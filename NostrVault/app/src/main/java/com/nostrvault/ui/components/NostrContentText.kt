@@ -15,7 +15,10 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
@@ -72,7 +75,8 @@ fun NostrContentText(
         buildAnnotatedString {
             for (segment in segments) {
                 when (segment) {
-                    is ContentSegment.PlainText -> append(segment.text)
+                    // Inline markdown, as the iPhone renders it.
+                    is ContentSegment.PlainText -> appendInlineMarkdown(segment.text)
 
                     is ContentSegment.Mention -> {
                         val displayName = profiles[segment.pubkey]?.bestName
@@ -160,6 +164,23 @@ fun NostrContentText(
         },
         modifier = modifier,
     )
+}
+
+/** [text] with its inline markdown applied and the markers dropped. See [InlineMarkdown]. */
+internal fun AnnotatedString.Builder.appendInlineMarkdown(text: String) {
+    for (run in InlineMarkdown.parse(text)) {
+        if (!run.bold && !run.italic && !run.strike && !run.code) {
+            append(run.text)
+            continue
+        }
+        val style = SpanStyle(
+            fontWeight = if (run.bold) FontWeight.Bold else null,
+            fontStyle = if (run.italic) FontStyle.Italic else null,
+            textDecoration = if (run.strike) TextDecoration.LineThrough else null,
+            fontFamily = if (run.code) FontFamily.Monospace else null,
+        )
+        withStyle(style) { append(run.text) }
+    }
 }
 
 /**
