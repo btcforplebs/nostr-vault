@@ -514,7 +514,19 @@ class FeedService @Inject constructor(
     // Lifecycle
     // ══════════════════════════════════════════════════════════════════
 
+    /** Set once a launch prewarm put the disk snapshot on screen. See [prewarmFromCache]. */
+    @Volatile internal var cachedFeedRestored = false
+    @Volatile internal var initialLoadStarted = false
+    internal var prewarmJob: Job? = null
+
     fun startInitialLoad() { startInitialLoadImpl() }
+
+    /** Shows the cached feed before the relay is ready. iOS `prewarmFromCache`. */
+    fun prewarmFromCache() { prewarmFromCacheImpl() }
+
+    /** Whether the relay coming up should start the feed's first load. */
+    fun needsInitialLoad(): Boolean =
+        shouldStartInitialLoad(_notes.value.isEmpty(), cachedFeedRestored, initialLoadStarted)
 
     fun refresh() { refreshImpl() }
 
