@@ -67,8 +67,7 @@ extension BlossomService {
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let auth = await makeUploadAuth(sha256: sha256)
-        let hosted = await mirrorUploadPass(source: .file(tempURL), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil)
-        if let url = hosted.first {
+        if let url = await firstHostingMirror(source: .file(tempURL), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil) {
             appLog("waiting post: \(sha256.prefix(8)) now hosted at \(url.absoluteString)")
             return url
         }

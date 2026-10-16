@@ -58,7 +58,10 @@ extension BlossomService {
             // full payload size upfront regardless of upload source type.
             let bodySize = source.byteCount
             request.setValue(String(bodySize), forHTTPHeaderField: "Content-Length")
-            request.timeoutInterval = 600  // 10 minutes for large file uploads to external mirrors
+            // An idle limit (no bytes moving), not a total: a big video still
+            // has the session's 15 minutes. 10 minutes of silence from a dead
+            // server used to hold the post.
+            request.timeoutInterval = isLocalNetwork ? 600 : Self.outsideServerIdleTimeout
 
             logger.debug("Uploading to \(uploadURL.absoluteString), Blossom auth event kind 24242, data size: \(bodySize) bytes")
 
@@ -108,8 +111,9 @@ extension BlossomService {
                     logger.error("URLError code: \(urlError.code.rawValue)")
                 }
 
-                // Retry on network errors
-                if attempt < maxRetries - 1 {
+                // Retry a dropped connection; a server that can't be found,
+                // refuses or never answers won't on a second try either.
+                if attempt < maxRetries - 1, Self.isWorthRetrying(error) {
                     let backoffNs = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
                     try? await Task.sleep(nanoseconds: backoffNs)
                     continue
@@ -120,6 +124,20 @@ extension BlossomService {
 
         logger.error("Upload to \(url) failed after \(maxRetries) attempts")
         return nil
+    }
+
+    /// Seconds an outside server may go silent mid-upload before it counts as failed.
+    static let outsideServerIdleTimeout: TimeInterval = 60
+
+    static func isWorthRetrying(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return true }
+        switch urlError.code {
+        case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .timedOut,
+             .notConnectedToInternet, .cancelled, .badURL, .unsupportedURL:
+            return false
+        default:
+            return true
+        }
     }
 
     // MARK: - BUD-06: Upload Preflight

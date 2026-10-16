@@ -53,7 +53,7 @@ class BlossomService @Inject constructor(
         internal const val MAX_BLOB_BYTES = 50L * 1024 * 1024 // 50 MB
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
     private val mirrorSemaphore = Semaphore(MIRROR_CONCURRENCY)
 
@@ -108,10 +108,13 @@ class BlossomService @Inject constructor(
         return true
     }
 
+    // Idle limits (no bytes moving), not totals: a big video keeps uploading
+    // as long as bytes flow. 10-15 minutes of silence from a dead server used
+    // to hold the post.
     internal val remoteClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(600, TimeUnit.SECONDS) // 10min for large files
-        .readTimeout(900, TimeUnit.SECONDS) // 15min resource timeout
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     // ══════════════════════════════════════════════════════════════════

@@ -52,7 +52,7 @@ import com.nostrvault.service.BlossomService.UploadSource
         // path below, like the built-in relay.
         if (savedLocalUrl != null && !com.nostrvault.relay.isPrivateNetworkURL(savedLocalUrl)) {
             if (mirrors.isNotEmpty() && !skipOutsideServers) {
-                mirrorUploadPass(source, mirrors, sha256, contentType, authHeader)
+                scope.launch { mirrorUploadPass(source, mirrors, sha256, contentType, authHeader) }
             }
             return@withContext UploadAttempt(PostUploadOutcome.Hosted(savedLocalUrl), savedLocalUrl)
         }
