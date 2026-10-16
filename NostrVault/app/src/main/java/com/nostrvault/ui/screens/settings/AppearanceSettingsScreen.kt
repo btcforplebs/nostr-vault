@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.nostrvault.ui.components.EmojiPickerSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,7 +141,8 @@ class AppearanceViewModel @Inject constructor(
         }
     }
 
-    fun setDefaultEmoji(emoji: String) {
+    fun setDefaultEmoji(picked: String) {
+        val emoji = defaultReactionFrom(picked) ?: return
         _defaultEmoji.value = emoji
         viewModelScope.launch {
             configStore.update { it.copy(defaultReactionEmoji = emoji) }
@@ -382,49 +384,38 @@ fun AppearanceSettingsScreen(
                 SettingHeading("Default Reaction", SettingsHelp.DISPLAY_DEFAULT_REACTION)
                 Spacer(Modifier.height(12.dp))
 
-                val emojiOptions = listOf(
-                "+" to "+",
-                "\u2764\uFE0F" to "\u2764\uFE0F",
-                "\uD83D\uDC4D" to "\uD83D\uDC4D",
-                "\uD83D\uDD25" to "\uD83D\uDD25",
-                "\u26A1" to "\u26A1",
-                "\uD83D\uDE02" to "\uD83D\uDE02",
-                "\uD83E\uDD14" to "\uD83E\uDD14",
-                "\uD83D\uDE4F" to "\uD83D\uDE4F",
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                emojiOptions.forEach { (display, value) ->
-                    val isSelected = defaultEmoji == value
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (isSelected) LocalNostrVaultColors.current.primary.copy(alpha = 0.2f)
-                                else TertiaryGroupedBg,
-                            )
-                            .then(
-                                if (isSelected) Modifier.border(
-                                    2.dp,
-                                    LocalNostrVaultColors.current.primary,
-                                    RoundedCornerShape(10.dp),
-                                )
-                                else Modifier
-                            )
-                            .clickable { viewModel.setDefaultEmoji(value) },
-                    ) {
-                        Text(
-                            text = display,
-                            fontSize = 20.sp,
-                        )
-                    }
+                // One row that opens the full picker, as on iPhone
+                // (AppearanceSettingsView): any emoji, not eight presets.
+                var showEmojiPicker by remember { mutableStateOf(false) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(TertiaryGroupedBg)
+                        .clickable(onClickLabel = "Choose the default reaction") { showEmojiPicker = true }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text("Reaction", color = PrimaryText, modifier = Modifier.weight(1f))
+                    Text(defaultEmoji, fontSize = 24.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        NostrVaultIcons.Navigate,
+                        contentDescription = null,
+                        tint = SecondaryText,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
-            }
+                if (showEmojiPicker) {
+                    EmojiPickerSheet(
+                        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                        onDismiss = { showEmojiPicker = false },
+                        onSelectEmoji = { emoji ->
+                            viewModel.setDefaultEmoji(emoji)
+                            showEmojiPicker = false
+                        },
+                    )
+                }
             }
         }
     }
@@ -565,3 +556,6 @@ private fun SettingHeading(title: String, help: SettingsHelp? = null, modifier: 
         if (help != null) InfoButton(help)
     }
 }
+
+/** A picked reaction, trimmed; a blank pick changes nothing. */
+internal fun defaultReactionFrom(picked: String): String? = picked.trim().ifEmpty { null }
