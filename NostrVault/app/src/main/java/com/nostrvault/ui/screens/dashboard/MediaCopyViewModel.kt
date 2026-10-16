@@ -69,20 +69,43 @@ data class MediaCopyFile(
 }
 
 /** A Blossom server and what the check found about it. */
-data class MediaServer(val url: String, val host: String, val health: Health = Health.UNKNOWN) {
+data class MediaServer(
+    val url: String,
+    val host: String,
+    val health: Health = Health.UNKNOWN,
+    /** When the last check finished; null until one has. */
+    val checkedAtMillis: Long? = null,
+) {
     enum class Health {
         UNKNOWN,
+        CHECKING,
         /** Holds at least one of your files: a real Blossom server. */
         WORKING,
-        /** Answered, but holds none of your files to prove it. */
+        /** Answered, but holds none of your files to prove it. A web server that is not Blossom answers too. */
         ANSWERS,
-        OFFLINE,
+        /** Had one of your files and now says it does not. */
+        LOST_FILE,
+        OFFLINE;
+
+        companion object {
+            /**
+             * What a Test found (iOS `MediaServersModel.test`): asked for a file
+             * of yours it was known to hold ([proofAnswer]), or with no such
+             * file, whether anything answers at its address.
+             */
+            fun fromTest(proofAnswer: BlobPresence?, answered: Boolean): Health = when (proofAnswer) {
+                BlobPresence.PRESENT -> WORKING
+                BlobPresence.ABSENT -> LOST_FILE
+                BlobPresence.UNREACHABLE -> OFFLINE
+                null -> if (answered) ANSWERS else OFFLINE
+            }
+        }
     }
 }
 
 /**
- * Media servers › Copy to servers, self-contained so the dashboard only has
- * to place [MirrorStatusSection]. Port of iOS `MediaServersModel`: measures
+ * The Media servers page (iOS `MediaServersPage`): each server's health, the
+ * files on this phone and Copy to servers. Port of iOS `MediaServersModel`: measures
  * which files on this phone a server does not have, then sends them with a
  * visible state per file. The old push ran one file at a time, signed each
  * one separately, and could wait half an hour on a single upload without a
@@ -150,7 +173,49 @@ class MediaCopyViewModel @Inject constructor(
                 }.awaitAll()
             }
             rebuild(mirrors)
+            // The check may have found a file a server holds; a server that
+            // only "answered" can now be tested against it.
+            _state.value.servers.filter { it.health == MediaServer.Health.ANSWERS }.forEach { test(it.url) }
         }
+    }
+
+    /**
+     * Asks the server for a file of yours it is known to hold. A 401 or 404
+     * from its front page proves nothing; holding your file does. With no
+     * such file, it can only be shown as answering. iOS `MediaServersModel.test`.
+     */
+    fun test(url: String) {
+        viewModelScope.launch {
+            updateServer(url) { it.copy(health = MediaServer.Health.CHECKING) }
+            val presence = blossomService.mirrorPresence.value
+            val proof = localFiles.keys.firstOrNull { presence[it]?.get(url) == BlobPresence.PRESENT }
+            val health = if (proof != null) {
+                val answer = blossomService.checkMirrorPresence(proof, force = true)[url] ?: BlobPresence.UNREACHABLE
+                MediaServer.Health.fromTest(answer, answered = true)
+            } else {
+                MediaServer.Health.fromTest(null, answered = withContext(Dispatchers.IO) { answers(url) })
+            }
+            updateServer(url) { it.copy(health = health, checkedAtMillis = System.currentTimeMillis()) }
+        }
+    }
+
+    private fun updateServer(url: String, change: (MediaServer) -> MediaServer) {
+        _state.update { s -> s.copy(servers = s.servers.map { if (it.url == url) change(it) else it }) }
+    }
+
+    /** The fallback when there is no file to ask for: does anything answer at the address at all (below 500). */
+    private fun answers(url: String): Boolean = try {
+        val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        connection.requestMethod = "HEAD"
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        try {
+            connection.responseCode in 200..499
+        } finally {
+            connection.disconnect()
+        }
+    } catch (e: Exception) {
+        false
     }
 
     private fun listVault(): Map<String, File> {
@@ -182,9 +247,11 @@ class MediaCopyViewModel @Inject constructor(
                 )
             }
         }
+        val now = System.currentTimeMillis()
         val servers = _state.value.servers.map { server ->
             val answers = localFiles.keys.mapNotNull { presence[it]?.get(server.url) }
             server.copy(
+                checkedAtMillis = if (answers.isNotEmpty()) now else server.checkedAtMillis,
                 health = when {
                     answers.any { it == BlobPresence.PRESENT } -> MediaServer.Health.WORKING
                     answers.isNotEmpty() && answers.all { it == BlobPresence.UNREACHABLE } -> MediaServer.Health.OFFLINE

@@ -21,7 +21,6 @@ import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
-import com.nostrvault.ui.screens.BlossomDashboardSections
 
 /** The relay dashboard sheet's [TutorialStage]. */
 private const val RELAY_DASHBOARD_TUTORIAL_LAYER = "relayDashboard"
@@ -38,7 +37,7 @@ private enum class VaultDashboardPage { MAIN, RELAY_DETAILS, MEDIA_DETAILS }
  * whether your vault is OK. The Vault tab presents it over either half: the
  * pill's last entry, the floating Vault button and the folded bar's corner
  * button all open it. Advanced holds Relay details (where the relay is) and
- * Media server details (Blossom's sections).
+ * Media servers (iOS MediaServersPage).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,16 +98,10 @@ internal fun VaultDashboardSheet(
                 onOpenMediaDetails = { page = VaultDashboardPage.MEDIA_DETAILS },
             )
             VaultDashboardPage.RELAY_DETAILS -> RelayDetailsPage(onBack = { page = VaultDashboardPage.MAIN })
-            VaultDashboardPage.MEDIA_DETAILS -> Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 32.dp),
-            ) {
-                SheetPageHeader(title = "Media server details", onBack = { page = VaultDashboardPage.MAIN })
-                BlossomDashboardSections(onOpenSettings = { openPage(Screen.BlossomSettings) })
-            }
+            VaultDashboardPage.MEDIA_DETAILS -> MediaServersPage(
+                onBack = { page = VaultDashboardPage.MAIN },
+                onOpenSettings = { openPage(Screen.BlossomSettings) },
+            )
         }
         TutorialStage(
             account = { viewModel.nostrService.activeHexPubkey },
