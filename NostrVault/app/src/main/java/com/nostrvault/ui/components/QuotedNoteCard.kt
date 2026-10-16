@@ -55,6 +55,13 @@ fun QuotedNoteCard(
     onArticleClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // Someone you follow can quote a blocked person: the card hides them,
+    // words and picture, and a tap opens nothing. iOS QuotedNoteView.
+    val blocked = rememberBlockedPubkeys()
+    if (!com.nostrvault.data.model.BlockedPeople.showsQuote(note.pubkey, note.kind, note.tags, blocked)) {
+        BlockedQuotePlaceholder(modifier)
+        return
+    }
     // A shared listing's content is usually NIP-15 JSON, which the note body
     // below would print. Same as the iPhone (#237): a listing card instead.
     val listing = if (note.kind in MarketListing.KINDS) {
@@ -240,6 +247,34 @@ internal const val PLACEHOLDER_TIMEOUT_MS = 12_000L
  * True once [PLACEHOLDER_TIMEOUT_MS] has passed for [key] without the caller
  * replacing the placeholder. A new [attempt] (Retry) starts the clock again.
  */
+/** The active account's blocked people (hex), current as you block and unblock. */
+@Composable
+private fun rememberBlockedPubkeys(): Set<String> {
+    val context = LocalContext.current
+    val feedService = remember(context) {
+        dagger.hilt.android.EntryPointAccessors
+            .fromApplication(context.applicationContext, LiveEmbedEntryPoint::class.java)
+            .feedService()
+    }
+    val config by feedService.configStore.config.collectAsState()
+    return remember(feedService, config) { feedService.blockedHexForActiveAccount() }
+}
+
+/** What stands in for a quote by someone you blocked. iOS QuotedNoteView.blockedPlaceholder. */
+@Composable
+private fun BlockedQuotePlaceholder(modifier: Modifier) {
+    Text(
+        "Quote from someone you blocked",
+        fontSize = 12.sp,
+        color = SecondaryText,
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(TertiaryGroupedBg)
+            .padding(10.dp),
+    )
+}
+
 @Composable
 internal fun rememberPlaceholderTimedOut(key: Any, attempt: Int = 0): Boolean {
     var timedOut by remember(key, attempt) { mutableStateOf(false) }

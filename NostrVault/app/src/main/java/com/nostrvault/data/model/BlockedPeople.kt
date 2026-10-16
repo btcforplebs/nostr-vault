@@ -32,6 +32,29 @@ object BlockedPeople {
         !isFromMe && !isBlocked(sender, blocked)
 
     /**
+     * Whether a quoted note may be drawn. Someone you follow can quote a
+     * blocked person, and the feed filter only looks at the quoting note, so
+     * the quote card itself checks. A hidden quote shows neither the blocked
+     * person's words nor their picture.
+     *
+     * A live stream (kind 30311) is the streamer's, not its signer's:
+     * zap.stream and shosho.live sign with their own service key and name the
+     * streamer in the `Host` p tag, so both are checked, as the Live tab does.
+     * iOS: BlockedPeople.showsQuote.
+     */
+    fun showsQuote(author: String, kind: Int, tags: List<List<String>>, blocked: Set<String>): Boolean {
+        if (blocked.isEmpty()) return true
+        if (isBlocked(author, blocked)) return false
+        if (kind == LIVE_STREAM_KIND) {
+            val host = LiveStream.from(author, 0, tags)?.hostPubkey ?: return true
+            if (isBlocked(host, blocked)) return false
+        }
+        return true
+    }
+
+    private const val LIVE_STREAM_KIND = 30311
+
+    /**
      * Notes left once blocked people's are taken out: the notes above a reply,
      * and the quotes and highlights under a note. iOS: BlockedPeople.visibleNotes.
      */
