@@ -319,6 +319,36 @@ class ProfileViewModel @Inject constructor(
         olderPage = null
     }
 
+    /** A refresh is running; a second tap waits for it. */
+    private var refreshing = false
+
+    /**
+     * Fetched fresh, in place: a new stream adds what is new while the
+     * notes, counts and tabs on screen stay, so the page never blanks and
+     * refills. Re-tapping the Profile tab runs it, the iPhone's way to
+     * refresh your own profile (pulling down opens Edit Profile). iOS
+     * ProfileFeedLoader.refresh(shop:extras:).
+     */
+    fun refresh() {
+        val pk = _pubkey.value
+        if (pk.isEmpty() || refreshing) return
+        refreshing = true
+        // A page of older notes in flight dies with the old stream.
+        stream?.close(); stream = null; _streamOpen.value = false
+        pageToken++
+        _isLoadingOlder.value = false
+        nostrService.fetchMissingProfiles(listOf(pk), force = true)
+        loadEngagement(force = true)
+        loadProfile()
+        shop.load(pk, force = true)
+        loadExtras(pk, force = true)
+        viewModelScope.launch {
+            // Done once the first page is in, or after a few seconds regardless.
+            withTimeoutOrNull(8_000) { _isLoading.first { !it } }
+            refreshing = false
+        }
+    }
+
     /** Set once your own follower ledger supplied the FOLLOWERS count. */
     @Volatile private var ownLedgerLoaded = false
 
