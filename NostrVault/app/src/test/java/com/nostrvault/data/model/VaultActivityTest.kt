@@ -53,6 +53,39 @@ class VaultActivityTest {
         isOutside: (String) -> Boolean = { false },
     ) = VaultActivity.build(events, me, noteKinds, follows, isBlocked, isOutside, zone = ZoneOffset.UTC)
 
+    /** An event as the list's parser makes it: picture links found in the content. */
+    private fun withPictures(id: String, pubkey: String, kind: Int = 1, at: Long, content: String,
+                             tags: List<List<String>> = emptyList()) =
+        VaultActivity.Event(id, pubkey, kind, at, content, tags,
+            VaultActivity.pictures(id, pubkey, kind, at, content, tags))
+
+    @Test fun `picture links leave the preview and ride along on the line`() {
+        val pic = "https://i.example.com/cat.jpg"
+        val page = "https://example.com/story"
+        val lines = build(listOf(
+            withPictures("m1", ann, at = 100, content = "look $pic at this $page", tags = listOf(listOf("p", me))),
+        ))
+        assertEquals("look at this $page", lines.single().preview)
+        assertEquals(listOf(pic), lines.single().images)
+    }
+
+    @Test fun `a like of your post carries your post's pictures`() {
+        val pic = "https://i.example.com/sunset.png"
+        val lines = build(listOf(
+            withPictures("post", me, at = 100, content = "sunset $pic"),
+            event("r1", ann, kind = 7, at = 110, content = "+", tags = listOf(listOf("e", "post"), listOf("p", me))),
+        ))
+        assertEquals("sunset", lines.single().preview)
+        assertEquals(listOf(pic), lines.single().images)
+    }
+
+    @Test fun `an imeta image type counts without an extension`() {
+        val pic = "https://blossom.example.com/abc123"
+        val tags = listOf(listOf("imeta", "url $pic", "m image/webp"))
+        assertEquals(listOf(pic), VaultActivity.pictures("x", ann, 1, 1, "hi $pic", tags))
+        assertEquals(emptyList<String>(), VaultActivity.pictures("x", ann, 1, 1, "hi $pic", emptyList()))
+    }
+
     @Test fun `likes on one post fold into one line, newest actor first`() {
         val lines = build(
             listOf(

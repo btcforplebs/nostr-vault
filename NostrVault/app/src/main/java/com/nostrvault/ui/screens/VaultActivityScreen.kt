@@ -302,7 +302,8 @@ class VaultActivityViewModel @Inject constructor(
         val tags = (obj["tags"] as? JsonArray)?.mapNotNull { tag ->
             (tag as? JsonArray)?.map { (it as? JsonPrimitive)?.contentOrNull ?: "" }
         }.orEmpty()
-        return VaultActivity.Event(id, pubkey, kind, createdAt, content, tags)
+        val images = VaultActivity.pictures(id, pubkey, kind, createdAt, content, tags)
+        return VaultActivity.Event(id, pubkey, kind, createdAt, content, tags, images)
     }
 
     /** The follows the Followers list marks as news, from the relay's ledger. */
@@ -649,6 +650,10 @@ private fun VaultActivityRow(
                 } else {
                     Text(preview, color = PrimaryText, fontSize = 15.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            if (line.images.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                VaultActivityThumbnails(line.images)
             }
         }
     }
