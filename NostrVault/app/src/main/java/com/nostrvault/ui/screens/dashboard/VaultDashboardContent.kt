@@ -421,7 +421,7 @@ internal fun VaultDashboardContent(
         DashSection(title = "Advanced") {
             SettingLink(Icons.Filled.Dns, "Relay details", null, onClick = onOpenRelayDetails)
             DashDivider()
-            SettingLink(Icons.Filled.Image, "Media server details", null, onClick = onOpenMediaDetails)
+            SettingLink(Icons.Filled.Image, "Media servers", null, onClick = onOpenMediaDetails)
             DashDivider()
             SettingLink(NostrVaultIcons.Logs, "Raw logs", null) { onOpenScreen(Screen.LogViewer) }
         }

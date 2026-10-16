@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,124 +14,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.nostrvault.ui.theme.*
 import java.text.DateFormat
 import java.util.Date
 
 /**
- * Your Blossom servers and the files on this phone that one of them is
- * missing, with Copy, Stop and Retry and what happened to each file.
- * Self-contained: place it, and it loads and runs on its own.
+ * Media servers › Your media: files stored, waiting to copy, Copy / Stop /
+ * Retry with its progress, and what happened to each file (iOS
+ * `MediaServersPage.mediaSection`). The state comes from [MediaCopyViewModel].
  */
 @Composable
-fun MirrorStatusSection(
-    modifier: Modifier = Modifier,
-    viewModel: MediaCopyViewModel = hiltViewModel(),
-) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    var expanded by remember { mutableStateOf(true) }
-    var showFiles by remember { mutableStateOf(false) }
-
-    Surface(
-        color = SecondaryGroupedBg,
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = "Mirror Servers",
-                    color = PrimaryText,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "${state.servers.count { it.health == MediaServer.Health.WORKING }}/${state.servers.size} active",
-                    color = SecondaryText,
-                    fontSize = 12.sp,
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = viewModel::load,
-                    enabled = !state.isCopying,
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        NostrVaultIcons.Refresh,
-                        contentDescription = "Check again",
-                        tint = SecondaryText,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-                IconButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        if (expanded) NostrVaultIcons.ChevronDown else NostrVaultIcons.Navigate,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
-                        tint = SecondaryText,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column {
-                    if (state.servers.isEmpty()) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                        ) {
-                            Text(
-                                text = "No mirrors configured",
-                                color = TertiaryText,
-                                fontSize = 13.sp,
-                            )
-                        }
-                    } else {
-                        Spacer(Modifier.height(8.dp))
-                        state.servers.forEach { server ->
-                            MirrorRow(server, scanning = state.isScanning)
-                            Spacer(Modifier.height(6.dp))
-                        }
-                        HorizontalDivider(color = TertiaryText.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 8.dp))
-                        CopyBlock(
-                            state = state,
-                            showFiles = showFiles,
-                            onToggleFiles = { showFiles = !showFiles },
-                            onCopy = { showFiles = true; viewModel.startCopy() },
-                            onStop = viewModel::stopCopy,
-                            hostFor = viewModel::host,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** Kept so the dashboard's current call still builds; the section now loads its own servers. */
-@Deprecated("The section is self-contained now", ReplaceWith("MirrorStatusSection(modifier)"))
-@Composable
-fun MirrorStatusSection(
-    @Suppress("UNUSED_PARAMETER") mirrors: List<MirrorInfo>,
-    @Suppress("UNUSED_PARAMETER") onRefreshHealth: () -> Unit,
-    modifier: Modifier = Modifier,
-) = MirrorStatusSection(modifier = modifier)
-
-@Composable
-private fun CopyBlock(
+internal fun CopyBlock(
     state: MediaCopyViewModel.UiState,
     showFiles: Boolean,
     onToggleFiles: () -> Unit,
@@ -294,57 +187,6 @@ private fun CopyFileRow(file: MediaCopyFile, hostFor: (String) -> String) {
             }
             MediaCopyFile.Status.Copied -> Text("Copied", color = SuccessGreen, fontSize = 12.sp)
             is MediaCopyFile.Status.Failed -> Text("Failed", color = ErrorRed, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
-private fun MirrorRow(server: MediaServer, scanning: Boolean) {
-    val statusColor = when (server.health) {
-        MediaServer.Health.WORKING -> SuccessGreen
-        MediaServer.Health.OFFLINE -> ErrorRed
-        MediaServer.Health.ANSWERS, MediaServer.Health.UNKNOWN -> WarningYellow
-    }
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-    ) {
-        // Health dot
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(statusColor, CircleShape),
-        )
-        Spacer(Modifier.width(10.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = server.host,
-                color = PrimaryText,
-                fontSize = 13.sp,
-            )
-        }
-
-        if (scanning && server.health == MediaServer.Health.UNKNOWN) {
-            CircularProgressIndicator(
-                color = WarningYellow,
-                strokeWidth = 1.5.dp,
-                modifier = Modifier.size(12.dp),
-            )
-        } else {
-            Text(
-                text = when (server.health) {
-                    MediaServer.Health.WORKING -> "Has your files"
-                    MediaServer.Health.ANSWERS -> "Answers, holds none yet"
-                    MediaServer.Health.OFFLINE -> "Not answering"
-                    MediaServer.Health.UNKNOWN -> "Not checked yet"
-                },
-                color = SecondaryText,
-                fontSize = 11.sp,
-            )
         }
     }
 }
