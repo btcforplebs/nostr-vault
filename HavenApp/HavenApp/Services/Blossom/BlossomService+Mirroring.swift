@@ -86,22 +86,23 @@ extension BlossomService {
             return .savedOnDevice(unreachable: mirrors)
         }
 
-        // Step 3: Upload to external mirrors concurrently using standard BUD-02 protocol
-        var mirrorURLs = await mirrorUploadPass(source: source, sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: progress)
+        // Step 3: Upload to every outside server at once and post as soon as
+        // ONE has it. The others keep uploading in the background; a server
+        // that fails or hangs can't hold the post.
+        var hostedURL = await firstHostingMirror(source: source, sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: progress)
 
         // A sleeping mirror host (e.g. the Mac relay over LAN/Tailscale) is often
         // woken *by* the first pass's connection attempts (wake-on-network) but
         // isn't up fast enough to serve it. Wait and retry the whole pass once
         // before handing the post to the queue.
-        if mirrorURLs.isEmpty {
+        if hostedURL == nil {
             logger.warning("All Blossom mirrors failed — retrying once in 10s in case a sleeping host is still waking")
             appLog("first mirror pass failed for all of \(mirrors) — retrying once in 10s", level: "WARN")
             try? await Task.sleep(nanoseconds: 10_000_000_000)
-            mirrorURLs = await mirrorUploadPass(source: source, sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: progress)
+            hostedURL = await firstHostingMirror(source: source, sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: progress)
         }
 
-        // Return first successful external mirror
-        if let externalURL = mirrorURLs.first {
+        if let externalURL = hostedURL {
             logger.info("Using external Blossom mirror: \(externalURL.absoluteString)")
             appLog("post upload ok — mirrored to \(externalURL.absoluteString)")
             return .hosted(externalURL)
@@ -112,48 +113,74 @@ extension BlossomService {
     }
 
     /// One concurrent BUD-02 upload pass over all configured mirrors.
-    /// Returns the URLs of every mirror that accepted the blob.
+    /// Returns the URLs of every mirror that accepted the blob, in the order
+    /// the servers are configured. Waits for all of them: for pushes that
+    /// report how many servers took a blob, not for posting.
     func mirrorUploadPass(source: UploadSource, sha256: String, contentType: String, mirrors: [String], authBase64: String?, progress: ((Double) -> Void)?) async -> [URL] {
         logger.debug("Attempting to mirror to: \(mirrors.description)")
-        return await withTaskGroup(of: (Int, String, URL?).self) { group in
+        return await withTaskGroup(of: (Int, URL?).self) { group in
             for (index, mirrorURL) in mirrors.enumerated() {
                 group.addTask {
-                    // Only report progress for the first remote mirror to avoid progress jitter
-                    let progressHandler = (index == 0) ? progress : nil
-                    let parsed = URL(string: mirrorURL)
-                    let useLocalSession = parsed.map { self.isLocalhost($0) } ?? false
-
-                    // BUD-06: Preflight check — skip mirror if server rejects
-                    let accepted = await self.preflightCheck(
-                        url: mirrorURL, sha256: sha256,
-                        contentLength: source.byteCount, contentType: contentType,
-                        useLocalhostSession: useLocalSession, authBase64: authBase64
-                    )
-                    guard accepted else {
-                        self.logger.info("BUD-06: Skipping mirror \(mirrorURL) — preflight rejected")
-                        return (index, mirrorURL, nil)
-                    }
-
-                    let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: useLocalSession, authBase64: authBase64, progress: progressHandler)
-                    return (index, mirrorURL, result)
+                    (index, await self.uploadToMirror(source: source, sha256: sha256, contentType: contentType, mirror: mirrorURL, authBase64: authBase64, progress: index == 0 ? progress : nil))
                 }
             }
-
             var successfulMirrors: [(index: Int, url: URL)] = []
-            for await (index, mirrorURL, result) in group {
-                if let url = result {
-                    self.logger.info("Mirror upload succeeded for \(mirrorURL): \(url.absoluteString)")
-                    successfulMirrors.append((index, url))
-                } else {
-                    self.logger.warning("Mirror upload failed for \(mirrorURL)")
-                }
+            for await (index, result) in group {
+                if let url = result { successfulMirrors.append((index, url)) }
             }
-            // In the order the servers are configured, not the order they
-            // answered: callers post the first URL, and the list order is the
-            // user's preference. Fastest-first made it whichever server won
-            // the race that time.
             return successfulMirrors.sorted { $0.index < $1.index }.map(\.url)
         }
+    }
+
+    /// Uploads to every mirror at once and returns the link from the first
+    /// that accepts the blob — the post doesn't wait for the rest, which
+    /// finish in the background. nil once every mirror has failed.
+    func firstHostingMirror(source: UploadSource, sha256: String, contentType: String, mirrors: [String], authBase64: String?, progress: ((Double) -> Void)?) async -> URL? {
+        // The stragglers outlive this call, so they read their own link to a
+        // file source: the caller deletes its temp file once the post is out.
+        var raceSource = source
+        var raceFile: URL?
+        if case .file(let fileURL) = source {
+            let link = FileManager.default.temporaryDirectory.appendingPathComponent("mirror-race-\(UUID().uuidString)")
+            if (try? FileManager.default.linkItem(at: fileURL, to: link)) != nil
+                || (try? FileManager.default.copyItem(at: fileURL, to: link)) != nil {
+                raceSource = .file(link)
+                raceFile = link
+            }
+        }
+        let source = raceSource
+        let jobs: [@Sendable () async -> URL?] = mirrors.enumerated().map { index, mirrorURL in
+            { await self.uploadToMirror(source: source, sha256: sha256, contentType: contentType, mirror: mirrorURL, authBase64: authBase64, progress: index == 0 ? progress : nil) }
+        }
+        return await FirstAnswer.first(jobs, onLate: { index, url in
+            if let url {
+                self.appLog("background mirror ok — \(mirrors[index]) also has \(sha256.prefix(8)): \(url.absoluteString)")
+            }
+        }, onAllDone: {
+            if let raceFile { try? FileManager.default.removeItem(at: raceFile) }
+        })
+    }
+
+    /// BUD-06 preflight, then the BUD-02 upload, to one mirror.
+    private func uploadToMirror(source: UploadSource, sha256: String, contentType: String, mirror mirrorURL: String, authBase64: String?, progress: ((Double) -> Void)?) async -> URL? {
+        let useLocalSession = URL(string: mirrorURL).map { isLocalhost($0) } ?? false
+        // BUD-06: Preflight check — skip mirror if server rejects
+        let accepted = await preflightCheck(
+            url: mirrorURL, sha256: sha256,
+            contentLength: source.byteCount, contentType: contentType,
+            useLocalhostSession: useLocalSession, authBase64: authBase64
+        )
+        guard accepted else {
+            logger.info("BUD-06: Skipping mirror \(mirrorURL) — preflight rejected")
+            return nil
+        }
+        let result = await uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: useLocalSession, authBase64: authBase64, progress: progress)
+        if let result {
+            logger.info("Mirror upload succeeded for \(mirrorURL): \(result.absoluteString)")
+        } else {
+            logger.warning("Mirror upload failed for \(mirrorURL)")
+        }
+        return result
     }
 
     /// Fire a cheap unauthenticated HEAD at every configured mirror so sleeping

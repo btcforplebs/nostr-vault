@@ -13,10 +13,9 @@ import com.nostrvault.service.BlossomService.Companion.TAG
 import com.nostrvault.service.BlossomService.UploadSource
 
     /**
-     * One concurrent upload pass over all mirrors; returns the URL from the
-     * first mirror IN CONFIGURED ORDER that accepted the blob — not the first
-     * to answer. The list order is the user's preference; fastest-first made
-     * the posted link whichever server won the race that time. Same as iOS.
+     * Uploads to every mirror at once and returns the link from the first that
+     * accepts the blob. The post doesn't wait for the rest: they finish in the
+     * background ([BlossomService.scope]). Same as iOS `firstHostingMirror`.
      */
     internal suspend fun BlossomService.mirrorUploadPass(
         source: UploadSource,
@@ -24,24 +23,46 @@ import com.nostrvault.service.BlossomService.UploadSource
         sha256: String,
         contentType: String,
         authHeader: String,
-    ): String? = coroutineScope {
-        val jobs = mirrors.map { mirrorUrl ->
-            async {
+    ): String? {
+        // The stragglers outlive this call, so they read their own link to a
+        // file source: callers delete their temp file once the post is out.
+        var raceFile: java.io.File? = null
+        val raceSource = (source as? UploadSource.FileSource)?.let { fileSource ->
+            val link = java.io.File(fileSource.file.parentFile, "mirror-race-${java.util.UUID.randomUUID()}")
+            val linked = try {
+                java.nio.file.Files.createLink(link.toPath(), fileSource.file.toPath()); true
+            } catch (e: Exception) {
+                try { fileSource.file.copyTo(link); true } catch (e2: Exception) { false }
+            }
+            if (linked) { raceFile = link; UploadSource.FileSource(link) } else null
+        } ?: source
+        val jobs: List<suspend () -> String?> = mirrors.map { mirrorUrl ->
+            suspend {
                 try {
                     uploadToServer(
-                        source = source,
+                        source = raceSource,
                         serverUrl = mirrorUrl,
                         sha256 = sha256,
                         contentType = contentType,
                         authHeader = authHeader,
                     )
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     Log.w(TAG, "Mirror to $mirrorUrl failed: ${e.message}")
                     null
                 }
             }
         }
-        jobs.awaitAll().firstOrNull { it != null }
+        return FirstAnswer.first(scope, jobs, onLate = { index, url ->
+            if (url != null) Log.i(TAG, "Background mirror ok — ${mirrors[index]} also has ${sha256.take(8)}")
+        }, onAllDone = { raceFile?.delete() })
+    }
+
+    /** A server that can't be found, refuses or never answers won't on a second try either. */
+    internal fun isWorthRetrying(error: Exception): Boolean = when (error) {
+        is java.net.UnknownHostException, is java.net.ConnectException,
+        is java.net.SocketTimeoutException, is java.net.NoRouteToHostException -> false
+        else -> true
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -101,7 +122,12 @@ import com.nostrvault.service.BlossomService.UploadSource
                     delay(1000L * (attempt + 1)) // Linear backoff
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 lastError = e
+                if (!isWorthRetrying(e)) {
+                    Log.w(TAG, "Upload to $serverUrl failed: ${e.message}")
+                    return@withContext null
+                }
                 if (attempt < MAX_UPLOAD_RETRIES - 1) {
                     delay(1000L * (attempt + 1))
                 }

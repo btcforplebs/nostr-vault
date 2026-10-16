@@ -469,7 +469,7 @@ data class HavenConfig(
     /** Active blossom mirror servers, including the Haven relay if configured. */
     val activeBlossomMirrors: List<String>
         get() {
-            val mirrors = blossomMirrors.toMutableList()
+            val mirrors = blossomMirrors.mapNotNull { blossomUploadServer(it) }.distinct().toMutableList()
             val macHttps = macRelayHttpsURL
             if (macHttps.isNotEmpty() && macHttps !in mirrors) {
                 mirrors.add(0, macHttps)
@@ -553,4 +553,27 @@ data class HavenConfig(
             reposts = pushNotifyReposts,
             follows = pushNotifyFollows,
         )
+}
+
+/**
+ * The address to use for a configured Blossom server, or null to skip it. Port
+ * of iOS `HavenConfig.blossomUploadServer`.
+ *
+ * nostr.build's website (`nostr.build`, `<name>.nostr.build`) is not a Blossom
+ * server: it answers every upload with its home page. Its Blossom server is
+ * `blossom.nostr.build`, which files the upload under the uploader's own
+ * `<npub>.blossom.band` link, so people who type their nostr.build address get
+ * that server instead of a failed upload. nostr.band's media server is gone
+ * (`blossom.nostr.band` is NXDOMAIN, `nostr.band` doesn't accept connections —
+ * checked 2026-10-16), so it is skipped rather than timed out on every post.
+ */
+fun blossomUploadServer(configured: String): String? {
+    val trimmed = configured.trim()
+    val host = try { java.net.URI(trimmed).host?.lowercase() } catch (e: Exception) { null }
+    if (host.isNullOrEmpty()) return trimmed
+    if (host == "nostr.band" || host.endsWith(".nostr.band")) return null
+    if ((host == "nostr.build" || host.endsWith(".nostr.build")) && host != "blossom.nostr.build") {
+        return "https://blossom.nostr.build"
+    }
+    return trimmed
 }

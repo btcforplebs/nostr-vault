@@ -21,9 +21,34 @@ extension HavenConfig {
         return "http://\(clean).fips:\(relayPort)"
     }
 
+    /// The address to use for a configured Blossom server, or nil to skip it.
+    ///
+    /// nostr.build's website (`nostr.build`, `<name>.nostr.build`) is not a
+    /// Blossom server: it answers every upload with its home page. Its Blossom
+    /// server is `blossom.nostr.build`, which files the upload under the
+    /// uploader's own `<npub>.blossom.band` link, so people who type their
+    /// nostr.build address get that server instead of a failed upload.
+    /// nostr.band's media server is gone (`blossom.nostr.band` is NXDOMAIN,
+    /// `nostr.band` doesn't accept connections — checked 2026-10-16), so it is
+    /// skipped rather than timed out on every post.
+    static func blossomUploadServer(_ configured: String) -> String? {
+        let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let host = URLComponents(string: trimmed)?.host?.lowercased(), !host.isEmpty else { return trimmed }
+        if host == "nostr.band" || host.hasSuffix(".nostr.band") { return nil }
+        if (host == "nostr.build" || host.hasSuffix(".nostr.build")) && host != "blossom.nostr.build" {
+            return "https://blossom.nostr.build"
+        }
+        return trimmed
+    }
+
     /// Active Blossom mirrors with optional FIPS URL appended last (clearnet-first per BUD-14).
     func activeBlossomMirrors(detectedNpub: String? = nil) -> [String] {
-        var mirrors = blossomMirrors
+        var mirrors: [String] = []
+        for configured in blossomMirrors {
+            if let server = Self.blossomUploadServer(configured), !mirrors.contains(server) {
+                mirrors.append(server)
+            }
+        }
         let macHttps = macRelayHttpsURL
         if !macHttps.isEmpty, !mirrors.contains(macHttps) {
             mirrors.insert(macHttps, at: 0)
