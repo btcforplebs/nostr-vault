@@ -243,7 +243,15 @@ class AccountSettingsViewModel @Inject constructor(
 
     fun setSigningMode(npub: String, mode: String) = configStore.setSigningMode(npub, mode)
 
-    fun removeAccount(npub: String) = configStore.removeAccount(npub)
+    /** Removes the account and, as the confirm says and iOS does, the key stored for it. */
+    fun removeAccount(npub: String) = viewModelScope.launch {
+        if (npub == config.value.ownerNpub) return@launch
+        val hex = hexFor(npub)
+        configStore.removeAccount(npub)
+        credentialStore.deleteCredentialHexKey(npub)
+        if (hex.isNotEmpty()) credentialStore.deleteNsec(hex)
+        _keysChanged.value++
+    }
 
     fun togglePublishRelayList(npub: String, enabled: Boolean) {
         configStore.setPublishRelayList(npub, enabled)

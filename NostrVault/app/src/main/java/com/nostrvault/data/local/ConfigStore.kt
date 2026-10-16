@@ -311,8 +311,16 @@ class ConfigStore @Inject constructor(
         else cfg.copy(accountNpubs = cfg.accountNpubs + npub)
     }
 
-    fun removeAccount(npub: String) {
+    /**
+     * Removes an added account. If it is the one in use, the app switches
+     * back to the owner through [switchActiveAccount], as on iOS, so the
+     * owner's signer is reconnected rather than the active key just cleared.
+     */
+    suspend fun removeAccount(npub: String) {
         NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], null)?.let(NIP46Service::dropSession)
+        // Switch away only after its signer session is gone: the owner's
+        // connect can share that session (iOS AccountsSettingsView).
+        if (_config.value.activeAccountNpub?.trim() == npub) switchActiveAccount(null)
         update { cfg ->
             cfg.copy(
                 accountNpubs = cfg.accountNpubs.filter { it != npub },
