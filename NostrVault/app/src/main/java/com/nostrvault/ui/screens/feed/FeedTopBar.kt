@@ -290,43 +290,18 @@ internal fun FeedTopBar(
                     if (scopeGlobal) TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
                 }
                 FeedMode.POPULAR -> {
-                    // Follows filter
+                    // Who it ranks: one menu, not two toggles that undo each other.
+                    PopularAudienceButton(selected = popularFilter, onSelect = onSetPopularFilter)
+                    // The rank line above each post
                     IconButton(
-                        onClick = {
-                            onSetPopularFilter(
-                                if (popularFilter == PopularFilter.FOLLOWS) PopularFilter.ALL else PopularFilter.FOLLOWS
-                            )
-                        },
-                        modifier = Modifier.size(40.dp),
+                        onClick = onToggleEngagementStats,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .semantics { stateDescription = if (showEngagementStats) "Shown" else "Hidden" },
                     ) {
                         Icon(
-                            imageVector = if (popularFilter == PopularFilter.FOLLOWS) NostrVaultIcons.People else NostrVaultIcons.PeopleOutline,
-                            contentDescription = "Follows only",
-                            tint = if (popularFilter == PopularFilter.FOLLOWS) colors.primary else SecondaryText,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    // Non-follows filter
-                    IconButton(
-                        onClick = {
-                            onSetPopularFilter(
-                                if (popularFilter == PopularFilter.NON_FOLLOWS) PopularFilter.ALL else PopularFilter.NON_FOLLOWS
-                            )
-                        },
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (popularFilter == PopularFilter.NON_FOLLOWS) NostrVaultIcons.Globe else NostrVaultIcons.GlobeOutline,
-                            contentDescription = "Non-follows",
-                            tint = if (popularFilter == PopularFilter.NON_FOLLOWS) colors.primary else SecondaryText,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    // Engagement stats
-                    IconButton(onClick = onToggleEngagementStats, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = NostrVaultIcons.BarChart,
-                            contentDescription = "Engagement stats",
+                            imageVector = if (showEngagementStats) NostrVaultIcons.Popular else NostrVaultIcons.PopularOutline,
+                            contentDescription = "Ranks",
                             tint = if (showEngagementStats) colors.primary else SecondaryText,
                             modifier = Modifier.size(18.dp),
                         )
@@ -363,6 +338,64 @@ private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
             tint = if (everyone) ZapOrange else colors.primary,
             modifier = Modifier.size(18.dp),
         )
+    }
+}
+
+/** Name in the Popular audience menu. iOS `PopularFilter.menuTitle`. */
+internal val PopularFilter.menuTitle: String
+    get() = when (this) {
+        PopularFilter.ALL -> "Everyone"
+        PopularFilter.FOLLOWS -> "People you follow"
+        PopularFilter.NON_FOLLOWS -> "People you don't follow"
+    }
+
+private val PopularFilter.icon
+    get() = when (this) {
+        PopularFilter.ALL -> NostrVaultIcons.PeopleOutline
+        PopularFilter.FOLLOWS -> NostrVaultIcons.People
+        PopularFilter.NON_FOLLOWS -> NostrVaultIcons.Globe
+    }
+
+/**
+ * Everyone / People you follow / People you don't follow, as one button in
+ * the Popular toolbar. Tinted only while it narrows the feed. iOS PopularAudienceMenu.
+ */
+@Composable
+private fun PopularAudienceButton(selected: PopularFilter, onSelect: (PopularFilter) -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .size(40.dp)
+                .semantics { stateDescription = selected.menuTitle },
+        ) {
+            Icon(
+                imageVector = selected.icon,
+                contentDescription = "Popular from",
+                tint = if (selected == PopularFilter.ALL) SecondaryText else colors.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            PopularFilter.entries.forEach { filter ->
+                DropdownMenuItem(
+                    text = { Text(filter.menuTitle) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (filter == selected) NostrVaultIcons.Check else filter.icon,
+                            contentDescription = if (filter == selected) "Selected" else null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(filter)
+                    },
+                )
+            }
+        }
     }
 }
 
