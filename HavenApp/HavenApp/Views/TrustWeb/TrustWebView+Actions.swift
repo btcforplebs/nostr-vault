@@ -23,7 +23,22 @@ extension TrustWebView {
             frames[pubkey] = Frame(center: pubkey, ring: ring, listFound: list != nil, path: found)
             nostrService.fetchMissingProfiles(for: [pubkey] + found.bridges)
             prepareFaces(pubkey)
+            loadWider(pubkey)
         }
+    }
+
+    /// "Open in WoT" from another globe: back to you, then onto them, with
+    /// anything open on the tab put away.
+    func openRequested() {
+        guard frames[me] != nil, let pubkey = WOTOpenRequest.shared.take() else { return }
+        clearSearch()
+        searchOpen = false
+        closeCard()
+        myWebOpen = false
+        profilePubkey = nil
+        messagePubkey = nil
+        jump(to: 0)
+        if pubkey != me { center(on: pubkey) }
     }
 
     /// Your follow list changed: redraw your own globe in place, so you stay

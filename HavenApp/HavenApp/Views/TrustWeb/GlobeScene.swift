@@ -132,10 +132,10 @@ final class GlobeScene: ObservableObject {
         self.author = author
         center = frame.center
 
-        // Every star's shell and look for this core. Whoever is in the middle,
-        // the globe is still yours: your haze stays, and on someone else's
-        // globe your follows they don't follow drift out to it. Each star keeps
-        // its direction, so re-centering only glides people in or out.
+        // Every star's shell and look for this core. `haze` is the core's own
+        // web: yours on your globe, theirs on someone else's, so moving onto
+        // someone shows their web as if they were you. Each star keeps its
+        // direction, so re-centering only glides people in or out.
         let bridgeSet = Set(frame.bridges)
         var want: [String: (Kind, Double)] = [:]
         // Close people sit on their own shell, nearer than the rest.
@@ -146,10 +146,8 @@ final class GlobeScene: ObservableObject {
         // Close is who someone is, not which layer is picked: a Close face past
         // the shell's cap keeps its shell when the layer changes.
         func wasClose(_ key: String) -> Bool { index[key].map { kinds[$0] == .closeHaze } ?? false }
-        if frame.center != me {
-            for key in myFollows { want[key] = (.haze, TrustMap.outerRadius) }
-            want[me] = (.bridge, TrustMap.outerRadius)
-        }
+        // On someone else's globe you're one of the stars.
+        if frame.center != me { want[me] = (.bridge, TrustMap.outerRadius) }
         for key in frame.ring {
             let kind: Kind = bridgeSet.contains(key) ? .bridge
                 : frame.center != me && myFollows.contains(key) ? .mutual : .ring
@@ -165,10 +163,8 @@ final class GlobeScene: ObservableObject {
         want[frame.center] = (.ring, 0)
         if let tracedStar, want[tracedStar] == nil { want[tracedStar] = (.bridge, TrustMap.outerRadius) }
         // A layer's face may be past the shell's cap: it still gets its star.
-        if frame.center == me {
-            for key in layerFaces where want[key] == nil {
-                want[key] = shell(close: layer == .close || closeHaze.contains(key) || (!newCenter && wasClose(key)))
-            }
+        for key in layerFaces where want[key] == nil {
+            want[key] = shell(close: layer == .close || closeHaze.contains(key) || (!newCenter && wasClose(key)))
         }
 
         for i in keys.indices where want[keys[i]] == nil {
@@ -217,11 +213,9 @@ final class GlobeScene: ObservableObject {
         }
         layerFaceSet = []
         dimLayerFaces = layer == .everyone
-        if frame.center == me {
-            for key in layerFaces where taken.insert(key).inserted {
-                shown.append(key)
-                layerFaceSet.insert(key)
-            }
+        for key in layerFaces where taken.insert(key).inserted {
+            shown.append(key)
+            layerFaceSet.insert(key)
         }
         faces = shown
         seatFaces()

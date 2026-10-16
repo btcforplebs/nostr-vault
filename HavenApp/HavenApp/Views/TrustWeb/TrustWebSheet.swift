@@ -57,6 +57,8 @@ struct TrustWebSheet: View {
         .frame(minWidth: 820, minHeight: 600)
         #endif
         .task(id: author) { trust.track(author) }
+        // "Open in WoT": this globe makes way for the tab's.
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenWOT)) { _ in dismiss() }
     }
 }
 

@@ -27,9 +27,9 @@ extension TrustWebView {
     private var globeLayers: some View {
         ZStack(alignment: .bottomLeading) {
             TrustGlobeCanvas(frame: frame, center: centerKey, me: me, author: author,
-                             myFollows: myFollows, haze: haze, closeHaze: closeHaze, ringFaces: ringFaces,
-                             layerFaces: layerFaces,
-                             filterLit: filterLit,
+                             myFollows: myFollows, haze: globeHaze, closeHaze: globeCloseHaze, ringFaces: ringFaces,
+                             layerFaces: outerFaces,
+                             filterLit: globeLit,
                              running: !wotSheetOpen,
                              layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
@@ -38,7 +38,8 @@ extension TrustWebView {
                              focusBridges: cardPath?.all ?? [],
                              onEmptyTap: { closeCard(); searchFocused = false },
                              liveArcs: isWOTTab, keepsDrifting: isWOTTab,
-                             showsNames: !isWOTTab)
+                             // Names off on every globe (Logen, 10/15).
+                             showsNames: false)
                 .ignoresSafeArea(edges: isWOTTab ? .all : [])
             // Moving onto someone keeps the globe up: the trail's chip spins
             // instead. Only the very first globe has nothing to show.
@@ -50,6 +51,10 @@ extension TrustWebView {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if mappingWeb, card == nil, !isWOTTab {
                 statusPill("Mapping your wider web…")
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.bottom, 14)
+            } else if widerLoading.contains(centerKey), card == nil {
+                statusPill("Mapping \(name(centerKey))'s web…", face: centerKey)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 14)
             }
