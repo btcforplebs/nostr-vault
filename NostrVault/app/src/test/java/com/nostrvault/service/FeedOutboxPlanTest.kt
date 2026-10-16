@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -137,5 +138,26 @@ class FeedOutboxPlanTest {
             val plan = FeedOutboxPlan.plan(follows = listOf("a", "b"), writeRelays = lists, feedRelays = feed, maxExtraRelays = 1)
             assertEquals(listOf("wss://a.example"), plan.keys.toList())
         }
+    }
+
+    /** The feed keeps the last plan while these are equal, so they must say when anything changed. */
+    @Test
+    fun `inputs are equal only when nothing that shapes the plan changed`() {
+        val a = FeedOutboxPlan.Inputs(listOf("p1", "p2"), mapOf("p1" to listOf("wss://a")), feed, emptySet())
+        assertEquals(a, a.copy(follows = listOf("p1", "p2"), writeRelays = mapOf("p1" to listOf("wss://a"))))
+        assertNotEquals(a, a.copy(follows = listOf("p1")))
+        assertNotEquals(a, a.copy(writeRelays = mapOf("p1" to listOf("wss://b"))))
+        assertNotEquals(a, a.copy(feedRelays = feed.take(1)))
+        assertNotEquals(a, a.copy(unreachableRelays = setOf("wss://a")))
+    }
+
+    @Test
+    fun `a plan from inputs is the plan from the same values`() {
+        val writes = mapOf("p1" to listOf("wss://a"), "p2" to listOf("wss://b"))
+        val inputs = FeedOutboxPlan.Inputs(listOf("p1", "p2", "p3"), writes, feed, setOf("wss://b"))
+        assertEquals(
+            FeedOutboxPlan.plan(listOf("p1", "p2", "p3"), writes, feed, listOf("wss://b")),
+            FeedOutboxPlan.plan(inputs),
+        )
     }
 }
