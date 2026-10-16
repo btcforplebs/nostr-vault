@@ -37,6 +37,11 @@ data class VaultActivity(
     val emojis: List<String> = emptyList(),
     /** Zaps only: the total. */
     val sats: Long = 0,
+    /**
+     * The pictures in the previewed note, in content order: theirs for a
+     * reply, mention or quote; yours when they only reacted to your post.
+     */
+    val images: List<String> = emptyList(),
 ) {
     enum class Kind { REPLY, MENTION, QUOTE, REACTION, REPOST, ZAP, ARTICLE, HIGHLIGHT, FOLLOW }
 
@@ -48,6 +53,8 @@ data class VaultActivity(
         val createdAt: Long,
         val content: String,
         val tags: List<List<String>>,
+        /** The pictures in [content] ([pictures]). They show as thumbnails and leave the preview text. */
+        val images: List<String> = emptyList(),
     )
 
     /** A follow from the relay's follower ledger: who, and when (unix seconds). */
@@ -90,9 +97,11 @@ data class VaultActivity(
             if (owner.isEmpty()) return emptyList()
 
             val myText = HashMap<String, String>()
+            val myImages = HashMap<String, List<String>>()
             for (event in events) {
                 if (event.pubkey == owner && event.kind in noteKinds && event.kind !in REPOST_KINDS) {
                     myText.getOrPut(event.id) { preview(event) }
+                    myImages.getOrPut(event.id) { event.images }
                 }
             }
 
@@ -140,6 +149,7 @@ data class VaultActivity(
                             openId = mine,
                             preview = comment.ifEmpty { mine?.let { myText[it] } ?: "" },
                             sats = sats,
+                            images = if (comment.isEmpty()) mine?.let { myImages[it] }.orEmpty() else emptyList(),
                         )
                     }
                     continue
@@ -171,7 +181,7 @@ data class VaultActivity(
                 }
                 singles += VaultActivity(
                     id = event.id, kind = kind, actors = listOf(event.pubkey), createdAt = event.createdAt,
-                    openId = event.id, preview = preview(event),
+                    openId = event.id, preview = preview(event), images = event.images,
                 )
             }
 
@@ -179,7 +189,7 @@ data class VaultActivity(
                 VaultActivity(
                     id = key, kind = f.kind, actors = f.actors.distinct(), createdAt = f.at,
                     openId = f.target, preview = myText[f.target] ?: "",
-                    emojis = f.emojis.distinct(), sats = f.sats,
+                    emojis = f.emojis.distinct(), sats = f.sats, images = myImages[f.target].orEmpty(),
                 )
             }
 
@@ -202,14 +212,16 @@ data class VaultActivity(
 
         /**
          * One line of text for an event: an article's title or summary, else
-         * its content with whitespace runs collapsed.
+         * its content with whitespace runs collapsed and its pictures' links
+         * left out, since those show as thumbnails.
          */
         fun preview(event: Event): String {
             if (event.kind == VaultNoteScope.ARTICLE_KIND) {
                 firstTag("title", event.tags)?.let { return it }
                 firstTag("summary", event.tags)?.let { return it }
             }
-            return event.content.split(WHITESPACE).filter { it.isNotEmpty() }.joinToString(" ")
+            val pictures = event.images.toSet()
+            return event.content.split(WHITESPACE).filter { it.isNotEmpty() && it !in pictures }.joinToString(" ")
         }
 
         /** "Ann", "Ann and Bob", "Ann and 3 others", from the actors' names. */
@@ -221,6 +233,23 @@ data class VaultActivity(
         }
 
         private val WHITESPACE = Regex("\\s+")
+        private val IMAGE_EXTENSION = Regex("""\.(jpe?g|png|gif|webp|heic|avif)(\?.*)?$""", RegexOption.IGNORE_CASE)
+
+        /**
+         * A note's picture links, as feed rows find its media: by file
+         * extension, or an `imeta` with an image type. iOS
+         * `mediaURLs.filter(\.isImage)`.
+         */
+        fun pictures(id: String, pubkey: String, kind: Int, createdAt: Long, content: String, tags: List<List<String>>): List<String> {
+            if (!content.contains("http")) return emptyList()
+            val imetaImages = tags
+                .filter { it.firstOrNull() == "imeta" && it.any { part -> part.startsWith("m image/") } }
+                .mapNotNull { tag -> tag.firstOrNull { it.startsWith("url ") }?.removePrefix("url ") }
+                .toSet()
+            return FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind).mediaURLs
+                .filter { it in imetaImages || IMAGE_EXTENSION.containsMatchIn(it) }
+                .filter { content.contains(it) }
+        }
 
         private class Fold(val kind: Kind, val target: String) {
             val actors = ArrayList<String>()
