@@ -107,6 +107,7 @@ internal fun TrustWebViewGlobe(
             focusBridges = cardPath?.all.orEmpty(),
             onEmptyTap = onEmptyTap,
             live = live,
+            keepsDrifting = isWOTTab,
             onNeedProfiles = { feedService.nostrService.fetchMissingProfiles(it) },
         )
         // The WoT tutorial's first card points at the middle of the

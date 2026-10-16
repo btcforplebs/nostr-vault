@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -128,6 +129,8 @@ internal fun TrustGlobe(
     onEmptyTap: () -> Unit,
     /** The WOT tab's live arrivals; null for none (a post's globe never has them). */
     live: LiveArcsRequest? = null,
+    /** The WOT tab's globe keeps drifting while on screen; a post's sleeps after a while. */
+    keepsDrifting: Boolean = false,
     /** Pictures still missing for people the globe shows. */
     onNeedProfiles: (List<String>) -> Unit = {},
 ) {
@@ -148,6 +151,13 @@ internal fun TrustGlobe(
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnEmptyTap by rememberUpdatedState(onEmptyTap)
 
+    SideEffect {
+        if (scene.camera.keepsDrifting != keepsDrifting) {
+            scene.camera.keepsDrifting = keepsDrifting
+            scene.wake()
+        }
+    }
+
     // The frame clock: runs while awake and on screen, then sleeps until a
     // touch or new data wakes it. Keyed on [active] only: a wake landing before
     // the next recomposition would leave an `awake` key unchanged.
@@ -158,7 +168,7 @@ internal fun TrustGlobe(
             scene.lastTick = null
             while (scene.awake) {
                 val started = withFrameNanos { scene.tick(it / 1e9); it }
-                // Only a few arcs moving: 30 fps rather than every frame keeps the phone cool.
+                // No finger on it: 30 fps rather than every frame keeps the phone cool.
                 if (scene.slowFrames) delay(max(0L, SLOW_FRAME_MS - (System.nanoTime() - started) / 1_000_000))
             }
         }

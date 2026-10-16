@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,6 +154,19 @@ class TrustMapTest {
         val before = camera.orientation
         camera.step(1 / 120.0, now + 1 / 120.0, reduceMotion = false)
         assertEquals(before, camera.orientation)
+    }
+
+    /** The WOT tab's globe keeps turning, and keeps its clock, past the idle timer. */
+    @Test fun `a globe that keeps drifting never sleeps`() {
+        val camera = GlobeCamera().apply { keepsDrifting = true }
+        var now = 0.0
+        while (now < GlobeCamera.SLEEP_AFTER * 2) { now += 1 / 120.0; camera.step(1 / 120.0, now, reduceMotion = false) }
+        val before = camera.orientation
+        camera.step(1 / 120.0, now + 1 / 120.0, reduceMotion = false)
+        assertNotEquals(before, camera.orientation)
+        assertTrue(camera.wantsFrames(now, reduceMotion = false))
+        // Reduce Motion still stops it.
+        assertFalse(camera.wantsFrames(now, reduceMotion = true))
     }
 
     @Test fun `reduce motion cuts instead of gliding`() {

@@ -656,6 +656,13 @@ class GlobeCamera {
     var dragging = false
     /** Frame-clock time of the last touch. */
     var lastTouch = 0.0
+    /**
+     * The WOT tab's globe drifts for as long as it is on screen, with no
+     * timer (Logen, 10/14: "should keep spinning"). Its frame clock stops
+     * when the tab goes or the app leaves the foreground. iOS
+     * `GlobeCamera.keepsDrifting`.
+     */
+    var keepsDrifting = false
 
     companion object {
         val ZOOM_RANGE = 0.8..2.4
@@ -682,7 +689,7 @@ class GlobeCamera {
         }
         /** Idle this long and the globe starts drifting, so it reads as alive. */
         const val DRIFT_AFTER = 3.0
-        /** Idle this long and it stops: the frame clock can sleep. */
+        /** Idle this long and it stops: the frame clock can sleep. Not on a globe that [keepsDrifting]. */
         const val SLEEP_AFTER = 20.0
         const val DRIFT_SPEED = 0.05
         /** How fast a flick dies away, per second. */
@@ -769,7 +776,7 @@ class GlobeCamera {
                 spin = Vec3.ZERO
             }
             val idle = now - lastTouch
-            if (idle > DRIFT_AFTER && idle < SLEEP_AFTER) {
+            if (idle > DRIFT_AFTER && (keepsDrifting || idle < SLEEP_AFTER)) {
                 orientation = (Quat.angle(DRIFT_SPEED * dt, Y_AXIS) * orientation).normalized()
             }
         }
@@ -786,6 +793,6 @@ class GlobeCamera {
      */
     fun wantsFrames(now: Double, reduceMotion: Boolean): Boolean {
         if (dragging || flyTarget != null || !spin.isZero || zoom != zoomTarget) return true
-        return !reduceMotion && now - lastTouch < SLEEP_AFTER
+        return !reduceMotion && (keepsDrifting || now - lastTouch < SLEEP_AFTER)
     }
 }

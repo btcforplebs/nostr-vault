@@ -416,7 +416,10 @@ internal class GlobeScene(
         if (arcs.step(now, me, center)) seatFaces()
         frameCount.longValue++
         val still = !settling && !fading && !camera.wantsFrames(now, reduceMotion)
-        slowFrames = still && !arcs.busy
+        // Full rate only under a finger (a drag or pinch, a flick's spin) or in
+        // a storm of arrivals; drift, settling and a few arcs at 30 fps. The
+        // idle globe was the heat. iOS `GlobeScene.handsOn`.
+        slowFrames = !camera.dragging && camera.spin.isZero && !arcs.busy
         if (still && arcs.idle) awake = false
     }
 
@@ -426,7 +429,7 @@ internal class GlobeScene(
     internal val arcs = GlobeSceneArcs()
     /** Pictured only as a line's end, not as one of the globe's own faces: drawn white. */
     internal var arcOnlyKeys: Set<String> = emptySet()
-    /** Only a few arcs move: the clock runs at 30 fps, which keeps the phone cool (iOS `slowRate`). */
+    /** No finger on the globe and no storm: the clock runs at 30 fps, which keeps the phone cool (iOS `slowRate`). */
     var slowFrames = false
         private set
     /** This frame's projection and scale, for drawing the arcs where the faces are. */
