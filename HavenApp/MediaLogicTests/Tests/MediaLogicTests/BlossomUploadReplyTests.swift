@@ -33,10 +33,13 @@ final class BlossomUploadReplyTests: XCTestCase {
                        "http://192.168.1.20:3355/\(sha).png")
     }
 
-    func testDescriptorForAnotherBlobIsNotThisUpload() {
+    /// A server that re-encodes the file answers with the new hash; its url
+    /// is the only link that works.
+    func testReEncodedBlobUsesTheServersLink() {
         let other = String(repeating: "c", count: 64)
-        let body = Data(#"{"url":"https://cdn.example/\#(other)","sha256":"\#(other)"}"#.utf8)
-        XCTAssertNil(BlossomUploadReply.hostedURL(body: body, server: URL(string: "https://cdn.example")!, sha256: sha, onDeviceRelay: false))
+        let body = Data(#"{"url":"https://cdn.example/\#(other).jpg","sha256":"\#(other)"}"#.utf8)
+        XCTAssertEqual(BlossomUploadReply.hostedURL(body: body, server: URL(string: "https://cdn.example")!, sha256: sha, onDeviceRelay: false)?.absoluteString,
+                       "https://cdn.example/\(other).jpg")
     }
 
     func testDescriptorWithoutAWebLinkIsRejected() {
