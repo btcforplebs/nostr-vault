@@ -271,11 +271,15 @@ class FeedViewModel @Inject constructor(
             }
         }
 
+        // The cached feed is a local read: show it now, as the iPhone does,
+        // rather than an empty feed until the relay is up.
+        feedService.prewarmFromCache()
+
         // Staggered startup: wait for relay to be ready before loading feed
         // to avoid OOM from relay + feed + media all starting simultaneously.
         viewModelScope.launch {
             com.nostrvault.relay.RelayForegroundService.readyForConnections.collect { ready ->
-                if (ready && notes.value.isEmpty()) {
+                if (ready && feedService.needsInitialLoad()) {
                     feedService.startInitialLoad()
                     return@collect
                 }

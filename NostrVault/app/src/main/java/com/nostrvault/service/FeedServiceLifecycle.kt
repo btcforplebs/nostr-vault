@@ -19,8 +19,24 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
      * Cold-launch entry point.
      * Restores disk snapshot if available, then tops up from relays.
      */
+    /**
+     * Restores the cached feed at launch, before the relay is ready. iOS
+     * `prewarmFromCache`: the disk snapshot is a local read, and holding it
+     * back until the relay reports ready made every launch flash an empty
+     * feed. Subscribing is still [startInitialLoadImpl]'s job.
+     */
+    internal fun FeedService.prewarmFromCacheImpl() {
+        if (!shouldPrewarm(_feedMode.value, _notes.value.isEmpty(), cachedFeedRestored, initialLoadStarted)) return
+        if (prewarmJob?.isActive == true) return
+        prewarmJob = scope.launch {
+            if (restoreFromDiskIfAvailable()) cachedFeedRestored = true
+            if (BuildConfig.DEBUG) Log.d(TAG, "prewarmFromCache: restored=$cachedFeedRestored, notes=${_notes.value.size}")
+        }
+    }
+
     internal fun FeedService.startInitialLoadImpl() {
         if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: mode=${_feedMode.value}")
+        initialLoadStarted = true
 
         // Pre-load WOT pubkeys so DISCOVERY and GLOBAL media modes work immediately
         loadWotPubkeys()
@@ -31,7 +47,10 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
         }
 
         scope.launch {
-            val restored = restoreFromDiskIfAvailable()
+            // A prewarm still reading the snapshot finishes first, so it is
+            // never applied twice; one that restored it means top up only.
+            prewarmJob?.join()
+            val restored = cachedFeedRestored || restoreFromDiskIfAvailable()
             if (BuildConfig.DEBUG) Log.d(TAG, "startInitialLoad: snapshot restored=$restored, notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
             if (restored) {
                 topUpFromRelays()
@@ -345,3 +364,14 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                 .collect { recomputeFilteredNotes() }
         }
     }
+
+/** A launch prewarm runs once, before the first load, and not for Popular (computed, not cached). */
+internal fun shouldPrewarm(mode: FeedMode, notesEmpty: Boolean, restored: Boolean, loadStarted: Boolean): Boolean =
+    mode != FeedMode.POPULAR && notesEmpty && !restored && !loadStarted
+
+/**
+ * The relay is ready: load when the feed is empty, as before, and also when the
+ * only notes are the prewarmed cache, which still needs its top-up.
+ */
+internal fun shouldStartInitialLoad(notesEmpty: Boolean, restored: Boolean, loadStarted: Boolean): Boolean =
+    notesEmpty || (restored && !loadStarted)
