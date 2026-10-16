@@ -73,25 +73,17 @@ struct iPadSidebarView: View {
         configService.allAccountNpubs.count > 1
     }
 
-    @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
-    @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
-    private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
-
-    /// A sidebar row: one of the feeds (all of which show in the Feed tab),
-    /// or one of the other tabs.
+    /// A sidebar row: one of the tabs. Feeds are switched from the feed's
+    /// own picker, so the sidebar has a single Feed row.
     private enum SidebarItem: Hashable {
-        case feed(FeedMode)
         case tab(Int)
     }
 
     private var sidebarSelection: Binding<SidebarItem?> {
         Binding(
-            get: { selectedTab == 0 ? .feed(feedService.feedMode) : .tab(selectedTab) },
+            get: { .tab(selectedTab) },
             set: { item in
                 switch item {
-                case .feed(let mode):
-                    selectedTab = 0
-                    feedService.switchMode(mode)
                 case .tab(let tab):
                     if tab == 3 && selectedTab == 3 {
                         NotificationCenter.default.post(name: .wotTabReselected, object: nil)
@@ -185,18 +177,10 @@ struct iPadSidebarView: View {
                     }
                 }
 
-                // Each feed is its own row, in the reader's feed-menu order,
-                // so the current feed shows here and switching is one tap.
-                Section("Feeds") {
-                    ForEach(menuModes, id: \.self) { mode in
-                        NavigationLink(value: SidebarItem.feed(mode)) {
-                            Label(mode.displayName, systemImage: mode.symbolName)
-                        }
-                    }
-                }
-
-                // Navigation tabs, headed so they read apart from the feeds.
                 Section("Vault") {
+                    NavigationLink(value: SidebarItem.tab(0)) {
+                        Label("Feed", systemImage: "list.bullet.rectangle.portrait")
+                    }
                     NavigationLink(value: SidebarItem.tab(1)) {
                         Label("Search", systemImage: "magnifyingglass")
                     }
