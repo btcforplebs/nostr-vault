@@ -14,8 +14,12 @@ internal const val RELAY_DOWN_HOLD_MS = 1_500L
 internal const val WOT_POLL_MS = 500L
 internal const val MAX_WOT_POLLS = 720
 
-/** The WOT tab checks on the relay's rebuild this often while one runs, and this often while none does. */
-internal const val LIVE_POLL_MS = 1_000L
+/**
+ * The WOT tab checks on the relay's rebuild this often while one runs, and
+ * this often while none does. Every few seconds either way: newcomers arrive
+ * in batches, and each check that finds some wakes the globe. iOS 61879988.
+ */
+internal const val LIVE_POLL_MS = 5_000L
 internal const val IDLE_POLL_MS = 5_000L
 
 /**
