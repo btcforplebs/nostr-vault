@@ -142,11 +142,10 @@ fun NostrVaultNavHost(
 
     PendingDeepLinkEffect(isSetupComplete, configStore, feedService, navController)
 
-    // The bars fold with the scroll on the list tabs (Feed, and both halves of
-    // Vault), following the finger; tabs without that wiring, and "disable
-    // tab bar animation", keep them shown.
-    val chromeFolds = currentRoute == Screen.Feed.route ||
-        currentRoute == Screen.Dashboard.route
+    // The bars fold with the scroll, following the finger, where the iPhone
+    // folds them (see [foldsChromeOnScroll]); "disable tab bar animation"
+    // keeps them shown.
+    val chromeFolds = foldsChromeOnScroll(currentRoute)
     val chromeConnection = rememberScrollChromeConnection(
         enabled = chromeFolds && !config.disableTabBarAnimation,
     )
@@ -430,3 +429,20 @@ internal fun navigateToTutorialRoute(navController: androidx.navigation.NavHostC
     }
     navController.popBackStack(route, inclusive = false)
 }
+
+/**
+ * Screens whose scrolling folds the bottom bar, as on iPhone
+ * (`scrollDirectionTracking`): Feed, both halves of Vault (Media included),
+ * Search, a profile (yours or pushed) and the article reader. The WoT globe
+ * and the rest keep the bar shown.
+ */
+internal fun foldsChromeOnScroll(route: String?): Boolean = route in FOLDING_ROUTES
+
+private val FOLDING_ROUTES = setOf(
+    Screen.Feed.route,
+    Screen.Dashboard.route,
+    Screen.Search.route,
+    PROFILE_TAB_ROUTE,
+    Screen.Profile.route,
+    Screen.ArticleReader.route,
+)
