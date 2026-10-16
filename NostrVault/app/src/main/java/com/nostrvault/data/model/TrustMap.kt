@@ -415,8 +415,13 @@ object TrustMap {
     const val LAYER_FACE_CANDIDATES = 400
     /** Faces on the outer shell when Vouched or Further out is picked; faces that would cover another stay stars ([seatFaces]). */
     const val LAYER_FACES = 100
-    /** With Everyone picked, a few small, dim faces past your follows, so the shells aren't faceless; your follows' faces still lead. */
-    const val EVERYONE_FACES = 15
+    /**
+     * With Everyone picked, smaller, dimmer faces past your follows, half on
+     * the Close (Vouched) shell and half further out, so every ring has
+     * pictures; your follows' faces still lead. Was 15, which left the
+     * Vouched ring with one or two (Logen, 10/15). iOS `everyoneFaceCount`.
+     */
+    const val EVERYONE_FACES = 36
 
     /** Faces past your follows for [layer]; Following has none. iOS `faceCount(for:)`. */
     fun faceCount(layer: Layer): Int = when (layer) {
@@ -427,7 +432,7 @@ object TrustMap {
 
     /** Profiles fetched for [layer]'s faces: a wide pool, since many people further out have no picture. */
     fun faceCandidateCount(layer: Layer): Int =
-        if (layer == Layer.EVERYONE) EVERYONE_FACES * 8 else LAYER_FACE_CANDIDATES
+        if (layer == Layer.EVERYONE) EVERYONE_FACES * 6 else LAYER_FACE_CANDIDATES
 
     /**
      * The people past your follows [layer] shows as faces, most vouched first.
@@ -446,10 +451,30 @@ object TrustMap {
         count: Int = LAYER_FACE_CANDIDATES,
     ): List<String> {
         if (layer == Layer.FOLLOWING) return emptyList()
-        return layerPeople(layer, me, follows, web, vouches).web
+        val ranked = layerPeople(layer, me, follows, web, vouches).web
             .sortedWith(compareByDescending<String> { vouches?.get(it) ?: 0 }.thenBy { fraction(it, 16) }.thenBy { it })
-            .take(count)
+        // Everyone spans both outer shells: most vouched first would put
+        // every face on the Close one. Take the two in turn instead.
+        if (layer != Layer.EVERYONE || vouches == null) return ranked.take(count)
+        val (close, further) = ranked.partition { (vouches[it] ?: 0) >= CLOSE_VOUCHES }
+        val picked = ArrayList<String>(minOf(count, ranked.size))
+        var i = 0
+        var j = 0
+        while (picked.size < count && (i < close.size || j < further.size)) {
+            if (i < close.size && (i <= j || j >= further.size)) picked += close[i++] else picked += further[j++]
+        }
+        return picked
     }
+
+    /**
+     * Who sits on the Close shell: judged by their vouches, not by whether
+     * the haze sample happened to take them. Faces are the most vouched and
+     * mostly outside the sample, so judged by the sample alone nearly all of
+     * them landed on the outer shell. [shown] is the haze and every layer's
+     * faces. Without [vouches] there is no Close. iOS `hazeLayout`.
+     */
+    fun closeByVouches(shown: Iterable<String>, vouches: Map<String, Int>?): Set<String> =
+        vouches?.let { v -> shown.filterTo(HashSet()) { (v[it] ?: 0) >= CLOSE_VOUCHES } }.orEmpty()
 
     /**
      * People in each layer, never counting you. [web] is the relay's whole

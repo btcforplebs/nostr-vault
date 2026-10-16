@@ -161,11 +161,13 @@ internal fun TrustWebContent(
             val follows = myFollows
             layerCandidates = withContext(Dispatchers.Default) {
                 listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.CLOSE, TrustMap.Layer.FURTHER_OUT).associateWith {
-                    TrustMap.layerFaceCandidates(it, me, follows, graph, counts, TrustMap.faceCandidateCount(it))
+                    TrustMap.layerFaceCandidates(it, me, follows, graph, counts, globeFaces(TrustMap.faceCandidateCount(it)))
                 }
             }
         }
-        closeHaze = counts?.let { v -> shell.filterTo(HashSet()) { (v[it] ?: 0) >= TrustMap.CLOSE_VOUCHES } }.orEmpty()
+        // Close by vouches over the haze and every layer's faces alike.
+        val faces = layerCandidates.values.flatten()
+        closeHaze = withContext(Dispatchers.Default) { TrustMap.closeByVouches(shell + faces, counts) }
         haze = shell
         web = graph
         vouches = counts
@@ -215,7 +217,7 @@ internal fun TrustWebContent(
     LaunchedEffect(Unit) { engagement = trust.engagement() }
     val ringCandidates = remember(frame?.center, frame?.ring, engagement) {
         if (frame != null && frame.center == author) {
-            TrustMap.faceCandidates(frame.ring, if (author == me) engagement else emptyMap())
+            TrustMap.faceCandidates(frame.ring, if (author == me) engagement else emptyMap(), globeFaces(TrustMap.FACE_CANDIDATES))
         } else emptyList()
     }
     LaunchedEffect(ringCandidates) {
@@ -247,7 +249,7 @@ internal fun TrustWebContent(
     val filterLit = if (isWOTTab) wotFilters.lit else null
     /** Matching people worth a picture, most interacted with first. */
     val filterCandidates = remember(filterLit, myFollows, engagement, vouches) {
-        filterFaceCandidates(filterLit, myFollows, engagement, vouches, TrustMap.LAYER_FACES * 3)
+        filterFaceCandidates(filterLit, myFollows, engagement, vouches, globeFaces(TrustMap.LAYER_FACES) * 3)
     }
     LaunchedEffect(filterCandidates) {
         if (filterCandidates.isEmpty()) return@LaunchedEffect
@@ -257,7 +259,7 @@ internal fun TrustWebContent(
     val ringFaces = remember(ringCandidates, renderedPictures, filterLit) {
         // With a filter on, only people it lights get a face.
         TrustMap.pickFaces(ringCandidates, { (filterLit == null || it in filterLit) && pictureRenders(it) },
-            if (lite) TrustMap.RING_FACES_LITE else TrustMap.RING_FACES)
+            if (lite) TrustMap.RING_FACES_LITE else globeFaces(TrustMap.RING_FACES))
     }
     // The picked layer's faces past your follows, fetched on each pick:
     // the picture loader stops after a while and profiles can arrive late.
@@ -272,9 +274,9 @@ internal fun TrustWebContent(
         if (!isWOTTab || centerKey != me) emptyList()
         // A filter's people take the outer faces first, as long as the layer lights them.
         else if (filterLit != null) TrustMap.pickFaces(filterCandidates, ::pictureRenders,
-            if (lite) TrustMap.RING_FACES_LITE else TrustMap.LAYER_FACES)
+            if (lite) TrustMap.RING_FACES_LITE else globeFaces(TrustMap.LAYER_FACES))
         else TrustMap.pickFaces(pickedLayerCandidates, ::pictureRenders,
-            minOf(TrustMap.faceCount(layer), if (lite) TrustMap.RING_FACES_LITE else TrustMap.LAYER_FACES))
+            if (lite) minOf(TrustMap.faceCount(layer), TrustMap.RING_FACES_LITE) else globeFaces(TrustMap.faceCount(layer)))
     }
 
     fun jump(index: Int) {

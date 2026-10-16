@@ -409,19 +409,47 @@ class TrustMapTest {
         assertEquals(listOf(key(2), key(3), key(5)), faces(TrustMap.Layer.CLOSE))
         assertEquals(listOf(key(2), key(3)), faces(TrustMap.Layer.CLOSE, count = 2))
         assertEquals(listOf(key(6), key(4)), faces(TrustMap.Layer.FURTHER_OUT))
-        // Everyone draws from everyone past your follows; Following keeps your follows' faces only.
-        assertEquals(listOf(key(2), key(3), key(5), key(6), key(4)), faces(TrustMap.Layer.EVERYONE))
+        // Everyone draws from everyone past your follows, Close and further out
+        // in turn so both outer shells get faces; Following keeps your follows' faces only.
+        assertEquals(listOf(key(2), key(6), key(3), key(4), key(5)), faces(TrustMap.Layer.EVERYONE))
+        assertEquals(listOf(key(2), key(6), key(3)), faces(TrustMap.Layer.EVERYONE, count = 3))
         assertEquals(emptyList<String>(), faces(TrustMap.Layer.FOLLOWING))
     }
 
     @Test
     fun everyoneShowsAFewFacesAndFollowingNone() {
-        assertEquals(15, TrustMap.faceCount(TrustMap.Layer.EVERYONE))
+        assertEquals(36, TrustMap.faceCount(TrustMap.Layer.EVERYONE))
         assertEquals(0, TrustMap.faceCount(TrustMap.Layer.FOLLOWING))
         assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.CLOSE))
         assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.FURTHER_OUT))
         assertTrue(TrustMap.faceCandidateCount(TrustMap.Layer.EVERYONE) > TrustMap.EVERYONE_FACES)
         assertEquals(TrustMap.LAYER_FACE_CANDIDATES, TrustMap.faceCandidateCount(TrustMap.Layer.CLOSE))
+    }
+
+    /** Without vouches there is no Close: most vouched first, as before. */
+    @Test
+    fun everyoneWithoutVouchesKeepsKeyOrder() {
+        val web = setOf(me, key(2), key(3))
+        assertEquals(2, TrustMap.layerFaceCandidates(TrustMap.Layer.EVERYONE, me, emptySet(), web, null, 5).size)
+    }
+
+    /** When one shell runs out, the other fills the rest. */
+    @Test
+    fun everyoneFillsFromTheLongerShell() {
+        val web = setOf(me, key(2), key(3), key(4), key(5))
+        val vouches = mapOf(key(2) to 20, key(3) to 3, key(4) to 2, key(5) to 1)
+        assertEquals(listOf(key(2), key(3), key(4), key(5)),
+            TrustMap.layerFaceCandidates(TrustMap.Layer.EVERYONE, me, emptySet(), web, vouches, 10))
+    }
+
+    /** A face outside the haze sample still sits on the Close shell when its vouches say so. */
+    @Test
+    fun closeIsJudgedByVouchesNotByTheSample() {
+        val vouches = mapOf(key(2) to 10, key(3) to 9, key(4) to 40)
+        val haze = listOf(key(2), key(3))
+        val faces = listOf(key(4))
+        assertEquals(setOf(key(2), key(4)), TrustMap.closeByVouches(haze + faces, vouches))
+        assertEquals(emptySet<String>(), TrustMap.closeByVouches(haze + faces, null))
     }
 
     @Test

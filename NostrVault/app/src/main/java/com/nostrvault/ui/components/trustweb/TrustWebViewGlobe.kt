@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -36,8 +37,17 @@ internal val HazeColor = Color(red = 0.62f, green = 0.55f, blue = 0.9f)
 /** Warm amber for the threads, lighter than the glow behind them. */
 internal val ThreadColor = Color(red = 1f, green = 0.66f, blue = 0.3f)
 
+/**
+ * The full globe shows about this many times [TrustMap]'s face counts: more
+ * pictures overall, not quite double (Logen, 10/14). A slow phone's lite
+ * globe keeps its own caps. iOS `TrustGlobeCanvas.faceScale`.
+ */
+internal const val GLOBE_FACE_SCALE = 1.8
+
+internal fun globeFaces(count: Int): Int = (count * GLOBE_FACE_SCALE).roundToInt()
+
 /** Bridges drawn as faces; the rest stay bright stars. */
-internal const val MAX_FACES = 12
+internal val MAX_FACES = globeFaces(12)
 
 @Composable
 internal fun TrustWebViewGlobe(

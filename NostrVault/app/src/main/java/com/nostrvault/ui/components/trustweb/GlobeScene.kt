@@ -677,7 +677,7 @@ internal class GlobeScene(
             val p = index[key]?.let { project.of(it) } ?: continue
             drawn += when {
                 traceTarget == null && key in layerFaceSet ->
-                    Drawn(key, p, HazeColor, 14.0 - 4.0 * layerDim, dimLayer)
+                    Drawn(key, p, HazeColor, 14.0 - 2.0 * layerDim, dimLayer)
                 center == author && traceTarget == null -> Drawn(key, p, RingColor, 15.0)
                 else -> Drawn(key, p, GlobeAccent, 15.0)
             }
@@ -777,7 +777,7 @@ internal class GlobeScene(
         /** Seconds a filter's dimming takes to ease in or out. */
         const val FILTER_FADE = 0.35
         /** How bright Everyone's few faces past your follows are drawn. */
-        const val DIM_FACE = 0.55
+        const val DIM_FACE = 0.8
         /**
          * Star brightness is rounded to this many steps, so each kind of star
          * is a handful of fills however many people there are. Fine enough
