@@ -298,4 +298,44 @@ extension QuoteReferenceTests {
         XCTAssertTrue(QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", ""]], matches: coordinate))
         XCTAssertFalse(QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [], matches: coordinate))
     }
+
+    // MARK: - nevent pointer (where the lookup asks)
+
+    private func hexData(_ hex: String) -> Data {
+        var bytes = [UInt8]()
+        var i = hex.startIndex
+        while i < hex.endIndex {
+            let j = hex.index(i, offsetBy: 2)
+            bytes.append(UInt8(hex[i..<j], radix: 16)!)
+            i = j
+        }
+        return Data(bytes)
+    }
+
+    private func tlv(_ type: UInt8, _ value: Data) -> Data { Data([type, UInt8(value.count)]) + value }
+
+    /// Plural's quote in Logen's thread: author first, then the id, no relay.
+    /// The author is what lets the lookup ask Plural's own relays.
+    func testPointerFromRealNeventKeepsAuthor() {
+        let author = "f42a02152031590dcc3a0a67db51316b7365e4aef34abbec9619c12e88f006b5"
+        let id = "a2f86e95d19056411861904c95a5bd19543f1769b354866567c4c014cef59e64"
+        let payload = tlv(2, hexData(author)) + tlv(0, hexData(id))
+        XCTAssertEqual(QuoteReference.eventPointer(fromNeventTLV: payload),
+                       QuoteReference.EventPointer(id: id, author: author))
+    }
+
+    /// A relay hint in the link is never kept: the sender must not choose
+    /// which host the app dials.
+    func testPointerDropsRelayHint() {
+        let id = Data(repeating: 7, count: 32)
+        let payload = tlv(0, id) + tlv(1, Data("wss://sender-chosen.example".utf8))
+        XCTAssertEqual(QuoteReference.eventPointer(fromNeventTLV: payload),
+                       QuoteReference.EventPointer(id: String(repeating: "07", count: 32), author: nil))
+    }
+
+    func testPointerIgnoresShortAuthorAndNeedsAnID() {
+        let payload = tlv(0, Data(repeating: 1, count: 32)) + tlv(2, Data(repeating: 2, count: 20))
+        XCTAssertNil(QuoteReference.eventPointer(fromNeventTLV: payload)?.author)
+        XCTAssertNil(QuoteReference.eventPointer(fromNeventTLV: tlv(2, Data(repeating: 2, count: 32))))
+    }
 }

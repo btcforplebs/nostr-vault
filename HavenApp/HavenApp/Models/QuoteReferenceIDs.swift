@@ -25,6 +25,23 @@ extension QuoteReference {
         }
     }
 
+    /// The pointer a bare `note1…` / `nevent1…` identifier (an optional
+    /// `nostr:` prefix allowed) decodes to, or nil for anything else.
+    static func eventPointer(from identifier: String) -> EventPointer? {
+        var bech = identifier.lowercased()
+        if bech.hasPrefix("nostr:") { bech.removeFirst("nostr:".count) }
+        guard let decoded = Bech32.decode(bech) else { return nil }
+        if bech.hasPrefix("note1") {
+            return decoded.data.count == 32 ? EventPointer(id: decoded.hexString) : nil
+        }
+        return bech.hasPrefix("nevent1") ? eventPointer(fromNeventTLV: decoded.data) : nil
+    }
+
+    /// The pointers of every `nostr:note1…` / `nostr:nevent1…` in `content`.
+    static func eventPointers(in content: String) -> [EventPointer] {
+        identifiers(in: content).compactMap { eventPointer(from: $0) }
+    }
+
     /// The coordinate of a NIP-53 live stream (kind 30311) that a web link
     /// points at — `zap.stream/naddr1…`, `shosho.live/live/naddr1…`,
     /// `njump.me/naddr1…`. Any host, because the naddr in the path is what

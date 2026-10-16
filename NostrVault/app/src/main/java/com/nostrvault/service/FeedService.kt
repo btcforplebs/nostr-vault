@@ -88,6 +88,12 @@ class FeedService @Inject constructor(
          * picked by measurement on 2026-10-01; re-measure with
          * `.scratch/roots/probe5.py` in the Buzz nest before changing it.
          * offchain.pub refused connections on 2026-10-12 and was dropped.
+         *
+         * relay.nostr.net and relay.fountain.fm are the last stop. On
+         * 2026-10-16, of 172 referenced notes still missing after primal and
+         * the rest of this list, those two found 112, the best pair of the 20
+         * relays tried. A quote in Logen's thread (Plural's, a2f86e95) was on
+         * fountain.fm alone.
          */
         internal val FALLBACK_NOTE_RELAYS = listOf(
             "wss://nostr.wine",
@@ -97,6 +103,8 @@ class FeedService @Inject constructor(
             "wss://relay.snort.social",
             "wss://relay.primal.net",
             "wss://relay.damus.io",
+            "wss://relay.nostr.net",
+            "wss://relay.fountain.fm",
         )
         private const val SEARCH_TIMEOUT_MS = 10_000L
         private const val SEARCH_DEBOUNCE_MS = 400L

@@ -264,6 +264,7 @@ extension FeedService {
                     noteAuthorHints[tag[1]] = tag[4]
                 }
             }
+            rememberQuoteHints(in: note.content)
             // Older clients leave the e-tag pubkey slot empty; the direct
             // parent's author is then the reply's p-tag.
             if let parentId = note.parentEventId, noteAuthorHints[parentId] == nil,

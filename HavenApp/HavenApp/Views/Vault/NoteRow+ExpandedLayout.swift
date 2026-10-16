@@ -153,7 +153,7 @@ extension NoteRow {
                 }
 
                 // Quoted notes and articles
-                QuotedEventsView(identifiers: event.quotedEventIds)
+                QuotedEventsView(identifiers: event.quotedEventIds, content: event.content)
             }
 
             // Compact inline engagement bar

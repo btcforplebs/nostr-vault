@@ -627,6 +627,13 @@ object HavenBridge {
         return null
     }
 
+    /** Decode an nevent1 bech32 string to its id and author ([QuoteRef.eventPointerFromNeventTlv]). */
+    fun decodeNeventPointer(nevent1: String): QuoteRef.EventPointer? {
+        val (hrp, payload) = bech32Decode(nevent1) ?: return null
+        if (hrp != "nevent") return null
+        return QuoteRef.eventPointerFromNeventTlv(payload)
+    }
+
     /**
      * Decode an naddr1 bech32 string to the address it names (NIP-19 TLV).
      * The TLV rules, and why each malformed case names nothing, are on

@@ -94,6 +94,12 @@ struct FeedNoteRow: View {
                let refId = note.repostedEventId, rowData.resolvedOriginal == nil {
                 actions.fetchMissingNote(refId)
             }
+            // A row can come from a profile, a thread or search, not just the
+            // feed batch that records hints: the author an nevent names goes
+            // in before the lookup is asked for.
+            if note.quotedEventIds.contains(where: { actions.findNote($0) == nil }) {
+                FeedService.shared.rememberQuoteHints(in: note.content)
+            }
             for qId in note.quotedEventIds where actions.findNote(qId) == nil {
                 actions.fetchMissingNote(qId)
             }

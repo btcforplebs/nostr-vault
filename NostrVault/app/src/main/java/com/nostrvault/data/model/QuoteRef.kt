@@ -90,6 +90,35 @@ object QuoteRef {
         return Coordinate(resolvedKind, resolvedPubkey, dTag ?: "")
     }
 
+    /**
+     * What an nevent says about the note it names: the id (type 0) and the
+     * author (type 2), whose own relays the lookup asks. The relay hint
+     * (type 1) is not kept, for the reason on [coordinateFromNaddrTlv]: a link
+     * must not make the app dial a host of the sender's choosing. Port of iOS
+     * `QuoteReference.eventPointer(fromNeventTLV:)`.
+     */
+    data class EventPointer(val id: String, val author: String?)
+
+    /** The pointer a decoded nevent payload holds, or null with no 32-byte id. */
+    fun eventPointerFromNeventTlv(payload: ByteArray): EventPointer? {
+        var id: String? = null
+        var author: String? = null
+        var i = 0
+        while (i + 2 <= payload.size) {
+            val type = payload[i].toInt() and 0xFF
+            val length = payload[i + 1].toInt() and 0xFF
+            i += 2
+            if (i + length > payload.size) break
+            if (length == 32) {
+                val hex = payload.copyOfRange(i, i + length).joinToString("") { "%02x".format(it) }
+                if (type == 0 && id == null) id = hex
+                if (type == 2 && author == null) author = hex
+            }
+            i += length
+        }
+        return id?.let { EventPointer(it, author) }
+    }
+
     /** [bytes] as UTF-8, or null when they are not valid UTF-8. Keeps a leading BOM. */
     private fun strictUtf8(bytes: ByteArray): String? = try {
         Charsets.UTF_8.newDecoder()
