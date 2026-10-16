@@ -34,15 +34,21 @@ import kotlinx.serialization.json.*
         val follows = _followedPubkeys.value
         if (!isFollowSetMode() || follows.isEmpty()) {
             outboxPlan = emptyMap()
+            outboxPlanInputs = null
             return
         }
-        requestRelayListsForAuthors(follows)
-        outboxPlan = FeedOutboxPlan.plan(
+        val inputs = FeedOutboxPlan.Inputs(
             follows = follows,
             writeRelays = nostrService.outboxRelays.value,
             feedRelays = feedRelays,
-            unreachableRelays = downRelayUrls.toList(),
+            unreachableRelays = downRelayUrls.toSet(),
         )
+        // Every reconcile lands here (each load round, older page and relay
+        // drop), mostly with nothing changed. As on iOS, keep the last plan.
+        if (inputs == outboxPlanInputs) return
+        outboxPlanInputs = inputs
+        requestRelayListsForAuthors(follows)
+        outboxPlan = FeedOutboxPlan.plan(inputs)
     }
 
     /** Every relay the feed subscribes to: [baseFeedRelayUrls], then the follows' own relays. */

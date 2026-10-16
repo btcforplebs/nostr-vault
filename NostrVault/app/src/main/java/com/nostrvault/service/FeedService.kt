@@ -216,6 +216,11 @@ class FeedService @Inject constructor(
     internal val _followedPubkeys = MutableStateFlow<List<String>>(emptyList())
     val followedPubkeys: StateFlow<List<String>> = _followedPubkeys.asStateFlow()
 
+    private val followSet = SetOfList<String>()
+
+    /** [followedPubkeys] as a Set, rebuilt only when the list changes. iOS `followedPubkeySet`. */
+    internal fun followedPubkeySet(): Set<String> = followSet.of(_followedPubkeys.value)
+
     internal val _extendedNetworkPubkeys = MutableStateFlow<List<String>>(emptyList())
     val extendedNetworkPubkeys: StateFlow<List<String>> = _extendedNetworkPubkeys.asStateFlow()
 
@@ -395,6 +400,9 @@ class FeedService @Inject constructor(
      * extra relay URL → the follows to ask it for. See [FeedOutboxPlan].
      */
     @Volatile internal var outboxPlan: Map<String, List<String>> = emptyMap()
+
+    /** What [outboxPlan] was built from; null when there is no plan. */
+    @Volatile internal var outboxPlanInputs: FeedOutboxPlan.Inputs? = null
 
     /**
      * Feed relays that failed to connect three times running and have not
@@ -607,7 +615,7 @@ class FeedService @Inject constructor(
 
     /** Check if a pubkey is in the followed list. */
     fun isFollowing(pubkey: String): Boolean =
-        _followedPubkeys.value.contains(pubkey)
+        pubkey in followedPubkeySet()
 
     /** Alias for followUser(), used by ProfileViewModel. */
     fun followPubkey(pubkey: String) { followUser(pubkey) }
