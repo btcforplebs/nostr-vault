@@ -89,16 +89,22 @@ class BlossomService @Inject constructor(
         }
         scope.launch {
             val result = try {
-                if (configStore.config.value.activeBlossomMirrors.isEmpty()) {
-                    "No mirrors configured"
-                } else {
-                    val count = mirrorAllFromExternal(
+                var count = 0
+                // 1. From your Blossom servers (their /list of your files).
+                if (configStore.config.value.activeBlossomMirrors.isNotEmpty()) {
+                    count += mirrorAllFromExternal(
                         onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
                         onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
                     )
-                    vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT)
-                    if (count > 0) "Mirrored $count files" else "All media already mirrored"
                 }
+                // 2. From the media links in your notes, on any server (iOS MirrorService).
+                _mirrorRun.value = _mirrorRun.value.copy(status = "Scanning notes for media...", progress = null)
+                count += mirrorFromNoteMedia(
+                    onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
+                    onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
+                )
+                vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT)
+                if (count > 0) "Mirrored $count files" else "All media already mirrored"
             } catch (e: Exception) {
                 Log.w(TAG, "Mirror run failed: ${e.message}")
                 "Mirror failed: ${e.message}"
@@ -236,7 +242,7 @@ class BlossomService @Inject constructor(
      *
      * @return the blob's sha256 on success, or null if the download or local save failed.
      */
-    suspend fun mirrorUrlToLocal(url: String): String? = withContext(Dispatchers.IO) {
+    suspend fun mirrorUrlToLocal(url: String, authHeader: String? = null): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).get().build()
             val response = remoteClient.newCall(request).execute()
@@ -249,7 +255,7 @@ class BlossomService @Inject constructor(
             val contentType = response.header("Content-Type") ?: "application/octet-stream"
             val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext null
             val sha256 = computeSHA256(data)
-            if (saveToLocalRelay(data, sha256, contentType)) sha256 else null
+            if (saveToLocalRelay(data, sha256, contentType, authHeader)) sha256 else null
         } catch (e: Exception) {
             Log.w(TAG, "Mirror $url to local failed: ${e.message}")
             null
@@ -463,6 +469,65 @@ class BlossomService @Inject constructor(
                 }
             }
         }
+        saved.get()
+    }
+
+    /**
+     * Copies in the media your own notes link to on outside servers: your
+     * notes are read from this device's relay, page by page, and each link
+     * not already here is downloaded and stored, four at a time, under one
+     * signed upload authorisation. iOS `BlossomService.mirrorFromNoteMedia`.
+     * @return how many files were saved.
+     */
+    suspend fun mirrorFromNoteMedia(
+        onProgress: ((Float) -> Unit)? = null,
+        onLogMessage: ((String) -> Unit)? = null,
+    ): Int = withContext(Dispatchers.IO) {
+        val owner = nostrService.ownerHexPubkey
+        val relay = configStore.config.value.nostrURL
+        if (owner.isEmpty() || relay == null) return@withContext 0
+
+        val notes = LinkedHashMap<String, NoteMediaScan.Note>()
+        var until: Long? = null
+        for (page in 0 until NoteMediaScan.MAX_PAGES) {
+            val events = nostrService.queryRawEvents(listOf(NoteMediaScan.pageFilter(owner, until)), listOf(relay), timeoutMs = 8_000L)
+            val fresh = events.mapNotNull(NoteMediaScan::parse).filter { it.pubkey == owner && notes.putIfAbsent(it.id, it) == null }
+            // `until` is inclusive, so a full page that brings nothing new is the end.
+            if (fresh.isEmpty() || events.size < NoteMediaScan.PAGE) break
+            until = fresh.minOf { it.createdAt }
+        }
+        val urls = notes.values.flatMap { note ->
+            nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url }
+        }
+        onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
+        val toImport = NoteMediaScan.urlsToImport(urls) { mediaCacheService.isInLocalBlossom(it) }
+        if (toImport.isEmpty()) {
+            onLogMessage?.invoke("All note media already exists locally")
+            return@withContext 0
+        }
+        // One signature for every upload: one signer prompt, not one per file.
+        val auth = createAuthHeader(listOf("upload"))
+        if (auth.isEmpty()) {
+            onLogMessage?.invoke("Note media skipped: could not sign the upload (signer unavailable)")
+            return@withContext 0
+        }
+        onLogMessage?.invoke("${toImport.size} media item(s) missing locally — downloading...")
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val saved = java.util.concurrent.atomic.AtomicInteger(0)
+        coroutineScope {
+            for (url in toImport) {
+                mirrorSemaphore.acquire()
+                launch {
+                    try {
+                        if (mirrorUrlToLocal(url, auth) != null) saved.incrementAndGet()
+                    } finally {
+                        mirrorSemaphore.release()
+                        onProgress?.invoke(completed.incrementAndGet().toFloat() / toImport.size)
+                    }
+                }
+            }
+        }
+        onLogMessage?.invoke("Mirror from notes complete: ${saved.get()} new file(s)")
         saved.get()
     }
 
