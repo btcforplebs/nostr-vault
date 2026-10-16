@@ -375,7 +375,15 @@ extension BlossomService {
             let session = local ? Self.copyLocalSession : Self.copySession
             let (body, response) = try await session.upload(for: request, fromFile: fileURL)
             guard let http = response as? HTTPURLResponse else { return .failed("The server sent back nothing.", retry: true) }
-            if (200...299).contains(http.statusCode) { return .copied }
+            if (200...299).contains(http.statusCode) {
+                // A website that answers every PUT with its home page has not
+                // stored anything (see BlossomUploadReply).
+                let isOnDevice = ["localhost", "127.0.0.1", "0.0.0.0"].contains(serverURL.host?.lowercased() ?? "")
+                guard BlossomUploadReply.hostedURL(body: body, server: serverURL, sha256: sha256, onDeviceRelay: isOnDevice) != nil else {
+                    return .failed("This address answered, but not as a Blossom media server. For nostr.build, use https://blossom.nostr.build.")
+                }
+                return .copied
+            }
             let why = http.value(forHTTPHeaderField: "X-Reason")
                 ?? String(data: body.prefix(200), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return Self.copyFailure(status: http.statusCode, serverSays: why)

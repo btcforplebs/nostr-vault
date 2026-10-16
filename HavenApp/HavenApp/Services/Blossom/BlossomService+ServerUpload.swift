@@ -75,16 +75,16 @@ extension BlossomService {
                 }
 
                 if let httpResponse = response as? HTTPURLResponse, (200...201).contains(httpResponse.statusCode) {
-                    // For external/mirror servers, parse BUD-02 Blob Descriptor for the canonical URL
-                    if !isOnDeviceRelay, let descriptor = try? JSONDecoder().decode(BlobDescriptor.self, from: responseData),
-                       let downloadURL = URL(string: descriptor.url) {
-                        logger.info("Successfully uploaded to \(url): \(descriptor.url)")
-                        return downloadURL
+                    // An outside server must hand back a BUD-02 blob descriptor;
+                    // a bare 200 (a website's home page) is not an upload.
+                    if let hostedURL = BlossomUploadReply.hostedURL(body: responseData, server: serverURL, sha256: sha256, onDeviceRelay: isOnDeviceRelay) {
+                        logger.info("Successfully uploaded to \(url): \(hostedURL.absoluteString)")
+                        return hostedURL
                     }
-                    // Fallback (local on-device relay or unparseable response): construct URL
-                    let fileURL = serverURL.appendingPathComponent(sha256)
-                    logger.info("Successfully uploaded to \(url): \(fileURL.absoluteString)")
-                    return fileURL
+                    let reply = BlossomUploadReply.describe(body: responseData, contentType: httpResponse.value(forHTTPHeaderField: "Content-Type"))
+                    logger.warning("Upload to \(url) answered \(httpResponse.statusCode) without a blob descriptor: \(reply)")
+                    appLog("upload to \(url) — HTTP \(httpResponse.statusCode) but no Blossom blob descriptor (\(reply)); not a Blossom server address?", level: "WARN")
+                    return nil
                 } else {
                     let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
                     let responseBody = String(data: responseData, encoding: .utf8) ?? "(binary)"
