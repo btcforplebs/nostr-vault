@@ -36,6 +36,21 @@ extension FeedService {
         }
     }
 
+    /// Keeps the author an `nevent` names as the lookup hint for its id, so
+    /// the lookup asks the author's own relays. A quote has no e-tag, so its
+    /// nevent is the only place the author is written down.
+    func rememberHints(_ pointer: QuoteReference.EventPointer) {
+        if noteAuthorHints[pointer.id] == nil, let author = pointer.author {
+            noteAuthorHints[pointer.id] = author
+        }
+    }
+
+    /// `rememberHints` for every note `content` quotes.
+    func rememberQuoteHints(in content: String) {
+        guard content.contains("nostr:") else { return }
+        for pointer in QuoteReference.eventPointers(in: content) { rememberHints(pointer) }
+    }
+
     /// Fetches an addressable event by its naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
     private func fetchMissingNoteByNaddr(coordinate: String, afterRelayList: Bool = false) {
         guard let (kind, pubkey, dTag) = QuoteReference.parseCoordinate(coordinate) else { return }

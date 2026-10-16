@@ -40,6 +40,23 @@ enum QuoteReference {
         return nil
     }
 
+    /// What a `note1…` / `nevent1…` link says about the event it names: the id,
+    /// and for an nevent its author (type 2), whose own relays the lookup
+    /// asks. The nevent's relay hint (type 1) is not kept: a link must not make
+    /// the app dial a host of the sender's choosing (Android `QuoteRef` rule).
+    struct EventPointer: Equatable {
+        let id: String
+        var author: String?
+    }
+
+    /// The pointer an `nevent` TLV payload holds, or nil when it names no
+    /// 32-byte event id.
+    static func eventPointer(fromNeventTLV payload: Data) -> EventPointer? {
+        guard let id = eventID(fromNeventTLV: payload) else { return nil }
+        let author = tlvEntries(payload).first { $0.type == 2 && $0.value.count == 32 }.map { hex($0.value) }
+        return EventPointer(id: id, author: author)
+    }
+
     /// The pubkey a profile mention names, from its decoded bech32 payload.
     /// `npub` is the 32 raw bytes; `nprofile` is TLV with the pubkey as type 0
     /// and relay hints after it. Hex-encoding an nprofile's whole payload —

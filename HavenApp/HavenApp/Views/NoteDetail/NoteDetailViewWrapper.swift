@@ -67,7 +67,11 @@ struct NoteDetailViewWrapper: View {
     }
 
     private func fetchNote() {
-        if let existing = feedService.findNote(id: noteId) {
+        // A note1/nevent link names its note by hex id; an nevent may also say
+        // who wrote it, whose relays the miss lookup asks.
+        let pointer = QuoteReference.eventPointer(from: noteId)
+        if let pointer { feedService.rememberHints(pointer) }
+        if let existing = feedService.findNote(id: pointer?.id ?? noteId) {
             self.resolvedNote = existing
             self.isLoading = false
             return
@@ -93,15 +97,9 @@ struct NoteDetailViewWrapper: View {
             }
             filter = ["kinds": [parts.kind], "authors": [parts.pubkey], "#d": [parts.dTag], "limit": 1]
         } else {
-            let hexId: String
-            if noteId.hasPrefix("note1") {
-                hexId = Bech32.decode(noteId)?.hexString ?? noteId
-            } else if noteId.hasPrefix("nevent1") {
-                hexId = noteId // Simplified
-            } else {
-                hexId = noteId
-            }
-            filter = ["ids": [hexId], "limit": 1]
+            // An nevent used to be sent as its bech32 text, which no relay
+            // matches, so a tapped nevent link never loaded.
+            filter = ["ids": [pointer?.id ?? noteId], "limit": 1]
         }
 
         // The inbox too: mentions, replies, likes and zaps on this device are stored there.
@@ -136,14 +134,39 @@ struct NoteDetailViewWrapper: View {
             client.connect(url: url)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-            if self.isLoading {
-                self.isLoading = false
-                if self.resolvedNote == nil {
-                    self.error = "Could not find note"
-                }
+        let hexId = pointer?.id ?? noteId
+        guard hexId.count == 64 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { self.giveUpIfLoading() }
+            return
+        }
+        // Not on your relays: hand it to the feed's lookup, which asks the
+        // author's relays, then the last-stop relays.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            guard self.isLoading, self.resolvedNote == nil else { return }
+            // A tap is a fresh ask: a note given up on earlier gets its passes again.
+            self.feedService.fetchMissingNote(id: hexId, force: true)
+            self.waitForLookup(hexId, until: Date().addingTimeInterval(16))
+        }
+    }
+
+    private func waitForLookup(_ hexId: String, until deadline: Date) {
+        guard isLoading, resolvedNote == nil else { return }
+        if let note = feedService.findNote(id: hexId) {
+            resolvedNote = note
+            isLoading = false
+        } else if feedService.unavailableNoteIds.contains(hexId) || Date() >= deadline {
+            giveUpIfLoading()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.waitForLookup(hexId, until: deadline)
             }
         }
+    }
+
+    private func giveUpIfLoading() {
+        guard isLoading else { return }
+        isLoading = false
+        if resolvedNote == nil { error = "Could not find note" }
     }
 
     private func handleNoteMessage(_ msg: String, client: WebSocketClient) {

@@ -72,7 +72,7 @@ struct RepostedNoteView: View {
             }
 
             // Quoted notes and articles
-            QuotedEventsView(identifiers: inner.quotedEventIds)
+            QuotedEventsView(identifiers: inner.quotedEventIds, content: inner.content)
         }
         .padding(10)
         .background(Color(red: 0.1, green: 0.1, blue: 0.14))

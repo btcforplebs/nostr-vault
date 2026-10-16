@@ -12,6 +12,8 @@ import SwiftUI
 /// quote of a note living elsewhere showed just the quoting post.
 struct QuotedEventsView: View {
     let identifiers: [String]
+    /// The quoting note's text: its nevents say where the quoted notes live.
+    var content: String = ""
     @EnvironmentObject var nostrService: NostrService
 
     var body: some View {
@@ -23,7 +25,7 @@ struct QuotedEventsView: View {
                         QuotedNoteView(note: quoted)
                             .environmentObject(nostrService)
                     } else {
-                        PendingQuotedEventView(identifier: identifier)
+                        PendingQuotedEventView(identifier: identifier, content: content)
                     }
                 }
             }
@@ -35,6 +37,7 @@ struct QuotedEventsView: View {
 /// cards observe `FeedService`, not every row that quotes something.
 private struct PendingQuotedEventView: View {
     let identifier: String
+    let content: String
     @EnvironmentObject var nostrService: NostrService
     @ObservedObject private var feedService = FeedService.shared
 
@@ -51,6 +54,7 @@ private struct PendingQuotedEventView: View {
             QuotedNoteSkeleton()
                 .onAppear {
                     nostrService.fetchQuotedEvent(identifier)
+                    feedService.rememberQuoteHints(in: content)
                     feedService.fetchMissingNote(id: identifier)
                 }
         }

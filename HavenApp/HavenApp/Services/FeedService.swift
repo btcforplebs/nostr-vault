@@ -363,6 +363,11 @@ class FeedService: ObservableObject {
     /// Re-measure with `.scratch/roots/probe5.py` in the Buzz nest before
     /// changing the list. offchain.pub was first until it began refusing
     /// connections (2026-10-12).
+    ///
+    /// relay.nostr.net and relay.fountain.fm are the last stop. On 2026-10-16,
+    /// of 172 referenced notes still missing after primal and the rest of this
+    /// list, those two found 112, the best pair of the 20 relays tried. A quote
+    /// in Logen's thread (Plural's, a2f86e95) was on fountain.fm alone.
     static let fallbackNoteRelays = [
         "wss://nostr.wine",
         "wss://nostr.oxtr.dev",
@@ -371,6 +376,8 @@ class FeedService: ObservableObject {
         "wss://relay.snort.social",
         "wss://relay.primal.net",
         "wss://relay.damus.io",
+        "wss://relay.nostr.net",
+        "wss://relay.fountain.fm",
     ]
 
     // Profile saving

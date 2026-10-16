@@ -18,11 +18,13 @@ import com.nostrvault.service.isDeleted
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.service.removeNote
+import com.nostrvault.service.retryMissingNote
 import com.nostrvault.ui.components.*
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.*
 import javax.inject.Inject
 
@@ -162,8 +164,33 @@ class NoteDetailViewModel @Inject constructor(
         // from the relays before declaring it not found (iOS wrapper parity).
         _isLoadingNote.value = true
         nostrService.fetchNoteById(noteId, onRawEvent = feedService::cacheRawEvent) { fetched ->
+            if (fetched != null) {
+                _isLoadingNote.value = false
+                startThreadLoad(fetched)
+            } else {
+                lookUpOnMiss()
+            }
+        }
+    }
+
+    /**
+     * Not on your relays: hand the id to the feed's lookup, which asks the
+     * author's relays and then the last-stop relays (FALLBACK_NOTE_RELAYS),
+     * and wait for it to land or be given up on. iOS NoteDetailViewWrapper.
+     * A user opening the note is a fresh ask, so an earlier give-up is forgotten.
+     */
+    private fun lookUpOnMiss() {
+        if (noteId.length != 64) { _isLoadingNote.value = false; return }
+        feedService.retryMissingNote(noteId)
+        viewModelScope.launch {
+            // (the note, or null once the lookup has given up on it)
+            val outcome = withTimeoutOrNull(20_000L) {
+                combine(feedService.parentNotesCache, feedService.unavailableNoteIds) { cache, unavailable ->
+                    cache[noteId] to (noteId in unavailable)
+                }.first { (note, givenUp) -> note != null || givenUp }
+            }
             _isLoadingNote.value = false
-            if (fetched != null) startThreadLoad(fetched)
+            outcome?.first?.let { startThreadLoad(it) }
         }
     }
 

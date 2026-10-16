@@ -110,8 +110,9 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
         // goes to the URL as written: lowercasing would change a path.
         val urlForKey = mutableMapOf<String, String>()
         val byRelay = mutableMapOf<String, MutableList<String>>()
+        val quoted = quotedAuthors()
         for (id in ids) {
-            val (hint, author) = referenceHints(id)
+            val (hint, author) = referenceHints(id, quoted)
             val urls = buildList {
                 hint?.let { add(it) }
                 author?.let { a -> nostrService.outboxRelays.value[a]?.take(3)?.let { addAll(it) } }
@@ -129,17 +130,39 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             .associate { urlForKey.getValue(it.key) to it.value.distinct() }
     }
 
-    /** The relay hint and author a note in the feed gives for the id it references. */
-    private fun FeedService.referenceHints(id: String): Pair<String?, String?> {
+    /**
+     * Who wrote each note that loaded notes quote by `nostr:nevent1…`, by id.
+     * A quote has no e-tag, so the nevent is the only place its author is
+     * written down; without it the lookup never asked the author's relays.
+     */
+    private fun FeedService.quotedAuthors(): Map<String, String> {
+        val out = HashMap<String, String>()
+        val notes = _notes.value.asSequence() + _parentNotesCache.value.values.asSequence()
+        for (note in notes) {
+            if (!note.content.contains("nevent1", ignoreCase = true)) continue
+            for (identifier in QuoteRef.identifiers(note.content)) {
+                if (!identifier.startsWith("nevent1", ignoreCase = true)) continue
+                val pointer = HavenBridge.decodeNeventPointer(identifier) ?: continue
+                pointer.author?.let { out.putIfAbsent(pointer.id, it) }
+            }
+        }
+        return out
+    }
+
+    /**
+     * The relay hint and author a note in the feed gives for the id it
+     * references; for a quote, the author its nevent names ([quoted]).
+     */
+    private fun FeedService.referenceHints(id: String, quoted: Map<String, String>): Pair<String?, String?> {
         for (note in _notes.value) {
             val tag = note.tags.firstOrNull { it.size >= 2 && (it[0] == "e" || it[0] == "q") && it[1] == id } ?: continue
             val hint = tag.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
             val author = tag.getOrNull(4)?.takeIf { it.length == 64 }
                 ?: tag.getOrNull(3)?.takeIf { tag[0] == "q" && it.length == 64 }
                 ?: if (note.parentEventId == id) note.tags.lastOrNull { it.size >= 2 && it[0] == "p" }?.get(1) else null
-            return hint to author
+            return hint to (author ?: quoted[id])
         }
-        return null to null
+        return null to quoted[id]
     }
 
     /** Authors referenced by these ids whose write relays aren't known yet. */
@@ -148,7 +171,8 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
         if (relayListRequested.size > 5000) relayListRequested.clear()
         // Once per author: force skips the profile fetch's throttle, and an
         // author with no kind 10002 would otherwise be re-asked every batch.
-        val authors = ids.mapNotNull { referenceHints(it).second }
+        val quoted = quotedAuthors()
+        val authors = ids.mapNotNull { referenceHints(it, quoted).second }
             .filter { it !in known && relayListRequested.add(it) }
             .distinct()
         if (authors.isNotEmpty()) {
