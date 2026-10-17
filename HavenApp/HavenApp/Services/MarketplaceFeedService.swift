@@ -45,12 +45,17 @@ final class MarketplaceFeedService: ObservableObject {
     /// and primal returned a full page, so one slow relay never empties the
     /// grid. The owner's feed relays are not used; they rarely carry listings.
     /// nos.lol dropped: it times out on connect (2026-10-12).
+    /// relay.conduit.market is Conduit's marketplace relay (2026-10-17): its
+    /// 200-listing page added 170 listings the others lack (439 -> 609).
+    /// Most of its listings are throwaway-key test posts; Global's trust
+    /// filter keeps those out, Everyone shows them.
     static let relayStrings = [
         "wss://relay.damus.io",
         "wss://relay.snort.social",
         "wss://relay.nostr.net",
         "wss://nostr.wine",
         "wss://relay.primal.net",
+        "wss://relay.conduit.market",
     ]
 
     private init() {}

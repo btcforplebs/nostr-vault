@@ -68,8 +68,11 @@ class MarketplaceFeedService @Inject constructor(
         /**
          * The MyNostrSpace marketplace relay set plus relay.primal.net, which
          * returned a full page on 2026-10-04 while nos.lol and relay.nostr.net
-         * timed out. nos.lol was dropped on 2026-10-12. Same list as the
-         * Swift side.
+         * timed out. nos.lol was dropped on 2026-10-12. relay.conduit.market
+         * is Conduit's marketplace relay (2026-10-17): its page added 170
+         * listings the others lack; most of its listings are throwaway-key
+         * test posts, which Global's trust filter keeps out. Same list as
+         * the Swift side.
          */
         val RELAYS = listOf(
             "wss://relay.damus.io",
@@ -77,6 +80,7 @@ class MarketplaceFeedService @Inject constructor(
             "wss://relay.nostr.net",
             "wss://nostr.wine",
             "wss://relay.primal.net",
+            "wss://relay.conduit.market",
         )
     }
 
