@@ -239,7 +239,8 @@ fun ComposeNoteScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .consumeWindowInsets(padding)
-                .imePadding(),
+                .imePadding()
+                .mediaDropTarget(enabled = !isPublishing && !attachmentLimitReached) { viewModel.addAttachments(it) },
         ) {
         Column(
             modifier = Modifier
