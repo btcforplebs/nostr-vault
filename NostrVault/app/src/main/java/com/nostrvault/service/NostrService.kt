@@ -356,7 +356,8 @@ class NostrService @Inject constructor(
         val confirmedNone: Boolean get() = event == null && asked > 0 && answered >= asked
     }
 
-    suspend fun lookupNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): ReplaceableLookup = lookupNewestReplaceableImpl(kind, pubkey, alsoAsk, timeoutMs)
+    /** With [dTag], an addressable event (kinds 30000-39999) at that `d` tag. */
+    suspend fun lookupNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000, dTag: String? = null): ReplaceableLookup = lookupNewestReplaceableImpl(kind, pubkey, alsoAsk, timeoutMs, dTag)
 
     fun publishBlockedRelayList() { publishBlockedRelayListImpl() }
 

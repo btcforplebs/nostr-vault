@@ -156,7 +156,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         lookupNewestReplaceable(kind, pubkey, alsoAsk, timeoutMs).event
 
     /** [fetchNewestReplaceable], also saying whether "none" was confirmed. */
-    internal suspend fun NostrService.lookupNewestReplaceableImpl(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): ReplaceableLookup {
+    internal suspend fun NostrService.lookupNewestReplaceableImpl(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000, dTag: String? = null): ReplaceableLookup {
         val targets = (configStore.config.value.activeBlastrRelays + alsoAsk)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !isLoopbackRelay(it) }
@@ -180,6 +180,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                                             val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
                                             val ev = parseSignedEvent(obj.toString()) ?: return@collect
                                             if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
+                                            if (dTag != null && ev.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@collect
                                             best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
                                         }
                                         "EOSE" -> {
@@ -192,7 +193,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                             }
                             launch {
                                 client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
-                                client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"],"limit":1}]""")
+                                val dFilter = dTag?.let { ""","#d":[${JsonPrimitive(it)}]""" } ?: ""
+                                client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"]$dFilter,"limit":1}]""")
                             }
                             client.connect()
                             done.await()

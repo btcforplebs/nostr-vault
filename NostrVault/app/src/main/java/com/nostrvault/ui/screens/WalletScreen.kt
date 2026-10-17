@@ -32,6 +32,8 @@ import com.nostrvault.service.NWCService
 import com.nostrvault.service.NWCTimeoutException
 import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.NwcBackupService
+import com.nostrvault.data.model.NwcBackup
 import com.nostrvault.service.ZapHistoryService
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
@@ -60,6 +62,7 @@ class WalletViewModel @Inject constructor(
     private val nwcService: NWCService,
     private val nostrService: NostrService,
     private val zapHistoryService: ZapHistoryService,
+    private val nwcBackupService: NwcBackupService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     /** Whose tutorials the wallet's cards count against. */
@@ -116,9 +119,50 @@ class WalletViewModel @Inject constructor(
     /** A refresh asked for while a page was loading; it runs once that page lands. */
     private var historyRefreshPending = false
 
+    // Wallet saved on this Nostr account (NIP-78, Wisp's format)
+    private val _savedWallet = MutableStateFlow<NwcBackupService.Saved?>(null)
+    val savedWallet = _savedWallet.asStateFlow()
+
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy = _backupBusy.asStateFlow()
+
+    private val _backupError = MutableStateFlow<String?>(null)
+    val backupError = _backupError.asStateFlow()
+
     init {
         refreshBalance()
         if (config.value.showBitcoinWallet) deriveAddress()
+        viewModelScope.launch { _savedWallet.value = nwcBackupService.fetchSaved() }
+    }
+
+    /** Puts the wallet saved on this account into use. */
+    fun useSavedWallet() {
+        val saved = _savedWallet.value ?: return
+        setNwcUri(saved.uri)
+    }
+
+    /**
+     * The "Save wallet to my Nostr account" switch: on publishes the wallet in
+     * use, encrypted to this account's key; off takes it off the account.
+     */
+    fun setSaveToAccount(on: Boolean) {
+        if (_backupBusy.value) return
+        val uri = config.value.nwcURI.orEmpty()
+        viewModelScope.launch {
+            _backupBusy.value = true
+            _backupError.value = null
+            val problem = if (on) nwcBackupService.save(uri) else nwcBackupService.clear()
+            if (problem == null) {
+                _savedWallet.value = if (on) {
+                    NwcBackup.plaintextForSaving(uri)?.let { NwcBackupService.Saved(it, System.currentTimeMillis() / 1000) }
+                } else {
+                    null
+                }
+            } else {
+                _backupError.value = problem
+            }
+            _backupBusy.value = false
+        }
     }
 
     // ── Config setters (Settings tab) ─────────────────────────────
@@ -408,6 +452,38 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
             colors = walletFieldColors(colors.primary),
         )
         WalletCaption("Connect a Lightning wallet to send zaps and use the Lightning tab.")
+
+        val savedWallet by viewModel.savedWallet.collectAsState()
+        val backupBusy by viewModel.backupBusy.collectAsState()
+        val backupError by viewModel.backupError.collectAsState()
+        val current = config.nwcURI?.trim().orEmpty()
+        if (current.isEmpty() && savedWallet != null) {
+            Spacer(Modifier.height(12.dp))
+            WalletSectionLabel("Saved wallet found")
+            val day = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM)
+                .format(java.util.Date(savedWallet!!.savedAt * 1000))
+            WalletCaption("Your Nostr account holds a wallet connection, saved $day. It may have come from Nostr Vault on another device or from Wisp.")
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = viewModel::useSavedWallet) { Text("Use saved wallet") }
+        }
+        if (current.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Save wallet to my Nostr account", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                if (backupBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Switch(
+                    checked = savedWallet?.uri == current,
+                    onCheckedChange = viewModel::setSaveToAccount,
+                    enabled = !backupBusy,
+                    colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+                )
+            }
+            WalletCaption("Stored encrypted to your key (NIP-44) on your relays, so Nostr Vault on your other devices, or Wisp, can use it. Anyone who has your key can read it and spend from this wallet.")
+            backupError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+        }
 
         if (!config.nwcURI.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))

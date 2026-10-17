@@ -9,6 +9,10 @@ struct WalletSettingsView: View {
     @State private var taprootAddress: String = ""
     @State private var addressCopied = false
     @State private var showSweepDisclaimer = false
+    /// The wallet saved on this Nostr account (NIP-78, Wisp's format), if any.
+    @State private var savedWallet: NWCBackupService.Saved?
+    @State private var backupBusy = false
+    @State private var backupError: String?
 
     var body: some View {
         Form {
@@ -27,6 +31,43 @@ struct WalletSettingsView: View {
                 Text("Wallet Connect").settingInfo(.walletNWC)
             } footer: {
                 Text("Paste a nostr+walletconnect:// link.")
+            }
+
+            if configService.config.nwcURI.isEmpty, let saved = savedWallet {
+                Section {
+                    Button {
+                        configService.config.nwcURI = saved.uri
+                        configService.save()
+                    } label: {
+                        Label("Use saved wallet", systemImage: "arrow.down.circle")
+                    }
+                } header: {
+                    Text("Saved wallet found")
+                } footer: {
+                    Text("Your Nostr account holds a wallet connection, saved \(saved.savedAt.formatted(date: .abbreviated, time: .omitted)). It may have come from Nostr Vault on another device or from Wisp.")
+                }
+            }
+
+            if !configService.config.nwcURI.isEmpty {
+                Section {
+                    Toggle(isOn: saveToAccountBinding) {
+                        HStack {
+                            Text("Save wallet to my Nostr account")
+                            if backupBusy {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .disabled(backupBusy)
+                } footer: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Stored encrypted to your key (NIP-44) on your relays, so Nostr Vault on your other devices, or Wisp, can use it. Anyone who has your key can read it and spend from this wallet.")
+                        if let backupError {
+                            Text(backupError).foregroundColor(.red)
+                        }
+                    }
+                }
             }
 
             if !configService.config.nwcURI.isEmpty {
@@ -174,7 +215,41 @@ struct WalletSettingsView: View {
         .onChange(of: configService.config.nwcURI) { _, _ in
             balance = nil
             balanceError = nil
+            backupError = nil
         }
+        .task(id: NostrService.shared.activeHexPubkey) {
+            savedWallet = await NWCBackupService.fetchSaved(nostrService: NostrService.shared)
+        }
+    }
+
+    /// On when the account holds exactly the wallet in use. Turning it on
+    /// publishes the encrypted wallet; off takes it off the account. A wallet
+    /// changed since saving shows off until it is saved again.
+    private var saveToAccountBinding: Binding<Bool> {
+        Binding(
+            get: { savedWallet?.uri == configService.config.nwcURI.trimmingCharacters(in: .whitespacesAndNewlines) },
+            set: { on in
+                let uri = configService.config.nwcURI
+                backupBusy = true
+                backupError = nil
+                Task {
+                    do {
+                        if on {
+                            try await NWCBackupService.save(uri, nostrService: NostrService.shared)
+                            if let trimmed = NWCBackup.plaintext(forSaving: uri) {
+                                savedWallet = NWCBackupService.Saved(uri: trimmed, savedAt: Date())
+                            }
+                        } else {
+                            try await NWCBackupService.clear(nostrService: NostrService.shared)
+                            savedWallet = nil
+                        }
+                    } catch {
+                        backupError = error.localizedDescription
+                    }
+                    backupBusy = false
+                }
+            }
+        )
     }
 
     private func fetchBalance() {
