@@ -219,6 +219,10 @@ struct WalletSettingsView: View {
                 } else {
                     saveToggle(isOn: false)
                 }
+                // One relay's answer decides "empty"; a slower one may still
+                // hold a wallet, so it can be asked again.
+                Button("Check again") { Task { await refreshBackupStatus(askSigner: false) } }
+                    .disabled(backupBusy)
             case .saved(let uri, _):
                 if currentWallet.isEmpty {
                     Button {
