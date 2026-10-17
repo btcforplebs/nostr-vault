@@ -50,4 +50,79 @@ enum NWCBackup {
     static func plaintext(forSaving uri: String) -> String? {
         walletString(fromDecrypted: uri)
     }
+
+    /// True only for something that may be published: never the wallet
+    /// string itself, never empty.
+    static func isCiphertext(_ content: String) -> Bool {
+        !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !content.lowercased().contains("walletconnect")
+    }
+
+    /// What the account's slot holds, as far as this device can tell. Only
+    /// `empty` says nothing is saved; a slot that exists but was not (or could
+    /// not be) read is its own state, so the screen never claims "not saved"
+    /// while the secret may still be on the relays.
+    enum Status: Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+        /// No relay answered fully: can't say either way.
+        case unknown
+        /// Every relay asked answered, and there is no wallet (or it was removed).
+        case empty
+        case saved(uri: String, savedAt: Int64)
+        /// A wallet is saved; reading it needs the signer (bunker or Amber),
+        /// which is only asked when the user taps.
+        case needsSigner(savedAt: Int64)
+        /// A wallet is saved, but this device can't read it (no key, the
+        /// signer refused, or it isn't a wallet string).
+        case unreadable(savedAt: Int64)
+
+        /// A slot with a wallet in it exists on the account, readable or not.
+        var hasSlot: Bool {
+            switch self {
+            case .saved, .needsSigner, .unreadable: return true
+            case .unknown, .empty: return false
+            }
+        }
+
+        var savedAt: Int64? {
+            switch self {
+            case .saved(_, let at), .needsSigner(let at), .unreadable(let at): return at
+            case .unknown, .empty: return nil
+            }
+        }
+
+        /// The wallet string is a spending secret: never in a log.
+        var description: String {
+            switch self {
+            case .unknown: return "unknown"
+            case .empty: return "empty"
+            case .saved(_, let at): return "saved(<redacted>, \(at))"
+            case .needsSigner(let at): return "needsSigner(\(at))"
+            case .unreadable(let at): return "unreadable(\(at))"
+            }
+        }
+        var debugDescription: String { description }
+    }
+
+    /// How far the slot's content was read.
+    enum Read {
+        /// Not tried: it would ask the signer, and the user hasn't tapped.
+        case notTried
+        case failed
+        case plaintext(String)
+    }
+
+    /// The status for a lookup: `slot` is the newest event found (nil when
+    /// none), `confirmedNone` whether every relay asked answered without one.
+    static func status(slot: (content: String, tags: [[String]], createdAt: Int64)?,
+                       confirmedNone: Bool, read: Read) -> Status {
+        guard let slot else { return confirmedNone ? .empty : .unknown }
+        if isCleared(content: slot.content, tags: slot.tags) { return .empty }
+        switch read {
+        case .notTried: return .needsSigner(savedAt: slot.createdAt)
+        case .failed: return .unreadable(savedAt: slot.createdAt)
+        case .plaintext(let text):
+            guard let uri = walletString(fromDecrypted: text) else { return .unreadable(savedAt: slot.createdAt) }
+            return .saved(uri: uri, savedAt: slot.createdAt)
+        }
+    }
 }

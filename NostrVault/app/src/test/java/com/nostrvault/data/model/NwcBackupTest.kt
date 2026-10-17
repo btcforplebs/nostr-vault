@@ -66,4 +66,46 @@ class NwcBackupTest {
         assertFalse(NwcBackup.isCiphertext(""))
         assertTrue(NwcBackup.isCiphertext("AgV0b3BzZWNyZXQ="))
     }
+
+    // ── Status: never claim "not saved" without proof (iOS NWCBackupTests) ──
+
+    private val slot = NwcBackup.Slot("AgV0ciphertext", listOf(listOf("d", "nwc-wallet-backup")), 1_792_000_000L)
+
+    @Test
+    fun `no full answer is unknown, not empty`() {
+        assertEquals(NwcBackup.Status.Unknown, NwcBackup.status(null, false, NwcBackup.Read.NotTried))
+        assertEquals(NwcBackup.Status.Empty, NwcBackup.status(null, true, NwcBackup.Read.NotTried))
+    }
+
+    @Test
+    fun `cleared slot is empty`() {
+        val cleared = NwcBackup.Slot("", NwcBackup.CLEARED_TAGS, 1L)
+        assertEquals(NwcBackup.Status.Empty, NwcBackup.status(cleared, false, NwcBackup.Read.NotTried))
+    }
+
+    /** A slot that wasn't or couldn't be read still has a wallet in it: Remove is offered, never "off". */
+    @Test
+    fun `unread slot still has a wallet`() {
+        val pending = NwcBackup.status(slot, false, NwcBackup.Read.NotTried)
+        assertEquals(NwcBackup.Status.NeedsSigner(1_792_000_000L), pending)
+        assertTrue(pending.hasSlot)
+        val failed = NwcBackup.status(slot, false, NwcBackup.Read.Failed)
+        assertEquals(NwcBackup.Status.Unreadable(1_792_000_000L), failed)
+        assertTrue(failed.hasSlot)
+        assertEquals(NwcBackup.Status.Unreadable(1_792_000_000L), NwcBackup.status(slot, false, NwcBackup.Read.Plaintext("not a wallet")))
+        assertFalse(NwcBackup.Status.Unknown.hasSlot)
+        assertFalse(NwcBackup.Status.Empty.hasSlot)
+    }
+
+    @Test
+    fun `read slot is saved`() {
+        assertEquals(NwcBackup.Status.Saved(uri, 1_792_000_000L), NwcBackup.status(slot, false, NwcBackup.Read.Plaintext(" $uri\n")))
+    }
+
+    /** The wallet string is a spending secret: it never shows up in a log. */
+    @Test
+    fun `status and read strings hide the wallet`() {
+        assertFalse(NwcBackup.Status.Saved(uri, 5).toString().contains("walletconnect"))
+        assertFalse(NwcBackup.Read.Plaintext(uri).toString().contains("walletconnect"))
+    }
 }

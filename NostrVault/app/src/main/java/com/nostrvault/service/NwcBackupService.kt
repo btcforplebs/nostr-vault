@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.NwcBackup
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.relay.HavenBridge
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,47 +22,64 @@ class NwcBackupService @Inject constructor(
     private val nostrService: NostrService,
     private val amberSignerService: AmberSignerService,
 ) {
-    data class Saved(val uri: String, val savedAt: Long) {
-        /** The wallet string is a spending secret: never in a log or crash report. */
-        override fun toString(): String = "Saved(uri=<redacted>, savedAt=$savedAt)"
+    /**
+     * What [account]'s slot holds. With [askSigner] false the signer is not
+     * asked to approve anything: a bunker is not asked at all, and Amber only
+     * through its silent path. Opening the wallet screen must not send the
+     * secret to a signer, so such a slot shows as [NwcBackup.Status.NeedsSigner]
+     * until the user taps to load it.
+     */
+    suspend fun status(account: String, askSigner: Boolean): NwcBackup.Status {
+        if (account.isEmpty()) return NwcBackup.Status.Unknown
+        val config = configStore.config.value
+        val alsoAsk = config.writeRelays + config.readRelays + nostrService.outboxRelays.value[account].orEmpty()
+        val lookup = nostrService.lookupNewestReplaceable(NwcBackup.KIND, account, alsoAsk, dTag = NwcBackup.D_TAG)
+        val event = lookup.event?.takeIf { NwcBackup.isBackup(it.kind, it.tags) }
+            ?: return NwcBackup.status(null, lookup.confirmedNone, NwcBackup.Read.NotTried)
+        val slot = NwcBackup.Slot(event.content, event.tags, event.createdAt)
+        if (NwcBackup.isCleared(event.content, event.tags)) return NwcBackup.status(slot, false, NwcBackup.Read.NotTried)
+        // Only the account that is still active can decrypt its own slot.
+        if (nostrService.activeHexPubkey != account) return NwcBackup.Status.Unknown
+        val mode = configStore.config.value.activeSigningMode()
+        val read = when {
+            mode == "nip46" && !askSigner -> NwcBackup.Read.NotTried
+            else -> decryptFromSelf(event.content, account, silentOnly = !askSigner)
+                ?.let { NwcBackup.Read.Plaintext(it) }
+                // Amber without a standing grant: not a failure, it just needs the tap.
+                ?: if (mode == "amber" && !askSigner) NwcBackup.Read.NotTried else NwcBackup.Read.Failed
+        }
+        return NwcBackup.status(slot, false, read)
     }
 
     /**
-     * The wallet saved on the active account, or null when there is none, it
-     * was removed, or this device can't decrypt it (no key, signer refused).
+     * Publishes [uri] encrypted to [lock]'s own key. Null on success, else why
+     * not. Refuses if the active account is no longer [lock]'s at any step.
      */
-    suspend fun fetchSaved(): Saved? {
-        val me = nostrService.activeHexPubkey
-        if (me.isEmpty()) return null
-        val config = configStore.config.value
-        val alsoAsk = config.writeRelays + config.readRelays + nostrService.outboxRelays.value[me].orEmpty()
-        val event = nostrService.lookupNewestReplaceable(NwcBackup.KIND, me, alsoAsk, dTag = NwcBackup.D_TAG).event
-            ?: return null
-        if (!NwcBackup.isBackup(event.kind, event.tags) || NwcBackup.isCleared(event.content, event.tags)) return null
-        val plaintext = decryptFromSelf(event.content, me) ?: return null
-        val uri = NwcBackup.walletString(plaintext) ?: return null
-        return Saved(uri, event.createdAt)
-    }
-
-    /** Publishes [uri] encrypted to the active account's own key. Null on success, else why not. */
-    suspend fun save(uri: String): String? {
+    suspend fun save(uri: String, lock: PostingAccount.Lock): String? {
         val plaintext = NwcBackup.plaintextForSaving(uri) ?: return "That isn't a nostr+walletconnect:// link."
-        val me = nostrService.activeHexPubkey
-        if (me.isEmpty()) return NO_KEY
-        val encrypted = encryptToSelf(plaintext, me) ?: return "Couldn't encrypt the wallet. Nothing was saved."
+        if (lock.hex.isEmpty() || nostrService.activeHexPubkey != lock.hex) return ACCOUNT_CHANGED
+        val encrypted = encryptToSelf(plaintext, lock.hex) ?: return "Couldn't encrypt the wallet. Nothing was saved."
         // Never publish anything that is not ciphertext.
         if (!NwcBackup.isCiphertext(encrypted)) return "Couldn't encrypt the wallet. Nothing was saved."
-        return publish(encrypted, NwcBackup.TAGS)
+        // Encrypted with whichever key was active: still the locked account?
+        if (nostrService.activeHexPubkey != lock.hex) return ACCOUNT_CHANGED
+        return publish(encrypted, NwcBackup.TAGS, lock)
     }
 
-    /** Takes the saved wallet off the account: same slot, empty content. */
-    suspend fun clear(): String? = publish("", NwcBackup.CLEARED_TAGS)
+    /** Takes the saved wallet off [lock]'s account: same slot, empty content. No decryption needed. */
+    suspend fun clear(lock: PostingAccount.Lock): String? {
+        if (lock.hex.isEmpty() || nostrService.activeHexPubkey != lock.hex) return ACCOUNT_CHANGED
+        return publish("", NwcBackup.CLEARED_TAGS, lock)
+    }
 
-    private suspend fun publish(content: String, tags: List<List<String>>): String? {
+    private suspend fun publish(content: String, tags: List<List<String>>, lock: PostingAccount.Lock): String? {
         val event = try {
-            nostrService.signEventAsync(kind = NwcBackup.KIND, content = content, tags = tags)
+            nostrService.signEventAsync(kind = NwcBackup.KIND, content = content, tags = tags, lockedTo = lock)
+                ?.also { nostrService.requireStillPostingAs(lock, it.pubkey) }
         } catch (e: CancellationException) {
             throw e
+        } catch (_: PostingAccount.AccountChangedException) {
+            return ACCOUNT_CHANGED
         } catch (_: Exception) {
             null
         } ?: return "Couldn't sign with this account."
@@ -85,11 +103,9 @@ class NwcBackupService @Inject constructor(
         null
     }
 
-    private suspend fun decryptFromSelf(ciphertext: String, me: String): String? = try {
+    private suspend fun decryptFromSelf(ciphertext: String, me: String, silentOnly: Boolean): String? = try {
         when (configStore.config.value.activeSigningMode()) {
-            // Silent only: opening the wallet screen must not pop Amber's
-            // approval screen each time. Without a standing grant, no offer.
-            "amber" -> amberSignerService.nip44Decrypt(ciphertext, me, silentOnly = true)
+            "amber" -> amberSignerService.nip44Decrypt(ciphertext, me, silentOnly = silentOnly)
             "nip46" -> if (bunkerReady(me)) NIP46Service.nip44Decrypt(me, ciphertext) else null
             else -> nostrService.resolveSecretKey(forceOwner = false)?.let { sk ->
                 withContext(Dispatchers.Default) { HavenBridge.decryptNIP44(ciphertext, me, sk) }
@@ -110,6 +126,6 @@ class NwcBackupService @Inject constructor(
     }
 
     private companion object {
-        const val NO_KEY = "This account has no key on this device to encrypt with."
+        const val ACCOUNT_CHANGED = "The account changed. Nothing was published; check again."
     }
 }

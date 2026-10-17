@@ -46,4 +46,53 @@ final class NWCBackupTests: XCTestCase {
         XCTAssertEqual(NWCBackup.plaintext(forSaving: " \(uri) "), uri)
         XCTAssertNil(NWCBackup.plaintext(forSaving: "not a wallet"))
     }
+
+    // MARK: - Status: never claim "not saved" without proof
+
+    private let slot = (content: "AgV0ciphertext", tags: [["d", "nwc-wallet-backup"]], createdAt: Int64(1_792_000_000))
+
+    func testNoAnswerIsUnknownNotEmpty() {
+        XCTAssertEqual(NWCBackup.status(slot: nil, confirmedNone: false, read: .notTried), .unknown)
+        XCTAssertEqual(NWCBackup.status(slot: nil, confirmedNone: true, read: .notTried), .empty)
+    }
+
+    func testClearedSlotIsEmpty() {
+        let cleared = (content: "", tags: NWCBackup.clearedTags, createdAt: Int64(1))
+        XCTAssertEqual(NWCBackup.status(slot: cleared, confirmedNone: false, read: .notTried), .empty)
+    }
+
+    /// A slot that exists but wasn't or couldn't be read still has a wallet
+    /// in it, so the screen offers Remove and never shows "off".
+    func testUnreadSlotStillHasAWallet() {
+        let pending = NWCBackup.status(slot: slot, confirmedNone: false, read: .notTried)
+        XCTAssertEqual(pending, .needsSigner(savedAt: 1_792_000_000))
+        XCTAssertTrue(pending.hasSlot)
+        let failed = NWCBackup.status(slot: slot, confirmedNone: false, read: .failed)
+        XCTAssertEqual(failed, .unreadable(savedAt: 1_792_000_000))
+        XCTAssertTrue(failed.hasSlot)
+        XCTAssertEqual(NWCBackup.status(slot: slot, confirmedNone: false, read: .plaintext("not a wallet")),
+                       .unreadable(savedAt: 1_792_000_000))
+        XCTAssertFalse(NWCBackup.Status.unknown.hasSlot)
+        XCTAssertFalse(NWCBackup.Status.empty.hasSlot)
+    }
+
+    func testReadSlotIsSaved() {
+        XCTAssertEqual(NWCBackup.status(slot: slot, confirmedNone: false, read: .plaintext(" \(uri)\n")),
+                       .saved(uri: uri, savedAt: 1_792_000_000))
+    }
+
+    /// The wallet string is a spending secret: it never shows up in a log.
+    func testStatusDescriptionHidesTheWallet() {
+        let saved = NWCBackup.Status.saved(uri: uri, savedAt: 5)
+        XCTAssertFalse(String(describing: saved).contains("walletconnect"))
+        XCTAssertFalse(String(reflecting: saved).contains("walletconnect"))
+        XCTAssertFalse("\(saved)".contains("secret"))
+    }
+
+    func testPlaintextNeverPassesAsCiphertext() {
+        XCTAssertFalse(NWCBackup.isCiphertext(uri))
+        XCTAssertFalse(NWCBackup.isCiphertext(uri.uppercased()))
+        XCTAssertFalse(NWCBackup.isCiphertext("  "))
+        XCTAssertTrue(NWCBackup.isCiphertext("AgV0b3BzZWNyZXQ="))
+    }
 }

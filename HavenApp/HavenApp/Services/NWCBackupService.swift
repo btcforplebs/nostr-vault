@@ -6,71 +6,98 @@ import Foundation
 /// carry no content.
 @MainActor
 enum NWCBackupService {
-    struct Saved: Equatable {
-        let uri: String
-        let savedAt: Date
-    }
-
     enum BackupError: LocalizedError {
         case noKey
         case notAWallet
         case encryptFailed
+        case accountChanged
 
         var errorDescription: String? {
             switch self {
             case .noKey: return "This account has no key on this device to encrypt with."
             case .notAWallet: return "That isn't a nostr+walletconnect:// link."
             case .encryptFailed: return "Couldn't encrypt the wallet. Nothing was saved."
+            case .accountChanged: return "The account changed. Nothing was published; check again."
             }
         }
     }
 
-    /// The wallet saved on the active account, or nil when there is none, it
-    /// was removed, or this device can't decrypt it (no key, signer refused).
-    static func fetchSaved(nostrService: NostrService) async -> Saved? {
-        let me = nostrService.activeHexPubkey
-        guard !me.isEmpty else { return nil }
+    /// What `account`'s slot holds. With `askSigner` false, a remote signer
+    /// (bunker) is not asked to decrypt: opening the wallet screen must not
+    /// send the secret to the signer, so the slot shows as `needsSigner`
+    /// until the user taps to load it.
+    static func status(for account: String, askSigner: Bool,
+                       nostrService: NostrService) async -> NWCBackup.Status {
+        guard !account.isEmpty else { return .unknown }
         let config = ConfigService.shared.config
-        guard let event = await nostrService.fetchNewestReplaceable(
-            kind: NWCBackup.kind, for: me, alsoAsk: config.readRelays, dTag: NWCBackup.dTag
-        ), NWCBackup.isBackup(kind: event.kind, tags: event.tags),
-           !NWCBackup.isCleared(content: event.content, tags: event.tags) else { return nil }
-        guard let plaintext = try? await decryptFromSelf(event.content, me: me),
-              let uri = NWCBackup.walletString(fromDecrypted: plaintext) else { return nil }
-        return Saved(uri: uri, savedAt: Date(timeIntervalSince1970: TimeInterval(event.created_at)))
+        let lookup = await nostrService.lookupNewestReplaceable(
+            kind: NWCBackup.kind, for: account, alsoAsk: config.readRelays, dTag: NWCBackup.dTag)
+        guard let event = lookup.event, NWCBackup.isBackup(kind: event.kind, tags: event.tags) else {
+            return NWCBackup.status(slot: nil, confirmedNone: lookup.confirmedNone, read: .notTried)
+        }
+        let slot = (content: event.content, tags: event.tags, createdAt: event.created_at)
+        if NWCBackup.isCleared(content: event.content, tags: event.tags) {
+            return NWCBackup.status(slot: slot, confirmedNone: false, read: .notTried)
+        }
+        // Only the account that is still active can decrypt its own slot.
+        guard nostrService.activeHexPubkey == account else { return .unknown }
+        let read: NWCBackup.Read
+        if usesRemoteSigner, !askSigner {
+            read = .notTried
+        } else if let plaintext = try? await decryptFromSelf(event.content, me: account) {
+            read = .plaintext(plaintext)
+        } else {
+            read = .failed
+        }
+        return NWCBackup.status(slot: slot, confirmedNone: false, read: read)
     }
 
-    /// Publishes `uri`, encrypted to the active account's own key.
-    static func save(_ uri: String, nostrService: NostrService) async throws {
+    /// Publishes `uri`, encrypted to the locked account's own key. Refuses if
+    /// the active account is no longer `lock`'s at any step.
+    static func save(_ uri: String, lockedTo lock: PostingAccount.Lock,
+                     nostrService: NostrService) async throws {
         guard let plaintext = NWCBackup.plaintext(forSaving: uri) else { throw BackupError.notAWallet }
-        let me = nostrService.activeHexPubkey
-        guard !me.isEmpty else { throw BackupError.noKey }
+        guard !lock.hex.isEmpty, nostrService.activeHexPubkey == lock.hex else { throw BackupError.accountChanged }
         let encrypted: String
         do {
-            encrypted = try await encryptToSelf(plaintext, me: me)
+            encrypted = try await encryptToSelf(plaintext, me: lock.hex)
         } catch BackupError.noKey {
             throw BackupError.noKey
         } catch {
             throw BackupError.encryptFailed
         }
         // Never publish anything that is not ciphertext.
-        guard !encrypted.isEmpty, !encrypted.lowercased().contains("walletconnect") else {
-            throw BackupError.encryptFailed
-        }
-        try await ModePostPublisher.publish(kind: NWCBackup.kind, content: encrypted,
-                                            tags: NWCBackup.tags, nostrService: nostrService)
+        guard NWCBackup.isCiphertext(encrypted) else { throw BackupError.encryptFailed }
+        // Encrypted with whichever key was active: still the locked account?
+        guard nostrService.activeHexPubkey == lock.hex else { throw BackupError.accountChanged }
+        try await publish(content: encrypted, tags: NWCBackup.tags, lock: lock, nostrService: nostrService)
     }
 
-    /// Takes the saved wallet off the account: same slot, empty content.
-    static func clear(nostrService: NostrService) async throws {
-        try await ModePostPublisher.publish(kind: NWCBackup.kind, content: "",
-                                            tags: NWCBackup.clearedTags, nostrService: nostrService)
+    /// Takes the saved wallet off `lock`'s account: same slot, empty content.
+    /// Needs no decryption, so it works from a device that can't read the slot.
+    static func clear(lockedTo lock: PostingAccount.Lock, nostrService: NostrService) async throws {
+        guard !lock.hex.isEmpty, nostrService.activeHexPubkey == lock.hex else { throw BackupError.accountChanged }
+        try await publish(content: "", tags: NWCBackup.clearedTags, lock: lock, nostrService: nostrService)
+    }
+
+    private static func publish(content: String, tags: [[String]], lock: PostingAccount.Lock,
+                                nostrService: NostrService) async throws {
+        do {
+            try await ModePostPublisher.publish(kind: NWCBackup.kind, content: content, tags: tags,
+                                                nostrService: nostrService, lockedTo: lock)
+        } catch ModePostPublisher.PublishError.accountChanged {
+            throw BackupError.accountChanged
+        }
     }
 
     // MARK: - NIP-44 to self (local key or the account's remote signer)
 
+    static var usesRemoteSigner: Bool {
+        ConfigService.shared.config.activeSigningMode() == "nip46"
+    }
+
     private static func encryptToSelf(_ plaintext: String, me: String) async throws -> String {
-        if ConfigService.shared.config.activeSigningMode() == "nip46" {
+        if usesRemoteSigner {
             return try await NIP44Service.encryptAsync(plaintext: plaintext, recipientPubkey: me)
         }
         guard let sk = try? DMService.shared.getActivePrivateKey() else { throw BackupError.noKey }
@@ -78,7 +105,7 @@ enum NWCBackupService {
     }
 
     private static func decryptFromSelf(_ ciphertext: String, me: String) async throws -> String {
-        if ConfigService.shared.config.activeSigningMode() == "nip46" {
+        if usesRemoteSigner {
             return try await NIP44Service.decryptAsync(ciphertext: ciphertext, senderPubkey: me)
         }
         guard let sk = try? DMService.shared.getActivePrivateKey() else { throw BackupError.noKey }

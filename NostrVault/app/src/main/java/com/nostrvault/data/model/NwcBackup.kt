@@ -52,4 +52,58 @@ object NwcBackup {
     /** True only for something that can be published: never the wallet string itself. */
     fun isCiphertext(content: String): Boolean =
         content.isNotBlank() && !content.contains("walletconnect", ignoreCase = true)
+
+    /**
+     * What the account's slot holds, as far as this device can tell. Only
+     * [Status.Empty] says nothing is saved; a slot that exists but was not (or
+     * could not) be read is its own state, so the screen never claims "not
+     * saved" while the secret may still be on the relays. iOS `NWCBackup.Status`.
+     */
+    sealed class Status {
+        /** No relay answered fully: can't say either way. */
+        data object Unknown : Status()
+        /** Every relay asked answered, and there is no wallet (or it was removed). */
+        data object Empty : Status()
+        class Saved(val uri: String, override val savedAt: Long) : Status() {
+            override fun equals(other: Any?) = other is Saved && other.uri == uri && other.savedAt == savedAt
+            override fun hashCode() = uri.hashCode() * 31 + savedAt.hashCode()
+            /** The wallet string is a spending secret: never in a log or crash report. */
+            override fun toString() = "Saved(uri=<redacted>, savedAt=$savedAt)"
+        }
+        /** Saved; reading it needs the signer, which is only asked when the user taps. */
+        data class NeedsSigner(override val savedAt: Long) : Status()
+        /** Saved, but this device can't read it (no key, signer refused, not a wallet). */
+        data class Unreadable(override val savedAt: Long) : Status()
+
+        /** A slot with a wallet in it exists on the account, readable or not. */
+        val hasSlot: Boolean get() = this is Saved || this is NeedsSigner || this is Unreadable
+
+        /** When the slot's wallet was saved; null when there is none or it's unknown. */
+        open val savedAt: Long? get() = null
+    }
+
+    /** How far the slot's content was read. */
+    sealed class Read {
+        /** Not tried: it would ask the signer, and the user hasn't tapped. */
+        data object NotTried : Read()
+        data object Failed : Read()
+        class Plaintext(val text: String) : Read() {
+            override fun toString() = "Plaintext(<redacted>)"
+        }
+    }
+
+    /** One found slot: the newest event's content, tags and time. */
+    data class Slot(val content: String, val tags: List<List<String>>, val createdAt: Long)
+
+    /** The status for a lookup: [slot] is the newest event found (null when none). */
+    fun status(slot: Slot?, confirmedNone: Boolean, read: Read): Status {
+        if (slot == null) return if (confirmedNone) Status.Empty else Status.Unknown
+        if (isCleared(slot.content, slot.tags)) return Status.Empty
+        return when (read) {
+            Read.NotTried -> Status.NeedsSigner(slot.createdAt)
+            Read.Failed -> Status.Unreadable(slot.createdAt)
+            is Read.Plaintext -> walletString(read.text)?.let { Status.Saved(it, slot.createdAt) }
+                ?: Status.Unreadable(slot.createdAt)
+        }
+    }
 }
