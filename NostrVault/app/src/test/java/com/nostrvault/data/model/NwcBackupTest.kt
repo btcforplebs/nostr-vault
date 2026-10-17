@@ -109,4 +109,17 @@ class NwcBackupTest {
         assertFalse(NwcBackup.Status.Saved(uri, 5).toString().contains("walletconnect"))
         assertFalse(NwcBackup.Read.Plaintext(uri).toString().contains("walletconnect"))
     }
+
+    /** Remove whenever a wallet may be on the account; not where nothing is, nor under an ON switch. */
+    @Test
+    fun `remove is offered where a wallet may be`() {
+        assertTrue(NwcBackup.Status.Unknown.offersRemove(""))
+        assertTrue(NwcBackup.Status.NeedsSigner(1).offersRemove(uri))
+        assertTrue(NwcBackup.Status.Unreadable(1).offersRemove(""))
+        assertTrue(NwcBackup.Status.Saved(uri, 1).offersRemove(""))
+        assertTrue(NwcBackup.Status.Saved(uri, 1).offersRemove("nostr+walletconnect://other"))
+        assertFalse(NwcBackup.Status.Saved(uri, 1).offersRemove(uri))
+        assertFalse(NwcBackup.Status.Empty.offersRemove(""))
+        assertFalse(NwcBackup.Status.Empty.offersRemove(uri))
+    }
 }

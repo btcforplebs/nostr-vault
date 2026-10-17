@@ -243,10 +243,12 @@ struct WalletSettingsView: View {
                     .disabled(backupBusy)
                 replaceButton
             }
-            // Always offered: removing needs no proof a wallet is saved, and
-            // is harmless when none is.
-            Button("Remove from my account", role: .destructive) { runBackupAction(save: false) }
-                .disabled(backupBusy)
+            // Offered whenever a wallet may be on the account: removing needs
+            // no proof it is there (see NWCBackup.Status.offersRemove).
+            if backupStatus.offersRemove(current: currentWallet) {
+                Button("Remove from my account", role: .destructive) { runBackupAction(save: false) }
+                    .disabled(backupBusy)
+            }
         } header: {
             HStack {
                 Text("Your Nostr account")

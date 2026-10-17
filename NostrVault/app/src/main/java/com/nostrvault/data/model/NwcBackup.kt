@@ -82,6 +82,18 @@ object NwcBackup {
         /** A slot with a wallet in it exists on the account, readable or not. */
         val hasSlot: Boolean get() = this is Saved || this is NeedsSigner || this is Unreadable
 
+        /**
+         * Whether "Remove from my account" is offered with [current] (the
+         * wallet in use) set: whenever a wallet may be on the account (a
+         * slot, or no answer to say otherwise), except when the save switch
+         * already shows it on, which removes it by itself. iOS `offersRemove`.
+         */
+        fun offersRemove(current: String): Boolean = when (this) {
+            Unknown, is NeedsSigner, is Unreadable -> true
+            Empty -> false
+            is Saved -> current.isEmpty() || uri != current
+        }
+
         /** When the slot's wallet was saved; null when there is none or it's unknown. */
         open val savedAt: Long? get() = null
     }

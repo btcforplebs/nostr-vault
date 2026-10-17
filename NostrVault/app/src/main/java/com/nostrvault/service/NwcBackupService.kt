@@ -58,9 +58,11 @@ class NwcBackupService @Inject constructor(
     suspend fun save(uri: String, lock: PostingAccount.Lock): String? {
         val plaintext = NwcBackup.plaintextForSaving(uri) ?: return "That isn't a nostr+walletconnect:// link."
         if (lock.hex.isEmpty() || nostrService.activeHexPubkey != lock.hex) return ACCOUNT_CHANGED
-        val mode = configStore.config.value.activeSigningMode()
-        if (mode != "amber" && mode != "nip46" && nostrService.resolveSecretKey(forceOwner = false) == null) return NO_KEY
-        val encrypted = encryptToSelf(plaintext, lock.hex) ?: return "Couldn't encrypt the wallet. Nothing was saved."
+        val encrypted = when (val result = encryptToSelf(plaintext, lock.hex)) {
+            EncryptResult.NoKey -> return NO_KEY
+            EncryptResult.Failed -> return "Couldn't encrypt the wallet. Nothing was saved."
+            is EncryptResult.Done -> result.ciphertext
+        }
         // Never publish anything that is not ciphertext.
         if (!NwcBackup.isCiphertext(encrypted)) return "Couldn't encrypt the wallet. Nothing was saved."
         // Encrypted with whichever key was active: still the locked account?
@@ -91,18 +93,27 @@ class NwcBackupService @Inject constructor(
 
     // ── NIP-44 to self: local key, Amber, or the account's bunker ──
 
-    private suspend fun encryptToSelf(plaintext: String, me: String): String? = try {
-        when (configStore.config.value.activeSigningMode()) {
+    private sealed class EncryptResult {
+        data object NoKey : EncryptResult()
+        data object Failed : EncryptResult()
+        class Done(val ciphertext: String) : EncryptResult()
+    }
+
+    /** Resolves a local key once (a NIP-49 key costs a scrypt per resolve). */
+    private suspend fun encryptToSelf(plaintext: String, me: String): EncryptResult = try {
+        val ciphertext = when (configStore.config.value.activeSigningMode()) {
             "amber" -> amberSignerService.nip44Encrypt(plaintext, me)
             "nip46" -> if (bunkerReady(me)) NIP46Service.nip44Encrypt(me, plaintext) else null
-            else -> nostrService.resolveSecretKey(forceOwner = false)?.let { sk ->
+            else -> {
+                val sk = nostrService.resolveSecretKey(forceOwner = false) ?: return EncryptResult.NoKey
                 withContext(Dispatchers.Default) { HavenBridge.encryptNIP44(plaintext, me, sk) }
             }
         }
+        ciphertext?.let { EncryptResult.Done(it) } ?: EncryptResult.Failed
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
-        null
+        EncryptResult.Failed
     }
 
     private suspend fun decryptFromSelf(ciphertext: String, me: String, silentOnly: Boolean): String? = try {

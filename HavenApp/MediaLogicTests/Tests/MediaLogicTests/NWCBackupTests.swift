@@ -98,4 +98,17 @@ final class NWCBackupTests: XCTestCase {
         XCTAssertFalse(NWCBackup.isCiphertext("  "))
         XCTAssertTrue(NWCBackup.isCiphertext("AgV0b3BzZWNyZXQ="))
     }
+
+    /// Remove whenever a wallet may be on the account; not where nothing is,
+    /// and not under a switch that already shows it on.
+    func testRemoveIsOfferedWhereAWalletMayBe() {
+        XCTAssertTrue(NWCBackup.Status.unknown.offersRemove(current: ""))
+        XCTAssertTrue(NWCBackup.Status.needsSigner(savedAt: 1).offersRemove(current: uri))
+        XCTAssertTrue(NWCBackup.Status.unreadable(savedAt: 1).offersRemove(current: ""))
+        XCTAssertTrue(NWCBackup.Status.saved(uri: uri, savedAt: 1).offersRemove(current: ""))
+        XCTAssertTrue(NWCBackup.Status.saved(uri: uri, savedAt: 1).offersRemove(current: "nostr+walletconnect://other"))
+        XCTAssertFalse(NWCBackup.Status.saved(uri: uri, savedAt: 1).offersRemove(current: uri))
+        XCTAssertFalse(NWCBackup.Status.empty.offersRemove(current: ""))
+        XCTAssertFalse(NWCBackup.Status.empty.offersRemove(current: uri))
+    }
 }

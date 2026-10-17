@@ -85,6 +85,18 @@ enum NWCBackup {
             }
         }
 
+        /// Whether "Remove from my account" is offered with `current` (the
+        /// wallet in use) set: whenever a wallet may be on the account (a slot,
+        /// or no answer to say otherwise), except when the save switch is
+        /// already showing it on, which removes it by itself.
+        func offersRemove(current: String) -> Bool {
+            switch self {
+            case .unknown, .needsSigner, .unreadable: return true
+            case .empty: return false
+            case .saved(let uri, _): return current.isEmpty || uri != current
+            }
+        }
+
         var savedAt: Int64? {
             switch self {
             case .saved(_, let at), .needsSigner(let at), .unreadable(let at): return at

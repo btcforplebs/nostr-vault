@@ -537,9 +537,11 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
             ReplaceButton()
         }
     }
-    // Always offered: removing needs no proof a wallet is saved, and is harmless when none is.
-    TextButton(onClick = { viewModel.setSaveToAccount(false) }, enabled = !busy) {
-        Text("Remove from my account", color = MaterialTheme.colorScheme.error)
+    // Offered whenever a wallet may be on the account: removing needs no proof it is there.
+    if (status.offersRemove(current)) {
+        TextButton(onClick = { viewModel.setSaveToAccount(false) }, enabled = !busy) {
+            Text("Remove from my account", color = MaterialTheme.colorScheme.error)
+        }
     }
     WalletCaption("Stored encrypted to your key (NIP-44) on your relays, so Nostr Vault on your other devices, or Wisp, can use it. Anyone who has your key can read it and spend from this wallet.")
     error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
