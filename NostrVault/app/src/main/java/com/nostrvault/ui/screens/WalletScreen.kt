@@ -32,6 +32,8 @@ import com.nostrvault.service.NWCService
 import com.nostrvault.service.NWCTimeoutException
 import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.NwcBackupService
+import com.nostrvault.data.model.NwcBackup
 import com.nostrvault.service.ZapHistoryService
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
@@ -48,6 +50,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -60,6 +64,7 @@ class WalletViewModel @Inject constructor(
     private val nwcService: NWCService,
     private val nostrService: NostrService,
     private val zapHistoryService: ZapHistoryService,
+    private val nwcBackupService: NwcBackupService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     /** Whose tutorials the wallet's cards count against. */
@@ -116,9 +121,90 @@ class WalletViewModel @Inject constructor(
     /** A refresh asked for while a page was loading; it runs once that page lands. */
     private var historyRefreshPending = false
 
+    // Wallet slot on this Nostr account (NIP-78, Wisp's format), and whose
+    // account it was read for: an action on another account's state would
+    // publish into the wrong slot.
+    private val _backupStatus = MutableStateFlow<NwcBackup.Status>(NwcBackup.Status.Unknown)
+    val backupStatus = _backupStatus.asStateFlow()
+    private var backupStatusAccount = ""
+
+    private val _backupChecked = MutableStateFlow(false)
+    val backupChecked = _backupChecked.asStateFlow()
+
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy = _backupBusy.asStateFlow()
+
+    private val _backupError = MutableStateFlow<String?>(null)
+    val backupError = _backupError.asStateFlow()
+
     init {
         refreshBalance()
         if (config.value.showBitcoinWallet) deriveAddress()
+        // Re-read on every account switch, as iOS keys on the active pubkey.
+        viewModelScope.launch {
+            configStore.config.map { it.activeOrOwnerNpub() }.distinctUntilChanged().collect {
+                refreshBackupStatus(askSigner = false)
+            }
+        }
+    }
+
+    /** Reads the slot again; [askSigner] lets the signer decrypt (the user tapped). */
+    fun refreshBackupStatus(askSigner: Boolean) {
+        val account = nostrService.activeHexPubkey
+        if (account != backupStatusAccount) {
+            _backupStatus.value = NwcBackup.Status.Unknown
+            _backupChecked.value = false
+        }
+        backupStatusAccount = account
+        viewModelScope.launch {
+            if (askSigner) _backupBusy.value = true
+            val status = nwcBackupService.status(account, askSigner)
+            // A switch while the lookup ran: that answer belongs to someone else.
+            if (nostrService.activeHexPubkey == account) {
+                _backupStatus.value = status
+                _backupChecked.value = true
+            }
+            if (askSigner) _backupBusy.value = false
+        }
+    }
+
+    /** Puts the wallet saved on this account into use. */
+    fun useSavedWallet() {
+        val saved = _backupStatus.value as? NwcBackup.Status.Saved ?: return
+        setNwcUri(saved.uri)
+    }
+
+    /**
+     * The "Save wallet to my Nostr account" switch (on saves the wallet in use)
+     * and "Remove from my account" (off). Locked to the account the screen
+     * shows, all the way to publishing.
+     */
+    fun setSaveToAccount(on: Boolean) {
+        if (_backupBusy.value) return
+        val lock = nostrService.lockPostingAccount()
+        if (lock.hex != backupStatusAccount) {
+            _backupError.value = "The account changed. Nothing was published; check again."
+            refreshBackupStatus(askSigner = false)
+            return
+        }
+        val uri = config.value.nwcURI.orEmpty()
+        viewModelScope.launch {
+            _backupBusy.value = true
+            _backupError.value = null
+            val problem = if (on) nwcBackupService.save(uri, lock) else nwcBackupService.clear(lock)
+            if (problem != null) {
+                _backupError.value = problem
+            } else if (nostrService.activeHexPubkey == lock.hex) {
+                // Only the account it was done for gets the new state.
+                _backupStatus.value = if (on) {
+                    NwcBackup.plaintextForSaving(uri)?.let { NwcBackup.Status.Saved(it, System.currentTimeMillis() / 1000) }
+                        ?: _backupStatus.value
+                } else {
+                    NwcBackup.Status.Empty
+                }
+            }
+            _backupBusy.value = false
+        }
     }
 
     // ── Config setters (Settings tab) ─────────────────────────────
@@ -385,6 +471,82 @@ fun WalletScreen(
     }
 }
 
+/** The wallet saved on the Nostr account: offer, switch, signer load, remove. iOS accountBackupSection. */
+@Composable
+private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
+    val status by viewModel.backupStatus.collectAsState()
+    val busy by viewModel.backupBusy.collectAsState()
+    val error by viewModel.backupError.collectAsState()
+    val colors = LocalNostrVaultColors.current
+    val day = status.savedAt?.let {
+        java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it * 1000))
+    }.orEmpty()
+
+    @Composable
+    fun SaveSwitch(on: Boolean) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Save wallet to my Nostr account", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Switch(
+                checked = on,
+                onCheckedChange = viewModel::setSaveToAccount,
+                enabled = !busy,
+                colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+            )
+        }
+    }
+
+    /** Saving needs no read: a slot this device can't read can still be replaced by the wallet in use. */
+    @Composable
+    fun ReplaceButton() {
+        if (current.isNotEmpty()) {
+            OutlinedButton(onClick = { viewModel.setSaveToAccount(true) }, enabled = !busy) { Text("Save this wallet instead") }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        WalletSectionLabel("Your Nostr account")
+        if (busy) {
+            Spacer(Modifier.width(8.dp))
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        }
+    }
+    when (val s = status) {
+        NwcBackup.Status.Unknown -> {
+            WalletCaption("Couldn't check your Nostr account for a saved wallet.")
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = false) }) { Text("Check again") }
+        }
+        NwcBackup.Status.Empty -> if (current.isNotEmpty()) SaveSwitch(on = false) else {
+            WalletCaption("No wallet saved on your Nostr account.")
+        }
+        is NwcBackup.Status.Saved -> if (current.isEmpty()) {
+            WalletCaption("Saved $day. It may have come from Nostr Vault on another device or from Wisp.")
+            OutlinedButton(onClick = viewModel::useSavedWallet) { Text("Use saved wallet") }
+        } else {
+            SaveSwitch(on = s.uri == current)
+            if (s.uri != current) WalletCaption("Your account holds a different wallet, saved $day. Turning this on replaces it.")
+        }
+        is NwcBackup.Status.NeedsSigner -> {
+            WalletCaption("A wallet is saved on your Nostr account ($day). Your signer has to open it.")
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = true) }, enabled = !busy) { Text("Load with signer") }
+            ReplaceButton()
+        }
+        is NwcBackup.Status.Unreadable -> {
+            WalletCaption("A wallet is saved on your Nostr account ($day), but this device can't read it.")
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = true) }, enabled = !busy) { Text("Try again") }
+            ReplaceButton()
+        }
+    }
+    // Offered whenever a wallet may be on the account: removing needs no proof it is there.
+    if (status.offersRemove(current)) {
+        TextButton(onClick = { viewModel.setSaveToAccount(false) }, enabled = !busy) {
+            Text("Remove from my account", color = MaterialTheme.colorScheme.error)
+        }
+    }
+    WalletCaption("Stored encrypted to your key (NIP-44) on your relays, so Nostr Vault on your other devices, or Wisp, can use it. Anyone who has your key can read it and spend from this wallet.")
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+}
+
 @Composable
 private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
     val config by viewModel.config.collectAsState()
@@ -408,6 +570,9 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
             colors = walletFieldColors(colors.primary),
         )
         WalletCaption("Connect a Lightning wallet to send zaps and use the Lightning tab.")
+
+        val backupChecked by viewModel.backupChecked.collectAsState()
+        if (backupChecked) AccountBackupSection(viewModel, config.nwcURI?.trim().orEmpty())
 
         if (!config.nwcURI.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))

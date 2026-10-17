@@ -17,13 +17,14 @@ extension NostrService {
     /// blastr relays, the account's cached outbox relays and `alsoAsk`, or nil
     /// if none answered within the timeout. Asks fresh: the profile caches can
     /// hold a list that was replaced long ago.
-    func fetchNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> NostrEvent? {
-        await lookupNewestReplaceable(kind: kind, for: pubkey, alsoAsk: alsoAsk, timeout: timeout).event
+    /// With `dTag`, an addressable event (kinds 30000-39999) at that `d` tag.
+    func fetchNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], dTag: String? = nil, timeout: TimeInterval = 6) async -> NostrEvent? {
+        await lookupNewestReplaceable(kind: kind, for: pubkey, alsoAsk: alsoAsk, dTag: dTag, timeout: timeout).event
     }
 
     /// `fetchNewestReplaceable`, also saying whether "none" was confirmed:
     /// every relay asked answered EOSE for this request without the event.
-    func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
+    func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], dTag: String? = nil, timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
         var urls = ConfigService.shared.config.writeRelays
         for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
             urls.append(extra)
@@ -70,6 +71,7 @@ extension NostrService {
                                let raw = try? JSONSerialization.data(withJSONObject: dict),
                                let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
                                event.kind == kind, event.pubkey == pubkey,
+                               dTag == nil || event.tags.contains(where: { $0.count >= 2 && $0[0] == "d" && $0[1] == dTag }),
                                let str = String(data: raw, encoding: .utf8),
                                NostrEventVerifier.isValid(json: str) {
                                 lock.lock()
@@ -90,7 +92,9 @@ extension NostrService {
                     client.$connectionState
                         .sink { state in
                             guard state == .connected else { return }
-                            let req = ["REQ", subId, ["kinds": [kind], "authors": [pubkey], "limit": 1]] as [Any]
+                            var filter: [String: Any] = ["kinds": [kind], "authors": [pubkey], "limit": 1]
+                            if let dTag { filter["#d"] = [dTag] }
+                            let req = ["REQ", subId, filter] as [Any]
                             if let data = try? JSONSerialization.data(withJSONObject: req),
                                let str = String(data: data, encoding: .utf8) {
                                 client.send(text: str)
