@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import com.nostrvault.ui.navigation.FloatingButtonRow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.ContactList
@@ -591,9 +592,10 @@ internal fun TrustWebContent(
         modifier: Modifier,
         clip: Boolean = true,
         overlayPadding: PaddingValues = PaddingValues(0.dp),
+        cardAsSidePanel: Boolean = false,
     ) {
         TrustWebViewGlobe(
-            modifier = modifier, clip = clip, overlayPadding = overlayPadding,
+            modifier = modifier, clip = clip, overlayPadding = overlayPadding, cardAsSidePanel = cardAsSidePanel,
             frame = frame, centerKey = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
             closeHaze = closeHaze, lite = lite, ringFaces = ringFaces, layerFaces = layerFaces, filterLit = filterLit,
             showingList = showingList, isWOTTab = isWOTTab, layer = layer, profiles = profiles, name = ::name,
@@ -610,8 +612,14 @@ internal fun TrustWebContent(
         // Full bleed, like the feed: space runs under the status bar and the
         // floating tab bar, and the bar's glass pills sit over it (iOS WOT bar).
         val counts = remember(myFollows, web, vouches) { TrustMap.layerCounts(me, myFollows, web, vouches) }
-        Box(Modifier.fillMaxSize()) {
-            globeArea(Modifier.fillMaxSize(), clip = false, overlayPadding = PaddingValues(bottom = bottomInset))
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val sidePanel = wotCardIsSidePanel(maxWidth)
+            globeArea(
+                Modifier.fillMaxSize(), clip = false, overlayPadding = PaddingValues(bottom = bottomInset),
+                cardAsSidePanel = sidePanel,
+            )
+            // The side-panel card owns the trailing edge; the bar centres in what is left.
+            Box(Modifier.fillMaxSize().padding(end = if (sidePanel) SIDE_PANEL_WIDTH else 0.dp)) {
             TrustWebViewWOTTabBar(
                 layer = layer,
                 vouches = vouches,
@@ -652,6 +660,7 @@ internal fun TrustWebContent(
                 filterNote = wotFilters.note,
                 liveArcs = liveArcs,
             )
+            }
             // My Web, where other tabs have Post; it steps aside for a card, the list or search.
             if (card == null && !searchFocused && !showingList) MyWebButton(
                 onClick = { closeCard(); myWebOpen = true },
@@ -741,6 +750,12 @@ private fun wotRebuiltAgo(feedService: com.nostrvault.service.FeedService): Stri
 
 /** Past this width (tablets) the globe takes the screen and the words move to a side panel. */
 private val WIDE_WIDTH = 760.dp
+
+/** Width of the docked trust card (iOS `AdaptiveLayout.sidePanelWidth`). */
+internal val SIDE_PANEL_WIDTH = 360.dp
+
+/** Room for a 360dp panel and a globe that is still the subject (iOS `cardIsSidePanel`, 900pt). */
+internal fun wotCardIsSidePanel(paneWidth: Dp): Boolean = paneWidth >= 900.dp
 
 /** Typing pauses this long before the relays are asked. */
 private const val SEARCH_DEBOUNCE_MS = 350L

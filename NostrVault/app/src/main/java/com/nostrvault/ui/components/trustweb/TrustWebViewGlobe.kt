@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -88,6 +89,8 @@ internal fun TrustWebViewGlobe(
     center: (String) -> Unit,
     /** Notes flying in as they reach the relay; null keeps the globe still (a post's globe, or the antenna off). */
     live: LiveArcsRequest? = null,
+    /** Wide WOT tab: the card docks down the trailing side instead of across the bottom. */
+    cardAsSidePanel: Boolean = false,
 ) {
     Box(if (clip) modifier.clipToBounds() else modifier) {
         TrustGlobe(
@@ -164,7 +167,8 @@ internal fun TrustWebViewGlobe(
                     if (blocked) feedService.unblockUser(shown) else { feedService.blockUser(shown); closeCard() }
                     blocked = !blocked
                 },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = if (cardAsSidePanel) Modifier.align(Alignment.TopEnd).width(SIDE_PANEL_WIDTH)
+                else Modifier.align(Alignment.BottomCenter),
             )
         }
         }
