@@ -31,67 +31,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         }
     }
 
-    fun DashboardViewModel.importNotes(context: android.content.Context) {
-        if (_isImporting.value) return
-        if (configStore.config.value.useExternalRelay) {
-            _importStatusMessage.value = com.nostrvault.service.EXTERNAL_RELAY_IMPORT_MESSAGE
-            return
-        }
-        _isImporting.value = true
-        _importProgress.value = 0f
-        _importStatusMessage.value = "Preparing import..."
-        _importCompleted.value = false
-
-        viewModelScope.launch {
-            try {
-                // Stop relay first
-                RelayForegroundService.stop(context)
-                delay(2000)
-
-                // Start in import mode
-                withContext(Dispatchers.IO) {
-                    val config = configStore.config.value
-                    val relayDataDir = java.io.File(context.filesDir, "relay_data")
-                    val envDict = com.nostrvault.relay.RelayConfiguration.generateEnvDictionary(
-                        config = config,
-                        relayDataDir = relayDataDir,
-                    )
-                    for ((key, value) in envDict) {
-                        com.nostrvault.relay.HavenBridge.setEnv(key, value)
-                    }
-                    com.nostrvault.relay.HavenBridge.startRelay(importMode = true)
-                }
-
-                // Poll for progress
-                val batch = com.nostrvault.relay.RelayLogParser.BatchedStateUpdate()
-                while (!batch.importCompleted && !batch.stopImporting) {
-                    val logLine = withContext(Dispatchers.IO) {
-                        com.nostrvault.relay.HavenBridge.getImportLog()
-                    }
-                    if (!logLine.isNullOrBlank()) {
-                        batch.importProgress = null
-                        batch.importStatusMessage = null
-                        com.nostrvault.relay.RelayLogParser.collectStateChanges(logLine, batch)
-                        batch.importProgress?.let { _importProgress.value = it.toFloat() }
-                        batch.importStatusMessage?.let { _importStatusMessage.value = it }
-                    }
-                    delay(200)
-                }
-
-                _importProgress.value = 1f
-                _importStatusMessage.value = "Import Complete!"
-                _importCompleted.value = true
-                vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_IMPORT)
-            } catch (e: Exception) {
-                _importStatusMessage.value = "Import failed: ${e.message}"
-                _importCompleted.value = true
-            } finally {
-                _isImporting.value = false
-                // Restart relay normally
-                RelayForegroundService.start(context)
-            }
-        }
-    }
+    fun DashboardViewModel.importNotes() { relayImportService.importNotes() }
 
     fun DashboardViewModel.exportJsonl(context: android.content.Context) {
         if (_isExportingJsonl.value || _isExportingMedia.value) return
@@ -188,11 +128,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.TAG
         }
     }
 
-    fun DashboardViewModel.dismissImport() {
-        _importCompleted.value = false
-        _importProgress.value = 0f
-        _importStatusMessage.value = ""
-    }
+    fun DashboardViewModel.dismissImport() { relayImportService.dismissImportProgress() }
 
     // ── Local relay notes ────────────────────────────────────────
 
