@@ -516,8 +516,10 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
             WalletCaption("Couldn't check your Nostr account for a saved wallet.")
             OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = false) }) { Text("Check again") }
         }
-        NwcBackup.Status.Empty -> if (current.isNotEmpty()) SaveSwitch(on = false) else {
-            WalletCaption("No wallet saved on your Nostr account.")
+        NwcBackup.Status.Empty -> {
+            if (current.isNotEmpty()) SaveSwitch(on = false) else WalletCaption("No wallet saved on your Nostr account.")
+            // One relay's answer decides "empty"; a slower one may still hold a wallet.
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = false) }, enabled = !busy) { Text("Check again") }
         }
         is NwcBackup.Status.Saved -> if (current.isEmpty()) {
             WalletCaption("Saved $day. It may have come from Nostr Vault on another device or from Wisp.")
