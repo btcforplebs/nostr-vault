@@ -211,10 +211,22 @@ final class RecipeFeedService: ObservableObject {
 
     // MARK: - Private
 
-    /// Relays to ask. Recipe authors are strangers, so the owner's own relay
-    /// has nothing to contribute here and is deliberately not queried.
+    /// zap.cooking's own feed relay: curated recipe posts, read-only, no login
+    /// needed (it sends an AUTH challenge that can be ignored). On 2026-10-17 it
+    /// answered this filter with 200 recipes from 65 authors; primal had 51
+    /// from 9. Logen wants the Recipes tab on it (Android ZAP_COOKING_RELAY).
+    static let zapCookingRelay = "wss://feed.zap.cooking"
+
+    /// Relays to ask: zap.cooking's, then the read relays, so the tab still
+    /// loads with no read relays set. Recipe authors are strangers, so the
+    /// owner's own relay has nothing to contribute and is not queried.
     private static var relayURLs: [URL] {
-        ConfigService.shared.config.readRelays.compactMap { URL(string: $0) }
+        relays(readRelays: ConfigService.shared.config.readRelays).compactMap { URL(string: $0) }
+    }
+
+    static func relays(readRelays: [String]) -> [String] {
+        let key = { (url: String) in url.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
+        return [zapCookingRelay] + readRelays.filter { key($0) != key(zapCookingRelay) }
     }
 
     private func handle(message: String, blocked: Set<String>) {

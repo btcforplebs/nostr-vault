@@ -95,6 +95,18 @@ class FeedService @Inject constructor(
          * relays tried. A quote in Logen's thread (Plural's, a2f86e95) was on
          * fountain.fm alone.
          */
+        /**
+         * zap.cooking's own feed relay: curated recipe posts, read-only, no
+         * login needed. On 2026-10-17 it answered the Recipes filter with 200
+         * recipes from 65 authors; primal had 51 from 9. Logen wants the
+         * Recipes tab to use it (iOS RecipeFeedService.zapCookingRelay).
+         */
+        internal const val ZAP_COOKING_RELAY = "wss://feed.zap.cooking"
+
+        /** [relays], plus [ZAP_COOKING_RELAY] when the feed is Recipes. */
+        internal fun relaysForMode(mode: FeedMode, relays: List<String>): List<String> =
+            if (mode == FeedMode.RECIPES) (relays + ZAP_COOKING_RELAY).distinct() else relays
+
         internal val FALLBACK_NOTE_RELAYS = listOf(
             "wss://nostr.wine",
             "wss://nostr.oxtr.dev",
