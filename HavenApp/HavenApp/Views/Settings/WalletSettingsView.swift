@@ -213,7 +213,12 @@ struct WalletSettingsView: View {
                     .foregroundColor(.secondary)
                 Button("Check again") { Task { await refreshBackupStatus(askSigner: false) } }
             case .empty:
-                if !currentWallet.isEmpty { saveToggle(isOn: false) }
+                if currentWallet.isEmpty {
+                    Text("No wallet saved on your Nostr account.")
+                        .foregroundColor(.secondary)
+                } else {
+                    saveToggle(isOn: false)
+                }
             case .saved(let uri, _):
                 if currentWallet.isEmpty {
                     Button {
@@ -230,14 +235,18 @@ struct WalletSettingsView: View {
                     .foregroundColor(.secondary)
                 Button("Load with signer") { Task { await refreshBackupStatus(askSigner: true) } }
                     .disabled(backupBusy)
+                replaceButton
             case .unreadable:
                 Text("A wallet is saved on your Nostr account (\(savedDay)), but this device can't read it.")
                     .foregroundColor(.secondary)
-            }
-            if backupStatus.hasSlot {
-                Button("Remove from my account", role: .destructive) { runBackupAction(save: false) }
+                Button("Try again") { Task { await refreshBackupStatus(askSigner: true) } }
                     .disabled(backupBusy)
+                replaceButton
             }
+            // Always offered: removing needs no proof a wallet is saved, and
+            // is harmless when none is.
+            Button("Remove from my account", role: .destructive) { runBackupAction(save: false) }
+                .disabled(backupBusy)
         } header: {
             HStack {
                 Text("Your Nostr account")
@@ -258,6 +267,16 @@ struct WalletSettingsView: View {
                     Text(backupError).foregroundColor(.red)
                 }
             }
+        }
+    }
+
+    /// Saving needs no read: with a wallet in use, a slot this device can't
+    /// read can still be replaced by it.
+    @ViewBuilder
+    private var replaceButton: some View {
+        if !currentWallet.isEmpty {
+            Button("Save this wallet instead") { runBackupAction(save: true) }
+                .disabled(backupBusy)
         }
     }
 

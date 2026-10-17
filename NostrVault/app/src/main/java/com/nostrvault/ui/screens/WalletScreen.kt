@@ -495,6 +495,14 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
         }
     }
 
+    /** Saving needs no read: a slot this device can't read can still be replaced by the wallet in use. */
+    @Composable
+    fun ReplaceButton() {
+        if (current.isNotEmpty()) {
+            OutlinedButton(onClick = { viewModel.setSaveToAccount(true) }, enabled = !busy) { Text("Save this wallet instead") }
+        }
+    }
+
     Spacer(Modifier.height(12.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         WalletSectionLabel("Your Nostr account")
@@ -508,7 +516,9 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
             WalletCaption("Couldn't check your Nostr account for a saved wallet.")
             OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = false) }) { Text("Check again") }
         }
-        NwcBackup.Status.Empty -> if (current.isNotEmpty()) SaveSwitch(on = false)
+        NwcBackup.Status.Empty -> if (current.isNotEmpty()) SaveSwitch(on = false) else {
+            WalletCaption("No wallet saved on your Nostr account.")
+        }
         is NwcBackup.Status.Saved -> if (current.isEmpty()) {
             WalletCaption("Saved $day. It may have come from Nostr Vault on another device or from Wisp.")
             OutlinedButton(onClick = viewModel::useSavedWallet) { Text("Use saved wallet") }
@@ -519,14 +529,17 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
         is NwcBackup.Status.NeedsSigner -> {
             WalletCaption("A wallet is saved on your Nostr account ($day). Your signer has to open it.")
             OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = true) }, enabled = !busy) { Text("Load with signer") }
+            ReplaceButton()
         }
-        is NwcBackup.Status.Unreadable ->
+        is NwcBackup.Status.Unreadable -> {
             WalletCaption("A wallet is saved on your Nostr account ($day), but this device can't read it.")
-    }
-    if (status.hasSlot) {
-        TextButton(onClick = { viewModel.setSaveToAccount(false) }, enabled = !busy) {
-            Text("Remove from my account", color = MaterialTheme.colorScheme.error)
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = true) }, enabled = !busy) { Text("Try again") }
+            ReplaceButton()
         }
+    }
+    // Always offered: removing needs no proof a wallet is saved, and is harmless when none is.
+    TextButton(onClick = { viewModel.setSaveToAccount(false) }, enabled = !busy) {
+        Text("Remove from my account", color = MaterialTheme.colorScheme.error)
     }
     WalletCaption("Stored encrypted to your key (NIP-44) on your relays, so Nostr Vault on your other devices, or Wisp, can use it. Anyone who has your key can read it and spend from this wallet.")
     error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }

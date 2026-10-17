@@ -60,9 +60,13 @@ object NwcBackup {
      * saved" while the secret may still be on the relays. iOS `NWCBackup.Status`.
      */
     sealed class Status {
-        /** No relay answered fully: can't say either way. */
+        /** No relay answered: can't say either way. */
         data object Unknown : Status()
-        /** Every relay asked answered, and there is no wallet (or it was removed). */
+        /**
+         * A relay answered and had no wallet, or the wallet was removed. (One
+         * that never answers, such as a Mac relay that is off, can't keep the
+         * screen from deciding.)
+         */
         data object Empty : Status()
         class Saved(val uri: String, override val savedAt: Long) : Status() {
             override fun equals(other: Any?) = other is Saved && other.uri == uri && other.savedAt == savedAt
@@ -95,9 +99,13 @@ object NwcBackup {
     /** One found slot: the newest event's content, tags and time. */
     data class Slot(val content: String, val tags: List<List<String>>, val createdAt: Long)
 
-    /** The status for a lookup: [slot] is the newest event found (null when none). */
-    fun status(slot: Slot?, confirmedNone: Boolean, read: Read): Status {
-        if (slot == null) return if (confirmedNone) Status.Empty else Status.Unknown
+    /**
+     * The status for a lookup: [slot] is the newest event found (null when
+     * none), [answeredAny] whether at least one relay answered the request
+     * (EOSE). A refusal such as `CLOSED: auth-required` is not an answer.
+     */
+    fun status(slot: Slot?, answeredAny: Boolean, read: Read): Status {
+        if (slot == null) return if (answeredAny) Status.Empty else Status.Unknown
         if (isCleared(slot.content, slot.tags)) return Status.Empty
         return when (read) {
             Read.NotTried -> Status.NeedsSigner(slot.createdAt)

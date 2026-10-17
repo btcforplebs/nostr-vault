@@ -63,9 +63,11 @@ enum NWCBackup {
     /// not be) read is its own state, so the screen never claims "not saved"
     /// while the secret may still be on the relays.
     enum Status: Equatable, CustomStringConvertible, CustomDebugStringConvertible {
-        /// No relay answered fully: can't say either way.
+        /// No relay answered: can't say either way.
         case unknown
-        /// Every relay asked answered, and there is no wallet (or it was removed).
+        /// A relay answered and had no wallet, or the wallet was removed.
+        /// (One that never answers, such as a Mac relay that is off, can't
+        /// keep the screen from deciding.)
         case empty
         case saved(uri: String, savedAt: Int64)
         /// A wallet is saved; reading it needs the signer (bunker or Amber),
@@ -112,10 +114,11 @@ enum NWCBackup {
     }
 
     /// The status for a lookup: `slot` is the newest event found (nil when
-    /// none), `confirmedNone` whether every relay asked answered without one.
+    /// none), `answeredAny` whether at least one relay answered the request
+    /// (EOSE). A refusal such as `CLOSED: auth-required` is not an answer.
     static func status(slot: (content: String, tags: [[String]], createdAt: Int64)?,
-                       confirmedNone: Bool, read: Read) -> Status {
-        guard let slot else { return confirmedNone ? .empty : .unknown }
+                       answeredAny: Bool, read: Read) -> Status {
+        guard let slot else { return answeredAny ? .empty : .unknown }
         if isCleared(content: slot.content, tags: slot.tags) { return .empty }
         switch read {
         case .notTried: return .needsSigner(savedAt: slot.createdAt)

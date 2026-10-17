@@ -35,9 +35,9 @@ class NwcBackupService @Inject constructor(
         val alsoAsk = config.writeRelays + config.readRelays + nostrService.outboxRelays.value[account].orEmpty()
         val lookup = nostrService.lookupNewestReplaceable(NwcBackup.KIND, account, alsoAsk, dTag = NwcBackup.D_TAG)
         val event = lookup.event?.takeIf { NwcBackup.isBackup(it.kind, it.tags) }
-            ?: return NwcBackup.status(null, lookup.confirmedNone, NwcBackup.Read.NotTried)
+            ?: return NwcBackup.status(null, lookup.answered > 0, NwcBackup.Read.NotTried)
         val slot = NwcBackup.Slot(event.content, event.tags, event.createdAt)
-        if (NwcBackup.isCleared(event.content, event.tags)) return NwcBackup.status(slot, false, NwcBackup.Read.NotTried)
+        if (NwcBackup.isCleared(event.content, event.tags)) return NwcBackup.status(slot, true, NwcBackup.Read.NotTried)
         // Only the account that is still active can decrypt its own slot.
         if (nostrService.activeHexPubkey != account) return NwcBackup.Status.Unknown
         val mode = configStore.config.value.activeSigningMode()
@@ -48,7 +48,7 @@ class NwcBackupService @Inject constructor(
                 // Amber without a standing grant: not a failure, it just needs the tap.
                 ?: if (mode == "amber" && !askSigner) NwcBackup.Read.NotTried else NwcBackup.Read.Failed
         }
-        return NwcBackup.status(slot, false, read)
+        return NwcBackup.status(slot, true, read)
     }
 
     /**
@@ -58,6 +58,8 @@ class NwcBackupService @Inject constructor(
     suspend fun save(uri: String, lock: PostingAccount.Lock): String? {
         val plaintext = NwcBackup.plaintextForSaving(uri) ?: return "That isn't a nostr+walletconnect:// link."
         if (lock.hex.isEmpty() || nostrService.activeHexPubkey != lock.hex) return ACCOUNT_CHANGED
+        val mode = configStore.config.value.activeSigningMode()
+        if (mode != "amber" && mode != "nip46" && nostrService.resolveSecretKey(forceOwner = false) == null) return NO_KEY
         val encrypted = encryptToSelf(plaintext, lock.hex) ?: return "Couldn't encrypt the wallet. Nothing was saved."
         // Never publish anything that is not ciphertext.
         if (!NwcBackup.isCiphertext(encrypted)) return "Couldn't encrypt the wallet. Nothing was saved."
@@ -127,5 +129,6 @@ class NwcBackupService @Inject constructor(
 
     private companion object {
         const val ACCOUNT_CHANGED = "The account changed. Nothing was published; check again."
+        const val NO_KEY = "This account has no key on this device to encrypt with."
     }
 }

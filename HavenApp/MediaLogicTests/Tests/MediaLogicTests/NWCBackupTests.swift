@@ -51,33 +51,36 @@ final class NWCBackupTests: XCTestCase {
 
     private let slot = (content: "AgV0ciphertext", tags: [["d", "nwc-wallet-backup"]], createdAt: Int64(1_792_000_000))
 
-    func testNoAnswerIsUnknownNotEmpty() {
-        XCTAssertEqual(NWCBackup.status(slot: nil, confirmedNone: false, read: .notTried), .unknown)
-        XCTAssertEqual(NWCBackup.status(slot: nil, confirmedNone: true, read: .notTried), .empty)
+    /// Only a relay's answer can say "nothing saved"; with none it stays unknown.
+    /// One answer is enough, so a relay that never answers (a Mac relay that
+    /// is off, an AUTH-gated one) can't hold the screen at "Couldn't check".
+    func testNoAnswerIsUnknownOneAnswerIsEmpty() {
+        XCTAssertEqual(NWCBackup.status(slot: nil, answeredAny: false, read: .notTried), .unknown)
+        XCTAssertEqual(NWCBackup.status(slot: nil, answeredAny: true, read: .notTried), .empty)
     }
 
     func testClearedSlotIsEmpty() {
         let cleared = (content: "", tags: NWCBackup.clearedTags, createdAt: Int64(1))
-        XCTAssertEqual(NWCBackup.status(slot: cleared, confirmedNone: false, read: .notTried), .empty)
+        XCTAssertEqual(NWCBackup.status(slot: cleared, answeredAny: true, read: .notTried), .empty)
     }
 
     /// A slot that exists but wasn't or couldn't be read still has a wallet
     /// in it, so the screen offers Remove and never shows "off".
     func testUnreadSlotStillHasAWallet() {
-        let pending = NWCBackup.status(slot: slot, confirmedNone: false, read: .notTried)
+        let pending = NWCBackup.status(slot: slot, answeredAny: true, read: .notTried)
         XCTAssertEqual(pending, .needsSigner(savedAt: 1_792_000_000))
         XCTAssertTrue(pending.hasSlot)
-        let failed = NWCBackup.status(slot: slot, confirmedNone: false, read: .failed)
+        let failed = NWCBackup.status(slot: slot, answeredAny: true, read: .failed)
         XCTAssertEqual(failed, .unreadable(savedAt: 1_792_000_000))
         XCTAssertTrue(failed.hasSlot)
-        XCTAssertEqual(NWCBackup.status(slot: slot, confirmedNone: false, read: .plaintext("not a wallet")),
+        XCTAssertEqual(NWCBackup.status(slot: slot, answeredAny: true, read: .plaintext("not a wallet")),
                        .unreadable(savedAt: 1_792_000_000))
         XCTAssertFalse(NWCBackup.Status.unknown.hasSlot)
         XCTAssertFalse(NWCBackup.Status.empty.hasSlot)
     }
 
     func testReadSlotIsSaved() {
-        XCTAssertEqual(NWCBackup.status(slot: slot, confirmedNone: false, read: .plaintext(" \(uri)\n")),
+        XCTAssertEqual(NWCBackup.status(slot: slot, answeredAny: true, read: .plaintext(" \(uri)\n")),
                        .saved(uri: uri, savedAt: 1_792_000_000))
     }
 

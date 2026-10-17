@@ -33,11 +33,11 @@ enum NWCBackupService {
         let lookup = await nostrService.lookupNewestReplaceable(
             kind: NWCBackup.kind, for: account, alsoAsk: config.readRelays, dTag: NWCBackup.dTag)
         guard let event = lookup.event, NWCBackup.isBackup(kind: event.kind, tags: event.tags) else {
-            return NWCBackup.status(slot: nil, confirmedNone: lookup.confirmedNone, read: .notTried)
+            return NWCBackup.status(slot: nil, answeredAny: lookup.answered > 0, read: .notTried)
         }
         let slot = (content: event.content, tags: event.tags, createdAt: event.created_at)
         if NWCBackup.isCleared(content: event.content, tags: event.tags) {
-            return NWCBackup.status(slot: slot, confirmedNone: false, read: .notTried)
+            return NWCBackup.status(slot: slot, answeredAny: true, read: .notTried)
         }
         // Only the account that is still active can decrypt its own slot.
         guard nostrService.activeHexPubkey == account else { return .unknown }
@@ -49,7 +49,7 @@ enum NWCBackupService {
         } else {
             read = .failed
         }
-        return NWCBackup.status(slot: slot, confirmedNone: false, read: read)
+        return NWCBackup.status(slot: slot, answeredAny: true, read: read)
     }
 
     /// Publishes `uri`, encrypted to the locked account's own key. Refuses if
