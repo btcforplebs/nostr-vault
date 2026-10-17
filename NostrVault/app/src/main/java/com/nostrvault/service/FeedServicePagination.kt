@@ -43,7 +43,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
             // reaches follows who publish to feed/blastr relays.
             addAll(config.activeFeedRelays)
             addAll(config.activeBlastrRelays)
-        }.distinct()
+        }.distinct().let { FeedService.relaysForMode(mode, it) }
 
         scope.launch(Dispatchers.IO) {
             val subId = "feed-hist-${UUID.randomUUID().toString().take(8)}"

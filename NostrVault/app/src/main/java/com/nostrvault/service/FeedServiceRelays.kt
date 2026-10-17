@@ -22,7 +22,7 @@ import kotlinx.serialization.json.*
             // follows who post elsewhere actually appear in the feed.
             addAll(config.readRelays)
             addAll(config.writeRelays)
-        }.distinct()
+        }.distinct().let { FeedService.relaysForMode(_feedMode.value, it) }
     }
 
     /**
