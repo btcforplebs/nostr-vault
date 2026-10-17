@@ -305,7 +305,7 @@ internal fun VaultDashboardContent(
                     title = "Import",
                     isLoading = isImporting,
                     enabled = !isImporting && actionsEnabled,
-                    onClick = { vaultViewModel.importNotes(context) },
+                    onClick = { vaultViewModel.importNotes() },
                 )
             }
             DashDivider()

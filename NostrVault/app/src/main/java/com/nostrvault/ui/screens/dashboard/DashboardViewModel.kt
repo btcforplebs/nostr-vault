@@ -140,17 +140,13 @@ class DashboardViewModel @Inject constructor(
 
     // ── Import/Export state ──────────────────────────────────────
 
-    internal val _isImporting = MutableStateFlow(false)
-    val isImporting = _isImporting.asStateFlow()
-
-    internal val _importProgress = MutableStateFlow(0f)
-    val importProgress = _importProgress.asStateFlow()
-
-    internal val _importStatusMessage = MutableStateFlow("")
-    val importStatusMessage = _importStatusMessage.asStateFlow()
-
-    internal val _importCompleted = MutableStateFlow(false)
-    val importCompleted = _importCompleted.asStateFlow()
+    // The one import path: RelayImportService runs it (Settings and the setup tour
+    // use it too), so every entry point gets the foreground service, the relay
+    // list files and the export guard. iOS: relayManager.importNotes.
+    val isImporting = relayImportService.isImporting
+    val importProgress = relayImportService.importProgress
+    val importStatusMessage = relayImportService.importStatusMessage
+    val importCompleted = relayImportService.importCompleted
 
     internal val _isExportingJsonl = MutableStateFlow(false)
     val isExportingJsonl = _isExportingJsonl.asStateFlow()
