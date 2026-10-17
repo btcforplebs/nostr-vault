@@ -52,4 +52,11 @@ class MarketplaceTrustFiltersTest {
         assertEquals(follows, authors(f[0]))
         assertTrue(f[0].toString().contains("\"limit\":200"))
     }
+
+    /** Conduit's marketplace relay is asked (Logen, 2026-10-17), once. */
+    @Test
+    fun `marketplace asks conduit's relay`() {
+        assertTrue("wss://relay.conduit.market" in MarketplaceFeedService.RELAYS)
+        assertEquals(MarketplaceFeedService.RELAYS.distinct(), MarketplaceFeedService.RELAYS)
+    }
 }
