@@ -80,11 +80,7 @@ internal fun TrustWebContent(
     var haze by remember { mutableStateOf(emptyList<String>()) }
     // Per person, so re-centering mid-load neither blocks nor mislabels the
     // next person's globe.
-    var loadingMore by remember { mutableStateOf(emptySet<String>()) }
-    var lookingDeeper by remember { mutableStateOf(emptySet<String>()) }
     // No relay answered: offer a retry instead of a final answer.
-    var failed by remember { mutableStateOf(emptySet<String>()) }
-    var deeperFailed by remember { mutableStateOf(emptySet<String>()) }
     var showingList by remember { mutableStateOf(false) }
     var myWebOpen by remember { mutableStateOf(false) }
     /** Your whole trust graph, for the search's "In your web" tag. */
@@ -317,58 +313,6 @@ internal fun TrustWebContent(
         if (pubkey == me || pubkey == card) closeCard() else openCard(pubkey)
     }
 
-    /**
-     * "Show everyone": batches of 20 lists until no relay has more, lighting
-     * stars as each batch lands. Stops at [TrustMap.MAX_BATCHED_LISTS] a tap.
-     */
-    fun showEveryone() {
-        val key = frame?.center ?: return
-        if (key in loadingMore) return
-        loadingMore = loadingMore + key
-        failed = failed - key
-        scope.launch {
-            var fetched = 0
-            while (true) {
-                val current = frames[key] ?: break
-                if (current.exhausted || fetched >= TrustMap.MAX_BATCHED_LISTS) break
-                val lists: List<ContactList>? = trust.moreBridgeLists(author, current.ring, current.seen)
-                if (lists == null) {
-                    failed = failed + key
-                    break
-                }
-                val latest = frames[key] ?: break
-                fetched += lists.size
-                val fresh = TrustPath.allBridges(author, key, current.ringSet, lists)
-                frames = frames + (key to latest.copy(
-                    seen = latest.seen + lists.map { it.pubkey },
-                    bridges = (latest.bridges + fresh).distinct().sorted(),
-                    exhausted = lists.isEmpty(),
-                ))
-            }
-            frames[key]?.bridges?.let { nostrService.fetchMissingProfiles(TrustMap.spread(it, MAX_FACES)) }
-            loadingMore = loadingMore - key
-        }
-    }
-
-    fun lookDeeper() {
-        val start = frames[crumbs.last()] ?: return
-        val key = start.center
-        if (key in lookingDeeper) return
-        lookingDeeper = lookingDeeper + key
-        deeperFailed = deeperFailed - key
-        scope.launch {
-            val graph = if (key == me) trust.myTrustGraph() else emptySet()
-            val chains = trust.deeperChains(author, key, start.ring, graph)
-            if (chains != null) {
-                frames[key]?.let { frames = frames + (key to it.copy(chains = chains)) }
-                nostrService.fetchMissingProfiles(chains.take(TrustMap.SHOWN_CHAINS).flatMap { listOf(it.bridge, it.via) })
-            } else {
-                deeperFailed = deeperFailed + key
-            }
-            lookingDeeper = lookingDeeper - key
-        }
-    }
-
     fun openProfile(pubkey: String) {
         showingList = false
         onProfileClick?.invoke(pubkey)
@@ -563,28 +507,9 @@ internal fun TrustWebContent(
         }
     }
 
-    val explainer = explainer(frame, me, author, centerKey, ::name, myFollows,
-        lookingDeeper = frame?.center in lookingDeeper, deeperFailed = frame?.center in deeperFailed, accent = accent,
-        noFollows = rootRingEmpty && !followsPending)
-
     @Composable
     fun crumbRow(modifier: Modifier) {
         TrustWebViewBreadcrumbs(modifier, crumbs, centerKey, author, profiles, accent, ::name, ::jump)
-    }
-
-    @Composable
-    fun legend() {
-        TrustWebLegend(frame, me, author, accent, ::name)
-    }
-
-    @Composable
-    fun actions() {
-        TrustWebActions(
-            frame = frame, author = author, centerKey = centerKey, me = me, deeperFailed = deeperFailed,
-            lookingDeeper = lookingDeeper, loadingMore = loadingMore, failed = failed, accent = accent, name = ::name,
-            onProfileClick = onProfileClick, lookDeeper = ::lookDeeper, showEveryone = ::showEveryone,
-            openProfile = ::openProfile,
-        )
     }
 
     @Composable
@@ -686,34 +611,11 @@ internal fun TrustWebContent(
             onList = { showingList = true },
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            if (maxWidth >= WIDE_WIDTH) {
-                // Tablets: the globe takes the screen and the words move to a side panel.
-                Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
-                        globeArea(Modifier.fillMaxSize())
-                        crumbRow(Modifier.align(Alignment.TopStart).padding(top = 12.dp))
-                    }
-                    TrustWebSidePanel(
-                        author = author, profiles = profiles, centerKey = centerKey, me = me, name = ::name,
-                        explainer = explainer, frame = frame, tapped = ::tapped,
-                        legend = { legend() }, actions = { actions() },
-                    )
-                }
-            } else {
-                Column(Modifier.fillMaxSize()) {
-                    crumbRow(Modifier.padding(top = 8.dp))
-                    globeArea(Modifier.weight(1f).fillMaxWidth())
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
-                    ) {
-                        Text(explainer, color = PrimaryText.copy(alpha = 0.85f), fontSize = 14.sp)
-                        legend()
-                        actions()
-                    }
-                }
-            }
+        // A post's globe: the trust card does the explaining, as in the WOT tab,
+        // so there are no words, legend or buttons under the globe (iOS).
+        Column(Modifier.fillMaxSize()) {
+            crumbRow(Modifier.padding(top = 8.dp))
+            globeArea(Modifier.weight(1f).fillMaxWidth())
         }
         }
     }
@@ -747,9 +649,6 @@ private fun wotRebuiltAgo(feedService: com.nostrvault.service.FeedService): Stri
         modified, now, android.text.format.DateUtils.MINUTE_IN_MILLIS,
     ).toString()
 }
-
-/** Past this width (tablets) the globe takes the screen and the words move to a side panel. */
-private val WIDE_WIDTH = 760.dp
 
 /** Width of the docked trust card (iOS `AdaptiveLayout.sidePanelWidth`). */
 internal val SIDE_PANEL_WIDTH = 360.dp
