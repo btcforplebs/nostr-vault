@@ -26,14 +26,11 @@ internal fun NavGraphBuilder.vaultRoutes(
     // ── Vault ─────────────────────────────────────────────
     composable(Screen.Dashboard.route) {
         VaultBack(feedService)
+        NoteSplitPane(navController, "Pick a note from the relay to read it here.") { open ->
         VaultTabScreen(
             onNavigate = { screen -> navController.navigate(screen.route) },
-            onNoteClick = { noteId ->
-                navController.navigate(Screen.NoteDetail.createRoute(noteId))
-            },
-            onArticleClick = { noteId ->
-                navController.navigate(Screen.ArticleReader.createRoute(noteId))
-            },
+            onNoteClick = open.note,
+            onArticleClick = open.article,
             onProfileClick = { pubkey ->
                 navController.navigate(Screen.Profile.createRoute(pubkey))
             },
@@ -44,6 +41,7 @@ internal fun NavGraphBuilder.vaultRoutes(
             feedService = feedService,
             unreadDMs = unreadDMs,
         )
+        }
     }
 
     composable(Screen.RelayActivity.route) {
