@@ -417,7 +417,11 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
             sendAuxiliarySubscriptions(relayUrl)
         }
 
-        // Flush accumulated notes
+        // Once the feed has loaded, every later EOSE (mentions, reactions,
+        // zaps, older pages) lands here too. Forcing a flush on each rebuilt
+        // the feed in a burst after every reconcile; the flush timer covers
+        // them. Same as iOS.
+        if (!flushesOnEose(subId, primaryFeedSubId(), _isLoadingFeed.value, _isSyncing.value)) return
         scope.launch {
             delay(100)
             flushAccumulator()
@@ -460,3 +464,11 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
 internal val OWN_SERVICE_MODES = setOf(
     FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS,
 )
+
+/**
+ * Whether an EOSE finishes the feed's load: the primary sub's, or any while a
+ * load or sync is still in progress. Later EOSEs from auxiliary subs and older
+ * pages leave the flush to the timer.
+ */
+internal fun flushesOnEose(subId: String, primarySubId: String, loading: Boolean, syncing: Boolean): Boolean =
+    subId == primarySubId || loading || syncing
