@@ -72,6 +72,43 @@ final class GlobeStormTests: XCTestCase {
         XCTAssertEqual(closes, [#"["CLOSE","arcs-abcd1234"]"#])
     }
 
+    /// Two links share a socket, and a CLOSEd subscription's answers can
+    /// still come in after the app comes back: each link reads only its own,
+    /// or a backlog flies through the new link as a burst.
+    func testALinkReadsOnlyItsOwnSubscriptionsAnswers() {
+        let event = #"{"id":"\#(key(1))","pubkey":"\#(key(2))","kind":1,"created_at":1,"tags":[],"content":"hi","sig":""}"#
+        let filters: [[String: Any]] = (0..<4).map { n in ["kinds": [1], "authors": (0..<500).map { key($0 + n * 500) }] }
+        let requests = GlobeArcs.requests(filters, subId: "arcs-abcd1234")
+        let ids = GlobeArcs.subscriptions(of: requests)
+        XCTAssertEqual(ids.count, requests.count)
+        for id in ids {
+            XCTAssertEqual(GlobeArcs.event(in: #"["EVENT","\#(id)",\#(event)]"#, ids: ids)?["id"] as? String, key(1))
+        }
+        // Another link's, an old CLOSEd one's, the feed's, and not an EVENT.
+        XCTAssertNil(GlobeArcs.event(in: #"["EVENT","arcs-ffff0000",\#(event)]"#, ids: ids))
+        XCTAssertNil(GlobeArcs.event(in: #"["EVENT","feed-x",\#(event)]"#, ids: ids))
+        XCTAssertNil(GlobeArcs.event(in: #"["EOSE","\#(ids.first!)"]"#, ids: ids))
+        XCTAssertNil(GlobeArcs.event(in: "", ids: ids))
+        // A feed REQ is no sub id of the globe's.
+        XCTAssertEqual(GlobeArcs.subscriptions(of: [#"["CLOSE","arcs-1"]"#]), [])
+    }
+
+    /// A reconnect, or the app coming back, asks from then: what was missed
+    /// meanwhile never replays as a burst of stars.
+    func testAskingAgainAsksFromNowAndKeepsTheRestOfEachFilter() {
+        let storm = GlobeArcs.storm(rings: [.following], show: .init(), follows: (0..<3).map(key), since: 100)
+        let toMe: [String: Any] = ["kinds": [1], "since": 100, "#p": [me]]
+        let again = GlobeArcs.filters(storm + [toMe], since: 5_000)
+        XCTAssertEqual(again.count, storm.count + 1)
+        for filter in again { XCTAssertEqual(filter["since"] as? Int, 5_000) }
+        XCTAssertEqual(again[0]["authors"] as? [String], (0..<3).map(key).sorted())
+        XCTAssertEqual(again.last?["#p"] as? [String], [me])
+        // The ids stay put, so CLOSE still ends what was sent.
+        let first = GlobeArcs.requests(storm, subId: "arcs-abcd1234")
+        let later = GlobeArcs.requests(GlobeArcs.filters(storm, since: 1_800_000_000), subId: "arcs-abcd1234")
+        XCTAssertEqual(GlobeArcs.subscriptions(of: first), GlobeArcs.subscriptions(of: later))
+    }
+
     // MARK: What the globe asks each relay for
 
     func testDiscoverAndGlobalAreOneAuthorlessFilterSoTheWholeWebFits() {

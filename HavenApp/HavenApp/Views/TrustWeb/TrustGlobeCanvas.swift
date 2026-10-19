@@ -174,11 +174,13 @@ struct TrustGlobeCanvas: View {
         }
         .onDisappear { onScreen = false }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
-        .task(id: liveArcs && liveArcsOn ? LiveRequest(rings: rings, show: show) : nil) {
-            // Listens while the switch is on and the globe is on screen; leaving
-            // the tab cancels this, and coming back starts it again. A feed or
-            // sort switched in My Web reopens it asking for just those.
-            guard liveArcs && liveArcsOn else { return }
+        .task(id: liveArcs && liveArcsOn && appIsActive ? LiveRequest(rings: rings, show: show) : nil) {
+            // Listens while the switch is on, the globe is on screen and the
+            // app is in front; leaving the tab or the app cancels this, and
+            // coming back starts it again, asking from then: what arrived
+            // meanwhile never flies as a burst (Android stops on pause too).
+            // A feed or sort switched in My Web reopens it asking for just those.
+            guard liveArcs && liveArcsOn && appIsActive else { return }
             scene.setLiveArcs(true)
             let token = arrivals.start(me: me, rings: rings, show: show)
             while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
