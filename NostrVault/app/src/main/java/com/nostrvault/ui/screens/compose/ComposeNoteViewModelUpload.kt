@@ -56,16 +56,30 @@ import com.nostrvault.ui.screens.ComposeNoteViewModel.AttachmentUploadResult
                 val inputStream = context.contentResolver.openInputStream(attachment.uri)
                     ?: return@withContext notSaved
 
-                val tempFile = File.createTempFile("upload_", ".tmp", context.cacheDir)
+                var tempFile = File.createTempFile("upload_", ".tmp", context.cacheDir)
                 tempFile.outputStream().use { output ->
                     inputStream.use { input ->
                         input.copyTo(output)
                     }
                 }
 
+                // HEIC becomes JPEG (the re-encode also drops its location);
+                // anything else keeps its bytes.
+                var mimeType = attachment.mimeType
+                if (isHeic(mimeType)) {
+                    val jpeg = File.createTempFile("upload_", ".jpg", context.cacheDir)
+                    if (convertHeicToJpeg(tempFile, jpeg)) {
+                        tempFile.delete()
+                        tempFile = jpeg
+                        mimeType = JPEG_MIME
+                    } else {
+                        jpeg.delete()
+                    }
+                }
+
                 // The location comes out before the hash: the blob is public
                 // once uploaded (iOS #335).
-                if (!MediaPrivacy.removeLocation(tempFile, attachment.mimeType)) {
+                if (!MediaPrivacy.removeLocation(tempFile, mimeType)) {
                     tempFile.delete()
                     return@withContext AttachmentUploadResult.Failed(MediaPrivacy.FAILURE_MESSAGE)
                 }
@@ -81,7 +95,7 @@ import com.nostrvault.ui.screens.ComposeNoteViewModel.AttachmentUploadResult
                 val outcome = blossomService.uploadForPost(
                     fileURL = tempFile,
                     sha256 = sha256,
-                    contentType = attachment.mimeType,
+                    contentType = mimeType,
                     skipOutsideServers = unreachableServers.isNotEmpty(),
                     onProgress = { progress ->
                         viewModelScope.launch(Dispatchers.Main) {
@@ -111,7 +125,7 @@ import com.nostrvault.ui.screens.ComposeNoteViewModel.AttachmentUploadResult
                 uploaded.add(
                     QueuedMediaPost.Media(
                         sha256 = sha256,
-                        mimeType = attachment.mimeType,
+                        mimeType = mimeType,
                         url = url,
                         pixelWidth = pixelSize?.first,
                         pixelHeight = pixelSize?.second,
