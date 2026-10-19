@@ -43,8 +43,10 @@ internal fun ArticleBody(
     onCommentHighlight: (ArticleHighlight) -> Unit,
     tally: ArticleTally,
     onOpenComment: (ArticleEngagementEvent) -> Unit,
+    gatedArticles: com.nostrvault.service.GatedArticleService? = null,
     modifier: Modifier = Modifier,
 ) {
+    val gated = remember(note.id, note.tags) { com.nostrvault.data.model.GatedArticle.from(note) }
     val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
     val readMinutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
     val blocks = remember(note.content) { ArticleEngagement.blocks(note.content) }
@@ -78,7 +80,8 @@ internal fun ArticleBody(
                 append(author?.bestName ?: note.pubkey.take(8))
                 append(" · ")
                 append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(meta.publishedAt))
-                readMinutes?.let { append(" · $it min read") }
+                if (gated != null) append(" · 🔒 ${gated.priceSats} sats")
+                else readMinutes?.let { append(" · $it min read") }
             },
             color = SecondaryText,
             fontSize = 13.sp,
@@ -92,7 +95,9 @@ internal fun ArticleBody(
         actions()
         Spacer(Modifier.height(20.dp))
         val bodyStyle = TextStyle(color = PrimaryText, fontSize = 16.sp, lineHeight = 24.sp)
-        if (onHighlightBlock == null && placed.isEmpty()) {
+        if (gated != null && gatedArticles != null) {
+            GatedArticleBody(note, gated, gatedArticles, author, bodyStyle)
+        } else if (onHighlightBlock == null && placed.isEmpty()) {
             MarkdownText(
                 markdown = note.content,
                 style = bodyStyle,

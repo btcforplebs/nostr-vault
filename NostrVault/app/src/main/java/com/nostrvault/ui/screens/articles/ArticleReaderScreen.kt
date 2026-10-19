@@ -120,6 +120,7 @@ fun ArticleReaderScreen(
                 onCommentHighlight = commentOnHighlight,
                 tally = tally,
                 onOpenComment = { onNoteClick(viewModel.prepareOpen(it)) },
+                gatedArticles = viewModel.gatedArticles,
                 modifier = Modifier
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
