@@ -17,7 +17,8 @@
     file       nostrvault_config.json  (nwcURI, bunker secret + clientSecretKey, s3SecretKey)
     file       relay_data/             (relay DB incl. private DMs, Blossom media)
 -->
-<full-backup-content>
+<full-backup-content xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="FullBackupContent">
     <!-- Settings that hold no secret -->
     <include domain="sharedpref" path="pow_preferences.xml" />
     <include domain="sharedpref" path="reels_preferences.xml" />
@@ -29,7 +30,8 @@
     <include domain="file" path="drafts.json" />
 
     <!-- Belt and braces: even if someone later adds a broad include, these
-         stay out. -->
+         stay out. Lint flags them as redundant (not under an include); the
+         tools:ignore on the root keeps them on purpose. -->
     <exclude domain="sharedpref" path="nostrvault_credentials.xml" />
     <exclude domain="file" path="nostrvault_config.json" />
     <exclude domain="file" path="relay_data" />
