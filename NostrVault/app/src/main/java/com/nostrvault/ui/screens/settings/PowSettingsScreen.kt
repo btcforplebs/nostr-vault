@@ -160,7 +160,7 @@ private fun PowSection(
                 value = difficulty.toFloat(),
                 onValueChange = { onDifficultyChange(it.toInt()) },
                 valueRange = PowPreferences.MIN_DIFFICULTY.toFloat()..PowPreferences.MAX_DIFFICULTY.toFloat(),
-                steps = (PowPreferences.MAX_DIFFICULTY - PowPreferences.MIN_DIFFICULTY) / 2 - 1,
+                steps = PowPreferences.SLIDER_STEPS,
                 colors = SliderDefaults.colors(
                     thumbColor = LocalNostrVaultColors.current.primary,
                     activeTrackColor = LocalNostrVaultColors.current.primary,
