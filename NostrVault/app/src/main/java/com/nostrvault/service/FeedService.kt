@@ -326,8 +326,10 @@ class FeedService @Inject constructor(
     internal val _popularFilter = MutableStateFlow(PopularFilter.ALL)
     val popularFilter: StateFlow<PopularFilter> = _popularFilter.asStateFlow()
 
-    private val _showPopularEngagement = MutableStateFlow(true)
+    /** The rank line over each Popular post; off until the Ranks button turns it on, as on iOS. */
+    private val _showPopularEngagement = MutableStateFlow(false)
     val showPopularEngagement: StateFlow<Boolean> = _showPopularEngagement.asStateFlow()
+    fun toggleShowPopularEngagement() { _showPopularEngagement.value = !_showPopularEngagement.value }
 
     internal val _popularNoteScores = MutableStateFlow<Map<String, Double>>(emptyMap())
     val popularNoteScores: StateFlow<Map<String, Double>> = _popularNoteScores.asStateFlow()
