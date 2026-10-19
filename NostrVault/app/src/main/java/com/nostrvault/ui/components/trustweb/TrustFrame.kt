@@ -1,6 +1,7 @@
 package com.nostrvault.ui.components
 
 import com.nostrvault.data.model.TrustMap
+import com.nostrvault.data.model.TrustMapWider
 import com.nostrvault.data.model.TrustPath
 
 /**
@@ -28,6 +29,11 @@ internal data class TrustFrame(
     /** 3-hop routes once "look deeper" ran; null before. */
     val chains: List<TrustMap.Chain>? = null,
     val ringSet: Set<String> = ring.toSet(),
+    /**
+     * Someone else's own web past their follows, once their follows' lists
+     * came back: the haze, Close shell and faces of their globe.
+     */
+    val wider: TrustMapWider.HazeLayout? = null,
 ) {
     /**
      * The same frame around a new follow list: the bridges, the lists already

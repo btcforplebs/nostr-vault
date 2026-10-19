@@ -84,7 +84,7 @@ internal class GlobeSceneArcs {
             if (edge <= 0.02) continue
             out += GlobeScene.Spot(
                 key, p.x, p.y, GlobeEdge.faceRadius(radius(p), edge), alpha * edge * (0.4 + 0.6 * p.front), p.depth,
-                ember = false, core = false, tint = FaceTint, label = false,
+                ember = false, core = false, tint = FaceTint,
             )
         }
         return out

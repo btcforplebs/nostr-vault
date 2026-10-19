@@ -73,6 +73,11 @@ internal fun TrustCard(
     onSeeWeb: (() -> Unit)?,
     onBlock: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * A profile's or a post's globe is a look, not a place to explore: its
+     * card has this one button, which shows them in the WOT tab (Logen, 10/15).
+     */
+    onOpenInWot: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(16.dp)
     var moreOpen by remember { mutableStateOf(false) }
@@ -124,7 +129,10 @@ internal fun TrustCard(
                 modifier = Modifier.weight(1f),
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onOpenInWot != null) {
+            CardButton("Open in WoT", icon = NostrVaultIcons.WebOfTrust, filled = true, accent = accent,
+                onClick = onOpenInWot, modifier = Modifier.fillMaxWidth())
+        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // The profile page's words: Unfollow says what the tap does.
             CardButton(if (following) "Unfollow" else "Follow", filled = !following, accent = accent,
                 onClick = onFollow, modifier = Modifier.weight(1f))

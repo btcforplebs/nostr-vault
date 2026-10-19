@@ -119,7 +119,7 @@ import kotlin.math.max
         }
     }
 
-    /** Names under the faces, the core, and plain stars once zoomed in. */
+    /** The core's name. Faces and stars go unnamed on every globe (Logen, 10/15). */
     internal fun GlobeScene.drawLabels(scope: DrawScope, measurer: TextMeasurer, name: (String) -> String) = with(scope) {
         prepare(size.width, size.height, density)
         if (!ready) return@with
@@ -134,15 +134,6 @@ import kotlin.math.max
             )
             drawText(layout, topLeft = Offset((x - layout.size.width / 2.0).toFloat(), (y - layout.size.height / 2.0).toFloat()),
                 alpha = alpha.coerceIn(0f, 1f))
-        }
-        for (spot in spots) {
-            if (spot.core || spot.ember || !spot.label) continue
-            val isAuthor = spot.key == (traceTarget ?: author)
-            label(name(spot.key), spot.x, spot.y + spot.r + 10 * dp, if (isAuthor) 14f else 11f, FontWeight.SemiBold,
-                (0.9 * spot.alpha).toFloat())
-        }
-        for (star in starLabels) {
-            label(name(star.key), star.x, star.y + star.r + 8 * dp, 10f, FontWeight.Normal, (0.6 * star.alpha).toFloat())
         }
         spots.lastOrNull()?.takeIf { it.core }?.let { core ->
             label(name(core.key), core.x, core.y + core.r + 11 * dp, 13f, FontWeight.Bold, 1f)

@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import com.nostrvault.ui.navigation.FloatingButtonRow
+import com.nostrvault.ui.navigation.WotOpenRequest
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.ContactList
 import com.nostrvault.data.model.TrustMap
+import com.nostrvault.data.model.TrustMapWider
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.data.model.WotNewcomers
 import com.nostrvault.data.model.WotRefreshProgress
@@ -96,6 +98,8 @@ internal fun TrustWebContent(
      * follows worth a profile fetch ([TrustMap.layerFaceCandidates]).
      */
     var layerCandidates by remember { mutableStateOf(emptyMap<TrustMap.Layer, List<String>>()) }
+    /** Whose wider web is on its way, for the loading pill. */
+    var widerLoading by remember { mutableStateOf(emptySet<String>()) }
     // An empty follow list means "not in yet" until a load has finished.
     val loadingFollows by trust.isLoadingFollows.collectAsState()
     val followsAttempted by trust.followsAttempted.collectAsState()
@@ -208,13 +212,15 @@ internal fun TrustWebContent(
         }
     }
 
-    // With the author in the middle there are no bridges, so the ring gets
-    // the faces: on your own globe, the people you interact with most.
+    // The ring gets the faces left over from the paths: with the author in
+    // the middle there are none, and anyone else in the middle gets faces as
+    // you do on your own globe. Who you talk with first, on anyone's globe.
+    // Your own globe opened for someone else keeps to the paths to them.
     var engagement by remember { mutableStateOf(emptyMap<String, Int>()) }
     LaunchedEffect(Unit) { engagement = trust.engagement() }
     val ringCandidates = remember(frame?.center, frame?.ring, engagement) {
-        if (frame != null && frame.center == author) {
-            TrustMap.faceCandidates(frame.ring, if (author == me) engagement else emptyMap(), globeFaces(TrustMap.FACE_CANDIDATES))
+        if (frame != null && (frame.center == author || frame.center != me)) {
+            TrustMap.faceCandidates(frame.ring, engagement, globeFaces(TrustMap.FACE_CANDIDATES))
         } else emptyList()
     }
     LaunchedEffect(ringCandidates) {
@@ -244,6 +250,14 @@ internal fun TrustWebContent(
     // ── Filters (WOT tab only) ──
     val wotFilters = rememberWotFilters(me, WotFilterInputs(myFollows, web, engagement))
     val filterLit = if (isWOTTab) wotFilters.lit else null
+    /** The picked layer as a lit set, for someone else's globe: it still lights your part of their web. */
+    val layerLit = remember(layer, myFollows, web, vouches) { TrustMapWider.layerLit(layer, me, myFollows, web, vouches) }
+    /**
+     * Who the globe leaves lit. Yours: the filters (the layer dims by shell).
+     * Someone else's: the filters and the layer, both still about you, so you
+     * can see who in their web is close to you.
+     */
+    val globeLit = if (centerKey == me) filterLit else TrustMapWider.globeLit(filterLit, layerLit)
     /** Matching people worth a picture, most interacted with first. */
     val filterCandidates = remember(filterLit, myFollows, engagement, vouches) {
         filterFaceCandidates(filterLit, myFollows, engagement, vouches, globeFaces(TrustMap.LAYER_FACES) * 3)
@@ -253,9 +267,9 @@ internal fun TrustWebContent(
         nostrService.fetchMissingProfiles(filterCandidates)
         loadPictures(filterCandidates)
     }
-    val ringFaces = remember(ringCandidates, renderedPictures, filterLit) {
+    val ringFaces = remember(ringCandidates, renderedPictures, globeLit) {
         // With a filter on, only people it lights get a face.
-        TrustMap.pickFaces(ringCandidates, { (filterLit == null || it in filterLit) && pictureRenders(it) },
+        TrustMap.pickFaces(ringCandidates, { (globeLit == null || it in globeLit) && pictureRenders(it) },
             if (lite) TrustMap.RING_FACES_LITE else globeFaces(TrustMap.RING_FACES))
     }
     // The picked layer's faces past your follows, fetched on each pick:
@@ -275,6 +289,22 @@ internal fun TrustWebContent(
         else TrustMap.pickFaces(pickedLayerCandidates, ::pictureRenders,
             if (lite) minOf(TrustMap.faceCount(layer), TrustMap.RING_FACES_LITE) else globeFaces(TrustMap.faceCount(layer)))
     }
+    // Someone else's globe: their wider web's most vouched as the outer faces.
+    val widerCandidates = frame?.wider?.layerFaces?.get(TrustMap.Layer.EVERYONE).orEmpty()
+    LaunchedEffect(centerKey, widerCandidates) {
+        if (centerKey == me || widerCandidates.isEmpty()) return@LaunchedEffect
+        nostrService.fetchMissingProfiles(widerCandidates)
+        loadPictures(widerCandidates)
+    }
+    /** Faces past the core's follows: yours by layer on your globe, or on someone else's the most vouched of their web. */
+    val outerFaces = remember(centerKey, layerFaces, widerCandidates, renderedPictures, globeLit) {
+        if (centerKey == me) layerFaces
+        else TrustMap.pickFaces(widerCandidates, { (globeLit == null || it in globeLit) && pictureRenders(it) },
+            if (lite) minOf(TrustMap.EVERYONE_FACES, TrustMap.RING_FACES_LITE) else globeFaces(TrustMap.EVERYONE_FACES))
+    }
+    /** The haze is the core's own web: yours, or theirs once it loaded. */
+    val globeHaze = if (centerKey == me) haze else frame?.wider?.shell.orEmpty()
+    val globeCloseHaze = if (centerKey == me) closeHaze else frame?.wider?.close.orEmpty()
 
     fun jump(index: Int) {
         if (index >= crumbs.size - 1) return
@@ -292,6 +322,31 @@ internal fun TrustWebContent(
         card = null
     }
 
+    /**
+     * Their wider web, mapped from their follows' lists, as their globe's
+     * haze and outer faces. Asked again on coming back to them if it failed.
+     */
+    fun loadWider(pubkey: String) {
+        val ring = frames[pubkey]?.takeIf { it.wider == null }?.ring
+        if (pubkey == me || ring.isNullOrEmpty() || pubkey in widerLoading) return
+        widerLoading = widerLoading + pubkey
+        val inner = ring.toSet() + pubkey + me + author
+        scope.launch {
+            try {
+                val found = trust.widerWeb(pubkey, ring) ?: return@launch
+                val layout = withContext(Dispatchers.Default) {
+                    TrustMapWider.hazeLayout(found.graph, inner, found.vouches, pubkey, ring.toSet(), GLOBE_FACE_SCALE,
+                        if (lite) TrustMap.HAZE_CAP_LITE else TrustMap.HAZE_CAP)
+                }
+                frames[pubkey]?.let { frames = frames + (pubkey to it.copy(wider = layout)) }
+            } finally {
+                widerLoading = widerLoading - pubkey
+            }
+        }
+    }
+    // Back onto someone: their web again if it failed.
+    LaunchedEffect(centerKey) { if (centerKey != me) loadWider(centerKey) }
+
     /** [pubkey] in the middle with everyone they follow around them, one step further along the trail. */
     fun center(pubkey: String) {
         val index = crumbs.indexOf(pubkey)
@@ -304,6 +359,7 @@ internal fun TrustWebContent(
             val found = trust.path(author, pubkey, ring)
             frames = frames + (pubkey to TrustFrame(pubkey, ring, list != null, found))
             nostrService.fetchMissingProfiles(listOf(pubkey) + found.bridges)
+            loadWider(pubkey)
         }
     }
 
@@ -418,6 +474,23 @@ internal fun TrustWebContent(
         }
     }
 
+    if (isWOTTab) {
+        // "Open in WoT" from a profile's or a post's globe: back to you, then
+        // onto them, with anything open on the tab put away.
+        LaunchedEffect(Unit) {
+            WotOpenRequest.pending.collect {
+                val pubkey = WotOpenRequest.take() ?: return@collect
+                showingList = false
+                clearSearch()
+                searchOpen = false
+                closeCard()
+                myWebOpen = false
+                jump(0)
+                if (pubkey != me) center(pubkey)
+            }
+        }
+    }
+
     // Back steps along the breadcrumbs before it closes the globe.
     BackHandler(enabled = crumbs.size > 1) { jump(crumbs.size - 2) }
     // Registered after the crumbs' handler, so it goes first: a search in
@@ -521,8 +594,8 @@ internal fun TrustWebContent(
     ) {
         TrustWebViewGlobe(
             modifier = modifier, clip = clip, overlayPadding = overlayPadding, cardAsSidePanel = cardAsSidePanel,
-            frame = frame, centerKey = centerKey, me = me, author = author, myFollows = myFollows, haze = haze,
-            closeHaze = closeHaze, lite = lite, ringFaces = ringFaces, layerFaces = layerFaces, filterLit = filterLit,
+            frame = frame, centerKey = centerKey, me = me, author = author, myFollows = myFollows, haze = globeHaze,
+            closeHaze = globeCloseHaze, lite = lite, ringFaces = ringFaces, layerFaces = outerFaces, filterLit = globeLit,
             showingList = showingList, isWOTTab = isWOTTab, layer = layer, profiles = profiles, name = ::name,
             tapped = ::tapped, card = card, cardPath = cardPath,
             onEmptyTap = { closeCard(); if (searchFocused) focusManager.clearFocus() },
@@ -530,6 +603,9 @@ internal fun TrustWebContent(
             onProfileClick = onProfileClick, openProfile = ::openProfile, feedService = feedService,
             closeCard = ::closeCard, onMessage = onMessage, center = ::center,
             live = if (isWOTTab && liveArcs.on) LiveArcsRequest(me, liveArcs.rings, liveArcs.show, globeArrivals) else null,
+            mappingWider = centerKey in widerLoading,
+            // A profile's or a post's globe makes way for the WOT tab's.
+            onOpenInWot = if (isWOTTab) null else { pubkey -> WotOpenRequest.open(pubkey); onDismiss?.invoke() },
         )
     }
 

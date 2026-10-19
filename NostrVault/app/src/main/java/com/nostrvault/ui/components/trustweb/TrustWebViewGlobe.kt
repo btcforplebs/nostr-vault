@@ -91,6 +91,10 @@ internal fun TrustWebViewGlobe(
     live: LiveArcsRequest? = null,
     /** Wide WOT tab: the card docks down the trailing side instead of across the bottom. */
     cardAsSidePanel: Boolean = false,
+    /** Their wider web is on its way, for someone else in the middle. */
+    mappingWider: Boolean = false,
+    /** A profile's or a post's globe: the card's one button, which shows them in the WOT tab. */
+    onOpenInWot: ((String) -> Unit)? = null,
 ) {
     Box(if (clip) modifier.clipToBounds() else modifier) {
         TrustGlobe(
@@ -141,6 +145,12 @@ internal fun TrustWebViewGlobe(
                     text = "Mapping your wider web…", accent = accent, small = true,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
                 )
+            mappingWider && card == null ->
+                StatusPill(
+                    text = "Mapping ${name(centerKey)}'s web…",
+                    pubkey = centerKey, profile = profiles[centerKey], accent = accent, small = true,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                )
         }
         val followed by feedService.followedPubkeys.collectAsState()
         val shown = card
@@ -167,6 +177,7 @@ internal fun TrustWebViewGlobe(
                     if (blocked) feedService.unblockUser(shown) else { feedService.blockUser(shown); closeCard() }
                     blocked = !blocked
                 },
+                onOpenInWot = onOpenInWot?.let { open -> { open(shown) } },
                 modifier = if (cardAsSidePanel) Modifier.align(Alignment.TopEnd).width(SIDE_PANEL_WIDTH)
                 else Modifier.align(Alignment.BottomCenter),
             )
