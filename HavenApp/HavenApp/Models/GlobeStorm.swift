@@ -65,6 +65,39 @@ extension GlobeArcs {
         }
     }
 
+    /// The sub ids of `requests`' REQ messages.
+    static func subscriptions(of requests: [String]) -> Set<String> {
+        Set(requests.compactMap { request in
+            guard let array = try? JSONSerialization.jsonObject(with: Data(request.utf8)) as? [Any],
+                  array.first as? String == "REQ" else { return nil }
+            return array.dropFirst().first as? String
+        })
+    }
+
+    /// The event of a relay `EVENT` under one of `ids`, or nil. Two links
+    /// share one socket (the wide REQ and the notes-to-you REQ), and a
+    /// CLOSEd subscription's answers can still be on their way after the
+    /// app comes back: each link reads only its own. The cheap look for the
+    /// prefix keeps a full parse off every feed message (Android's
+    /// `GlobeRelayLink.eventOf`).
+    static func event(in message: String, ids: Set<String>) -> [String: Any]? {
+        guard message.contains(subscriptionPrefix),
+              let array = try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [Any], array.count >= 3,
+              array[0] as? String == "EVENT", let id = array[1] as? String, ids.contains(id) else { return nil }
+        return array[2] as? [String: Any]
+    }
+
+    /// `filters` asking from `since`. A link asks again each time its
+    /// socket connects, from that moment: a reconnect, or the app coming
+    /// back, never replays what was missed as a burst of stars.
+    static func filters(_ filters: [[String: Any]], since: Int) -> [[String: Any]] {
+        filters.map { filter in
+            var filter = filter
+            filter["since"] = since
+            return filter
+        }
+    }
+
     /// The globe's filters on one read relay. Discover and Global are one
     /// filter with no authors, the relay's whole live stream: every note
     /// is sorted to its feed by its author here, so the whole of your wider
