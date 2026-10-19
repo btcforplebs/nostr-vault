@@ -53,6 +53,7 @@ class ArticleReaderViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val zapSendService: ZapSendService,
+    val gatedArticles: com.nostrvault.service.GatedArticleService,
     private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
 ) : ViewModel() {
 

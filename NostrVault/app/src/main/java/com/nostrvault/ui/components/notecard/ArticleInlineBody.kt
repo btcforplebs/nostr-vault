@@ -35,7 +35,7 @@ internal fun ArticleInlineBody(
     modifier: Modifier = Modifier,
 ) {
     val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
-    val preview = remember(note.id) { ArticleMeta.previewText(meta.summary, note.content) }
+    val preview = remember(note.id) { ArticleMeta.previewText(meta.summary, com.nostrvault.data.model.GatedArticleTeaser.previewBody(note)) }
     val minutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
     val accent = LocalNostrVaultColors.current.primary
     Column(
