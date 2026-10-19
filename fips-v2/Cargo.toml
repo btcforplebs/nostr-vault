@@ -8,8 +8,9 @@ publish = false
 # Upstream FIPS (jmcorgan). Git-only; pin a release tag, never a branch.
 [dependencies]
 # Our fork: v0.5.2 plus leaf-only mode and the dual-init offer re-send, both
-# headed upstream. Back to a jmcorgan/fips tag once they land in a release.
-fips = { git = "https://github.com/btcforplebs/fips", rev = "ff355b84" }
+# headed upstream, the native API the app pins (dbb6c848), and offer_allowlist
+# (8e21e513). Back to a jmcorgan/fips tag once they land in a release.
+fips = { git = "https://github.com/btcforplebs/fips", rev = "8e21e513" }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 anyhow = "1"
