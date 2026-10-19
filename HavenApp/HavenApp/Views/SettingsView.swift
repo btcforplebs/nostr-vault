@@ -3328,7 +3328,7 @@ struct MacRelaySettingsView: View {
             // ── URL Input ──────────────────────────────────────────────
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    CommitOnEndTextField("https://relay.example.com", text: $configService.config.macRelayURL)
+                    CommitOnEndTextField("https://relay.example.com or npub1…", text: $configService.config.macRelayURL)
                         .font(.system(.body, design: .monospaced))
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -3418,7 +3418,19 @@ struct MacRelaySettingsView: View {
                 } header: {
                     Text("Also Used For")
                 }
+            }
 
+            if configService.config.macRelayMeshNpub != nil {
+                Section {
+                    Label("Reached over FIPS, from this phone only. Feeds, other people and Blossom don't use it.", systemImage: "point.3.connected.trianglepath.dotted")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                } header: {
+                    Text("Mesh")
+                }
+            }
+
+            if !wssURL.isEmpty || configService.config.macRelayMeshNpub != nil {
                 // ── Sync ───────────────────────────────────────────────
                 Section {
                     MacRelaySyncStatusView()
