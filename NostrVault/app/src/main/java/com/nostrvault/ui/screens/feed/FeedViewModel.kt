@@ -564,13 +564,13 @@ class FeedViewModel @Inject constructor(
     }
     fun setGlobalFeedLanguages(codes: List<String>) = feedService.setGlobalFeedLanguages(codes)
 
-    private val _showEngagementStats = MutableStateFlow(false)
-    val showEngagementStats: StateFlow<Boolean> = _showEngagementStats.asStateFlow()
+    // The service's flag, which the rank line reads: a second copy here left the Ranks button inert.
+    val showEngagementStats: StateFlow<Boolean> = feedService.showPopularEngagement
 
     fun toggleAutoLoad() { configStore.update { it.copy(autoLoadNewPosts = !it.autoLoadNewPosts) } }
     fun toggleShowReposts() { feedService.setShowReposts(!showReposts.value) }
     fun toggleShowReplies() { feedService.setShowReplies(!showReplies.value) }
-    fun toggleShowEngagementStats() { _showEngagementStats.value = !_showEngagementStats.value }
+    fun toggleShowEngagementStats() { feedService.toggleShowPopularEngagement() }
     fun setPopularFilter(filter: PopularFilter) { feedService.setPopularFilter(filter) }
 
     // ── Actions ──────────────────────────────────────────────────
