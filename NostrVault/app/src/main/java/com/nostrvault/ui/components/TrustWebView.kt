@@ -564,7 +564,8 @@ internal fun TrustWebContent(
                         query = query,
                         onQueryChange = { query = it },
                         onFocusChange = { searchFocused = it },
-                        onSearch = { keyboard?.hide() },
+                        // Return opens the top match, as on iOS; nothing to open just puts the keyboard away.
+                        onSearch = { hits.firstOrNull()?.let { pick(it.pubkey) } ?: keyboard?.hide() },
                         onClear = ::clearSearch,
                         accent = accent,
                         hits = hits,
