@@ -9,7 +9,8 @@
   disableIfNoEncryptionCapabilities: skip the cloud backup entirely on a
   transport that cannot encrypt it end to end.
 -->
-<data-extraction-rules>
+<data-extraction-rules xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="FullBackupContent">
     <cloud-backup disableIfNoEncryptionCapabilities="true">
         <include domain="sharedpref" path="pow_preferences.xml" />
         <include domain="sharedpref" path="reels_preferences.xml" />
