@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens.dm
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,13 +14,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,17 +24,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.os.bundleOf
-import androidx.hilt.navigation.HiltViewModelFactory
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.DEFAULT_ARGS_KEY
-import androidx.lifecycle.HasDefaultViewModelProviderFactory
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.viewmodel.CreationExtras
-import androidx.lifecycle.viewmodel.MutableCreationExtras
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
-import androidx.navigation.NavBackStackEntry
+import com.nostrvault.ui.components.PaneViewModelScope
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
@@ -83,19 +69,11 @@ internal fun DMTwoPane(
 
 /**
  * The thread in the right pane. Its view model reads the pubkey from saved
- * state, the way the pushed route hands it over, and lives in a store of its
- * own that is cleared when another conversation is picked, so threads looked
- * at earlier don't keep running behind the open one.
+ * state, the way the pushed route hands it over (see [PaneViewModelScope]).
  */
 @Composable
 private fun DMThreadPane(pubkey: String, onProfileClick: (String) -> Unit) {
-    val parent = checkNotNull(LocalViewModelStoreOwner.current)
-    val context = LocalContext.current
-    val owner = remember(parent, pubkey) { DMPaneViewModelOwner(parent, pubkey, context) }
-    DisposableEffect(owner) {
-        onDispose { owner.viewModelStore.clear() }
-    }
-    CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+    PaneViewModelScope(pubkey, bundleOf("pubkey" to pubkey)) {
         DMThreadScreen(
             counterpartyPubkey = pubkey,
             onProfileClick = onProfileClick,
@@ -103,28 +81,6 @@ private fun DMThreadPane(pubkey: String, onProfileClick: (String) -> Unit) {
             viewModel = hiltViewModel(key = "dm-pane:$pubkey"),
         )
     }
-}
-
-private class DMPaneViewModelOwner(
-    parent: ViewModelStoreOwner,
-    pubkey: String,
-    context: Context,
-) : ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
-    override val viewModelStore = ViewModelStore()
-
-    private val parentDefaults = parent as? HasDefaultViewModelProviderFactory
-
-    override val defaultViewModelProviderFactory: ViewModelProvider.Factory =
-        if (parent is NavBackStackEntry) {
-            HiltViewModelFactory(context, parent)
-        } else {
-            checkNotNull(parentDefaults) { "The DM pane needs a Hilt view model factory" }
-                .defaultViewModelProviderFactory
-        }
-
-    override val defaultViewModelCreationExtras: CreationExtras =
-        MutableCreationExtras(parentDefaults?.defaultViewModelCreationExtras ?: CreationExtras.Empty)
-            .apply { set(DEFAULT_ARGS_KEY, bundleOf("pubkey" to pubkey)) }
 }
 
 /** iOS ContentUnavailableView in the right pane before a conversation is picked. */

@@ -33,13 +33,10 @@ internal fun NavGraphBuilder.tabRoutes(
 
     // ── Bottom nav tabs ───────────────────────────────────
     composable(Screen.Feed.route) {
+        NoteSplitPane(navController, "Pick a note from the feed to read it here.") { open ->
         FeedScreen(
-            onNoteClick = { noteId ->
-                navController.navigate(Screen.NoteDetail.createRoute(noteId))
-            },
-            onArticleClick = { noteId ->
-                navController.navigate(Screen.ArticleReader.createRoute(noteId))
-            },
+            onNoteClick = open.note,
+            onArticleClick = open.article,
             onProfileClick = { pubkey ->
                 navController.navigate(Screen.Profile.createRoute(pubkey))
             },
@@ -63,6 +60,7 @@ internal fun NavGraphBuilder.tabRoutes(
             },
             onOpenDashboard = { navController.navigate(Screen.FeedDashboard.route) },
         )
+        }
     }
 
     composable(Screen.FeedDashboard.route) {
@@ -97,13 +95,10 @@ internal fun NavGraphBuilder.tabRoutes(
     }
 
     composable(Screen.Search.route) {
+        NoteSplitPane(navController, "Pick a note from the results to read it here.") { open ->
         SearchScreen(
-            onNoteClick = { noteId ->
-                navController.navigate(Screen.NoteDetail.createRoute(noteId))
-            },
-            onArticleClick = { noteId ->
-                navController.navigate(Screen.ArticleReader.createRoute(noteId))
-            },
+            onNoteClick = open.note,
+            onArticleClick = open.article,
             onProfileClick = { pubkey ->
                 navController.navigate(Screen.Profile.createRoute(pubkey))
             },
@@ -117,6 +112,7 @@ internal fun NavGraphBuilder.tabRoutes(
                 navController.navigate(Screen.ComposeNote.createRoute())
             },
         )
+        }
     }
 
     composable(Screen.WOT.route) {
@@ -173,12 +169,24 @@ internal fun NavGraphBuilder.tabRoutes(
 /** A profile page with the app's routes wired in: the tab or a pushed profile. */
 @Composable
 private fun ProfileRoute(navController: NavHostController, pubkey: String, isTab: Boolean) {
+    // The tab has room for a note beside it; a profile pushed from somewhere is a page.
+    if (isTab) {
+        NoteSplitPane(navController, "Pick a note from your profile to read it here.") { open ->
+            ProfilePage(navController, pubkey, isTab, open)
+        }
+    } else {
+        ProfilePage(navController, pubkey, isTab, null)
+    }
+}
+
+@Composable
+private fun ProfilePage(navController: NavHostController, pubkey: String, isTab: Boolean, open: NoteOpeners?) {
     ProfileScreen(
         pubkey = pubkey,
-        onNoteClick = { noteId ->
+        onNoteClick = open?.note ?: { noteId ->
             navController.navigate(Screen.NoteDetail.createRoute(noteId))
         },
-        onArticleClick = { noteId ->
+        onArticleClick = open?.article ?: { noteId ->
             navController.navigate(Screen.ArticleReader.createRoute(noteId))
         },
         onProfileClick = { pk ->
