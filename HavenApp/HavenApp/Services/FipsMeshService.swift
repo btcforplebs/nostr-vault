@@ -520,6 +520,20 @@ final class FipsMeshService: ObservableObject {
 
     // MARK: - Mesh key
 
+    /// This phone's mesh npub from its stored key, without starting the engine,
+    /// so the owner can put it on the Mac's offer allowlist before the first
+    /// dial. Creates the key if there is none yet, as a start would.
+    nonisolated static func meshNpubFromKey() -> String? {
+        guard let nsec = meshNsec(), let decoded = Bech32.decode(nsec), decoded.hrp == "nsec",
+              decoded.data.count == 32,
+              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String))
+        else { return nil }
+        let pk = String(cString: pkCStr)
+        free(pkCStr)
+        guard let pubData = Bech32.hexToData(pk) else { return nil }
+        return Bech32.encode(hrp: "npub", data: pubData)
+    }
+
     // The mesh npub is the address readers dial, so it must survive restarts.
     // It is its own key, not the owner's nsec, and never leaves this device.
     nonisolated private static let keychainQuery: [String: Any] = [

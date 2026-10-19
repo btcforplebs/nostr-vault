@@ -9,6 +9,8 @@
 //!   connect --peer <npub> --listen  127.0.0.1:4000   local TCP -> peer's mesh port 80
 //!
 //! Both sides must name each other with `--peer` (configured_only policy).
+//! Traversal offers are answered only from that npub (offer_allowlist), so
+//! this node's public address goes to no one else.
 
 // The app's runtime controls (fips-v2-android) go unused here.
 #[allow(dead_code)]
@@ -103,6 +105,7 @@ fn build_config(args: &Args, nsec: &str) -> Result<Config> {
       enabled: true
       advertise: true
       policy: configured_only
+      offer_allowlist: ["{peer}"]
       share_local_candidates: {lan}
 {relays}dns:
   enabled: false
