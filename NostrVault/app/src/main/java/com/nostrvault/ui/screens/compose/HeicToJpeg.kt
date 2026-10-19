@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens
 
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.os.Build
 import android.util.Log
 import java.io.File
 
@@ -21,10 +22,15 @@ private const val HEIC_JPEG_QUALITY = 80
 /**
  * Re-encodes [source] as JPEG into [target] (quality 80, as iOS). The decoder
  * applies the picture's rotation, so the JPEG is upright and needs no EXIF.
- * False when this device cannot decode it; the caller then keeps the original
+ * False when this device cannot decode it (Android 8.x, or a decoder failure); the caller then keeps the original
  * bytes, the same as iOS.
  */
-internal fun convertHeicToJpeg(source: File, target: File): Boolean = try {
+internal fun convertHeicToJpeg(source: File, target: File): Boolean =
+    // ImageDecoder, and the platform's HEIF decoding, arrive with API 28; minSdk is 26.
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && decodeHeicToJpeg(source, target)
+
+@androidx.annotation.RequiresApi(28)
+private fun decodeHeicToJpeg(source: File, target: File): Boolean = try {
     val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(source)) { decoder, _, _ ->
         // JPEG has no alpha and a software bitmap is what compress() needs.
         decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
