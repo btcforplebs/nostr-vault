@@ -28,7 +28,7 @@ data class FollowingSnapshotStore(
     val snapshots: List<FollowingSnapshot>,
 ) {
     companion object {
-        const val MAX_SNAPSHOTS = 25
+        const val MAX_SNAPSHOTS = 50
     }
 }
 
