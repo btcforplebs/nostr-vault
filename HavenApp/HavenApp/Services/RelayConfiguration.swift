@@ -49,14 +49,60 @@ enum RelayConfiguration {
     /// has no TLS, and the old sync service honoured that; anything else is wss://.
     static func macRelayURL(config: HavenConfig) -> String {
         #if os(iOS)
+        return macRelayURL(config: config, mesh: macMeshRelay)
+        #else
+        return ""
+        #endif
+    }
+
+    /// A Mac relay typed as a mesh npub, dialed through FIPS: `url` is the
+    /// local `ws://127.0.0.1:<port>/<token>` that reaches it. Set before the
+    /// relay starts (RelayProcessManager), nil when there is none or the dial
+    /// failed. Never log `url`: the token keeps other apps on the phone out.
+    struct MacMeshRelay: Equatable {
+        let npub: String
+        let url: String
+    }
+
+    static var macMeshRelay: MacMeshRelay?
+
+    /// macRelayURL(config:) without the platform check. A mesh npub gives the
+    /// dialed address for that same npub, or "" until it has been dialed.
+    static func macRelayURL(config: HavenConfig, mesh: MacMeshRelay?) -> String {
+        if let npub = config.macRelayMeshNpub {
+            guard let mesh, mesh.npub == npub else { return "" }
+            return mesh.url
+        }
         let base = config.macRelayNormalizedBase
         guard !base.isEmpty else { return "" }
         let typed = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let plain = typed.hasPrefix("ws://") || typed.hasPrefix("http://")
         return (plain ? "ws://" : "wss://") + base
-        #else
-        return ""
-        #endif
+    }
+
+    /// A copy refreshes its heartbeat every 20 s (macsync.go); one silent for
+    /// 90 s died with its relay and is retried on the next start.
+    static let macSyncStaleAfter: TimeInterval = 90
+
+    /// The Mac copy is running now, not a "running" left by a relay that died.
+    static func macSyncIsLive(_ status: MacSyncStatus?, now: Date) -> Bool {
+        guard let status, status.state == "running",
+              let beat = status.updatedAt ?? status.startedAt else { return false }
+        return now.timeIntervalSince1970 - TimeInterval(beat) <= macSyncStaleAfter
+    }
+
+    /// The FIPS engine must stay up in the background: the Mac is reached
+    /// over the mesh and its copy is still running.
+    static func macSyncNeedsMesh(mesh: MacMeshRelay?, status: MacSyncStatus?, now: Date) -> Bool {
+        guard let mesh else { return false }
+        return macSyncIsLive(status, now: now) && status?.macURL.map(macRelayBaseForStatus) == macRelayBaseForStatus(mesh.url)
+    }
+
+    /// haven-go records the Mac URL with trailing slashes trimmed (macRelayBase).
+    private static func macRelayBaseForStatus(_ url: String) -> String {
+        var url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        while url.hasSuffix("/") { url.removeLast() }
+        return url
     }
 
     /// Result of the relay's one-time full-history copy from the Mac relay and
@@ -139,10 +185,27 @@ enum RelayConfiguration {
         LaunchInputs(
             env: generateEnvDictionary(config: config, relayDataDir: relayDataDir),
             importSeedRelays: config.importSeedRelays,
-            blastrRelays: config.activeBlastrRelays,
+            blastrRelays: blastrRelays(config: config, mesh: {
+                #if os(iOS)
+                return macMeshRelay
+                #else
+                return nil
+                #endif
+            }()),
             dmRelays: config.dmRelays,
             whitelistedNpubs: config.whitelistedNpubs
         )
+    }
+
+    /// The broadcast list the relay writes to: a Mac on the mesh goes first,
+    /// as a Mac with a URL does (HavenConfig.activeBlastrRelays), so the
+    /// phone's notes reach it.
+    static func blastrRelays(config: HavenConfig, mesh: MacMeshRelay?) -> [String] {
+        var relays = config.activeBlastrRelays
+        if let npub = config.macRelayMeshNpub, let mesh, mesh.npub == npub, !relays.contains(mesh.url) {
+            relays.insert(mesh.url, at: 0)
+        }
+        return relays
     }
 
     /// Build the full environment dictionary from a HavenConfig.

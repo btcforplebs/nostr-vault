@@ -31,7 +31,7 @@ struct MacRelaySyncStatusView: View {
     /// its relay and is retried on the next start.
     private var isStale: Bool {
         guard let beat = status?.updatedAt ?? status?.startedAt else { return true }
-        return Date().timeIntervalSince1970 - TimeInterval(beat) > 90
+        return Date().timeIntervalSince1970 - TimeInterval(beat) > RelayConfiguration.macSyncStaleAfter
     }
 
     private var isRunning: Bool {

@@ -256,6 +256,14 @@ final class FipsMeshService: ObservableObject {
         return url
     }
 
+    /// The local websocket address of the Haven relay at `meshNpub` (the
+    /// owner's Mac given as a mesh npub), or nil if the dial fails. Never log
+    /// it: the path holds the ingress token.
+    func relayWebsocketURL(meshNpub: String) async -> String? {
+        guard let base = await ingressURL(meshNpub: meshNpub) else { return nil }
+        return HomeVaultLogic.websocketURL(base: base)?.absoluteString
+    }
+
     /// The engine is up as a client (not kiosk mode): stop it once the app has
     /// been in the background a while.
     private func markClientActive() {
@@ -369,6 +377,12 @@ final class FipsMeshService: ObservableObject {
 
     private func stopClientIfBackground() {
         guard clientActive, UIApplication.shared.applicationState == .background else { return }
+        // The Mac's full-history copy runs over this engine: keep it up until
+        // the copy ends, then give the usual 25 s.
+        if macSyncNeedsMesh() {
+            waitForMacSyncEnd()
+            return
+        }
         clientActive = false
         if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
         clientBackgroundObserver = nil
@@ -376,6 +390,32 @@ final class FipsMeshService: ObservableObject {
         guard !kioskActive, !starting else { return }
         stopEngine()
         print("FipsMesh: client engine stopped in the background")
+    }
+
+    private func macSyncNeedsMesh() -> Bool {
+        RelayConfiguration.macSyncNeedsMesh(
+            mesh: RelayConfiguration.macMeshRelay,
+            status: RelayConfiguration.macSyncStatus(under: ConfigService.shared.relayDataDir),
+            now: Date()
+        )
+    }
+
+    /// Checks every 5 s while the Mac copy runs; once it ends, the engine
+    /// stops 25 s later if the app is still in the background.
+    private func waitForMacSyncEnd() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.clientActive,
+                      UIApplication.shared.applicationState == .background else { return }
+                if self.macSyncNeedsMesh() {
+                    self.waitForMacSyncEnd()
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
+                        MainActor.assumeIsolated { self?.stopClientIfBackground() }
+                    }
+                }
+            }
+        }
     }
 
     nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool) -> URL? {
