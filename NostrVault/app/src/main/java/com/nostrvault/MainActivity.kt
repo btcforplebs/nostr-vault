@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
@@ -194,16 +195,22 @@ class MainActivity : FragmentActivity() {
                         color = Surface0,
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            NostrVaultNavHost(
-                                isSetupComplete = config.hasCompletedSetup,
-                                configStore = configStore,
-                                feedService = feedService,
-                                nostrService = nostrService,
-                                logStore = logStore,
-                                dmUnreadCount = dmService.totalUnreadCountFlow,
-                                hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                                pendingPostManager = pendingPostManager,
-                            )
+                            // Edge-to-edge: the window no longer resizes for the keyboard
+                            // (adjustResize is a no-op here), so lift every screen above it
+                            // once, here. Screens that add their own imePadding see the
+                            // inset already consumed, so nothing is padded twice.
+                            Box(modifier = Modifier.fillMaxSize().imePadding()) {
+                                NostrVaultNavHost(
+                                    isSetupComplete = config.hasCompletedSetup,
+                                    configStore = configStore,
+                                    feedService = feedService,
+                                    nostrService = nostrService,
+                                    logStore = logStore,
+                                    dmUnreadCount = dmService.totalUnreadCountFlow,
+                                    hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
+                                    pendingPostManager = pendingPostManager,
+                                )
+                            }
                             // Full-screen media viewer overlay — lives in the activity window
                             // (not a Dialog) so Picture-in-Picture can capture the video.
                             FullScreenMediaHost()
