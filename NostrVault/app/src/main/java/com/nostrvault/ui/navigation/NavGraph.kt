@@ -141,6 +141,7 @@ fun NostrVaultNavHost(
     }
 
     PendingDeepLinkEffect(isSetupComplete, configStore, feedService, navController)
+    WotOpenEffect(navController)
 
     // The bars fold with the scroll, following the finger, where the iPhone
     // folds them (see [foldsChromeOnScroll]); "disable tab bar animation"

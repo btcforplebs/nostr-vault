@@ -4,6 +4,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.ContactList
 import com.nostrvault.data.model.FollowListFilter
 import com.nostrvault.data.model.TrustMap
+import com.nostrvault.data.model.TrustMapWider
 import com.nostrvault.data.model.TrustLinks
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.relay.HavenBridge
@@ -170,6 +171,28 @@ class TrustPathService @Inject constructor(
         return follows
     }
 
+    private val widerWebs = ConcurrentHashMap<String, TrustMapWider.WiderWeb>()
+
+    /**
+     * Someone else's wider web ([TrustMapWider.web]): the follow lists of a
+     * sample of their follows, from the first feed relay and the follow-list
+     * index at once. Cached for the session; null when no list came back.
+     * iOS `TrustPathService.widerWeb`.
+     */
+    suspend fun widerWeb(center: String, ring: List<String>): TrustMapWider.WiderWeb? {
+        widerWebs[center]?.let { return it }
+        val sample = TrustMapWider.sample(ring)
+        if (sample.isEmpty()) return null
+        // Kept short per filter: some relays refuse a long authors list.
+        val filters = sample.chunked(WIDER_CHUNK).map { FollowListFilter(authors = it, tagged = null, limit = it.size) }
+        val relays = (publicRelays().take(1) + WIDER_INDEX_RELAY).distinctBy(::relayKey)
+        val lists = query(filters, relays, WIDER_TIMEOUT_MS)
+        val found = withContext(Dispatchers.Default) { TrustMapWider.web(center, sample, lists) }
+        if (found.graph.isEmpty()) return null
+        widerWebs[center] = found
+        return found
+    }
+
     /**
      * Where one person's follow list is asked for, all at once: the first
      * feed relays, the index relays, and the relays they publish to. The
@@ -303,5 +326,10 @@ class TrustPathService @Inject constructor(
         const val MAX_RELAYS = 3
         /** Under the phone relay's 1,000-event cap (Badger), so it is honoured. */
         const val ENGAGEMENT_LIMIT = 1000
+        /** Authors per filter when mapping someone's wider web. */
+        const val WIDER_CHUNK = 40
+        const val WIDER_TIMEOUT_MS = 10_000L
+        /** The follow-list index, asked beside the first feed relay. */
+        const val WIDER_INDEX_RELAY = "wss://purplepag.es"
     }
 }

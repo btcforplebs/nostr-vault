@@ -59,7 +59,6 @@ internal class GlobeScene(
         val ember: Boolean,
         val core: Boolean,
         val tint: Color,
-        val label: Boolean,
     )
 
     internal class Projected(val x: Double, val y: Double, val depth: Double, val scale: Double) {
@@ -89,6 +88,8 @@ internal class GlobeScene(
     private var bridges: List<String> = emptyList()
     private var chains: List<TrustMap.Chain> = emptyList()
     private var faces: List<String> = emptyList()
+    /** The core's follows given faces: drawn in the ring's colour. */
+    private var ringFaceSet: Set<String> = emptySet()
     /** Faces on the outer shells for the picked layer: drawn in the shell's colour. */
     private var layerFaceSet: Set<String> = emptySet()
     /** With Everyone picked the shells' faces are a small, dim few that give way to your follows' faces. */
@@ -156,7 +157,9 @@ internal class GlobeScene(
         this.author = author
         center = frame.center
 
-        // Every star's shell and look for this core.
+        // Every star's shell and look for this core. [haze] is the core's own
+        // web: yours on your globe, theirs on someone else's, so moving onto
+        // someone shows their web as if they were you.
         val bridgeSet = frame.bridges.toSet()
         val want = HashMap<String, Pair<Kind, Double>>()
         // Vouched people sit on their own shell, nearer than the rest.
@@ -165,7 +168,9 @@ internal class GlobeScene(
         // Close is who someone is, not which layer is picked: a Close face past
         // the shell's cap keeps its shell when the layer changes.
         fun wasClose(key: String) = index[key]?.kind == Kind.CLOSE_HAZE
-        if (frame.center == me) for (key in haze) want[key] = shell(key in closeHaze)
+        for (key in haze) want[key] = shell(key in closeHaze)
+        // On someone else's globe you're one of the stars.
+        if (frame.center != me) want[me] = Kind.BRIDGE to TrustMap.OUTER_RADIUS
         for (key in frame.ring) {
             val kind = when {
                 key in bridgeSet -> Kind.BRIDGE
@@ -184,10 +189,8 @@ internal class GlobeScene(
         want[frame.center] = Kind.RING to 0.0
         tracedStar?.let { if (it !in want) want[it] = Kind.BRIDGE to TrustMap.OUTER_RADIUS }
         // A layer's face may be past the shell's cap: it still gets its star.
-        if (frame.center == me) {
-            for (key in layerFaces) {
-                if (key !in want) want[key] = shell(layer == TrustMap.Layer.CLOSE || key in closeHaze || (!newCenter && wasClose(key)))
-            }
+        for (key in layerFaces) {
+            if (key !in want) want[key] = shell(layer == TrustMap.Layer.CLOSE || key in closeHaze || (!newCenter && wasClose(key)))
         }
 
         for (star in stars) {
@@ -216,15 +219,19 @@ internal class GlobeScene(
         chains = frame.chains.orEmpty()
         val shown = ArrayList<String>()
         val taken = hashSetOf(frame.center, author)
-        // The core is the author, so there are no bridges: give the ring faces
-        // instead, or there'd be nothing to tap but the core.
-        val faceSource = if (frame.center == author) ringFaces.filter { it in frame.ringSet } else TrustMap.spread(bridges, MAX_FACES)
-        for (key in faceSource) if (taken.add(key)) shown += key
+        // On someone else's globe you're one of the stars: keep your face.
+        if (frame.center != me && taken.add(me)) shown += me
+        for (key in TrustMap.spread(bridges, MAX_FACES)) if (taken.add(key)) shown += key
         for (chain in chains.take(TrustMap.SHOWN_CHAINS)) {
             for (key in listOf(chain.bridge, chain.via)) if (taken.add(key)) shown += key
         }
+        // Whoever is in the middle, their follows get the faces left over
+        // from the paths, so the globe opens with pictures.
+        val ringShown = HashSet<String>()
+        for (key in ringFaces) if (key in frame.ringSet && taken.add(key)) { shown += key; ringShown += key }
+        ringFaceSet = ringShown
         val layerShown = HashSet<String>()
-        if (frame.center == me) for (key in layerFaces) if (taken.add(key)) { shown += key; layerShown += key }
+        for (key in layerFaces) if (taken.add(key)) { shown += key; layerShown += key }
         layerFaceSet = layerShown
         dimLayerFaces = layer == TrustMap.Layer.EVERYONE
         // A new globe opens with its faces already the right size.
@@ -522,7 +529,6 @@ internal class GlobeScene(
     internal val dashed = Path()
     internal var spots: List<Spot> = emptyList()
     private val spotByKey = HashMap<String, Spot>()
-    internal val starLabels = ArrayList<Spot>()
 
     internal enum class Slot { HAZE, RING, MUTUAL, HOT }
 
@@ -577,7 +583,6 @@ internal class GlobeScene(
         for (band in 0 until 4) { glow[band].reset(); strong[band].reset(); faint[band].reset() }
         dashed.reset()
         spotByKey.clear()
-        starLabels.clear()
         spots = emptyList()
         ready = false
 
@@ -599,8 +604,6 @@ internal class GlobeScene(
         coreR = 22 * k * core.scale * min(zoom, 1.8) * density
         ready = true
         val pad = 8 * density
-        val namesOut = zoom > 2.2
-        val labelled = ArrayList<Spot>()
 
         for (star in stars) {
             if (star.isFace) continue
@@ -626,9 +629,6 @@ internal class GlobeScene(
                 buckets[slot.ordinal][min(LEVELS, level)].addOval(
                     Rect((p.x - r).toFloat(), (p.y - r).toFloat(), (p.x + r).toFloat(), (p.y + r).toFloat()),
                 )
-            }
-            if (namesOut && slot != Slot.HAZE && p.depth > 0.6 && labelled.size < 200) {
-                labelled += Spot(star.key, p.x, p.y, r, a, p.depth, ember = false, core = false, tint = Color.White, label = true)
             }
         }
 
@@ -681,7 +681,7 @@ internal class GlobeScene(
             drawn += when {
                 traceTarget == null && key in layerFaceSet ->
                     Drawn(key, p, HazeColor, 14.0 - 2.0 * layerDim, dimLayer)
-                center == author && traceTarget == null -> Drawn(key, p, RingColor, 15.0)
+                traceTarget == null && key in ringFaceSet -> Drawn(key, p, RingColor, 15.0)
                 else -> Drawn(key, p, GlobeAccent, 15.0)
             }
         }
@@ -705,27 +705,6 @@ internal class GlobeScene(
         )
         seated = seats
 
-        // Labels: front-most first, skipping any that would cover one placed.
-        val placed = arrayListOf(Rect((core.x - 40 * density).toFloat(), (core.y - coreR).toFloat(),
-            (core.x + 40 * density).toFloat(), (core.y + coreR + 22 * density).toFloat()))
-        // Pictures count as placed too, so a name never runs across a face.
-        for (face in drawn) {
-            if (face.key !in seats) continue
-            val r = faceR(face)
-            placed += Rect((face.p.x - r).toFloat(), (face.p.y - r).toFloat(), (face.p.x + r).toFloat(), (face.p.y + r).toFloat())
-        }
-        val showLabel = HashSet<String>()
-        val labelCap = if (zoom < 1.5) 9 else 40
-        for (face in drawn.asReversed()) {
-            if (face.p.depth <= 0.15 || face.dim || face.key !in seats || showLabel.size >= labelCap) continue
-            val r = face.size * k * face.p.scale * min(zoom, 1.8) * density
-            val box = Rect((face.p.x - 46 * density).toFloat(), (face.p.y + r + 2 * density).toFloat(),
-                (face.p.x + 46 * density).toFloat(), (face.p.y + r + 18 * density).toFloat())
-            if (face.key == author || placed.none { it.overlaps(box) }) {
-                placed += box
-                showLabel += face.key
-            }
-        }
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
             val a = min(1.0, (index[face.key] ?: coreStar).let { it.alpha * weight(it) })
@@ -738,11 +717,11 @@ internal class GlobeScene(
             else if (held) 3.6 * face.p.scale * zoom * density
             else faceR(face)
             out += Spot(face.key, face.p.x, face.p.y, r, dim, face.p.depth, ember = behind || held, core = false,
-                tint = face.tint, label = face.key in showLabel)
+                tint = face.tint)
         }
         // The core last: it is always in front of its own shell.
         out += Spot(center, core.x, core.y, coreR, 1.0, core.depth, ember = false, core = true,
-            tint = if (center == me) GlobeAccent else Color.White, label = true)
+            tint = if (center == me) GlobeAccent else Color.White)
         spots = out
         for (spot in out) spotByKey[spot.key] = spot
         lastProjector = project
@@ -751,18 +730,6 @@ internal class GlobeScene(
         for (spot in arcs.faceSpots(lastTick ?: nowSeconds(), { project.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) }, pictured, center) {
             GlobeSceneArcs.faceRadius(it, k, zoom, density)
         }) if (spotByKey[spot.key]?.ember != false) spotByKey[spot.key] = spot
-
-        // Names on plain stars once zoomed well in, where they fit.
-        if (namesOut) {
-            for (star in labelled) {
-                if (placed.size >= 60) break
-                val box = Rect((star.x - 40 * density).toFloat(), (star.y + star.r + 2 * density).toFloat(),
-                    (star.x + 40 * density).toFloat(), (star.y + star.r + 15 * density).toFloat())
-                if (placed.any { it.overlaps(box) }) continue
-                placed += box
-                starLabels += star
-            }
-        }
     }
 
     private fun Path.line(x0: Double, y0: Double, x1: Double, y1: Double) {
