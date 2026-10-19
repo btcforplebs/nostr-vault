@@ -128,7 +128,8 @@ internal fun MarketplaceGrid(
 
     PullToRefreshBox(isRefreshing = isLoading, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            // As many 160dp cards as fit (iOS adaptive(minimum: 160)): two on a phone, more on a tablet.
+            columns = GridCells.Adaptive(minSize = 160.dp),
             contentPadding = PaddingValues(
                 start = 12.dp,
                 end = 12.dp,
