@@ -4,7 +4,7 @@
 import { neventEncode } from "nostr-tools/nip19"
 import { pool, publishRelays } from "./pool.js"
 import { checkSigned } from "./sync.js"
-import { verifiedCopy } from "./thread.js"
+import { repostedId, verifiedCopy } from "./thread.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -91,6 +91,13 @@ export const deletionTemplate = (id, kind) =>
 const deleted = new Set()
 let deletionsFor = null
 export const isDeleted = id => deleted.has(id)
+/** The ids whose deletion hides a card for `event`: its own, and for a repost the note inside it too. */
+export function gateIds(event) {
+  if (event?.kind !== 6) return [event.id]
+  let inner
+  try { inner = JSON.parse(event.content) } catch {}
+  return [...new Set([event.id, typeof inner?.id === "string" ? inner.id : null, repostedId(event)].filter(Boolean))]
+}
 function markDeleted(ids) {
   for (const id of ids) deleted.add(id)
   for (const id of ids) for (const f of listeners) f(id)
@@ -136,7 +143,8 @@ export async function loadSent(ctx, id) {
 /** Like or repost `note` once. A second tap on a sent repost does nothing; on a sent like it is Unlike. */
 export async function act(ctx, kind, note) {
   const cur = actionState(note.id)[kind]
-  if (cur === "sent" && kind === "like") return unlike(ctx, note).catch(e => console.warn("Unlike:", e?.message ?? e))
+  // A failed Unlike says so on the heart ({ error, unlike }); a tap on it tries the rest again.
+  if (kind === "like" && (cur === "sent" || cur?.unlike)) return unlike(ctx, note).catch(() => {})
   if (cur === "busy" || cur === "sent") return
   put(note.id, kind, "busy")
   try {
@@ -151,7 +159,8 @@ export async function act(ctx, kind, note) {
 /**
  * Take a like back (FeedActions.removeReaction): a kind 5 for each of this account's reactions to the note. A like
  * this browser didn't see made (an older app, another device) is looked up on the account's relays first, as the
- * iPhone's retractUnknown does. The heart clears at once; if no deletion went out, it reads as liked again.
+ * iPhone's retractUnknown does. Each deletion counts as it goes out, so a retry after a failure sends only the rest.
+ * A failure reads as { error, unlike } on the heart, not as liked again.
  */
 export async function unlike(ctx, note) {
   put(note.id, "like", "busy")
@@ -160,15 +169,19 @@ export async function unlike(ctx, note) {
     if (!ids.length) {
       const relays = [...new Set([...ctx.account.relays.read, ...ctx.account.relays.write])]
       const found = await pool.querySync(relays, { kinds: [7], authors: [ctx.session.pubkey], "#e": [note.id] }, { maxWait: 6000 })
-      ids = found.filter(ev => ev.pubkey === ctx.session.pubkey).map(ev => ev.id)
+      ids = found.filter(ev => ev.pubkey === ctx.session.pubkey && !deleted.has(ev.id)).map(ev => ev.id)
+      if (ids.length) addLikes(note.id, ids)
     }
     if (!ids.length) throw new Error("Your like wasn't found on your relays")
-    for (const id of ids) await publishAction(ctx, deletionTemplate(id, 7))
+    for (const id of ids) {
+      await publishAction(ctx, deletionTemplate(id, 7))
+      likeIds.set(note.id, (likeIds.get(note.id) ?? []).filter(x => x !== id))
+      markDeleted([id])
+    }
     likeIds.delete(note.id)
-    markDeleted(ids)
     put(note.id, "like", undefined)
   } catch (e) {
-    put(note.id, "like", "sent")
+    put(note.id, "like", { error: String(e?.message ?? e), unlike: true })
     throw e
   }
 }
