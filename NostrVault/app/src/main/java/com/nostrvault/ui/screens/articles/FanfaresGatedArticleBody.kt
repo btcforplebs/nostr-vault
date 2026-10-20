@@ -56,9 +56,12 @@ internal fun FanfaresGatedArticleBody(
     // re-checks for the key, and never pays the same share twice.
     var unpaid by remember(note.id, reader) { mutableStateOf(service.unpaidShares(note, gated)) }
     var confirming by remember { mutableStateOf(false) }
+    var confirmingPayAgain by remember { mutableStateOf(false) }
     val paid = unpaid.size < gated.shares.size
     val dueSats = unpaid.sumOf { it.sats }
     val authorName = author?.bestName ?: "the author"
+    // Split too many ways to pay here: no pay button, only the key check.
+    val payable = gated.payableInApp
     val busy = phase == GatedPhase.Checking || phase == GatedPhase.Paying || phase == GatedPhase.Waiting
 
     // auto: the check that runs on open. It asks the signer only when that is
@@ -115,6 +118,16 @@ internal fun FanfaresGatedArticleBody(
         waitForKey()
     }
 
+    // A share stays recorded after a failure that may have paid; the reader
+    // whose wallet shows nothing went out clears it and pays again.
+    suspend fun payAgain() {
+        if (phase == GatedPhase.Checking || phase == GatedPhase.Paying || phase == GatedPhase.Waiting) return
+        service.forgetPaid(note, gated)
+        unpaid = service.unpaidShares(note, gated)
+        phase = GatedPhase.Locked
+        confirming = unpaid.isNotEmpty()
+    }
+
     LaunchedEffect(note.id, reader) { checkAccess(auto = true) }
 
     val current = phase
@@ -138,17 +151,34 @@ internal fun FanfaresGatedArticleBody(
         )
     }
 
+    if (confirmingPayAgain) {
+        AlertDialog(
+            onDismissRequest = { confirmingPayAgain = false },
+            title = { Text(GatedLockCopy.PAY_AGAIN_TITLE) },
+            text = { Text(GatedLockCopy.PAY_AGAIN_TEXT) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingPayAgain = false
+                    scope.launch { payAgain() }
+                }) { Text("Pay again") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingPayAgain = false }) { Text("Cancel") } },
+        )
+    }
+
     GatedLockFrame(note, gated, bodyStyle) {
         Text(
             text = GatedLockCopy.status(
-                author = authorName, priceSats = gated.priceSats, paid = paid,
-                fullyPaid = paid && unpaid.isEmpty(), failure = (current as? GatedPhase.Failed)?.message,
+                author = authorName, dueSats = dueSats, paid = paid,
+                fullyPaid = paid && unpaid.isEmpty(),
+                failure = (current as? GatedPhase.Failed)?.message
+                    ?: GatedArticleService.UnlockError.TooManyShares.message.takeIf { !payable && !paid },
                 waiting = current == GatedPhase.Waiting,
             ),
             color = SecondaryText,
             fontSize = 14.sp,
         )
-        Button(
+        if (payable || paid) Button(
             onClick = {
                 if (paid && unpaid.isEmpty()) scope.launch { waitForKey() } else confirming = true
             },
@@ -174,7 +204,7 @@ internal fun FanfaresGatedArticleBody(
                     GatedPhase.Paying -> "Zapping…"
                     GatedPhase.Waiting -> "Unlocking…"
                     GatedPhase.Checking -> "Checking…"
-                    else -> GatedLockCopy.buttonLabel(gated.priceSats, paid, unpaid.isEmpty(), dueSats)
+                    else -> GatedLockCopy.buttonLabel(paid, unpaid.isEmpty(), dueSats)
                 },
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -187,6 +217,13 @@ internal fun FanfaresGatedArticleBody(
                     Spacer(Modifier.width(6.dp))
                     Text("Already paid?", fontSize = 13.sp)
                 }
+            }
+        }
+        if ((current == GatedPhase.Locked || current is GatedPhase.Failed) && payable &&
+            remember(unpaid, current) { service.hasUncertainShare(note, gated) }
+        ) {
+            TextButton(onClick = { confirmingPayAgain = true }) {
+                Text("Wallet shows no zap? Pay again", fontSize = 13.sp)
             }
         }
     }

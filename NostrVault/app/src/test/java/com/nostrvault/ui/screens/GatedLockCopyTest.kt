@@ -16,9 +16,19 @@ class GatedLockCopyTest {
     }
 
     @Test fun theButtonNeverOffersAShareAlreadyPaid() {
-        assertEquals("Zap 42 sats to unlock", GatedLockCopy.buttonLabel(42, paid = false, unpaidEmpty = false, dueSats = 42))
-        assertEquals("Zap the remaining 4 sats", GatedLockCopy.buttonLabel(10, paid = true, unpaidEmpty = false, dueSats = 4))
-        assertEquals("Check again", GatedLockCopy.buttonLabel(10, paid = true, unpaidEmpty = true, dueSats = 0))
+        assertEquals("Zap 42 sats to unlock", GatedLockCopy.buttonLabel(paid = false, unpaidEmpty = false, dueSats = 42))
+        assertEquals("Zap the remaining 4 sats", GatedLockCopy.buttonLabel(paid = true, unpaidEmpty = false, dueSats = 4))
+        assertEquals("Check again", GatedLockCopy.buttonLabel(paid = true, unpaidEmpty = true, dueSats = 0))
+    }
+
+    @Test fun theButtonNamesWhatItChargesNotTheListedPrice() {
+        // A 10-sat price split three ways rounds each share up: 4 + 4 + 4.
+        val gated = com.nostrvault.data.model.GatedArticle("x", "https://api.fanfares.live/k", 10,
+            com.nostrvault.data.model.GatedArticle.split(10, "a".repeat(64),
+                listOf("1", "2", "3").map { listOf("zap", it.repeat(64), "", "1") }))
+        assertEquals(12, gated.totalSats)
+        assertEquals("Zap 12 sats to unlock", GatedLockCopy.buttonLabel(paid = false, unpaidEmpty = false, dueSats = gated.totalSats))
+        assertEquals("Zap Ann 12 sats to read the full article here.", GatedLockCopy.status("Ann", gated.totalSats, false, false, null, false))
     }
 
     @Test fun confirmNamesTheAuthorOnlyWhenTheyTakeItAll() {
@@ -29,7 +39,7 @@ class GatedLockCopyTest {
     @Test fun aFailureAfterMoneyMayHaveMovedWarnsBeforePayingAgain() {
         assertEquals("No wallet", GatedLockCopy.payFailure(false, "No wallet"))
         assertEquals(
-            "The zap may not have gone through (timeout). Check your wallet before paying again — tap Check again if it did.",
+            "The zap may not have gone through (timeout). Check your wallet: if it paid, tap Check again; if not, tap Pay again.",
             GatedLockCopy.payFailure(true, "timeout"),
         )
     }

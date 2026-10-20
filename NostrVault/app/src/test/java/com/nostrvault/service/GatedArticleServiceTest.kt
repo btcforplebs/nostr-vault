@@ -139,7 +139,8 @@ class GatedArticleServiceTest {
         for (error in listOf(
             ZapSendService.ZapError.LnurlFailed(), ZapSendService.ZapError.InvoiceFailed(),
             ZapSendService.ZapError.SignFailed(), ZapSendService.ZapError.NoWallet(),
-            ZapSendService.ZapError.PaymentFailed("Invalid NWC URI"),
+            ZapSendService.ZapError.PaymentFailed("Invalid NWC URI", notPaid = true),
+            ZapSendService.ZapError.PaymentFailed("insufficient balance", notPaid = true),
         )) {
             val s = service()
             coEvery { zaps.zapNote(any(), any(), any(), any(), any(), any()) } returns Result.failure(error)
@@ -150,6 +151,7 @@ class GatedArticleServiceTest {
 
     @Test fun onlyPreWalletFailuresCountAsNotPaid() {
         assertFalse(GatedArticleService.failedBeforePaying(ZapSendService.ZapError.PaymentFailed("timeout")))
+        assertTrue(GatedArticleService.failedBeforePaying(ZapSendService.ZapError.PaymentFailed("Encryption failed", notPaid = true)))
         assertFalse(GatedArticleService.failedBeforePaying(RuntimeException("socket closed")))
         assertTrue(GatedArticleService.failedBeforePaying(ZapSendService.ZapError.SignFailed()))
     }
@@ -171,6 +173,51 @@ class GatedArticleServiceTest {
         // Fully paid: paying again sends nothing.
         s.pay(split, splitGated)
         coVerify(exactly = 2) { zaps.zapNote(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun walletRefusalsMoveNoMoneyButAFailedPaymentMayHave() {
+        for (code in listOf("INSUFFICIENT_BALANCE", "QUOTA_EXCEEDED", "RATE_LIMITED", "RESTRICTED", "UNAUTHORIZED", "NOT_IMPLEMENTED")) {
+            assertTrue(code, NWCWalletException(code, "no").refusedBeforePaying)
+        }
+        for (code in listOf("PAYMENT_FAILED", "INTERNAL", "OTHER")) {
+            assertFalse(code, NWCWalletException(code, "no").refusedBeforePaying)
+        }
+    }
+
+    @Test fun payAgainReoffersOnlyTheShareThatMayNotHavePaid() = runBlocking {
+        val s = service()
+        // The author's share is confirmed; the other times out (maybe paid).
+        coEvery { zaps.zapNote(any(), author, any(), any(), any(), any()) } returns Result.success(Unit)
+        coEvery { zaps.zapNote(any(), other, any(), any(), any(), any()) } returns
+            Result.failure(ZapSendService.ZapError.PaymentFailed("timeout"))
+        try { s.pay(split, splitGated); fail("should throw") } catch (e: ZapSendService.ZapError) {}
+        assertTrue(s.unpaidShares(split, splitGated).isEmpty())
+        assertTrue(s.hasUncertainShare(split, splitGated))
+
+        s.forgetPaid(split, splitGated)
+        assertEquals(listOf(other), s.unpaidShares(split, splitGated).map { it.pubkey })
+        coEvery { zaps.zapNote(any(), other, any(), any(), any(), any()) } returns Result.success(Unit)
+        s.pay(split, splitGated)
+        coVerify(exactly = 1) { zaps.zapNote(any(), author, any(), any(), any(), any()) }
+        coVerify(exactly = 2) { zaps.zapNote(any(), other, any(), any(), any(), any()) }
+        assertFalse(s.hasUncertainShare(split, splitGated))
+
+        // Every share confirmed: forgetting re-offers nothing.
+        s.forgetPaid(split, splitGated)
+        assertTrue(s.unpaidShares(split, splitGated).isEmpty())
+    }
+
+    @Test fun aPriceSplitTooManyWaysIsNeverPaidInApp() = runBlocking {
+        val many = note(tags("https://api.fanfares.live/request-key",
+            (1..500).map { listOf("zap", it.toString(16).padStart(64, '0'), "", "1") }))
+        val manyGated = GatedArticle.from(many)!!
+        assertEquals(500, manyGated.totalSats)
+        assertFalse(manyGated.payableInApp)
+        assertTrue(fanfaresGated.payableInApp)
+        assertTrue(splitGated.payableInApp)
+        try { service().pay(many, manyGated); fail("should throw") } catch (e: GatedArticleService.UnlockError.TooManyShares) {}
+        coVerify(exactly = 0) { zaps.zapNote(any(), any(), any(), any(), any(), any()) }
+        assertTrue(paid.sets.isEmpty())
     }
 
     @Test fun aMissingLightningAddressFailsBeforeAnyMoneyMoves() = runBlocking {

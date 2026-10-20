@@ -53,6 +53,8 @@ class GatedArticleService @Inject constructor(
         object NoLightningAddress : UnlockError("The author has no lightning address to zap.")
         /** Not a Fanfares article: Nostr Vault does not unlock it. */
         object NotUnlockable : UnlockError("This article can't be unlocked in Nostr Vault.")
+        /** A Fanfares article whose price is split too many ways to pay here ([GatedArticle.payableInApp]). */
+        object TooManyShares : UnlockError("This article splits its price too many ways to pay in Nostr Vault. Unlock it on Fanfares, then tap Already paid?")
         class Server(val code: Int, text: String) : UnlockError("The key server answered $code: $text")
         object Undecryptable : UnlockError("The key didn't open this article.")
     }
@@ -155,11 +157,13 @@ class GatedArticleService @Inject constructor(
      */
     suspend fun pay(note: FeedNote, gated: GatedArticle) {
         if (!gated.isFanfares) throw UnlockError.NotUnlockable
+        if (!gated.payableInApp) throw UnlockError.TooManyShares
         appScope.async { paying.withLock { payShares(note, gated) } }.await()
     }
 
     private suspend fun payShares(note: FeedNote, gated: GatedArticle) {
         if (!gated.isFanfares) throw UnlockError.NotUnlockable
+        if (!gated.payableInApp) throw UnlockError.TooManyShares
         if (nostrService.activeHexPubkey.isEmpty()) throw UnlockError.NotSignedIn
         // A share that can't be recorded could be offered again: never pay one.
         val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags) ?: throw UnlockError.Undecryptable
@@ -189,6 +193,21 @@ class GatedArticleService @Inject constructor(
                 if (failedBeforePaying(error)) record(key, paid = false)
                 throw error
             }
+            confirm(key)
+        }
+    }
+
+    /**
+     * Offers again every share of this article whose zap failed in a way that
+     * may have paid. A share the wallet confirmed stays paid. Only for a
+     * reader whose wallet shows that zap never went out; the UI asks them to
+     * check first. Waits for a payment in flight.
+     */
+    suspend fun forgetPaid(note: FeedNote, gated: GatedArticle) {
+        paying.withLock {
+            val confirmed = paidPrefs.getStringSet(CONFIRMED_KEY, null).orEmpty()
+            val keys = gated.shares.mapNotNull { shareKey(note, it) }.filter { it !in confirmed }.toSet()
+            paidPrefs.edit().putStringSet(PAID_KEY, (paidShares() - keys).toMutableSet()).commit()
         }
     }
 
@@ -197,6 +216,19 @@ class GatedArticleService @Inject constructor(
         if (paid) all.add(key) else all.remove(key)
         // commit, not apply: the record is on disk before the zap goes out.
         paidPrefs.edit().putStringSet(PAID_KEY, all).commit()
+    }
+
+    /** True when a share is recorded but its zap failed: it may or may not have paid, and only [forgetPaid] re-offers it. */
+    fun hasUncertainShare(note: FeedNote, gated: GatedArticle): Boolean {
+        val paid = paidShares()
+        val confirmed = paidPrefs.getStringSet(CONFIRMED_KEY, null).orEmpty()
+        return gated.shares.mapNotNull { shareKey(note, it) }.any { it in paid && it !in confirmed }
+    }
+
+    /** The wallet said this share paid: "Pay again" never offers it. */
+    private fun confirm(key: String) {
+        val all = paidPrefs.getStringSet(CONFIRMED_KEY, null).orEmpty() + key
+        paidPrefs.edit().putStringSet(CONFIRMED_KEY, all.toMutableSet()).commit()
     }
 
     private suspend fun hasLightningAddress(pubkey: String): Boolean {
@@ -279,24 +311,23 @@ class GatedArticleService @Inject constructor(
     internal companion object {
         const val TAG = "GatedArticleService"
         const val PAID_KEY = "paid_shares_v1"
+        const val CONFIRMED_KEY = "confirmed_shares_v1"
 
         /** iOS waitForKey's backoff, about three minutes in all. */
         val WAIT_SECONDS = listOf(2, 3, 5, 5, 8, 8, 10, 10, 10, 15, 15, 15, 15, 15)
 
-        /** NWC errors thrown before any request reaches the wallet (NWCService.sendNWCRequest). */
-        private val NO_WALLET_DETAILS = setOf("No NWC connection configured", "Invalid NWC URI")
-
         /**
-         * True only when the zap failed before the wallet was asked to pay:
-         * LNURL, invoice or signing failures, or no wallet. Anything else,
-         * a wallet timeout included, may have paid.
+         * True only when the zap moved no money: LNURL, invoice or signing
+         * failures, no wallet, a request that never reached the wallet, or a
+         * wallet that refused before paying (insufficient balance and the
+         * like). Anything else, a wallet timeout included, may have paid.
          */
         fun failedBeforePaying(error: Throwable): Boolean = when (error) {
             is ZapSendService.ZapError.LnurlFailed,
             is ZapSendService.ZapError.InvoiceFailed,
             is ZapSendService.ZapError.SignFailed,
             is ZapSendService.ZapError.NoWallet -> true
-            is ZapSendService.ZapError.PaymentFailed -> error.detail in NO_WALLET_DETAILS
+            is ZapSendService.ZapError.PaymentFailed -> error.notPaid
             else -> false
         }
     }

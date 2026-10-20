@@ -32,6 +32,19 @@ data class GatedArticle(
 ) {
     data class Share(val pubkey: String, val relay: String?, val sats: Int)
 
+    /** What paying every share costs: each share rounds up, so this can be a little over [priceSats]. */
+    val totalSats: Int get() = shares.sumOf { it.sats }
+
+    /**
+     * Whether the app may pay this price itself. Rounding each share up costs
+     * at most a sat per share, so a price split [MAX_SHARES] ways or fewer
+     * stays within [MAX_SHARES] sats of the price; an article split more ways
+     * (500 `zap` tags on a 42-sat price is 500 sats in 500 payments) is not
+     * paid here.
+     */
+    val payableInApp: Boolean
+        get() = shares.size <= MAX_SHARES && totalSats <= priceSats + MAX_SHARES
+
     /** Relays the author named in their `zap` tags, where the key server finds the receipt. */
     val receiptRelays: List<String>
         get() = shares.mapNotNull { it.relay }.distinctBy { it.lowercase() }
@@ -98,6 +111,9 @@ data class GatedArticle(
         }
 
         fun from(note: FeedNote): GatedArticle? = from(note.kind, note.pubkey, note.tags)
+
+        /** The most shares (and so payments, and sats over the price) the app pays for one article. */
+        const val MAX_SHARES = 10
 
         private val FANFARES_DOMAINS = listOf("fanfares.live", "fanfares.io")
 

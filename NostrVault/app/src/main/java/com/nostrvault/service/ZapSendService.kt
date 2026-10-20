@@ -33,7 +33,8 @@ class ZapSendService @Inject constructor(
         class LnurlFailed : ZapError("Failed to resolve lightning address")
         class SignFailed : ZapError("Failed to sign zap request")
         class InvoiceFailed : ZapError("Failed to fetch invoice from provider")
-        class PaymentFailed(val detail: String) : ZapError("Payment failed: $detail")
+        /** [notPaid]: the wallet never paid (it was never asked, or refused), so trying again can't pay twice. */
+        class PaymentFailed(val detail: String, val notPaid: Boolean = false) : ZapError("Payment failed: $detail")
     }
 
     /**
@@ -63,10 +64,10 @@ class ZapSendService @Inject constructor(
         extraReceiptRelays: List<String> = emptyList(),
     ): Result<Unit> {
         if (amountSats <= 0) {
-            return Result.failure(ZapError.PaymentFailed("Zap amount must be greater than 0"))
+            return Result.failure(ZapError.PaymentFailed("Zap amount must be greater than 0", notPaid = true))
         }
         if (amountSats > MAX_ZAP_SATS) {
-            return Result.failure(ZapError.PaymentFailed("Zap amount exceeds safety limit"))
+            return Result.failure(ZapError.PaymentFailed("Zap amount exceeds safety limit", notPaid = true))
         }
         val config = configStore.config.value
         if (config.nwcURI.isNullOrBlank()) {
@@ -94,7 +95,7 @@ class ZapSendService @Inject constructor(
         if (amountMsat < lnurlResponse.minSendable || amountMsat > lnurlResponse.maxSendable) {
             val min = lnurlResponse.minSendable / 1000
             val max = lnurlResponse.maxSendable / 1000
-            return Result.failure(ZapError.PaymentFailed("Amount outside provider limits ($min–$max sats)"))
+            return Result.failure(ZapError.PaymentFailed("Amount outside provider limits ($min–$max sats)", notPaid = true))
         }
 
         // 2. Sign the kind-9734 zap request (only when the provider supports
@@ -155,7 +156,8 @@ class ZapSendService @Inject constructor(
             Log.i(TAG, "Zap paid ($amountSats sats): $preimage")
         } catch (e: Exception) {
             Log.w(TAG, "NWC payment failed: ${e.message}")
-            return Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error"))
+            val notPaid = e is NWCNotSentException || (e is NWCWalletException && e.refusedBeforePaying)
+            return Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error", notPaid))
         }
 
         // Optimistic local bump; the real kind-9735 receipt overwrites this
