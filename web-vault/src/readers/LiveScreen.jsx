@@ -1,7 +1,7 @@
 // The Live feed (the iPhone's LiveStreamCardView grid and LiveStreamPlayerView): streams on air now, Following or
 // Global (your web of trust; everyone but adult streams until you follow someone), as tiles with a LIVE badge and
-// viewers. A tile opens the stream: the video where the browser plays HLS
-// itself (Safari), else a link out, then the chat and its zaps, read-only. Nothing is stored.
+// viewers. A tile opens the stream: the video (Safari's own HLS player, hls.js in other browsers, a link out when
+// neither can play it), then the chat and its zaps, read-only. Nothing is stored.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
@@ -11,7 +11,8 @@ import { pool } from "../net/pool.js"
 import { formatSats } from "../net/notifications.js"
 import { receiptTrust } from "../net/zaps.js"
 import { Scopes } from "./ArticlesScreen.jsx"
-import { LIVE_SCOPES, chatFilter, chatRelays, chatRows, fetchStreams, loadScope, playsHls, saveScope, startScope, streamLink } from "./live.js"
+import { attachHls, playMode } from "./hls.js"
+import { LIVE_SCOPES, chatFilter, chatRelays, chatRows, fetchStreams, loadScope, saveScope, startScope, streamLink } from "./live.js"
 
 if (import.meta.env) import("./readers.css")
 
@@ -76,7 +77,6 @@ export function LiveTile({ stream: s, onOpen }) {
 
 /** The stream: video (or the link out), host, title and summary, Open in zap.stream, then the chat. */
 export function LivePlayer({ ctx, stream: s, onBack }) {
-  const hls = playsHls()
   const link = streamLink(s)
   return (
     <div class="reader live-player">
@@ -84,11 +84,7 @@ export function LivePlayer({ ctx, stream: s, onBack }) {
         <button type="button" class="small" onClick={onBack}>‹ Back</button>
         <a class="reader-web small" href={link} target="_blank" rel="noopener noreferrer">Open in zap.stream</a>
       </div>
-      {hls ? <video class="live-video" src={s.streaming} poster={s.image ?? undefined} controls autoplay playsinline />
-        : <a class="live-out" href={link} target="_blank" rel="noopener noreferrer">
-            {s.image && <img src={s.image} alt="" referrerpolicy="no-referrer" />}
-            <span>This browser can't play the stream here. Watch it on zap.stream ›</span>
-          </a>}
+      <LiveVideo stream={s} link={link} />
       <h1 class="reader-title">{s.title || "Live stream"}</h1>
       <a class="reader-byline muted small" href={`#/profile/${s.host}`}>
         <Avatar pubkey={s.host} size={24} /><AuthorName pubkey={s.host} />
@@ -98,6 +94,23 @@ export function LivePlayer({ ctx, stream: s, onBack }) {
       <LiveChat ctx={ctx} stream={s} />
     </div>
   )
+}
+
+/** The video: Safari's own HLS player, hls.js elsewhere, and the link out when neither can play it. */
+export function LiveVideo({ stream: s, link, mode: forced }) {
+  const ref = useRef(null)
+  const [mode, setMode] = useState(() => forced ?? playMode(globalThis.document?.createElement("video")))
+  useEffect(() => {
+    if (mode !== "hlsjs" || !ref.current) return
+    return attachHls(ref.current, s.streaming, () => setMode("none"))
+  }, [mode, s.streaming])
+  if (mode === "none") return (
+    <a class="live-out" href={link} target="_blank" rel="noopener noreferrer">
+      {s.image && <img src={s.image} alt="" referrerpolicy="no-referrer" />}
+      <span>This browser can't play the stream here. Watch it on zap.stream ›</span>
+    </a>
+  )
+  return <video ref={ref} class="live-video" src={mode === "native" ? s.streaming : undefined} poster={s.image ?? undefined} controls autoplay playsinline />
 }
 
 /** The stream's chat and zaps, read-only, newest at the bottom, live while open. Zap receipts only count once their
