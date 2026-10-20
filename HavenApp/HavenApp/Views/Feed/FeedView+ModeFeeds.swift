@@ -352,6 +352,9 @@ extension FeedView {
                         LiveStreamCardView(stream: stream, profile: nostrService.profiles[stream.hostPubkey])
                             .contentShape(Rectangle())
                             .onTapGesture { playingStream = stream }
+                            // Here, not on the card: the card is also drawn inside
+                            // notes, whose own long-press menu it would hide.
+                            .openInWebContextMenu(stream.webLink)
                     }
                 }
                 .padding(.horizontal, 16)

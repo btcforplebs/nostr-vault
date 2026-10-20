@@ -56,7 +56,6 @@ struct LiveStreamCardView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(Rectangle())
-        .openInWebContextMenu(stream.webLink)
     }
 
     private var endedPill: some View {
