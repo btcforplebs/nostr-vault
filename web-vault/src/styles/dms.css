@@ -1,6 +1,7 @@
 /* Messages (iPhone DMInboxView / DMThreadView): conversation rows, then a thread of bubbles with a field at the bottom. */
 .dm-head-actions { display: inline-flex; gap: 8px; }
 .dm-new { display: flex; gap: 8px; margin: 0 var(--gutter) 12px; }
+.dm-people { margin: -8px var(--gutter) 12px; }
 .dm-new input, .dm-compose textarea { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
 .dm-new input:focus, .dm-compose textarea:focus { outline: none; border-color: var(--accent-line); }
