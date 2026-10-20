@@ -632,6 +632,7 @@
 		80CD34C18669E6058254A790 /* InlinePlayerLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EEA633D3639AB7EE2C3BFC /* InlinePlayerLayer.swift */; };
 		81092C0D01D5FA1232A9E3A8 /* LiveFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C29A25C6DBE37CB0202A7F /* LiveFeedService.swift */; };
 		81168E8CEF8F8FF779C822DC /* NIP46Service+Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */; };
+		81AAA6A945378E0B389D3F1D /* GatedLockCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9065299A41018D52E9DF6512 /* GatedLockCopy.swift */; };
 		81AEFECDE802D15F53ABE5CB /* BitcoinAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E29020BA039397A6D8AFB8 /* BitcoinAddress.swift */; };
 		81CF5F8E9CBC73C1F6621D45 /* MediaViewerPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 336577F60AD61D4D9DC89298 /* MediaViewerPresentation.swift */; };
 		81E4B84A7AD7E745DE93E2A4 /* MediaDateGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */; };
@@ -822,6 +823,7 @@
 		A59BFB091451B1925F912A7D /* NostrService+MessageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000450336CCC4829F6DEE1 /* NostrService+MessageProcessing.swift */; };
 		A5B06D91684942B06596203F /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F0A09BAA2ED410A3EAD8AB /* QuickActionsWidget.swift */; };
 		A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B2C3C269E23662DF825BFD /* LinkPreviewService.swift */; };
+		A61414C2A90F91F8790B68D6 /* GatedLockCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9065299A41018D52E9DF6512 /* GatedLockCopy.swift */; };
 		A67A3D25AD98B4679381B013 /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
 		A6A2F74BE2379BFD1788AD1A /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA979A3F7ED54EAB8F501F2E /* WalletLightningTab.swift */; };
 		A74B963EE33362EE5336AA5E /* ProfileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBFCD52C53864BA74263D0E7 /* ProfileActions.swift */; };
@@ -1703,6 +1705,7 @@
 		8F6F3DA371A22E888542EB92 /* NoteDetailView+Parents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+Parents.swift"; sourceTree = "<group>"; };
 		8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPostQueue.swift; sourceTree = "<group>"; };
 		9053BAEF74D259A303D5CD57 /* BlobCopyRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlobCopyRun.swift; sourceTree = "<group>"; };
+		9065299A41018D52E9DF6512 /* GatedLockCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatedLockCopy.swift; sourceTree = "<group>"; };
 		90C7DCAD2158E32953277AED /* TutorialStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialStage.swift; sourceTree = "<group>"; };
 		90EE1AC599A9743E3EFC73CC /* FeedService+ExtendedNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+ExtendedNetwork.swift"; sourceTree = "<group>"; };
 		915DF9A0796218139DE0703E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -2374,6 +2377,7 @@
 				37E1BD51ACE15691E3AB709B /* ArticleInlineBody.swift */,
 				10BB63071E62D3686FEB781F /* ArticleReaderView.swift */,
 				0909C6301A67A52A5CA1E250 /* GatedArticleBody.swift */,
+				9065299A41018D52E9DF6512 /* GatedLockCopy.swift */,
 				0DEF13C08E09135E0133D49F /* HighlightRow.swift */,
 				606AB572251938C1D2B3590A /* HighlightSheet.swift */,
 				F9CA2E376AE6090E021D6EB3 /* MarkdownBodyView.swift */,
@@ -3502,6 +3506,7 @@
 				2DD243D4E5DD2B8399F6FF81 /* GatedArticle.swift in Sources */,
 				4E6051FB6C74323D6FF53A61 /* GatedArticleBody.swift in Sources */,
 				CA20A22E475BC4BEB3A607CA /* GatedArticleService.swift in Sources */,
+				81AAA6A945378E0B389D3F1D /* GatedLockCopy.swift in Sources */,
 				478CE22C263BA06E0DE42A33 /* GenericRepost.swift in Sources */,
 				43E02A6DB11E2B376C20CB18 /* GifGridLayout.swift in Sources */,
 				9800F297286FD1E28D2411D4 /* GifItem.swift in Sources */,
@@ -4155,6 +4160,7 @@
 				73C69EA442770FAC406C9494 /* GatedArticle.swift in Sources */,
 				57368C0B1B3A9F988A64EA03 /* GatedArticleBody.swift in Sources */,
 				D9C46B149F40885AB63D0494 /* GatedArticleService.swift in Sources */,
+				A61414C2A90F91F8790B68D6 /* GatedLockCopy.swift in Sources */,
 				1AE80BECD4D48E91C29D0EC2 /* GenericRepost.swift in Sources */,
 				03770F1D9FA5237A9CC6FBAA /* GifGridLayout.swift in Sources */,
 				DDDBD242B9786EB74D4D8EC2 /* GifItem.swift in Sources */,
