@@ -76,6 +76,19 @@ struct ConfigFileStore {
         return copy
     }
 
+    /// Deletes the backup when a save drops the last key that this session
+    /// loaded or saved from config.json itself, so a user who removes their
+    /// key (say, before handing the device on) leaves no copy behind.
+    /// `hadKey` must be false after a failed load or a load from the backup:
+    /// a keyless config written then is a recovery, and the backup may hold
+    /// the only copy of the key.
+    @discardableResult
+    func forgetBackupIfKeyRemoved(hadKey: Bool, hasKey: Bool, setupDone: Bool) -> Bool {
+        guard hadKey, !hasKey, setupDone else { return false }
+        try? fileManager.removeItem(at: backupURL)
+        return true
+    }
+
     /// Factory reset: config.json and its backup both go.
     func removeAll() {
         try? fileManager.removeItem(at: url)

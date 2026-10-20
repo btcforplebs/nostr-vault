@@ -21,6 +21,10 @@ class ConfigService: ObservableObject {
     /// config.json existed but would not load. Until a copy of it is kept,
     /// save() writes nothing, so the key inside it is never overwritten.
     @Published private(set) var loadFailed = false
+    /// Whether the config.json this session read or last wrote held a key.
+    /// False after a failed load or a load from the backup, so a recovery
+    /// save never deletes config.json.bak.
+    private var savedHasKey = false
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -71,6 +75,7 @@ class ConfigService: ObservableObject {
             config = loaded
             loadedSuccessfully = true
             loadFailed = fromBackup && FileManager.default.fileExists(atPath: configURL.path)
+            savedHasKey = !fromBackup && loaded.hasKeyMaterial
             if fromBackup {
                 RelayProcessManager.shared.addLog("config.json would not load; restored from config.json.bak", level: "ERROR")
             }
@@ -242,6 +247,9 @@ class ConfigService: ObservableObject {
         do {
             let data = try JSONEncoder().encode(config)
             try store.write(data)
+            store.forgetBackupIfKeyRemoved(hadKey: savedHasKey, hasKey: config.hasKeyMaterial,
+                                           setupDone: config.hasCompletedSetup)
+            savedHasKey = config.hasKeyMaterial
 
             #if DEBUG
             print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
@@ -343,6 +351,7 @@ class ConfigService: ObservableObject {
         // 2. Delete config.json and its backup in Application Support
         ConfigFileStore(url: configURL).removeAll()
         loadFailed = false
+        savedHasKey = false
 
         // 3. Keychain passwords, notifications and widget data
         ResetLeftovers.clear()
