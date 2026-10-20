@@ -116,6 +116,8 @@ extension TrustWebView {
             }
             Menu {
                 Button { messagePubkey = pubkey } label: { Label("Message", systemImage: "message") }
+                // Brainstorm shows the same person's trust scores, worked out off this device.
+                if let link = NostrWebLink.profile(pubkey: pubkey) { OpenInWebButton(link: link) }
                 Divider()
                 Button(role: blocked ? nil : .destructive) { toggleBlock(pubkey, blocked: blocked) } label: {
                     Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")

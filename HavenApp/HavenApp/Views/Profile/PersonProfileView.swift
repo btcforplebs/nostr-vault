@@ -273,6 +273,9 @@ struct PersonProfileView: View, Equatable {
             } label: {
                 Label("Copy npub", systemImage: "doc.on.doc")
             }
+            if let link = NostrWebLink.profile(pubkey: pubkey) {
+                OpenInWebButton(link: link)
+            }
             Divider()
             Button(role: isBlocked ? nil : .destructive, action: toggleBlock) {
                 Label(isBlocked ? "Unblock" : "Block",

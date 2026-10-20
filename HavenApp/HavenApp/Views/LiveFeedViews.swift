@@ -370,6 +370,10 @@ struct LiveStreamPlayerView: View {
                 }
                 Spacer(minLength: 0)
                 Menu {
+                    if let link = stream.webLink {
+                        OpenInWebButton(link: link)
+                        Divider()
+                    }
                     Button {
                         showingReportDialog = true
                     } label: {
