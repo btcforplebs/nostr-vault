@@ -22,8 +22,15 @@
 .dm-bubble.mine .note-text a, .dm-bubble.mine .mention { color: #fff; text-decoration: underline; }
 .dm-meta { display: block; margin-top: 2px; font: var(--t-cap); color: var(--text-3); text-align: right; }
 .dm-bubble.mine .dm-meta { color: rgb(255 255 255 / .7); }
-.dm-compose { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 8px + env(safe-area-inset-bottom)); display: flex; gap: 8px;
+.dm-compose { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 8px + env(safe-area-inset-bottom)); display: grid; gap: 6px;
   margin: 0 var(--gutter); padding: 8px 0; background: var(--bg); }
+.dm-compose.dragging { outline: 2px dashed var(--accent-line); outline-offset: 2px; border-radius: var(--radius); }
+.dm-compose-row { display: flex; gap: 8px; align-items: center; }
+/* The photo waiting to go with the next message (DMThreadView: 64 pt, rounded, an x in the corner). */
+.dm-attachment { position: relative; width: 64px; height: 64px; }
+.dm-attachment img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
+.dm-attachment-remove { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 999px;
+  border: 0; background: rgb(0 0 0 / .6); color: #fff; line-height: 22px; font-size: 16px; }
 
 /* An image link in a stranger's DM waits for a tap (NoteText TapImage). */
 .tap-image { display: flex; margin: 8px 0 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
