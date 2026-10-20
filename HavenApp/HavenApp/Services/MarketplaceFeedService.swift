@@ -16,6 +16,9 @@ final class MarketplaceFeedService: ObservableObject {
     @Published private(set) var isLoading = false
     /// Set when every relay failed or returned nothing.
     @Published private(set) var loadFailed = false
+    /// Any relay sent anything this load. An empty result after an answer is
+    /// "none found", not "could not reach".
+    private var relayAnswered = false
     /// Selected category chip, or nil for "All".
     @Published var selectedCategory: MarketCategory?
     /// Global by default, unlike Recipes: a marketplace is for finding sellers
@@ -107,6 +110,7 @@ final class MarketplaceFeedService: ObservableObject {
         disconnect()
         book.removeAll()
         loadFailed = false
+        relayAnswered = false
         followSetIsEmpty = false
         isLoading = true
 
@@ -177,6 +181,7 @@ final class MarketplaceFeedService: ObservableObject {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String else { return }
+        relayAnswered = true
 
         if type == "EOSE" {
             // One relay reaching EOSE is enough to show results; the others
@@ -219,7 +224,7 @@ final class MarketplaceFeedService: ObservableObject {
 
     private func finishLoading() {
         isLoading = false
-        loadFailed = listings.isEmpty
+        loadFailed = listings.isEmpty && !relayAnswered
         if !listings.isEmpty {
             lastLoadedAt = Date()
             lastLoadedScope = scope
