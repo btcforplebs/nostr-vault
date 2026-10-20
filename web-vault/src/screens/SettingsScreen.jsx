@@ -8,13 +8,14 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { StorageNote } from "../components/StorageNote.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { RelaysPage } from "./RelaysPage.jsx"
 import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { syncOwn } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import {
-  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL, relayRows, mediaServerRows,
+  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL, mediaServerRows,
   readEverything, backupLines, backupName, parseBackup, restoreBackup, logLines,
 } from "../net/settings.js"
 
@@ -110,7 +111,7 @@ function Page({ ctx, page }) {
     <main class="screen settings">
       <header class="screen-head"><a class="button small" href="#/settings">‹ Settings</a><h2>{title}</h2><span style="width: 92px" /></header>
       {page === "blocked" && <Blocked ctx={ctx} />}
-      {page === "relays" && <Relays ctx={ctx} />}
+      {page === "relays" && <RelaysPage ctx={ctx} />}
       {page === "media-servers" && <MediaServers ctx={ctx} />}
       {page === "import" && <Import ctx={ctx} />}
       {page === "backup" && <Backup ctx={ctx} />}
@@ -148,27 +149,6 @@ function BlockedRow({ ctx, pubkey, isPrivate }) {
       <button type="button" class="small" onClick={() => setAsking(true)}>Unblock</button>
       {asking && <UnblockDialog ctx={ctx} pubkey={pubkey} name={name} onClose={() => setAsking(false)} />}
     </div>
-  )
-}
-
-/** The account's relay list (kind 10002), as published; editing it is still the phone's job. */
-function Relays({ ctx }) {
-  const [rows, setRows] = useState(null)
-  useEffect(() => {
-    ctx.vault.outbox.query({ kinds: [10002], authors: [ctx.session.pubkey] }).then(evs => setRows(relayRows(evs.sort((a, b) => b.created_at - a.created_at)[0]))).catch(() => setRows([]))
-  }, [])
-  const fallback = !rows?.length
-  return (
-    <>
-      <p class="settings-note muted small">Where your notes are published and read from, as your relay list (NIP-65) says. Changing it is done on the phone for now.</p>
-      {rows === null ? <p class="empty">Loading…</p> : (fallback ? DEFAULT_RELAYS.map(url => ({ url, read: true, write: true })) : rows).map(r => (
-        <div key={r.url} class="settings-row static">
-          <span class="settings-title mono">{r.url}</span>
-          <span class="settings-tags">{r.read && <span class="tag">read</span>}{r.write && <span class="tag">write</span>}</span>
-        </div>
-      ))}
-      {rows !== null && fallback && <p class="settings-note muted small">No relay list of yours is here yet, so the defaults are used.</p>}
-    </>
   )
 }
 
