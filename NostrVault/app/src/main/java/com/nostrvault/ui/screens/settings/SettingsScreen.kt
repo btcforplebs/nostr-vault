@@ -175,6 +175,7 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
     SettingsGroup("Advanced", listOf(
         SettingsRow("Proof of Work", NostrVaultIcons.PoW, SettingsTile.Purple, Screen.PowSettings),
         SettingsRow("Database & Reset", NostrVaultIcons.Settings, SettingsTile.Gray, Screen.AdvancedSettings),
+        SettingsRow("Bitcoin On-Chain", NostrVaultIcons.Wallet, SettingsTile.Orange, Screen.BitcoinWallet),
         SettingsRow("Logs", NostrVaultIcons.Logs, SettingsTile.Gray, Screen.LogViewer),
     )),
 )

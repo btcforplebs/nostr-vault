@@ -1292,7 +1292,7 @@ func nip46Login(goSK, goURL string, background bool) *C.char {
 	// Parse the bunker URL to extract relay(s), target pubkey, and secret.
 	parsed, err := url.Parse(goURL)
 	if err != nil {
-		slog.Error("NIP46ConnectC: invalid bunker URL", "error", err)
+		slog.Error("NIP46ConnectC: invalid bunker URL", "error", bunkerParseError(err))
 		storeError("error:invalid bunker link")
 		return nil
 	}

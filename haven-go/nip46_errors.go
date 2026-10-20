@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"strings"
 )
 
@@ -55,4 +56,15 @@ func nip46PingLogLevel(kind string) slog.Level {
 	default:
 		return slog.LevelError
 	}
+}
+
+// bunkerParseError is a bunker link's parse error without the link: a
+// *url.Error quotes the whole URL, and its `secret=` would land in the logs
+// the Logs screen shows and copies.
+func bunkerParseError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
 }
