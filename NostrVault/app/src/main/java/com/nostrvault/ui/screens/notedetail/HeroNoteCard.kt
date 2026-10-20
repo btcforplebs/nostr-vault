@@ -196,6 +196,11 @@ internal fun HeroNoteCard(
                                 },
                             )
                             // Same as every other note's menu (NoteCard).
+                            com.nostrvault.ui.components.NostrWebLinks.forEvent(note.displayKind, note.effectiveAuthor, note.tags)?.let { link ->
+                                add(NoteAction(NostrVaultIcons.OpenExternal, link.label) {
+                                    com.nostrvault.ui.components.NostrWebLinks.open(heroContext, link.url)
+                                })
+                            }
                             if (note.content.isNotBlank()) {
                                 add(
                                     NoteAction(NostrVaultIcons.Copy, "Copy text") {

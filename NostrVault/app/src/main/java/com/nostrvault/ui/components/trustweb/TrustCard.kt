@@ -1,6 +1,7 @@
 package com.nostrvault.ui.components
 
 import com.nostrvault.data.model.TrustPathText
+import androidx.compose.ui.platform.LocalContext
 import com.nostrvault.ui.theme.ErrorRed
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -129,9 +130,18 @@ internal fun TrustCard(
                 modifier = Modifier.weight(1f),
             )
         }
+        // Brainstorm, so their trust can be checked off the device.
+        val context = LocalContext.current
+        val webLink = remember(pubkey) { NostrWebLinks.forProfile(pubkey) }
         if (onOpenInWot != null) {
-            CardButton("Open in WoT", icon = NostrVaultIcons.WebOfTrust, filled = true, accent = accent,
-                onClick = onOpenInWot, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                CardButton("Open in WoT", icon = NostrVaultIcons.WebOfTrust, filled = true, accent = accent,
+                    onClick = onOpenInWot, modifier = Modifier.weight(1f))
+                webLink?.let { link ->
+                    CardButton(link.label, short = "Brainstorm", icon = NostrVaultIcons.OpenExternal, filled = false,
+                        accent = accent, onClick = { NostrWebLinks.open(context, link.url) }, modifier = Modifier.weight(1f))
+                }
+            }
         } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // The profile page's words: Unfollow says what the tap does.
             CardButton(if (following) "Unfollow" else "Follow", filled = !following, accent = accent,
@@ -157,6 +167,16 @@ internal fun TrustCard(
                             onClick = {
                                 moreOpen = false
                                 onMessage()
+                            },
+                        )
+                        HorizontalDivider()
+                    }
+                    webLink?.let { link ->
+                        DropdownMenuItem(
+                            text = { Text(link.label, color = PrimaryText) },
+                            onClick = {
+                                moreOpen = false
+                                NostrWebLinks.open(context, link.url)
                             },
                         )
                         HorizontalDivider()
