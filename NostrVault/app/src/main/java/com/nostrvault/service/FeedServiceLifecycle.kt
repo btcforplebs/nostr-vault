@@ -316,6 +316,7 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                     // answers, and a tap queued under the previous account
                     // must not reach this one.
                     contactListConfirmed = false
+                    forgetFollowListForAccountSwitch()
                     pendingFollowActions.clear()
                     notificationManager.clearPendingFollows()
                     forceReload()
