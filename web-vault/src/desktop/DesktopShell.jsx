@@ -114,7 +114,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     <div class={`desk ${mode}${rail ? " rail" : ""}`}>
       <Sidebar ctx={ctx} side={side} rail={rail} />
       <section class="desk-main">
-        {view.route === "wot" ? <div class="desk-full"><WotScreen ctx={ctx} /></div>
+        {view.route === "wot" ? <div class="desk-full"><WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(view.arg) ? view.arg : undefined} /></div>
           : full ? null /* the Dashboard: main.jsx keeps the relay screen mounted and lays it over this area */
           : <SplitPane single={mode === "single"} list={list} detail={detail} placeholder={placeholder}
               noteHidden={noteHidden} setNoteHidden={setNoteHidden} onBack={closeDetail} />}

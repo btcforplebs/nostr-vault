@@ -1,7 +1,7 @@
 // The Feed's picker: what each feed asks the relays for, what is remembered, and that strangers' notes stay in memory.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { FEEDS, loadChoice, saveChoice, normalizeTag, feedFilter, fetchStrangerFeed, mergePage, statusGate, noteAuthors, heldNotes, holdNotes, feedKey, fromHaven } from "../src/net/feeds.js"
+import { FEEDS, feedList, loadChoice, saveChoice, normalizeTag, feedFilter, fetchStrangerFeed, mergePage, statusGate, noteAuthors, heldNotes, holdNotes, feedKey, fromHaven } from "../src/net/feeds.js"
 import { getProfile, fetchProfiles } from "../src/net/profiles.js"
 import { visibleNotes } from "../src/net/blocks.js"
 
@@ -10,6 +10,16 @@ const A = "a".repeat(64), B = "b".repeat(64)
 
 test("the picker offers Following, Global, Hashtag, Popular and Media, in the iPhone's order", () => {
   assert.deepEqual(FEEDS.map(f => f.label), ["Following", "Global", "Hashtag", "Popular", "Media"])
+})
+
+test("readers take their iPhone FeedMode place in the picker, and a saved reader is remembered", () => {
+  const readers = [{ id: "music", label: "Music" }, { id: "articles", label: "Articles" }, { id: "live", label: "Live" }]
+  assert.deepEqual(feedList(readers).map(f => f.id), ["following", "global", "hashtag", "popular", "media", "articles", "live", "music"])
+  assert.deepEqual(feedList().map(f => f.id), FEEDS.map(f => f.id))
+  const s = memStorage()
+  saveChoice({ mode: "articles", tag: "" }, s)
+  assert.equal(loadChoice(s, feedList(readers)).mode, "articles")
+  assert.equal(loadChoice(s).mode, "following")
 })
 
 test("only Following and Media are read from Haven /feed", () => {

@@ -5,7 +5,9 @@
 import { pool, uniq } from "./pool.js"
 import { FEED_KINDS } from "./sync.js"
 
-// The iPhone's FeedMode names and order (Services/FeedServiceTypes.swift). The rest of its feeds aren't on the web yet.
+// The iPhone's FeedMode order (Services/FeedServiceTypes.swift FeedMode). Readers (src/readers) take their place in it.
+export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popular", "media", "reels", "articles", "recipes",
+  "marketplace", "live", "polls", "music"]
 export const FEEDS = [
   { id: "following", label: "Following" },
   { id: "global", label: "Global" },
@@ -13,15 +15,21 @@ export const FEEDS = [
   { id: "popular", label: "Popular" },
   { id: "media", label: "Media" },
 ]
+/** The picker's feeds: these, plus each reader's { id, label }, in the iPhone's order. */
+export function feedList(readers = []) {
+  const all = [...FEEDS, ...readers.map(r => ({ id: r.id, label: r.label }))]
+  const at = id => { const i = FEED_ORDER.indexOf(id); return i < 0 ? FEED_ORDER.length : i }
+  return all.sort((a, b) => at(a.id) - at(b.id))
+}
 /** Following and Media are read from Haven /feed; the others are strangers' notes, held in memory. */
 export const fromHaven = mode => mode === "following" || mode === "media"
 const KEY = "nv-feed"
 
 /** The last feed picked on this browser: { mode, tag }. Following when nothing (or nothing valid) is saved. */
-export function loadChoice(storage = globalThis.localStorage) {
+export function loadChoice(storage = globalThis.localStorage, feeds = FEEDS) {
   try {
     const c = JSON.parse(storage?.getItem(KEY) ?? "null")
-    const mode = FEEDS.some(f => f.id === c?.mode) ? c.mode : "following"
+    const mode = feeds.some(f => f.id === c?.mode) ? c.mode : "following"
     return { mode, tag: normalizeTag(c?.tag) }
   } catch { return { mode: "following", tag: "" } }
 }
