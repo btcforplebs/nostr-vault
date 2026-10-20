@@ -10,7 +10,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
-import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, watchMessages } from "../net/dms.js"
+import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, watchMessages } from "../net/dms.js"
 
 /** The relays the user's own DMs are read from: their DM inbox list, read list, defaults and this browser's extras. */
 export async function inboxRelays(ctx) {
@@ -20,24 +20,41 @@ export async function inboxRelays(ctx) {
   return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
 }
 
-/** Messages state for a screen, loading once and re-rendering as messages land. `retry` asks again for every message
- *  that isn't open (the signer refused or stopped answering: `trouble`). */
+/** Messages state for a screen, loading once and re-rendering as messages land. `refresh` (the iPhone's pull to
+ *  refresh) looks at the relays again; `retry` also asks again for every message that isn't open (the signer refused
+ *  or stopped answering: `trouble`). Coming back to the tab after five minutes, or back online, looks again
+ *  too (DMService.syncOnForeground / reconnect), with a fresh live subscription. `syncing` while a look is running. */
 export function useMessages(ctx) {
   const [m, setM] = useState(getMessages)
   const [round, setRound] = useState(0)
+  const [syncing, setSyncing] = useState(false)
   useEffect(() => {
     const off = onMessages(() => setM(getMessages()))
     let stop = () => {}
     let live = true
     ;(async () => {
-      const relays = await inboxRelays(ctx)
-      if (!live) return
-      await loadMessages(ctx, relays).catch(() => {})
-      if (live) stop = watchMessages(ctx, relays)
+      setSyncing(true)
+      try {
+        const relays = await inboxRelays(ctx)
+        if (!live) return
+        await loadMessages(ctx, relays).catch(() => {})
+        if (live) stop = watchMessages(ctx, relays)
+      } finally { if (live) setSyncing(false) }
     })()
     return () => { live = false; off(); stop() }
   }, [ctx.session.pubkey, round])
-  return { ...m, retry: () => { forgetUnopened(); setRound(r => r + 1) } }
+  useEffect(() => {
+    // Both screens may be mounted (desktop list + thread): claimResync lets only one of them look.
+    const back = () => { if (document.visibilityState === "visible" && claimResync()) setRound(r => r + 1) }
+    const online = () => { if (claimResync({ after: 10_000 })) setRound(r => r + 1) }
+    document.addEventListener("visibilitychange", back)
+    addEventListener("online", online)
+    return () => { document.removeEventListener("visibilitychange", back); removeEventListener("online", online) }
+  }, [])
+  // Refresh looks again without forgetting what was settled: wraps found not to be the user's, and ones refused past
+  // MAX_REFUSALS, stay settled, so a routine tap never costs a bunker user a run of prompts. Only "Try again" does.
+  const retry = () => { forgetUnopened(); setRound(r => r + 1) }
+  return { ...m, syncing, retry, refresh: () => setRound(r => r + 1) }
 }
 
 /** Unread counts per conversation, re-counted as messages land or are read. -> { counts: Map peer -> n, total } */
@@ -80,7 +97,7 @@ export function SignerTrouble({ trouble, retry }) {
 }
 
 export function MessagesScreen({ ctx }) {
-  const { messages, note, trouble, retry, more, loaded } = useMessages(ctx)
+  const { messages, note, trouble, retry, refresh, syncing, more, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [to, setTo] = useState("")
   const [err, setErr] = useState("")
@@ -104,7 +121,10 @@ export function MessagesScreen({ ctx }) {
     <main class="screen">
       <header class="screen-head">
         <h2>Messages</h2>
-        {total > 0 && <button type="button" class="small" onClick={() => markRead(ctx.session.pubkey, [...messages.values()].filter(m => !blocked.has(m.peer)))}>Mark all read</button>}
+        <span class="dm-head-actions">
+          {total > 0 && <button type="button" class="small" onClick={() => markRead(ctx.session.pubkey, [...messages.values()].filter(m => !blocked.has(m.peer)))}>Mark all read</button>}
+          {!note && <button type="button" class="small" onClick={refresh} disabled={syncing} aria-label="Refresh messages">{syncing ? "Refreshing…" : "Refresh"}</button>}
+        </span>
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
       <BunkerNote ctx={ctx} />

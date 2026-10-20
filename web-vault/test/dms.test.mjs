@@ -250,3 +250,17 @@ test("#/dm/<hex> names the peer", () => {
   assert.equal(peerOf("#/dm/short"), null)
   assert.equal(peerOf("#/messages"), null)
 })
+
+test("coming back looks again only after five minutes, and once for two screens", async () => {
+  const { claimResync, RESYNC_AFTER } = await import("../src/net/dms.js")
+  let t = 10_000_000
+  const clock = () => t
+  await loadMessages({ vault: {}, session: { method: "nip07", pubkey: pk(A) }, signer: envOf(A).signer, account: { relays: { read: [], write: [] } } }, [], { crypto: cryptoOf(A), chat: fakeChat(), clock })
+  t += RESYNC_AFTER - 1
+  assert.equal(claimResync({ clock }), false, "a load just ran")
+  t += 1
+  assert.equal(claimResync({ clock }), true)
+  assert.equal(claimResync({ clock }), false, "the second screen coming back at the same moment doesn't look again")
+  t += 10_000
+  assert.equal(claimResync({ clock, after: 10_000 }), true, "back online looks after a shorter wait")
+})
