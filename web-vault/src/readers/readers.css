@@ -48,3 +48,30 @@
 .recipe-text { padding: 10px; display: grid; gap: 4px; }
 .recipe-text h3 { margin: 0; font: 700 14px/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .recipe-text h3 a { color: inherit; text-decoration: none; }
+
+/* Live: 16:9 tiles with a LIVE badge and viewers (LiveStreamCardView), the player column, and the chat. */
+.live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; padding: 0 var(--gutter) 16px; }
+.live-tile { background: var(--s1); border: 0.5px solid var(--hair); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+.live-tile:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.live-thumb { position: relative; aspect-ratio: 16 / 9; background: var(--s2); }
+.live-thumb img, .live-blank { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-badge { position: absolute; top: 8px; left: 8px; padding: 2px 6px; border-radius: 4px; background: var(--danger); color: #fff;
+  font: 700 10px/1.2 var(--font); letter-spacing: .04em; }
+.live-viewers { position: absolute; bottom: 8px; left: 8px; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / .6); color: #fff; font: var(--t-cap); }
+.live-text { padding: 10px; display: grid; gap: 4px; }
+.live-text h3 { margin: 0; font: 600 15px/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.live-text h3 a { color: inherit; text-decoration: none; }
+.live-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: var(--radius); }
+.live-out { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
+  background: var(--s2); color: var(--text); text-decoration: none; text-align: center; }
+.live-out img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .35; }
+.live-out span { position: relative; padding: 0 24px; font: var(--t-headline); }
+.live-chat { margin-top: 20px; border-top: 1px solid var(--hair); }
+.live-chat-head { font: var(--t-headline); margin: 12px 0 8px; }
+.live-chat-rows { max-height: 420px; overflow-y: auto; display: grid; gap: 8px; }
+.live-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font: var(--t-sub); }
+.live-row .avatar { align-self: center; }
+.live-who { font-weight: 600; color: var(--text-2); }
+.live-sats { color: var(--accent-light); font-weight: 700; }
+.live-msg { overflow-wrap: anywhere; }
+.live-row.zap { background: var(--accent-pale); border-radius: 8px; padding: 4px 6px; }
