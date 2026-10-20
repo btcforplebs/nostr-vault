@@ -171,6 +171,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Shares the notes and media backup zips (cache/exports/) with the
+             share sheet. Not exported; readers get a one-off URI grant. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Home-screen widgets (Glance). Each receiver names the provider XML
              that gives its size; the widget itself draws from the snapshot file
              the app publishes. -->

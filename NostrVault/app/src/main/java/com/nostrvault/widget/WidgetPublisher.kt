@@ -217,7 +217,11 @@ class WidgetPublisher @Inject constructor(
             ?.filter { f ->
                 f.isFile && f.nameWithoutExtension.let { n -> n.length == 64 && n.all { it in "0123456789abcdef" } }
             }
-            ?.sortedByDescending { it.lastModified() }
+            // Timestamps read once; a live lastModified() sort throws if a
+            // blob changes mid-sort.
+            ?.map { it to it.lastModified() }
+            ?.sortedByDescending { it.second }
+            ?.map { it.first }
             .orEmpty()
         for (file in blobs) {
             val kind = sniff(file)

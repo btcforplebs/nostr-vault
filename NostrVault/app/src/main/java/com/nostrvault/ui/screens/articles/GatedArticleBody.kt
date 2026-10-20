@@ -137,7 +137,7 @@ internal fun GatedArticleBody(
                     }
                     gatedWebUrl(note, gated, service)?.let { url ->
                         TextButton(onClick = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                         }) {
                             Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))

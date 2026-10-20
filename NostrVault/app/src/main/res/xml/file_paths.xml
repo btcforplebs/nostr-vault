@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider roots. Only the backup zips in cache/exports/ are shared
+  (DashboardViewModelImportExport). Add a path here only for files meant to
+  leave the app.
+-->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>

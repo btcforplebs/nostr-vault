@@ -217,7 +217,7 @@ private fun AboutSection() {
             color = LocalNostrVaultColors.current.primary,
             fontSize = 14.sp,
             modifier = Modifier.clickable {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))) }
             },
         )
     }
