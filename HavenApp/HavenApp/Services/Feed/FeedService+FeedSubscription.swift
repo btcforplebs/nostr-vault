@@ -303,7 +303,15 @@ extension FeedService {
         let subId = feedSubId(for: label)
         subIdToRelayKey[subId] = label
 
-        let req = ["REQ", subId, filter] as [Any]
+        // Global under Web of Trust asks twice, once for trusted authors and
+        // once open. Asked open only, a new account's small web matched almost
+        // nothing in a page of strangers and Global rendered blank.
+        var req: [Any] = ["REQ", subId]
+        if isGlobalLikeMode && !isInbox {
+            req.append(contentsOf: Self.trustScopedFilters(filter, trust: globalTrustSet()) as [Any])
+        } else {
+            req.append(filter)
+        }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)

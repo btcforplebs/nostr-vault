@@ -144,10 +144,12 @@ extension FeedService {
                     return
                 }
                 self.curatedGraphPollAttempts += 1
-                // ~2 minutes. If the graph has not appeared by then the relay
-                // could not reach its seed relays, and retrying forever just
-                // burns battery behind a screen that is already honest.
-                guard self.needsCuratedGraph, self.curatedGraphPollAttempts <= 40 else {
+                // ~5 minutes: the relay rebuilds a graph that names nobody
+                // every 2 minutes, so a first follow can take two rounds to
+                // land. If it has not appeared by then the relay could not
+                // reach its seed relays, and retrying forever just burns
+                // battery behind a screen that is already honest.
+                guard self.needsCuratedGraph, self.curatedGraphPollAttempts <= 100 else {
                     timer.invalidate()
                     self.curatedGraphPollTimer = nil
                     return
@@ -165,10 +167,31 @@ extension FeedService {
                         return
                     }
                     self.recomputeFilteredNotes()
+                    self.resubscribeGlobalForNewGraph()
                     self.connectionStatus = self.filteredNotes.isEmpty ? "No notes found" : "Live"
                 }
             }
         }
+    }
+
+    /// Re-ask every connected Global relay now the graph has loaded: the
+    /// trusted-author half of the REQ was built while the web was empty.
+    private func resubscribeGlobalForNewGraph() {
+        guard isGlobalLikeMode else { return }
+        for (key, client) in feedClients where !key.hasPrefix("page-") && client.connectionState == .connected {
+            sendPrimaryFeedSubscription(client: client, label: key)
+        }
+    }
+
+    /// What a finished load reports. "Live" over an empty Global that is
+    /// still waiting for its graph read as a feed that works and has nothing.
+    var liveOrPendingStatus: String {
+        globalAwaitsGraph ? curatedGraphPendingStatus : "Live"
+    }
+
+    /// Global is filtering by a web of trust that has not loaded yet.
+    var globalAwaitsGraph: Bool {
+        isGlobalLikeMode && !curatedGraphReady && !ConfigService.shared.config.globalShowsEveryone
     }
 
     /// "No notes found" is a lie while the Global feed is waiting for its

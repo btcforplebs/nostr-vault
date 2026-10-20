@@ -486,6 +486,7 @@
 		60B57CA574C71ADCEE8194D3 /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
 		60DBDA8C3680E9974E7386D8 /* FirstAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9186DB5FDE59FC6B87C6C3F8 /* FirstAnswer.swift */; };
 		60DEA99DD39DD7237F900AB0 /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
+		60EC9BF9AD8AAA44784CF963 /* GlobalFeedEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */; };
 		6107634D0F024E5CA86830A2 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
 		613AC454E25815E8143C6724 /* RelayProcessManager+MimeDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF5467C5412FB74901660F13 /* RelayProcessManager+MimeDetection.swift */; };
 		6170146EE4DEC312D4DAB61B /* NoteDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */; };
@@ -865,6 +866,7 @@
 		ACDC529EBD39E03CF54E889A /* SearchFilterMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7EDB2EA15D2E68ACF4B64F0 /* SearchFilterMenu.swift */; };
 		AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */; };
 		AD09CAB3FDA4AF35E77DEE62 /* CondensedNoteLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */; };
+		AD0E49E31659A84461BDFAF5 /* GlobalFeedEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */; };
 		ADF8E73FEAB54BB359DAB9F1 /* ProfileEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18F26C050E4BFA86B818A60 /* ProfileEditView.swift */; };
 		AE14C4EAA114B02298A68A83 /* SearchRecommendationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F9425ED11E6941459090BF /* SearchRecommendationsSection.swift */; };
 		AE37789FA8A675627D6EB342 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D86DC20FC17947852F5719 /* NostrService.swift */; };
@@ -1648,6 +1650,7 @@
 		7A927C4C3EB88D75B8E8AF17 /* MusicToolbarButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicToolbarButtons.swift; sourceTree = "<group>"; };
 		7B4C145BD660E4F7A185A677 /* WalletSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletSettingsView.swift; sourceTree = "<group>"; };
 		7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollComposeView.swift; sourceTree = "<group>"; };
+		7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalFeedEmptyState.swift; sourceTree = "<group>"; };
 		7C27B2F22F799426D3D276B3 /* BlossomDashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardComponents.swift; sourceTree = "<group>"; };
 		7CA03816123BAFD2424954F9 /* ImportTourStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportTourStep.swift; sourceTree = "<group>"; };
 		7CFB14BE787FF5D3A51852F1 /* NoteDetailView+Replies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+Replies.swift"; sourceTree = "<group>"; };
@@ -2861,6 +2864,7 @@
 				8D2901CEE1478D0AE933B4BC /* FeedView+ToolbarMenu.swift */,
 				C09269B6CDEA04F6D772F6BC /* FeedView+TrustScope.swift */,
 				FBB8668F5703C081765EC7C1 /* FeedVisibleRows.swift */,
+				7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */,
 				0FC58BB54728488999244E19 /* HighlightInlineBody.swift */,
 				68B2994F2A95D651708846D6 /* IdentifiableString.swift */,
 				9CB1418A113C8C037133410C /* NewPostsFold.swift */,
@@ -3521,6 +3525,7 @@
 				43E02A6DB11E2B376C20CB18 /* GifGridLayout.swift in Sources */,
 				9800F297286FD1E28D2411D4 /* GifItem.swift in Sources */,
 				E4D9036E6A98FD0E5E5E4624 /* GifPickerSheet.swift in Sources */,
+				60EC9BF9AD8AAA44784CF963 /* GlobalFeedEmptyState.swift in Sources */,
 				E22FFB37CAC77A587016D695 /* GlobalSearchLogic.swift in Sources */,
 				F21AC6DF7BE3739513710028 /* GlobalSearchSession.swift in Sources */,
 				5FA1579C568CB14E0DB553D3 /* GlobeArcs.swift in Sources */,
@@ -4177,6 +4182,7 @@
 				03770F1D9FA5237A9CC6FBAA /* GifGridLayout.swift in Sources */,
 				DDDBD242B9786EB74D4D8EC2 /* GifItem.swift in Sources */,
 				1170A2AE5A61D5B5FF2510CF /* GifPickerSheet.swift in Sources */,
+				AD0E49E31659A84461BDFAF5 /* GlobalFeedEmptyState.swift in Sources */,
 				82F1C518309EE4C29EF8642F /* GlobalSearchLogic.swift in Sources */,
 				7570C4E14AA4FF93C3F233E9 /* GlobalSearchSession.swift in Sources */,
 				4FD379CC4F37E7B4B7C2F6B0 /* GlobeArcs.swift in Sources */,

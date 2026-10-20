@@ -52,7 +52,7 @@ extension FeedService {
         let key = modeCacheKey(mode)
         guard let cache = modeCaches[key] else { return nil }
         let age = Date().timeIntervalSince(cache.capturedAt)
-        guard age < Self.modeCacheMaxAge, !cache.notes.isEmpty else {
+        guard age < Self.modeCacheMaxAge, !cache.notes.isEmpty, !isGlobalCacheOfStrangers(cache.notes) else {
             modeCaches.removeValue(forKey: key)
             return nil
         }
@@ -67,6 +67,14 @@ extension FeedService {
         popularNoteScores = cache.popularNoteScores
         lastEventTimestamp = cache.notes.map { Int64($0.createdAt.timeIntervalSince1970) }.max() ?? 0
         return age
+    }
+
+    /// A Global cache in which your web names nobody, saved while the web was
+    /// still empty. Resuming from its newest stranger's note never asked for
+    /// your people's older notes, so Global stayed blank on every return.
+    private func isGlobalCacheOfStrangers(_ cached: [FeedNote]) -> Bool {
+        guard isGlobalLikeMode, let trust = globalTrustSet() else { return false }
+        return !cached.contains { trust.contains($0.pubkey) }
     }
 
     /// Disconnects a side feed's service once it has gone unused for

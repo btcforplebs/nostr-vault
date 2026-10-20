@@ -173,6 +173,7 @@ extension FeedService {
         // 1. Subscribe to relays immediately using the cached follow set.
         if isGlobalLike {
             loadWotPubkeys()
+            pollForCuratedGraph()
         }
         if isGlobalLike || !followedPubkeys.isEmpty {
             subscribeToAllRelays()
