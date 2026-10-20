@@ -14,6 +14,7 @@ import { formatSats, fetchNotes } from "../net/notifications.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { receiptTrust } from "../net/zaps.js"
 import { VaultSearch } from "./VaultSearch.jsx"
+import { BlossomGallery } from "./BlossomGallery.jsx"
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
@@ -138,7 +139,7 @@ export function VaultScreen({ ctx, desk = false }) {
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       {status && <div class="status-line">{status}</div>}
-      {!loaded ? <p class="empty">Loading…</p> : <List mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} />}
+      {!loaded ? <p class="empty">Loading…</p> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} />}
       </>}
     </main>
   )
@@ -172,7 +173,7 @@ function Menu({ label, title, align = "left", children }) {
 }
 const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={on ? "on" : ""} aria-checked={on} onClick={onClick}>{children}</button>
 
-function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted }) {
+function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted }) {
   switch (mode) {
     case "activity": {
       const follows = followers
@@ -192,10 +193,11 @@ function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, like
       return list.length ? list.map(h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
     }
     case "media": {
+      if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} />
       const list = mediaFor(own)
       return list.length
         ? <div class="vault-grid">{list.map(p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><img src={p.url} alt="" loading="lazy" /></a>)}</div>
-        : <Empty text="Pictures from your notes show here. The phone's Blossom gallery isn't on the web yet." />
+        : <Empty text="Pictures from your notes show here." />
     }
     case "likes": return likes.length ? likes.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
     case "zaps": return zaps.length ? zaps.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />

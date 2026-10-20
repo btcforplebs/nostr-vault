@@ -32,7 +32,8 @@ export const FILTERS = {
   notes: [{ id: "all", title: "All notes", pill: "All" }, { id: "mine", title: "Your notes", pill: "Yours" }, { id: "tagged", title: "Mentions" }],
   articles: [{ id: "all", title: "All articles", pill: "All" }, { id: "recipes", title: "Recipes only", pill: "Recipes" }],
   highlights: [{ id: "all", title: "All highlights", pill: "All" }, { id: "mine", title: "Your highlights", pill: "Yours" }],
-  media: [],
+  // The phone's gallery filters (MediaGalleryToolbar), then the pictures in your notes, which the web showed before.
+  media: [{ id: "all", title: "All media", pill: "All" }, { id: "photos", title: "Photos" }, { id: "videos", title: "Videos" }, { id: "gifs", title: "GIFs" }, { id: "notes", title: "In your notes", pill: "Notes" }],
   likes: [{ id: "received", title: "Likes received", pill: "Received" }, { id: "given", title: "Likes given", pill: "Given" }],
   zaps: [{ id: "received", title: "Zaps received", pill: "Received" }, { id: "given", title: "Zaps given", pill: "Given" }],
   followers: [{ id: "new", title: "Newest followers", pill: "Newest" }, { id: "all", title: "All followers", pill: "All" }],
