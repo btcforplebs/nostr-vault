@@ -24,6 +24,18 @@ internal fun pastedMediaUrl(text: String): String? {
     return trimmed
 }
 
+/**
+ * Whether a pasted link may be fetched: http(s) to a public host only. The
+ * clipboard is set by other apps, so a loopback or LAN link would have us
+ * request our own relay or a host on the user's network. Resolves the name,
+ * so call off the main thread.
+ */
+internal fun pastedUrlIsPublic(url: String): Boolean =
+    com.nostrvault.util.UrlSafety.isSafeRemoteUrl(url)
+
+/** Shown when a pasted link points at this device or the local network. */
+internal const val PASTED_URL_REFUSED = "That link points at this device or your local network"
+
 internal const val MEDIA_GALLERY_PREFS = "media_gallery"
 
 
