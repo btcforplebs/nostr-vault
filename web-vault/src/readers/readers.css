@@ -113,3 +113,22 @@
 .music-player button.icon:disabled { opacity: .35; cursor: default; }
 .music-player a { color: var(--accent-light); text-decoration: none; padding: 0 6px; }
 @media (min-width: 760px) { .music-player { bottom: 12px; } }
+
+/* Marketplace: square photo tiles with price (MarketplaceCardView), and the listing view. */
+.market-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 var(--gutter) 16px; }
+@media (min-width: 700px) { .market-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+.market-tile { background: var(--s1); border: 0.5px solid var(--hair); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+.market-tile:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.market-photo { position: relative; aspect-ratio: 1; background: var(--s2); }
+.market-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.market-photo.big { border-radius: var(--radius); overflow: hidden; max-width: 560px; }
+.market-badge { position: absolute; top: 8px; left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #fff; font: 700 11px/1.4 var(--font); }
+.market-text { padding: 10px; display: grid; gap: 4px; }
+.market-text h3 { margin: 0; font: 600 14px/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.market-price { font: 700 14px/1.3 var(--font); color: var(--accent-light); }
+.market-price.big { font-size: 20px; }
+.market-pager { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.market-details { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.market-seller { margin: 16px 0; color: var(--text); }
+.market-buy { display: block; text-align: center; padding: 13px; border-radius: var(--radius); background: var(--accent); color: #fff;
+  font: 700 15px/1.3 var(--font); text-decoration: none; max-width: 560px; }
