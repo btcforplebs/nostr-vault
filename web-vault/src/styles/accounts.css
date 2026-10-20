@@ -21,3 +21,5 @@ button.danger { color: var(--danger); }
 .saved-accounts p { margin: 4px 0 0; text-align: center; }
 .readonly-signin { display: contents; }
 .readonly-signin .person-row { width: 100%; margin: 0; }
+.account-npub-line { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+.account-npub-line .account-npub { flex: 1; min-width: 0; margin-bottom: 0; }

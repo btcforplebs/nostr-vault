@@ -89,7 +89,7 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
         {active && <span class="you-badge">ACTIVE</span>}
       </button>
       {open && <div class="account-actions">
-        <div class="mono account-npub">{npubEncode(account.pubkey)}</div>
+        <NpubLine pubkey={account.pubkey} />
         {active
           ? confirm
             ? <>
@@ -158,5 +158,18 @@ function BackupCard({ ctx }) {
       {status && <p class="muted small">{status}</p>}
       {err && <p class="error small">{err}</p>}
     </section>
+  )
+}
+
+/** The account's full npub with Copy, as the iPhone's AccountDetailView header shows it. */
+function NpubLine({ pubkey }) {
+  const [copied, setCopied] = useState(false)
+  const npub = npubEncode(pubkey)
+  const copy = () => navigator.clipboard.writeText(npub).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {}) // refused: the npub is still selectable
+  return (
+    <div class="account-npub-line">
+      <div class="mono account-npub">{npub}</div>
+      <button class="small" onClick={copy} aria-label="Copy npub">{copied ? "Copied" : "Copy"}</button>
+    </div>
   )
 }
