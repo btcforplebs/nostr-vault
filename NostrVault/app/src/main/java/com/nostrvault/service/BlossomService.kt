@@ -123,6 +123,22 @@ class BlossomService @Inject constructor(
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * [remoteClient] for a URL another app chose (the clipboard): every hop,
+     * redirects included, must have connected to a public address, so a link
+     * can't reach this device's relay on 127.0.0.1 or a LAN host. Checked on
+     * the connected socket, so a name that re-resolves to 127.0.0.1 is caught too.
+     */
+    internal val publicOnlyClient = remoteClient.newBuilder()
+        .addNetworkInterceptor { chain ->
+            val addr = chain.connection()?.socket()?.inetAddress
+            if (addr == null || com.nostrvault.util.UrlSafety.isInternalAddress(addr)) {
+                throw IOException("Refused: ${chain.request().url.host} is not a public address")
+            }
+            chain.proceed(chain.request())
+        }
+        .build()
+
     // ══════════════════════════════════════════════════════════════════
     // Upload + Mirror
     // ══════════════════════════════════════════════════════════════════
@@ -240,12 +256,19 @@ class BlossomService @Inject constructor(
      * this reports whether the local save actually succeeded (it returns the blob's
      * sha256), so the feed viewer can show an accurate "Mirrored / Failed" result.
      *
+     * @param publicOnly when the URL came from another app (the clipboard):
+     *   refuse loopback/LAN addresses on every hop ([publicOnlyClient]).
      * @return the blob's sha256 on success, or null if the download or local save failed.
      */
-    suspend fun mirrorUrlToLocal(url: String, authHeader: String? = null): String? = withContext(Dispatchers.IO) {
+    suspend fun mirrorUrlToLocal(
+        url: String,
+        authHeader: String? = null,
+        publicOnly: Boolean = false,
+    ): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).get().build()
-            val response = remoteClient.newCall(request).execute()
+            val client = if (publicOnly) publicOnlyClient else remoteClient
+            val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.w(TAG, "Mirror $url to local: download HTTP ${response.code}")
                 return@withContext null

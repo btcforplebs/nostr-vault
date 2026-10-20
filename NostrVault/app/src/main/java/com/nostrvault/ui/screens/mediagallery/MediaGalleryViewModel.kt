@@ -326,12 +326,19 @@ class MediaGalleryViewModel @Inject constructor(
         }
         if (_isUploading.value) return
         viewModelScope.launch {
+            // Another app sets this text and can trigger the paste with the
+            // nostrvault://mediapaste link: only fetch from a public host,
+            // never our own relay on 127.0.0.1 or the LAN.
+            if (!withContext(Dispatchers.IO) { pastedUrlIsPublic(url) }) {
+                notificationManager.showError(PASTED_URL_REFUSED)
+                return@launch
+            }
             _isUploading.value = true
             val filename = url.substringBefore('?').substringBefore('#')
                 .substringAfterLast('/').ifEmpty { "pasted-media" }
             val uploadId = notificationManager.addUpload(filename)
             try {
-                if (blossomService.mirrorUrlToLocal(url) != null) {
+                if (blossomService.mirrorUrlToLocal(url, publicOnly = true) != null) {
                     notificationManager.markUploadSuccess(uploadId)
                     refresh()
                 } else {
