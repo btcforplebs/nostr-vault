@@ -42,8 +42,8 @@ struct ArticleInlineBody: View {
                     .font(.appSystem(size: 10, weight: .semibold))
                 Text(String(localized: "feed.note.longForm"))
                     .font(.appSystem(size: 11, weight: .semibold))
-                if let gated = note.gatedArticle {
-                    Text("· 🔒 \(gated.priceSats) sats")
+                if note.gatedArticle != nil {
+                    Text("· 🔒 Locked")
                         .font(.appSystem(size: 11, weight: .semibold))
                 } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
                     Text("· \(minutes) min read")

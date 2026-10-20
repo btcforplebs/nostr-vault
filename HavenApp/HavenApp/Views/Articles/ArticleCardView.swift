@@ -56,10 +56,10 @@ struct ArticleCardView: View {
                         .font(.appSystem(size: 12))
                         .foregroundColor(.secondary)
 
-                    if let gated = note.gatedArticle {
+                    if note.gatedArticle != nil {
                         Text("·")
                             .foregroundColor(.secondary)
-                        Label("\(gated.priceSats) sats", systemImage: "lock.fill")
+                        Label("Locked", systemImage: "lock.fill")
                             .font(.appSystem(size: 12, weight: .semibold))
                             .foregroundColor(.havenPurple)
                     } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
