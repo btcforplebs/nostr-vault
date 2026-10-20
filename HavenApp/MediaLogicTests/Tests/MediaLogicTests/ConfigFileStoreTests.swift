@@ -90,6 +90,32 @@ final class ConfigFileStoreTests: XCTestCase {
         XCTAssertEqual(backup.relayURL, "second")
     }
 
+    /// The user removed their key before handing the device on: the save
+    /// that drops it takes the encrypted copy in the backup with it.
+    func testRemovingTheKeyDeletesTheBackup() throws {
+        try store.write(try configWithKey())
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.backupURL.path))
+
+        XCTAssertTrue(store.forgetBackupIfKeyRemoved(hadKey: true, hasKey: false, setupDone: true))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.backupURL.path))
+    }
+
+    /// Tron's earlier path must still hold: a keyless save after a failed
+    /// load (hadKey false) is a recovery, and the backup keeps the key.
+    func testRecoverySaveKeepsTheBackup() throws {
+        try store.write(try configWithKey())
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
+
+        XCTAssertFalse(store.forgetBackupIfKeyRemoved(hadKey: false, hasKey: false, setupDone: true))
+        XCTAssertFalse(store.forgetBackupIfKeyRemoved(hadKey: true, hasKey: true, setupDone: true))
+        XCTAssertFalse(store.forgetBackupIfKeyRemoved(hadKey: true, hasKey: false, setupDone: false))
+
+        let backup = try JSONDecoder().decode(HavenConfig.self, from: Data(contentsOf: store.backupURL))
+        XCTAssertEqual(backup.ownerNcryptsec, "ncryptsec1owner")
+    }
+
     func testHasKeyMaterial() {
         var config = HavenConfig.default
         XCTAssertFalse(config.hasKeyMaterial)
