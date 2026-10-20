@@ -24,6 +24,9 @@ final class RecipeFeedService: ObservableObject {
     @Published private(set) var isLoading = false
     /// Set when every relay failed or returned nothing.
     @Published private(set) var loadFailed = false
+    /// Any relay sent anything this load. An empty result after an answer is
+    /// "none found", not "could not reach".
+    private var relayAnswered = false
     /// Selected category chip, or nil for "All".
     @Published var selectedCategory: String?
     /// Following by default. Global is filtered by the Web of Trust shield;
@@ -136,6 +139,7 @@ final class RecipeFeedService: ObservableObject {
         disconnect()
         collected.removeAll()
         loadFailed = false
+        relayAnswered = false
         followSetIsEmpty = false
         isLoading = true
 
@@ -233,6 +237,7 @@ final class RecipeFeedService: ObservableObject {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String else { return }
+        relayAnswered = true
 
         if type == "EOSE" {
             publish()
@@ -314,7 +319,7 @@ final class RecipeFeedService: ObservableObject {
 
     private func finishLoading() {
         isLoading = false
-        loadFailed = recipes.isEmpty
+        loadFailed = recipes.isEmpty && !relayAnswered
         if !recipes.isEmpty {
             lastLoadedAt = Date()
             lastLoadedScope = scope
