@@ -80,3 +80,21 @@ test("kinds from the type or the extension; filters; day groups keep order", () 
   const t = blossomAuthTemplate("delete", H("d"), 1000)
   assert.deepEqual(t.tags, [["t", "delete"], ["x", H("d")], ["expiration", "1600"]])
 })
+
+test("Test: a file of yours the server still serves proves it works; gone, empty, or silent say so", async () => {
+  const { testServer, SERVER_STATES } = await import("../src/net/blossom-gallery.js")
+  const list = [{ sha256: H("9"), url: `${A}/${H("9")}`, uploaded: 5 }]
+  const make = ({ listed = list, head = 200, listFails = false, front = true }) => async (url, opt = {}) => {
+    if (url.includes("/list/")) { if (listFails) throw new TypeError("Failed to fetch"); return res(200, listed) }
+    if (opt.method === "HEAD") { assert.equal(url, `${A}/${H("9")}`); return res(head) }
+    if (!front) throw new TypeError("Failed to fetch")
+    assert.equal(opt.mode, "no-cors"); return { ok: false, status: 0, type: "opaque" }
+  }
+  const ro = { ...ctx, signer: { readOnly: true } }
+  assert.equal((await testServer(A, ME, { ctx: ro, fetch: make({}) })).state, "working")
+  assert.equal((await testServer(A, ME, { ctx: ro, fetch: make({ head: 404 }) })).state, "lostFile")
+  assert.equal((await testServer(A, ME, { ctx: ro, fetch: make({ listed: [] }) })).state, "answers")
+  assert.deepEqual(await testServer(A, ME, { ctx: ro, fetch: make({ listFails: true }) }), { state: "answers", reason: "Failed to fetch" })
+  assert.equal((await testServer(A, ME, { ctx: ro, fetch: make({ listFails: true, front: false }) })).state, "offline")
+  assert.deepEqual(Object.keys(SERVER_STATES), ["working", "answers", "lostFile", "offline"])
+})

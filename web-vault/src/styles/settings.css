@@ -109,3 +109,11 @@ a.settings-row:hover { background: var(--s2); }
 .blossom-servers .missing { color: var(--text-3); }
 .blossom-viewer .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .relay-list { margin-top: 18px; }
+
+/* Settings › Media Servers: Test (iPhone MediaServersPage). */
+.server-health { display: flex; align-items: center; gap: 6px; margin-top: 3px; font: var(--t-foot); white-space: normal; }
+.server-health .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.server-health.working .dot { background: var(--online); }
+.server-health.answers .dot, .server-health.lostFile .dot { background: #ff9f0a; }
+.server-health.offline .dot { background: #ff453a; }
+.relay-edit-row .settings-title:has(.server-health) { white-space: normal; }
