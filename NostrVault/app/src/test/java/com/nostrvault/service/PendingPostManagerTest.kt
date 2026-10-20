@@ -38,12 +38,17 @@ class PendingPostManagerTest {
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()
 
+    /** Emit here to switch the active account. */
+    private val switches = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+
     private fun manager(delaySeconds: Int = 5): PendingPostManager {
         val prefs = mockk<SharedPreferences>(relaxed = true)
         every { prefs.getInt(any(), any()) } returns delaySeconds
         val context = mockk<Context>()
         every { context.getSharedPreferences(any(), any()) } returns prefs
-        return PendingPostManager(context)
+        val configStore = mockk<com.nostrvault.data.local.ConfigStore>()
+        every { configStore.accountSwitches } returns switches
+        return PendingPostManager(context, configStore)
     }
 
     private fun event(id: String) = NostrEvent(id, "pk", 0, 1, emptyList(), "hi", "sig")
@@ -285,5 +290,49 @@ class PendingPostManagerTest {
         m.startDelete { gone++ }
         advanceUntilIdle()
         assertEquals(1, gone)
+    }
+
+    /**
+     * The repost signs when the countdown ends, as whoever is active then:
+     * a switch mid-countdown must take it back, or B reposts A's pick.
+     */
+    @Test fun anAccountSwitchTakesBackAPendingRepost() = runTest(dispatcher) {
+        val m = manager()
+        val feed = feed()
+        m.startRepost("n1", feed)
+        runCurrent()
+        advanceTimeBy(2_000)
+        switches.tryEmit("hex-b")
+        advanceUntilIdle()
+        verify(exactly = 0) { feed.repostNote(any()) }
+        assertNull(m.actionType.value)
+        assertTrue(!m.isShowing.value)
+    }
+
+    /** Same for a delete: B must not publish a kind 5 for A's note. */
+    @Test fun anAccountSwitchTakesBackAPendingDelete() = runTest(dispatcher) {
+        val m = manager()
+        var gone = 0
+        m.startDelete { gone++ }
+        runCurrent()
+        assertEquals(1, switches.subscriptionCount.value)
+        advanceTimeBy(2_000)
+        assertTrue(switches.tryEmit("hex-b"))
+        advanceUntilIdle()
+        assertEquals(0, gone)
+        assertNull(m.actionType.value)
+    }
+
+    /** A post is taken back too (iOS cancels whatever is pending), keeping its draft. */
+    @Test fun anAccountSwitchTakesBackAPendingPostAndKeepsItsDraft() = runTest(dispatcher) {
+        val m = manager()
+        runCurrent()
+        val post = m.post("e1")
+        advanceTimeBy(2_000)
+        switches.tryEmit("hex-b")
+        advanceUntilIdle()
+        assertEquals(0, post.published)
+        assertEquals(1, post.kept)
+        assertTrue(!m.isSending("draft-e1"))
     }
 }
