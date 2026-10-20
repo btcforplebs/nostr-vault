@@ -1,6 +1,10 @@
 package com.nostrvault.service
 
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.pm.ProviderInfo
 import android.net.Uri
+import io.mockk.every
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -69,5 +73,38 @@ class ShareIntentGuardTest {
         assertEquals(listOf(b), sharedStreamUris(arrayListOf<Any?>("/data/data/$own/files/nostrvault_config.json", b, null, 7)))
         assertEquals(emptyList<Uri>(), sharedStreamUris("/sdcard/a.png"))
         assertEquals(emptyList<Uri>(), sharedStreamUris(null))
+    }
+
+    private fun uri(scheme: String?, authority: String?) = mockk<Uri> {
+        every { this@mockk.scheme } returns scheme
+        every { this@mockk.authority } returns authority
+    }
+
+    private fun context(providers: Map<String, String>): Context {
+        val pm = mockk<PackageManager> {
+            every { resolveContentProvider(any(), any<Int>()) } answers {
+                providers[firstArg()]?.let { pkg -> ProviderInfo().apply { packageName = pkg } }
+            }
+        }
+        return mockk {
+            every { packageName } returns own
+            every { packageManager } returns pm
+        }
+    }
+
+    /**
+     * The clipboard paths (the nostrvault://mediapaste link, which another app
+     * can open with no tap, and the composer's paste) check the URI the same
+     * way as the share sheet (Tron, #796).
+     */
+    @Test
+    fun aClipboardUriIntoOurOwnFilesIsRefused() {
+        val ctx = context(mapOf("media" to "com.android.providers.media", "renamed.ours" to own))
+        assertFalse(ctx.readsForeignUri(uri("file", null)))
+        assertFalse(ctx.readsForeignUri(uri("file", "")))
+        assertFalse(ctx.readsForeignUri(uri("content", "$own.androidx-startup")))
+        assertFalse(ctx.readsForeignUri(uri("content", "renamed.ours")))
+        assertTrue(ctx.readsForeignUri(uri("content", "media")))
+        assertTrue(ctx.readsForeignUri(uri("content", "com.example.hidden.provider")))
     }
 }
