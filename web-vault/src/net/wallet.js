@@ -100,6 +100,20 @@ export async function payInvoice(conn, invoice, opts) {
   return typeof preimage === "string" ? preimage : ""
 }
 
+/**
+ * Ask the wallet for an invoice to receive `sats` (NIP-47 make_invoice) -> the bolt11. Receiving spends nothing. The
+ * invoice must be one this app can read and ask for exactly `sats`, or it isn't shown: a payer would send what it says.
+ * `amountOf`: zaps.js invoiceMsat, passed in because zaps.js imports this file.
+ */
+export async function makeInvoice(conn, { sats, description = "" }, { amountOf, ...opts } = {}) {
+  if (!(Number.isInteger(sats) && sats >= 1 && sats <= 10_000_000)) throw new Error("Enter an amount from 1 to 10,000,000 sats.")
+  const params = { amount: sats * 1000, ...(description.trim() ? { description: description.trim() } : {}) }
+  const { invoice } = await walletRequest(conn, "make_invoice", params, opts)
+  if (typeof invoice !== "string" || !/^ln/i.test(invoice.trim())) throw new Error("Your wallet didn't send back an invoice.")
+  if (amountOf && amountOf(invoice) !== sats * 1000) throw new Error("Your wallet sent back an invoice for a different amount, so it isn't shown.")
+  return invoice.trim()
+}
+
 // Sealing: the link is encrypted under a non-extractable AES-GCM key, kept with it. This keeps the link out of plain
 // sight in the stored value; it is not protection: a copied profile or script on this page can still read it.
 export async function sealUri(uri, subtle = crypto.subtle) {
