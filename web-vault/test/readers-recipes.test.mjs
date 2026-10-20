@@ -45,10 +45,19 @@ test("categories: most used first, ties alphabetical, once per recipe, capped", 
 
 test("a load asks zap.cooking's relay with the filter and returns only recipes", async () => {
   const seen = []
-  const out = await fetchRecipes({ scope: "global", follows: [], readRelays: ["wss://r"], query: async (relays, f) => { seen.push({ relays, f }); return [recipe(), recipe({ content: "x" })] } })
-  assert.equal(out.length, 1)
+  const { recipes } = await fetchRecipes({ scope: "following", follows: [A], readRelays: ["wss://r"], query: async (relays, f) => { seen.push({ relays, f }); return [recipe(), recipe({ content: "x" })] } })
+  assert.equal(recipes.length, 1)
   assert.equal(seen[0].relays[0], ZAP_COOKING_RELAY)
   assert.equal(await fetchRecipes({ scope: "following", follows: [], readRelays: [], query: async () => { throw new Error("asked") } }), null)
+})
+
+test("Global keeps the web of trust's recipes, asking trusted authors first; no follows fails closed", async () => {
+  const asked = [], mine = recipe({ pubkey: A }), theirs = recipe({ pubkey: C })
+  const { recipes } = await fetchRecipes({ scope: "global", me: A, follows: ["7".repeat(64)], readRelays: [], trustOf: async () => new Set([A]),
+    query: async (r, f) => { asked.push(f.authors ?? null); return [mine, theirs] } })
+  assert.deepEqual(recipes.map(r => r.pubkey), [A])
+  assert.deepEqual(asked, [[A], null])
+  assert.deepEqual(await fetchRecipes({ scope: "global", me: A, follows: [], readRelays: [], trustOf: async () => { throw new Error("asked") }, query: async () => { throw new Error("asked") } }), { recipes: [], noWeb: true })
 })
 
 test("the module never touches Haven: a strangers' feed stays in memory", async () => {

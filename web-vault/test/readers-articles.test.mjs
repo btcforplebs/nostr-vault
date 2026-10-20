@@ -161,9 +161,19 @@ test("Following reads /feed, then writes the network's articles into /feed; Glob
   assert.deepEqual(asked[0].authors, [A, B])
 
   const g = fakeVault()
-  const out = await fetchArticles({ scope: "global", follows: [A], relays: ["wss://r"], vault: g, query: async () => [art({ pubkey: C })], online: true })
+  const out = await fetchArticles({ scope: "global", me: B, follows: [A], relays: ["wss://r"], vault: g, trustOf: async () => new Set([B, A, C]), query: async () => [art({ pubkey: C })], online: true })
   assert.equal(out.articles.length, 1)
   assert.equal(g.written.length, 0, "strangers' articles stay in memory")
+})
+
+test("Global: only people the web of trust vouches for, trusted authors asked first; no follows fails closed", async () => {
+  const asked = []
+  const out = await fetchArticles({ scope: "global", me: B, follows: [A], relays: ["wss://r"], online: true, trustOf: async () => new Set([B, A]),
+    query: async (r, f) => { asked.push(f.authors ?? null); return [art({ pubkey: A, d: "ok" }), art({ pubkey: C, d: "spam" })] } })
+  assert.deepEqual(out.articles.map(a => a.pubkey), [A])
+  assert.deepEqual(asked, [[A, B].sort(), null])
+  const none = await fetchArticles({ scope: "global", me: B, follows: [], relays: [], online: true, trustOf: async () => { throw new Error("asked") }, query: async () => { throw new Error("asked") } })
+  assert.deepEqual(none, { articles: [], fromNetwork: false, noWeb: true })
 })
 
 test("offline, Following shows what /feed holds and asks no relay", async () => {

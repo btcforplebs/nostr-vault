@@ -1,4 +1,5 @@
-// The Recipes feed (the iPhone's RecipeCardView grid and RecipeCategoryBar): Following or Global, category chips
+// The Recipes feed (the iPhone's RecipeCardView grid and RecipeCategoryBar): Following or Global (your web of
+// trust), category chips
 // built from the recipes loaded, image tiles. A tile opens the recipe in the article reader, whose "Open in" link
 // goes to zap.cooking. Strangers' recipes: held in memory only.
 import { useEffect, useRef, useState } from "preact/hooks"
@@ -28,16 +29,17 @@ export function RecipesScreen({ ctx }) {
 
   const load = async () => {
     const n = ++seq.current
-    if (scope === "following" && !follows.length) return setStatus("")
+    if (!follows.length) return setStatus("")
     if (navigator.onLine === false) return setStatus("Offline: Recipes needs the network")
     setStatus("Loading recipes…")
     try {
-      const list = await fetchRecipes({ scope, follows, readRelays: account.relays.read })
+      const got = await fetchRecipes({ scope, me: ctx.session?.pubkey, follows, readRelays: account.relays.read })
       if (n !== seq.current) return
-      held.set(scope, list ?? [])
-      setRecipes(list ?? [])
+      const list = got?.recipes ?? []
+      held.set(scope, list)
+      setRecipes(list)
       setStatus("")
-      if (list?.length) fetchProfiles(vault, list.map(r => r.pubkey), account.relays.read, { save: false }).catch(() => {})
+      if (list.length) fetchProfiles(vault, list.map(r => r.pubkey), account.relays.read, { save: false }).catch(() => {})
     } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
   }
   useEffect(() => { setOpen(null); setCategory(null); setRecipes(held.get(scope) ?? null); if (!held.has(scope)) load() }, [scope, follows.length])
@@ -57,7 +59,8 @@ export function RecipesScreen({ ctx }) {
         </div>
       )}
       {status && <div class="status-line">{status}</div>}
-      {scope === "following" && !follows.length ? <p class="empty">{account.loaded ? "Follow someone to see their recipes here, or switch to Global." : "Loading your follows…"}</p>
+      {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see their recipes here."
+          : "Global shows recipes from people your web of trust vouches for. Follow a few people first."}</p>
         : recipes === null ? <p class="empty">Loading recipes…</p>
         : !shown.length ? <p class="empty">{recipes.length && !unblocked.length ? "Every recipe loaded here is from someone you blocked."
           : scope === "following" ? "Nobody you follow has posted a recipe yet. Try Global." : "No recipes found."}</p>

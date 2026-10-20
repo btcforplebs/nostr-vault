@@ -1,5 +1,6 @@
 // The Live feed (the iPhone's LiveStreamCardView grid and LiveStreamPlayerView): streams on air now, Following or
-// Global, as tiles with a LIVE badge and viewers. A tile opens the stream: the video where the browser plays HLS
+// Global (your web of trust; everyone but adult streams until you follow someone), as tiles with a LIVE badge and
+// viewers. A tile opens the stream: the video where the browser plays HLS
 // itself (Safari), else a link out, then the chat and its zaps, read-only. Nothing is stored.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
@@ -30,7 +31,7 @@ export function LiveScreen({ ctx }) {
     if (navigator.onLine === false) return setStatus("Offline: Live needs the network")
     setStatus("Looking for live streams…")
     try {
-      const list = await fetchStreams({ scope, follows, readRelays: account.relays.read, blocked })
+      const list = await fetchStreams({ scope, me: ctx.session?.pubkey, follows, readRelays: account.relays.read, blocked })
       if (n !== seq.current) return
       setStreams(list ?? [])
       setStatus("")

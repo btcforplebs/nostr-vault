@@ -4,6 +4,7 @@
 import { naddrEncode } from "nostr-tools/nip19"
 import { pool, uniq } from "../net/pool.js"
 import { zapRequest, zapSats } from "../net/notifications.js"
+import { globalTrust } from "./trust.js"
 
 export const LIVE_KIND = 30311
 export const CHAT_KIND = 1311
@@ -99,15 +100,16 @@ export function liveFilters(scope, follows) {
 }
 
 /** From what the relays sent: the newest event per address (an ended stream replaces its live announcement), kept
- *  when followed (Following), not adult (Global), not blocked (author or host), and playable live now. */
-export function pickStreams(evs, { scope, follows, blocked = new Set(), now = Math.floor(Date.now() / 1000) }) {
+ *  when by someone followed (Following) or trusted (Global, author or Host in `trust`), not blocked (author or host),
+ *  and playable live now. Global with no web yet (`trust` null) shows everyone but adult streams (LiveChat.globalGate). */
+export function pickStreams(evs, { scope, follows, trust = null, blocked = new Set(), now = Math.floor(Date.now() / 1000) }) {
   const follow = new Set(follows)
   const by = new Map()
   for (const ev of evs) {
     const s = parseStream(ev)
     if (!s || blocked.has(s.author) || blocked.has(s.host)) continue
     if (scope === "following" && !isFollowedStream(s.author, ev.tags, follow)) continue
-    if (scope !== "following" && s.adult) continue
+    if (scope !== "following" && (trust ? !isFollowedStream(s.author, ev.tags, trust) : s.adult)) continue
     const have = by.get(s.address)
     if (!have || s.createdAt > have.createdAt) by.set(s.address, s)
   }
@@ -117,12 +119,14 @@ export function pickStreams(evs, { scope, follows, blocked = new Set(), now = Ma
 /** The read relays plus zap.stream's. */
 export const liveRelays = read => uniq([...read, STREAM_RELAY].map(u => u.replace(/\/+$/, "")))
 
-/** One load. `query` is for tests. -> streams, or null when there was nothing to ask. */
-export async function fetchStreams({ scope, follows, readRelays, blocked, query = (r, f, o) => pool.querySync(r, f, o), now }) {
+/** One load. `query` and `trustOf` are for tests. -> streams, or null when there was nothing to ask. Streams are
+ *  rare, so Global's one open filter covers the trusted too (no author-restricted second ask, as on the iPhone). */
+export async function fetchStreams({ scope, me, follows, readRelays, blocked, query = (r, f, o) => pool.querySync(r, f, o), trustOf, now }) {
   const filters = liveFilters(scope, follows)
   if (!filters.length) return null
+  const trust = scope === "following" ? null : await globalTrust(me, follows, trustOf)
   const evs = (await Promise.all(filters.map(f => query(liveRelays(readRelays), f, { maxWait: 10000 })))).flat()
-  return pickStreams(evs, { scope, follows, blocked, now })
+  return pickStreams(evs, { scope, follows, trust, blocked, now })
 }
 
 /** "Open in zap.stream": the stream's naddr, by who signed it, with up to two of its own relays as hints. */
