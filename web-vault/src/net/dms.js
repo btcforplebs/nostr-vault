@@ -235,6 +235,17 @@ export function openMore({ session, signer }, { crypto } = {}) {
   })
 }
 
+/** Back in front after this long, Messages looks at the relays again (DMService.syncOnForeground's 5 minutes). */
+export const RESYNC_AFTER = 5 * 60_000
+let lastLoad = -Infinity
+/** Coming back: true (and the look counted as begun) when no load began in the last `after`; false otherwise, so
+ *  two screens coming back together look once. `clock` is for tests. */
+export function claimResync({ clock = Date.now, after = RESYNC_AFTER } = {}) {
+  if (clock() - lastLoad < after) return false
+  lastLoad = clock()
+  return true
+}
+
 /**
  * Load the user's messages: Haven's /chat first (offline), then the relays, storing new wraps in /chat.
  * With a signer that can't decrypt, nothing is opened and `note` says why. `query`, `crypto`, `chat` are for tests.
@@ -244,8 +255,9 @@ export function loadMessages(ctx, relays, opts = {}) {
   return oneAtATime(() => load(ctx, relays, opts))
 }
 
-async function load({ vault, session, signer }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat } = {}) {
+async function load({ vault, session, signer }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat, clock = Date.now } = {}) {
   const me = session.pubkey
+  lastLoad = clock()
   if (state.pubkey !== me) resetMessages(me)
   if (state.trouble) { state = { ...state, trouble: "" }; changed() }
   const c = crypto ?? cryptoFor(session, { signer })
