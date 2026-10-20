@@ -1,6 +1,7 @@
 // The Music player (the iPhone's MusicPlayerService): one audio element for the page, a queue, play/pause, previous
 // and next, and on to the next song when one ends. It lives outside the Music screen, so switching feeds keeps the
-// song playing. Wavlake's mediaUrl is a plain MP3.
+// song playing. Wavlake's mediaUrl is a plain MP3. Every song that starts puts its artist in Your artists.
+import { rememberRecent, trackArtist } from "./wavlake.js"
 const listeners = new Set()
 let audio = null
 let state = { queue: [], index: -1, playing: false, time: 0, duration: 0, error: "" }
@@ -31,6 +32,7 @@ function load(index) {
   set({ index, time: 0, duration: t.duration ?? 0, error: "" })
   a.src = t.mediaUrl
   nowPlaying(t)
+  rememberRecent(trackArtist(t))
   const p = a.play()
   if (p?.catch) p.catch(e => { if (e?.name !== "AbortError") set({ playing: false, error: "Press play to start the song." }) })
 }

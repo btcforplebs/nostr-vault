@@ -126,6 +126,66 @@ export async function tracksOnAlbums(albums, get = getJson) {
   return pages.flatMap(p => p.tracks)
 }
 
+// --- Your artists and the artists you follow (the iPhone's MusicFeedState recentArtists and followedArtists).
+
+const RECENT_KEY = "nv-music-recent-artists"
+export const MAX_RECENT = 20
+
+/** Artists you've played or opened, newest first, saved in this browser. */
+export function loadRecent(storage = globalThis.localStorage) {
+  try {
+    const list = JSON.parse(storage?.getItem(RECENT_KEY) ?? "[]")
+    return Array.isArray(list) ? list.filter(a => a && typeof a.id === "string" && typeof a.name === "string") : []
+  } catch { return [] }
+}
+
+/** Puts `a` first in Your artists, keeping a picture or key an earlier entry had. -> the new list */
+export function rememberRecent(a, storage = globalThis.localStorage) {
+  if (!a?.id || !a.name) return loadRecent(storage)
+  const list = loadRecent(storage)
+  const known = list.find(x => x.id === a.id)
+  const entry = { id: a.id, name: a.name, art: a.art ?? known?.art ?? null, npub: a.npub ?? known?.npub ?? null }
+  const out = [entry, ...list.filter(x => x.id !== a.id)].slice(0, MAX_RECENT)
+  try { storage?.setItem(RECENT_KEY, JSON.stringify(out)) } catch {}
+  rememberArtist(entry)
+  return out
+}
+export const clearRecent = (storage = globalThis.localStorage) => storage?.removeItem(RECENT_KEY)
+
+/** The artist a song is by, for Your artists. */
+export const trackArtist = t => (t?.artistId ? { id: t.artistId, name: t.artist, art: t.artistArt, npub: t.artistNpub } : null)
+
+// Artist pages fetched this session, for their Nostr keys. One with no key is kept too, so it isn't asked twice; a
+// failed fetch isn't, so it is asked again next time.
+const artistInfo = new Map()
+
+async function mapLimit(items, n, f) {
+  const out = new Array(items.length)
+  let at = 0
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (at < items.length) { const i = at++; out[i] = await f(items[i]) }
+  }))
+  return out
+}
+
+/** Wavlake artists whose linked Nostr key you follow, and their ranked songs. Wavlake can't be asked which artists a
+ *  key follows, and only an artist's own page carries their key, so this checks the artists of the last 90 days'
+ *  rankings plus Your artists, as the iPhone does. `follows` and `blocked` are Sets of hex keys.
+ *  -> { artists, tracks } */
+export async function followedArtists({ follows, blocked = new Set(), recent = loadRecent(), get = getJson, cache = artistInfo }) {
+  const ranked = await trending(90, get).catch(() => [])
+  const ids = [...new Set([...recent.map(a => a.id), ...ranked.map(t => t.artistId).filter(Boolean)])]
+  await mapLimit(ids.filter(id => !cache.has(id)), 8, async id => {
+    try { cache.set(id, (await artist(id, get)).artist) } catch {}
+  })
+  const artists = ids.map(id => cache.get(id)).filter(a => {
+    const key = a?.npub && hexOf(a.npub)
+    return key && follows.has(key) && !blocked.has(key)
+  })
+  const followed = new Set(artists.map(a => a.id))
+  return { artists, tracks: ranked.filter(t => t.artistId && followed.has(t.artistId)) }
+}
+
 /** 3:07 */
 export const clock = s => (s == null || !Number.isFinite(s) ? "" : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`)
 export const songs = n => (n === 1 ? "1 song" : `${n} songs`)
