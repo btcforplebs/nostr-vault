@@ -222,3 +222,25 @@ test("a zap's words and note come from the signed request; with words, or on the
     [[BOB, ALICE], N3, ""],
   ])
 })
+
+// All / Mentions and the unread mark (VaultToolbar, VaultActivityList.activityVisit).
+test("the Mentions filter keeps replies, mentions and quotes only", async () => {
+  const { filterRows } = await import("../src/net/notifications.js")
+  const rows = ["reply", "mention", "quote", "reaction", "repost", "zap", "follow", "article", "highlight"].map((type, i) => ({ id: String(i), type }))
+  assert.deepEqual(filterRows(rows, "mentions").map(r => r.type), ["reply", "mention", "quote"])
+  assert.equal(filterRows(rows, "all").length, 9)
+})
+
+test("unread: a first visit marks nothing new; the next shows what came since; leaving moves the mark too", async () => {
+  const { visitNotifications, seenKey } = await import("../src/net/notifications.js")
+  const store = new Map()
+  const storage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
+  assert.equal(visitNotifications(ME, { arriving: true, storage, now: 100 }), 100)
+  visitNotifications(ME, { arriving: false, storage, now: 150 })
+  assert.equal(visitNotifications(ME, { arriving: true, storage, now: 400 }), 150)
+  assert.equal(store.get(seenKey(ME)), "400")
+  // Another account keeps its own mark.
+  assert.equal(visitNotifications(ALICE, { arriving: true, storage, now: 500 }), 500)
+  // A browser that won't store anything still opens the list.
+  assert.equal(visitNotifications(ME, { arriving: true, storage: { getItem() { throw new Error("no") }, setItem() { throw new Error("no") } }, now: 9 }), 9)
+})
