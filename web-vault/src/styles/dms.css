@@ -12,6 +12,10 @@
 .dm-row-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .dm-row-head .author-name { flex: 1; }
 .dm-row-last { font: var(--t-sub); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Unread (DMInboxView): the name and last line bold, the count in an accent pill. */
+.dm-row.unread .author-name, .dm-row.unread .dm-row-last { font-weight: 700; color: var(--text); }
+.dm-unread { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-grad); color: #fff; font: var(--t-cap); font-weight: 700;
+  line-height: 20px; text-align: center; }
 
 .dm-title { display: inline-flex; align-items: center; gap: 8px; max-width: 60%; }
 .dm-title .author-name { font: inherit; }
