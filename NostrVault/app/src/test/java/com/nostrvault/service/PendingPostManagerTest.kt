@@ -41,6 +41,10 @@ class PendingPostManagerTest {
     /** Emit here to switch the active account. */
     private val switches = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
 
+    /** The active account; set it without emitting on [switches] to stand in
+     *  for a switch whose listener has not run yet. */
+    private val activeAccount = kotlinx.coroutines.flow.MutableStateFlow("hex-a")
+
     private fun manager(delaySeconds: Int = 5): PendingPostManager {
         val prefs = mockk<SharedPreferences>(relaxed = true)
         every { prefs.getInt(any(), any()) } returns delaySeconds
@@ -48,6 +52,7 @@ class PendingPostManagerTest {
         every { context.getSharedPreferences(any(), any()) } returns prefs
         val configStore = mockk<com.nostrvault.data.local.ConfigStore>()
         every { configStore.accountSwitches } returns switches
+        every { configStore.activeAccountHexPubkey } returns activeAccount
         return PendingPostManager(context, configStore)
     }
 
@@ -334,5 +339,42 @@ class PendingPostManagerTest {
         assertEquals(0, post.published)
         assertEquals(1, post.kept)
         assertTrue(!m.isSending("draft-e1"))
+    }
+
+    /**
+     * A switch in the same instant the countdown ends: the account has changed
+     * but the switch listener has not run yet. The action is refused, not
+     * signed as B.
+     */
+    @Test fun aSwitchAsTheCountdownEndsRefusesTheRepost() = runTest(dispatcher) {
+        val m = manager()
+        val feed = feed()
+        m.startRepost("n1", feed)
+        advanceTimeBy(4_950)
+        activeAccount.value = "hex-b"
+        advanceUntilIdle()
+        verify(exactly = 0) { feed.repostNote(any()) }
+        assertNull(m.actionType.value)
+        assertTrue(!m.isShowing.value)
+    }
+
+    @Test fun aSwitchAsTheCountdownEndsRefusesTheDelete() = runTest(dispatcher) {
+        val m = manager()
+        var gone = 0
+        m.startDelete { gone++ }
+        advanceTimeBy(4_950)
+        activeAccount.value = "hex-b"
+        advanceUntilIdle()
+        assertEquals(0, gone)
+        assertNull(m.actionType.value)
+    }
+
+    @Test fun withTheDelayOffASwitchedAccountStillRefuses() = runTest(dispatcher) {
+        val m = manager(delaySeconds = 0)
+        var gone = 0
+        m.startDelete { gone++ }
+        activeAccount.value = "hex-b"
+        advanceUntilIdle()
+        assertEquals(0, gone)
     }
 }

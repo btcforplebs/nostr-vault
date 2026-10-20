@@ -67,11 +67,15 @@ extension NostrService {
     /// showing it before the next reload. Signing failures leave the list
     /// alone, like `deleteOwnEvents`.
     func deleteNote(id: String) {
+        // The account at hand-off. A kind 5 signed after a switch would go out
+        // as the new account, linking the two, and no relay would honour it.
+        let account = activeHexPubkey
         Task {
             let copy = await copyBeforeDeleting(id: id)
-            guard let signed = await signEventAsync(kind: 5, content: "", tags: NoteDeletion.requestTags(noteId: id)) else {
+            guard let signed = await signEventAsync(kind: 5, content: "", tags: NoteDeletion.requestTags(noteId: id)),
+                  signed.pubkey.lowercased() == account else {
                 #if DEBUG
-                print("NostrService: Failed to sign deletion event")
+                print("NostrService: Deletion not signed, or signed as another account")
                 #endif
                 return
             }

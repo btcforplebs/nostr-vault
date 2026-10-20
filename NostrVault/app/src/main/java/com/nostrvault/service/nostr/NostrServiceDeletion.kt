@@ -22,6 +22,9 @@ import kotlinx.coroutines.withContext
  * [deleteOwnEvents].
  */
 fun NostrService.deleteNote(noteId: String) {
+    // Taken at hand-off: a kind 5 signed after a switch would go out as the
+    // new account, linking the two, and no relay would honour it.
+    val lock = lockPostingAccount()
     scope.launch(Dispatchers.IO) {
         val copy = try {
             copyBeforeDeleting(noteId)
@@ -30,7 +33,8 @@ fun NostrService.deleteNote(noteId: String) {
             null
         }
         val signed = try {
-            signEventAsync(kind = 5, content = "", tags = NoteDeletion.requestTags(noteId))
+            signEventAsync(kind = 5, content = "", tags = NoteDeletion.requestTags(noteId), lockedTo = lock)
+                ?.also { requireStillPostingAs(lock, it.pubkey) }
         } catch (e: Exception) {
             Log.e(TAG, "deleteNote: not signed: ${e.message}")
             null
