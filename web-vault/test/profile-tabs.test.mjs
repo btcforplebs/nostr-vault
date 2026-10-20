@@ -53,3 +53,11 @@ test("someone's articles are asked for once, from their write relays, and only t
   assert.ok(asks[0].relays.includes("wss://w.example"))
   assert.deepEqual(asks[0].f, { kinds: [30023], authors: [pk], limit: 50 })
 })
+
+test("Brainstorm opens their nprofile page, as NostrWebLink.profile", async () => {
+  const { brainstormLink } = await import("../src/net/person.js")
+  const { decode } = await import("nostr-tools/nip19")
+  const url = brainstormLink(pk)
+  assert.ok(url.startsWith("https://brainstorm.world/p/nprofile1"))
+  assert.equal(decode(url.split("/p/")[1]).data.pubkey, pk)
+})

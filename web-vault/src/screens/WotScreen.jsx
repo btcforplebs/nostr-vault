@@ -1,6 +1,7 @@
 // The Web of Trust tab, as the iPhone's globe: you in the middle, your follows round you, then the extended network,
 // then further out (screens/WotGlobe.jsx). Tap someone for their trust card; My Web lists everyone in your web.
-// The web comes from your follows' contact lists (net/wot.js); the globe's maths is net/wot-globe.js.
+// The web comes from your follows' contact lists (net/wot.js); the globe's maths is net/wot-globe.js. `pubkey` (from
+// #/wot/<hex>, e.g. a profile's Web of Trust button) opens on that person's trust card, turned to the front.
 import { useEffect, useMemo, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -13,6 +14,7 @@ import { setFollow } from "../net/follows.js"
 import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPathText, FURTHER_CAP, EXTENDED_CAP, EXTENDED_MIN } from "../net/wot.js"
 import { layout, outerFaces, pictured } from "../net/wot-globe.js"
 import { WotGlobe } from "./WotGlobe.jsx"
+import { brainstormLink } from "../net/person.js"
 
 if (import.meta.env) import("../styles/wot.css")
 
@@ -20,7 +22,7 @@ const nameOf = pk => getProfile(pk)?.name || npubEncode(pk).slice(0, 12) + "…"
 const LAYER_LABEL = { me: "You", follow: "You follow", extended: "Extended network", further: "Further out" }
 const LAYER_SHORT = { me: "You", follow: "Follow", extended: "Extended", further: "Further" }
 
-export function WotScreen({ ctx }) {
+export function WotScreen({ ctx, pubkey }) {
   const { vault, account, session } = ctx
   const me = session.pubkey
   const follows = account.follows
@@ -58,6 +60,12 @@ export function WotScreen({ ctx }) {
   const nodes = useMemo(() => (web ? layout({ ...web, extended: shown.extended }, shown.further, faceKey ? faceKey.split(",") : []) : null), [web, shown, faceKey])
 
   const pickFromList = pk => { setPicked(pk); setCentre(pk); setView("map") }
+  // Opened on someone: their card once the web is in, and the globe turned to them if they're on it.
+  useEffect(() => {
+    if (!pubkey || !nodes) return
+    setPicked(pubkey)
+    if (nodes.some(n => n.pk === pubkey)) setCentre(pubkey)
+  }, [pubkey, !nodes])
 
   return (
     <main class="screen wot">
@@ -85,7 +93,7 @@ export function WotScreen({ ctx }) {
   )
 }
 
-/** The trust card: who links you, the trust path, and Profile / Follow / Message / Block. */
+/** The trust card: who links you, the trust path, and Profile / Follow / Message / Brainstorm / Block. */
 function TrustCard({ ctx, web, pubkey, onPick, onClose }) {
   const { vault, account, session, signer } = ctx
   const [, bump] = useState(0)
@@ -138,6 +146,7 @@ function TrustCard({ ctx, web, pubkey, onPick, onClose }) {
             {busy ? (signer.method === "nip46" ? "Waiting for your signer…" : "…") : iFollow ? "Unfollow" : "Follow"}
           </button>
           <a class="button small" href={`#/dm/${pubkey}`}>Message</a>
+          <a class="button small" href={brainstormLink(pubkey)} target="_blank" rel="noopener noreferrer">Brainstorm</a>
           {!blocked.has(pubkey) && <button type="button" class="small danger" onClick={() => setBlocking(true)}>Block</button>}
         </div>
       )}

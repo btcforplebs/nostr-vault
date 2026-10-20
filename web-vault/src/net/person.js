@@ -4,6 +4,7 @@
 // merged with this memory.
 import { pool, relayLists, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
 import { newestList } from "./follows.js"
+import { nprofileEncode } from "nostr-tools/nip19"
 
 export const PERSON_PAGE = 50
 // Notes fetched per profile, for the profiles opened most recently; the oldest profile is dropped past this.
@@ -52,3 +53,6 @@ export async function fetchPersonArticles(pubkey, writeRelays, { limit = 50, que
   while (articles.size > KEEP_PROFILES) articles.delete(articles.keys().next().value)
   return theirs
 }
+
+/** Their page on Brainstorm, the web's trust explorer (NostrWebLink.swift profile link). */
+export const brainstormLink = pubkey => `https://brainstorm.world/p/${nprofileEncode({ pubkey })}`
