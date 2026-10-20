@@ -11,7 +11,10 @@ const now = () => Math.floor(Date.now() / 1000)
 
 // The app's ctx ({ vault, session, signer, account }), set once the vault is up. A card has only its event.
 let actx = null
-export const setActionContext = ctx => { actx = ctx }
+export const setActionContext = ctx => {
+  actx = ctx
+  if (ctx?.session?.pubkey && deletionsFor !== ctx.session.pubkey) { deletionsFor = ctx.session.pubkey; loadDeletions(ctx) }
+}
 export const actionContext = () => actx
 
 /** The iPhone app's quick reaction (HavenConfig.defaultReactionEmoji). */
@@ -78,6 +81,25 @@ export async function publishAction(ctx, template) {
   return { event, relays }
 }
 
+/** NIP-09 deletion request for one of the account's events. A reaction carries ["k", "7"], as the iPhone's retract;
+ *  a post carries only its e tag (NoteDeletion.requestTags). */
+export const deletionTemplate = (id, kind) =>
+  ({ kind: 5, created_at: now(), tags: kind === 7 ? [["e", id], ["k", "7"]] : [["e", id]], content: "" })
+
+// Ids this account asked to delete: its posts (hidden wherever a card would draw them) and its retracted likes
+// (no longer read as sent). Read once per account from the kind 5s kept in Haven's outbox, then kept up to date here.
+const deleted = new Set()
+let deletionsFor = null
+export const isDeleted = id => deleted.has(id)
+function markDeleted(ids) {
+  for (const id of ids) deleted.add(id)
+  for (const id of ids) for (const f of listeners) f(id)
+}
+export async function loadDeletions(ctx) {
+  const mine = await ctx.vault.outbox.query({ kinds: [5], authors: [ctx.session.pubkey], limit: 1000 }).catch(() => [])
+  markDeleted(mine.flatMap(ev => (ev.tags ?? []).filter(t => t[0] === "e" && HEX64.test(t[1] ?? "")).map(t => t[1])))
+}
+
 // What this account has done to each note: { like, repost } as "busy" | "sent" | { error }. One store, so the same
 // note shown twice (feed and thread) reads the same.
 const state = new Map()
@@ -89,28 +111,77 @@ function put(id, kind, value) {
   for (const f of listeners) f(id)
 }
 
-/** Reactions and reposts this account already made, from Haven's outbox: still shown as sent after a reload. */
+// The ids of this account's likes on each note, so Unlike knows what to delete.
+const likeIds = new Map()
+const addLikes = (id, ids) => likeIds.set(id, [...new Set([...(likeIds.get(id) ?? []), ...ids])])
+
+/** Reactions and reposts this account already made, from Haven's outbox: still shown as sent after a reload. A like
+ *  it has since taken back (a kind 5 for it) doesn't count. */
 export async function loadSent(ctx, id) {
   if (actionState(id).like && actionState(id).repost) return
   const mine = await ctx.vault.outbox.query({ kinds: [6, 7], authors: [ctx.session.pubkey], "#e": [id], limit: 20 }).catch(() => [])
+  const likes = mine.filter(ev => ev.kind === 7).map(ev => ev.id)
+  const gone = likes.length
+    ? new Set((await ctx.vault.outbox.query({ kinds: [5], authors: [ctx.session.pubkey], "#e": likes, limit: 50 }).catch(() => []))
+      .flatMap(ev => ev.tags.filter(t => t[0] === "e").map(t => t[1])))
+    : new Set()
   for (const ev of mine) {
+    if (ev.kind === 7 && (gone.has(ev.id) || deleted.has(ev.id))) continue
     const kind = ev.kind === 7 ? "like" : "repost"
+    if (kind === "like") addLikes(id, [ev.id])
     if (actionState(id)[kind] === undefined) put(id, kind, "sent")
   }
 }
 
-/** Like or repost `note` once. A second tap on a sent one does nothing: taking it back (NIP-09) isn't here yet. */
+/** Like or repost `note` once. A second tap on a sent repost does nothing; on a sent like it is Unlike. */
 export async function act(ctx, kind, note) {
   const cur = actionState(note.id)[kind]
+  if (cur === "sent" && kind === "like") return unlike(ctx, note).catch(e => console.warn("Unlike:", e?.message ?? e))
   if (cur === "busy" || cur === "sent") return
   put(note.id, kind, "busy")
   try {
-    await publishAction(ctx, kind === "like" ? reactionTemplate(note) : repostTemplate(note))
+    const { event } = await publishAction(ctx, kind === "like" ? reactionTemplate(note) : repostTemplate(note))
+    if (kind === "like") addLikes(note.id, [event.id])
     put(note.id, kind, "sent")
   } catch (e) {
     put(note.id, kind, { error: String(e?.message ?? e) })
   }
 }
+
+/**
+ * Take a like back (FeedActions.removeReaction): a kind 5 for each of this account's reactions to the note. A like
+ * this browser didn't see made (an older app, another device) is looked up on the account's relays first, as the
+ * iPhone's retractUnknown does. The heart clears at once; if no deletion went out, it reads as liked again.
+ */
+export async function unlike(ctx, note) {
+  put(note.id, "like", "busy")
+  try {
+    let ids = likeIds.get(note.id) ?? []
+    if (!ids.length) {
+      const relays = [...new Set([...ctx.account.relays.read, ...ctx.account.relays.write])]
+      const found = await pool.querySync(relays, { kinds: [7], authors: [ctx.session.pubkey], "#e": [note.id] }, { maxWait: 6000 })
+      ids = found.filter(ev => ev.pubkey === ctx.session.pubkey).map(ev => ev.id)
+    }
+    if (!ids.length) throw new Error("Your like wasn't found on your relays")
+    for (const id of ids) await publishAction(ctx, deletionTemplate(id, 7))
+    likeIds.delete(note.id)
+    markDeleted(ids)
+    put(note.id, "like", undefined)
+  } catch (e) {
+    put(note.id, "like", "sent")
+    throw e
+  }
+}
+
+/** Ask relays to delete one of this account's own posts (NostrService.deleteNote). Hidden here at once. */
+export async function deleteNote(ctx, note) {
+  if (note.pubkey !== ctx.session.pubkey) throw new Error("Only your own posts can be deleted")
+  await publishAction(ctx, deletionTemplate(note.id, note.kind))
+  markDeleted([note.id])
+}
+
+/** Where Share and Copy link point, as on the iPhone (FeedNoteRow+Menus): a public page anyone can open. */
+export const shareLink = note => `https://mynostrspace.com/thread/${neventEncode({ id: note.id, author: note.pubkey, kind: note.kind })}`
 
 // Reply and quote hand the note to Compose through here, so Compose needn't fetch what the card already had.
 const handed = new Map()

@@ -8,7 +8,7 @@ import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
 import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
-import { act, actionContext, actionState, actionTarget, compose, loadSent, onActionState } from "../net/actions.js"
+import { act, actionContext, actionState, actionTarget, compose, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
 import { replyToPubkey, repostedId } from "../net/thread.js"
 
@@ -25,6 +25,20 @@ export function AuthorName({ pubkey }) {
  *  note inside it, zap included. `memoryOnly`: a stranger's note (Global, Hashtag), so quotes and @names inside it
  *  aren't written to Haven /feed. */
 export function NoteCard({ event, memoryOnly = false }) {
+  return <Undeleted id={event.id}>{card(event, memoryOnly)}</Undeleted>
+}
+
+/** Its children, until this account deletes post `id`: then nothing, at once, wherever the card was drawn. */
+export function Undeleted({ id, children }) {
+  const [gone, setGone] = useState(() => isDeleted(id))
+  useEffect(() => {
+    setGone(isDeleted(id))
+    return onActionState(i => { if (i === id) setGone(isDeleted(i)) })
+  }, [id])
+  return gone ? null : children
+}
+
+function card(event, memoryOnly) {
   if (event.kind === 6) {
     let inner
     try { inner = JSON.parse(event.content) } catch {}
@@ -101,22 +115,22 @@ function NoteActions({ note }) {
       <ActionButton label="Reply" off={off} icon={ICONS.reply} onClick={() => compose("reply", note)} />
       <ActionButton label="Repost" off={off} doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => act(ctx, "repost", note)} />
       <ActionButton label="Quote" off={off} icon={ICONS.quote} onClick={() => compose("quote", note)} />
-      <ActionButton label="Like" off={off} doneLabel="Liked" kind="like" state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
+      <ActionButton label="Like" off={off} doneLabel="Liked. Tap to unlike" kind="like" undo state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
       <ZapButton note={note} />
       {!off && <span class="note-actions-end"><MoreMenu note={note} className="note-action" /></span>}
     </div>
   )
 }
 
-// state: undefined | "busy" | "sent" | { error }. Sent stays pressed: taking it back (NIP-09) isn't here yet.
-function ActionButton({ label, doneLabel, kind, state, icon, onClick, off = "" }) {
+// state: undefined | "busy" | "sent" | { error }. Sent stays pressed; with `undo` (Like) a tap on it takes it back.
+function ActionButton({ label, doneLabel, kind, state, icon, onClick, off = "", undo = false }) {
   const sent = state === "sent", busy = state === "busy", error = state?.error
   if (off) onClick = undefined
   const name = off ? `${label}. ${off}` : sent ? doneLabel : error ? `${label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
   return (
     <button type="button" class={`note-action${kind ? " " + kind : ""}${sent ? " sent" : ""}${error ? " failed" : ""}${off ? " off" : ""}`}
       aria-label={name} title={name} aria-pressed={kind ? sent : undefined} aria-busy={busy || undefined}
-      aria-disabled={sent || busy || !!off || undefined} onClick={sent || busy ? undefined : onClick}>
+      aria-disabled={(sent && !undo) || busy || !!off || undefined} onClick={(sent && !undo) || busy ? undefined : onClick}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill={sent && kind === "like" ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d={icon} />
       </svg>
