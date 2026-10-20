@@ -3,6 +3,7 @@
 // anywhere, Haven's outbox or the relays, so a stale or missing local copy never gets published over the real one.
 import { pool, publishRelays, uniq, DEFAULT_RELAYS, PROFILE_RELAYS } from "./pool.js"
 import { checkSigned } from "./sync.js"
+import { serverUrl } from "./upload.js"
 
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 const now = () => Math.floor(Date.now() / 1000)
@@ -116,3 +117,21 @@ export function relayProblem(rows) {
 }
 
 export const sameRows = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+// ---- Media servers (kind 10063) ----
+
+/** The list's servers, in its order (the first is where a photo is uploaded first), duplicates dropped. Servers
+ *  upload.js won't use (not https, gone hosts) stay listed so an edit doesn't drop them unasked. */
+export function serverEntries(ev) {
+  const urls = (ev?.tags ?? []).filter(t => t[0] === "server" && typeof t[1] === "string" && t[1].trim()).map(t => serverUrl(t[1]) ?? t[1].trim())
+  return uniq(urls)
+}
+
+/** BUD-03 tags, the old copy's other tags kept. */
+export function serverTags(urls, previous) {
+  return [...(previous?.tags ?? []).filter(t => t[0] !== "server"), ...urls.map(u => ["server", u])]
+}
+
+export const addServer = (urls, url) => urls.includes(url) ? urls : [...urls, url]
+export const removeServer = (urls, url) => urls.filter(u => u !== url)
+export const serverProblem = urls => urls.length ? "" : "Keep at least one server, or photos have nowhere to go."
