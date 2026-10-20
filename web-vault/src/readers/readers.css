@@ -132,3 +132,9 @@
 .market-seller { margin: 16px 0; color: var(--text); }
 .market-buy { display: block; text-align: center; padding: 13px; border-radius: var(--radius); background: var(--accent); color: #fff;
   font: 700 15px/1.3 var(--font); text-decoration: none; max-width: 560px; }
+
+/* Locked (gated) articles */
+.reader-locked { color: var(--accent-light); font-weight: 600; }
+.reader-lock { margin: 16px 0; padding: 16px; border-radius: 14px; background: var(--s1); border: 1px solid var(--accent-line); }
+.reader-lock p { margin: 8px 0 12px; }
+.reader-lock-open { display: block; text-align: center; padding: 12px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
