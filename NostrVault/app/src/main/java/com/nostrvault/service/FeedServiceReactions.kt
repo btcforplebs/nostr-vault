@@ -220,6 +220,9 @@ import com.nostrvault.ui.components.ReactionChoice
         if (noteId in existing) return
         _repostedEventIds.value = existing + noteId
 
+        // Taken at hand-off, so a switch while it signs refuses it rather
+        // than reposting as the new account.
+        val lock = nostrService.lockPostingAccount()
         scope.launch(Dispatchers.IO) {
             // NIP-18: always repost the ORIGINAL event, not a repost wrapper. For kind
             // 6 notes, repostedEventId points to the original kind-1 event (the only
@@ -246,7 +249,10 @@ import com.nostrvault.ui.components.ReactionChoice
                 originalPubkey?.let { add(listOf("p", it)) }
                 if (repostKind == 16) add(listOf("k", originalKind.toString()))
             }
-            val event = runCatching { nostrService.signEventAsync(kind = repostKind, content = rawEvent, tags = tags) }
+            val event = runCatching {
+                nostrService.signEventAsync(kind = repostKind, content = rawEvent, tags = tags, lockedTo = lock)
+                    ?.also { nostrService.requireStillPostingAs(lock, it.pubkey) }
+            }
                 .onFailure { Log.e(TAG, "repost not signed: ${it.message}") }.getOrNull()
             if (event != null) {
                 nostrService.postEvent(event)

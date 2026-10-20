@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -186,11 +187,11 @@ class EventInspector(
 
     private fun lookupReply(message: String, subId: String): RelayPresence? {
         val parsed = runCatching { Json.parseToJsonElement(message).jsonArray }.getOrNull() ?: return null
-        if (parsed.size < 2 || parsed[1].jsonPrimitive.contentOrNull != subId) return null
-        return when (parsed[0].jsonPrimitive.contentOrNull) {
+        if (parsed.size < 2 || (parsed[1] as? JsonPrimitive)?.contentOrNull != subId) return null
+        return when ((parsed[0] as? JsonPrimitive)?.contentOrNull) {
             "EVENT" -> {
                 val ev = parsed.getOrNull(2) as? JsonObject ?: return null
-                if (ev["id"]?.jsonPrimitive?.contentOrNull != eventId) return null
+                if ((ev["id"] as? JsonPrimitive)?.contentOrNull != eventId) return null
                 val raw = ev.toString()
                 // A relay can send anything under any id; only a copy that
                 // verifies counts as having the event.
@@ -203,7 +204,7 @@ class EventInspector(
             }
             "EOSE" -> RelayPresence.NotFound
             "CLOSED" -> RelayPresence.Failed(
-                parsed.getOrNull(2)?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() } ?: "refused the request"
+                (parsed.getOrNull(2) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() } ?: "refused the request"
             )
             else -> null
         }
@@ -212,10 +213,10 @@ class EventInspector(
     /** `["OK", <eventId>, <accepted>, <message>]` for this event, else null. */
     private fun okReply(message: String): Pair<Boolean, String>? {
         val parsed = runCatching { Json.parseToJsonElement(message).jsonArray }.getOrNull() ?: return null
-        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "OK") return null
-        if (parsed[1].jsonPrimitive.contentOrNull != eventId) return null
-        val accepted = parsed[2].jsonPrimitive.booleanOrNull ?: false
-        return accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
+        if (parsed.size < 3 || (parsed[0] as? JsonPrimitive)?.contentOrNull != "OK") return null
+        if ((parsed[1] as? JsonPrimitive)?.contentOrNull != eventId) return null
+        val accepted = (parsed[2] as? JsonPrimitive)?.booleanOrNull ?: false
+        return accepted to ((parsed.getOrNull(3) as? JsonPrimitive)?.contentOrNull ?: "")
     }
 
     private fun adopt(raw: String) {

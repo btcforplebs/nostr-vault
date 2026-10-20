@@ -175,16 +175,16 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                             val collector = launch {
                                 client.messages.collect { msg ->
                                     val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
-                                    when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                    when ((arr.getOrNull(0) as? JsonPrimitive)?.contentOrNull) {
                                         "EVENT" -> {
-                                            val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                            val obj = (arr.getOrNull(2) as? JsonObject) ?: return@collect
                                             val ev = parseSignedEvent(obj.toString()) ?: return@collect
                                             if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
                                             if (dTag != null && ev.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@collect
                                             best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
                                         }
                                         "EOSE" -> {
-                                            val ours = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull == subId
+                                            val ours = (arr.getOrNull(1) as? JsonPrimitive)?.contentOrNull == subId
                                             if (done.complete(Unit) && ours) answered.incrementAndGet()
                                         }
                                         "CLOSED" -> done.complete(Unit)
@@ -235,8 +235,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                         val collector = launch {
                             client.messages.collect { msg ->
                                 val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
-                                if (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull != "EVENT") return@collect
-                                val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                if ((arr.getOrNull(0) as? JsonPrimitive)?.contentOrNull != "EVENT") return@collect
+                                val obj = (arr.getOrNull(2) as? JsonObject) ?: return@collect
                                 val ev = parseSignedEvent(obj.toString()) ?: return@collect
                                 val r = vertex.reply(ev.kind, ev.pubkey, ev.tags, ev.content, request.id, target) ?: return@collect
                                 if (HavenBridge.verifyEvent(obj.toString())) answer.complete(r)

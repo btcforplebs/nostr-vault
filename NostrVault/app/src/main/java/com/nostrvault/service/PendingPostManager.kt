@@ -24,7 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class PendingPostManager @Inject constructor(
     @ApplicationContext context: Context,
-    configStore: ConfigStore,
+    private val configStore: ConfigStore,
 ) {
 
     companion object {
@@ -338,11 +338,22 @@ class PendingPostManager @Inject constructor(
         // action on its first pass.
         _isShowing.value = durationMs > 0
 
+        // The account the action was queued under. The switch listener in
+        // init runs a dispatch after the switch itself, so a countdown that
+        // ends in that gap would still sign as the new account; checking the
+        // active account here, at the moment it goes out, closes the gap.
+        val queuedAccount = configStore.activeAccountHexPubkey.value
+
         countdownJob = scope.launch {
             val steps = (durationMs / TICK_INTERVAL_MS).toInt()
             for (i in steps downTo 0) {
                 _timeRemaining.value = (i * TICK_INTERVAL_MS) / 1000f
                 if (i > 0) delay(TICK_INTERVAL_MS)
+            }
+
+            if (configStore.activeAccountHexPubkey.value != queuedAccount) {
+                this@PendingPostManager.cancel()
+                return@launch
             }
 
             // Countdown complete — publish

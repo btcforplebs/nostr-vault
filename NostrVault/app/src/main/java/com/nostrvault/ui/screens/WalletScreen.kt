@@ -10,9 +10,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -23,7 +20,6 @@ import androidx.lifecycle.viewModelScope
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.data.local.ConfigStore
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.LNURLPayResponse
 import com.nostrvault.service.LNURLService
@@ -71,9 +67,6 @@ class WalletViewModel @Inject constructor(
     val activeHexPubkey: String get() = nostrService.activeHexPubkey
     private val _lightningBalance = MutableStateFlow<Long?>(null)
     val lightningBalance = _lightningBalance.asStateFlow()
-
-    private val _taprootAddress = MutableStateFlow<String?>(null)
-    val taprootAddress = _taprootAddress.asStateFlow()
 
     // Shared operation state
     private val _busy = MutableStateFlow(false)
@@ -139,7 +132,6 @@ class WalletViewModel @Inject constructor(
 
     init {
         refreshBalance()
-        if (config.value.showBitcoinWallet) deriveAddress()
         // Re-read on every account switch, as iOS keys on the active pubkey.
         viewModelScope.launch {
             configStore.config.map { it.activeOrOwnerNpub() }.distinctUntilChanged().collect {
@@ -211,21 +203,11 @@ class WalletViewModel @Inject constructor(
     fun setNwcUri(uri: String) = configStore.update { it.copy(nwcURI = uri.ifBlank { null }) }
     fun setDefaultZap(sats: Int) = configStore.update { it.copy(defaultZapAmount = sats.coerceAtLeast(1)) }
 
-    fun toggleBitcoin(on: Boolean) {
-        configStore.update { it.copy(showBitcoinWallet = on) }
-        if (on) deriveAddress() else _taprootAddress.value = null
-    }
-
     fun refreshBalance() {
         viewModelScope.launch {
             // NWC get_balance returns millisats (NIP-47); display as sats like iOS.
             _lightningBalance.value = try { nwcService.getBalance() / 1000 } catch (_: Exception) { null }
         }
-    }
-
-    private fun deriveAddress() {
-        val hex = nostrService.ownerHexPubkey
-        if (hex.isNotEmpty()) _taprootAddress.value = HavenBridge.deriveTaprootAddress(hex)
     }
 
     fun clearMessages() { _error.value = null; _message.value = null }
@@ -410,7 +392,6 @@ private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), SETTIN
 @Composable
 fun WalletScreen(
     onBack: () -> Unit,
-    onSweep: () -> Unit = {},
     onNoteClick: (String) -> Unit = {},
     viewModel: WalletViewModel = hiltViewModel(),
 ) {
@@ -465,7 +446,7 @@ fun WalletScreen(
                     onNoteClick,
                     onConnectWallet = { selectedTab = WalletTab.SETTINGS },
                 )
-                WalletTab.SETTINGS -> WalletSettingsTab(viewModel, onSweep)
+                WalletTab.SETTINGS -> WalletSettingsTab(viewModel)
             }
         }
     }
@@ -550,11 +531,9 @@ private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
 }
 
 @Composable
-private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
+private fun WalletSettingsTab(viewModel: WalletViewModel) {
     val config by viewModel.config.collectAsState()
-    val taproot by viewModel.taprootAddress.collectAsState()
     val colors = LocalNostrVaultColors.current
-    val clipboard = LocalClipboardManager.current
 
     Column(
         modifier = Modifier
@@ -589,42 +568,6 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 colors = walletFieldColors(colors.primary),
             )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        WalletSectionLabel("Bitcoin")
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Bitcoin Address", color = PrimaryText, fontSize = 15.sp)
-                    InfoButton(SettingsHelp.WALLET_BITCOIN)
-                }
-                Text("Derive a taproot address from your Nostr key (BIP-341)", color = SecondaryText, fontSize = 12.sp)
-            }
-            Switch(
-                checked = config.showBitcoinWallet,
-                onCheckedChange = viewModel::toggleBitcoin,
-                colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
-            )
-        }
-
-        if (config.showBitcoinWallet && taproot != null) {
-            Spacer(Modifier.height(12.dp))
-            WalletQr(taproot!!)
-            Spacer(Modifier.height(8.dp))
-            Text(taproot!!, color = PrimaryText, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-            Spacer(Modifier.height(8.dp))
-            Row {
-                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(taproot!!)) }) {
-                    Text("Copy Address")
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = onSweep,
-                    colors = ButtonDefaults.buttonColors(containerColor = ZapOrange),
-                ) { Text("Sweep Wallet") }
-            }
         }
 
         Spacer(Modifier.height(32.dp))

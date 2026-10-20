@@ -167,6 +167,7 @@ class PendingPostManager: ObservableObject {
         // one was swapped to the inner author.
         let originalPubkey = FeedService.shared.originalNote(for: sourceNote).pubkey
         let originalKind = sourceNote.repostedEventId != nil ? 1 : sourceNote.kind
+        let queuedAccount = ConfigService.shared.activeAccountHexPubkey
 
         beginCountdown(duration: duration) {
             let confirmationId = self.beginConfirmation(.repost)
@@ -194,14 +195,16 @@ class PendingPostManager: ObservableObject {
                 kind: repostKind, content: embedded,
                 tags: tags,
                 difficulty: powDiff
-            ) {
+            ), signed.pubkey.lowercased() == queuedAccount {
+                // Mining can take seconds; one signed as an account switched
+                // to meanwhile is dropped, not sent, and not marked reposted.
                 nostrService.postEvent(signed) { outcome in
                     self.finishConfirmation(confirmationId, outcome: outcome)
                 }
+                FeedService.shared.repostedEventIds.insert(originalId)
             } else {
                 self.finishConfirmation(confirmationId, outcome: nil)
             }
-            FeedService.shared.repostedEventIds.insert(originalId)
         }
     }
 
@@ -325,6 +328,11 @@ class PendingPostManager: ObservableObject {
         // make this window last several seconds.
         beginBackgroundTask()
         let endTime = Date().addingTimeInterval(duration)
+        // The account the action was queued under. The switch listener in
+        // init hops the main queue after the switch itself, so a countdown
+        // that ends in that gap would still sign as the new account; checking
+        // the active account here, at the moment it goes out, closes the gap.
+        let queuedAccount = ConfigService.shared.activeAccountHexPubkey
         countdown = Task { @MainActor in
             while Date() < endTime {
                 try? await Task.sleep(nanoseconds: 100_000_000)
@@ -336,6 +344,10 @@ class PendingPostManager: ObservableObject {
             }
             if Task.isCancelled {
                 self.endBackgroundTaskIfNeeded()
+                return
+            }
+            guard ConfigService.shared.activeAccountHexPubkey == queuedAccount else {
+                self.cancel()
                 return
             }
             withAnimation(Motion.bannerOut) {

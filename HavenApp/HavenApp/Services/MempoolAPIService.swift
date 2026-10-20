@@ -1,7 +1,7 @@
 import Foundation
 
 enum MempoolAPIService {
-    private static let baseURL = "https://mempool.btcforplebs.com/api"
+    private static let baseURL = "https://mempool.space/api"
 
     struct MempoolTx: Decodable {
         let txid: String

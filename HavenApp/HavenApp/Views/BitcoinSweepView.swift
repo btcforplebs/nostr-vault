@@ -272,7 +272,7 @@ struct BitcoinSweepView: View {
                     .lineLimit(2)
             }
 
-            if let url = URL(string: "https://mempool.btcforplebs.com/tx/\(txid)") {
+            if let url = URL(string: "https://mempool.space/tx/\(txid)") {
                 Link(destination: url) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.right.square")

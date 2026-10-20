@@ -100,4 +100,14 @@ class DeadRelaysTest {
         assertEquals(HavenConfig.DEFAULT_READ_RELAYS, old.readRelays)
         assertEquals(HavenConfig.DEFAULT_DM_RELAYS, old.dmRelays)
     }
+
+    /** D5: one prune, not one per launch, so a relay added back stays. */
+    @Test
+    fun `the prune runs once and a relay added back stays`() {
+        val marker = java.io.File(java.nio.file.Files.createTempDirectory("dead").toFile(), "dead_relays_pruned")
+        val saved = HavenConfig(feedRelays = listOf("wss://nos.lol", "wss://relay.damus.io"))
+        assertEquals(listOf("wss://relay.damus.io"), DeadRelays.droppingOnce(saved, marker).feedRelays)
+        assertTrue(marker.exists())
+        assertSame(saved, DeadRelays.droppingOnce(saved, marker))
+    }
 }

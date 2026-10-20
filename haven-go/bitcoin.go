@@ -20,7 +20,7 @@ import (
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
-const mempoolBase = "https://mempool.btcforplebs.com"
+const mempoolBase = "https://mempool.space"
 const mempoolFallback = "https://mempool.space"
 
 // deriveP2TRAddress derives a Bitcoin Taproot (P2TR) address from a 32-byte

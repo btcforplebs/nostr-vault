@@ -23,7 +23,7 @@ class MempoolApiService @Inject constructor() {
 
     companion object {
         private const val TAG = "MempoolApiService"
-        private const val BASE_URL = "https://mempool.btcforplebs.com/api"
+        private const val BASE_URL = "https://mempool.space/api"
     }
 
     private val json = Json { ignoreUnknownKeys = true }

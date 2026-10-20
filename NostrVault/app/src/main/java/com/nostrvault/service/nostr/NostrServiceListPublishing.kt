@@ -40,7 +40,15 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val owner = ownerHexPubkey
         if (owner.isBlank()) return
         val config = configStore.config.value
-        val newest = fetchNewestDMRelayList(owner, config.dmInboxRelays)
+        val lookup = lookupNewestReplaceable(10050, owner, config.dmInboxRelays)
+        // No relay answered: "none found" is unknown, not empty. A new install
+        // of an existing account would otherwise publish the defaults over
+        // the real list.
+        if (lookup.event == null && lookup.answered == 0) {
+            Log.w(TAG, "DM inbox sync: no relay answered; not published")
+            return
+        }
+        val newest = lookup.event?.let { profileRepository.parseDMRelayListTags(it.tags) to it.createdAt }
         val published = newest?.first?.filter { !isLoopbackRelay(it) }
 
         var action = DMInbox.syncAction(config.dmInboxRelays, config.dmRelaysUpdatedAt, published, newest?.second)
@@ -78,10 +86,57 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             Log.w(TAG, "publishMuteList: ${accountNpub.take(12)} is not the owner or active account; not published")
             return
         }
-        val tags = blockedNpubs.mapNotNull { npub ->
-            npubToHex(npub)?.let { listOf("p", it) }
+        val author = npubToHex(accountNpub) ?: ownerHexPubkey
+        val blocked = blockedNpubs.mapNotNull { npubToHex(it) }
+        // The "p" tags are this device's blocks. The rest of the published
+        // list (word, hashtag and thread mutes, and the encrypted private
+        // mutes in content) was set in other clients and is kept.
+        publishMergedList(10000, author, forceOwner) { published ->
+            ListMerge.tags("p", blocked, published?.tags.orEmpty()) { false } to published?.content.orEmpty()
         }
-        signAndPost(kind = 10000, content = "", tags = tags, forceOwner = forceOwner)
+    }
+
+    /**
+     * Publishes [kind] for [author] built by [build] from the newest
+     * published one (null when there is none). Skips when no relay answered,
+     * since publishing then would overwrite a list this device never saw.
+     */
+    private fun NostrService.publishMergedList(
+        kind: Int,
+        author: String,
+        forceOwner: Boolean,
+        build: (NostrEvent?) -> Pair<List<List<String>>, String>,
+    ) {
+        if (author.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            val lookup = runCatching {
+                lookupNewestReplaceable(kind, author, configStore.config.value.readRelays.take(3))
+            }.getOrElse { NostrService.ReplaceableLookup(null, 0, 0) }
+            if (lookup.event == null && lookup.answered == 0) {
+                Log.w(TAG, "kind $kind: no relay answered; not published")
+                return@launch
+            }
+            val (tags, content) = build(lookup.event)
+            signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+        }
+    }
+
+    /**
+     * Publishes [kind] for the owner: [local] as [name] tags, plus the
+     * entries other clients added. An entry counts as added elsewhere when
+     * it is published but was not in what this device last published (the
+     * base kept in [ListMerge.Bases]), so a local removal still removes it.
+     */
+    private fun NostrService.publishOwnerEntryList(kind: Int, name: String, local: List<String>) {
+        val owner = ownerHexPubkey
+        val bases = configStore.config.value.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }
+        val baseKey = "$kind:$owner"
+        publishMergedList(kind, owner, forceOwner = true) { published ->
+            val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
+            val tags = ListMerge.tags(name, local, published?.tags.orEmpty()) { base == null || ListMerge.key(it) !in base }
+            bases?.put(baseKey, local)
+            tags to published?.content.orEmpty()
+        }
     }
 
     internal fun NostrService.publishRelayListImpl(accountNpub: String) {
@@ -125,13 +180,71 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * last relay clears it.
      */
     internal fun NostrService.publishBlockedRelayListImpl() {
-        val tags = configStore.config.value.blockedRelays.map { listOf("relay", DMInbox.normalizedRelayURL(it)) }
-        signAndPost(kind = 10006, content = "", tags = tags, forceOwner = true)
+        val relays = configStore.config.value.blockedRelays.map(DMInbox::normalizedRelayURL)
+        publishOwnerEntryList(10006, "relay", relays)
     }
 
     internal fun NostrService.publishServerListImpl() {
         val mirrors = configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) return
-        val tags = mirrors.map { listOf("server", it) }
-        signAndPost(kind = 10063, content = "", tags = tags, forceOwner = true)
+        publishOwnerEntryList(10063, "server", mirrors)
     }
+
+/**
+ * Merging this device's entries into a list published by any client. NIP-51
+ * lists are replaceable, so publishing only what this device holds deletes
+ * everything another client added.
+ */
+internal object ListMerge {
+    const val BASES_FILE = "list_publish_bases.json"
+
+    /** Compares entries regardless of case, padding and a trailing slash. */
+    fun key(value: String): String = value.trim().trimEnd('/').lowercase()
+
+    /**
+     * [local] as `[name, value]` tags, then the [published] tags kept: every
+     * tag of another name, and a [name] tag that is not local when
+     * [keepPublished] says so.
+     */
+    fun tags(
+        name: String,
+        local: List<String>,
+        published: List<List<String>>,
+        keepPublished: (String) -> Boolean,
+    ): List<List<String>> {
+        val seen = HashSet<String>()
+        val mine = local.filter { it.isNotBlank() && seen.add(key(it)) }.map { listOf(name, it) }
+        val kept = published.filter { tag ->
+            when {
+                tag.isEmpty() -> false
+                tag[0] != name -> true
+                else -> tag.size >= 2 && keepPublished(tag[1]) && seen.add(key(tag[1]))
+            }
+        }
+        return mine + kept
+    }
+
+    /**
+     * What this device last published per list, so the next publish can tell
+     * an entry another client added from one removed here. A list with no
+     * base yet (the first publish after this shipped) keeps every published
+     * entry: a removal made in that one publish stays on the published list,
+     * which only other clients read, rather than another client's entries
+     * being wiped.
+     */
+    class Bases(private val file: java.io.File) {
+        private val json = Json { ignoreUnknownKeys = true }
+        private val serializer = kotlinx.serialization.serializer<Map<String, List<String>>>()
+
+        fun get(key: String): List<String>? = synchronized(Bases::class) { read()[key] }
+
+        fun put(key: String, entries: List<String>) = synchronized(Bases::class) {
+            runCatching { file.writeText(json.encodeToString(serializer, read() + (key to entries))) }
+                .onFailure { Log.w(TAG, "list base not saved: ${it.message}") }
+            Unit
+        }
+
+        private fun read(): Map<String, List<String>> =
+            runCatching { json.decodeFromString(serializer, file.readText()) }.getOrDefault(emptyMap())
+    }
+}

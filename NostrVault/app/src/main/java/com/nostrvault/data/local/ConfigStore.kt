@@ -181,7 +181,7 @@ class ConfigStore @Inject constructor(
 
         // Same for relays that went dark after they were defaults; a saved
         // list that names them stays saved, so they are removed here, once.
-        loaded = DeadRelays.dropping(loaded)
+        loaded = DeadRelays.droppingOnce(loaded, File(context.filesDir, "dead_relays_pruned"))
 
         // Multi-account migration: seed the owner's signing mode so
         // activeSigningMode() is stable for legacy single-owner configs. The

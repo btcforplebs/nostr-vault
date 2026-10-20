@@ -365,7 +365,7 @@ struct BitcoinSweepDisclaimerView: View {
 
     private func fetchBitcoinBalance(address: String) {
         Task {
-            guard let url = URL(string: "https://mempool.btcforplebs.com/api/address/\(address)") else {
+            guard let url = URL(string: "https://mempool.space/api/address/\(address)") else {
                 await MainActor.run { isLoadingBalance = false }
                 return
             }
