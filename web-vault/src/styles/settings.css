@@ -81,3 +81,14 @@ a.settings-row:hover { background: var(--s2); }
 .relay-remove { min-height: 28px; padding: 0 10px; }
 .relay-add input { flex: 1; min-width: 0; min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); font: 13px var(--mono); }
 .settings-note.row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Vault search (iPhone VaultSearchBar + VaultSearchResults). */
+.vault-search-bar { display: flex; gap: 8px; align-items: center; margin: 0 var(--gutter) 10px; }
+.vault-search-bar input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-body); }
+.vault-search-chips { display: flex; gap: 6px; overflow-x: auto; padding: 0 var(--gutter) 10px; }
+.vault-search-chips .chip { flex: none; }
+.vault-search-chips .chip.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; font-weight: 600; }
+.vault-search-head { display: flex; justify-content: space-between; align-items: baseline; }
+.vault-search-head button.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: var(--t-foot); font-weight: 600; }
+.vault-search-row { width: calc(100% - 2 * var(--gutter)); margin: 0 var(--gutter) 6px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); text-align: left; }
+.vault-search-row a.small { flex: none; color: var(--accent); font: var(--t-foot); font-weight: 600; }

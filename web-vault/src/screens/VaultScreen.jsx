@@ -13,6 +13,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { formatSats, fetchNotes } from "../net/notifications.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { receiptTrust } from "../net/zaps.js"
+import { VaultSearch } from "./VaultSearch.jsx"
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
@@ -34,6 +35,7 @@ const ICONS = {
   // The Vault tab's own glyph, as on the phone, where the tab and the Dashboard share one symbol.
   safe: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 11v2M4 9h3M4 15h3",
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5",
 }
 const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
@@ -67,6 +69,7 @@ export function VaultScreen({ ctx, desk = false }) {
   const [loaded, setLoaded] = useState(false)
   const { blocked } = useBlocks(ctx)
   const seenAt = useRef(followersSeenAt(me))
+  const [searching, setSearching] = useState(false)
 
   useEffect(() => { const f = () => { const m = modeOf(); if (m) pick(m) }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
@@ -129,11 +132,14 @@ export function VaultScreen({ ctx, desk = false }) {
               {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => setFilter(x.id)}>{x.title}</MenuItem>)}
             </Menu>
           )}
+          <button class="vault-pill-btn" onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} /></button>
           <button class="vault-pill-btn" onClick={load} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
         </div>
       </header>
+      {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       {status && <div class="status-line">{status}</div>}
       {!loaded ? <p class="empty">Loading…</p> : <List mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} />}
+      </>}
     </main>
   )
 }
