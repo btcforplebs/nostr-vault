@@ -21,23 +21,30 @@ object CredentialStore {
     private const val PREFS_NAME = "nostrvault_credentials"
     private const val OWNER_ACCOUNT = "owner-key-password"
 
-    private lateinit var prefs: SharedPreferences
+    @Volatile private lateinit var prefs: SharedPreferences
     private var openFailed = false
+    private const val HEALTH_PREFS = "nostrvault_credentials_open"
+    private const val FAILED_LAST_LAUNCH = "failed-last-launch"
 
     /**
-     * Opens the store. A store that can't be opened (a keyset the keystore no
-     * longer has a key for, as after some OS updates or a restore) is set
-     * aside and opened fresh; the keys in it can't be read either way. If even
-     * a fresh one fails, the store stays closed: reads find nothing and writes
-     * fail, but the app still starts.
+     * Opens the store, retrying a few times. A store that still can't be
+     * opened stays closed for this launch: reads find nothing and writes
+     * fail, but the app starts and nothing is deleted. Only if it failed on
+     * the launch before as well (a keyset the keystore no longer has a key
+     * for, as after some OS updates or a restore) is it set aside and opened
+     * fresh. Synchronized: Hilt (main) and ConfigStore (IO) both call it.
      */
+    @Synchronized
     fun init(context: Context) {
         if (::prefs.isInitialized || openFailed) return
         val app = context.applicationContext
+        val health = app.getSharedPreferences(HEALTH_PREFS, Context.MODE_PRIVATE)
         val opened = openRecovering(
             open = { open(app) },
             setAside = { setAside(app) },
+            failedBefore = health.getBoolean(FAILED_LAST_LAUNCH, false),
         )
+        health.edit().putBoolean(FAILED_LAST_LAUNCH, opened == null).commit()
         if (opened == null) {
             openFailed = true
             return
@@ -72,20 +79,42 @@ object CredentialStore {
         context.deleteSharedPreferences(PREFS_NAME)
     }
 
-    /** [open], or after [setAside] a second [open]; null if both fail. */
-    internal fun <T> openRecovering(open: () -> T, setAside: () -> Unit): T? {
-        try {
-            return open()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to open EncryptedSharedPreferences, setting it aside: ${e.message}")
+    /**
+     * [open], tried [attempts] times. If every try fails and [failedBefore]
+     * (the last launch couldn't open it either), [setAside] and one fresh
+     * [open]. Null when the store stays closed.
+     */
+    internal fun <T> openRecovering(
+        open: () -> T,
+        setAside: () -> Unit,
+        failedBefore: Boolean,
+        attempts: Int = 3,
+        pause: (Int) -> Unit = { Thread.sleep(150L * it) },
+    ): T? {
+        for (attempt in 1..attempts) {
+            try {
+                return open()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open EncryptedSharedPreferences (try $attempt): ${e.message}")
+            }
+            if (attempt < attempts) pause(attempt)
         }
+        if (!failedBefore) return null
         return try {
+            Log.e(TAG, "Failed on two launches; setting the store aside")
             setAside()
             open()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open a fresh EncryptedSharedPreferences: ${e.message}")
             null
         }
+    }
+
+    /** Deletes the copies [setAside] kept (factory reset). */
+    fun deleteSetAside(context: Context) {
+        File(context.filesDir.parentFile, "shared_prefs").listFiles()
+            ?.filter { it.name.startsWith("$PREFS_NAME.unreadable-") }
+            ?.forEach { it.delete() }
     }
 
     /**

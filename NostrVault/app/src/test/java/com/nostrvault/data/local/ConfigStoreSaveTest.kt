@@ -39,6 +39,11 @@ class ConfigStoreSaveTest {
             if (works) keys[hexPubkey] = hexKey
             return works
         }
+        val forgotten = mutableListOf<Pair<String?, String>>()
+        override fun forgetOwner(hexPubkey: String?, npub: String) {
+            forgotten += hexPubkey to npub
+            hexPubkey?.let { keys.remove(it) }
+        }
     }
 
     private val vault = FakeVault()
@@ -48,7 +53,13 @@ class ConfigStoreSaveTest {
         filesDir.deleteRecursively()
     }
 
-    private fun store() = ConfigStore(context).apply { keyVault = vault; reload() }
+    private fun store() = ConfigStore(context).apply {
+        keyVault = vault
+        publicKeyOf = { if (it == secret) ownerHex else null }
+        reload()
+    }
+
+    private fun setAside() = filesDir.listFiles()!!.filter { it.name.startsWith("nostrvault_config.json.unreadable-") }
 
     @Test
     fun `an unreadable config is set aside, not lost`() {
@@ -133,5 +144,54 @@ class ConfigStoreSaveTest {
         store.updateAsync { it.copy(ownerNpub = owner, ownerHexKey = secret) }
         store.updateAsync { it.copy(ownerHexKey = null) }
         assertNull(Regex("\"ownerHexKey\"").find(configFile.readText()))
+    }
+
+    @Test
+    fun `a truncated config's owner key goes to the credential store, not back into plain text`() = runBlocking {
+        configFile.writeText("""{"hasCompletedSetup":true,"ownerHexKey":"$secret","accountNpubs":[""")
+
+        val store = store()
+        store.save()
+
+        assertEquals(secret, vault.keys[ownerHex])
+        assertFalse(configFile.readText().contains(secret))
+        assertEquals(1, setAside().size)
+        assertFalse(setAside()[0].readText().contains(secret))
+    }
+
+    @Test
+    fun `a config that parses but won't decode does not write its key back`() = runBlocking {
+        configFile.writeText("""{"ownerNpub":"$owner","ownerHexKey":"$secret","relayPort":"not a number"}""")
+
+        val store = store()
+        store.save()
+
+        assertEquals(secret, vault.keys[ownerHex])
+        assertFalse(configFile.readText().contains(secret))
+        assertFalse(setAside()[0].readText().contains(secret))
+    }
+
+    @Test
+    fun `an unreadable config's key the store can't take stays in the set-aside copy`() = runBlocking {
+        vault.works = false
+        configFile.writeText("""{"ownerNpub":"$owner","ownerHexKey":"$secret",""")
+        store().save()
+        assertTrue(setAside()[0].readText().contains(secret))
+    }
+
+    @Test
+    fun `factory reset forgets the owner key and the set-aside copies`() = runBlocking {
+        configFile.writeText("{broken")
+        val store = store()
+        store.updateAsync { it.copy(ownerNpub = owner, ownerHexKey = secret) }
+        assertEquals(1, setAside().size)
+
+        store.resetApp()
+
+        assertEquals(listOf<Pair<String?, String>>(ownerHex to owner), vault.forgotten)
+        assertNull(vault.keys[ownerHex])
+        assertTrue(setAside().isEmpty())
+        assertFalse(configFile.exists())
+        assertNull(store.config.value.ownerHexKey)
     }
 }
