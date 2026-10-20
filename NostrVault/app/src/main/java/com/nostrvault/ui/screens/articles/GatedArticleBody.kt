@@ -1,24 +1,18 @@
 package com.nostrvault.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GatedArticle
@@ -27,31 +21,12 @@ import com.nostrvault.service.GatedArticleService
 import com.nostrvault.ui.theme.*
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
-/** What the reader of a gated article sees. iOS GatedArticleBody, minus the pay button. */
-internal sealed interface GatedPhase {
-    data object Checking : GatedPhase
-    data object Locked : GatedPhase
-    data class Unlocked(val markdown: String) : GatedPhase
-    data class Failed(val message: String) : GatedPhase
-}
-
-/** Where to read or buy the article outside the app: the author's own link, else the naddr on njump. */
-internal fun gatedWebUrl(note: FeedNote, gated: GatedArticle, service: GatedArticleService): String? {
-    GatedArticleTeaser.unlockUrl(note.content)?.let { return it }
-    val identifier = note.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
-    return service.naddr(note, gated, identifier)?.let { "https://njump.me/$it" }
-}
-
-internal fun gatedStatusText(phase: GatedPhase, authorName: String, priceSats: Int): String = when (phase) {
-    is GatedPhase.Failed -> phase.message
-    else -> "Locked by $authorName for $priceSats sats. Paid on the web or in another app? " +
-        "Tap Already paid? to read it here."
-}
+internal fun gatedStatusText(authorName: String, priceSats: Int): String =
+    "Locked by $authorName for $priceSats sats."
 
 /**
- * The teaser and a lock card until the key server says this reader has paid,
- * then the decrypted article. Never pays: a zap made on the web or in another
- * client opens it here, since the key server only checks the zap receipt.
+ * The teaser and a lock card, or the article when this reader unlocked it
+ * before. Nostr Vault does not unlock articles: no pay button, no key request.
  */
 @Composable
 internal fun GatedArticleBody(
@@ -62,34 +37,11 @@ internal fun GatedArticleBody(
     bodyStyle: TextStyle,
 ) {
     val colors = LocalNostrVaultColors.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var phase by remember(note.id) { mutableStateOf<GatedPhase>(GatedPhase.Checking) }
+    val unlocked = remember(note.id, note.tags, service.activeReader) { service.open(note, gated) }
 
-    // auto: the check that runs on open. It asks the signer only when that is
-    // silent (a local key); a remote signer would prompt on every view.
-    suspend fun check(auto: Boolean) {
-        if (auto && !service.canCheckSilently) {
-            phase = GatedPhase.Locked
-            return
-        }
-        phase = GatedPhase.Checking
-        phase = try {
-            GatedPhase.Unlocked(service.open(note, gated))
-        } catch (e: GatedArticleService.UnlockError) {
-            // Not paid yet is the normal case on open. On a check the reader
-            // asked for, say why it didn't open.
-            if (auto) GatedPhase.Locked else GatedPhase.Failed(e.message.orEmpty())
-        } catch (e: Exception) {
-            GatedPhase.Locked
-        }
-    }
-    LaunchedEffect(note.id, service.activeReader) { check(auto = true) }
-
-    val current = phase
-    if (current is GatedPhase.Unlocked) {
+    if (unlocked != null) {
         MarkdownText(
-            markdown = current.markdown,
+            markdown = unlocked,
             style = bodyStyle,
             linkColor = colors.primary,
             modifier = Modifier.fillMaxWidth(),
@@ -120,31 +72,10 @@ internal fun GatedArticleBody(
                     }
                 }
                 Text(
-                    text = if (current == GatedPhase.Checking) "Checking…"
-                    else gatedStatusText(current, author?.bestName ?: "the author", gated.priceSats),
+                    text = gatedStatusText(author?.bestName ?: "the author", gated.priceSats),
                     color = SecondaryText,
                     fontSize = 14.sp,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (current == GatedPhase.Checking) {
-                        CircularProgressIndicator(color = colors.primary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                    } else {
-                        TextButton(onClick = { scope.launch { check(auto = false) } }) {
-                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Already paid?", fontSize = 13.sp)
-                        }
-                    }
-                    gatedWebUrl(note, gated, service)?.let { url ->
-                        TextButton(onClick = {
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                        }) {
-                            Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Open on ${Uri.parse(url).host ?: "the web"}", fontSize = 13.sp)
-                        }
-                    }
-                }
             }
         }
     }
