@@ -63,8 +63,8 @@ struct ArticleReaderView: View {
                             .font(.appSystem(size: 13, weight: .semibold))
                         HStack(spacing: 4) {
                             Text(note.longFormDisplayDate, format: .dateTime.month(.abbreviated).day().year())
-                            if let gated = note.gatedArticle {
-                                Text("· 🔒 \(gated.priceSats) sats")
+                            if note.gatedArticle != nil {
+                                Text("· 🔒 Locked")
                             } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
                                 Text("· \(minutes) min read")
                             }
