@@ -5,6 +5,7 @@ import { neventEncode } from "nostr-tools/nip19"
 import { pool, publishRelays } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { repostedId, verifiedCopy } from "./thread.js"
+import { keepDeletedCopy } from "./recently-deleted.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -190,6 +191,7 @@ export async function unlike(ctx, note) {
 export async function deleteNote(ctx, note) {
   if (note.pubkey !== ctx.session.pubkey) throw new Error("Only your own posts can be deleted")
   await publishAction(ctx, deletionTemplate(note.id, note.kind))
+  await keepDeletedCopy(ctx, note).catch(() => {}) // Recently Deleted: Haven drops the post once the kind 5 lands
   markDeleted([note.id])
 }
 
