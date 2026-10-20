@@ -371,8 +371,21 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
             append(",\"limit\":500}")
         }
 
+        // Global under the Web of Trust asks twice, once naming trusted authors
+        // and once open. Asked open only, a new account's small web matched
+        // almost nothing in a page of strangers and Global rendered blank
+        // (iOS #824). Not the local relay: it holds your own vault.
+        val filters = if (_feedMode.value == FeedMode.GLOBAL &&
+            relayUrl != configStore.config.value.localRelayURL("feed")
+        ) {
+            val trust = globalTrustSet()
+            globalTrustScopedFilters(primaryFeedKinds(), filter, trust, trustedSince(trust))
+        } else {
+            listOf(filter)
+        }
+
         if (BuildConfig.DEBUG) Log.d(TAG, "sendPrimaryFeedSubscription: $relayUrl subId=$subId followedPubkeys=${_followedPubkeys.value.size}")
-        client.send("[\"REQ\",\"$subId\",$filter]")
+        client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
 
         // Your own deletion requests (kind 5), so a post deleted on another
         // device leaves this one too. Its own subId: the primary's EOSE is
@@ -472,3 +485,33 @@ internal val OWN_SERVICE_MODES = setOf(
  */
 internal fun flushesOnEose(subId: String, primarySubId: String, loading: Boolean, syncing: Boolean): Boolean =
     subId == primarySubId || loading || syncing
+
+/**
+ * Where the trusted half of a Global REQ starts: the oldest note on screen
+ * from someone in [trust], or a week back when there is none. The open half
+ * resumes from the oldest note of all, usually a stranger's from minutes ago,
+ * which never asked for your people's older notes.
+ */
+internal fun FeedService.trustedSince(trust: Set<String>?): Long {
+    val oldest = trust?.let { t -> _notes.value.lastOrNull { it.pubkey in t }?.createdAt }
+    return oldest?.time?.div(1000) ?: (System.currentTimeMillis() / 1000 - 7 * 24 * 60 * 60)
+}
+
+/**
+ * Global's primary REQ filters (iOS `trustScopedFilters`). Under the Web of
+ * Trust the trusted authors are named in their own filter, so a page of
+ * strangers cannot crowd them out, then [openFilter] asks for the rest; the
+ * client still drops untrusted authors from both. [trust] null (Everyone) or
+ * empty (no graph and no follows) leaves the open filter alone.
+ */
+internal fun globalTrustScopedFilters(
+    kinds: String,
+    openFilter: String,
+    trust: Set<String>?,
+    trustedSince: Long,
+): List<String> {
+    if (trust.isNullOrEmpty()) return listOf(openFilter)
+    val authors = trust.sorted().take(MarketplaceFeedService.AUTHORS_CAP).joinToString(",") { "\"$it\"" }
+    val trusted = "{\"kinds\":[$kinds],\"authors\":[$authors],\"since\":$trustedSince,\"limit\":500}"
+    return listOf(trusted, openFilter)
+}

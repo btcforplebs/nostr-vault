@@ -541,7 +541,9 @@ fun FeedScreen(
                     } else if (feedMode == FeedMode.GLOBAL && !globalShowsEveryone && !trustGraphReady) {
                         // Global fails closed without the trust graph; say so
                         // rather than "waiting for notes" over a full inbox.
-                        if (noWebOfTrustYet) {
+                        // Someone who has just followed waits for the relay's
+                        // next rebuild, not for a follow (iOS waitsForFirstFollow).
+                        if (noWebOfTrustYet && followedPubkeys.isEmpty()) {
                             "Follow people to build your web of trust"
                         } else {
                             "Building your Web of Trust\u2026 Tap the shield to see everyone"
