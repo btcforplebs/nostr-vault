@@ -70,3 +70,12 @@ a.settings-row:hover { background: var(--s2); }
 .highlight .person-sub { margin-top: 6px; }
 .highlight .note-head .author-name { flex: 1; }
 .person-row .author-name { font: var(--t-headline); }
+
+/* Settings › Relays: read/write switches per relay, Add. */
+.relay-edit-row { flex-wrap: wrap; }
+.relay-edit-row .settings-title .tag { margin-left: 8px; }
+.tag.job { min-height: 0; border: 1px solid var(--hair); cursor: pointer; }
+.tag.job.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; }
+.relay-remove { min-height: 28px; padding: 0 10px; }
+.relay-add input { flex: 1; min-width: 0; min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); font: 13px var(--mono); }
+.settings-note.row { display: flex; gap: 8px; flex-wrap: wrap; }
