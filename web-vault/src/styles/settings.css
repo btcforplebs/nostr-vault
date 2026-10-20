@@ -117,3 +117,9 @@ a.settings-row:hover { background: var(--s2); }
 .server-health.answers .dot, .server-health.lostFile .dot { background: #ff9f0a; }
 .server-health.offline .dot { background: #ff453a; }
 .relay-edit-row .settings-title:has(.server-health) { white-space: normal; }
+
+/* Vault mode menu: New (iPhone VaultModePill newModes). */
+.vault-new { margin-left: auto; padding: 2px 6px; border-radius: 999px; background: var(--accent-pale); color: var(--accent); font: 700 10px/1.2 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.vault-menu-list [role=menuitem].on .vault-new { margin-left: 8px; }
+.vault-new-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.vault-modes button { position: relative; }

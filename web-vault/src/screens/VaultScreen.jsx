@@ -15,6 +15,7 @@ import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { receiptTrust } from "../net/zaps.js"
 import { VaultSearch } from "./VaultSearch.jsx"
 import { BlossomGallery } from "./BlossomGallery.jsx"
+import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from "../net/vault-new.js"
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
@@ -78,7 +79,7 @@ export function VaultScreen({ ctx, desk = false }) {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
     setOwn(o); setInbound(i); setLoaded(true)
     screen(i) // receipts kept before this check existed
-    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); return }
+    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setFetched(true); return }
     setStatus("Checking your relays…")
     try {
       const [fresh, l, g] = await Promise.all([
@@ -89,6 +90,7 @@ export function VaultScreen({ ctx, desk = false }) {
       setOwn(await readOwn(vault, me).catch(() => o))
       setStatus("")
     } catch (e) { setStatus(`Couldn't reach your relays (${e?.message ?? e})`) }
+    setFetched(true)
   }
   useEffect(() => { load() }, [me])
 
@@ -96,6 +98,19 @@ export function VaultScreen({ ctx, desk = false }) {
   const followers = followersOf(lists, me, blocked)
   // Seeing the Followers list is what makes its "new" ones old, as on the phone; the current visit still shows them.
   useEffect(() => { if (mode === "followers" && followers.length) markFollowersSeen(me, followers[0].at) }, [mode, followers.length])
+
+  // "New" in the mode menu: what others sent since each mode was last open. The mode on screen counts as looked at.
+  const [seen, setSeen] = useState(() => readSeen(me))
+  const [fetched, setFetched] = useState(false) // the relays were asked: only then is a first look's baseline whole
+  const newest = newestByMode(inbound, me, blocked)
+  useEffect(() => {
+    if (!loaded || (!seen && !fetched)) return
+    let next = seen ?? baseline(newest)
+    if (newest[mode]) next = markSeen(next, mode, newest[mode])
+    if (JSON.stringify(next) !== JSON.stringify(seen)) { setSeen(next); writeSeen(me, next) }
+  }, [loaded, fetched, mode, newest[mode], seen === null])
+  const followersSeen = followersSeenAt(me)
+  const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: followers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
 
   // Likes and Zaps rows name the note they were about.
   const likes = mode === "likes" ? likesFor(own, inbound, me, filter, blocked) : []
@@ -116,11 +131,11 @@ export function VaultScreen({ ctx, desk = false }) {
       <header class="screen-head vault-head">
         {desk ? (
           <div class="vault-modes" role="tablist" aria-label="Vault">
-            {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={x.title} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} /><span>{x.title}</span></button>)}
+            {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={fresh.has(x.id) ? `${x.title}: new` : x.title} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} /><span>{x.title}</span>{fresh.has(x.id) && <span class="vault-new-dot" aria-label="new" />}</button>)}
           </div>
         ) : (
-          <Menu label={<><Icon d={ICONS[mode]} /><b>{m.title}</b><Chevron /></>} title={`Vault: ${m.title}`}>
-            {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}</MenuItem>)}
+          <Menu label={<><Icon d={ICONS[mode]} /><b>{m.title}</b>{fresh.size > 0 && <span class="vault-new-dot" aria-label="new in another mode" />}<Chevron /></>} title={`Vault: ${m.title}`}>
+            {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}{fresh.has(x.id) && <span class="vault-new">New</span>}</MenuItem>)}
             <hr />
             <MenuItem onClick={() => { location.hash = "#/relay" }}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
           </Menu>
