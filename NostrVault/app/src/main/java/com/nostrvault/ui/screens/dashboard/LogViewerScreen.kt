@@ -73,7 +73,7 @@ fun LogViewerScreen(
                 actions = {
                     IconButton(onClick = {
                         val text = logs.joinToString("\n") { entry ->
-                            "[${entry.level}] ${entry.message}"
+                            "[${entry.level}] ${redactLogSecrets(entry.message)}"
                         }
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Relay Logs", text))
@@ -162,6 +162,19 @@ fun LogViewerScreen(
     }
 }
 
+/** A `secret=` value (bunker and NWC links) or an nsec, whatever printed it. */
+private val LOG_SECRET = Regex("""(?i)(secret=)[^&\s"']+|\bnsec1[02-9ac-hj-np-z]+""")
+
+/**
+ * A log line as the Logs screen shows and copies it: secrets replaced. A
+ * bunker link that failed to parse used to be printed whole, `secret=`
+ * included (Android review K4), and Copy put that on the clipboard.
+ */
+internal fun redactLogSecrets(message: String): String =
+    LOG_SECRET.replace(message) { m ->
+        if (m.groupValues[1].isNotEmpty()) "${m.groupValues[1]}[redacted]" else "nsec1[redacted]"
+    }
+
 @Composable
 private fun FullLogEntryRow(
     entry: RelayLogParser.LogEntry,
@@ -216,7 +229,7 @@ private fun FullLogEntryRow(
         // Message: long-press selects and copies, like iOS .textSelection(.enabled).
         SelectionContainer(modifier = Modifier.weight(1f)) {
             Text(
-                text = entry.message,
+                text = redactLogSecrets(entry.message),
                 color = PrimaryText.copy(alpha = 0.9f),
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,

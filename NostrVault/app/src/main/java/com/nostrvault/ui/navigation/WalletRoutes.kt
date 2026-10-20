@@ -5,7 +5,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 import com.nostrvault.ui.screens.*
 
-/** The wallet and its sweep, lifted from [NostrVaultNavHost]. */
+/**
+ * The wallet, lifted from [NostrVaultNavHost], and the on-chain page with its
+ * sweep, which only Settings > Advanced opens.
+ */
 internal fun NavGraphBuilder.walletRoutes(
     navController: NavHostController,
 ) {
@@ -13,10 +16,16 @@ internal fun NavGraphBuilder.walletRoutes(
     composable(Screen.Wallet.route) {
         WalletScreen(
             onBack = { navController.popBackStack() },
-            onSweep = { navController.navigate(Screen.BitcoinSweep.route) },
             onNoteClick = { noteId ->
                 navController.navigate(Screen.NoteDetail.createRoute(noteId))
             },
+        )
+    }
+
+    composable(Screen.BitcoinWallet.route) {
+        BitcoinWalletScreen(
+            onBack = { navController.popBackStack() },
+            onSweep = { navController.navigate(Screen.BitcoinSweep.route) },
         )
     }
 

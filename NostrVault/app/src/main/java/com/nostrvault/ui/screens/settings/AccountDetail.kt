@@ -10,9 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -256,7 +254,7 @@ internal fun AccountDetail(
 /** The revealed nsec with Copy (shows Copied for two seconds), Hide, and the iOS warning line. */
 @Composable
 private fun RevealedKey(nsec: String, onHide: () -> Unit) {
-    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     var copied by remember(nsec) { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -276,7 +274,7 @@ private fun RevealedKey(nsec: String, onHide: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = {
-                clipboard.setText(AnnotatedString(nsec))
+                copySecretKey(context, nsec)
                 copied = true
             }) {
                 Icon(
@@ -387,6 +385,55 @@ internal const val REVEAL_AUTH_UNAVAILABLE = "Authentication isn't available her
 internal const val REVEAL_NEEDS_SCREEN_LOCK = "Set a screen lock or fingerprint on this device to reveal your private key."
 internal const val REVEAL_NO_KEY = "No encrypted key found for this account"
 internal const val REVEAL_WRONG_PASSWORD = "Incorrect password or decryption failed"
+/** How long a copied nsec stays on the clipboard. */
+internal const val SECRET_CLIP_LIFETIME_MS = 60_000L
+
+/**
+ * Copies the nsec marked sensitive, as the setup wizard does (Android 13+
+ * keeps it out of the clipboard preview and keyboard suggestions), and takes
+ * it off the clipboard after [SECRET_CLIP_LIFETIME_MS] unless something else
+ * was copied since (Android review K3). The timer is on the main looper, not
+ * the screen, so it still runs after the user leaves.
+ */
+internal fun copySecretKey(context: android.content.Context, nsec: String) {
+    val clipboard = context.applicationContext
+        .getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val clip = android.content.ClipData.newPlainText("Nostr key", nsec)
+    clip.description.extras = android.os.PersistableBundle().apply {
+        putBoolean("android.content.extra.IS_SENSITIVE", true)
+    }
+    clipboard.setPrimaryClip(clip)
+    var replaced = false
+    // Fires for our own copy too, so read the clip rather than count changes.
+    val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+        val now = runCatching { clipboard.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
+        if (now != nsec) replaced = true
+    }
+    clipboard.addPrimaryClipChangedListener(listener)
+    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        clipboard.removePrimaryClipChangedListener(listener)
+        val current = runCatching { clipboard.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
+        if (shouldClearCopiedSecret(current, nsec, replaced)) clearClipboard(clipboard)
+    }, SECRET_CLIP_LIFETIME_MS)
+}
+
+/**
+ * Whether the copied nsec is taken off the clipboard. [current] is what the
+ * clipboard holds now, or null when the app can't read it (Android 10+ in the
+ * background); [replaced] is whether a change was seen since the copy.
+ * Another copy is never wiped.
+ */
+internal fun shouldClearCopiedSecret(current: String?, nsec: String, replaced: Boolean): Boolean =
+    if (current != null) current == nsec else !replaced
+
+private fun clearClipboard(clipboard: android.content.ClipboardManager) {
+    if (android.os.Build.VERSION.SDK_INT >= 28) {
+        clipboard.clearPrimaryClip()
+    } else {
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+    }
+}
+
 internal const val REVEAL_KEY_WARNING = "Keep this key safe. Anyone with your nsec has full control of your Nostr identity."
 
 /**
