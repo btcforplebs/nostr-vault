@@ -11,7 +11,7 @@ import { decode } from "nostr-tools/nip19"
 import { pool } from "../src/net/pool.js"
 import { publishNote } from "../src/net/sync.js"
 import {
-  REACTION, act, actionState, actionTarget, composeTarget, deleteNote, deletionTemplate, findNote, isDeleted, loadDeletions,
+  REACTION, act, actionState, actionTarget, composeTarget, deleteNote, deletionTemplate, findNote, gateIds, isDeleted, loadDeletions,
   loadSent, publishAction, quoteOf, reactionTemplate, replyTags, repostTemplate, shareLink, unlike,
 } from "../src/net/actions.js"
 
@@ -164,13 +164,40 @@ test("unlike a like this browser never saw: found on the account's relays, then 
   assert.deepEqual(sent.map(s => s.ev.tags), [[["e", elsewhere.id], ["k", "7"]]])
 })
 
-test("unlike with nothing found reads as liked again and says why", async t => {
+test("unlike with nothing found says why on the heart, from a tap too", async t => {
   const sent = relaysSay(t, () => Promise.resolve(""))
   t.mock.method(pool, "querySync", async () => [])
   const c = ctxFor(), n = note()
   await assert.rejects(unlike(c, n), /wasn't found/)
-  assert.equal(actionState(n.id).like, "sent")
+  assert.deepEqual(actionState(n.id).like, { error: "Your like wasn't found on your relays", unlike: true })
   assert.equal(sent.length, 0)
+  // The tap path doesn't swallow it into the console: the heart carries it, and a tap on it tries again.
+  await act(c, "like", n)
+  assert.match(actionState(n.id).like.error, /wasn't found/)
+  assert.equal(pool.querySync.mock.callCount(), 2)
+  assert.equal(sent.length, 0)
+})
+
+test("a half-failed unlike doesn't read as liked, and the retry sends only the deletion that failed", async t => {
+  let down = false
+  const sent = relaysSay(t, () => down ? Promise.reject(new Error("down")) : Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  const a = finalizeEvent(reactionTemplate(n), me), b = finalizeEvent({ ...reactionTemplate(n), content: "+" }, me)
+  t.mock.method(pool, "querySync", async () => [a, b])
+  const realPublish = pool.publish
+  t.mock.method(pool, "publish", (urls, ev) => { down = sent.length >= 1; return realPublish(urls, ev) })
+  await assert.rejects(unlike(c, n), /No relay took it/)
+  assert.equal(actionState(n.id).like.unlike, true)
+  assert.notEqual(actionState(n.id).like, "sent")
+  assert.ok(isDeleted(a.id) && !isDeleted(b.id))
+  assert.deepEqual(sent.map(s => s.ev.tags[0][1]), [a.id, b.id])
+  // The relays still hand back both reactions; only b's deletion is signed again.
+  down = false
+  t.mock.method(pool, "publish", (urls, ev) => realPublish(urls, ev))
+  await act(c, "like", n)
+  assert.deepEqual(sent.map(s => s.ev.tags[0][1]), [a.id, b.id, b.id])
+  assert.equal(actionState(n.id).like, undefined)
+  assert.ok(isDeleted(b.id))
 })
 
 test("deleting your own post: a kind 5 with only its e tag (NoteDeletion.requestTags); hidden at once", async t => {
@@ -259,4 +286,13 @@ test("the card and compose load outside Vite (their stylesheet is Vite-only)", a
   assert.equal(typeof (await import("../src/components/NoteCard.jsx")).NoteCard, "function")
   assert.equal(typeof (await import("../src/screens/ComposeScreen.jsx")).ComposeScreen, "function")
   assert.ok(HEX.test(pk(me)))
+})
+
+test("a card is gated on the note a repost carries too: deleting your post hides reposts of it", () => {
+  const mine = note([], "mine", me)
+  const rp = finalizeEvent(repostTemplate(mine), other)
+  assert.deepEqual(gateIds(rp), [rp.id, mine.id])
+  const bare = finalizeEvent({ kind: 6, created_at: now, tags: [["e", mine.id, ""]], content: "" }, other)
+  assert.deepEqual(gateIds(bare), [bare.id, mine.id])
+  assert.deepEqual(gateIds(mine), [mine.id])
 })

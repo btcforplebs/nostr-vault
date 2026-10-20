@@ -8,7 +8,7 @@ import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
 import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
-import { act, actionContext, actionState, actionTarget, compose, isDeleted, loadSent, onActionState } from "../net/actions.js"
+import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
 import { replyToPubkey, repostedId } from "../net/thread.js"
 
@@ -25,16 +25,18 @@ export function AuthorName({ pubkey }) {
  *  note inside it, zap included. `memoryOnly`: a stranger's note (Global, Hashtag), so quotes and @names inside it
  *  aren't written to Haven /feed. */
 export function NoteCard({ event, memoryOnly = false }) {
-  return <Undeleted id={event.id}>{card(event, memoryOnly)}</Undeleted>
+  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly)}</Undeleted>
 }
 
-/** Its children, until this account deletes post `id`: then nothing, at once, wherever the card was drawn. */
-export function Undeleted({ id, children }) {
-  const [gone, setGone] = useState(() => isDeleted(id))
+/** Its children, until this account deletes one of `ids` (a post, or the note a repost carries): then nothing, at
+ *  once, wherever the card was drawn. */
+export function Undeleted({ ids, children }) {
+  const key = ids.join()
+  const [gone, setGone] = useState(() => ids.some(isDeleted))
   useEffect(() => {
-    setGone(isDeleted(id))
-    return onActionState(i => { if (i === id) setGone(isDeleted(i)) })
-  }, [id])
+    setGone(ids.some(isDeleted))
+    return onActionState(i => { if (ids.includes(i)) setGone(ids.some(isDeleted)) })
+  }, [key])
   return gone ? null : children
 }
 
@@ -122,11 +124,11 @@ function NoteActions({ note }) {
   )
 }
 
-// state: undefined | "busy" | "sent" | { error }. Sent stays pressed; with `undo` (Like) a tap on it takes it back.
+// state: undefined | "busy" | "sent" | { error, unlike? }. Sent stays pressed; with `undo` (Like) a tap on it takes it back.
 function ActionButton({ label, doneLabel, kind, state, icon, onClick, off = "", undo = false }) {
   const sent = state === "sent", busy = state === "busy", error = state?.error
   if (off) onClick = undefined
-  const name = off ? `${label}. ${off}` : sent ? doneLabel : error ? `${label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
+  const name = off ? `${label}. ${off}` : sent ? doneLabel : error ? `${state.unlike ? "Unlike" : label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
   return (
     <button type="button" class={`note-action${kind ? " " + kind : ""}${sent ? " sent" : ""}${error ? " failed" : ""}${off ? " off" : ""}`}
       aria-label={name} title={name} aria-pressed={kind ? sent : undefined} aria-busy={busy || undefined}
