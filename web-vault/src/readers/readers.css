@@ -1,0 +1,35 @@
+/* The reader feeds (Articles, Recipes, Marketplace, Live, Music), drawn under the Feed's picker. */
+.reader-scopes { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 var(--gutter) 10px; }
+.reader-scope-row { display: flex; gap: 6px; }
+.reader-scope-row button { min-height: 30px; padding: 0 12px; border-radius: 999px; font: var(--t-foot); font-weight: 600;
+  background: transparent; color: var(--text-2); border: 1px solid var(--hair); }
+.reader-scope-row button.on { background: var(--s2); color: var(--text); border-color: var(--strong); }
+
+.reader-card { display: block; }
+.reader-card:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.reader-preview { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.reader-byline { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: var(--text-2); text-decoration: none; flex-wrap: wrap; }
+.reader-byline .avatar { flex: none; }
+
+/* The reader: one readable column. */
+.reader { max-width: 720px; margin: 0 auto; padding: 0 var(--gutter) 48px; }
+.reader-bar { position: sticky; top: 0; z-index: 4; display: flex; justify-content: space-between; align-items: center; padding: 8px 0;
+  background: var(--bg); }
+.reader-web { color: var(--accent-light); font-weight: 600; text-decoration: none; }
+.reader-hero { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: var(--radius); margin: 4px 0 12px; }
+.reader-title { font: var(--t-title); margin: 8px 0 6px; }
+.reader-summary { font: var(--t-sub); color: var(--text-2); margin: 12px 0 0; }
+
+/* Markdown (MarkdownBodyView sizes: 24 / 20 / 18 / 16). */
+.md { margin-top: 16px; font: 400 16px/1.55 var(--font); overflow-wrap: anywhere; }
+.md p { margin: 0 0 12px; }
+.md-h { margin: 18px 0 8px; font-weight: 700; line-height: 1.25; }
+.md-h1 { font-size: 24px; } .md-h2 { font-size: 20px; } .md-h3 { font-size: 18px; } .md-h4, .md-h5, .md-h6 { font-size: 16px; }
+.md-item { display: flex; gap: 8px; margin: 0 0 8px; }
+.md-mark { flex: none; font-weight: 700; color: var(--accent-light); font-variant-numeric: tabular-nums; }
+.md blockquote { margin: 0 0 12px; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--text-2); }
+.md pre { margin: 0 0 12px; padding: 10px; border-radius: 8px; background: rgb(142 142 147 / .12); overflow-x: auto; font: 13px/1.45 var(--mono); }
+.md code { font: 0.9em var(--mono); }
+.md a { color: var(--accent-light); }
+.md hr { border: 0; border-top: 1px solid var(--hair); margin: 16px 0; }
+.md-image { display: block; width: 100%; max-height: 420px; object-fit: cover; border-radius: 10px; margin: 0 0 12px; }
