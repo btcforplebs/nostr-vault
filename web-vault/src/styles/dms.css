@@ -1,10 +1,10 @@
 /* Messages (iPhone DMInboxView / DMThreadView): conversation rows, then a thread of bubbles with a field at the bottom. */
 .dm-head-actions { display: inline-flex; gap: 8px; }
 .dm-new { display: flex; gap: 8px; margin: 0 var(--gutter) 12px; }
-.dm-new input, .dm-compose input { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: 999px;
+.dm-new input, .dm-compose textarea { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
-.dm-new input:focus, .dm-compose input:focus { outline: none; border-color: var(--accent-line); }
-.dm-new input::placeholder, .dm-compose input::placeholder { color: var(--text-3); }
+.dm-new input:focus, .dm-compose textarea:focus { outline: none; border-color: var(--accent-line); }
+.dm-new input::placeholder, .dm-compose textarea::placeholder { color: var(--text-3); }
 
 .dm-row { display: flex; align-items: center; gap: 12px; margin: 0 var(--gutter) 8px; padding: 10px 12px; border-radius: var(--radius);
   background: var(--s1); border: 1px solid var(--hair); color: inherit; text-decoration: none; }
@@ -30,7 +30,9 @@
 .dm-compose { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 8px + env(safe-area-inset-bottom)); display: grid; gap: 6px;
   margin: 0 var(--gutter); padding: 8px 0; background: var(--bg); }
 .dm-compose.dragging { outline: 2px dashed var(--accent-line); outline-offset: 2px; border-radius: var(--radius); }
-.dm-compose-row { display: flex; gap: 8px; align-items: center; }
+.dm-compose-row { display: flex; gap: 8px; align-items: flex-end; }
+/* One line to start, growing to five (the height is set from the text); rounder than a pill once it has lines. */
+.dm-compose textarea { resize: none; overflow-y: auto; padding: 11px 14px; line-height: 20px; border-radius: 22px; box-sizing: border-box; }
 /* The photo waiting to go with the next message (DMThreadView: 64 pt, rounded, an x in the corner). */
 .dm-attachment { position: relative; width: 64px; height: 64px; }
 .dm-attachment img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
