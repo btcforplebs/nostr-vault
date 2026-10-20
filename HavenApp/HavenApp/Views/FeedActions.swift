@@ -445,19 +445,14 @@ struct FeedNoteRowData: Equatable {
 }
 
 /// The buttons under a post, as the emoji typed into Settings → Post buttons.
-/// Only ⚡️ is read: on iOS the zap button on posts and live streams shows
-/// only once the user adds it, so App Review sees a labeled
-/// opt-in rather than a hidden feature. Profile zaps don't read this, and the
-/// Mac always shows zaps.
+/// Only ⚡️ is read: on iOS and the Mac the zap button on posts, live streams
+/// and articles shows only once the user adds it, so App Review sees a labeled
+/// opt-in rather than a hidden feature. Profile zaps don't read this.
 enum PostButtons {
     static let storageKey = "postButtons"
 
     static func showsZap(_ value: String) -> Bool {
-        #if os(iOS)
         // The emoji keyboard sends ⚡️ (U+26A1 U+FE0F); a bare ⚡ counts too.
-        return value.unicodeScalars.contains("\u{26A1}")
-        #else
-        return true
-        #endif
+        value.unicodeScalars.contains("\u{26A1}")
     }
 }

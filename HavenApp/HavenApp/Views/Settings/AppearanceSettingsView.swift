@@ -117,9 +117,7 @@ struct AppearanceSettingsView: View {
                 Text("Off, new posts wait until you pull down to refresh.")
             }
 
-            #if os(iOS)
             PostButtonsSection()
-            #endif
 
             Section {
                 Toggle(isOn: $configService.config.zapsOnlyMode) {
@@ -196,9 +194,8 @@ struct AppearanceSettingsView: View {
     
 }
 
-#if os(iOS)
 /// Settings → Post buttons: the emoji the action bar under a post shows. Adding
-/// ⚡️ turns on the zap button on posts, which ships off on iOS. Labeled and in
+/// ⚡️ turns on the zap button on posts, which ships off on iOS and the Mac. Labeled and in
 /// plain sight on purpose — App Review has to be able to find it.
 private struct PostButtonsSection: View {
     @AppStorage(PostButtons.storageKey) private var postButtons = ""
@@ -215,7 +212,9 @@ private struct PostButtonsSection: View {
                 TextField("Add ⚡️", text: $postButtons)
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()
+                    #if os(iOS)
                     .textInputAutocapitalization(.never)
+                    #endif
                     .frame(maxWidth: 140)
             }
             preview
@@ -250,4 +249,3 @@ private struct PostButtonsSection: View {
         return PostButtons.showsZap(postButtons) ? base + ["bolt"] : base
     }
 }
-#endif
