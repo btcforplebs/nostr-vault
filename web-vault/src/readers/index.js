@@ -3,9 +3,11 @@
 import { ArticlesScreen } from "./ArticlesScreen.jsx"
 import { RecipesScreen } from "./RecipesScreen.jsx"
 import { LiveScreen } from "./LiveScreen.jsx"
+import { MusicScreen } from "./MusicScreen.jsx"
 
 export const READERS = [
   { id: "articles", label: "Articles", Screen: ArticlesScreen },
   { id: "recipes", label: "Recipes", Screen: RecipesScreen },
   { id: "live", label: "Live", Screen: LiveScreen },
+  { id: "music", label: "Music", Screen: MusicScreen },
 ]
