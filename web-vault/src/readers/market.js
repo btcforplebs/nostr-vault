@@ -2,7 +2,7 @@
 // MarketListingBook (Models/MarketListing.swift): NIP-15 products and auctions (30018, 30020) and NIP-99 classifieds
 // (30402). Sellers are mostly strangers, so nothing is written to Haven; buying hands off to Plebeian Market.
 import { pool } from "../net/pool.js"
-import { trustSet } from "../net/popular.js"
+import { globalTrust, trustedFilters } from "./trust.js"
 
 export const PRODUCT = 30018, AUCTION = 30020, CLASSIFIED = 30402
 export const MARKET_KINDS = [PRODUCT, AUCTION, CLASSIFIED]
@@ -141,14 +141,7 @@ export function marketFilter(scope, follows) {
   return follows.length ? { ...f, authors: follows } : null
 }
 
-/** How many trusted authors the first filter names (FeedService.trustedAuthorsCap). */
-export const TRUSTED_AUTHORS_CAP = 500
-
-/** Global on the web of trust (FeedService.trustScopedFilters): the filter once for trusted authors, so a page of
- *  strangers can't crowd them out, and once open for the trusted past the cap. Only trusted sellers are kept. */
-export function trustedFilters(base, trust) {
-  return [{ ...base, authors: [...trust].sort().slice(0, TRUSTED_AUTHORS_CAP) }, base]
-}
+export { trustedFilters, TRUSTED_AUTHORS_CAP } from "./trust.js"
 
 /**
  * One load. Following: follows' listings. Global: sellers your web vouches for (you, your follows and the people they
@@ -156,13 +149,13 @@ export function trustedFilters(base, trust) {
  * With no web yet (no follows) Global fails closed. `query` and `trustOf` are for tests.
  * -> { listings, noWeb } or null when there was nothing to ask.
  */
-export async function fetchListings({ scope, me, follows, blocked, query = (r, f, o) => pool.querySync(r, f, o), trustOf = trustSet }) {
+export async function fetchListings({ scope, me, follows, blocked, query = (r, f, o) => pool.querySync(r, f, o), trustOf }) {
   const filter = marketFilter(scope, follows)
   if (!filter) return null
   let allowed = filter.authors && new Set(filter.authors), filters = [filter]
   if (scope !== "following") {
-    if (!follows.length) return { listings: [], noWeb: true }
-    allowed = await trustOf(me, follows)
+    allowed = await globalTrust(me, follows, trustOf)
+    if (!allowed) return { listings: [], noWeb: true }
     filters = trustedFilters(filter, allowed)
   }
   const evs = (await Promise.all(filters.map(f => query(MARKET_RELAYS, f, { maxWait: 12000 })))).flat()

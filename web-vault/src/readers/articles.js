@@ -4,6 +4,7 @@
 // are strangers': held in memory only, never written to /feed.
 import { pool, uniq } from "../net/pool.js"
 import { LONG_FORM_KIND, dedupeAddressable, isRecipe } from "./longform.js"
+import { globalTrust, trustedFilters } from "./trust.js"
 
 export const ARTICLE_SCOPES = [{ id: "following", label: "Following" }, { id: "global", label: "Global" }]
 const KEY = "nv-articles-scope"
@@ -23,24 +24,32 @@ export function articleFilter(scope, follows, { limit = PAGE, until } = {}) {
 }
 
 /** Articles, not recipes (those have their own feed), one per address, newest first. Only what was asked for: a
- *  relay may answer with other kinds, or with authors outside the filter. */
-export function keepArticles(evs, filter) {
-  const authors = filter.authors && new Set(filter.authors)
+ *  relay may answer with other kinds, or with authors outside the filter (or outside `trust`, on Global). */
+export function keepArticles(evs, filter, trust = null) {
+  const authors = trust ?? (filter.authors && new Set(filter.authors))
   return dedupeAddressable(evs.filter(ev => ev?.id && ev.kind === LONG_FORM_KIND && (!authors || authors.has(ev.pubkey)) && !isRecipe(ev.tags)))
 }
 
-/** One page of articles. Following: Haven /feed first, then the network into /feed; Global: the network only, in
- *  memory. `query` and `online` are for tests. -> { articles, fromNetwork } */
-export async function fetchArticles({ scope, follows, relays, vault, until, limit = PAGE, online = globalThis.navigator?.onLine !== false,
-  query = (r, f, o) => pool.querySync(r, f, o) }) {
+/** One page of articles. Following: Haven /feed first, then the network into /feed. Global: the network only, in
+ *  memory, from people your web of trust vouches for (none with no follows: Global fails closed, as on the iPhone).
+ *  `query`, `online` and `trustOf` are for tests. -> { articles, fromNetwork, noWeb } */
+export async function fetchArticles({ scope, me, follows, relays, vault, until, limit = PAGE, online = globalThis.navigator?.onLine !== false,
+  query = (r, f, o) => pool.querySync(r, f, o), trustOf }) {
   const filter = articleFilter(scope, follows, { limit, until })
   if (!filter) return { articles: [], fromNetwork: false }
-  const local = scope === "following" && vault ? await vault.feed.query(filter) : []
+  if (scope !== "following") {
+    if (!online) return { articles: [], fromNetwork: false }
+    const trust = await globalTrust(me, follows, trustOf)
+    if (!trust) return { articles: [], fromNetwork: false, noWeb: true }
+    const net = (await Promise.all(trustedFilters(filter, trust).map(f => query(uniq(relays), f, { maxWait: 8000 })))).flat()
+    return { articles: keepArticles(net, filter, trust).slice(0, limit), fromNetwork: true }
+  }
+  const local = vault ? await vault.feed.query(filter) : []
   if (!online) return { articles: keepArticles(local, filter), fromNetwork: false }
   let net = []
-  for (const f of scope === "following" ? split(filter) : [filter]) net.push(...await query(uniq(relays), f, { maxWait: 8000 }))
+  for (const f of split(filter)) net.push(...await query(uniq(relays), f, { maxWait: 8000 }))
   net = keepArticles(net, filter)
-  if (scope === "following" && vault) for (const ev of net) await vault.feed.event(ev).catch(() => {})
+  if (vault) for (const ev of net) await vault.feed.event(ev).catch(() => {})
   return { articles: keepArticles([...local, ...net], filter).slice(0, limit), fromNetwork: true }
 }
 

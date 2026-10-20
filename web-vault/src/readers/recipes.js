@@ -1,8 +1,9 @@
 // The Recipes feed (the iPhone's RecipeFeedService): kind 30023 tagged zapcooking or nostrcooking, from zap.cooking's
-// feed relay plus the read relays. Following asks for follows' recipes, Global for anyone's. Recipe authors are mostly
+// feed relay plus the read relays. Following asks for follows' recipes, Global for those of your web of trust. Recipe authors are mostly
 // strangers, so nothing here is written to Haven: results live in memory only.
 import { pool, uniq } from "../net/pool.js"
 import { LONG_FORM_KIND, RECIPE_TOPICS, dedupeAddressable, longFormMeta } from "./longform.js"
+import { globalTrust, trustedFilters } from "./trust.js"
 
 /** zap.cooking's own feed relay: curated recipe posts, read-only (RecipeFeedService.zapCookingRelay). */
 export const ZAP_COOKING_RELAY = "wss://feed.zap.cooking"
@@ -40,8 +41,8 @@ const recipeTagged = ev => ev.tags?.some(t => t.length >= 2 && t[0] === "t" && R
 
 /** Recipes from what the relays sent: only 30023 actually tagged as a recipe, by the authors asked for, no test posts,
  *  one per address, newest first. */
-export function keepRecipes(evs, filter) {
-  const authors = filter.authors && new Set(filter.authors)
+export function keepRecipes(evs, filter, trust = null) {
+  const authors = trust ?? (filter.authors && new Set(filter.authors))
   return dedupeAddressable(evs.filter(ev => ev?.id && ev.kind === LONG_FORM_KIND && recipeTagged(ev)
     && (!authors || authors.has(ev.pubkey)) && !looksLikeTestPost(ev.tags, ev.content)))
 }
@@ -65,9 +66,15 @@ export function recipeCategories(recipes, max = MAX_CATEGORIES) {
 
 export const inCategory = (recipes, category) => (category ? recipes.filter(r => longFormMeta(r).topics.includes(CATEGORY_PREFIX + category)) : recipes)
 
-/** One load. `query` is for tests. -> recipes, or null when there was nothing to ask. */
-export async function fetchRecipes({ scope, follows, readRelays, query = (r, f, o) => pool.querySync(r, f, o) }) {
+/** One load. Global keeps recipes from people your web of trust vouches for (RecipeFeedService's trust), and fails
+ *  closed with no follows. `query` and `trustOf` are for tests. -> { recipes, noWeb }, or null when there was nothing
+ *  to ask. */
+export async function fetchRecipes({ scope, me, follows, readRelays, query = (r, f, o) => pool.querySync(r, f, o), trustOf }) {
   const filter = recipeFilter(scope, follows)
   if (!filter) return null
-  return keepRecipes(await query(recipeRelays(readRelays), filter, { maxWait: 12000 }), filter)
+  if (scope === "following") return { recipes: keepRecipes(await query(recipeRelays(readRelays), filter, { maxWait: 12000 }), filter), noWeb: false }
+  const trust = await globalTrust(me, follows, trustOf)
+  if (!trust) return { recipes: [], noWeb: true }
+  const evs = (await Promise.all(trustedFilters(filter, trust).map(f => query(recipeRelays(readRelays), f, { maxWait: 12000 })))).flat()
+  return { recipes: keepRecipes(evs, filter, trust), noWeb: false }
 }

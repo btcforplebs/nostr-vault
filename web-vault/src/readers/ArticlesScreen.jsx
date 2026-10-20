@@ -1,4 +1,5 @@
-// The Articles feed and its reader (the iPhone's ArticleCardView and ArticleReaderView): Following or Global,
+// The Articles feed and its reader (the iPhone's ArticleCardView and ArticleReaderView): Following or Global (your
+// web of trust),
 // cards with image, title, summary, author, date and reading time; a card opens the article with its body rendered
 // and an "Open in YakiHonne" link.
 import { useEffect, useRef, useState } from "preact/hooks"
@@ -28,10 +29,10 @@ export function ArticlesScreen({ ctx }) {
 
   const load = async until => {
     const n = ++seq.current
-    if (scope === "following" && !follows.length) { setItems([]); return setStatus("") }
+    if (!follows.length) { setItems([]); return setStatus("") }
     setStatus(until ? "Fetching older articles…" : "Loading articles…")
     try {
-      const { articles, fromNetwork } = await fetchArticles({ scope, follows, relays, vault, until })
+      const { articles, fromNetwork } = await fetchArticles({ scope, me: ctx.session?.pubkey, follows, relays, vault, until })
       if (n !== seq.current) return
       setItems(have => (until ? [...(have ?? []), ...articles.filter(a => !have?.some(h => h.id === a.id))] : articles))
       setMore(articles.length >= PAGE / 2)
@@ -48,7 +49,8 @@ export function ArticlesScreen({ ctx }) {
     <div class="reader-feed">
       <Scopes scopes={ARTICLE_SCOPES} value={scope} onPick={pick} onRefresh={() => load()} />
       {status && <div class="status-line">{status}</div>}
-      {scope === "following" && !follows.length ? <p class="empty">{account.loaded ? "Follow someone to see their articles here, or switch to Global." : "Loading your follows…"}</p>
+      {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see their articles here."
+          : "Global shows articles from people your web of trust vouches for. Follow a few people first."}</p>
         : items === null ? <p class="empty">Loading articles…</p>
         : !shown.length ? <p class="empty">{items.length ? "Every article loaded here is from someone you blocked." : scope === "following" ? "The people you follow haven't written any articles yet." : "No articles found."}</p>
         : <>

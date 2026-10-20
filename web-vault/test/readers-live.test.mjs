@@ -6,7 +6,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import { decode } from "nostr-tools/nip19"
 import { parseStream, isOnAir, playableUrl, hostOf, isAdultStream, pickStreams, liveFilters, liveRelays, fetchStreams, streamLink, chatRows, chatFilter, chatRelays, startScope, normalizedRelay, STREAM_RELAY, CHAT_RELAYS, STALE_AFTER } from "../src/readers/live.js"
 
-const A = "a".repeat(64), B = "b".repeat(64), S = "5".repeat(64)
+const A = "a".repeat(64), B = "b".repeat(64), S = "5".repeat(64), C_ = "c".repeat(64)
 const NOW = 1_800_000_000
 const HLS = "https://cdn.example/live/index.m3u8"
 let n = 0
@@ -60,6 +60,14 @@ test("an ended edit replaces its own live announcement; a later re-announce brin
   assert.deepEqual(pickStreams([ended, announced], { scope: "global", follows: [], now: NOW }), [], "order of arrival doesn't matter")
   const back = stream({ pubkey: B, d: "show", at: NOW - 5 })
   assert.deepEqual(pickStreams([announced, ended, back], { scope: "global", follows: [], now: NOW }).map(s => s.id), [back.id])
+})
+
+test("Global with a web shows trusted hosts (adult included, as iOS); with none, everyone but adult", async () => {
+  const trusted = stream({ pubkey: S, extra: [["p", B, "", "Host"]] }), stranger = stream({ pubkey: C_ }), adult = stream({ pubkey: B, extra: [["t", "nsfw"]] })
+  const withWeb = await fetchStreams({ scope: "global", me: A, follows: [B], readRelays: [], now: NOW, trustOf: async () => new Set([A, B]), query: async () => [trusted, stranger, adult] })
+  assert.deepEqual(withWeb.map(s => s.id).sort(), [trusted.id, adult.id].sort())
+  const noWeb = await fetchStreams({ scope: "global", me: A, follows: [], readRelays: [], now: NOW, trustOf: async () => { throw new Error("asked") }, query: async () => [trusted, stranger, adult] })
+  assert.deepEqual(noWeb.map(s => s.id).sort(), [trusted.id, stranger.id].sort())
 })
 
 test("filters: Following by author and #p; Global asks for everything; zap.stream's relay is always asked", () => {
