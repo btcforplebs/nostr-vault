@@ -234,6 +234,14 @@ struct ArticleReaderView: View {
                 actionIcon("square.and.arrow.up", tint: .secondary)
             }
             .accessibilityLabel(Text("Share"))
+            if let link = note.webLink {
+                Button { PlatformURL.open(link.url) } label: {
+                    actionIcon("safari", tint: .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Open in \(link.siteName)"))
+                .help(Text("Open in \(link.siteName)"))
+            }
             Spacer(minLength: 0)
         }
     }

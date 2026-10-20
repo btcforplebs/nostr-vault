@@ -82,6 +82,7 @@ struct ArticleCardView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(Rectangle())
+        .openInWebContextMenu(note.webLink)
     }
 
     /// The author's own `summary` tag when they wrote one, otherwise the top of

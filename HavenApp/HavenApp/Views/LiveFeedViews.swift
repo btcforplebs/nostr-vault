@@ -56,6 +56,7 @@ struct LiveStreamCardView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(Rectangle())
+        .openInWebContextMenu(stream.webLink)
     }
 
     private var endedPill: some View {
@@ -370,6 +371,10 @@ struct LiveStreamPlayerView: View {
                 }
                 Spacer(minLength: 0)
                 Menu {
+                    if let link = stream.webLink {
+                        OpenInWebButton(link: link)
+                        Divider()
+                    }
                     Button {
                         showingReportDialog = true
                     } label: {
