@@ -12,6 +12,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { sendMessage, sendFailure, thread } from "../net/dms.js"
 import { dmContent, preparePhoto } from "../net/dm-photo.js"
+import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, OpenMore } from "./MessagesScreen.jsx"
 
@@ -36,6 +37,13 @@ export function ConversationScreen({ ctx, peer }) {
 
   useEffect(() => { fetchProfiles(ctx.vault, [peer], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [peer])
   useEffect(() => { end.current?.scrollIntoView?.({ block: "end" }) }, [rows.length])
+  // What's on screen is read: on opening, and as messages land while the tab is in front (DMThreadView markAsRead).
+  useEffect(() => {
+    const read = () => { if (document.visibilityState !== "hidden" && !isBlocked) markRead(me, rows) }
+    read()
+    document.addEventListener("visibilitychange", read)
+    return () => document.removeEventListener("visibilitychange", read)
+  }, [peer, rows.length, isBlocked])
 
   const clearPhoto = () => setPhoto(p => { if (p) URL.revokeObjectURL(p.preview); return null })
   useEffect(() => clearPhoto, [peer])

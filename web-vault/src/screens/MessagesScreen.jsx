@@ -1,5 +1,6 @@
 // Messages: the user's conversations, newest first (iPhone DMInboxView). Read from Haven's /chat and the relays
-// through net/dms.js; the text is decrypted in memory only. Blocked people's conversations are left out.
+// through net/dms.js; the text is decrypted in memory only. Blocked people's conversations are left out. Unread
+// conversations are bold with a count, as on the iPhone (net/dm-read.js).
 import { useEffect, useState } from "preact/hooks"
 import { decode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -8,6 +9,7 @@ import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, watchMessages } from "../net/dms.js"
 
 /** The relays the user's own DMs are read from: their DM inbox list, read list, defaults and this browser's extras. */
@@ -36,6 +38,16 @@ export function useMessages(ctx) {
     return () => { live = false; off(); stop() }
   }, [ctx.session.pubkey, round])
   return { ...m, retry: () => { forgetUnopened(); setRound(r => r + 1) } }
+}
+
+/** Unread counts per conversation, re-counted as messages land or are read. -> { counts: Map peer -> n, total } */
+export function useUnread(ctx, messages, blocked) {
+  const [, setTick] = useState(0)
+  useEffect(() => onRead(() => setTick(t => t + 1)), [])
+  const counts = unreadCounts(messages, ctx.session.pubkey, blocked)
+  let total = 0
+  for (const n of counts.values()) total += n
+  return { counts, total }
 }
 
 /** Messages past the first load's ceiling, or that came in faster than they're opened live: open the next lot. */
@@ -73,6 +85,7 @@ export function MessagesScreen({ ctx }) {
   const [to, setTo] = useState("")
   const [err, setErr] = useState("")
   const list = conversations(messages, blocked)
+  const { counts, total } = useUnread(ctx, messages, blocked)
 
   useEffect(() => {
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
@@ -89,7 +102,10 @@ export function MessagesScreen({ ctx }) {
 
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Messages</h2></header>
+      <header class="screen-head">
+        <h2>Messages</h2>
+        {total > 0 && <button type="button" class="small" onClick={() => markRead(ctx.session.pubkey, [...messages.values()].filter(m => !blocked.has(m.peer)))}>Mark all read</button>}
+      </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
       <BunkerNote ctx={ctx} />
       <SignerTrouble trouble={trouble} retry={retry} />
@@ -101,16 +117,16 @@ export function MessagesScreen({ ctx }) {
       {err && <div class="status-line error">{err}</div>}
       {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
         : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
-        : list.map(c => (
-          <a key={c.peer} class="dm-row" href={`#/dm/${c.peer}`}>
+        : list.map(c => { const unread = counts.get(c.peer) ?? 0; return (
+          <a key={c.peer} class={unread ? "dm-row unread" : "dm-row"} href={`#/dm/${c.peer}`} aria-label={unread ? `${unread} unread` : undefined}>
             {/* A stranger's picture waits: their server would learn your IP the moment the list draws. */}
             <Avatar pubkey={c.peer} size={44} load={ctx.account.follows.includes(c.peer)} />
             <span class="dm-row-text">
-              <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time></span>
+              <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time>{unread > 0 && <span class="dm-unread">{unread > 99 ? "99+" : unread}</span>}</span>
               <span class="dm-row-last">{c.last.from === ctx.session.pubkey ? "You: " : ""}{c.last.content.replace(/\s+/g, " ").trim() || "(empty)"}</span>
             </span>
           </a>
-        ))}
+        ) })}
     </main>
   )
 }
