@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1185,39 +1186,15 @@ func DecryptNIP49C(ncryptsec *C.char, password *C.char) *C.char {
 		return nil
 	}
 
-	// NIP-49 payload: version(1) + logN(1) + salt(16) + nonce(24) + ciphertext(48)
-	if len(payload) < 1+1+16+24+32+16 {
-		slog.Debug("DecryptNIP49C: payload too short (likely legacy format)", "len", len(payload))
-		return nil
-	}
-
-	version := payload[0]
-	if version != 0x02 {
-		slog.Debug("DecryptNIP49C: unsupported version (likely legacy format)", "version", version)
-		return nil
-	}
-
-	logN := payload[1]
-	N := 1 << int(logN)
-	salt := payload[2:18]
-	nonce := payload[18:42]
-	ciphertext := payload[42:]
-
-	derivedKey, err := scrypt.Key(pw, salt, N, 8, 1, 32)
+	plaintext, err := decryptNIP49Payload(payload, pw)
 	if err != nil {
-		slog.Error("DecryptNIP49C: scrypt failed", "err", err)
-		return nil
-	}
-
-	aead, err := chacha20poly1305.NewX(derivedKey)
-	if err != nil {
-		slog.Error("DecryptNIP49C: NewX failed", "err", err)
-		return nil
-	}
-
-	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		slog.Error("DecryptNIP49C: decrypt failed", "err", err)
+		// Too short or wrong version is the legacy Swift format, which the
+		// caller tries next; anything else is a real failure.
+		if errors.Is(err, errNIP49Short) || errors.Is(err, errNIP49Version) {
+			slog.Debug("DecryptNIP49C: not NIP-49 v2 (likely legacy format)", "err", err)
+		} else {
+			slog.Error("DecryptNIP49C: decrypt failed", "err", err)
+		}
 		return nil
 	}
 

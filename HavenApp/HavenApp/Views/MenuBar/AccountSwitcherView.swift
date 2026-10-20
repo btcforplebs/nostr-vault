@@ -253,6 +253,13 @@ struct AccountSwitcherView: View {
         guard importPassword.count >= 8 else { importError = "Password must be at least 8 characters"; return }
 
         do {
+            try NIP49Service.validateImport(nsec: nsecTrimmed, matching: npub)
+        } catch {
+            importError = error.localizedDescription
+            return
+        }
+
+        do {
             try configService.setCredential(nsec: nsecTrimmed, password: importPassword, forNpub: npub)
             importSuccess = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
