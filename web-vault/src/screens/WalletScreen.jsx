@@ -4,11 +4,12 @@
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { useWallet } from "../components/ZapButton.jsx"
-import { appKeyOf, connectWallet, disconnectWallet, getBalance, setDefaultZap } from "../net/wallet.js"
+import { appKeyOf, connectWallet, disconnectWallet, getBalance, onPaid, setDefaultZap } from "../net/wallet.js"
 import { MAX_ZAP_SATS } from "../net/zaps.js"
 import { actionContext } from "../net/actions.js"
 import { WalletReceive } from "./WalletReceive.jsx"
 import { WalletHistory } from "./WalletHistory.jsx"
+import { WalletSend } from "./WalletSend.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
@@ -19,7 +20,7 @@ export function WalletScreen() {
     <main class="screen wallet">
       <header class="screen-head"><h2>Wallet</h2></header>
       {wallet.status === "loading" ? <p class="empty">Opening your wallet…</p>
-        : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /><WalletHistory wallet={wallet} /></> : <Connect />}
+        : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletSend wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /><WalletHistory wallet={wallet} /></> : <Connect />}
       {wallet.status !== "loading" && <DefaultZap sats={wallet.defaultSats} />}
     </main>
   )
@@ -48,16 +49,18 @@ function Connect() {
   )
 }
 
-function Connected({ wallet }) {
+/** Exported for the test that it re-reads the balance after a payment (`balanceOf`: a fake there). */
+export function Connected({ wallet, balanceOf = getBalance }) {
   const [balance, setBalance] = useState(null) // msat
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const refresh = async () => {
     setBusy(true); setErr("")
-    try { setBalance(await getBalance(wallet.conn)) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+    try { setBalance(await balanceOf(wallet.conn)) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
   useEffect(() => { setBalance(null); refresh() }, [wallet.conn])
+  useEffect(() => onPaid(refresh), [wallet.conn])
   const host = (() => { try { return new URL(wallet.conn.relay).host } catch { return wallet.conn.relay } })()
   return (
     <section class="card wallet-card">

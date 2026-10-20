@@ -3,6 +3,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { ago } from "../components/time.js"
+import { onPaid } from "../net/wallet.js"
 import { HISTORY_PAGE, counterparty, isUnsupported, listTransactions, mergeTransactions } from "../net/wallet-history.js"
 
 export function WalletHistory({ wallet, list = listTransactions }) {
@@ -24,6 +25,8 @@ export function WalletHistory({ wallet, list = listTransactions }) {
     } finally { setBusy(false) }
   }
   useEffect(() => { setTxs([]); load(true) }, [wallet.conn])
+  // A payment from Send or a zap: reload from the top, so "check History" shows it.
+  useEffect(() => onPaid(() => load(true)), [wallet.conn])
 
   return (
     <section class="card wallet-card">

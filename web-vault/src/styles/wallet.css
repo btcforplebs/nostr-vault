@@ -3,9 +3,9 @@
 .wallet-card { display: flex; flex-direction: column; gap: 10px; }
 .wallet-card h3 { margin: 0; }
 .wallet-card p { margin: 0; }
-.wallet-uri, .wallet-sats { background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; font: 13px var(--mono); }
+.wallet-uri, .wallet-sats, .wallet-card input[type="text"] { background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; font: 13px var(--mono); }
 .wallet-uri { width: 100%; }
-.wallet-uri:focus, .wallet-sats:focus { outline: none; border-color: var(--strong); }
+.wallet-uri:focus, .wallet-sats:focus, .wallet-card input[type="text"]:focus { outline: none; border-color: var(--strong); }
 .wallet-sats { width: 110px; text-align: right; }
 .wallet-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
 .wallet-row > span:first-child { flex: 1; }
@@ -61,3 +61,10 @@ button.danger { color: var(--danger); }
 .zapper-head .author-name { flex: 1; min-width: 0; }
 .zapper-sats { flex: none; color: #ff9f0a; font: 600 13px var(--mono); }
 .zapper-comment { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* Send (WalletLightningTab+Send): the amount is shown in orange before anything is paid. */
+.wallet-paying { color: #ff9f0a; font-weight: 600; margin: 8px 0; }
+.wallet-to { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
+.wallet-confirm { margin-top: 10px; padding: 12px; border: 1px solid #ff9f0a; border-radius: 10px; background: rgb(255 159 10 / .08); }
+.wallet-confirm p { margin: 0 0 10px; }
+.wallet-sent { color: #30d158; margin: 8px 0 0; }
+textarea.wallet-uri { width: 100%; resize: vertical; font: 13px var(--mono); }
