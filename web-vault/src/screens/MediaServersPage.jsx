@@ -3,6 +3,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
+import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
 import { latestList, publishList, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
 
 const loopback = url => { try { return /^(localhost|127\.|\[::1\])/.test(new URL(url).hostname) } catch { return false } }
@@ -15,6 +16,12 @@ export function MediaServersPage({ ctx }) {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [err, setErr] = useState("")
+  const [health, setHealth] = useState({}) // url -> "checking" | { state, reason, at }
+  const test = async url => {
+    setHealth(h => ({ ...h, [url]: "checking" }))
+    const r = await testServer(url, ctx.session.pubkey, { ctx }).catch(e => ({ state: "offline", reason: String(e?.message ?? e) }))
+    setHealth(h => ({ ...h, [url]: { ...r, at: Date.now() } }))
+  }
 
   // With no list of its own, the account uploads to the defaults, so an edit starts from them.
   const start = ev => ev ? serverEntries(ev) : DEFAULT_MEDIA_SERVERS
@@ -49,11 +56,12 @@ export function MediaServersPage({ ctx }) {
       {!loaded.event && loaded.checked && <p class="settings-note muted small">You haven't published a list, so the defaults below are used. Saving publishes them with your changes.</p>}
       {urls.map((url, i) => (
         <div key={url} class="settings-row static relay-edit-row">
-          <span class="settings-title mono" title={url}>{url}</span>
+          <span class="settings-title mono" title={url}>{url}<Health h={health[url]} /></span>
           <span class="settings-tags">
             {i === 0 && <span class="tag">first</span>}
             {!loaded.event && DEFAULT_MEDIA_SERVERS.includes(url) && <span class="tag">default</span>}
             {serverUrl(url) === null && <span class="tag">not used</span>}
+            {saved.includes(url) && <button type="button" class="small relay-remove" disabled={health[url] === "checking"} aria-label={`Test ${url}`} onClick={() => test(url)}>{health[url] === "checking" ? "Testing…" : "Test"}</button>}
             {!readOnly && <button type="button" class="small relay-remove" disabled={busy} aria-label={`Remove ${url}`} onClick={() => setUrls(removeServer(urls, url))}>Remove</button>}
           </span>
         </div>
@@ -77,4 +85,10 @@ export function MediaServersPage({ ctx }) {
       {err && <p class="settings-note small error">{err}</p>}
     </>
   )
+}
+
+/** A tested server's line: a dot and the phone's words, with why when it isn't working. */
+function Health({ h }) {
+  if (!h || h === "checking") return <span class="server-health muted">{h ? "Checking…" : "Not checked yet"}</span>
+  return <span class={`server-health ${h.state}`}><span class="dot" />{SERVER_STATES[h.state]}{h.reason && h.state !== "working" ? ` (${h.reason})` : ""}</span>
 }

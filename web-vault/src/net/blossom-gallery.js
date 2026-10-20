@@ -120,3 +120,32 @@ export function byDay(blobs, locale) {
   }
   return groups
 }
+
+/**
+ * Is a media server working for you? (MediaServersPage.test) Holding one of your files is the proof: its list is
+ * asked for, and the newest file on it is checked with HEAD. A front page that answers proves only that it answers.
+ * -> { state: "working" | "answers" | "lostFile" | "offline", reason? }
+ */
+export async function testServer(server, pubkey, { ctx, fetch = globalThis.fetch, timeoutMs = 8000 } = {}) {
+  const { blobs, status } = await listBlobs([server], pubkey, { ctx, fetch, timeoutMs })
+  if (status[server] === "ok" && blobs.length) {
+    try {
+      const res = await fetch(`${server}/${blobs[0].sha256}`, { method: "HEAD", signal: AbortSignal.timeout?.(timeoutMs) })
+      if (res.ok) return { state: "working" }
+      if (res.status === 404) return { state: "lostFile" }
+      return { state: "answers", reason: `HTTP ${res.status}` }
+    } catch (e) { return { state: "offline", reason: String(e?.message ?? e) } }
+  }
+  if (status[server] === "ok") return { state: "answers" }
+  // Its list wasn't readable: does it answer at all? An opaque answer still means something is there.
+  try { await fetch(`${server}/`, { mode: "no-cors", signal: AbortSignal.timeout?.(timeoutMs) }); return { state: "answers", reason: status[server] } }
+  catch (e) { return { state: "offline", reason: e?.name === "TimeoutError" ? "didn't answer" : String(e?.message ?? e) } }
+}
+
+/** The phone's words for each state (MediaServersPage statusLine). */
+export const SERVER_STATES = {
+  working: "Has your files",
+  answers: "Answers, but holds none of your files to check",
+  lostFile: "Answers, but a file it had is gone",
+  offline: "Not answering",
+}
