@@ -15,6 +15,9 @@ import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, OpenMore } from "./MessagesScreen.jsx"
 
+// A pasted image can come without a type; preparePhoto decides whether it's a drawable image.
+const isImageFile = f => !f.type || /^image\//.test(f.type)
+
 export function ConversationScreen({ ctx, peer }) {
   const { messages, note, trouble, retry, more } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
@@ -22,6 +25,7 @@ export function ConversationScreen({ ctx, peer }) {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [photo, setPhoto] = useState(null) // { file, preview } ready to upload with the next send
+  const [preparing, setPreparing] = useState(false) // a photo being redrawn: Send waits for it
   const [dragging, setDragging] = useState(false)
   const end = useRef(null)
   const picker = useRef(null)
@@ -36,20 +40,20 @@ export function ConversationScreen({ ctx, peer }) {
   const clearPhoto = () => setPhoto(p => { if (p) URL.revokeObjectURL(p.preview); return null })
   useEffect(() => clearPhoto, [peer])
   const attach = async files => {
-    const file = [...(files ?? [])].find(f => /^image\//.test(f.type))
-    if (!file || busy) return
-    setStatus("")
+    const file = [...(files ?? [])].find(isImageFile)
+    if (!file || busy || preparing) return
+    setStatus(""); setPreparing(true)
     try {
       const ready = await preparePhoto(file)
       clearPhoto()
       setPhoto({ file: ready, preview: URL.createObjectURL(ready) })
-    } catch (err) { setStatus(err?.message || "Couldn't read that photo.") }
+    } catch (err) { setStatus(err?.message || "Couldn't read that photo.") } finally { setPreparing(false) }
   }
 
   const send = async e => {
     e.preventDefault()
     const t = text.trim()
-    if ((!t && !photo) || busy) return
+    if ((!t && !photo) || busy || preparing) return
     setBusy(true); setStatus("")
     try {
       let url = null
@@ -92,7 +96,7 @@ export function ConversationScreen({ ctx, peer }) {
       {!note && !isBlocked && (
         <form class={dragging ? "dm-compose dragging" : "dm-compose"} onSubmit={send}
           onDragOver={e => { if ([...(e.dataTransfer?.items ?? [])].some(i => i.kind === "file")) { e.preventDefault(); setDragging(true) } }}
-          onDragLeave={() => setDragging(false)}
+          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
           onDrop={e => { e.preventDefault(); setDragging(false); attach(e.dataTransfer?.files) }}>
           {photo && (
             <div class="dm-attachment">
@@ -101,11 +105,16 @@ export function ConversationScreen({ ctx, peer }) {
             </div>
           )}
           <div class="dm-compose-row">
-            <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={busy} aria-label="Attach photo">Photo</button>
+            <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={busy || preparing} aria-label="Attach photo">{preparing ? "Photo…" : "Photo"}</button>
             <input ref={picker} type="file" accept="image/*" hidden onChange={e => { attach(e.currentTarget.files); e.currentTarget.value = "" }} />
             <input value={text} onInput={e => setText(e.currentTarget.value)} placeholder="Message…" disabled={busy} aria-label="Message"
-              onPaste={e => { const files = [...(e.clipboardData?.files ?? [])]; if (files.some(f => /^image\//.test(f.type))) { e.preventDefault(); attach(files) } }} />
-            <button type="submit" class="primary small" disabled={busy || (!text.trim() && !photo)}>{busy ? "Sending…" : "Send"}</button>
+              onPaste={e => {
+                const files = [...(e.clipboardData?.files ?? [])]
+                if (!files.some(isImageFile)) return
+                if (!e.clipboardData.getData("text/plain")) e.preventDefault() // text copied with the image still pastes
+                attach(files)
+              }} />
+            <button type="submit" class="primary small" disabled={busy || preparing || (!text.trim() && !photo)}>{busy ? "Sending…" : "Send"}</button>
           </div>
         </form>
       )}

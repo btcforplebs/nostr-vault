@@ -17,10 +17,18 @@ test("the long edge comes down to 2400 px, keeping the shape; small photos stay 
   assert.deepEqual(fitSize(800, 600), { width: 800, height: 600 })
 })
 
-test("a GIF is known by its type, or by its header when a paste has no type", async () => {
-  assert.equal(await isGif(new File(["x"], "a.gif", { type: "image/gif" })), true)
-  assert.equal(await isGif(new File(["GIF89a..."], "paste")), true)
-  assert.equal(await isGif(new File(["GIF89a..."], "a.png", { type: "image/png" })), false)
+test("a GIF is known by its header, never by its type or name", async () => {
+  assert.equal(await isGif(new File(["GIF89a..."], "a.gif", { type: "image/gif" })), true)
+  assert.equal(await isGif(new File(["GIF87a..."], "paste")), true)
+  assert.equal(await isGif(new File(["\xff\xd8\xff\xe1 Exif GPS"], "IMG_0001.gif", { type: "image/gif" })), false, "a renamed JPEG")
+})
+
+test("a JPEG named .gif is redrawn, not uploaded with its EXIF", async () => {
+  let drew = false
+  const out = await preparePhoto(new File(["\xff\xd8 EXIF GPS"], "IMG.gif", { type: "image/gif" }), { draw: async () => { drew = true; return new Blob(["clean"], { type: "image/jpeg" }) } })
+  assert.equal(drew, true)
+  assert.equal(out.type, "image/jpeg")
+  assert.equal(await out.text(), "clean")
 })
 
 test("a GIF goes up in its own bytes, without being redrawn", async () => {

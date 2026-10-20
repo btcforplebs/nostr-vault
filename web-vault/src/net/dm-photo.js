@@ -13,12 +13,11 @@ export function dmContent(text, url) {
   return t ? `${t}\n${url}` : url
 }
 
-/** A GIF by its type or, when the type is missing (some pastes), its header. */
+/** A GIF by its own header ("GIF8"), never by its type: a browser takes the type from the file name, so a JPEG
+ *  renamed .gif would otherwise go up as it is, EXIF and all. */
 export async function isGif(file) {
-  if (file?.type === "image/gif") return true
-  if (file?.type && file.type !== "application/octet-stream") return false
-  const head = new Uint8Array(await file.slice(0, 3).arrayBuffer())
-  return head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46
+  const h = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+  return h[0] === 0x47 && h[1] === 0x49 && h[2] === 0x46 && h[3] === 0x38
 }
 
 /** The drawn size: the long edge brought down to `max`, never up. */
