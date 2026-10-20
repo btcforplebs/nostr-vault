@@ -1,7 +1,8 @@
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "./Avatar.jsx"
-import { NoteText } from "./NoteText.jsx"
+import { Mention, NoteText } from "./NoteText.jsx"
+import { useQuote } from "./QuotedNote.jsx"
 import { useProfile } from "./useProfile.js"
 import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
@@ -9,6 +10,7 @@ import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
+import { replyToPubkey, repostedId } from "../net/thread.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/note-actions.css")
@@ -28,10 +30,13 @@ export function NoteCard({ event, memoryOnly = false }) {
     try { inner = JSON.parse(event.content) } catch {}
     const target = actionTarget(event)
     if (target) rememberNote(target)
+    const open = inner?.id ?? repostedId(event)
     return (
-      <article class="note" data-note-id={target?.id} onClick={inner?.id && openThread(inner.id)} onAuxClick={inner?.id && openThread(inner.id)}>
+      <article class="note" data-note-id={target?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
         <div class="repost-line"><RepostIcon /><a class="author-link" href={profileHref(event.pubkey)}><AuthorName pubkey={event.pubkey} /></a> reposted</div>
-        {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} /> : <div class="note-text muted">Repost of a note not included</div>}
+        {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} />
+          : repostedId(event) ? <FetchedRepost id={repostedId(event)} memoryOnly={memoryOnly} />
+          : <div class="note-text muted">Repost of a note not included</div>}
         {target && <NoteActions note={target} />}
       </article>
     )
@@ -51,7 +56,18 @@ const openThread = id => e => {
 
 const profileHref = pubkey => `#/profile/${pubkey}`
 
+/** A repost that carried only the e tag (FeedNoteRow+NoteBody fetches the original the same way): the note it points
+ *  at, from Haven /feed or the relays, with its own actions. */
+function FetchedRepost({ id, memoryOnly }) {
+  const ev = useQuote({ type: "note", id, relays: [] }, memoryOnly)
+  if (ev === undefined) return <div class="note-text muted">Loading the reposted note…</div>
+  if (ev?.kind !== 1) return <div class="note-text muted">The reposted note couldn't be found</div>
+  rememberNote(ev)
+  return <><NoteBody event={ev} memoryOnly={memoryOnly} /><NoteActions note={ev} /></>
+}
+
 function NoteBody({ event, memoryOnly }) {
+  const replyTo = replyToPubkey(event)
   return (
     <>
       <div class="note-head">
@@ -61,6 +77,7 @@ function NoteBody({ event, memoryOnly }) {
         </a>
         <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
       </div>
+      {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
       <NoteText content={event.content} memoryOnly={memoryOnly} />
     </>
   )
@@ -113,6 +130,11 @@ const ICONS = {
   quote: "M14 15c3.5-1 5-3.5 5-7.5V6h-5v5h3M5 15c3.5-1 5-3.5 5-7.5V6H5v5h3",
   heart: "M12 20.5S3.5 15.3 3.5 9.2A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.5 2.8c0 6.1-8.5 11.3-8.5 11.3z",
 }
+
+// The iPhone's arrowshape.turn.up.left.fill, small, before "reply to @name".
+const ReplyIcon = () => (
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M10 4 3 11l7 7v-4.2c5 0 8.4 1.6 11 5.2-1-5-4-10-11-11V4z" /></svg>
+)
 
 const RepostIcon = () => (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
