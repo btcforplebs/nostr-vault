@@ -539,7 +539,7 @@ private fun SweepSuccessView(success: SweepSuccess) {
         Text(success.txid, color = SecondaryText, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = { runCatching { uriHandler.openUri("https://mempool.btcforplebs.com/tx/${success.txid}") } }) {
+        TextButton(onClick = { runCatching { uriHandler.openUri("https://mempool.space/tx/${success.txid}") } }) {
             Text("View on mempool ↗", color = LocalNostrVaultColors.current.primary, fontWeight = FontWeight.Medium)
         }
     }
