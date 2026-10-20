@@ -81,9 +81,9 @@ test("a store the browser lists is deleted even if the route list doesn't know i
   assert.deepEqual(idb.deleted.filter(n => n.includes(other) || n === "someone-else"), [])
   // Without indexedDB.databases() (older Firefox) the known route list is still used.
   const fallback = await storeNames(pk, fakeIdb())
-  assert.equal(fallback.length, 17) // 7 routes, with and without the pubkey, + its drafts, wallet and deleted-post copies
-  // The page's own stores (drafts, the NWC wallet) are wiped with the account whether or not the browser lists them.
-  for (const s of ["drafts", "wallet", "deleted"]) {
+  assert.equal(fallback.length, 18) // 7 routes, with and without the pubkey, + its drafts, wallet, deleted-post copies and follow backups
+  // The page's own stores (drafts, the NWC wallet, Recently Deleted's and Following Backup's copies) are wiped with the account whether or not the browser lists them.
+  for (const s of ["drafts", "wallet", "deleted", "followbackup"]) {
     assert.ok(fallback.includes(`haven:${pk}:${s}`), `${s} on the fallback list`)
     assert.ok(idb.deleted.includes(`haven:${pk}:${s}`), `${s} on the databases() path`)
     assert.ok(!fallback.includes(`haven:${s}`), `no unprefixed ${s}: there never was one`)

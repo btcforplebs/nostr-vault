@@ -11,6 +11,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { RelaysPage } from "./RelaysPage.jsx"
 import { MediaServersPage } from "./MediaServersPage.jsx"
 import { RecentlyDeletedPage } from "./RecentlyDeletedPage.jsx"
+import { FollowingBackupPage } from "./FollowingBackupPage.jsx"
 import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
@@ -33,6 +34,7 @@ const ICONS = {
   logs: "M4 5h16M4 10h16M4 15h10M4 20h7",
   bolt: "M13 2 4.5 13.5H11L10 22l8.5-11.5H12z",
   trash: "M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3",
+  people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
 }
 const Icon = ({ d, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
@@ -115,6 +117,7 @@ function Page({ ctx, page }) {
       <header class="screen-head"><a class="button small" href="#/settings">‹ Settings</a><h2>{title}</h2><span style="width: 92px" /></header>
       {page === "blocked" && <Blocked ctx={ctx} />}
       {page === "recently-deleted" && <RecentlyDeletedPage ctx={ctx} />}
+      {page === "following-backup" && <FollowingBackupPage ctx={ctx} />}
       {page === "relays" && <RelaysPage ctx={ctx} />}
       {page === "media-servers" && <MediaServersPage ctx={ctx} />}
       {page === "import" && <Import ctx={ctx} />}

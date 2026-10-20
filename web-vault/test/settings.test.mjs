@@ -35,7 +35,7 @@ test("groups are the phone's, each row with a page or a screen to go to; every s
   assert.equal(rows.find(r => r.id === "relay-access").href, "#/relay")
   assert.equal(rows.find(r => r.id === "wallet").href, "#/wallet")
   for (const r of rows) assert.match(r.href, /^#\/[a-z-]+(\/[a-z-]+)?$/)
-  assert.deepEqual(Object.keys(PAGES).sort(), ["backup", "blocked", "database", "import", "logs", "media-servers", "recently-deleted", "relays"])
+  assert.deepEqual(Object.keys(PAGES).sort(), ["backup", "blocked", "database", "following-backup", "import", "logs", "media-servers", "recently-deleted", "relays"])
   assert.ok(isPage("backup") && !isPage("accounts") && !isPage("") && !isPage(undefined) && !isPage("constructor"))
   assert.match(APP_VERSION, /^\d+\.\d+\.\d+/)
   assert.match(SUPPORT_NPUB, /^npub1/)
