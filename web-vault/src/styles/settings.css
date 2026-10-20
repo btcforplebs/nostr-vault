@@ -73,6 +73,8 @@ a.settings-row:hover { background: var(--s2); }
 
 /* Settings › Relays: read/write switches per relay, Add. */
 .relay-edit-row { flex-wrap: wrap; }
+.relay-edit-row .settings-title { min-width: 14em; }
+.relay-edit-row .settings-tags { align-items: center; margin-left: auto; }
 .relay-edit-row .settings-title .tag { margin-left: 8px; }
 .tag.job { min-height: 0; border: 1px solid var(--hair); cursor: pointer; }
 .tag.job.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; }

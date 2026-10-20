@@ -9,13 +9,14 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { StorageNote } from "../components/StorageNote.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { RelaysPage } from "./RelaysPage.jsx"
+import { MediaServersPage } from "./MediaServersPage.jsx"
 import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { syncOwn } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import {
-  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL, mediaServerRows,
+  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL,
   readEverything, backupLines, backupName, parseBackup, restoreBackup, logLines,
 } from "../net/settings.js"
 
@@ -112,7 +113,7 @@ function Page({ ctx, page }) {
       <header class="screen-head"><a class="button small" href="#/settings">‹ Settings</a><h2>{title}</h2><span style="width: 92px" /></header>
       {page === "blocked" && <Blocked ctx={ctx} />}
       {page === "relays" && <RelaysPage ctx={ctx} />}
-      {page === "media-servers" && <MediaServers ctx={ctx} />}
+      {page === "media-servers" && <MediaServersPage ctx={ctx} />}
       {page === "import" && <Import ctx={ctx} />}
       {page === "backup" && <Backup ctx={ctx} />}
       {page === "database" && <Database ctx={ctx} />}
@@ -149,20 +150,6 @@ function BlockedRow({ ctx, pubkey, isPrivate }) {
       <button type="button" class="small" onClick={() => setAsking(true)}>Unblock</button>
       {asking && <UnblockDialog ctx={ctx} pubkey={pubkey} name={name} onClose={() => setAsking(false)} />}
     </div>
-  )
-}
-
-/** The account's Blossom media servers (kind 10063), where Compose uploads pictures. */
-function MediaServers({ ctx }) {
-  const [rows, setRows] = useState(null)
-  useEffect(() => {
-    ctx.vault.outbox.query({ kinds: [10063], authors: [ctx.session.pubkey] }).then(evs => setRows(mediaServerRows(evs.sort((a, b) => b.created_at - a.created_at)[0]))).catch(() => setRows(mediaServerRows(undefined)))
-  }, [])
-  return (
-    <>
-      <p class="settings-note muted small">Pictures you attach to a note are uploaded here (Blossom). Your own list is used when you've published one; otherwise the defaults.</p>
-      {rows === null ? <p class="empty">Loading…</p> : rows.map(r => <div key={r.url} class="settings-row static"><span class="settings-title mono">{r.url}</span>{!r.listed && <span class="tag">default</span>}</div>)}
-    </>
   )
 }
 
