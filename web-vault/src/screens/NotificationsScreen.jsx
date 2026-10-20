@@ -38,6 +38,8 @@ export function NotificationsScreen({ ctx }) {
   }
   useEffect(() => { load() }, [session.pubkey])
   const shown = rows && visibleRows(rows, blocked, session.pubkey)
+  // Anyone can reply, react or zap: only a follow's (or your own) picture host and inline images are fetched.
+  const trusted = pk => pk === session.pubkey || account.follows.includes(pk)
 
   return (
     <main class="screen">
@@ -45,27 +47,29 @@ export function NotificationsScreen({ ctx }) {
       {status && <div class="status-line">{status}</div>}
       {rows === null ? <p class="empty">Loading…</p>
         : !shown.length ? <p class="empty">No notifications yet.</p>
-        : shown.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} />)}
+        : shown.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} trusted={trusted} />)}
     </main>
   )
 }
 
-/** One row: who did what (and the reply's text or the note it was about). Several people on one note share a row. */
-function Row({ row, note }) {
+/** One row: who did what (and the reply's text or the note it was about). Several people on one note share a row.
+ *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP. */
+export function Row({ row, note, trusted = () => false }) {
   const lead = row.who[0]
   const ev = row.events[0]
+  const ok = trusted(lead)
   return (
     <article class="note notification">
       <div class="note-head">
-        <Avatar pubkey={lead} size={32} />
+        <Avatar pubkey={lead} size={32} load={ok} />
         {/* Not .author-name on the outer span: that class is nowrap + ellipsis, and "A and B reacted" must wrap. */}
         <span style="flex: 1; min-width: 0; font: var(--t-headline)"><Who who={row.who} /> {what(row)}</span>
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
       </div>
       {row.type === "reply" || row.type === "mention"
-        ? <NoteText content={ev.content} />
+        ? <NoteText content={ev.content} images={ok} />
         : row.type === "zap" && ev.content
-          ? <NoteText content={ev.content} />
+          ? <NoteText content={ev.content} images={ok} />
           : null}
       {row.noteId && <About note={note} />}
     </article>
