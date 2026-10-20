@@ -28,17 +28,30 @@ enum NpubValidation {
     /// Rejects a wrong human-readable part, a failed checksum, and any payload
     /// that is not exactly 32 bytes.
     static func hexPubkey(fromNpub npub: String) -> String? {
-        let trimmed = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexKey(npub, hrp: "npub")
+    }
+
+    /// The 32-byte hex secret key for a well-formed `nsec1…`, or nil.
+    ///
+    /// Same rules as `hexPubkey(fromNpub:)`. A mistyped nsec still decodes to
+    /// 32 bytes under the lenient decoder, and importing it replaces the
+    /// stored key with one nobody owns.
+    static func hexSecretKey(fromNsec nsec: String) -> String? {
+        hexKey(nsec, hrp: "nsec")
+    }
+
+    private static func hexKey(_ bech32: String, hrp: String) -> String? {
+        let trimmed = bech32.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Mixed case is not merely ugly, it makes the checksum meaningless.
         guard trimmed == trimmed.lowercased() || trimmed == trimmed.uppercased() else { return nil }
         let lower = trimmed.lowercased()
 
         // The separator is the last "1", but the human-readable part must still
-        // be exactly "npub" — that is what catches an npub with a stray "1" in
-        // its payload, which otherwise splits in the wrong place.
+        // be exactly the expected one — that is what catches an npub with a
+        // stray "1" in its payload, which otherwise splits in the wrong place.
         guard let separator = lower.lastIndex(of: "1") else { return nil }
-        guard String(lower[..<separator]) == "npub" else { return nil }
+        guard String(lower[..<separator]) == hrp else { return nil }
 
         let payload = lower[lower.index(after: separator)...]
         var values = [Int]()
@@ -49,7 +62,7 @@ enum NpubValidation {
         }
         guard values.count > 6 else { return nil }
 
-        guard checksum(hrp: "npub", values: values) == 1 else { return nil }
+        guard checksum(hrp: hrp, values: values) == 1 else { return nil }
 
         // Drop the 6 checksum characters, then 5-bit groups back to bytes. The
         // remainder bits must be zero padding, or the string is not a faithful

@@ -133,13 +133,22 @@ struct ImportKeySheetView: View {
             importError = "Password must be at least 8 characters and match confirm password"
             return
         }
+        let nsec = importNsec.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            // Before anything is overwritten: a typo'd nsec still decodes to a
+            // key, and storing it loses the real one.
+            try NIP49Service.validateImport(nsec: nsec, matching: npub)
+        } catch {
+            importError = error.localizedDescription
+            return
+        }
         do {
             if npub == configService.config.ownerNpub {
-                try configService.config.setEncryptedNsec(nsec: importNsec, password: importPassword)
+                try configService.config.setEncryptedNsec(nsec: nsec, password: importPassword)
                 _ = NIP49Service.storePasswordInKeychain(importPassword)
                 configService.save()
             } else {
-                try configService.setCredential(nsec: importNsec, password: importPassword, forNpub: npub)
+                try configService.setCredential(nsec: nsec, password: importPassword, forNpub: npub)
             }
             performDismiss()
         } catch {

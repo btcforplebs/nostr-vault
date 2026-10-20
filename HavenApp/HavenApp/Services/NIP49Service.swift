@@ -19,6 +19,8 @@ struct NIP49Service {
         case invalidPassword
         case encodingFailed
         case decodingFailed
+        case invalidNsec
+        case nsecDoesNotMatchAccount
 
         var errorDescription: String? {
             switch self {
@@ -32,6 +34,10 @@ struct NIP49Service {
                 return "Failed to encode encrypted key"
             case .decodingFailed:
                 return "Failed to decode encrypted key"
+            case .invalidNsec:
+                return "That is not a valid nsec. Check for a typo."
+            case .nsecDoesNotMatchAccount:
+                return "That nsec belongs to a different account."
             }
         }
     }
@@ -64,6 +70,7 @@ struct NIP49Service {
     /// AES-GCM method for backward compatibility with any existing stored values.
     static func decrypt(ncryptsec: String, password: String) throws -> String {
         guard !password.isEmpty else { throw NIP49Error.invalidPassword }
+        try checkScryptCost(ncryptsec)
 
         // Try spec-compliant Go FFI first
         if let resultCStr = DecryptNIP49C(
@@ -73,7 +80,12 @@ struct NIP49Service {
             let hexKey = String(cString: resultCStr)
             free(resultCStr)
 
-            guard let nsec = Bech32.encode(hrp: "nsec", data: Data(hex: hexKey) ?? Data()) else {
+            // Strict decode: the lenient `Data(hex:)` turns garbage into an
+            // empty key, which encodes to a valid-looking nsec.
+            guard let keyData = Data(hexString: hexKey), keyData.count == 32 else {
+                throw NIP49Error.decryptionFailed
+            }
+            guard let nsec = Bech32.encode(hrp: "nsec", data: keyData) else {
                 throw NIP49Error.encodingFailed
             }
             return nsec
@@ -139,13 +151,37 @@ struct NIP49Service {
         return decoded.hrp == "ncryptsec"
     }
 
-    /// Decodes nsec to hex private key
-    private static func decodeNsec(_ nsec: String) throws -> String {
-        guard let decoded = Bech32.decode(nsec.lowercased()),
-              decoded.hrp == "nsec" else {
-            throw NIP49Error.decodingFailed
+    /// Refuses a NIP-49 v2 ncryptsec whose scrypt cost byte (logN) is out of
+    /// range before Go allocates for it: logN 40 asks for ~1 TB and aborts the
+    /// app. NIP-49 writes 16. Mirrors `nip49MaxLogN` in haven-go/nip49.go.
+    /// Legacy (version 1) values carry no cost byte and pass through.
+    private static func checkScryptCost(_ ncryptsec: String) throws {
+        guard let decoded = Bech32.decode(ncryptsec.lowercased()),
+              decoded.data.count >= 2, decoded.data[decoded.data.startIndex] == 0x02 else { return }
+        let logN = decoded.data[decoded.data.startIndex + 1]
+        guard (1...22).contains(logN) else { throw NIP49Error.invalidEncrypted }
+    }
+
+    /// Checks a typed or pasted nsec before it replaces a stored key: valid
+    /// checksum, "nsec" prefix, 32 bytes, and it must be the key for `npub`.
+    static func validateImport(nsec: String, matching npub: String) throws {
+        let hexKey = try decodeNsec(nsec)
+        guard let expected = NpubValidation.hexPubkey(fromNpub: npub),
+              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (hexKey as NSString).utf8String)) else {
+            throw NIP49Error.nsecDoesNotMatchAccount
         }
-        return decoded.data.hex
+        let derived = String(cString: pkCStr)
+        free(pkCStr)
+        guard derived.lowercased() == expected else { throw NIP49Error.nsecDoesNotMatchAccount }
+    }
+
+    /// Decodes nsec to hex private key, rejecting a bad checksum, a wrong
+    /// prefix or a payload that is not 32 bytes.
+    private static func decodeNsec(_ nsec: String) throws -> String {
+        guard let hexKey = NpubValidation.hexSecretKey(fromNsec: nsec) else {
+            throw NIP49Error.invalidNsec
+        }
+        return hexKey
     }
 
     // MARK: - Keychain Storage (delegates to CredentialStore)
