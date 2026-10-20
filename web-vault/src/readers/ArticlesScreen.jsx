@@ -12,6 +12,8 @@ import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { ARTICLE_SCOPES, PAGE, fetchArticles, loadScope, saveScope } from "./articles.js"
 import { displayDate, displayTitle, longFormLink, longFormMeta, plainText, readingMinutes } from "./longform.js"
 import { Markdown } from "./Markdown.jsx"
+import { fanfaresLink, gatedArticle, lockStatus, stripTeaser } from "./gated.js"
+import { useProfile } from "../components/useProfile.js"
 
 if (import.meta.env) import("./readers.css")
 
@@ -78,7 +80,8 @@ const dateText = ts => new Date(ts * 1000).toLocaleDateString(undefined, { month
 /** One card: hero image, title, a two-line preview, then author · date · minutes. */
 export function ArticleRow({ event, onOpen }) {
   const m = longFormMeta(event)
-  const preview = m.summary || plainText(event.content, 200)
+  const gated = gatedArticle(event)
+  const preview = m.summary || plainText(gated ? stripTeaser(event.content) : event.content, 200)
   const minutes = readingMinutes(event.content)
   return (
     <article class="article reader-card" tabindex="0" onClick={onOpen} onKeyDown={e => { if (e.key === "Enter") onOpen() }}>
@@ -89,7 +92,7 @@ export function ArticleRow({ event, onOpen }) {
         <Avatar pubkey={event.pubkey} size={20} />
         <AuthorName pubkey={event.pubkey} />
         <span>·</span><time datetime={new Date(displayDate(event) * 1000).toISOString()}>{dateText(displayDate(event))}</time>
-        {minutes && <><span>·</span><span>{minutes} min read</span></>}
+        {gated ? <><span>·</span><span class="reader-locked">🔒 Locked</span></> : minutes && <><span>·</span><span>{minutes} min read</span></>}
       </div>
     </article>
   )
@@ -98,7 +101,8 @@ export function ArticleRow({ event, onOpen }) {
 /** The article, full width: image, title, author line, the body, and Open in YakiHonne (zap.cooking for a recipe). */
 export function ArticleReader({ event, onBack }) {
   const m = longFormMeta(event)
-  const minutes = readingMinutes(event.content)
+  const gated = gatedArticle(event)
+  const minutes = gated ? null : readingMinutes(event.content)
   const link = longFormLink(event)
   useEffect(() => { globalThis.scrollTo?.(0, 0) }, [event.id])
   return (
@@ -116,7 +120,28 @@ export function ArticleReader({ event, onBack }) {
         {minutes && <><span>·</span><span>{minutes} min read</span></>}
       </a>
       {m.summary && <p class="reader-summary">{m.summary}</p>}
-      <Markdown body={event.content} />
+      {gated ? <LockedBody event={event} gated={gated} summary={m.summary} /> : <Markdown body={event.content} />}
     </article>
+  )
+}
+
+/** A locked article: its teaser, then a lock card that links out. The web never pays for or unlocks an article. */
+export function LockedBody({ event, gated, summary }) {
+  const profile = useProfile(event.pubkey)
+  return <LockedTeaser event={event} gated={gated} summary={summary} author={profile?.display_name || profile?.name || "the author"} />
+}
+
+export function LockedTeaser({ event, gated, summary, author }) {
+  const teaser = stripTeaser(event.content)
+  const url = fanfaresLink(event, gated)
+  return (
+    <>
+      {teaser && teaser !== summary && <Markdown body={teaser} />}
+      <div class="reader-lock">
+        <strong>🔒 Locked article</strong>
+        <p class="muted small">{lockStatus(author, gated.isFanfares)}</p>
+        {url && <a class="reader-lock-open" href={url} target="_blank" rel="noopener noreferrer">Open in Fanfares</a>}
+      </div>
+    </>
   )
 }
