@@ -883,6 +883,7 @@
 		B078D58DB3B737198B72E836 /* GlobeStormProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03DBB409E343A8D2FF2B53D1 /* GlobeStormProbe.swift */; };
 		B0CCD220B12D223F5CC9860F /* InterestList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC5D952C2744229EB2046 /* InterestList.swift */; };
 		B0EE7DC4594BAA8CB1C4ACEF /* VaultTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4006EAE38E09D8D31A4D607 /* VaultTabView.swift */; };
+		B10A156A2429DB7FF1867BB5 /* BitcoinWalletSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB5173E38B19CBFAAB8CCE21 /* BitcoinWalletSettingsView.swift */; };
 		B120ED529E6E8C6FF7F86216 /* NWCBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9413A39E4C5825C455EB73 /* NWCBackup.swift */; };
 		B13776688F9EE2460B0A5FDB /* VaultTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E465CC24BD21C2812171299B /* VaultTypes.swift */; };
 		B139C60064CD42C867B118AA /* VaultFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A58EA5A96FF1042528234F /* VaultFollowers.swift */; };
@@ -1195,6 +1196,7 @@
 		EC907339E02BF6357A5CFC2D /* ArticleInlineBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E1BD51ACE15691E3AB709B /* ArticleInlineBody.swift */; };
 		ECCFB80095D15CF9CB57204E /* ImportKeySheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0CC041733ECA113CC8CAFB /* ImportKeySheetView.swift */; };
 		ECE5D86C1C52C6006894B668 /* FeedService+NoteStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0CF308038EED2246C1A5B2 /* FeedService+NoteStats.swift */; };
+		ED2A0B552556F82C3E65951D /* BitcoinWalletSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB5173E38B19CBFAAB8CCE21 /* BitcoinWalletSettingsView.swift */; };
 		ED54837C471D65DD0BF8DC2F /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
 		ED6FCAF4DF7249BB3EB94A07 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
 		EDCA08DB3ED399583C55F594 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
@@ -1949,6 +1951,7 @@
 		EB0CF7D47686F1256BEF99DB /* VaultDataProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultDataProcessing.swift; sourceTree = "<group>"; };
 		EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthorQuickMenu.swift; sourceTree = "<group>"; };
 		EB3E8A015C8F2D8E25729362 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		EB5173E38B19CBFAAB8CCE21 /* BitcoinWalletSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinWalletSettingsView.swift; sourceTree = "<group>"; };
 		EC0AF323C6A978AA0E08E94A /* StatsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsCard.swift; sourceTree = "<group>"; };
 		EC11AD03532022248A5C4583 /* FloatingButtonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingButtonRow.swift; sourceTree = "<group>"; };
 		EC2FFB887BB8F9193F493F61 /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
@@ -2494,6 +2497,7 @@
 				4E3B509A58DD49AE937F1A6F /* AdvancedSettingsView.swift */,
 				5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */,
 				0489624951EA3E66D2956960 /* BackupSettingsView.swift */,
+				EB5173E38B19CBFAAB8CCE21 /* BitcoinWalletSettingsView.swift */,
 				0F278E9BCFC93BB667E56D3D /* BlockedSettingsView.swift */,
 				A8FEFBCD65FD1B5DD5E43FD3 /* BlossomSettingsView.swift */,
 				BA06B5C2547C97F781911EC4 /* CommitOnEndTextField.swift */,
@@ -3345,6 +3349,7 @@
 				81AEFECDE802D15F53ABE5CB /* BitcoinAddress.swift in Sources */,
 				59965C511D2D8F2DCDA83D3C /* BitcoinSweepDisclaimerView.swift in Sources */,
 				D6B489ACF9177452BF641CAE /* BitcoinSweepView.swift in Sources */,
+				B10A156A2429DB7FF1867BB5 /* BitcoinWalletSettingsView.swift in Sources */,
 				92BAAC238F493C5533857956 /* BlobCopyRun.swift in Sources */,
 				3DF818A9990BDF480F1827BE /* BlockedPeople.swift in Sources */,
 				64C711DC2F00F4CEEB963B0E /* BlockedSettingsView.swift in Sources */,
@@ -4004,6 +4009,7 @@
 				101CE31C6E3702F6C6BDB3CC /* BitcoinAddress.swift in Sources */,
 				9281BA2E40137E09870E026E /* BitcoinSweepDisclaimerView.swift in Sources */,
 				92BA603CA1FF1A6F13674A52 /* BitcoinSweepView.swift in Sources */,
+				ED2A0B552556F82C3E65951D /* BitcoinWalletSettingsView.swift in Sources */,
 				F7E8DA3139B3A267667DA744 /* BlobCopyRun.swift in Sources */,
 				F51057FE4AB2D33E7768FFAC /* BlockedPeople.swift in Sources */,
 				DF8A93DDB4F9F51190A37B84 /* BlockedSettingsView.swift in Sources */,
