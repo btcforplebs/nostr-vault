@@ -1,4 +1,5 @@
 import { Avatar } from "./Avatar.jsx"
+import { useUnreadTotal } from "./useUnreadTotal.js"
 
 // The phone's five tabs, in its order: Feed · Search · Profile · WoT · Vault (iPhone BottomTabBar). Everything else
 // is reached the way the phone reaches it, from a floating button at the top of a tab: Messages and the Vault
@@ -11,15 +12,19 @@ const TABS = [
   ["vault", "Vault", "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 11v2M4 9h3M4 15h3"],
 ]
 
-/** Floating glass capsule. `pubkey` puts the user's avatar on the Profile tab (falls back to a person glyph). */
-export function TabBar({ route, pubkey }) {
+/** Floating glass capsule. `pubkey` puts the user's avatar on the Profile tab (falls back to a person glyph). The Vault
+ *  tab wears a red dot while a message is unread, as the iPhone's does (BottomTabBar vaultHasNews). */
+export function TabBar({ ctx, route, pubkey }) {
+  const unread = useUnreadTotal(ctx)
   return (
     <nav class="tabbar" aria-label="Sections">
       {TABS.map(([id, label, d]) => (
-        <a key={id} href={`#/${id}`} class={route === id ? "tab on" : "tab"} aria-current={route === id ? "page" : undefined}>
+        <a key={id} href={`#/${id}`} class={route === id ? "tab on" : "tab"} aria-current={route === id ? "page" : undefined}
+          aria-label={id === "vault" && unread ? `${label}, ${unread} unread` : undefined}>
           {id === "profile" && pubkey
             ? <span class="tab-avatar"><Avatar pubkey={pubkey} size={26} /></span>
             : <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d || "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0"} /></svg>}
+          {id === "vault" && unread > 0 && <span class="tab-dot" aria-hidden="true" />}
           <span>{label}</span>
         </a>
       ))}
