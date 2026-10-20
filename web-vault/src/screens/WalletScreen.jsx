@@ -6,6 +6,8 @@ import { npubEncode } from "nostr-tools/nip19"
 import { useWallet } from "../components/ZapButton.jsx"
 import { appKeyOf, connectWallet, disconnectWallet, getBalance, setDefaultZap } from "../net/wallet.js"
 import { MAX_ZAP_SATS } from "../net/zaps.js"
+import { actionContext } from "../net/actions.js"
+import { WalletReceive } from "./WalletReceive.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
@@ -16,7 +18,7 @@ export function WalletScreen() {
     <main class="screen wallet">
       <header class="screen-head"><h2>Wallet</h2></header>
       {wallet.status === "loading" ? <p class="empty">Opening your wallet…</p>
-        : wallet.status === "ready" ? <Connected wallet={wallet} /> : <Connect />}
+        : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /></> : <Connect />}
       {wallet.status !== "loading" && <DefaultZap sats={wallet.defaultSats} />}
     </main>
   )
