@@ -100,6 +100,20 @@ final class GatedArticleTests: XCTestCase {
         XCTAssertEqual(GatedArticle.fanfaresURL(naddr: "naddr1xyz")?.absoluteString, "https://fanfares.io/naddr/naddr1xyz")
     }
 
+    func testLockLinkComesOnlyFromTheNaddr() throws {
+        let gated = try XCTUnwrap(GatedArticle(kind: 30023, pubkey: author, tags: fanfaresTags()))
+        XCTAssertEqual(gated.fanfaresURL(naddr: "naddr1xyz")?.absoluteString, "https://fanfares.io/naddr/naddr1xyz")
+        // No `d` tag means no naddr: no link at all, whatever URL the content carries.
+        XCTAssertNil(gated.fanfaresURL(naddr: nil))
+    }
+
+    func testLockLinkIsNilForOtherKeyServers() throws {
+        var tags = fanfaresTags()
+        tags[1] = ["encrypted", "aes-256-gcm", "AAAA", "https://keys.example.com/k"]
+        let gated = try XCTUnwrap(GatedArticle(kind: 30023, pubkey: author, tags: tags))
+        XCTAssertNil(gated.fanfaresURL(naddr: "naddr1xyz"))
+    }
+
     // MARK: Key request
 
     func testFanfaresBackendIsReachedThroughItsPublicProxy() throws {
@@ -155,9 +169,4 @@ final class GatedArticleTests: XCTestCase {
         XCTAssertEqual(GatedArticleTeaser.strip("Just a teaser."), "Just a teaser.")
     }
 
-    func testUnlockURLIsTheCallToActionLinkNotATeaserImage() {
-        let content = "![cover](https://img.example/a.png)\n\nTeaser.\n\n⚡ Zap 42 sats to unlock the full article on\nhttps://fanfares.io/naddr/naddr1xyz"
-        XCTAssertEqual(GatedArticleTeaser.unlockURL(content)?.absoluteString, "https://fanfares.io/naddr/naddr1xyz")
-        XCTAssertNil(GatedArticleTeaser.unlockURL("https://img.example/a.png only"))
-    }
 }

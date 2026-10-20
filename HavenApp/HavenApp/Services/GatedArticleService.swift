@@ -94,9 +94,7 @@ final class GatedArticleService {
 
     /// Where to read or buy a Fanfares article; nil for any other.
     func fanfaresURL(note: FeedNote, gated: GatedArticle) -> URL? {
-        guard gated.isFanfares else { return nil }
-        if let naddr = naddr(note: note, gated: gated), let url = GatedArticle.fanfaresURL(naddr: naddr) { return url }
-        return GatedArticleTeaser.unlockURL(note.content)
+        gated.fanfaresURL(naddr: naddr(note: note, gated: gated))
     }
 
     private func requestKey(note: FeedNote, gated: GatedArticle) async throws -> String {
