@@ -11,8 +11,8 @@ import { decode } from "nostr-tools/nip19"
 import { pool } from "../src/net/pool.js"
 import { publishNote } from "../src/net/sync.js"
 import {
-  REACTION, act, actionState, actionTarget, composeTarget, findNote, loadSent, publishAction, quoteOf, reactionTemplate,
-  replyTags, repostTemplate,
+  REACTION, act, actionState, actionTarget, composeTarget, deleteNote, deletionTemplate, findNote, isDeleted, loadDeletions,
+  loadSent, publishAction, quoteOf, reactionTemplate, replyTags, repostTemplate, shareLink, unlike,
 } from "../src/net/actions.js"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -35,7 +35,7 @@ function ctxFor({ sk = me, write = ["wss://relay.example.com"] } = {}) {
     vault: {
       outbox: {
         event: async ev => { kept.push(ev); return { ok: true, message: "" } },
-        query: async f => kept.filter(e => f.kinds.includes(e.kind) && f.authors.includes(e.pubkey) && e.tags.some(t => t[0] === "e" && f["#e"].includes(t[1]))),
+        query: async f => kept.filter(e => f.kinds.includes(e.kind) && f.authors.includes(e.pubkey) && (!f["#e"] || e.tags.some(t => t[0] === "e" && f["#e"].includes(t[1])))),
       },
       feed: { query: async () => [] },
     },
@@ -130,8 +130,74 @@ test("a like is sent once signed and a relay took it, and is kept in the outbox"
   assert.equal(sent[0].ev.pubkey, pk(me))
   assert.ok(verifyEvent(sent[0].ev))
   assert.deepEqual(c.kept.map(e => e.id), [sent[0].ev.id])
-  await act(c, "like", n) // a second tap does nothing
+})
+
+test("a second tap on a sent repost does nothing", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  await act(c, "repost", n)
+  await act(c, "repost", n)
   assert.equal(sent.length, 1)
+})
+
+test("a second tap on a sent like takes it back: a kind 5 for that reaction, with k 7", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  await act(c, "like", n)
+  const like = sent[0].ev
+  await act(c, "like", n)
+  assert.equal(sent.length, 2)
+  assert.equal(sent[1].ev.kind, 5)
+  assert.deepEqual(sent[1].ev.tags, [["e", like.id], ["k", "7"]])
+  assert.equal(actionState(n.id).like, undefined)
+  // After a reload the taken-back like no longer reads as sent.
+  await loadSent(c, n.id)
+  assert.equal(actionState(n.id).like, undefined)
+})
+
+test("unlike a like this browser never saw: found on the account's relays, then deleted", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  const elsewhere = finalizeEvent(reactionTemplate(n), me), stranger = finalizeEvent(reactionTemplate(n), other)
+  t.mock.method(pool, "querySync", async () => [elsewhere, stranger])
+  await unlike(c, n)
+  assert.deepEqual(sent.map(s => s.ev.tags), [[["e", elsewhere.id], ["k", "7"]]])
+})
+
+test("unlike with nothing found reads as liked again and says why", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  t.mock.method(pool, "querySync", async () => [])
+  const c = ctxFor(), n = note()
+  await assert.rejects(unlike(c, n), /wasn't found/)
+  assert.equal(actionState(n.id).like, "sent")
+  assert.equal(sent.length, 0)
+})
+
+test("deleting your own post: a kind 5 with only its e tag (NoteDeletion.requestTags); hidden at once", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), mine = note([], "mine", me)
+  await deleteNote(c, mine)
+  assert.deepEqual(sent[0].ev.tags, [["e", mine.id]])
+  assert.equal(sent[0].ev.content, "")
+  assert.ok(isDeleted(mine.id))
+  await assert.rejects(deleteNote(c, note()), /your own/)
+  assert.equal(sent.length, 1)
+})
+
+test("deletions kept in the outbox hide those posts after a reload", async t => {
+  relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), id = "b".repeat(64)
+  await publishAction(c, deletionTemplate(id, 1))
+  assert.equal(isDeleted(id), false)
+  await loadDeletions(c)
+  assert.ok(isDeleted(id))
+})
+
+test("Share and Copy link point at a public mynostrspace thread page for the note's nevent", () => {
+  const n = note()
+  const link = shareLink(n)
+  assert.match(link, /^https:\/\/mynostrspace\.com\/thread\/nevent1/)
+  assert.equal(decode(link.split("/thread/")[1]).data.id, n.id)
 })
 
 test("no relay took it: the action shows the error and can be tried again", async t => {

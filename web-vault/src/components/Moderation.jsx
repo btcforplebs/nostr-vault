@@ -3,7 +3,7 @@
 // net/reports.js reportAndBlock, which blocks too, as the iPhone's Report & Block does.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
-import { actionContext } from "../net/actions.js"
+import { actionContext, deleteNote, shareLink } from "../net/actions.js"
 import { setBlock } from "../net/blocks.js"
 import { REASONS, reportAndBlock } from "../net/reports.js"
 import { useProfile } from "./useProfile.js"
@@ -17,8 +17,9 @@ const nameOf = (p, pubkey) => p?.display_name || p?.name || npubEncode(pubkey).s
 const waiting = ctx => (ctx.signer.method === "nip46" ? "Waiting for your signer…" : null)
 
 /**
- * The ⋯ button and its menu. `note`: a note's menu (Report note, Block). Without it, a profile's (Copy npub, Block or
- * Unblock, Report). Nothing for the user's own notes or profile. `className` styles the button for where it sits.
+ * The ⋯ button and its menu. `note`: a note's menu, in the iPhone's order (FeedNoteRow+Menus): Share, Copy link,
+ * Copy text, then Delete on the user's own post or Report and Block on someone else's. Without `note`, a profile's
+ * (Copy npub, Block or Unblock, Report); nothing on the user's own profile. `className` styles the button.
  */
 export function MoreMenu({ note, pubkey, className = "" }) {
   const ctx = actionContext()
@@ -26,8 +27,8 @@ export function MoreMenu({ note, pubkey, className = "" }) {
   const p = useProfile(who)
   const { blocked } = useBlocks(ctx ?? {})
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState(null) // "block" | "unblock" | "report"
-  const [copied, setCopied] = useState(false)
+  const [dialog, setDialog] = useState(null) // "block" | "unblock" | "report" | "delete"
+  const [copied, setCopied] = useState("") // which item just copied
   const ref = useRef(null)
   useEffect(() => {
     if (!open) return
@@ -36,11 +37,20 @@ export function MoreMenu({ note, pubkey, className = "" }) {
     addEventListener("pointerdown", away); addEventListener("keydown", key)
     return () => { removeEventListener("pointerdown", away); removeEventListener("keydown", key) }
   }, [open])
-  if (!ctx || !who || who === ctx.session.pubkey) return null
+  const own = who === ctx?.session.pubkey
+  if (!ctx || !who || (own && !note)) return null
   const isBlocked = blocked.has(who)
   const name = nameOf(p, who)
   const pick = d => () => { setOpen(false); setDialog(d) }
-  const copy = async () => { await navigator.clipboard?.writeText(npubEncode(who)); setCopied(true); setTimeout(() => { setCopied(false); setOpen(false) }, 900) }
+  const copy = (item, text) => async () => {
+    await navigator.clipboard?.writeText(text)
+    setCopied(item); setTimeout(() => { setCopied(""); setOpen(false) }, 900)
+  }
+  const text = note?.content?.trim()
+  // The system share sheet where the browser has one; elsewhere Share copies the link.
+  const share = note && navigator.share
+    ? async () => { setOpen(false); await navigator.share({ url: shareLink(note) }).catch(() => {}) }
+    : note && copy("share", note && shareLink(note))
 
   return (
     // Clicks stay here: the card around a note's menu opens its thread on a click.
@@ -50,17 +60,23 @@ export function MoreMenu({ note, pubkey, className = "" }) {
       </button>
       {open && (
         <div class="more-menu" role="menu">
-          {!note && <button role="menuitem" onClick={copy}>{copied ? "Copied" : "Copy npub"}</button>}
-          {note && <button role="menuitem" class="danger" onClick={pick("report")}>Report note…</button>}
-          {isBlocked
+          {!note && <button role="menuitem" onClick={copy("npub", npubEncode(who))}>{copied === "npub" ? "Copied" : "Copy npub"}</button>}
+          {note && <button role="menuitem" onClick={share}>{copied === "share" ? "Link copied" : "Share"}</button>}
+          {note && <button role="menuitem" onClick={copy("link", shareLink(note))}>{copied === "link" ? "Link copied" : "Copy link"}</button>}
+          {note && text && <button role="menuitem" onClick={copy("text", text)}>{copied === "text" ? "Text copied" : "Copy text"}</button>}
+          {note && <hr class="more-sep" />}
+          {own && <button role="menuitem" class="danger" onClick={pick("delete")}>Delete post…</button>}
+          {!own && note && <button role="menuitem" class="danger" onClick={pick("report")}>Report note…</button>}
+          {!own && (isBlocked
             ? <button role="menuitem" onClick={pick("unblock")}>Unblock {name}</button>
-            : <button role="menuitem" class="danger" onClick={pick("block")}>Block {name}…</button>}
+            : <button role="menuitem" class="danger" onClick={pick("block")}>Block {name}…</button>)}
           {!note && <button role="menuitem" class="danger" onClick={pick("report")}>Report {name}…</button>}
         </div>
       )}
       {dialog === "block" && <BlockDialog ctx={ctx} pubkey={who} name={name} onClose={() => setDialog(null)} />}
       {dialog === "unblock" && <UnblockDialog ctx={ctx} pubkey={who} name={name} onClose={() => setDialog(null)} />}
       {dialog === "report" && <ReportDialog ctx={ctx} note={note} pubkey={who} name={name} onClose={() => setDialog(null)} />}
+      {dialog === "delete" && <DeleteDialog ctx={ctx} note={note} onClose={() => setDialog(null)} />}
     </span>
   )
 }
@@ -113,6 +129,23 @@ export function BlockDialog({ ctx, pubkey, name, onClose }) {
       <div class="mod-row">
         <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
         <button type="button" class="danger-fill" disabled={busy} onClick={go}>{busy ? waiting(ctx) ?? "Blocking…" : "Block"}</button>
+      </div>
+    </Dialog>
+  )
+}
+
+/** The iPhone's delete alert (FeedNoteRow RowAlert.delete), word for word. */
+export function DeleteDialog({ ctx, note, onClose }) {
+  const { busy, err, run } = useAction()
+  const go = run(async () => { await deleteNote(ctx, note); onClose() })
+  return (
+    <Dialog label="Delete Post" onClose={onClose}>
+      <h3>Delete Post</h3>
+      <p class="muted">Request deletion of this post? Not all relays honor NIP-09 deletion requests.</p>
+      {err && <p class="error small" role="alert">{err}</p>}
+      <div class="mod-row">
+        <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
+        <button type="button" class="danger-fill" disabled={busy} onClick={go}>{busy ? waiting(ctx) ?? "Deleting…" : "Delete"}</button>
       </div>
     </Dialog>
   )

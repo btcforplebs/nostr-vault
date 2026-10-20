@@ -8,6 +8,7 @@
   font: var(--t-sub); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .more-menu button:hover, .more-menu button:focus-visible { background: var(--s2); }
 .more-menu button.danger { color: var(--danger); }
+.more-sep { margin: 4px 6px; border: 0; border-top: 1px solid var(--s2); }
 /* On a profile the menu is near the top of the screen: it opens downward. */
 .person-actions .more-menu { bottom: auto; top: calc(100% + 8px); }
 /* As tall as the Follow button beside it. */
