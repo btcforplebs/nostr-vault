@@ -329,6 +329,25 @@ extension FeedService {
         }
     }
 
+    /// The trusted-author half of a Global REQ on its own subscription, for a
+    /// graph that loaded after the primary REQ went out. Its own subId keeps
+    /// its EOSE out of the primary count, which would end a running load early.
+    func sendTrustedAuthorsSubscription(client: WebSocketClient, label: String, trust: Set<String>) {
+        guard label != localInboxURL?.absoluteString else { return }
+        let (since, limitVal) = feedSinceAndLimit()
+        let filter: [String: Any] = [
+            "kinds": primaryFeedKinds,
+            "since": since,
+            "limit": limitVal,
+            "authors": Array(trust.sorted().prefix(Self.trustedAuthorsCap))
+        ]
+        let req: [Any] = ["REQ", "wot-" + feedSubId(for: label), filter]
+        if let data = try? JSONSerialization.data(withJSONObject: req),
+           let str = String(data: data, encoding: .utf8) {
+            client.send(text: str)
+        }
+    }
+
     /// Send auxiliary subscriptions (mentions, reactions, zaps) to a relay after
     /// its primary feed EOSE has arrived so feed content isn't bandwidth-starved.
     func sendAuxiliarySubscriptions(client: WebSocketClient, label: String) {

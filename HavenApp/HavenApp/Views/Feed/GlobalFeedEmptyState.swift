@@ -8,7 +8,7 @@ struct GlobalFeedEmptyState: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            if feedService.isLoadingFeed || (feedService.globalAwaitsGraph && !feedService.hasNoWebOfTrustYet) {
+            if feedService.isLoadingFeed || (feedService.globalAwaitsGraph && !feedService.waitsForFirstFollow) {
                 ProgressView().tint(Color.havenPurple)
             } else {
                 Image(systemName: "globe")
