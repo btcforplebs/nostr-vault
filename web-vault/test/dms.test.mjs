@@ -3,12 +3,13 @@
 // written anywhere. Throwaway keys, a fake /chat and a stubbed network: nothing is published.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
+import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import * as nip44 from "nostr-tools/nip44"
 import * as nip04 from "nostr-tools/nip04"
+import { makeAuthEvent } from "nostr-tools/nip42"
 import {
   cryptoFor, rumorFor, wrapFor, unwrap, openLegacy, dmRelaysFor, extraRelays, loadMessages, getMessages, onMessages, resetMessages,
-  conversations, thread, sendMessage, peerOf, watchMessages, WATCH_SINCE, OPEN_BATCH,
+  conversations, thread, sendMessage, peerOf, watchMessages, WATCH_SINCE, OPEN_BATCH, authFor,
 } from "../src/net/dms.js"
 
 const A = generateSecretKey(), B = generateSecretKey(), C = generateSecretKey()
@@ -263,4 +264,104 @@ test("coming back looks again only after five minutes, and once for two screens"
   assert.equal(claimResync({ clock }), false, "the second screen coming back at the same moment doesn't look again")
   t += 10_000
   assert.equal(claimResync({ clock, after: 10_000 }), true, "back online looks after a shorter wait")
+})
+
+test("a relay that wants AUTH gets one signed by the sender, for that relay only, and then takes the wrap", async () => {
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://b-haven.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  const authed = []
+  // What nostr-tools does on "auth-required: …": sign makeAuthEvent(relay.url, challenge), wait for its OK, resend.
+  const publish = (urls, ev, opts) => [(async () => {
+    if (!urls[0].includes("b-haven")) return "ok"
+    const auth = await opts.onauth(makeAuthEvent(urls[0], "challenge-123"))
+    authed.push(auth)
+    return "ok"
+  })()]
+  resetMessages(pk(A))
+  const { relays } = await sendMessage(ctxOf(A, { write: ["wss://a-write.example"] }), pk(B), "hi", { crypto: cryptoOf(A), query, chat: fakeChat(), publish })
+  assert.deepEqual(relays.map(r => [r.url, r.ok]), [["wss://b-haven.example", true], ["wss://a-write.example", true]])
+  const [auth] = authed
+  assert.equal(auth.kind, 22242); assert.equal(auth.pubkey, pk(A)); assert.ok(verifyEvent(auth))
+  assert.deepEqual(auth.tags, [["relay", "wss://b-haven.example"], ["challenge", "challenge-123"]])
+})
+
+test("authFor signs nothing but a bare AUTH for its own relay", async () => {
+  let asked = 0
+  const ctx = { session: { method: "nip07", pubkey: pk(A) }, signer: { signEvent: async t => { asked++; return finalizeEvent(t, A) } } }
+  const auth = authFor(ctx, "wss://relay.example")
+  assert.equal((await auth(makeAuthEvent("wss://Relay.Example/", "c"))).kind, 22242, "the same relay, written differently")
+  await assert.rejects(auth(makeAuthEvent("wss://other.example", "c")), /not an AUTH for this relay/)
+  await assert.rejects(auth({ ...makeAuthEvent("wss://relay.example", "c"), kind: 1, content: "gm" }), /not an AUTH/)
+  await assert.rejects(auth({ ...makeAuthEvent("wss://relay.example", "c"), content: "x" }), /not an AUTH/)
+  const t = makeAuthEvent("wss://relay.example", "c")
+  await assert.rejects(auth({ ...t, tags: [...t.tags, ["p", pk(B)]] }), /not an AUTH/)
+  assert.equal(asked, 1, "the signer only saw the one real AUTH")
+  const wrongAccount = authFor({ session: { pubkey: pk(A) }, signer: { signEvent: async t => finalizeEvent(t, B) } }, "wss://relay.example")
+  await assert.rejects(wrongAccount(makeAuthEvent("wss://relay.example", "c")), /different account/)
+})
+
+test("through the real nostr-tools pool: auth-required, AUTH, then the wrap is taken", async () => {
+  const { SimplePool } = await import("nostr-tools/pool")
+  const log = []
+  // A relay that, like a Haven inbox, refuses events until the connection has AUTHed. In memory, no network.
+  class FakeRelaySocket {
+    static OPEN = 1; static CLOSING = 2; static CLOSED = 3
+    constructor(url) { this.url = url; this.readyState = 0; this.authed = null; setTimeout(() => { this.readyState = 1; this.onopen?.(); this.reply(["AUTH", "chal-xyz"]) }) }
+    reply(m) { setTimeout(() => this.onmessage?.({ data: JSON.stringify(m) })) }
+    send(raw) {
+      const [type, ev] = JSON.parse(raw)
+      if (type === "AUTH") {
+        const ok = ev.kind === 22242 && verifyEvent(ev) && ev.tags.some(t => t[0] === "challenge" && t[1] === "chal-xyz")
+        if (ok) this.authed = ev.pubkey
+        log.push(["AUTH", ok]); return this.reply(["OK", ev.id, ok, ok ? "" : "invalid: bad auth"])
+      }
+      if (type === "EVENT") { log.push(["EVENT", !!this.authed]); return this.reply(["OK", ev.id, !!this.authed, this.authed ? "" : "auth-required: we only accept DMs from authenticated users"]) }
+    }
+    close() { this.readyState = 3; this.onclose?.({}) }
+  }
+  const testPool = new SimplePool({ websocketImplementation: FakeRelaySocket })
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://b-haven.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  resetMessages(pk(A))
+  try {
+    const { relays } = await sendMessage(ctxOf(A, { write: ["wss://a-haven.example"] }), pk(B), "hi", {
+      crypto: cryptoOf(A), query, chat: fakeChat(), publish: (urls, ev, opts) => testPool.publish(urls, ev, opts),
+    })
+    assert.deepEqual(relays.map(r => [r.url, r.ok]), [["wss://b-haven.example", true], ["wss://a-haven.example", true]])
+    assert.deepEqual(log.slice(0, 3), [["EVENT", false], ["AUTH", true], ["EVENT", true]], "refused, AUTHed, then taken")
+  } finally { testPool.destroy() }
+})
+
+test("a declined AUTH doesn't jam the relay: it's dropped, and the next send AUTHs afresh and is taken", async () => {
+  const { SimplePool } = await import("nostr-tools/pool")
+  const log = []
+  class FakeRelaySocket {
+    static OPEN = 1; static CLOSING = 2; static CLOSED = 3
+    constructor(url) { this.url = url; this.readyState = 0; this.authed = null; log.push(["OPEN"]); setTimeout(() => { this.readyState = 1; this.onopen?.(); this.reply(["AUTH", "chal-" + log.length]) }) }
+    reply(m) { setTimeout(() => this.onmessage?.({ data: JSON.stringify(m) })) }
+    send(raw) {
+      const [type, ev] = JSON.parse(raw)
+      if (type === "AUTH") { this.authed = ev.pubkey; log.push(["AUTH"]); return this.reply(["OK", ev.id, true, ""]) }
+      if (type === "EVENT") { log.push(["EVENT", !!this.authed]); return this.reply(["OK", ev.id, !!this.authed, this.authed ? "" : "auth-required: who are you"]) }
+    }
+    close() { this.readyState = 3; this.onclose?.({}) }
+  }
+  const testPool = new SimplePool({ websocketImplementation: FakeRelaySocket })
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://b-haven.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  let decline = true
+  const ctx = ctxOf(A, { write: ["wss://b-haven.example"] })
+  ctx.signer = { signEvent: async t => { if (t.kind === 22242 && decline) throw new Error("user declined"); return finalizeEvent(t, A) } }
+  const dropped = []
+  const opts = { crypto: cryptoOf(A), query, chat: fakeChat(), wait: 300, publish: (urls, ev, o) => testPool.publish(urls, ev, o), drop: urls => { dropped.push(...urls); testPool.close(urls) } }
+  resetMessages(pk(A))
+  try {
+    await assert.rejects(sendMessage(ctx, pk(B), "first", opts), /Not delivered/)
+    assert.deepEqual(dropped, ["wss://b-haven.example"])
+    decline = false
+    const { relays } = await sendMessage(ctx, pk(B), "second", opts)
+    assert.ok(relays.find(r => r.to === "them").ok, "the second send got through")
+    assert.equal(log.filter(e => e[0] === "OPEN").length, 2, "a fresh socket")
+    assert.equal(log.filter(e => e[0] === "AUTH").length, 1, "the relay saw the second AUTH")
+  } finally { testPool.destroy() }
 })
