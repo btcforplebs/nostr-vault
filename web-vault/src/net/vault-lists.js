@@ -103,7 +103,8 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     }
     if (ev.kind === 9735) {
       const req = zapRequest(ev)
-      const sender = req?.pubkey || tag(ev, "P") || ev.pubkey
+      if (!req) continue // no valid zap request: nobody can be named as the sender
+      const sender = req.pubkey
       if (sender === me || blocked.has(sender)) continue
       const sats = zapSats(ev)
       const target = (req && lastE(req)) || lastE(ev)
@@ -199,8 +200,9 @@ export function likesFor(own, inbound, me, filter, blocked = new Set()) {
   return groupNotifications(inbound.filter(e => e.kind === 7), me).filter(r => r.type === "reaction" && !r.who.every(w => blocked.has(w)))
 }
 
-/** The sender of a zap receipt: the signed request's author, else the `P` tag. */
-export const zapSender = ev => zapRequest(ev)?.pubkey || tag(ev, "P") || ""
+/** The sender of a zap receipt: the author of its valid zap request (notifications.js zapRequest), else nobody.
+ *  The `P` tag alone is written by the receipt's publisher, so it names no one. */
+export const zapSender = ev => zapRequest(ev)?.pubkey || ""
 
 /** Zaps: received (on your notes, folded per note) or given (receipts whose request you signed, from the network). */
 export function zapsFor(given, inbound, me, filter, blocked = new Set()) {
@@ -252,8 +254,9 @@ export async function readInbound(vault, me) {
 }
 
 /** Others' events that tag the user from the network, kept in Haven's inbox when it takes them. -> events */
-export async function fetchInbound(vault, me, relays, { limit = 200, since } = {}) {
-  const evs = await pool.querySync(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...(since ? { since } : {}) }, { maxWait: 8000 })
+export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs } = {}) {
+  // `trust` drops forged zap receipts (zaps.js trustedReceipts) before Haven keeps them.
+  const evs = await trust(await pool.querySync(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...(since ? { since } : {}) }, { maxWait: 8000 }))
   if (vault.inbox) for (const ev of evs) await vault.inbox.event(ev).catch(() => {})
   return dedupe(evs)
 }

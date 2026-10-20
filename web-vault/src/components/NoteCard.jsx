@@ -8,6 +8,7 @@ import { ZapButton } from "./ZapButton.jsx"
 import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, loadSent, onActionState } from "../net/actions.js"
+import { rememberNote } from "../desktop/noteIndex.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/note-actions.css")
@@ -26,20 +27,25 @@ export function NoteCard({ event, memoryOnly = false }) {
     let inner
     try { inner = JSON.parse(event.content) } catch {}
     const target = actionTarget(event)
+    if (target) rememberNote(target)
     return (
-      <article class="note" onClick={inner?.id && openThread(inner.id)}>
+      <article class="note" data-note-id={target?.id} onClick={inner?.id && openThread(inner.id)} onAuxClick={inner?.id && openThread(inner.id)}>
         <div class="repost-line"><RepostIcon /><a class="author-link" href={profileHref(event.pubkey)}><AuthorName pubkey={event.pubkey} /></a> reposted</div>
         {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} /> : <div class="note-text muted">Repost of a note not included</div>}
         {target && <NoteActions note={target} />}
       </article>
     )
   }
-  return <article class="note" onClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} /><NoteActions note={event} /></article>
+  rememberNote(event)
+  return <article class="note" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} /><NoteActions note={event} /></article>
 }
 
-// Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it.
+// Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it. A ⌘/Ctrl-click or a
+// middle-click opens the thread in a new browser tab, as a link would.
 const openThread = id => e => {
   if (e.target.closest("a, button, video, audio")) return
+  if (e.type === "auxclick" && e.button !== 1) return
+  if (e.metaKey || e.ctrlKey || e.button === 1) { open(`#/thread/${id}`, "_blank", "noopener"); return }
   location.hash = `#/thread/${id}`
 }
 
@@ -53,7 +59,7 @@ function NoteBody({ event, memoryOnly }) {
           <Avatar pubkey={event.pubkey} />
           <AuthorName pubkey={event.pubkey} />
         </a>
-        <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()}>{ago(event.created_at)}</time>
+        <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
       </div>
       <NoteText content={event.content} memoryOnly={memoryOnly} />
     </>

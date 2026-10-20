@@ -103,7 +103,8 @@ export function MessagesScreen({ ctx }) {
         : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
         : list.map(c => (
           <a key={c.peer} class="dm-row" href={`#/dm/${c.peer}`}>
-            <Avatar pubkey={c.peer} size={44} />
+            {/* A stranger's picture waits: their server would learn your IP the moment the list draws. */}
+            <Avatar pubkey={c.peer} size={44} load={ctx.account.follows.includes(c.peer)} />
             <span class="dm-row-text">
               <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time></span>
               <span class="dm-row-last">{c.last.from === ctx.session.pubkey ? "You: " : ""}{c.last.content.replace(/\s+/g, " ").trim() || "(empty)"}</span>

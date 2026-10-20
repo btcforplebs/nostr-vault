@@ -2,13 +2,18 @@
 // into one row, and the sats paid by a zap from its bolt11 (or the zap request's amount tag).
 import test from "node:test"
 import assert from "node:assert/strict"
-import { groupNotifications, classify, replyTarget, reactionEmoji, zapSats, bolt11Sats, formatSats } from "../src/net/notifications.js"
+import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
+import { groupNotifications, classify, replyTarget, reactionEmoji, zapSats, bolt11Sats, formatSats, zapRequest } from "../src/net/notifications.js"
 
-const ME = "a".repeat(64), ALICE = "b".repeat(64), BOB = "c".repeat(64), CAROL = "d".repeat(64)
+// Throwaway keys: a zap request only names its sender when that sender really signed it.
+const keys = new Map()
+const person = () => { const sk = generateSecretKey(), pk = getPublicKey(sk); keys.set(pk, sk); return pk }
+const ME = person(), ALICE = person(), BOB = person(), CAROL = "d".repeat(64)
 const N1 = "1".repeat(64), N2 = "2".repeat(64), N3 = "3".repeat(64)
 let seq = 0
 const ev = (kind, pubkey, tags, content = "", created_at = 1000 + seq) => ({ id: `${kind}-${pubkey.slice(0, 2)}-${++seq}`.padEnd(64, "0"), kind, pubkey, tags, content, created_at })
-const zapReq = (sender, tags = [], extra = {}) => JSON.stringify({ kind: 9734, pubkey: sender, tags: [["p", ME], ...tags], content: "", ...extra })
+const zapReq = (sender, tags = [], extra = {}) =>
+  JSON.stringify(finalizeEvent({ kind: 9734, created_at: 1000, tags: [["p", ME], ...tags], content: "", ...extra }, keys.get(sender)))
 
 test("a reply to the user's note is a reply row pointing at that note", () => {
   const r = classify(ev(1, ALICE, [["e", N1, "", "reply"], ["p", ME]], "nice"), ME)
@@ -65,10 +70,22 @@ test("a zap's who is the zap request's sender, not the LNURL server that signed 
   assert.equal(z.sats, 21)
 })
 
-test("a zap with a broken description falls back to the P tag, then the 9735's own pubkey", () => {
+test("a receipt names nobody, and is no notification, unless its zap request holds up", () => {
   const LNURL = "e".repeat(64)
-  assert.equal(classify(ev(9735, LNURL, [["p", ME], ["P", BOB], ["description", "{not json"]]), ME).who, BOB)
-  assert.equal(classify(ev(9735, LNURL, [["p", ME]]), ME).who, LNURL)
+  const zap = (tags, desc) => ev(9735, LNURL, [["p", ME], ["e", N1], ["bolt11", "lnbc210n1x"], ...tags, ["description", desc]])
+  const ok = zap([["P", ALICE]], zapReq(ALICE, [["amount", "21000"]]))
+  assert.equal(classify(ok, ME).who, ALICE, "the control: a real one is a notification")
+  assert.equal(classify(zap([], "{not json"), ME), null, "broken description")
+  assert.equal(classify(ev(9735, LNURL, [["p", ME], ["P", BOB]]), ME), null, "no request: the P tag alone names no one")
+  const unsigned = JSON.stringify({ kind: 9734, pubkey: ALICE, tags: [["p", ME]], content: "", created_at: 1000 })
+  assert.equal(classify(zap([], unsigned), ME), null, "unsigned request in Alice's name")
+  const req = JSON.parse(zapReq(BOB))
+  assert.equal(classify(zap([], JSON.stringify({ ...req, pubkey: ALICE })), ME), null, "Bob's signature, Alice's name")
+  assert.equal(classify(zap([], JSON.stringify({ ...req, verified: true, pubkey: ALICE })), ME), null, "a verified flag in the JSON is ignored")
+  assert.equal(classify(zap([], zapReq(ALICE, [], { tags: [["p", CAROL]] })), ME), null, "Alice's real zap to Carol, replayed at me")
+  assert.equal(classify(zap([["P", BOB]], zapReq(ALICE)), ME), null, "receipt's P names someone else")
+  assert.equal(classify(zap([], zapReq(ALICE, [["amount", "1200000000"]])), ME), null, "invoice charges 21, request asked 1.2M")
+  assert.equal(zapRequest(ok)?.pubkey, ALICE)
 })
 
 test("the user zapping themself is not a notification", () => {
@@ -93,8 +110,9 @@ test("bolt11 amounts: multipliers, no amount, not an invoice", () => {
 
 test("zapSats prefers the bolt11, then the zap request's amount tag in millisats", () => {
   assert.equal(zapSats(ev(9735, BOB, [["bolt11", "lnbc420n1x"], ["description", zapReq(ALICE, [["amount", "999000"]])]])), 42)
-  assert.equal(zapSats(ev(9735, BOB, [["description", zapReq(ALICE, [["amount", "21000"]])]])), 21)
-  assert.equal(zapSats(ev(9735, BOB, [["description", zapReq(ALICE, [["amount", "oops"]])]])), 0)
+  assert.equal(zapSats(ev(9735, BOB, [["p", ME], ["description", zapReq(ALICE, [["amount", "21000"]])]])), 21)
+  assert.equal(zapSats(ev(9735, BOB, [["p", ME], ["description", zapReq(ALICE, [["amount", "oops"]])]])), 0)
+  assert.equal(zapSats(ev(9735, BOB, [["p", ME], ["description", JSON.stringify({ kind: 9734, pubkey: ALICE, tags: [["p", ME], ["amount", "21000"]] })]])), 0, "unsigned request: no amount")
   assert.equal(zapSats(ev(9735, BOB, [])), 0)
 })
 

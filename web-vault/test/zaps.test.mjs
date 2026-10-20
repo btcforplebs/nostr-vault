@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import {
-  lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts,
+  lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts, trustedReceipts,
   zapTotal, wantTotals, lightningAddressOf, ZAP_MESSAGE,
 } from "../src/net/zaps.js"
 
@@ -176,6 +176,23 @@ test("totals: a recipient whose zap service can't be resolved is trusted, as on 
   const a = note(), stranger = generateSecretKey()
   await countReceipts([receipt({ target: a.id, sats: 3, by: forger, sender: bob, recipient: pk(stranger) })], [a.id], pk(me), async () => null)
   assert.deepEqual(zapTotal(a.id), { sats: 3, mine: false })
+})
+
+test("trusted receipts: only the payee's own zap service may publish one, and only with a real signed request", async () => {
+  const s = fakeService()
+  const a = note()
+  const real = receipt({ target: a.id, sats: 21 })
+  const forged = receipt({ target: a.id, sats: 1_200_000, by: forger }) // a real-looking receipt from someone else
+  const unsigned = { ...real, tags: real.tags.map(t => t[0] === "description" ? ["description", JSON.stringify({ ...JSON.parse(t[1]), sig: "0".repeat(128) })] : t) }
+  const other = note(bob) // not a receipt: passes untouched
+  const kept = await trustedReceipts([real, forged, unsigned, other], bobLn, s.fetchImpl)
+  assert.deepEqual(kept.map(e => e.id), [real.id, other.id])
+})
+
+test("trusted receipts: a payee whose zap service can't be resolved keeps receipts with a valid request (fails open)", async () => {
+  const stranger = generateSecretKey(), a = note()
+  const r = receipt({ target: a.id, sats: 3, by: forger, recipient: pk(stranger) })
+  assert.deepEqual((await trustedReceipts([r], async () => null)).map(e => e.id), [r.id])
 })
 
 test("totals are asked in groups of ten, one filter per call, once per note", async () => {

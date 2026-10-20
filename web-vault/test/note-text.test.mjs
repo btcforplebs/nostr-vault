@@ -17,7 +17,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { NoteText, Mention } = await import("../src/components/NoteText.jsx")
+const { NoteText, Mention, TapImage } = await import("../src/components/NoteText.jsx")
 const { QuotedNote } = await import("../src/components/QuotedNote.jsx")
 
 // The rendered parts: strings stay strings, elements become { type, ...props }.
@@ -28,11 +28,14 @@ function parts(content) {
     .map(c => (typeof c === "string" ? c : { type: c.type, ...c.props }))
 }
 
-test("in a DM, video links stay links and nostr:npub stays short text; images still show", () => {
+test("in a DM, video links stay links, nostr:npub stays short text, and images wait for a tap unless trusted", () => {
   const npub = npubEncode("ab".repeat(32))
   const url = "https://x.example/v.mp4"
   const els = [NoteText({ content: `${url} nostr:${npub} https://x.example/p.png`, dm: true }).props.children].flat().filter(c => typeof c !== "string")
-  assert.deepEqual(els.map(e => e.type), ["a", "span", "img"])
+  assert.deepEqual(els.map(e => e.type), ["a", "span", TapImage], "a stranger's image waits for a tap: no tracking pixel")
+  const trusted = [NoteText({ content: "https://x.example/p.png", dm: true, images: true }).props.children].flat().filter(c => typeof c !== "string")
+  assert.equal(trusted[0].type, "img", "a follow's image shows")
+  assert.equal(trusted[0].props.referrerpolicy, "no-referrer")
   assert.equal(els[0].props.href, url, "a link, no <video> preload")
   assert.equal(els[1].type, "span", "no Mention component, so no profile fetch"); assert.match(els[1].props.children, /^npub1/)
   // Outside a DM the same text gets a video player and a Mention.

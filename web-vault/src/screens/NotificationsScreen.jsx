@@ -9,6 +9,7 @@ import { ago } from "../components/time.js"
 import { fetchNotifications, fetchNotes, formatSats } from "../net/notifications.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { receiptTrust } from "../net/zaps.js"
 import { visibleRows } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 
@@ -26,7 +27,7 @@ export function NotificationsScreen({ ctx }) {
     if (!navigator.onLine) { setStatus("Offline: notifications need the network"); setRows(rows ?? []); return }
     setStatus("Loading…")
     try {
-      const r = await fetchNotifications(session.pubkey, relays, { limit: PAGE })
+      const r = await fetchNotifications(session.pubkey, relays, { limit: PAGE, trust: receiptTrust(ctx) })
       setRows(r)
       setStatus(r.length ? "" : "Nothing yet")
       fetchProfiles(ctx.vault, r.flatMap(x => x.who), relays).catch(() => {})
