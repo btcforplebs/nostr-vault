@@ -44,7 +44,7 @@ export function ConversationScreen({ ctx, peer }) {
     <main class="screen dm-screen">
       <header class="screen-head">
         <button class="small" onClick={() => history.back()}>Back</button>
-        <h2 class="dm-title"><Avatar pubkey={peer} size={24} /><AuthorName pubkey={peer} /></h2>
+        <h2 class="dm-title"><Avatar pubkey={peer} size={24} load={follows} /><AuthorName pubkey={peer} /></h2>
         <a class="small button" href={`#/profile/${peer}`}>Profile</a>
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}

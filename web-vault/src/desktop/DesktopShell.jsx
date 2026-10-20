@@ -220,14 +220,19 @@ function useShortcuts(o) {
       r.scrollIntoView({ block: "nearest" })
     }
     // The card a like or zap goes to: the selected row, or else the note opened in the note column.
-    const card = () => selected()?.closest("[data-note-id]") ?? document.querySelector(".desk-thread [aria-current] [data-note-id], .desk-thread [data-note-id]")
+    // Two lookups, not one selector list: a list matches in tree order, and the thread draws its root first, so an
+    // open reply would hand a like or zap to the root's author.
+    const card = () => selected()?.closest("[data-note-id]")
+      ?? document.querySelector(".desk-thread [aria-current] [data-note-id]") ?? document.querySelector(".desk-thread [data-note-id]")
     const openRow = r => { if (r.matches("[data-note-id]") || r.tagName === "A") r.click() }
     const run = (c, e) => {
       const s = ref.current
       if (document.querySelector("dialog[open]")) return false // a block, report or shortcuts dialog has the keys
+      // A menu, zap amount picker or mention list is open: it owns the keys (Escape closes it itself). A stray z
+      // over the zap picker would otherwise pay the default amount.
+      if (document.querySelector(OVERLAY)) return false
       switch (c.cmd) {
         case "close":
-          if (document.querySelector(OVERLAY)) return false
           if (s.composing) return s.closeCompose()
           if (typingIn(document.activeElement)) return document.activeElement.blur()
           if (s.hasDetail) return s.closeDetail()
