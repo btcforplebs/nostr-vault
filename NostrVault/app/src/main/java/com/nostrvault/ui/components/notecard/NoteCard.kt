@@ -451,7 +451,14 @@ fun NoteCard(
                 // article raw and untitled. iOS ArticleInlineBody.
                 ArticleInlineBody(
                     note = note,
-                    onClick = { (onArticleClick ?: onNoteClick)(note.effectiveEventId) },
+                    onClick = {
+                        // A repost's `e` tag is unchecked relay data; a value
+                        // that is not an event id breaks the article route.
+                        val target = note.effectiveEventId
+                        if (com.nostrvault.ui.navigation.NotificationTarget.isHex64(target)) {
+                            (onArticleClick ?: onNoteClick)(target)
+                        }
+                    },
                 )
             } else if (note.displayKind == FeedHighlight.KIND) {
                 HighlightInlineBody(note = note, isFocused = isFocused)

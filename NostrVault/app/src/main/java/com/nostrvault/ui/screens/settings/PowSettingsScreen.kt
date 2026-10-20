@@ -16,6 +16,7 @@ import com.nostrvault.data.local.PowPreferences
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 /**
  * Proof of Work (NIP-13) settings screen.
@@ -158,7 +159,7 @@ private fun PowSection(
             Text("Easy", color = TertiaryText, fontSize = 12.sp)
             Slider(
                 value = difficulty.toFloat(),
-                onValueChange = { onDifficultyChange(it.toInt()) },
+                onValueChange = { onDifficultyChange(it.roundToInt()) },
                 valueRange = PowPreferences.MIN_DIFFICULTY.toFloat()..PowPreferences.MAX_DIFFICULTY.toFloat(),
                 steps = PowPreferences.SLIDER_STEPS,
                 colors = SliderDefaults.colors(

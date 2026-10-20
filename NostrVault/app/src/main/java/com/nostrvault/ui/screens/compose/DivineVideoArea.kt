@@ -1,10 +1,12 @@
 package com.nostrvault.ui.screens
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,10 +45,16 @@ internal fun DivineVideoArea(clip: PickedClip?, busy: Boolean, onPicked: (Uri) -
         result.data?.data?.let(onPicked)
     }
     fun launchCamera() {
-        record.launch(
-            Intent(MediaStore.ACTION_VIDEO_CAPTURE)
-                .putExtra(MediaStore.EXTRA_DURATION_LIMIT, ModeComposeViewModel.RECORD_LIMIT_SECONDS)
-        )
+        // The camera is optional in the manifest; some devices have no app
+        // that records video.
+        try {
+            record.launch(
+                Intent(MediaStore.ACTION_VIDEO_CAPTURE)
+                    .putExtra(MediaStore.EXTRA_DURATION_LIMIT, ModeComposeViewModel.RECORD_LIMIT_SECONDS)
+            )
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, "No camera app to record with", Toast.LENGTH_SHORT).show()
+        }
     }
     // The manifest declares CAMERA (QR scanning), so the system camera intent
     // is refused until the permission is granted.

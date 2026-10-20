@@ -174,7 +174,13 @@ class MediaCacheService @Inject constructor(
 
     /** Delete oldest cached files until the media cache dir is under [maxBytes]. */
     private fun trimDiskCacheToSize(maxBytes: Long) {
-        val files = cacheDirectory.listFiles()?.sortedBy { it.lastModified() } ?: return
+        // Read each timestamp once: sorting on live lastModified() throws
+        // when a file changes mid-sort (evictExpiredFiles runs alongside).
+        val files = cacheDirectory.listFiles()
+            ?.map { it to it.lastModified() }
+            ?.sortedBy { it.second }
+            ?.map { it.first }
+            ?: return
         var total = files.sumOf { it.length() }
         for (file in files) {
             if (total <= maxBytes) break

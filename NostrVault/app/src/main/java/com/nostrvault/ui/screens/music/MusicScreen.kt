@@ -384,7 +384,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 text = "Music from Wavlake",
                 color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.fillMaxWidth().padding(16.dp)
-                    .clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wavlake.com"))) },
+                    .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wavlake.com"))) } },
             )
         }
     }

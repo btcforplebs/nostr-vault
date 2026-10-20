@@ -355,7 +355,7 @@ internal fun MarketListingSheet(
 
             Spacer(Modifier.height(18.dp))
             Button(
-                onClick = { uriHandler.openUri(listing.plebeianUrl) },
+                onClick = { runCatching { uriHandler.openUri(listing.plebeianUrl) } },
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.Black),
                 modifier = Modifier.fillMaxWidth(),
             ) {

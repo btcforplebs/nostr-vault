@@ -202,7 +202,7 @@ fun MusicTrackRow(
                 DropdownMenuItem(text = { Text("${track.artist} on Nostr") }, onClick = { menu = false; actions.onOpenProfile(hex) })
             }
             DropdownMenuItem(text = { Text("Open on Wavlake") }, onClick = {
-                menu = false; ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.pageUrl)))
+                menu = false; runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.pageUrl))) }
             })
         }
     }

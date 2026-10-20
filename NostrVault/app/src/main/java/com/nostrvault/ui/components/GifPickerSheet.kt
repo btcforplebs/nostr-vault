@@ -95,7 +95,7 @@ fun GifPickerSheet(
                     text = "GIFs from nostr.build",
                     color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(vertical = 8.dp)
-                        .clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://nostr.build"))) },
+                        .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://nostr.build"))) } },
                 )
                 Spacer(Modifier.weight(1f))
                 // nostr.build GIFs are already hosted; this decides whether

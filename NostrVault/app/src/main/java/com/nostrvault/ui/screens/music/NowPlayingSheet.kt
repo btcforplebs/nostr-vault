@@ -166,7 +166,7 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                 )
             }
             t.pageUrl?.let { page ->
-                TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }) {
+                TextButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) } }) {
                     Text(if (t.isLive) "Open stream" else "Open on Wavlake", color = SecondaryText)
                 }
             }
