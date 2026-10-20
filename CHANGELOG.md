@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2 (39) — macOS / iOS / Android] - 2026-10-20
+
+> **The App Store release candidate.** Everything merged since build 38 (#766–#834, #853): an App Store review pass on every platform, safer key and config handling, Fanfares articles you can unlock, "Open in …" links to the rest of Nostr, and a long list of Android parity fixes. Web vault and website changes merged in the same window ship separately and are not listed here.
+
+### Security
+- **Keys and Config Are Kept Safe**: The config file is written atomically on every platform, and one that won't load is set aside instead of being overwritten by setup. iOS and macOS keep a backup copy and load it when the file is damaged, and removing your last key deletes that backup too. Reset Everything clears what it left behind, and a private API call is gone. Android moves the owner key out of the config file and recovers from a broken credential store instead of crashing on every launch (#797, #799, #801).
+- **Imported Keys Are Checked**: Imported nsecs are validated, and the NIP-49 scrypt cost is bounded so a crafted encrypted key can't hang the app (#794).
+- **Strings to the Relay Engine**: iOS and macOS pass strings to the Go relay with `withCString`, including the nsec in setup, instead of bridged pointers (#805, #807).
+- **Hostile Relays**: A TLV over 255 bytes or an out-of-range kind is refused instead of trapping (#808).
+- **Posting as the Right Account (Android)**: A pending repost or delete is cancelled on an account switch and locked to the account that queued it. Profile edits and follow-list changes are signed only as the account they belong to, and a switch can't carry one account's follow list into another (#795, #798, #819).
+- **Android Sharing and Links**: Share-to-Blossom reads only another app's `content://` URIs, pasted links fetch previews only from public hosts, copying your nsec is marked sensitive, and secrets are kept out of the log (#796, #809, #821).
+- **A Wallet Reply Without Proof Is Not a Payment**: A Nostr Wallet Connect reply with neither a preimage nor an error counted as paid. Now only a preimage counts (#853).
+- **Bitcoin Sweep**: The address is validated and the send is confirmed first. Balances and transaction links use mempool.space, so the sweep shows a balance again (#802, #818).
+- **Privacy Manifests**: The share and widget extensions now carry their own privacy manifests, and Face ID has a usage description (#803).
+
+### Changed
+- **Locked Articles**: Fanfares articles can be unlocked. On Android, zap the price from the lock card (split across the article's zap recipients, each share sent once) or tap "Already paid?". On iPhone and Mac the app never pays: "Open in Fanfares" opens the article there, and "Already unlocked?" checks Fanfares' key server. Other locked articles show a lock card with no price and no way to pay. An article you unlocked before still opens everywhere (#806, #812, #816, #820, #834).
+- **Open in the Rest of Nostr**: Recipes open in zap.cooking, live streams in zap.stream, articles in YakiHonne, and profiles and the WoT trust card in Brainstorm, from the reader, the ⋯ menus and the trust card, on every platform (#831, #832).
+- **Zaps Are Opt-In on the Mac**: Post, live and article zaps sit behind the Post buttons setting, as on iOS (#814).
+- **On-Chain Wallet in Advanced**: The on-chain Bitcoin wallet is only in Settings → Advanced (#813, #821).
+- **Wallet**: The NWC connection can be saved to your Nostr account (NIP-78), and the wallet backup has "Check again" (#772, #773).
+- **Recipes and Marketplace**: Recipes ask feed.zap.cooking, Marketplace asks Conduit's relay, and an empty answer reads "No results" instead of "Could not reach" (#766, #771, #810).
+
+### Fixed
+- **Blocked People's Highlights and Comments**: They no longer show under articles (#804).
+- **Global for a New Account**: A new account sees a web to explore instead of a blank screen, now with its follows' follows, on iOS, macOS and Android (#824, #828, #830).
+- **Other Clients' List Entries (iOS, macOS)**: Publishing your mute, relay and other lists keeps the entries other clients added, as on Android (#827).
+- **Media Grid**: Web page links such as njump.me are no longer shown as broken image tiles (#833).
+- **Keyboard**: It no longer covers text inputs in DMs and other screens (#774).
+- **iPad**: The relay card wraps, the tour card no longer overlaps, the Media viewer is no longer blank, and the copy no longer says "phone" (#826).
+- **iOS Globe**: Live stars stay steady, with no burst on return (#785).
+- **Android Release Fixes**: Notes backup works (FileProvider), PoW rounding is fixed, drafts, the media queue and live chat no longer lose data or crash, other clients' mute, relay and DM-relay list entries survive a publish, and HEIC converts to JPEG only where the OS can (#782, #790, #793, #815, #817).
+- **Android Parity**: Tablet two-pane notes, someone else's whole web in WoT, a trust-card-only WoT popup, the trust card docked beside the globe on wide screens, drag-in media in compose, a date picker for the import start, 50 follow-list snapshots, a one-bit PoW slider, the Ranks toggle, Return opens the top WoT match, Share sends the web link, a Marketplace grid that fits the screen, the Mac relay address change migrating relay lists, one notes-import path, and a feed that flushes on the primary EOSE (#767–#770, #776, #777, #779–#781, #783, #784, #786–#789).
+
 ## [2.7.2 (21) — macOS / iOS / Android] - 2026-10-10
 
 > **The Web of Trust and first-launch release.** A new WOT tab shows your network as a globe you can explore, a new front door gets new and returning people into a full feed, Media and Relay merge into one Vault tab, and the iPad gets a real sidebar, two-pane DMs and keyboard shortcuts. Built from `release/2.7.2-b21`; FIPS mesh work is not in this build.

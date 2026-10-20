@@ -1,3 +1,9 @@
+# Nostr Vault v2.7.2 (Build 39) Release Notes
+
+The App Store review pass for Android. Reposts, deletes, profile edits and follow-list changes are signed only as the account they belong to, and switching accounts can't carry one account's follow list into another. Settings are saved atomically and survive a damaged file, the owner key moves out of the config file, and a broken credential store no longer crashes the app. Notes backup works. Fanfares articles can be unlocked with a zap from the lock card; other locked articles stay locked. Recipes, streams, articles and profiles can be opened in the rest of Nostr, and Global shows a new account's web. Copying your nsec is marked sensitive, secrets stay out of the log, and the on-chain wallet moves to Settings → Advanced. Plus tablet two-pane notes and more iPhone parity. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (39).
+
+---
+
 # Nostr Vault v2.7.2 (Build 20) Release Notes
 
 The Android app now matches the iPhone: same tabs, same wording, same feed, thread and Relay tab. New in this release: Wavlake music with background play, a Marketplace where you can buy and sell, translation of posts in other languages done on your phone, a hashtag feed, an article reader with highlights, and more reliable direct messages.
