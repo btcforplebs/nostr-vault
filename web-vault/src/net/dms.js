@@ -370,9 +370,13 @@ const PUBLISH_WAIT = { nip46: 20_000, other: 8000 }
 // nostr-tools 2.25.2 keeps a relay's AUTH promise for the life of its socket, and a sign function that throws (the
 // user declines, the bunker errors, authFor refuses the challenge) leaves that promise never settling: every later
 // AUTH on the socket waits on it, so every later DM to that relay times out. A relay that failed after we were asked
-// to AUTH it is dropped, so the next send opens a fresh socket (Tron, #858). Only that relay: subscriptions on it
-// close too, and come back with the next look (Refresh, or returning to the tab).
+// to AUTH it is dropped, so the next send opens a fresh socket (Tron, #858). Only that relay. A close we ask for
+// isn't reconnected, and it ends the live subscription there too, so dropping one tells the screens to look again
+// (onResyncNeeded): otherwise incoming DMs from that relay would go quiet with nothing on screen.
 const dropRelay = urls => pool.close(urls)
+const resyncListeners = new Set()
+/** `cb(urls)` when relays were dropped and the live subscription needs opening again. -> off() */
+export function onResyncNeeded(cb) { resyncListeners.add(cb); return () => resyncListeners.delete(cb) }
 
 export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts), drop = dropRelay, wait } = {}) {
   const me = ctx.session.pubkey
@@ -397,7 +401,10 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     const onauthFor = url => { const sign = authFor(ctx, url); return t => { asked.add(url); return sign(t) } }
     const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev, { onauth: onauthFor(url) })[0], timeout(ms)])))
     const stuck = urls.filter((url, i) => results[i].status === "rejected" && asked.has(url))
-    if (stuck.length) { try { drop(stuck) } catch {} }
+    if (stuck.length) {
+      try { drop(stuck) } catch {}
+      for (const cb of resyncListeners) { try { cb(stuck) } catch {} }
+    }
     return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
   }
   // Their wrap first: the self-copy goes out only once a recipient relay took theirs, so a refused message never

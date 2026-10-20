@@ -365,3 +365,23 @@ test("a declined AUTH doesn't jam the relay: it's dropped, and the next send AUT
     assert.equal(log.filter(e => e[0] === "AUTH").length, 1, "the relay saw the second AUTH")
   } finally { testPool.destroy() }
 })
+
+test("dropping a relay after a failed AUTH tells the screens to look again, once per drop", async () => {
+  const { onResyncNeeded } = await import("../src/net/dms.js")
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://b-haven.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  const ctx = ctxOf(A, { write: ["wss://b-haven.example"] })
+  ctx.signer = { signEvent: async t => { if (t.kind === 22242) throw new Error("user declined"); return finalizeEvent(t, A) } }
+  const heard = []
+  const off = onResyncNeeded(urls => heard.push(urls))
+  const publish = (urls, ev, o) => [o.onauth(makeAuthEvent(urls[0], "c")).then(() => "ok")]
+  resetMessages(pk(A))
+  try {
+    await assert.rejects(sendMessage(ctx, pk(B), "x", { crypto: cryptoOf(A), query, chat: fakeChat(), wait: 200, publish, drop: () => {} }), /Not delivered/)
+    assert.deepEqual(heard, [["wss://b-haven.example"]])
+    heard.length = 0
+    const ok = (urls, ev) => [Promise.resolve("ok")]
+    await sendMessage(ctxOf(A, { write: ["wss://b-haven.example"] }), pk(B), "y", { crypto: cryptoOf(A), query, chat: fakeChat(), publish: ok, drop: () => {} })
+    assert.deepEqual(heard, [], "no drop, no extra look")
+  } finally { off() }
+})
