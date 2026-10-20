@@ -135,3 +135,18 @@ export function serverTags(urls, previous) {
 export const addServer = (urls, url) => urls.includes(url) ? urls : [...urls, url]
 export const removeServer = (urls, url) => urls.filter(u => u !== url)
 export const serverProblem = urls => urls.length ? "" : "Keep at least one server, or photos have nowhere to go."
+
+// ---- Plain relay lists: DM inbox (kind 10050, NIP-17) and Never Connect (kind 10006, NIP-51) ----
+
+/** The list's relays from its `relay` tags, in order, trailing slash dropped, each once. */
+export function urlEntries(ev, tag = "relay") {
+  return uniq((ev?.tags ?? []).filter(t => t[0] === tag && /^wss?:\/\//i.test(t[1] ?? "")).map(t => t[1].trim().replace(/\/+$/, "")))
+}
+
+/** `relay` tags, the old copy's other tags kept. */
+export function urlTags(urls, previous, tag = "relay") {
+  return [...(previous?.tags ?? []).filter(t => t[0] !== tag), ...urls.map(u => [tag, u])]
+}
+
+export const addUrl = addServer
+export const removeUrl = removeServer

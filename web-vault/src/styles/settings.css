@@ -108,3 +108,4 @@ a.settings-row:hover { background: var(--s2); }
 .blossom-servers .ok { color: var(--online); }
 .blossom-servers .missing { color: var(--text-3); }
 .blossom-viewer .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.relay-list { margin-top: 18px; }

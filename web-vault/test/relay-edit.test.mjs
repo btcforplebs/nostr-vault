@@ -113,3 +113,12 @@ test("a signer that signs as someone else is refused", async t => {
   t.mock.method(pool, "publish", () => assert.fail("published"))
   await assert.rejects(publishList(ctx, 10002, [["r", "wss://a.example"]]), /different account/)
 })
+
+test("plain relay lists (10050, 10006): relay tags in order, each once, other tags kept", async () => {
+  const { urlEntries, urlTags, addUrl, removeUrl } = await import("../src/net/list-edit.js")
+  const ev = finalizeEvent({ kind: 10050, content: "", created_at: 5, tags: [["relay", "wss://a.example/"], ["relay", "wss://a.example"], ["relay", "https://x"], ["relay", "wss://b.example"], ["alt", "x"]] }, SK)
+  const urls = urlEntries(ev)
+  assert.deepEqual(urls, ["wss://a.example", "wss://b.example"])
+  assert.deepEqual(urlTags(removeUrl(addUrl(urls, "wss://c.example"), "wss://a.example"), ev), [["alt", "x"], ["relay", "wss://b.example"], ["relay", "wss://c.example"]])
+  assert.deepEqual(urlEntries(undefined), [])
+})
