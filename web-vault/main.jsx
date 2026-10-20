@@ -178,7 +178,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
-      {route === "wot" && <WotScreen ctx={ctx} />}
+      {route === "wot" && <WotScreen ctx={ctx} pubkey={/^[0-9a-f]{64}$/.test(arg) ? arg : undefined} />}
       {route === "search" && <SearchScreen ctx={ctx} onProfile={pk => { location.hash = `#/profile/${pk}` }} />}
       {route === "notifications" && <NotificationsScreen ctx={ctx} />}
       {route === "thread" && <ThreadScreen key={arg} ctx={ctx} id={arg} />}

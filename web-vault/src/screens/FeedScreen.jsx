@@ -9,14 +9,18 @@ import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { FEEDS, loadChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
+import { feedList, loadChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { mediaTiles } from "../net/media.js"
+import { READERS } from "../readers/index.js"
 
 if (import.meta.env) import("../styles/feeds.css")
 
 const PAGE = 100
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
+const FEEDS = feedList(READERS)
+const readerFor = mode => READERS.find(r => r.id === mode)
+const pickedChoice = () => loadChoice(globalThis.localStorage, FEEDS)
 
 export function FeedScreen({ ctx }) {
   const { vault, account } = ctx
@@ -26,8 +30,10 @@ export function FeedScreen({ ctx }) {
   const [status, setStatus] = useState("")
   const [syncing, setSyncing] = useState(false)
   const { blocked, privateNote } = useBlocks(ctx)
-  const [choice, setChoice] = useState(loadChoice)
-  const [strange, setStrange] = useState(() => heldNotes(loadChoice()))
+  const [choice, setChoice] = useState(pickedChoice)
+  const [strange, setStrange] = useState(() => heldNotes(pickedChoice()))
+  // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
+  const Reader = readerFor(choice.mode)?.Screen
   const following = fromHaven(choice.mode), media = choice.mode === "media", popular = choice.mode === "popular"
   const page = media ? MEDIA_PAGE : PAGE
   // A sync started on Following reloads when it ends, maybe after a switch to Media: it reads with the page size
@@ -100,7 +106,7 @@ export function FeedScreen({ ctx }) {
   useEffect(() => { if (following) reload().then(sync) }, [follows.length, following])
   // Following and Media share the notes read from /feed; Media reads a bigger page, so switching to it reads again.
   useEffect(() => { if (following && notes) reload() }, [media])
-  useEffect(() => { if (!following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), popular && follows.length > 0])
+  useEffect(() => { if (!Reader && !following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), popular && follows.length > 0])
   useEffect(() => {
     if (following && notes?.length) fetchProfiles(vault, noteAuthors(notes), relays).catch(() => {})
   }, [notes, following])
@@ -117,9 +123,10 @@ export function FeedScreen({ ctx }) {
     <main class="screen">
       <header class="screen-head">
         <h2>{choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : label}</h2>
-        <button class="small" onClick={() => (following ? sync() : loadStrange(choice))}>Refresh</button>
+        {!Reader && <button class="small" onClick={() => (following ? sync() : loadStrange(choice))}>Refresh</button>}
       </header>
       <FeedPicker choice={choice} onPick={pick} />
+      {Reader ? <Reader ctx={ctx} /> : <>
       {status && <div class="status-line">{status}</div>}
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
       {following
@@ -133,6 +140,7 @@ export function FeedScreen({ ctx }) {
           : strange === null ? <p class="empty">{navigator.onLine ? "Loading notes…" : "This feed needs the network."}</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : "No notes found."}</p>
           : <Notes shown={shown} memoryOnly onOlder={popular ? null : () => loadStrange(choice, strange.at(-1)?.created_at - 1)} />}
+      </>}
     </main>
   )
 }
