@@ -4,8 +4,9 @@ import SwiftUI
 
 /// The body of a gated article: its teaser and a lock card, or the decrypted
 /// article when this reader has unlocked it. The app never pays for an
-/// article (App Store 3.1.1). A Fanfares article links to Fanfares and opens
-/// here once Fanfares' key server sees the reader's payment. See `GatedArticle`.
+/// article (App Store 3.1.1). A Fanfares article opens here once Fanfares' key
+/// server sees the reader's payment; only the Mac links out to Fanfares, since
+/// on iOS a link to buy it is steering. See `GatedArticle`.
 struct GatedArticleBody: View {
     let note: FeedNote
     let gated: GatedArticle
@@ -51,7 +52,11 @@ struct GatedArticleBody: View {
         guard gated.isFanfares else { return GatedLockCopy.status(author: authorName) }
         var failure: String?
         if case .failed(let message) = phase { failure = message }
+        #if os(macOS)
         return GatedLockCopy.fanfaresStatus(author: authorName, failure: failure)
+        #else
+        return failure ?? GatedLockCopy.status(author: authorName)
+        #endif
     }
 
     private var lockCard: some View {
@@ -67,22 +72,26 @@ struct GatedArticleBody: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let url = fanfaresURL {
-                Button {
-                    openURL(url)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.up.right.square")
-                        Text("Open in Fanfares")
-                            .font(.appSystem(size: 15, weight: .semibold))
+            if fanfaresURL != nil {
+                #if os(macOS)
+                if let url = fanfaresURL {
+                    Button {
+                        openURL(url)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.up.right.square")
+                            Text("Open in Fanfares")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.havenPurple)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.havenPurple)
-                    .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                #endif
 
                 Button {
                     Task { await checkAccess(auto: false) }
