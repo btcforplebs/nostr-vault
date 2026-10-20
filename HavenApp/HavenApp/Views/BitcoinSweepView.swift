@@ -372,11 +372,7 @@ struct BitcoinSweepView: View {
 
         sweepState = .sweeping
         Task.detached {
-            guard let cStr = SweepToAddressC(
-                UnsafeMutablePointer(mutating: (nsecHex as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (dest as NSString).utf8String),
-                rate
-            ) else {
+            guard let cStr = withCStrings([nsecHex, dest], { p in SweepToAddressC(p[0], p[1], rate) }) else {
                 await MainActor.run { sweepState = .failure("Sweep failed (no response).") }
                 return
             }

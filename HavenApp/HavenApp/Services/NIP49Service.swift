@@ -51,10 +51,7 @@ struct NIP49Service {
 
         let hexKey = try decodeNsec(nsec)
 
-        guard let resultCStr = EncryptNIP49C(
-            UnsafeMutablePointer(mutating: (hexKey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (password as NSString).utf8String)
-        ) else {
+        guard let resultCStr = withCStrings([hexKey, password], { p in EncryptNIP49C(p[0], p[1]) }) else {
             throw NIP49Error.encodingFailed
         }
 
@@ -73,10 +70,7 @@ struct NIP49Service {
         try checkScryptCost(ncryptsec)
 
         // Try spec-compliant Go FFI first
-        if let resultCStr = DecryptNIP49C(
-            UnsafeMutablePointer(mutating: (ncryptsec as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (password as NSString).utf8String)
-        ) {
+        if let resultCStr = withCStrings([ncryptsec, password], { p in DecryptNIP49C(p[0], p[1]) }) {
             let hexKey = String(cString: resultCStr)
             free(resultCStr)
 
@@ -167,7 +161,7 @@ struct NIP49Service {
     static func validateImport(nsec: String, matching npub: String) throws {
         let hexKey = try decodeNsec(nsec)
         guard let expected = NpubValidation.hexPubkey(fromNpub: npub),
-              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (hexKey as NSString).utf8String)) else {
+              let pkCStr = withCStrings([hexKey], { p in GetPublicKeyC(p[0]) }) else {
             throw NIP49Error.nsecDoesNotMatchAccount
         }
         let derived = String(cString: pkCStr)

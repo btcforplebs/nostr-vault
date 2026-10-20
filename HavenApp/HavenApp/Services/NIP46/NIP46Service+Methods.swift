@@ -13,10 +13,7 @@ extension NIP46Service {
     /// that cannot sign for that key.
     func signEvent(eventJSON: String, withSigner signerPubkey: String) async throws -> String {
         return try await signerRequest(userAction: Self.isUserAction(eventJSON: eventJSON), queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
-            try await self.callGo { NIP46SignEventWithC(
-                UnsafeMutablePointer(mutating: (signerPubkey as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
-            )}
+            try await self.callGo { withCStrings([signerPubkey, eventJSON], { p in NIP46SignEventWithC(p[0], p[1]) })}
         }
     }
 
@@ -31,9 +28,7 @@ extension NIP46Service {
         let sessionKey = Self.activeSignerKey()
         do {
             return try await signerRequest(userAction: userAction, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
-                try await self.callGo { NIP46SignEventC(
-                    UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
-                )}
+                try await self.callGo { withCStrings([eventJSON], { p in NIP46SignEventC(p[0]) })}
             }
         } catch let error as NIP46Error {
             // Only something the person did (a post, a reaction): background
@@ -59,7 +54,7 @@ extension NIP46Service {
     /// with a new link: switching to it must then log in with that link.
     static func dropSession(signerKey: String) {
         guard !signerKey.isEmpty else { return }
-        NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
+        withCStrings([signerKey], { p in NIP46DropC(p[0]) })
     }
 
     /// A post the signer never answered may mean a broken session: a relay can
@@ -99,40 +94,28 @@ extension NIP46Service {
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
         return try await signerRequest(userAction: false, queued: false) {
-            try await self.callGo { NIP46NIP04EncryptC(
-                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
-            )}
+            try await self.callGo { withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP04EncryptC(p[0], p[1]) })}
         }
     }
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
         return try await signerRequest(userAction: false) {
-            try await self.callGo { NIP46NIP04DecryptC(
-                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
-            )}
+            try await self.callGo { withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP04DecryptC(p[0], p[1]) })}
         }
     }
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
         return try await signerRequest(userAction: false, queued: false) {
-            try await self.callGo { NIP46NIP44EncryptC(
-                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
-            )}
+            try await self.callGo { withCStrings([thirdPartyPubkey, plaintext], { p in NIP46NIP44EncryptC(p[0], p[1]) })}
         }
     }
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
         return try await signerRequest(userAction: false) {
-            try await self.callGo { NIP46NIP44DecryptC(
-                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
-            )}
+            try await self.callGo { withCStrings([thirdPartyPubkey, ciphertext], { p in NIP46NIP44DecryptC(p[0], p[1]) })}
         }
     }
 

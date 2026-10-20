@@ -51,10 +51,7 @@ enum EventPublisher {
     /// Signs an event JSON string using the Go backend (SignEventC).
     /// Returns the decoded NostrEvent on success, nil on failure.
     static func signWithGoBackend(eventJSON: String, secretKey: String) -> NostrEvent? {
-        guard let signedCStr = SignEventC(
-            UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (secretKey as NSString).utf8String)
-        ) else {
+        guard let signedCStr = withCStrings([eventJSON, secretKey], { p in SignEventC(p[0], p[1]) }) else {
             #if DEBUG
             print("EventPublisher: SignEventC returned nil")
             #endif
@@ -73,12 +70,7 @@ enum EventPublisher {
         difficulty: Int,
         maxAttempts: Int
     ) -> NostrEvent? {
-        guard let signedCStr = MineAndSignEventC(
-            UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (secretKey as NSString).utf8String),
-            Int32(difficulty),
-            Int32(maxAttempts)
-        ) else {
+        guard let signedCStr = withCStrings([eventJSON, secretKey], { p in MineAndSignEventC(p[0], p[1], Int32(difficulty), Int32(maxAttempts)) }) else {
             #if DEBUG
             print("EventPublisher: MineAndSignEventC returned nil")
             #endif
