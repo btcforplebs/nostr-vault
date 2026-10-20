@@ -259,8 +259,12 @@ class MediaCacheService @Inject constructor(
     }
 
     fun loadFromCache(url: String): ByteArray? {
-        val file = cachePath(url)
-        return if (file.exists()) file.readBytes() else null
+        // Eviction can delete the file between a check and the read.
+        return try {
+            cachePath(url).readBytes()
+        } catch (_: java.io.IOException) {
+            null
+        }
     }
 
     /**

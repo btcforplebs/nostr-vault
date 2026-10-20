@@ -84,10 +84,16 @@ class DeletedPostsStore internal constructor(private val directory: File) {
             file.delete()
             return
         }
-        directory.mkdirs()
+        // Disk full or a revoked directory must not crash the caller's launch;
+        // the old file stays as it was.
         val tmp = File(directory, "${file.name}.tmp")
-        tmp.writeText(json.encodeToString(posts))
-        tmp.renameTo(file)
+        try {
+            directory.mkdirs()
+            tmp.writeText(json.encodeToString(posts))
+            if (!tmp.renameTo(file)) tmp.delete()
+        } catch (e: Exception) {
+            tmp.delete()
+        }
     }
 
     companion object {

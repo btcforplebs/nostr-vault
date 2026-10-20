@@ -56,6 +56,8 @@ class DraftService @Inject constructor(
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private val fetchMutex = kotlinx.coroutines.sync.Mutex()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val diskWriter = Dispatchers.IO.limitedParallelism(1)
 
     /** IDs of drafts that haven't been synced to the relay yet. */
     private val pendingSyncQueue = java.util.Collections.synchronizedSet(mutableSetOf<String>())
@@ -173,14 +175,29 @@ class DraftService @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load drafts from disk", e)
+            // The next autosave would write only the draft being typed and
+            // erase every other draft: move the unreadable file aside first.
+            val file = draftsFile()
+            if (file.exists()) {
+                val aside = File(context.filesDir, "$DRAFTS_FILENAME.unreadable-${System.currentTimeMillis()}")
+                if (!file.renameTo(aside)) Log.e(TAG, "Could not move unreadable drafts file aside")
+            }
         }
     }
 
     private fun persistToDisk(drafts: List<Draft>) {
-        scope.launch {
+        // One writer at a time, in call order, so an older list never lands
+        // after a newer one; temp file + rename so a crash can't leave half a file.
+        scope.launch(diskWriter) {
             try {
                 val store = DraftStore(drafts = drafts, pendingDeletes = synchronized(pendingDeletes) { pendingDeletes.toList() })
-                draftsFile().writeText(json.encodeToString(store))
+                val file = draftsFile()
+                val tmp = File(context.filesDir, "$DRAFTS_FILENAME.tmp")
+                tmp.writeText(json.encodeToString(store))
+                if (!tmp.renameTo(file)) {
+                    tmp.delete()
+                    Log.e(TAG, "Failed to replace drafts file")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to persist drafts to disk", e)
             }

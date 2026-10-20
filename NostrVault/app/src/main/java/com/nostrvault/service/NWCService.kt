@@ -197,14 +197,14 @@ class NWCService @Inject constructor(
 
         // Send via WebSocket and await response
         return suspendCancellableCoroutine { cont ->
-            var isCompleted = false
+            val completed = java.util.concurrent.atomic.AtomicBoolean(false)
 
             val nwcScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
             val client = WebSocketClient(url = connection.relayURL, scope = nwcScope)
             val subId = "nwc-${eventId.take(8)}"
             nwcScope.launch {
                 client.messages.collect { msg ->
-                    if (isCompleted) return@collect
+                    if (completed.get()) return@collect
                     try {
                         val parsed = json.parseToJsonElement(msg).jsonArray
                         val type = parsed[0].jsonPrimitive.contentOrNull
@@ -224,8 +224,7 @@ class NWCService @Inject constructor(
                                 ) ?: return@collect
 
                                 val response = json.decodeFromString<NWCResponse>(decrypted)
-                                if (!isCompleted) {
-                                    isCompleted = true
+                                if (completed.compareAndSet(false, true)) {
                                     client.disconnect()
                                     cont.resume(response)
                                 }
@@ -247,15 +246,14 @@ class NWCService @Inject constructor(
             // Timeout
             nwcScope.launch {
                 delay(TIMEOUT_MS)
-                if (!isCompleted) {
-                    isCompleted = true
+                if (completed.compareAndSet(false, true)) {
                     client.disconnect()
                     cont.resumeWithException(NWCTimeoutException())
                 }
             }
 
             cont.invokeOnCancellation {
-                isCompleted = true
+                completed.set(true)
                 client.disconnect()
                 nwcScope.cancel()
             }
