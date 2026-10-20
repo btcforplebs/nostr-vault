@@ -3,6 +3,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { isDead } from "../net/pool.js"
+import { RelayUrlList } from "./RelayUrlList.jsx"
 import { latestList, publishList, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem, sameRows } from "../net/list-edit.js"
 
 export function RelaysPage({ ctx }) {
@@ -69,6 +70,12 @@ export function RelaysPage({ ctx }) {
       )}
       {status && <p class="settings-note muted small">{status}</p>}
       {err && <p class="settings-note small error">{err}</p>}
+      <RelayUrlList ctx={ctx} kind={10050} title="Messages" needsOne
+        note="Where people send you private messages (NIP-17, kind 10050). Messages here read from these relays too."
+        empty="No messages list of yours was found, so people send to your Read relays." />
+      <RelayUrlList ctx={ctx} kind={10006} title="Never connect"
+        note="Relays your apps should never connect to (NIP-51, kind 10006). Your phone skips them; this list goes with your account."
+        empty="No relays are on your never-connect list." />
     </>
   )
 }
