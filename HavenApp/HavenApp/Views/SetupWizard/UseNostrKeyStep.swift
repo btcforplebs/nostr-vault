@@ -339,7 +339,7 @@ struct UseNostrKeyStep: View {
 
     private func derivedNpub(fromNsec value: String) -> String? {
         guard let decoded = Bech32.decode(value), decoded.hrp == "nsec", decoded.data.count == 32,
-              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String)) else { return nil }
+              let pkCStr = withCStrings([decoded.hexString], { p in GetPublicKeyC(p[0]) }) else { return nil }
         let pk = String(cString: pkCStr)
         free(pkCStr)
         guard let pubData = Bech32.hexToData(pk) else { return nil }
