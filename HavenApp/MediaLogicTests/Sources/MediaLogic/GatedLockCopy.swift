@@ -1,0 +1,1 @@
+../../../HavenApp/Views/Articles/GatedLockCopy.swift

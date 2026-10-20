@@ -59,19 +59,11 @@ struct GatedArticleBody: View {
         #endif
     }
 
-    /// Where to read or buy the article outside the app: the author's own
-    /// link, or on iOS (where there is no pay button) the naddr on njump.
+    private var copy: GatedLockCopy { GatedLockCopy(paysHere: paysHere) }
+
+    /// The author's own link to read or buy the article; never on iOS.
     private var webURL: URL? {
-        if let url = GatedArticleTeaser.unlockURL(note.content) { return url }
-        #if os(iOS)
-        let relay = gated.shares.first(where: { $0.pubkey == note.pubkey })?.relay ?? gated.receiptRelays.first
-        guard let identifier = note.longFormMetadata.identifier,
-              let tlv = GatedArticle.naddrTLV(identifier: identifier, relay: relay, pubkey: note.pubkey, kind: note.kind),
-              let naddr = Bech32.encode(hrp: "naddr", data: tlv) else { return nil }
-        return URL(string: "https://njump.me/\(naddr)")
-        #else
-        return nil
-        #endif
+        copy.webLink(authorLink: GatedArticleTeaser.unlockURL(note.content))
     }
 
     private var lockPanel: some View {
@@ -95,13 +87,15 @@ struct GatedArticleBody: View {
                 Text("Locked article")
                     .font(.appSystem(size: 16, weight: .bold))
                 Spacer(minLength: 0)
-                Text("\(gated.priceSats) sats")
-                    .font(.appSystem(size: 13, weight: .semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.havenPurplePale)
-                    .foregroundColor(.havenPurple)
-                    .clipShape(Capsule())
+                if copy.showsPrice {
+                    Text("\(gated.priceSats) sats")
+                        .font(.appSystem(size: 13, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.havenPurplePale)
+                        .foregroundColor(.havenPurple)
+                        .clipShape(Capsule())
+                }
             }
 
             Text(statusText)
@@ -191,19 +185,10 @@ struct GatedArticleBody: View {
     }
 
     private var statusText: String {
-        switch phase {
-        case .failed(let message): return message
-        case .waiting: return "Paid. Waiting for the author's server to see your zap. This can take a minute or two."
-        case _ where paid && unpaid.isEmpty:
-            return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
-        case _ where paid && !paysHere:
-            return "Part of the price went through. Pay the rest on the web or in another app, then tap Already paid?"
-        case _ where paid:
-            return "Part of the price went through. Zap the rest to unlock."
-        case _ where !paysHere:
-            return "Locked by \(authorName) for \(gated.priceSats) sats. Paid on the web or in another app? Tap Already paid? to read it here."
-        default: return "Zap \(authorName) \(gated.priceSats) sats to read the full article here."
-        }
+        var failure: String?
+        if case .failed(let message) = phase { failure = message }
+        return copy.status(author: authorName, priceSats: gated.priceSats, paid: paid,
+                           fullyPaid: paid && unpaid.isEmpty, failure: failure, waiting: phase == .waiting)
     }
 
     /// - Parameter auto: the check that runs on open. It asks the signer only
