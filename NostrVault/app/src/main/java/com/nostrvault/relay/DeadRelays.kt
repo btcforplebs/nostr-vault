@@ -1,5 +1,7 @@
 package com.nostrvault.relay
 
+import java.io.File
+
 /**
  * Relays that were once defaults and no longer answer. Checked from this
  * network on 2026-10-12: nos.lol and nostr.mom time out on the handshake and
@@ -9,8 +11,8 @@ package com.nostrvault.relay
  * of them keeps it, and a dead relay at the head of a list is worse than a
  * missing one: several features ask only the first few relays of a list
  * (`readRelays.take(3)`, `take(1)`), so one dead entry near the front means
- * that feature asks nobody. [dropping] removes them from every saved list
- * once, on load. Same as iOS HavenConfig's migration.
+ * that feature asks nobody. [droppingOnce] removes them from every saved
+ * list once, on load. Same as iOS HavenConfig's migration.
  */
 object DeadRelays {
     /** Hosts to drop; matched on the host, so any spelling or trailing slash goes too. */
@@ -56,5 +58,16 @@ object DeadRelays {
             importSeedRelays = import,
             searchRelays = search,
         )
+    }
+
+    /**
+     * [dropping], the first time only: [marker] records that it ran, so a
+     * user who adds one of these relays back keeps it on the next launch.
+     */
+    fun droppingOnce(config: HavenConfig, marker: File): HavenConfig {
+        if (marker.exists()) return config
+        val pruned = dropping(config)
+        runCatching { marker.writeText("pruned\n") }
+        return pruned
     }
 }

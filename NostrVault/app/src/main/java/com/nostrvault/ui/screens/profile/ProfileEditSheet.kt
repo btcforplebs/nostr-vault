@@ -248,7 +248,9 @@ class ProfileEditViewModel @Inject constructor(
         // A bunker timeout, an Amber rejection or a switch away from [lock]
         // throws; uncaught here it crashed the app.
         val event = try {
-            nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = emptyList(), lockedTo = lock)
+            // The tags go too: NIP-39 `i` identities and NIP-30 emoji set
+            // in other clients would be dropped by an empty list.
+            nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = lookup.event?.tags.orEmpty(), lockedTo = lock)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
