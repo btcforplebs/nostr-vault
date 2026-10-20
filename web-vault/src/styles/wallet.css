@@ -41,3 +41,13 @@ button.danger { color: var(--danger); }
 .person-actions .zap-picker { bottom: auto; top: calc(100% + 8px); }
 .wallet-invoice { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 14px; }
 .wallet-invoice-text { word-break: break-all; max-width: 100%; margin: 0; }
+.wallet-history { list-style: none; margin: 8px 0; padding: 0; }
+.wallet-tx { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+.wallet-tx:last-child { border-bottom: 0; }
+.wallet-tx-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; }
+.wallet-tx-icon.in { color: #30d158; background: rgb(48 209 88 / 0.12); }
+.wallet-tx-icon.out, .wallet-tx-icon.zap { color: #ff9f0a; background: rgb(255 159 10 / 0.12); }
+.wallet-tx-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wallet-tx-title, .wallet-tx-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wallet-tx-amount { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wallet-tx-amount.in { color: #30d158; }
