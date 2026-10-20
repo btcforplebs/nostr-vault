@@ -100,10 +100,7 @@ enum NIP17Service {
         )
 
         // Sign seal with sender's key to get the complete seal event
-        guard let sealEventCStr = SignEventC(
-            UnsafeMutablePointer(mutating: (sealEventJSON as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (senderHexPrivkey as NSString).utf8String)
-        ) else {
+        guard let sealEventCStr = withCStrings([sealEventJSON, senderHexPrivkey], { p in SignEventC(p[0], p[1]) }) else {
             throw NIP17Service.NIP17Error.eventSigningFailed
         }
 
@@ -157,12 +154,7 @@ enum NIP17Service {
         // Mine PoW + sign gift wrap with ephemeral key
         let powSnap = PowPreferences.snapshot()
         let dmDiff = powSnap.dmEnabled ? powSnap.dmDifficulty : 0
-        guard let giftWrapCStr = MineAndSignEventC(
-            UnsafeMutablePointer(mutating: (giftWrapEventJSON as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (ephemeralSk as NSString).utf8String),
-            Int32(dmDiff),
-            Int32(10_000_000)
-        ) else {
+        guard let giftWrapCStr = withCStrings([giftWrapEventJSON, ephemeralSk], { p in MineAndSignEventC(p[0], p[1], Int32(dmDiff), Int32(10_000_000)) }) else {
             throw NIP17Service.NIP17Error.eventSigningFailed
         }
 
@@ -242,12 +234,7 @@ enum NIP17Service {
         // Mine PoW + sign gift wrap with ephemeral key
         let powSnap = PowPreferences.snapshot()
         let dmDiff = powSnap.dmEnabled ? powSnap.dmDifficulty : 0
-        guard let giftWrapCStr = MineAndSignEventC(
-            UnsafeMutablePointer(mutating: (giftWrapEventJSON as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (ephemeralSk as NSString).utf8String),
-            Int32(dmDiff),
-            Int32(10_000_000)
-        ) else { throw NIP17Error.eventSigningFailed }
+        guard let giftWrapCStr = withCStrings([giftWrapEventJSON, ephemeralSk], { p in MineAndSignEventC(p[0], p[1], Int32(dmDiff), Int32(10_000_000)) }) else { throw NIP17Error.eventSigningFailed }
 
         let giftWrapStr = String(cString: giftWrapCStr)
         free(giftWrapCStr)

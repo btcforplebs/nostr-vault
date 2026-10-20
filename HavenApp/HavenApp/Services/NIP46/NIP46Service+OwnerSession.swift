@@ -27,10 +27,7 @@ extension NIP46Service {
         Task {
             // Blocking in Go (the signer has to answer): off the main actor.
             let pubkey: String? = await Task.detached {
-                guard let cStr = NIP46ConnectBackgroundC(
-                    UnsafeMutablePointer(mutating: (login.clientSecretKey as NSString).utf8String),
-                    UnsafeMutablePointer(mutating: (login.link as NSString).utf8String)
-                ) else { return nil as String? }
+                guard let cStr = withCStrings([login.clientSecretKey, login.link], { p in NIP46ConnectBackgroundC(p[0], p[1]) }) else { return nil as String? }
                 defer { free(cStr) }
                 return String(cString: cStr)
             }.value

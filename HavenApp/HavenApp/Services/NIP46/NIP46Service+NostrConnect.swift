@@ -85,13 +85,7 @@ extension NIP46Service {
         while Date() < deadline {
             try Task.checkCancellation()
             let pubkey: String? = await Task.detached {
-                guard let cStr = NIP46AwaitNostrConnectC(
-                    UnsafeMutablePointer(mutating: (request.clientSecretKey as NSString).utf8String),
-                    UnsafeMutablePointer(mutating: (relaysJSON as NSString).utf8String),
-                    UnsafeMutablePointer(mutating: (request.secret as NSString).utf8String),
-                    Int64(request.startedAt),
-                    15
-                ) else { return nil as String? }
+                guard let cStr = withCStrings([request.clientSecretKey, relaysJSON, request.secret], { p in NIP46AwaitNostrConnectC(p[0], p[1], p[2], Int64(request.startedAt), 15) }) else { return nil as String? }
                 let str = String(cString: cStr)
                 free(cStr)
                 return str

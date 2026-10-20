@@ -23,7 +23,7 @@ extension NWCService {
         )
         
         // 3. Create Nostr Event (Kind 23194)
-        guard let localPubkeyCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (connData.secret as NSString).utf8String)) else {
+        guard let localPubkeyCStr = withCStrings([connData.secret], { p in GetPublicKeyC(p[0]) }) else {
             throw NWCError.encryptionError
         }
         let localPubkey = String(cString: localPubkeyCStr)
@@ -42,7 +42,7 @@ extension NWCService {
             throw NWCError.encryptionError
         }
         
-        guard let signedCStr = SignEventC(UnsafeMutablePointer(mutating: (eventJsonStr as NSString).utf8String), UnsafeMutablePointer(mutating: (connData.secret as NSString).utf8String)) else {
+        guard let signedCStr = withCStrings([eventJsonStr, connData.secret], { p in SignEventC(p[0], p[1]) }) else {
             throw NWCError.encryptionError
         }
         let signedJsonStr = String(cString: signedCStr)

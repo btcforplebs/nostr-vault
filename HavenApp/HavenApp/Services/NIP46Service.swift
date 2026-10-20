@@ -132,7 +132,7 @@ class NIP46Service: ObservableObject {
         // secret) must reach the signer, not reuse an older session.
         let freshPairing = !config.nip46Secret.isEmpty
         if !signerKey.isEmpty, !freshPairing,
-           let cStr = NIP46ActivateC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String)) {
+           let cStr = withCStrings([signerKey], { p in NIP46ActivateC(p[0]) }) {
             let cached = String(cString: cStr)
             free(cStr)
             // No ping first: the session's relay pool redials a dropped socket
@@ -148,7 +148,7 @@ class NIP46Service: ObservableObject {
                 RelayProcessManager.shared.addLog("NIP-46: Switched to signer \(cached.prefix(8))... (already connected)", level: "INFO")
                 return cached
             }
-            NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
+            withCStrings([signerKey], { p in NIP46DropC(p[0]) })
         }
 
         #if DEBUG
@@ -161,10 +161,7 @@ class NIP46Service: ObservableObject {
         // ConnectBunker is blocking in Go -- run off main actor
         let signerPubkey: String? =
         await Task.detached {
-            guard let result = NIP46ConnectC(
-                UnsafeMutablePointer(mutating: (clientSK as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (bunkerURL as NSString).utf8String)
-            ) else {
+            guard let result = withCStrings([clientSK, bunkerURL], { p in NIP46ConnectC(p[0], p[1]) }) else {
                 #if DEBUG
                 print("[NIP46] NIP46ConnectC returned nil")
                 #endif
@@ -201,7 +198,7 @@ class NIP46Service: ObservableObject {
             // that finished after a switch is kept in the background for when
             // that account is active again; the Go side did not make it active.
             if accountMismatch {
-                NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
+                withCStrings([signerKey], { p in NIP46DropC(p[0]) })
             }
             authPollerTask?.cancel()
             authPollerTask = nil
