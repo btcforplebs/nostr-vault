@@ -123,3 +123,7 @@ a.settings-row:hover { background: var(--s2); }
 .vault-menu-list [role=menuitem].on .vault-new { margin-left: 8px; }
 .vault-new-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
 .vault-modes button { position: relative; }
+
+/* Settings › Recently Deleted. */
+.deleted-post { display: grid; gap: 8px; }
+.deleted-post .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
