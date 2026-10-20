@@ -516,7 +516,7 @@ struct IdentityStepView: View {
     /// The npub of the nsec field, or nil while it doesn't hold a valid key.
     private var derivedNpub: String? {
         guard let decoded = Bech32.decode(nsec), decoded.hrp == "nsec",
-              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String)) else { return nil }
+              let pkCStr = withCStrings([decoded.hexString], { p in GetPublicKeyC(p[0]) }) else { return nil }
         let pk = String(cString: pkCStr)
         free(pkCStr)
         guard let pubData = Bech32.hexToData(pk) else { return nil }
