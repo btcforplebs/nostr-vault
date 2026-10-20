@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.readsForeignUri
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.layout.*
@@ -303,6 +304,13 @@ class MediaGalleryViewModel @Inject constructor(
         val item = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
         val uri = item?.uri
         if (uri != null) {
+            // Another app sets the clipboard and can open this with the
+            // nostrvault://mediapaste link, no tap: a file:// URI into our
+            // own data would upload our config (keys) to Blossom.
+            if (!context.readsForeignUri(uri)) {
+                notificationManager.showError(com.nostrvault.service.FOREIGN_URI_REFUSED)
+                return
+            }
             uploadMedia(listOf(uri), context.contentResolver)
             return
         }

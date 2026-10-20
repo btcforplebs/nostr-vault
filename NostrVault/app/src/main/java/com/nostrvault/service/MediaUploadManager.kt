@@ -1,10 +1,12 @@
 package com.nostrvault.service
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.ui.notification.NotificationManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -37,6 +39,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class MediaUploadManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val blossomService: BlossomService,
     private val notificationManager: NotificationManager,
     private val mediaCacheService: MediaCacheService,
@@ -44,7 +47,11 @@ class MediaUploadManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "MediaUploadManager"
+        const val REFUSED_MESSAGE = FOREIGN_URI_REFUSED
     }
+
+    /** Whether a URI another app handed us may be read for an upload ([readsForeignUri]). */
+    fun acceptsShare(uri: Uri): Boolean = context.readsForeignUri(uri)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val uploadMutex = Mutex()
@@ -63,6 +70,12 @@ class MediaUploadManager @Inject constructor(
      * run serially.
      */
     fun upload(uri: Uri, contentResolver: ContentResolver) {
+        // Checked here too, so no caller can hand us one of our own files.
+        if (!acceptsShare(uri)) {
+            Log.w(TAG, "Refused a shared URI that is not another app's content")
+            notificationManager.showError(REFUSED_MESSAGE)
+            return
+        }
         pending.incrementAndGet()
         _isUploading.value = true
         scope.launch {
@@ -137,3 +150,4 @@ class MediaUploadManager @Inject constructor(
         }
     }
 }
+

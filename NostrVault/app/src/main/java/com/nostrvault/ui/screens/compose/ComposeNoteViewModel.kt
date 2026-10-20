@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.readsForeignUri
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
@@ -410,6 +411,11 @@ class ComposeNoteViewModel @Inject constructor(
 
             // Try URI first (images copied from gallery)
             item.uri?.let { uri ->
+                // Another app may have put it there: never one of our own files.
+                if (!context.readsForeignUri(uri)) {
+                    notificationManager.showError(com.nostrvault.service.FOREIGN_URI_REFUSED)
+                    return
+                }
                 if (_attachments.value.size < 4) {
                     addAttachments(listOf(uri))
                     return
