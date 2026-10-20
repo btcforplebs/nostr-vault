@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -335,8 +336,8 @@ class ReelsFeedService @Inject constructor(
             null
         } ?: return
         if (array.size < 2) return
-        val type = array[0].jsonPrimitive.contentOrNull
-        if (array[1].jsonPrimitive.contentOrNull != subId) return
+        val type = (array[0] as? JsonPrimitive)?.contentOrNull
+        if ((array[1] as? JsonPrimitive)?.contentOrNull != subId) return
 
         when (type) {
             "EOSE", "CLOSED" -> synchronized(lock) {
