@@ -26,10 +26,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -50,6 +60,43 @@ class ConfigStore @Inject constructor(
 
     private val _config = MutableStateFlow(HavenConfig())
     val config: StateFlow<HavenConfig> = _config.asStateFlow()
+
+    /** One write at a time, each of the config as it is then, so the last write is the newest. */
+    private val saveLock = Mutex()
+
+    /** Where the owner's secret key is kept, by hex pubkey. Tests put their own here. */
+    internal interface KeyVault {
+        fun read(hexPubkey: String): String?
+        fun write(hexKey: String, hexPubkey: String): Boolean
+        /** Factory reset: the owner's key and passwords, and any store set aside. */
+        fun forgetOwner(hexPubkey: String?, npub: String)
+    }
+
+    internal var keyVault: KeyVault = object : KeyVault {
+        override fun read(hexPubkey: String): String? {
+            CredentialStore.init(context)
+            return CredentialStore.getNsec(hexPubkey)
+        }
+        override fun write(hexKey: String, hexPubkey: String): Boolean {
+            CredentialStore.init(context)
+            return CredentialStore.saveNsec(hexKey, hexPubkey)
+        }
+        override fun forgetOwner(hexPubkey: String?, npub: String) {
+            CredentialStore.init(context)
+            hexPubkey?.let { CredentialStore.deleteNsec(it) }
+            if (npub.isNotEmpty()) CredentialStore.deleteKeychainPassword(npub)
+            CredentialStore.deleteOwnerPassword()
+            CredentialStore.deleteSetAside(context)
+        }
+    }
+
+    /** A secret key's hex pubkey, for a key whose config names no owner. Tests put their own here. */
+    internal var publicKeyOf: (String) -> String? = { key ->
+        try { if (HavenBridge.isLoaded) HavenBridge.getPublicKey(key) else null } catch (_: Throwable) { null }
+    }
+
+    /** (pubkey, key) known to be in [keyVault], so a save need not write it again. */
+    @Volatile private var vaulted: Pair<String, String>? = null
 
     init {
         RelayBlocklist.source = { _config.value.blockedRelays }
@@ -87,15 +134,29 @@ class ConfigStore @Inject constructor(
 
     /** Load config from disk or create defaults. */
     fun reload() {
+        // Older builds saved the owner's key in the file; it moves to the
+        // vault on the save below.
+        var keyInFile: String? = null
         var loaded = try {
             if (configFile.exists()) {
-                json.decodeFromString<HavenConfig>(configFile.readText())
+                val text = configFile.readText()
+                keyInFile = ownerHexKeyIn(text)
+                json.decodeFromString<HavenConfig>(text)
             } else {
                 HavenConfig.newInstall()
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Setup starts over, but the file is kept for recovery rather
+            // than overwritten by setup's first save.
+            setAsideUnreadable(e)
+            keyInFile = null
             HavenConfig()
         }
+        loaded = loaded.copy(
+            ownerHexKey = keyInFile ?: hexPubkey(loaded.ownerNpub)?.let { pub ->
+                try { keyVault.read(pub) } catch (_: Exception) { null }
+            },
+        )
 
         // Ensure runtime paths are always populated — these are derived from the
         // app's filesystem and intentionally not persisted, but every service that
@@ -153,7 +214,7 @@ class ConfigStore @Inject constructor(
         }
 
         setConfig(loaded)
-        if (removedStarterPicks) CoroutineScope(Dispatchers.IO).launch { save() }
+        if (removedStarterPicks || keyInFile != null) CoroutineScope(Dispatchers.IO).launch { save() }
 
     }
 
@@ -198,12 +259,88 @@ class ConfigStore @Inject constructor(
         true
     }
 
-    /** Persist current config to disk. */
+    /**
+     * Persist current config to disk: to a temp file, then renamed over the
+     * old one, so a kill or a full disk mid-write leaves the old file whole.
+     */
     suspend fun save() = withContext(Dispatchers.IO) {
+        saveLock.withLock {
+            val cfg = _config.value
+            try {
+                val tmp = File(configFile.parentFile, configFile.name + ".tmp")
+                tmp.outputStream().use { out ->
+                    out.write(encodeForDisk(cfg, ownerKeyForFile(cfg)).toByteArray())
+                    out.fd.sync()
+                }
+                Files.move(tmp.toPath(), configFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: Exception) {
+                Log.e("ConfigStore", "config save failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Puts the owner's key in [keyVault]. Returns the key only if the vault
+     * couldn't take it, so it stays in the file as before instead of being
+     * lost. A different key the vault already holds for the owner is never
+     * overwritten.
+     */
+    private fun ownerKeyForFile(cfg: HavenConfig): String? {
+        val key = cfg.ownerHexKey ?: return null
+        if (vaultOwnerKey(key, cfg.ownerNpub)) return null
+        Log.w("ConfigStore", "owner key not stored in the credential store; kept in config")
+        return key
+    }
+
+    /** Whether [key] is now in [keyVault], under [ownerNpub] or else its own pubkey. */
+    private fun vaultOwnerKey(key: String, ownerNpub: String): Boolean {
+        val pub = hexPubkey(ownerNpub) ?: publicKeyOf(key) ?: return false
+        if (vaulted == pub to key) return true
+        val stored = try {
+            val existing = keyVault.read(pub)
+            existing == key || (existing == null && keyVault.write(key, pub))
+        } catch (_: Exception) {
+            false
+        }
+        if (stored) vaulted = pub to key
+        return stored
+    }
+
+    private fun encodeForDisk(cfg: HavenConfig, ownerKey: String?): String {
+        if (ownerKey == null) return json.encodeToString(cfg)
+        val fields = json.encodeToJsonElement(cfg).jsonObject
+        return json.encodeToString(JsonObject(fields + (OWNER_KEY_FIELD to JsonPrimitive(ownerKey))))
+    }
+
+    private fun ownerHexKeyIn(text: String): String? = try {
+        json.parseToJsonElement(text).jsonObject[OWNER_KEY_FIELD]?.jsonPrimitive?.contentOrNull
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Keeps an unreadable config as `.unreadable-<ms>`. An owner key in it
+     * is moved to [keyVault] and blanked in the copy; one the vault can't
+     * take stays in the copy rather than be lost.
+     */
+    private fun setAsideUnreadable(e: Exception) {
+        Log.e("ConfigStore", "config unreadable, setting it aside: ${e.message}")
         try {
-            configFile.writeText(json.encodeToString(_config.value))
+            if (!configFile.exists()) return
+            val aside = File(configFile.parentFile, "${configFile.name}.unreadable-${System.currentTimeMillis()}")
+            val text = try { configFile.readText() } catch (_: Exception) { null }
+            val key = text?.let { OWNER_KEY_IN_TEXT.find(it)?.groupValues?.get(1) }
+            if (text != null && key != null && vaultOwnerKey(key, ownerNpubIn(text))) {
+                aside.writeText(text.replace(OWNER_KEY_IN_TEXT, "\"$OWNER_KEY_FIELD\": null"))
+                configFile.delete()
+            } else {
+                configFile.renameTo(aside)
+            }
         } catch (_: Exception) { }
     }
+
+    private fun ownerNpubIn(text: String): String =
+        Regex("\"ownerNpub\"\\s*:\\s*\"([^\"]*)\"").find(text)?.groupValues?.get(1).orEmpty()
 
     /** Update config and auto-save (suspend). */
     suspend fun updateAsync(transform: (HavenConfig) -> HavenConfig) {
@@ -352,12 +489,32 @@ class ConfigStore @Inject constructor(
 
     /** Factory reset -- delete config and all data. */
     suspend fun resetApp() = withContext(Dispatchers.IO) {
-        configFile.delete()
-        // The relay's certificate goes with its data; a new one is coming.
-        LocalTls.forgetAll()
-        _config.value = HavenConfig.newInstall()
-        _activeAccountHexPubkey.value = ""
+        saveLock.withLock {
+            val cfg = _config.value
+            configFile.delete()
+            configFile.parentFile?.listFiles()
+                ?.filter { it.name.startsWith("${configFile.name}.unreadable-") }
+                ?.forEach { it.delete() }
+            // The key the config file used to hold goes with it.
+            val pub = hexPubkey(cfg.ownerNpub) ?: cfg.ownerHexKey?.let(publicKeyOf)
+            try { keyVault.forgetOwner(pub, cfg.ownerNpub) } catch (_: Exception) { }
+            vaulted = null
+            // The relay's certificate goes with its data; a new one is coming.
+            LocalTls.forgetAll()
+            _config.value = HavenConfig.newInstall()
+            _activeAccountHexPubkey.value = ""
+        }
     }
+}
+
+private const val OWNER_KEY_FIELD = "ownerHexKey"
+private val OWNER_KEY_IN_TEXT = Regex("\"$OWNER_KEY_FIELD\"\\s*:\\s*\"([0-9a-fA-F]{64})\"")
+
+/** The hex pubkey of an npub, or of an older config's raw-hex account. */
+private fun hexPubkey(npub: String): String? = when {
+    npub.startsWith("npub1") -> HavenBridge.decodeNpub(npub)
+    npub.length == 64 && npub.all { it in '0'..'9' || it in 'a'..'f' } -> npub
+    else -> null
 }
 
 /** Whether the active account moving from [previous] to [current] is a switch. */
