@@ -34,6 +34,7 @@ struct ArticleReaderView: View {
     @State private var highlightCommentContext: ComposeContext?
     /// Likes, zaps and comments from the network.
     @State private var tally = ArticleTally()
+    @State private var blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
     @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
@@ -142,6 +143,17 @@ struct ArticleReaderView: View {
         }
         .task(id: note.id) { await loadHighlights() }
         .task(id: note.id) { await loadEngagement() }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+            let now = ConfigService.shared.activeAccountBlockedHexPubkeys
+            guard now != blocked else { return }
+            blocked = now
+            // Fewer is right after a block, so the newer-is-bigger check is skipped.
+            let id = note.id
+            Task {
+                await showHighlights(Self.highlightCache[id] ?? [], replacing: true)
+                await showEngagement(Self.engagementCache[id] ?? [], replacing: true)
+            }
+        }
         // A comment opens as a note with its replies. Declared here as well as
         // by the feeds, because the iPad note column's stack has no route for
         // a FeedNote when it holds an article.
@@ -370,8 +382,9 @@ struct ArticleReaderView: View {
         await showHighlights(events)
     }
 
-    private func showHighlights(_ events: [[String: Any]]) async {
+    private func showHighlights(_ events: [[String: Any]], replacing: Bool = false) async {
         let articleId = note.id
+        let events = ArticleBlockFilter.visibleEvents(events, blocked: blocked)
         let coordinate = coordinate
         let content = note.content
         let (found, placed) = await Task.detached(priority: .userInitiated) { () -> ([ArticleHighlight], [String: [ArticleHighlight]]) in
@@ -389,7 +402,7 @@ struct ArticleReaderView: View {
         }.value
         await MainActor.run {
             // An earlier, smaller snapshot can finish placing after a later one.
-            guard found.count >= highlights.count else { return }
+            guard replacing || found.count >= highlights.count else { return }
             highlights = found
             highlightsByBlock = placed
             let missing = Set(found.map(\.pubkey)).filter { nostrService.profiles[$0] == nil }
@@ -443,8 +456,9 @@ struct ArticleReaderView: View {
         await showEngagement(Array(byId.values))
     }
 
-    private func showEngagement(_ events: [[String: Any]]) async {
+    private func showEngagement(_ events: [[String: Any]], replacing: Bool = false) async {
         let articleId = note.id
+        let events = ArticleBlockFilter.visibleEvents(events, blocked: blocked)
         let coordinate = coordinate
         let found = await Task.detached(priority: .userInitiated) { () -> ArticleTally in
             // Spam comments are dropped the same way the thread view drops them.
@@ -459,7 +473,7 @@ struct ArticleReaderView: View {
         }.value
         await MainActor.run {
             // An earlier, smaller snapshot can finish after a later one.
-            guard found.likers.count + found.zaps + found.commentCount
+            guard replacing || found.likers.count + found.zaps + found.commentCount
                     >= tally.likers.count + tally.zaps + tally.commentCount else { return }
             tally = found
             let commenters = found.topLevelComments.compactMap { $0["pubkey"] as? String }
