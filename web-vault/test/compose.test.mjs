@@ -159,6 +159,12 @@ test("a quote with a photo: the photo link before the nevent line", () => {
   assert.equal(tags[0][0], "q")
 })
 
+test("typed #hashtags become t tags (NoteTagging), once each, and a URL fragment doesn't", () => {
+  const { content, tags } = buildPost({ text: "gm #Nostr #nostr see https://x.com/a#b #日本", mentions: {}, photos: [], target: null, parent: null })
+  assert.equal(content, "gm #Nostr #nostr see https://x.com/a#b #日本")
+  assert.deepEqual(tags.filter(t => t[0] === "t"), [["t", "nostr"], ["t", "日本"]])
+})
+
 test("a draft keeps the text, the mentions still in it and only uploaded photos; one per target", () => {
   const d = draftOf("hi @Alice", { "@Alice": A, "@Bob": B }, [{ id: 1, url: "https://m/1.png", sha256: "1", preview: "blob:x", file: {}, status: "done" }, { id: 2, status: "uploading", preview: "blob:y" }])
   assert.deepEqual(d, { text: "hi @Alice", mentions: { "@Alice": A }, photos: [{ url: "https://m/1.png", sha256: "1", mime: undefined, size: undefined, width: undefined, height: undefined }] })

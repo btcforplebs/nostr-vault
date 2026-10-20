@@ -9,10 +9,11 @@ import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { feedList, loadChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
+import { feedList, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
+import { withParam } from "../desktop/routes.js"
 
 if (import.meta.env) import("../styles/feeds.css")
 
@@ -20,7 +21,9 @@ const PAGE = 100
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
 const FEEDS = feedList(READERS)
 const readerFor = mode => READERS.find(r => r.id === mode)
-const pickedChoice = () => loadChoice(globalThis.localStorage, FEEDS)
+const pickedChoice = () => tagChoice(globalThis.location?.hash) ?? loadChoice(globalThis.localStorage, FEEDS)
+// Once the Feed has taken a #tag link's tag, the address drops it: Back and a reload keep the feed the user is on.
+const dropTag = () => history.replaceState(history.state, "", withParam(location.hash, "tag", null))
 
 export function FeedScreen({ ctx }) {
   const { vault, account } = ctx
@@ -45,6 +48,14 @@ export function FeedScreen({ ctx }) {
   const seq = useRef(0)
   const pick = c => { seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus("") }
   const sayer = () => statusGate(seq, setStatus)
+  // A #tag link (NoteText) opens that tag's feed, from any screen; the Feed may already be up behind it (desktop).
+  useEffect(() => {
+    if (!globalThis.location) return
+    const take = () => { const c = tagChoice(location.hash); if (c) { pick(c); dropTag() } }
+    take()
+    addEventListener("hashchange", take)
+    return () => removeEventListener("hashchange", take)
+  }, [])
 
   const reload = async () => setNotes(await readFeed(vault, follows, { limit: Math.max(shownNow.current.page, shownNow.current.have) }))
   const sync = async () => {
