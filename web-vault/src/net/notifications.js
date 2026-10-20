@@ -2,16 +2,17 @@
 // Read straight from the user's read relays and never signed. Haven has no route for other people's
 // reactions, so for M1 these aren't stored; the note each one is about is read from Haven's outbox first
 // (the user's own notes live there) and only then from the network.
+import { verifyEvent } from "nostr-tools/pure"
 import { pool } from "./pool.js"
 
 export const NOTIFICATION_KINDS = [1, 6, 7, 9735]
 const HEX64 = /^[0-9a-f]{64}$/
 
 /** Fetch events of the notification kinds that tag `pubkey`, newest first, the user's own left out. */
-export async function fetchNotifications(pubkey, relays, { limit = 100, since, until } = {}) {
+export async function fetchNotifications(pubkey, relays, { limit = 100, since, until, trust = async evs => evs } = {}) {
   const filter = { kinds: NOTIFICATION_KINDS, "#p": [pubkey], limit, ...(since ? { since } : {}), ...(until ? { until } : {}) }
   const evs = await pool.querySync(relays, filter, { maxWait: 8000 })
-  return groupNotifications(evs, pubkey)
+  return groupNotifications(await trust(evs), pubkey) // `trust`: zaps.js trustedReceipts, dropping forged receipts
 }
 
 /**
@@ -60,8 +61,11 @@ export function classify(ev, pubkey) {
     case 6: return { ...base, type: "repost", noteId: lastTag(ev.tags, "e") }
     case 7: return { ...base, type: "reaction", noteId: lastTag(ev.tags, "e"), emoji: reactionEmoji(ev.content) }
     case 9735: {
+      // Who zapped is only ever the signer of a valid zap request: the receipt, its `P` tag and its invoice are
+      // whatever the receipt's publisher wrote. Who may publish receipts is checked by zaps.js trustedReceipts.
       const req = zapRequest(ev)
-      const who = req?.pubkey || tagValue(ev.tags, "P") || ev.pubkey
+      if (!req) return null
+      const who = req.pubkey
       if (who === pubkey) return null // the user zapping themself
       return { ...base, who, type: "zap", noteId: lastTag(ev.tags, "e"), sats: zapSats(ev) }
     }
@@ -88,14 +92,36 @@ export function reactionEmoji(content) {
   return c.length > 8 ? c.slice(0, 8) : c
 }
 
-/** The kind 9734 zap request inside a 9735's `description` tag, or null. */
+/**
+ * The kind 9734 zap request inside a 9735's `description` tag, or null unless it holds up (NIP-57 Appendix F):
+ * signed by its pubkey, for the person the receipt pays (`p`), by the sender the receipt names (`P`, when there is
+ * one), and for the amount the invoice charges (`amount`, when there is one). Anyone can publish a 9735, so without
+ * this a receipt could say anybody zapped anybody, for any amount. Checked once per receipt.
+ */
 export function zapRequest(ev) {
-  const d = tagValue(ev.tags, "description")
+  if (!ev || typeof ev !== "object") return null
+  if (!checkedRequests.has(ev)) checkedRequests.set(ev, checkRequest(ev))
+  return checkedRequests.get(ev)
+}
+const checkedRequests = new WeakMap()
+function checkRequest(ev) {
+  const tags = Array.isArray(ev.tags) ? ev.tags : []
+  const d = tagValue(tags, "description")
   if (!d) return null
-  try {
-    const req = JSON.parse(d)
-    return req && req.kind === 9734 && HEX64.test(req.pubkey ?? "") ? req : null
-  } catch { return null }
+  let req
+  try { req = JSON.parse(d) } catch { return null }
+  if (!req || req.kind !== 9734 || !HEX64.test(req.pubkey ?? "") || !Array.isArray(req.tags)) return null
+  // A copy of only the signed fields: verifyEvent trusts a "verified" flag the parsed object could carry.
+  const { id, pubkey, created_at, kind, content, sig } = req
+  try { if (!verifyEvent({ id, pubkey, created_at, kind, tags: req.tags, content, sig })) return null } catch { return null }
+  const payee = tagValue(tags, "p")
+  if (!payee || tagValue(req.tags, "p") !== payee) return null
+  const sender = tagValue(tags, "P")
+  if (sender && sender !== req.pubkey) return null
+  const asked = tagValue(req.tags, "amount")
+  const charged = bolt11Sats(tagValue(tags, "bolt11"))
+  if (asked != null && charged > 0 && Math.floor(Number(asked) / 1000) !== charged) return null
+  return { id, pubkey, created_at, kind, tags: req.tags, content, sig }
 }
 
 /** Sats a 9735 paid: from the bolt11 invoice's amount, else the zap request's `amount` tag (millisats). */

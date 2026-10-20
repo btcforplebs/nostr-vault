@@ -3,17 +3,21 @@
 // lists. Throwaway keys and fake Haven routes: nothing is published.
 import test from "node:test"
 import assert from "node:assert/strict"
+import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import {
   MODES, FILTERS, defaultFilter, isMode, imagesOf, previewOf, activityRows, activityFilter, notesFor, articlesFor, isRecipe,
   highlightsFor, highlightSource, mediaFor, likesFor, zapsFor, zapSender, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, fetchOwnExtras, INBOUND_KINDS,
 } from "../src/net/vault-lists.js"
 
-const ME = "a".repeat(64), ALICE = "b".repeat(64), BOB = "c".repeat(64), CAROL = "d".repeat(64)
+const keys = new Map()
+const person = () => { const sk = generateSecretKey(), pk = getPublicKey(sk); keys.set(pk, sk); return pk }
+const ME = person(), ALICE = person(), BOB = person(), CAROL = person()
 const N1 = "1".repeat(64), N2 = "2".repeat(64)
 let seq = 0
 const ev = (kind, pubkey, tags = [], content = "", created_at = 1000 + ++seq) => ({ id: `${kind}-${pubkey.slice(0, 1)}-${seq}`.padEnd(64, "0"), kind, pubkey, tags, content, created_at })
-const zapReq = (sender, tags = [], content = "") => JSON.stringify({ kind: 9734, pubkey: sender, tags, content })
+// Signed by the sender, paying `to` (the user unless said otherwise).
+const zapReq = (sender, tags = [], content = "", to = ME) => JSON.stringify(finalizeEvent({ kind: 9734, created_at: 1000, tags: [["p", to], ...tags], content }, keys.get(sender)))
 const mine = [{ ...ev(1, ME, [], "my first note https://x.io/a.jpg"), id: N1 }, { ...ev(1, ME, [], "my second"), id: N2 }]
 
 test("modes and filters are the phone's, in its order, each with a default", () => {
@@ -157,8 +161,9 @@ test("zaps: received are receipts on your notes; given are receipts whose reques
   const LN = "f".repeat(64)
   const inbound = [ev(9735, LN, [["p", ME], ["e", N1], ["description", zapReq(ALICE, [["e", N1]])], ["bolt11", "lnbc210n1"]])]
   const given = [
-    ev(9735, LN, [["p", ALICE], ["P", ME], ["e", N2], ["description", zapReq(ME, [["e", N2]])], ["bolt11", "lnbc1u1"]]),
-    ev(9735, LN, [["p", ALICE], ["P", ME], ["description", zapReq(BOB, [])]]), // a forged P: the request says Bob
+    ev(9735, LN, [["p", ALICE], ["P", ME], ["e", N2], ["description", zapReq(ME, [["e", N2]], "", ALICE)], ["bolt11", "lnbc1u1"]]),
+    ev(9735, LN, [["p", ALICE], ["P", ME], ["description", zapReq(BOB, [], "", ALICE)]]), // a forged P: the request says Bob
+    ev(9735, LN, [["p", ALICE], ["P", ME], ["description", JSON.stringify({ kind: 9734, pubkey: ME, tags: [["p", ALICE]], content: "" })]]), // unsigned, in my name
   ]
   const r = zapsFor(given, inbound, ME, "received")
   assert.equal(r.length, 1)
@@ -168,7 +173,9 @@ test("zaps: received are receipts on your notes; given are receipts whose reques
   assert.equal(g[0].to, ALICE)
   assert.equal(g[0].noteId, N2)
   assert.equal(g[0].sats, 100)
-  assert.equal(zapSender(given[1]), BOB)
+  assert.equal(zapSender(given[1]), "", "the P tag disagrees with the request: nobody")
+  assert.equal(zapSender(given[2]), "", "an unsigned request names nobody")
+  assert.equal(zapSender(given[0]), ME)
 })
 
 test("followers: each author's newest list counts, only while it still names you; newest first", () => {

@@ -210,6 +210,27 @@ export async function countReceipts(events, ids, me, lnOf, fetchImpl = globalThi
   }
 }
 
+/**
+ * `events` without the zap receipts their payee's zap service didn't publish (the iPhone's ZapValidationService):
+ * the receipt's author must be the `nostrPubkey` of the LNURL endpoint in the payee's profile, and its zap request
+ * must hold up (notifications.js zapRequest). Other kinds pass untouched. As countReceipts does, a payee whose zap
+ * service can't be resolved is trusted (fails open) for the author check; the request check never fails open.
+ */
+export async function trustedReceipts(events, lnOf, fetchImpl = globalThis.fetch) {
+  const out = []
+  for (const ev of events) {
+    if (ev?.kind !== 9735) { out.push(ev); continue }
+    if (!zapRequest(ev)) continue
+    const payee = ev.tags.find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))?.[1]
+    const publisher = await publisherOf(payee, lnOf, fetchImpl)
+    if (publisher && publisher !== ev.pubkey) continue
+    out.push(ev)
+  }
+  return out
+}
+/** trustedReceipts for this account's screens. */
+export const receiptTrust = ctx => evs => trustedReceipts(evs, pk => lightningAddressOf(ctx, pk))
+
 let queue = new Set(), timer = null
 /** Ask for `id`'s zap total from the account's read relays. Asked once per note per session. */
 export function wantTotals(ctx, id, { query = (r, f, o) => pool.querySync(r, f, o), delayMs = 300 } = {}) {

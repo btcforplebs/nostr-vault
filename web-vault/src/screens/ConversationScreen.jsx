@@ -22,6 +22,7 @@ export function ConversationScreen({ ctx, peer }) {
   const me = ctx.session.pubkey
   const rows = thread(messages, peer)
   const isBlocked = blocked.has(peer)
+  const follows = ctx.account.follows.includes(peer)
 
   useEffect(() => { fetchProfiles(ctx.vault, [peer], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [peer])
   useEffect(() => { end.current?.scrollIntoView?.({ block: "end" }) }, [rows.length])
@@ -55,8 +56,9 @@ export function ConversationScreen({ ctx, peer }) {
         {rows.map(m => (
           <div key={m.id} class={m.from === me ? "dm-bubble mine" : "dm-bubble"}>
             {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write
-                into /feed; dm keeps video links and nostr:npub as plain text (the iPhone does), images still show. */}
-            <NoteText content={m.content} depth={1} dm />
+                into /feed; dm keeps video links and nostr:npub as plain text (the iPhone does), and a stranger's
+                images wait for a tap. */}
+            <NoteText content={m.content} depth={1} dm images={m.from === me || follows} />
             <span class="dm-meta">{ago(m.at)}{m.legacy ? " · NIP-04" : ""}</span>
           </div>
         ))}

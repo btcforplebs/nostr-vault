@@ -101,7 +101,9 @@ async function pixelSize(file) {
 
 let nextPhoto = 0
 
-export function ComposeScreen({ ctx }) {
+/** `fixed`: the reply or quote to write, instead of the one in the address (the desktop's inline reply under a thread).
+ *  `inline`: drawn small, with no title and no copy of the note above it, since the thread is right there. */
+export function ComposeScreen({ ctx, fixed = null, inline = false }) {
   const [text, setText] = useState("")
   const [mentions, setMentions] = useState({}) // { "@Name": pubkey }
   const [photos, setPhotos] = useState([]) // { id, preview, status: "uploading" | "done" | "failed", error?, file?, url?, ... }
@@ -111,7 +113,7 @@ export function ComposeScreen({ ctx }) {
   const [result, setResult] = useState(null)
   const [err, setErr] = useState("")
   // Read on every render: going from a reply to the Post button keeps this screen mounted and only changes the hash.
-  const target = composeTarget()
+  const target = fixed ?? composeTarget()
   const [note, setNote] = useState(null) // { id, event } once looked up; event null when not found
 
   useEffect(() => {
@@ -206,16 +208,16 @@ export function ComposeScreen({ ctx }) {
 
   const title = !target ? "New note" : target.mode === "reply" ? "Reply" : "Quote"
   return (
-    <main class="screen">
-      <header class="screen-head"><h2>{title}</h2></header>
-      {waiting && <p class="status-line">Finding the note…</p>}
+    <main class={inline ? "screen compose-inline" : "screen"}>
+      {!inline && <header class="screen-head"><h2>{title}</h2></header>}
+      {waiting && !inline && <p class="status-line">Finding the note…</p>}
       {target && note?.id === target.id && !parent && <p class="error status-line">That note couldn't be found, so there's nothing to {target.mode} to.</p>}
-      {parent && <ComposeTarget mode={target.mode} note={parent} />}
+      {parent && !inline && <ComposeTarget mode={target.mode} note={parent} />}
       <div class={dragging ? "compose-area dragging" : "compose-area"}
         onDragOver={e => { if ([...(e.dataTransfer?.types ?? [])].includes("Files")) { e.preventDefault(); setDragging(true) } }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
         onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}>
-        <textarea ref={box} class="compose" rows={6} value={text} aria-label={title}
+        <textarea ref={box} class="compose" rows={inline ? 2 : 6} value={text} aria-label={title}
           placeholder={target?.mode === "reply" ? "Write your reply" : target ? "Add your comment" : "What's happening?"}
           aria-autocomplete="list" aria-expanded={!!mention} aria-controls={mention ? "mention-picker" : undefined}
           onInput={e => { setText(e.currentTarget.value); track(e.currentTarget) }}

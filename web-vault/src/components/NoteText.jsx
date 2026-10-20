@@ -2,7 +2,7 @@
 // nostr:npub / nprofile -> the person's name, linking to their profile. nostr:nevent / note / naddr -> the quoted
 // note as a card (QuotedNote). A quote inside a quoted note stays a short reference, so cards don't nest forever.
 import { npubEncode } from "nostr-tools/nip19"
-import { useEffect } from "preact/hooks"
+import { useEffect, useState } from "preact/hooks"
 import { useProfile } from "./useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { onQuotes, parseRef, quoteSource } from "../net/quotes.js"
@@ -14,9 +14,11 @@ const VIDEO = /\.(mp4|webm|mov)(\?\S*)?$/i
 const MAX_QUOTE_DEPTH = 1
 
 /** `dm`: the text is a private message, so nothing in it reaches the network on its own: video links stay links
- *  (no preload) and nostr:npub / nprofile stay short text (no profile fetch). Images show as in a note.
+ *  (no preload), nostr:npub / nprofile stay short text (no profile fetch), and an image waits for a tap unless
+ *  `images` says the sender is trusted (a follow, or you). Otherwise any stranger's DM would be a tracking pixel:
+ *  opening it would tell their server your IP and when you read it.
  *  `memoryOnly`: a stranger's note (Global, Hashtag): quotes and @names it loads aren't written to Haven /feed. */
-export function NoteText({ content, depth = 0, dm = false, memoryOnly = false }) {
+export function NoteText({ content, depth = 0, dm = false, memoryOnly = false, images = !dm }) {
   const parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -29,13 +31,22 @@ export function NoteText({ content, depth = 0, dm = false, memoryOnly = false })
       {parts.map((s, i) => {
         if (i % 2 === 0) return s
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
-        if (IMAGE.test(s)) return <img key={i} class="note-media" src={s} alt="" loading="lazy" />
-        if (VIDEO.test(s) && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline />
+        if (IMAGE.test(s)) return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
+        if (VIDEO.test(s) && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
     </div>
   )
+}
+
+/** An image link in a stranger's DM: nothing is fetched until it is tapped. */
+export function TapImage({ src }) {
+  const [on, setOn] = useState(false)
+  if (on) return <img class="note-media" src={src} alt="" referrerpolicy="no-referrer" />
+  let host = ""
+  try { host = new URL(src).host } catch {}
+  return <button type="button" class="small tap-image" title={src} onClick={e => { e.stopPropagation(); setOn(true) }}>Show image{host ? ` from ${host}` : ""}</button>
 }
 
 function nostrRef(ref, key, depth, dm, memoryOnly) {

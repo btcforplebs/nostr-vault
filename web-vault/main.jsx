@@ -1,7 +1,7 @@
 // Nostr Vault on the web. Boot: sign-in (NIP-07 / NIP-46) -> the in-page Haven owned by that npub -> the app.
 // Every screen reads from Haven; the network only fills Haven. See PLANS/NV_WEB_CLIENT.md.
 import { render } from "preact"
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
@@ -30,6 +30,8 @@ import { WotScreen } from "./src/screens/WotScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { tabOf } from "./src/components/tabs.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
+import { DesktopShell } from "./src/desktop/DesktopShell.jsx"
+import { deskModeFor, deskRedirect, phoneRedirect, isListHash } from "./src/desktop/routes.js"
 import "./src/styles/app.css"
 import "./src/styles/quotes.css"
 import "./src/styles/dms.css"
@@ -40,6 +42,22 @@ const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", 
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
   return ROUTES.includes(r) && ((r !== "thread" && r !== "dm") || /^[0-9a-f]{64}$/.test(arg)) && (r !== "profile" || !arg || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
+}
+
+// 760px and up is the desktop layout (src/desktop). The address is fixed up for the layout before anything renders:
+// a thread link opens beside the list it came from on a wide window, and a desktop address with a note open goes to
+// the phone's thread screen on a narrow one. `lastList` is the list screen a thread or Compose opens over.
+let lastList = null
+function settle(mode) {
+  const fix = mode === "phone" ? phoneRedirect(location.hash) : deskRedirect(location.hash, lastList)
+  if (fix) history.replaceState(history.state, "", fix)
+  if (mode !== "phone" && isListHash(location.hash)) lastList = location.hash
+  return routeOf()
+}
+function useDeskMode() {
+  const [mode, setMode] = useState(() => deskModeFor(innerWidth))
+  useEffect(() => { const f = () => setMode(deskModeFor(innerWidth)); addEventListener("resize", f); return () => removeEventListener("resize", f) }, [])
+  return mode
 }
 
 // Kept in localStorage so a phone run can be read back over CDP; nothing leaves the device.
@@ -61,10 +79,15 @@ function App() {
   const [vault, setVault] = useState(null)
   const [account, setAccount] = useState(null)
   const [error, setError] = useState("")
-  const [{ route, arg }, setRoute] = useState(routeOf)
+  const mode = useDeskMode()
+  const modeNow = useRef(mode)
+  modeNow.current = mode
+  const [{ route, arg }, setRoute] = useState(() => settle(mode))
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
 
-  useEffect(() => { const f = () => setRoute(routeOf()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
+  useEffect(() => { const f = () => setRoute(settle(modeNow.current)); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
+  // Crossing 760px swaps layouts; the address is fixed up for the new one.
+  useEffect(() => { setRoute(settle(mode)) }, [mode === "phone"])
 
   useEffect(() => {
     if (!session) return
@@ -135,8 +158,23 @@ function App() {
   const ctx = { vault, session, signer, account, signOut, reloadAccount }
   setActionContext(ctx)
   const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
+  const desk = mode !== "phone"
+  // The relay screen stays mounted (its FIPS panel finds its elements once, by id), in the same place in both layouts.
   return (
-    <div class="app">
+    <div class={desk ? "app desk-app" : "app"}>
+      {desk ? <DesktopShell ctx={ctx} mode={mode} hash={location.hash} lastList={lastList} /> : <PhoneScreens ctx={ctx} route={route} arg={arg} other={other} />}
+      <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
+      {!desk && (route === "feed" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
+      {!desk && <TabBar route={tabOf(route, other)} pubkey={session.pubkey} />}
+      <AuthPrompt />
+    </div>
+  )
+}
+
+/** The phone layout's screens, one at a time, as before the desktop layout existed. */
+function PhoneScreens({ ctx, route, arg, other }) {
+  return (
+    <>
       {route === "feed" && <FeedScreen ctx={ctx} />}
       {route === "compose" && <ComposeScreen ctx={ctx} />}
       {route === "profile" && (other ? <PersonScreen key={arg} ctx={ctx} pubkey={arg} /> : <ProfileScreen ctx={ctx} />)}
@@ -150,11 +188,7 @@ function App() {
       {route === "settings" && <SettingsScreen key={arg} ctx={ctx} page={arg} />}
       {route === "accounts" && <AccountsScreen ctx={ctx} />}
       {route === "wallet" && <WalletScreen />}
-      <div hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
-      {(route === "feed" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
-      <TabBar route={tabOf(route, other)} pubkey={session.pubkey} />
-      <AuthPrompt />
-    </div>
+    </>
   )
 }
 

@@ -12,6 +12,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { formatSats, fetchNotes } from "../net/notifications.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { receiptTrust } from "../net/zaps.js"
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
@@ -38,7 +39,8 @@ const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={
 
 const modeOf = (hash = location.hash) => { const m = /^#\/?vault\/([a-z]+)/.exec(hash)?.[1]; return isMode(m) ? m : null }
 
-export function VaultScreen({ ctx }) {
+/** `desk`: the desktop's list column, where the modes are a segmented header and Messages is a sidebar row. */
+export function VaultScreen({ ctx, desk = false }) {
   const { vault, account, session } = ctx
   const me = session.pubkey
   const relays = uniq([...account.relays.read, ...account.relays.write, ...DEFAULT_RELAYS])
@@ -46,9 +48,20 @@ export function VaultScreen({ ctx }) {
   const [mode, setMode] = useState(() => modeOf() ?? "activity")
   const [filter, setFilter] = useState(() => defaultFilter(mode))
   const [own, setOwn] = useState([])
-  const [inbound, setInbound] = useState([])
+  const [inboundAll, setInbound] = useState([])
   const [lists, setLists] = useState([]) // kind 3 lists naming the user
-  const [given, setGiven] = useState([]) // zap receipts the user paid
+  const [givenAll, setGiven] = useState([]) // zap receipts the user paid
+  // Zap receipts their payee's zap service didn't publish (forged), by id. Checked after the first draw, since
+  // resolving a zap service takes the network; until then a receipt still needs a valid signed zap request.
+  const [forged, setForged] = useState(() => new Set())
+  const trust = receiptTrust(ctx)
+  const screen = async evs => {
+    const kept = new Set((await trust(evs).catch(() => evs)).map(e => e.id))
+    const out = evs.filter(e => !kept.has(e.id)).map(e => e.id)
+    if (out.length) setForged(f => new Set([...f, ...out]))
+  }
+  const inbound = forged.size ? inboundAll.filter(e => !forged.has(e.id)) : inboundAll
+  const given = forged.size ? givenAll.filter(e => !forged.has(e.id)) : givenAll
   const [notes, setNotes] = useState(new Map())
   const [status, setStatus] = useState("")
   const [loaded, setLoaded] = useState(false)
@@ -60,11 +73,12 @@ export function VaultScreen({ ctx }) {
   const load = async () => {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
     setOwn(o); setInbound(i); setLoaded(true)
+    screen(i) // receipts kept before this check existed
     if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); return }
     setStatus("Checking your relays…")
     try {
       const [fresh, l, g] = await Promise.all([
-        fetchInbound(vault, me, relays), fetchFollowerLists(me, relays).catch(() => []), fetchGivenZaps(me, relays).catch(() => []),
+        fetchInbound(vault, me, relays, { trust }), fetchFollowerLists(me, relays).catch(() => []), fetchGivenZaps(me, relays).then(trust).catch(() => []),
         fetchOwnExtras(vault, me, relays).catch(() => 0),
       ])
       setInbound(prev => merge(prev, fresh)); setLists(l); setGiven(g)
@@ -94,14 +108,20 @@ export function VaultScreen({ ctx }) {
   return (
     <main class="screen vault">
       <header class="screen-head vault-head">
-        <Menu label={<><Icon d={ICONS[mode]} /><b>{m.title}</b><Chevron /></>} title={`Vault: ${m.title}`}>
-          {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}</MenuItem>)}
-          <hr />
-          <MenuItem onClick={() => { location.hash = "#/relay" }}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
-        </Menu>
+        {desk ? (
+          <div class="vault-modes" role="tablist" aria-label="Vault">
+            {MODES.map(x => <button key={x.id} role="tab" aria-selected={x.id === mode} class={x.id === mode ? "on" : ""} title={x.title} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} /><span>{x.title}</span></button>)}
+          </div>
+        ) : (
+          <Menu label={<><Icon d={ICONS[mode]} /><b>{m.title}</b><Chevron /></>} title={`Vault: ${m.title}`}>
+            {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}</MenuItem>)}
+            <hr />
+            <MenuItem onClick={() => { location.hash = "#/relay" }}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
+          </Menu>
+        )}
         <div class="vault-right">
-          <a class="vault-pill-btn" href="#/messages" aria-label="Messages" title="Messages"><Icon d={ICONS.envelope} /></a>
-          <a class="vault-pill-btn" href="#/relay" aria-label="Vault Dashboard" title="Vault Dashboard"><Icon d={ICONS.safe} /></a>
+          {!desk && <a class="vault-pill-btn" href="#/messages" aria-label="Messages" title="Messages"><Icon d={ICONS.envelope} /></a>}
+          <a class="vault-pill-btn" href="#/relay" aria-label="Vault Dashboard" title="Vault Dashboard"><Icon d={desk ? ICONS.dashboard : ICONS.safe} /></a>
           {filters.length > 0 && (
             <Menu label={<><Icon d={ICONS.filter} /><span>{f?.pill ?? f?.title}</span><Chevron /></>} title={`Filter: ${f?.title}`} align="right">
               {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => setFilter(x.id)}>{x.title}</MenuItem>)}
