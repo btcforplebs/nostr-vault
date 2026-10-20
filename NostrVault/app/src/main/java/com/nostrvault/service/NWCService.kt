@@ -27,6 +27,21 @@ class NWCService @Inject constructor(
     private val configStore: ConfigStore,
 ) {
     companion object {
+        /**
+         * The preimage proving a pay_invoice reply paid. A preimage wins over
+         * an error in the same reply (proof of payment). Otherwise a wallet
+         * error throws [NWCWalletException], and a reply with neither throws
+         * [NWCNoPreimageException]: nothing proves it paid, so it is never
+         * counted as paid.
+         */
+        internal fun paidPreimage(response: NWCResponse): String {
+            val preimage = (response.result?.get("preimage") as? JsonPrimitive)
+                ?.takeIf { it.isString }?.content?.trim()
+            if (!preimage.isNullOrEmpty()) return preimage
+            response.error?.let { throw NWCWalletException(it.code, it.message.ifBlank { it.code }) }
+            throw NWCNoPreimageException()
+        }
+
         private const val TAG = "NWCService"
         private const val REQUEST_KIND = 23194
         private const val RESPONSE_KIND = 23195
@@ -75,21 +90,14 @@ class NWCService @Inject constructor(
 
     /**
      * Pay a Lightning invoice via NWC.
-     * @return Preimage or "Success"
+     * @return the preimage; throws when the wallet did not prove the payment ([paidPreimage])
      */
     suspend fun payInvoice(bolt11: String): String = withContext(Dispatchers.IO) {
         val request = NWCRequest(
             method = "pay_invoice",
             params = NWCParams(invoice = bolt11),
         )
-        val response = sendNWCRequest(request)
-
-        val preimage = response.result?.get("preimage")
-        if (preimage != null) {
-            return@withContext extractStringValue(preimage)
-        }
-        response.error?.let { throw NWCWalletException(it.code, it.message.ifBlank { it.code }) }
-        "Success"
+        paidPreimage(sendNWCRequest(request))
     }
 
     /**
@@ -318,6 +326,12 @@ open class NWCException(message: String) : Exception(message)
  * nothing was paid.
  */
 class NWCNotSentException(message: String) : NWCException(message)
+
+/**
+ * The wallet answered pay_invoice with neither a preimage nor an error. It
+ * may or may not have paid; it is never counted as paid.
+ */
+class NWCNoPreimageException : NWCException("The wallet didn't confirm the payment")
 
 /**
  * No reply within the timeout. The request was already published, so the

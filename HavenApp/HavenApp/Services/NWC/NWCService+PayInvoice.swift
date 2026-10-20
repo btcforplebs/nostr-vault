@@ -124,13 +124,17 @@ extension NWCService {
                                     isCompleted = true
                                     wsClient.disconnect()
                                     _ = cancellable // extend lifetime
-                                    if let nwcErr = responseObj.error {
+                                    // Only a preimage proves the payment. A reply with
+                                    // neither a preimage nor an error is not counted as paid.
+                                    if let preimage = (responseObj.result?["preimage"]?.value as? String)?
+                                        .trimmingCharacters(in: .whitespaces), !preimage.isEmpty {
+                                        continuation.resume(returning: preimage)
+                                    } else if let nwcErr = responseObj.error {
                                         RelayProcessManager.shared.addLog("NWC: Relay returned error: \(nwcErr.message)", level: "ERROR")
                                         continuation.resume(throwing: NSError(domain: "NWC", code: 1, userInfo: [NSLocalizedDescriptionKey: nwcErr.message]))
-                                    } else if let preimage = responseObj.result?["preimage"]?.value as? String {
-                                        continuation.resume(returning: preimage)
                                     } else {
-                                        continuation.resume(returning: "Success")
+                                        RelayProcessManager.shared.addLog("NWC: pay_invoice reply had no preimage", level: "ERROR")
+                                        continuation.resume(throwing: NWCError.noPreimage)
                                     }
                                 }
                             } catch {
