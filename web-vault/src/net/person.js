@@ -41,3 +41,14 @@ export async function syncPersonNotes(vault, pubkey, writeRelays, { until, limit
   remember(pubkey, theirs)
   return theirs.length
 }
+
+const articles = new Map() // pubkey -> [kind 30023], for the same profiles as `fetched`
+/** Their articles (kind 30023) from their write relays, kept in memory like their notes. -> [event] */
+export async function fetchPersonArticles(pubkey, writeRelays, { limit = 50, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  if (articles.has(pubkey)) return articles.get(pubkey)
+  const evs = await query(uniq([...writeRelays, ...DEFAULT_RELAYS]), { kinds: [30023], authors: [pubkey], limit }, { maxWait: 8000 })
+  const theirs = evs.filter(e => e.pubkey === pubkey && e.kind === 30023)
+  articles.set(pubkey, theirs)
+  while (articles.size > KEEP_PROFILES) articles.delete(articles.keys().next().value)
+  return theirs
+}
