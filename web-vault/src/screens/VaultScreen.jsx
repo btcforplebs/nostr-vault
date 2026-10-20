@@ -102,6 +102,8 @@ export function VaultScreen({ ctx, desk = false }) {
   const faces = mode === "activity" ? activityRows(inbound, me).flatMap(r => r.actors) : mode === "followers" ? followers.map(f => f.pubkey) : [...likes, ...zaps].flatMap(r => r.who)
   useEffect(() => { if (faces.length) fetchProfiles(vault, faces, relays).catch(() => {}) }, [mode, faces.length])
 
+  // Anyone can reply, react, zap or follow: only a follow's (or your own) picture host and inline images are fetched.
+  const trusted = pk => pk === me || account.follows.includes(pk)
   const m = MODES.find(x => x.id === mode)
   const filters = FILTERS[mode]
   const f = filters.find(x => x.id === filter)
@@ -131,7 +133,7 @@ export function VaultScreen({ ctx, desk = false }) {
         </div>
       </header>
       {status && <div class="status-line">{status}</div>}
-      {!loaded ? <p class="empty">Loading…</p> : <List mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} />}
+      {!loaded ? <p class="empty">Loading…</p> : <List mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} />}
     </main>
   )
 }
@@ -164,12 +166,12 @@ function Menu({ label, title, align = "left", children }) {
 }
 const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={on ? "on" : ""} aria-checked={on} onClick={onClick}>{children}</button>
 
-function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes }) {
+function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted }) {
   switch (mode) {
     case "activity": {
       const follows = followers
       const rows = activityRows(inbound, me, { mine: own, follows, blocked }).filter(r => activityFilter(r, filter))
-      return rows.length ? rows.map(r => <ActivityRow key={r.id} row={r} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
+      return rows.length ? rows.map(r => <ActivityRow key={r.id} row={r} trusted={trusted} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
     }
     case "notes": {
       const list = notesFor(own, inbound, me, filter, blocked)
@@ -181,7 +183,7 @@ function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, like
     }
     case "highlights": {
       const list = highlightsFor(own, inbound, me, filter, blocked)
-      return list.length ? list.map(h => <HighlightCard key={h.id} event={h} />) : <Empty text="No highlights yet." />
+      return list.length ? list.map(h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
     }
     case "media": {
       const list = mediaFor(own)
@@ -189,12 +191,12 @@ function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, like
         ? <div class="vault-grid">{list.map(p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><img src={p.url} alt="" loading="lazy" /></a>)}</div>
         : <Empty text="Pictures from your notes show here. The phone's Blossom gallery isn't on the web yet." />
     }
-    case "likes": return likes.length ? likes.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
-    case "zaps": return zaps.length ? zaps.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />
+    case "likes": return likes.length ? likes.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
+    case "zaps": return zaps.length ? zaps.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />
     case "followers": {
       const list = followersFilter(followers, filter, seenAt)
       return list.length
-        ? list.map(f => <a key={f.pubkey} class="person-row" href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)
+        ? list.map(f => <a key={f.pubkey} class="person-row" href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)
         : <Empty text={filter === "new" ? "No new followers since you last looked." : "No followers found on your relays yet."} />
     }
     default: return null
@@ -203,18 +205,20 @@ function List({ mode, filter, own, inbound, me, blocked, followers, seenAt, like
 
 const Empty = ({ text }) => <p class="empty">{text}</p>
 
-/** One "Vault" line: who did what, the text or the note it was about, the pictures as thumbnails. */
-function ActivityRow({ row }) {
+/** One "Vault" line: who did what, the text or the note it was about, the pictures as thumbnails (your own notes').
+ *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP. */
+export function ActivityRow({ row, trusted = () => false }) {
+  const ok = trusted(row.actors[0])
   const open = row.openId ? () => { location.hash = `#/thread/${row.openId}` } : undefined
   return (
     <article class={`note notification ${open ? "tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
       <div class="note-head">
-        <Avatar pubkey={row.actors[0]} size={32} />
+        <Avatar pubkey={row.actors[0]} size={32} load={ok} />
         <span class="notif-who"><Who who={row.actors} /> {verb(row)}</span>
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
       </div>
       {["reply", "mention", "quote", "article", "highlight"].includes(row.kind)
-        ? <NoteText content={row.preview} />
+        ? <NoteText content={row.preview} images={ok} />
         : row.preview ? <div class="repost-line vault-about"><span>{cut(row.preview)}</span></div> : null}
       {row.images.length > 0 && <div class="vault-thumbs">{row.images.slice(0, 4).map(u => <img key={u} src={u} alt="" loading="lazy" />)}</div>}
     </article>
@@ -237,13 +241,13 @@ function verb(row) {
 }
 
 /** A Likes or Zaps row: who, what, and the note it was about. */
-function EngagementRow({ row, note, me }) {
+function EngagementRow({ row, note, me, trusted = () => false }) {
   const mine = row.who[0] === me
   const open = row.noteId ? () => { location.hash = `#/thread/${row.noteId}` } : undefined
   return (
     <article class={`note notification ${open ? "tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
       <div class="note-head">
-        <Avatar pubkey={row.who[0]} size={32} />
+        <Avatar pubkey={row.who[0]} size={32} load={trusted(row.who[0])} />
         <span class="notif-who">{mine ? "You" : <Who who={row.who} />} {row.type === "reaction" ? `liked ${row.emoji !== "❤️" ? row.emoji : ""}`.trim() : "⚡ zapped"}{mine && row.to && <> <AuthorName pubkey={row.to} /></>}{row.type === "zap" && row.sats ? ` ${formatSats(row.sats)} sats` : ""}</span>
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
       </div>
@@ -267,11 +271,11 @@ function About({ note }) {
 const cut = s => s.length > 140 ? s.slice(0, 140) + "…" : s
 
 /** A NIP-84 highlight: the quoted text and where it came from. */
-function HighlightCard({ event }) {
+function HighlightCard({ event, trusted = () => false }) {
   const src = highlightSource(event)
   return (
     <article class="note highlight">
-      <div class="note-head"><Avatar pubkey={event.pubkey} size={32} /><AuthorName pubkey={event.pubkey} /><time class="note-time">{ago(event.created_at)}</time></div>
+      <div class="note-head"><Avatar pubkey={event.pubkey} size={32} load={trusted(event.pubkey)} /><AuthorName pubkey={event.pubkey} /><time class="note-time">{ago(event.created_at)}</time></div>
       <blockquote class="vault-quote">{event.content}</blockquote>
       {src && <div class="person-sub">{/^https?:/.test(src) ? <a href={src} target="_blank" rel="noopener">{src}</a> : /^[0-9a-f]{64}$/.test(src) ? <a href={`#/thread/${src}`}>from a note</a> : src}</div>}
     </article>
