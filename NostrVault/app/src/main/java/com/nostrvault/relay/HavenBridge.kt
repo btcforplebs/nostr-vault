@@ -582,6 +582,9 @@ object HavenBridge {
         return bech32Encode("nevent", tlv.toByteArray())
     }
 
+    /** An `naddr1…` from its already-built TLV payload (see [com.nostrvault.data.model.GatedArticle.naddrTlv]). */
+    fun encodeNaddrTlv(tlv: ByteArray): String = bech32Encode("naddr", tlv)
+
     /**
      * Encode an addressable event to an naddr1 bech32 string (NIP-19 TLV):
      * type 0 (d tag, UTF-8), type 2 (author pubkey), type 3 (kind). Mirrors

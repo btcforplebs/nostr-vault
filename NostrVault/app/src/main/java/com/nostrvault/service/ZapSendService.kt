@@ -33,7 +33,7 @@ class ZapSendService @Inject constructor(
         class LnurlFailed : ZapError("Failed to resolve lightning address")
         class SignFailed : ZapError("Failed to sign zap request")
         class InvoiceFailed : ZapError("Failed to fetch invoice from provider")
-        class PaymentFailed(detail: String) : ZapError("Payment failed: $detail")
+        class PaymentFailed(val detail: String) : ZapError("Payment failed: $detail")
     }
 
     /**
@@ -47,6 +47,12 @@ class ZapSendService @Inject constructor(
      *   to, e.g. `30311:<host>:<d>` for a live stream. Live clients read the
      *   `a` tag to decide which room a zap belongs in — without it the zap
      *   pays the host but never appears in the stream's chat.
+     * @param extraReceiptRelays relays someone else needs to find the receipt
+     *   on: a gated article's key server reads the relays its author named in
+     *   the `zap` tags. They go first in the `relays` tag (never cut by the
+     *   cap), and the first one is the `a` tag's relay hint. When given, the
+     *   live-stream relays are not added: the zap is for that article, not a
+     *   room. iOS ZapService.zapNote(..., extraReceiptRelays:).
      */
     suspend fun zapNote(
         noteId: String,
@@ -54,6 +60,7 @@ class ZapSendService @Inject constructor(
         amountSats: Int,
         message: String = "Zap from Nostr Vault",
         addressTag: String? = null,
+        extraReceiptRelays: List<String> = emptyList(),
     ): Result<Unit> {
         if (amountSats <= 0) {
             return Result.failure(ZapError.PaymentFailed("Zap amount must be greater than 0"))
@@ -106,18 +113,19 @@ class ZapSendService @Inject constructor(
                         feedRelays = config.activeFeedRelays,
                         myInbox = relayLists[nostrService.activeHexPubkey].orEmpty(),
                         recipientInbox = relayLists[notePubkey].orEmpty(),
+                        extra = extraReceiptRelays,
                     ),
                 )
                 // A stream zap has to be published where the room is watching,
                 // or the receipt never shows up in its chat.
-                if (addressTag != null) addAll(LiveChatService.STREAMING_RELAYS)
+                if (addressTag != null && extraReceiptRelays.isEmpty()) addAll(LiveChatService.STREAMING_RELAYS)
             }.distinct()
             val tags = buildList {
                 add(listOf("p", notePubkey))
                 add(listOf("relays") + relayList)
                 add(listOf("amount", amountMsat.toString()))
                 if (noteId.isNotEmpty()) add(listOf("e", noteId))
-                addressTag?.let { add(listOf("a", it, LiveChatService.STREAMING_RELAYS.first())) }
+                addressTag?.let { add(listOf("a", it, extraReceiptRelays.firstOrNull() ?: LiveChatService.STREAMING_RELAYS.first())) }
                 if (lnurlTag.isNotEmpty()) add(listOf("lnurl", lnurlTag))
             }
             val signed = try {

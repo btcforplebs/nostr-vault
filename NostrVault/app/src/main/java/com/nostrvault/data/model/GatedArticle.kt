@@ -1,6 +1,7 @@
 package com.nostrvault.data.model
 
 import java.net.URI
+import java.nio.ByteBuffer
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -10,18 +11,53 @@ import javax.crypto.spec.SecretKeySpec
  *
  * There is no merged NIP for this. The event carries
  * `["encrypted", "aes-256-gcm", <base64>, <key URL>]` and
- * `["price", "42", "SATS"]`; `content` is only a teaser plus a link. Nostr
- * Vault shows it locked and does not unlock it; a key stored by an earlier
- * version still opens it. The base64 blob is WebCrypto's layout: 12-byte IV,
- * ciphertext, 16-byte tag.
+ * `["price", "42", "SATS"]`; `content` is only a teaser plus a link. Payment
+ * is an ordinary NIP-57 zap receipt carrying the article's `a` coordinate
+ * from the reader's pubkey, so a zap from any client counts. The key comes
+ * from the key URL behind NIP-98 HTTP auth: the server answers 402 until the
+ * receipts cover the price, then returns the AES key as 64 hex characters.
+ * The base64 blob is WebCrypto's layout: 12-byte IV, ciphertext, 16-byte tag.
+ *
+ * Nostr Vault unlocks (asks for the key, and pays) only Fanfares articles
+ * ([isFanfares], owner decision 2026-10-20). Any other gated article stays
+ * locked; a key stored by an earlier version still opens it.
  */
 data class GatedArticle(
     /** Base64 of IV ‖ ciphertext ‖ tag. */
     val ciphertext: String,
-    /** Where the author's tag says the key lives. */
+    /** Where the author's tag says the key lives; also the `u` the NIP-98 event names. */
     val keyUrl: String,
     val priceSats: Int,
+    val shares: List<Share>,
 ) {
+    data class Share(val pubkey: String, val relay: String?, val sats: Int)
+
+    /** Relays the author named in their `zap` tags, where the key server finds the receipt. */
+    val receiptRelays: List<String>
+        get() = shares.mapNotNull { it.relay }.distinctBy { it.lowercase() }
+
+    /**
+     * Whether the key lives on Fanfares (fanfares.live or fanfares.io, or a
+     * subdomain such as api.fanfares.live). Only these are unlocked in the app.
+     */
+    val isFanfares: Boolean
+        get() = isFanfaresHost(runCatching { URI(keyUrl) }.getOrNull()?.host)
+
+    /**
+     * Where to send the key request. Fanfares' tag names its backend, which
+     * wants a private API key; its web app reaches it through a public proxy,
+     * and so must we. The NIP-98 `u` still names the tag's URL.
+     */
+    val requestUrl: String
+        get() {
+            val uri = runCatching { URI(keyUrl) }.getOrNull() ?: return keyUrl
+            return if (uri.host?.lowercase() == "api.fanfares.live") "https://fanfares.io/api" + uri.rawPath else keyUrl
+        }
+
+    /** Tags of the NIP-98 (kind 27235) event that asks for the key; its content is the naddr. */
+    val httpAuthTags: List<List<String>>
+        get() = listOf(listOf("u", keyUrl), listOf("method", "GET"))
+
     /**
      * Decrypts the body with the key the server returned. Null when the key
      * isn't 32 bytes of hex or doesn't open the box: a wrong key and a
@@ -58,10 +94,63 @@ data class GatedArticle(
             val currency = if (priceTag.size >= 3) priceTag[2].uppercase() else "SATS"
             if (currency != "SATS" && currency != "SAT") return null
 
-            return GatedArticle(enc[2], keyUrl, amount)
+            return GatedArticle(enc[2], keyUrl, amount, split(amount, pubkey, tags))
         }
 
         fun from(note: FeedNote): GatedArticle? = from(note.kind, note.pubkey, note.tags)
+
+        private val FANFARES_DOMAINS = listOf("fanfares.live", "fanfares.io")
+
+        /** fanfares.live, fanfares.io, or a subdomain of either; never a look-alike such as notfanfares.io. */
+        fun isFanfaresHost(host: String?): Boolean {
+            val h = host?.lowercase()?.trimEnd('.') ?: return false
+            return FANFARES_DOMAINS.any { h == it || h.endsWith(".$it") }
+        }
+
+        /**
+         * Splits the price across the event's NIP-57 `zap` tags by weight, the
+         * way Fanfares' own check does: a recipient listed twice has its weights
+         * summed, no `zap` tag means the author takes it all, each share rounds up.
+         */
+        fun split(price: Int, authorPubkey: String, tags: List<List<String>>): List<Share> {
+            val order = mutableListOf<String>()
+            val weights = HashMap<String, Int>()
+            val relays = HashMap<String, String>()
+            for (tag in tags) {
+                if (tag.firstOrNull() != "zap" || tag.size < 2) continue
+                val pk = tag[1].lowercase()
+                if (pk.length != 64 || !pk.all { it in '0'..'9' || it in 'a'..'f' }) continue
+                // A missing, zero or unparseable weight reads as 1.
+                val weight = if (tag.size >= 4) maxOf(tag[3].toIntOrNull() ?: 1, 1) else 1
+                if (pk !in weights) order.add(pk)
+                weights[pk] = (weights[pk] ?: 0) + weight
+                if (pk !in relays && tag.size >= 3 && tag[2].isNotEmpty()) relays[pk] = tag[2]
+            }
+            val total = order.sumOf { weights[it] ?: 0 }
+            if (total <= 0) return listOf(Share(authorPubkey, null, price))
+            return order.map { pk ->
+                val weight = weights[pk] ?: 1
+                val sats = if (total == price) weight else Math.ceil(weight.toDouble() / total * price).toInt()
+                Share(pk, relays[pk], sats)
+            }
+        }
+
+        /**
+         * The NIP-19 naddr TLV payload, entries in the order nostr-tools writes
+         * them (kind, author, relay, d), so the bech32 string we sign is
+         * byte-identical to the one Fanfares' own site signs.
+         */
+        fun naddrTlv(identifier: String, relay: String?, pubkey: String, kind: Int): ByteArray? {
+            val author = hexToBytes(pubkey)?.takeIf { it.size == 32 } ?: return null
+            fun entry(type: Int, value: ByteArray): ByteArray? =
+                if (value.size > 255) null else byteArrayOf(type.toByte(), value.size.toByte()) + value
+            val out = java.io.ByteArrayOutputStream()
+            out.write(byteArrayOf(3, 4) + ByteBuffer.allocate(4).putInt(kind).array())
+            out.write(byteArrayOf(2, 32) + author)
+            if (!relay.isNullOrEmpty()) entry(1, relay.toByteArray())?.let { out.write(it) }
+            out.write(entry(0, identifier.toByteArray()) ?: return null)
+            return out.toByteArray()
+        }
 
         internal fun hexToBytes(hex: String): ByteArray? {
             if (hex.length % 2 != 0) return null

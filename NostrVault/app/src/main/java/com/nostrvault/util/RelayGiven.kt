@@ -62,14 +62,18 @@ object RelayGiven {
      * feed read, your published inbox, and up to three of the recipient's
      * inbox relays. Your own relay is listed only when it is public: a
      * lightning provider cannot reach a loopback or LAN address.
+     * [extra] are relays someone else needs to find the receipt on (a gated
+     * article's key server reads the relays its author named), so they go
+     * first and are never the ones the cap cuts. iOS ZapService.receiptRelays.
      */
     fun zapReceiptRelays(
         ownRelay: String?,
         feedRelays: List<String>,
         myInbox: List<String>,
         recipientInbox: List<String>,
+        extra: List<String> = emptyList(),
     ): List<String> {
-        val candidates = listOfNotNull(ownRelay) +
+        val candidates = extra + listOfNotNull(ownRelay) +
             feedRelays.ifEmpty { FALLBACK_FEED_RELAYS } +
             myInbox +
             recipientInbox.take(RECIPIENT_INBOX_RELAYS)
