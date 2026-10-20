@@ -9,6 +9,7 @@ struct NWCService {
         case invalidResponse
         case encryptionError
         case responseDecodeError
+        case noPreimage
 
         var errorDescription: String? {
             switch self {
@@ -17,6 +18,7 @@ struct NWCService {
             case .invalidResponse: return "Invalid response from NWC relay"
             case .encryptionError: return "Failed to encrypt/decrypt NWC payload"
             case .responseDecodeError: return "Wallet returned an unexpected response format"
+            case .noPreimage: return "The wallet didn't confirm the payment"
             }
         }
     }
