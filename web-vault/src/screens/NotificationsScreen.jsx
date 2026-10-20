@@ -1,4 +1,5 @@
-// Notifications: who replied, mentioned, reposted, reacted or zapped the user, newest first, one row each.
+// Notifications: who replied, mentioned, quoted, reposted, reacted, zapped, followed, or tagged the user in an
+// article or highlight, newest first, one row each.
 // Read from the user's read relays; nothing here signs. The note each row is about comes from Haven's outbox
 // (the user's own notes) or the network. Reuses .note / .note-head / .repost-line from app.css.
 import { useEffect, useState } from "preact/hooks"
@@ -66,10 +67,10 @@ export function Row({ row, note, trusted = () => false }) {
         <span style="flex: 1; min-width: 0; font: var(--t-headline)"><Who who={row.who} /> {what(row)}</span>
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
       </div>
-      {row.type === "reply" || row.type === "mention"
+      {row.type === "reply" || row.type === "mention" || row.type === "quote" || row.type === "highlight"
         ? <NoteText content={ev.content} images={ok} />
-        : row.type === "zap" && ev.content
-          ? <NoteText content={ev.content} images={ok} />
+        : (row.type === "zap" || row.type === "article") && row.comment
+          ? <NoteText content={row.comment} images={false} />
           : null}
       {row.noteId && <About note={note} />}
     </article>
@@ -87,6 +88,10 @@ function what(row) {
   switch (row.type) {
     case "reply": return "replied"
     case "mention": return "mentioned you"
+    case "quote": return "quoted your note"
+    case "follow": return "followed you"
+    case "article": return "tagged you in an article"
+    case "highlight": return "highlighted your note"
     case "repost": return "reposted"
     case "reaction": return `reacted ${row.emoji}`
     case "zap": return row.sats ? `⚡ zapped ${formatSats(row.sats)} sats` : "⚡ zapped"

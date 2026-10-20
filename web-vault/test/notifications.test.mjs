@@ -172,3 +172,53 @@ test("grouping: reactions with no e tag don't fold into each other", () => {
   const rows = groupNotifications([ev(7, ALICE, [["p", ME]], "+"), ev(7, BOB, [["p", ME]], "+")], ME)
   assert.equal(rows.length, 2)
 })
+
+// The iPhone's other notification types (Models/VaultActivity.swift): quotes, follows, kind 16 reposts, articles,
+// highlights, and zaps whose comment or missing note gives them a row of their own.
+test("a kind 1 with a q tag is a quote of that note, even with e tags", () => {
+  const r = classify(ev(1, ALICE, [["e", N2, "", "root"], ["q", N1], ["p", ME]], "look at this"), ME)
+  assert.equal(r.type, "quote")
+  assert.equal(r.noteId, N1)
+})
+
+test("a contact list naming the user is a follow; follows on one day share a row, other days don't", () => {
+  const day = 86_400 * 20000
+  const rows = groupNotifications([
+    ev(3, ALICE, [["p", ME], ["p", BOB]], "", day + 10),
+    ev(3, BOB, [["p", ME]], "", day + 20),
+    ev(3, CAROL, [["p", ME]], "", day - 10),
+  ], ME)
+  assert.deepEqual(rows.map(r => [r.type, r.who]), [["follow", [BOB, ALICE]], ["follow", [CAROL]]])
+})
+
+test("a kind 16 generic repost folds with kind 6 reposts of the same note", () => {
+  const rows = groupNotifications([ev(6, ALICE, [["e", N1], ["p", ME]]), ev(16, BOB, [["e", N1], ["p", ME], ["k", "20"]])], ME)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].type, "repost")
+  assert.deepEqual(rows[0].who.sort(), [ALICE, BOB].sort())
+})
+
+test("an article that tags the user carries its title; a highlight points at its note", () => {
+  const a = classify(ev(30023, ALICE, [["d", "x"], ["title", "On vaults"], ["p", ME]], "# long"), ME)
+  assert.equal(a.type, "article")
+  assert.equal(a.comment, "On vaults")
+  const h = classify(ev(9802, BOB, [["e", N2], ["p", ME]], "a quoted line"), ME)
+  assert.equal(h.type, "highlight")
+  assert.equal(h.noteId, N2)
+})
+
+test("a zap's words and note come from the signed request; with words, or on the profile, it keeps its own row", () => {
+  const LNURL = "e".repeat(64)
+  const zap = (sender, words, tags, t) => ev(9735, LNURL, [["p", ME], ["bolt11", "lnbc210n1x"], ["description", zapReq(sender, tags, { content: words })]], "receipt text", t)
+  const rows = groupNotifications([
+    zap(ALICE, "", [["e", N3]], 1),
+    zap(BOB, "", [["e", N3]], 2),
+    zap(BOB, "great post", [["e", N3]], 3),
+    zap(ALICE, "", [], 4),
+  ], ME)
+  assert.deepEqual(rows.map(r => [r.who, r.noteId, r.comment]), [
+    [[ALICE], null, ""],
+    [[BOB], N3, "great post"],
+    [[BOB, ALICE], N3, ""],
+  ])
+})
