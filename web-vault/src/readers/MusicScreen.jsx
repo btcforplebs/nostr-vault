@@ -1,6 +1,7 @@
 // Music (the iPhone's MusicBrowserView, artist and album pages, and player): Wavlake's trending songs this week or
 // month with their top artists and albums, search, an artist's albums and songs, an album's songs, and a player bar
-// that keeps playing when you switch feeds. Songs by someone you blocked are left out (wavlake.js visibleTracks).
+// that keeps playing when you switch feeds. Your artists (played or opened) above Trending, and Following: the
+// Wavlake artists among the people you follow. Songs by someone you blocked are left out (wavlake.js visibleTracks).
 import { useEffect, useRef, useState } from "preact/hooks"
 import { useBlocks } from "../components/useBlocks.js"
 import { formatSats } from "../net/notifications.js"
@@ -11,7 +12,7 @@ if (import.meta.env) import("./readers.css")
 
 export function MusicScreen({ ctx }) {
   const { blocked } = useBlocks(ctx)
-  const [days, setDays] = useState(7)
+  const [days, setDays] = useState(7) // 7, 30, or "following"
   const [tracks, setTracks] = useState(null)
   const [error, setError] = useState("")
   const [query, setQuery] = useState("")
@@ -22,6 +23,7 @@ export function MusicScreen({ ctx }) {
   const loadTrending = async () => {
     const n = ++seq.current
     setError("")
+    if (days === "following") return
     try { const t = await wl.trending(days); if (n === seq.current) setTracks(t) }
     catch (e) { if (n === seq.current) { setTracks([]); setError(`Couldn't reach Wavlake (${e?.message ?? e})`) } }
   }
@@ -39,10 +41,11 @@ export function MusicScreen({ ctx }) {
     return () => clearTimeout(t)
   }, [query])
 
-  const open = p => { setPage(p); globalThis.scrollTo?.(0, 0) }
+  const open = p => { if (p.type === "artist") wl.rememberRecent(p.artist); setPage(p); globalThis.scrollTo?.(0, 0) }
   const body = page?.type === "artist" ? <ArtistPage id={page.artist.id} seed={page.artist} blocked={blocked} onOpen={open} onBack={() => setPage(null)} />
     : page?.type === "album" ? <AlbumPage id={page.album.id} seed={page.album} blocked={blocked} onOpen={open} onBack={() => setPage(null)} />
     : results ? <SearchResults results={wl.visibleResults(results, blocked)} blocked={blocked} onOpen={open} />
+    : days === "following" ? <Following follows={ctx.account.follows} loaded={ctx.account.loaded} blocked={blocked} onOpen={open} />
     : <Trending tracks={tracks} days={days} blocked={blocked} onOpen={open} />
   return (
     <div class="reader-feed music">
@@ -52,7 +55,7 @@ export function MusicScreen({ ctx }) {
             aria-label="Search Wavlake" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck={false} />
           {!query.trim() && (
             <div class="reader-scope-row" role="tablist" aria-label="Trending">
-              {wl.WINDOWS.map(w => <button key={w.days} type="button" role="tab" aria-selected={days === w.days} class={days === w.days ? "on" : ""} onClick={() => setDays(w.days)}>{w.label}</button>)}
+              {[...wl.WINDOWS, { days: "following", label: "Following" }].map(w => <button key={w.days} type="button" role="tab" aria-selected={days === w.days} class={days === w.days ? "on" : ""} onClick={() => setDays(w.days)}>{w.label}</button>)}
             </div>
           )}
         </div>
@@ -72,10 +75,48 @@ function Trending({ tracks, days, blocked, onOpen }) {
   const span = days === 7 ? "this week" : "this month"
   const artists = wl.topArtists(shown), albums = wl.topAlbums(shown)
   return <>
+    <YourArtists blocked={blocked} onOpen={onOpen} />
     {artists.length > 0 && <><h3 class="music-head">Top artists {span}</h3><Row items={artists.map(a => ({ key: a.id, title: a.name, sub: "Artist", art: a.art, round: true, open: () => onOpen({ type: "artist", artist: a }) }))} /></>}
     {albums.length > 0 && <><h3 class="music-head">Top albums {span}</h3><Row items={albums.map(a => ({ key: a.id, title: a.title, sub: a.artist, art: a.art, open: () => onOpen({ type: "album", album: a }) }))} /></>}
     <h3 class="music-head">Trending songs {span}</h3>
     <Tracks tracks={shown} />
+  </>
+}
+
+const artistTiles = (artists, onOpen) => artists.map(a => ({ key: a.id, title: a.name, sub: "Artist", art: a.art, round: true, open: () => onOpen({ type: "artist", artist: a }) }))
+
+/** Artists you've played or opened, newest first; it follows the player, so a song starting moves its artist up. */
+export function YourArtists({ blocked, onOpen }) {
+  const [recent, setRecent] = useState(wl.loadRecent)
+  useEffect(() => onPlayer(() => setRecent(wl.loadRecent())), [])
+  const shown = wl.visibleArtists(recent, blocked)
+  if (!shown.length) return null
+  return <><h3 class="music-head">Your artists</h3><Row items={artistTiles(shown, onOpen)} /></>
+}
+
+/** The Wavlake artists among the people you follow, then their ranked songs. */
+export function Following({ follows, loaded, blocked, onOpen }) {
+  const [found, setFound] = useState(null)
+  const key = follows.length
+  useEffect(() => {
+    if (!follows.length) return setFound(null)
+    let live = true
+    setFound(null)
+    // Blocks are applied when drawing (FollowingList), so a new block list doesn't refetch.
+    wl.followedArtists({ follows: new Set(follows) }).then(f => live && setFound(f))
+    return () => { live = false }
+  }, [key])
+  return <FollowingList follows={follows} loaded={loaded} found={found} blocked={blocked} onOpen={onOpen} />
+}
+
+export function FollowingList({ follows, loaded, found, blocked, onOpen }) {
+  if (!follows.length) return <p class="empty">{loaded === false ? "Loading your follows…" : "Follow people on Nostr, and the Wavlake artists among them show up here."}</p>
+  if (!found) return <p class="empty">Looking for the Wavlake artists you follow…</p>
+  const artists = wl.visibleArtists(found.artists, blocked), songs = wl.visibleTracks(found.tracks, blocked)
+  if (!artists.length) return <p class="empty">None of the Wavlake artists checked are people you follow. Artists show up here once they link their Nostr key on Wavlake.</p>
+  return <>
+    <h3 class="music-head">Artists you follow</h3><Row items={artistTiles(artists, onOpen)} />
+    {songs.length > 0 && <><h3 class="music-head">Their songs</h3><Tracks tracks={songs} /></>}
   </>
 }
 
