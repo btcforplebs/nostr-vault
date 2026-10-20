@@ -150,6 +150,7 @@ class ConfigService: ObservableObject {
             do {
                 let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
                 self.config = loaded
+                savedHasKey = loaded.hasKeyMaterial
                 #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
                 #endif
