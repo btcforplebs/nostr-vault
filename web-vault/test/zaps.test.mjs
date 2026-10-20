@@ -237,4 +237,26 @@ test("the zap button and Wallet screen load", async () => {
   })
   assert.equal(typeof (await import("../src/components/ZapButton.jsx")).ZapButton, "function")
   assert.equal(typeof (await import("../src/screens/WalletScreen.jsx")).WalletScreen, "function")
+  assert.equal(typeof (await import("../src/components/ZappersList.jsx")).ZappersList, "function")
+})
+
+// Who zapped a note (ZappersListView): the zap request's signer, its sats and comment, biggest first. A receipt whose
+// request doesn't hold up still counts toward the total, as before, but names nobody.
+test("zappers: each is the zap request's signer with sats and comment, biggest first; an unchecked request names nobody", async () => {
+  const { zappersOf } = await import("../src/net/zaps.js")
+  const N = "7".repeat(64), RECIPIENT = getPublicKey(generateSecretKey())
+  const aSk = generateSecretKey(), bSk = generateSecretKey()
+  const req = (sk, content) => JSON.stringify(finalizeEvent({ kind: 9734, created_at: 1, tags: [["p", RECIPIENT], ["e", N]], content }, sk))
+  let i = 0
+  const receipt = (description, msat) => ({
+    id: String(++i).padStart(64, "0"), kind: 9735, pubkey: "f".repeat(64), created_at: 100 + i, content: "",
+    tags: [["p", RECIPIENT], ["e", N], ["bolt11", `lnbc${msat / 100}n1x`], ["description", description]],
+  })
+  const events = [receipt(req(aSk, " thanks! "), 21_000), receipt(req(bSk, ""), 1_000_000), receipt("{not a request", 5_000)]
+  await countReceipts(events, [N], "0".repeat(64), async () => null)
+  assert.equal(zapTotal(N).sats, 21 + 1000 + 5)
+  assert.deepEqual(zappersOf(N).map(z => [z.sender, z.sats, z.comment]), [
+    [getPublicKey(bSk), 1000, ""],
+    [getPublicKey(aSk), 21, "thanks!"],
+  ])
 })
