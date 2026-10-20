@@ -125,7 +125,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
             for field in tag.dropFirst() {
                 if field.hasPrefix("url ") {
                     let urlStr = String(field.dropFirst(4)).trimmingCharacters(in: .whitespaces)
-                    return URL(string: urlStr)
+                    return URL(string: urlStr).flatMap { SupportedMediaFormats.isImetaMediaURL($0) ? $0 : nil }
                 }
             }
             return nil
@@ -155,30 +155,8 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
 
     // MARK: - Static parsers (called once at init)
 
-    private static let mediaRegex: NSRegularExpression? = SupportedMediaFormats.mediaExtensionRegex
-
-    /// Matches extensionless Blossom URLs where the path is a 64-char SHA-256 hex hash.
-    private static let blossomRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
-    }()
-
     private static func parseMediaURLs(from content: String) -> [URL] {
-        let ns = content as NSString
-        let range = NSRange(location: 0, length: ns.length)
-        var urls: [URL] = []
-
-        if let regex = mediaRegex {
-            urls += regex.matches(in: content, range: range)
-                .compactMap { URL(string: ns.substring(with: $0.range)) }
-        }
-
-        // Extensionless Blossom URLs (SHA-256 hash as last path component)
-        if let regex = blossomRegex {
-            urls += regex.matches(in: content, range: range)
-                .compactMap { URL(string: ns.substring(with: $0.range)) }
-        }
-
-        return urls
+        SupportedMediaFormats.mediaURLs(in: content)
     }
 
     private static func parseQuotedEventIds(from content: String) -> [String] {
@@ -219,8 +197,24 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.isReply = try c.decode(Bool.self, forKey: .isReply)
         self.replyToPubkey = try c.decodeIfPresent(String.self, forKey: .replyToPubkey)
         self.parentEventId = try c.decodeIfPresent(String.self, forKey: .parentEventId)
-        self.mediaURLs = try c.decode([URL].self, forKey: .mediaURLs)
-        self.linkURLs = try c.decodeIfPresent([URL].self, forKey: .linkURLs) ?? []
+        // Saved before the media/web-page rule: drop what it now rejects, or
+        // cached notes keep their njump.me "image" tiles. The dropped links go
+        // back to the link cards they were kept out of.
+        let savedMedia = try c.decode([URL].self, forKey: .mediaURLs)
+        let imetaStrings = Set(tags.compactMap { tag -> String? in
+            guard tag.first == "imeta" else { return nil }
+            return tag.dropFirst().first { $0.hasPrefix("url ") }
+                .map { String($0.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
+        })
+        self.mediaURLs = savedMedia.filter { url in
+            imetaStrings.contains(url.absoluteString)
+                ? SupportedMediaFormats.isImetaMediaURL(url)
+                : SupportedMediaFormats.isMediaURL(url)
+        }
+        let savedLinks = try c.decodeIfPresent([URL].self, forKey: .linkURLs) ?? []
+        self.linkURLs = mediaURLs.count == savedMedia.count
+            ? savedLinks
+            : Self.parseLinkURLs(from: content, excludingMedia: mediaURLs)
         self.quotedEventIds = try c.decode([String].self, forKey: .quotedEventIds)
         self.repostedEventId = try c.decodeIfPresent(String.self, forKey: .repostedEventId)
         self.originalCreatedAt = try c.decodeIfPresent(Date.self, forKey: .originalCreatedAt)

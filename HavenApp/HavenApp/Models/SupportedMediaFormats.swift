@@ -143,17 +143,82 @@ enum SupportedMediaFormats {
         all.map { $0.ext }.sorted().joined(separator: "|")
     }()
 
+    /// The extension has to end the URL's text: next comes the end, a space,
+    /// `?`/`#`, or punctuation that isn't followed by more of the word. Without
+    /// it `https://www.avid.com` matched as `https://www.avi`.
+    private static let extensionEnd = #"(?=$|[^\w/.\-]|[.\-](?!\w))"#
+
     /// Matches media URLs ending in a known extension, plus Blossom hash URLs.
+    /// Callers still run `isMediaURL` on each match: a regex can't tell a file
+    /// from a page.
     static let mediaURLRegex: NSRegularExpression? = {
-        let pattern = #"(https?://\S+?\.(?:"# + extensionAlternation + #")(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})|(https?://\S+?/[a-f0-9]{64})"#
+        let pattern = #"(https?://\S+?\.(?:"# + extensionAlternation + #")"# + extensionEnd + #"(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})|(https?://\S+?/[a-f0-9]{64})"#
         return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
     }()
 
     /// Matches only extension-based media URLs (no Blossom groups).
     static let mediaExtensionRegex: NSRegularExpression? = {
-        let pattern = #"https?://\S+?\.(?:"# + extensionAlternation + #")(?:\?\S+)?"#
+        let pattern = #"https?://\S+?\.(?:"# + extensionAlternation + #")"# + extensionEnd + #"(?:\?\S+)?"#
         return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
     }()
+
+    /// Matches extensionless Blossom URLs (SHA-256 hex as the last path part).
+    static let blossomHashRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
+    }()
+
+    // MARK: Media or Web Page
+
+    /// Nostr web clients and gateways. They serve a web page, not a file, at
+    /// `/<64-hex>` (an event id or pubkey), so their hex links aren't Blossom
+    /// blobs. Exact hosts: `blossom.primal.net` is a real Blossom server.
+    static let webPageHosts: Set<String> = [
+        "njump.me", "njump.to", "primal.net", "nostr.band", "snort.social",
+        "iris.to", "coracle.social", "nostrudel.ninja", "habla.news",
+        "yakihonne.com", "nostter.app", "jumble.social", "nostr.com",
+        "damus.io", "zap.stream", "highlighter.com", "nostr.at", "nostr.eu",
+        "nostrrr.com", "flycat.club", "nostrapp.link", "nostr.watch",
+    ]
+
+    static func isWebPageHost(_ url: URL) -> Bool {
+        guard var host = url.host?.lowercased() else { return false }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return webPageHosts.contains(host)
+    }
+
+    /// Whether a URL names a file the media grid can draw: a known media
+    /// extension on its path (not its host — `.mov` is also a TLD), or a
+    /// Blossom SHA-256 path on a host that isn't a web page.
+    static func isMediaURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        if allExtensions.contains(url.pathExtension.lowercased()) { return true }
+        guard url.pathExtension.isEmpty,
+              url.lastPathComponent.range(of: #"^[a-f0-9]{64}$"#, options: [.regularExpression, .caseInsensitive]) != nil
+        else { return false }
+        return !isWebPageHost(url)
+    }
+
+    /// An `imeta` URL is media unless it points at a web page: no media
+    /// extension and a web-client host. Extensionless uploads stay, since
+    /// imeta is how those announce themselves.
+    static func isImetaMediaURL(_ url: URL) -> Bool {
+        if allExtensions.contains(url.pathExtension.lowercased()) { return true }
+        return !isWebPageHost(url)
+    }
+
+    /// The media URLs written in a note's text, in order: extension URLs, then
+    /// Blossom hash URLs. Web pages that only look like media are dropped.
+    static func mediaURLs(in content: String) -> [URL] {
+        let ns = content as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        var urls: [URL] = []
+        for regex in [mediaExtensionRegex, blossomHashRegex].compactMap({ $0 }) {
+            urls += regex.matches(in: content, range: range)
+                .compactMap { URL(string: ns.substring(with: $0.range)) }
+                .filter(isMediaURL)
+        }
+        return urls
+    }
 }
 
 // MARK: - URL Convenience
@@ -174,12 +239,9 @@ extension URL {
     var isImage: Bool {
         let ext = self.pathExtension.lowercased()
         if SupportedMediaFormats.imageOrGifExtensions.contains(ext) { return true }
-        // Blossom hash fallback: extensionless 64-char hex paths
-        if ext.isEmpty {
-            let last = self.lastPathComponent
-            return last.range(of: #"^[a-f0-9]{64}$"#, options: [.regularExpression, .caseInsensitive]) != nil
-        }
-        return false
+        // Blossom hash fallback: extensionless 64-char hex paths, unless the
+        // host is a web client (njump.me/<event id> is a page)
+        return ext.isEmpty && SupportedMediaFormats.isMediaURL(self)
     }
 
     var isGIF: Bool {
