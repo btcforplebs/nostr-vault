@@ -261,6 +261,7 @@
 		3396ACABC418FE7CE9773F3D /* LinkPreviewCacheKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */; };
 		339EE6A8F01759E30F37112C /* NoteDetailSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EF4AC7240C6AB9CCD609AAE /* NoteDetailSelection.swift */; };
 		33C3DBA932813117EFD2AB23 /* OwnerSessionWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */; };
+		33DA43E5719FACF70AA4594B /* ListMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6F8180BFCF4A2CA360DD6D /* ListMerge.swift */; };
 		342880AF34B3F04FD307BDCB /* GlobeSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFB0B9F42290F34B8AD6C57 /* GlobeSpace.swift */; };
 		346E57283E62BF450CDC1B58 /* MediaGalleryGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */; };
 		34760E06C9CE16B9730639F4 /* StarterPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E0F271DFC0731ABBC9E938 /* StarterPack.swift */; };
@@ -520,6 +521,7 @@
 		672A76A54B117639CC833335 /* AccountSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A268D91B72FDA154162360 /* AccountSwitcherView.swift */; };
 		673731663A06785AAD5AA6FD /* TrustPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */; };
 		67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D917784217297C478102785 /* DMInboxView.swift */; };
+		67BE7395BAFF9749E0FA0E3E /* ListMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6F8180BFCF4A2CA360DD6D /* ListMerge.swift */; };
 		6814DBA708E44A94F8A812F1 /* VaultModeLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */; };
 		68B07631D12BD4CAFDE6AF86 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ABEDE255E82775CCD37559 /* NIP49Service.swift */; };
 		68B9084DB6D148FEFCE2C608 /* ConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1810634848EE1957C7E49DAF /* ConfigService.swift */; };
@@ -1663,6 +1665,7 @@
 		7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayMatrix.swift; sourceTree = "<group>"; };
 		7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
+		7F6F8180BFCF4A2CA360DD6D /* ListMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListMerge.swift; sourceTree = "<group>"; };
 		7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSound.swift; sourceTree = "<group>"; };
 		7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGridLayout.swift; sourceTree = "<group>"; };
 		7FB96BA330E32C7807A2F867 /* NoteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteDetailView.swift; sourceTree = "<group>"; };
@@ -2718,6 +2721,7 @@
 				9DB502B6992F3E77F294CA5D /* LightningPayTarget.swift */,
 				06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */,
 				EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */,
+				7F6F8180BFCF4A2CA360DD6D /* ListMerge.swift */,
 				A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */,
 				71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */,
 				C40FE00243820A6D15633BB8 /* LocalTLSPolicy.swift */,
@@ -3584,6 +3588,7 @@
 				3396ACABC418FE7CE9773F3D /* LinkPreviewCacheKey.swift in Sources */,
 				2DD420459ECE57ACDD5E1432 /* LinkPreviewCard.swift in Sources */,
 				0C8D6CA3BC04B268F580C95E /* LinkPreviewService.swift in Sources */,
+				33DA43E5719FACF70AA4594B /* ListMerge.swift in Sources */,
 				DA168364485DBA9AC9FD8385 /* ListingDraft.swift in Sources */,
 				F4175A333FE9BC285E25056C /* LiveArcsShowSection.swift in Sources */,
 				A36D3F7A908A749F7B34206D /* LiveChat.swift in Sources */,
@@ -4242,6 +4247,7 @@
 				AC3D43EDF24751AE6452DE62 /* LinkPreviewCacheKey.swift in Sources */,
 				79A7B0E3D32383C1DE4C7C92 /* LinkPreviewCard.swift in Sources */,
 				A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */,
+				67BE7395BAFF9749E0FA0E3E /* ListMerge.swift in Sources */,
 				9157ACB85192A360E8EFA7E7 /* ListingDraft.swift in Sources */,
 				D26D1F18CFDB421D03397F2F /* LiveArcsShowSection.swift in Sources */,
 				DBE997AB3BEB7BE899BB88A9 /* LiveChat.swift in Sources */,

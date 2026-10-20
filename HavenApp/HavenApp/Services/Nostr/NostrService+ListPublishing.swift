@@ -12,21 +12,67 @@ extension NostrService {
             return Bech32.decode(clean)?.hexString
         }
 
-        let tags = hexKeys.map { ["p", $0] }
+        guard let author = Bech32.decode(accountNpub.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString else { return }
 
         Task {
-            if let event = await signEventAsync(kind: 10000, content: "", tags: tags, signAsNpub: accountNpub) {
-                postEvent(event)
+            // The "p" tags are this device's blocks. The rest of the published
+            // list (word, hashtag and thread mutes, and the encrypted private
+            // mutes in content) was set in other clients and is kept.
+            let event = await publishMergedList(kind: 10000, author: author, signAsNpub: accountNpub) { published in
+                (ListMerge.tags(name: "p", local: hexKeys, published: published?.tags ?? []) { _ in false },
+                 published?.content ?? "")
+            }
+            if let event {
                 ConfigService.shared.config.blockedNpubsLastSyncTimestamp[accountNpub] = event.created_at
                 ConfigService.shared.save()
-                #if DEBUG
-                print("NostrService: Successfully published Kind 10000 mute list with \(tags.count) tags for \(accountNpub.prefix(8))")
-                #endif
-            } else {
-                #if DEBUG
-                print("NostrService: Failed to sign Kind 10000 mute list for \(accountNpub.prefix(8))")
-                #endif
             }
+        }
+    }
+
+    /// Signs and posts `kind` for `author`, built by `build` from the newest
+    /// published one (nil when there is none). Skips when no relay answered,
+    /// since publishing then would overwrite a list this device never saw.
+    @MainActor
+    private func publishMergedList(kind: Int, author: String, signAsNpub: String?,
+                                   build: (NostrEvent?) -> (tags: [[String]], content: String)) async -> NostrEvent? {
+        guard !author.isEmpty else { return nil }
+        let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
+        let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk)
+        if lookup.event == nil && lookup.answered == 0 {
+            #if DEBUG
+            print("NostrService: Kind \(kind): no relay answered; not published")
+            #endif
+            return nil
+        }
+        let (tags, content) = build(lookup.event)
+        guard let event = await signEventAsync(kind: kind, content: content, tags: tags, signAsNpub: signAsNpub) else {
+            #if DEBUG
+            print("NostrService: Failed to sign Kind \(kind) list")
+            #endif
+            return nil
+        }
+        postEvent(event)
+        #if DEBUG
+        print("NostrService: Published Kind \(kind) list with \(tags.count) tags for \(author.prefix(8))")
+        #endif
+        return event
+    }
+
+    /// Publishes `kind` for `author`: `local` as `name` tags, plus the entries
+    /// other clients added. An entry counts as added elsewhere when it is
+    /// published but was not in what this device last published (the base in
+    /// `ListMerge.Bases`), so a local removal still removes it.
+    @MainActor
+    private func publishEntryList(kind: Int, name: String, local: [String], author: String, signAsNpub: String?) async {
+        let bases = ListMerge.Bases.shared
+        let baseKey = "\(kind):\(author)"
+        _ = await publishMergedList(kind: kind, author: author, signAsNpub: signAsNpub) { published in
+            let base = bases.get(baseKey).map { Set($0.map(ListMerge.key)) }
+            let tags = ListMerge.tags(name: name, local: local, published: published?.tags ?? []) { entry in
+                base.map { !$0.contains(ListMerge.key(entry)) } ?? true
+            }
+            bases.put(baseKey, local)
+            return (tags, published?.content ?? "")
         }
     }
 
@@ -43,20 +89,10 @@ extension NostrService {
             return
         }
 
-        // Build ["server", url] tags — ordered by reliability (local relay first via activeBlossomMirrors)
-        let tags = mirrors.map { ["server", $0] }
-
+        // Local first via activeBlossomMirrors, so the primary server keeps its place.
+        let author = activeHexPubkey
         Task {
-            if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
-                postEvent(event)
-                #if DEBUG
-                print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
-                #endif
-            } else {
-                #if DEBUG
-                print("NostrService: Failed to sign Kind 10063 server list")
-                #endif
-            }
+            await publishEntryList(kind: 10063, name: "server", local: mirrors, author: author, signAsNpub: nil)
         }
     }
 
@@ -109,22 +145,15 @@ extension NostrService {
     }
 
     /// NIP-51: publishes the owner's blocked relay list (kind 10006), the
-    /// relays set to Never connect. Public `relay` tags, empty content. An
-    /// empty list is published too, so unblocking the last relay clears it.
+    /// relays set to Never connect. Public `relay` tags merged with the ones
+    /// other clients added. An empty local list is published too, so
+    /// unblocking the last relay clears it.
     func publishBlockedRelayList() {
         let config = ConfigService.shared.config
-        let tags = config.blockedRelays.map { ["relay", HavenConfig.normalizedRelayURL($0)] }
-        Task {
-            if let event = await signEventAsync(kind: 10006, content: "", tags: tags, signAsNpub: config.ownerNpub) {
-                postEvent(event)
-                #if DEBUG
-                print("NostrService: Published Kind 10006 blocked relay list with \(tags.count) relays")
-                #endif
-            } else {
-                #if DEBUG
-                print("NostrService: Failed to sign Kind 10006 blocked relay list")
-                #endif
-            }
+        let relays = config.blockedRelays.map(HavenConfig.normalizedRelayURL)
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { return }
+        Task { @MainActor in
+            await publishEntryList(kind: 10006, name: "relay", local: relays, author: owner, signAsNpub: config.ownerNpub)
         }
     }
 
@@ -196,7 +225,17 @@ extension NostrService {
         let canSign = !config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil
             || configService.hasBunkerConfig(forNpub: config.ownerNpub)
 
-        let newest = await fetchNewestDMRelayList(for: ownerHex, alsoAsk: config.dmInboxRelays)
+        let lookup = await lookupNewestReplaceable(kind: 10050, for: ownerHex, alsoAsk: config.dmInboxRelays)
+        // No relay answered: "none found" is unknown, not empty. A new install
+        // of an existing account would otherwise publish the defaults over
+        // the real list.
+        if lookup.event == nil && lookup.answered == 0 {
+            #if DEBUG
+            print("NostrService: DM inbox sync: no relay answered; not published")
+            #endif
+            return
+        }
+        let newest = lookup.event.map { (relays: ProfileRepository.parseDMRelayListTags($0.tags), createdAt: $0.created_at) }
         // A published list can still carry relays that are gone; adopting it
         // would undo the one-time drop of them from the saved config.
         let published = newest?.relays.filter { !Self.isLoopbackRelay($0) && !HavenConfig.isDeadRelay($0) }
