@@ -13,6 +13,12 @@
 .side-row:hover { background: var(--s2); color: var(--text); }
 .side-row.on { background: var(--accent-pale); color: var(--accent-light); font-weight: 600; }
 .side-row svg { flex: none; }
+.side-icon { position: relative; display: flex; flex: none; }
+/* Unread messages: a count after the name (iPadSidebarView), a dot on the icon when the rail hides names. */
+.side-badge { margin-left: auto; min-width: 20px; padding: 2px 7px; border-radius: 999px; box-sizing: border-box; text-align: center;
+  background: var(--danger); color: #fff; font: 700 12px/16px var(--font); }
+.side-dot { position: absolute; top: -2px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg); }
 .side-post { color: var(--accent-light); font-weight: 600; }
 .side-post.off { color: var(--text-3); cursor: not-allowed; }
 .side-post.off:hover { background: none; color: var(--text-3); }

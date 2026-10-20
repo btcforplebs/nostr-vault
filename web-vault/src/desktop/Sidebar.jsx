@@ -5,6 +5,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
+import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
 
 const ICON = {
   post: "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z",
@@ -23,10 +24,14 @@ const SECTIONS = [["feed", "Feed", "g f"], ["search", "Search", "/"], ["profile"
 
 export function Sidebar({ ctx, side, rail }) {
   const readOnly = ctx.signer?.readOnly
-  const row = (id, label, keys, extra = {}) => (
+  const unread = useUnreadTotal(ctx)
+  // badge: a count after the name (iPadSidebarView's red capsule); on the rail, where names hide, a dot on the icon.
+  const row = (id, label, keys, badge = 0) => (
     <a key={id} href={`#/${id}`} class={side === id ? "side-row on" : "side-row"} aria-current={side === id ? "page" : undefined}
-      title={rail ? `${label} (${keys})` : `${keys}`} aria-label={rail ? label : undefined} {...extra}>
-      <Icon d={ICON[id]} /><span class="side-label">{label}</span>
+      title={rail ? `${label} (${keys})` : `${keys}`} aria-label={rail || badge ? `${label}${badge ? `, ${badge} unread` : ""}` : undefined}>
+      <span class="side-icon"><Icon d={ICON[id]} />{badge > 0 && rail && <span class="side-dot" aria-hidden="true" />}</span>
+      <span class="side-label">{label}</span>
+      {badge > 0 && !rail && <span class="side-badge" aria-hidden="true">{badgeCount(badge)}</span>}
     </a>
   )
   return (
@@ -35,7 +40,7 @@ export function Sidebar({ ctx, side, rail }) {
       {readOnly
         ? <span class="side-row side-post off" aria-disabled="true" title={`New Post. ${READ_ONLY_SHORT}`}><Icon d={ICON.post} /><span class="side-label">New Post</span></span>
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
-      {row("messages", "Messages", "g m")}
+      {row("messages", "Messages", "g m", unread)}
       <hr />
       {SECTIONS.map(([id, label, keys]) => row(id, label, keys))}
       <RelayFoot ctx={ctx} rail={rail} />
