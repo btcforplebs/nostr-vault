@@ -63,6 +63,7 @@ struct SettingsView: View {
         case startup = "Startup"
         case proofOfWork = "Proof of Work"
         case advanced = "Database & Reset"
+        case bitcoin = "Bitcoin On-Chain"
         case logs = "Logs"
         case tutorials = "Tutorials"
 
@@ -106,6 +107,7 @@ struct SettingsView: View {
             case .startup: return "power"
             case .proofOfWork: return "hammer.fill"
             case .advanced: return "gearshape.2"
+            case .bitcoin: return "bitcoinsign.circle"
             case .logs: return "list.bullet.rectangle"
             case .tutorials: return "graduationcap"
             }
@@ -132,7 +134,7 @@ struct SettingsView: View {
             ("Relays", [.relays, .blossom]),
             ("Your Vault Relay", relayTabs),
             ("Help", [.tutorials]),
-            ("Advanced", [.proofOfWork, .advanced, .logs]),
+            ("Advanced", [.proofOfWork, .advanced, .bitcoin, .logs]),
         ]
     }
 
@@ -613,6 +615,7 @@ struct SettingsView: View {
         case .macRelay: return .teal
         case .proofOfWork: return .purple
         case .advanced: return .gray
+        case .bitcoin: return .orange
         case .wallet: return .orange
         case .logs: return .secondary
         case .tutorials: return .purple
@@ -653,6 +656,7 @@ struct SettingsView: View {
                 #endif
             case .proofOfWork: ProofOfWorkSettingsView()
             case .advanced: AdvancedSettingsView()
+            case .bitcoin: BitcoinWalletSettingsView()
             case .wallet: WalletSettingsView()
             case .logs: LogsView(logStore: relayManager.logStore)
             case .tutorials:
