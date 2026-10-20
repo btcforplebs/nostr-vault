@@ -1,10 +1,12 @@
 package com.nostrvault.service
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.ui.notification.NotificationManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -37,6 +39,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class MediaUploadManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val blossomService: BlossomService,
     private val notificationManager: NotificationManager,
     private val mediaCacheService: MediaCacheService,
@@ -44,6 +47,18 @@ class MediaUploadManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "MediaUploadManager"
+        const val REFUSED_MESSAGE = "That file can't be uploaded"
+    }
+
+    /**
+     * Whether a URI another app shared may be read for an upload: only another
+     * app's content provider ([isReadableShare]). The provider is looked up so
+     * one of ours is refused whatever its name.
+     */
+    fun acceptsShare(uri: Uri): Boolean {
+        val host = shareHost(uri.authority)
+        val owner = host?.let { runCatching { context.packageManager.resolveContentProvider(it, 0)?.packageName }.getOrNull() }
+        return isReadableShare(uri.scheme, uri.authority, owner, context.packageName)
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -63,6 +78,12 @@ class MediaUploadManager @Inject constructor(
      * run serially.
      */
     fun upload(uri: Uri, contentResolver: ContentResolver) {
+        // Checked here too, so no caller can hand us one of our own files.
+        if (!acceptsShare(uri)) {
+            Log.w(TAG, "Refused a shared URI that is not another app's content")
+            notificationManager.showError(REFUSED_MESSAGE)
+            return
+        }
         pending.incrementAndGet()
         _isUploading.value = true
         scope.launch {
@@ -136,4 +157,35 @@ class MediaUploadManager @Inject constructor(
             tempFile?.let { withContext(NonCancellable) { it.delete() } }
         }
     }
+}
+
+/**
+ * Whether a shared URI may be read for an upload. Only `content://` from
+ * another app's provider: a `file://` URI, or one naming a provider of ours,
+ * is opened with this app's own permissions, so any app could have us upload
+ * our private files (the config, with its keys) to Blossom. [providerPackage]
+ * is who the system says owns the authority, or null when it can't see it
+ * (another app's provider can be hidden by package visibility).
+ */
+internal fun isReadableShare(scheme: String?, authority: String?, providerPackage: String?, ownPackage: String): Boolean {
+    if (!scheme.equals("content", ignoreCase = true)) return false
+    val host = shareHost(authority) ?: return false
+    val own = ownPackage.lowercase()
+    if (host == own || host.startsWith("$own.")) return false
+    return providerPackage != ownPackage
+}
+
+/** The provider part of an authority, without a cross-profile `userId@` prefix. */
+internal fun shareHost(authority: String?): String? =
+    authority?.substringAfterLast('@')?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
+/**
+ * The URIs in a share's `EXTRA_STREAM`: one or a list, as the sender put it.
+ * Anything that isn't a [Uri] is dropped rather than cast, so a malformed
+ * share (a list of path strings) can't crash the app.
+ */
+internal fun sharedStreamUris(stream: Any?): List<Uri> = when (stream) {
+    is Uri -> listOf(stream)
+    is Iterable<*> -> stream.filterIsInstance<Uri>()
+    else -> emptyList()
 }

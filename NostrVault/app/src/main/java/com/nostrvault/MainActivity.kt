@@ -8,10 +8,12 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Parcelable
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -41,6 +43,7 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.service.NoteTranslationPolicy
 import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
+import com.nostrvault.service.sharedStreamUris
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
 import com.nostrvault.ui.components.LocalNoteTranslation
@@ -323,22 +326,22 @@ class MainActivity : FragmentActivity() {
             return
         }
 
-        val uris: List<Uri> = when (action) {
-            Intent.ACTION_SEND -> listOfNotNull(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                }
-            )
-            Intent.ACTION_SEND_MULTIPLE -> (
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                }
-            ) ?: emptyList()
-            else -> emptyList()
+        // IntentCompat, and a filter rather than a cast: a sender can put
+        // anything under EXTRA_STREAM (a list of path strings), and the old
+        // untyped read cast it to Uri and crashed on API 32 and below.
+        val stream: Any? = runCatching {
+            when (action) {
+                Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                else -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Parcelable::class.java)
+            }
+        }.getOrNull()
+        val shared = sharedStreamUris(stream)
+        // Only another app's content: a file:// URI or one of our own providers
+        // would have us upload our private files (MediaUploadManager.acceptsShare).
+        val uris = shared.filter(mediaUploadManager::acceptsShare)
+        if (shared.isNotEmpty() && uris.isEmpty()) {
+            notificationManager.showError(MediaUploadManager.REFUSED_MESSAGE)
+            return
         }
 
         if (uris.isEmpty()) return
