@@ -367,7 +367,14 @@ export function authFor(ctx, url) {
 // How long one relay gets to take a wrap. A bunker signs an AUTH over its own relay, so it gets longer.
 const PUBLISH_WAIT = { nip46: 20_000, other: 8000 }
 
-export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts) } = {}) {
+// nostr-tools 2.25.2 keeps a relay's AUTH promise for the life of its socket, and a sign function that throws (the
+// user declines, the bunker errors, authFor refuses the challenge) leaves that promise never settling: every later
+// AUTH on the socket waits on it, so every later DM to that relay times out. A relay that failed after we were asked
+// to AUTH it is dropped, so the next send opens a fresh socket (Tron, #858). Only that relay: subscriptions on it
+// close too, and come back with the next look (Refresh, or returning to the tab).
+const dropRelay = urls => pool.close(urls)
+
+export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts), drop = dropRelay, wait } = {}) {
   const me = ctx.session.pubkey
   const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
   if (c.reason) throw sendError(`Can't send: ${c.reason}`)
@@ -385,8 +392,12 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     toThem = self ? toMe : await wrapFor(rumor, env, peer)
   } catch (e) { throw sendError(e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer) }
   const send = async (urls, ev, to) => {
-    const wait = ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other
-    const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev, { onauth: authFor(ctx, url) })[0], timeout(wait)])))
+    const ms = wait ?? (ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other)
+    const asked = new Set() // relays that asked for AUTH on this send
+    const onauthFor = url => { const sign = authFor(ctx, url); return t => { asked.add(url); return sign(t) } }
+    const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev, { onauth: onauthFor(url) })[0], timeout(ms)])))
+    const stuck = urls.filter((url, i) => results[i].status === "rejected" && asked.has(url))
+    if (stuck.length) { try { drop(stuck) } catch {} }
     return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
   }
   // Their wrap first: the self-copy goes out only once a recipient relay took theirs, so a refused message never

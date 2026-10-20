@@ -331,3 +331,37 @@ test("through the real nostr-tools pool: auth-required, AUTH, then the wrap is t
     assert.deepEqual(log.slice(0, 3), [["EVENT", false], ["AUTH", true], ["EVENT", true]], "refused, AUTHed, then taken")
   } finally { testPool.destroy() }
 })
+
+test("a declined AUTH doesn't jam the relay: it's dropped, and the next send AUTHs afresh and is taken", async () => {
+  const { SimplePool } = await import("nostr-tools/pool")
+  const log = []
+  class FakeRelaySocket {
+    static OPEN = 1; static CLOSING = 2; static CLOSED = 3
+    constructor(url) { this.url = url; this.readyState = 0; this.authed = null; log.push(["OPEN"]); setTimeout(() => { this.readyState = 1; this.onopen?.(); this.reply(["AUTH", "chal-" + log.length]) }) }
+    reply(m) { setTimeout(() => this.onmessage?.({ data: JSON.stringify(m) })) }
+    send(raw) {
+      const [type, ev] = JSON.parse(raw)
+      if (type === "AUTH") { this.authed = ev.pubkey; log.push(["AUTH"]); return this.reply(["OK", ev.id, true, ""]) }
+      if (type === "EVENT") { log.push(["EVENT", !!this.authed]); return this.reply(["OK", ev.id, !!this.authed, this.authed ? "" : "auth-required: who are you"]) }
+    }
+    close() { this.readyState = 3; this.onclose?.({}) }
+  }
+  const testPool = new SimplePool({ websocketImplementation: FakeRelaySocket })
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://b-haven.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  let decline = true
+  const ctx = ctxOf(A, { write: ["wss://b-haven.example"] })
+  ctx.signer = { signEvent: async t => { if (t.kind === 22242 && decline) throw new Error("user declined"); return finalizeEvent(t, A) } }
+  const dropped = []
+  const opts = { crypto: cryptoOf(A), query, chat: fakeChat(), wait: 300, publish: (urls, ev, o) => testPool.publish(urls, ev, o), drop: urls => { dropped.push(...urls); testPool.close(urls) } }
+  resetMessages(pk(A))
+  try {
+    await assert.rejects(sendMessage(ctx, pk(B), "first", opts), /Not delivered/)
+    assert.deepEqual(dropped, ["wss://b-haven.example"])
+    decline = false
+    const { relays } = await sendMessage(ctx, pk(B), "second", opts)
+    assert.ok(relays.find(r => r.to === "them").ok, "the second send got through")
+    assert.equal(log.filter(e => e[0] === "OPEN").length, 2, "a fresh socket")
+    assert.equal(log.filter(e => e[0] === "AUTH").length, 1, "the relay saw the second AUTH")
+  } finally { testPool.destroy() }
+})
