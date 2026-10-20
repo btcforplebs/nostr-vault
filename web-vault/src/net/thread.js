@@ -24,6 +24,17 @@ export function replyRefs(ev) {
   return { root: positional[0][1], parent: positional.at(-1)[1] }
 }
 
+/** Who a note replies to, for the card's "reply to @name" line: the first p tag, as the iPhone's FeedNote.replyToPubkey
+ *  (FeedServiceTypes.swift). null for a note that isn't a reply (no NIP-10 parent) or names nobody. */
+export function replyToPubkey(ev) {
+  if (ev?.kind !== 1 || !replyRefs(ev).parent) return null
+  const p = (ev.tags ?? []).find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))
+  return p ? p[1] : null
+}
+
+/** The note a kind 6 repost points at (its e tag), for a repost that left the content empty. */
+export const repostedId = ev => (ev?.tags ?? []).find(t => t[0] === "e" && HEX64.test(t[1] ?? ""))?.[1] ?? null
+
 /** Build the tree under rootId from any bag of events (duplicates and unrelated notes are fine).
  *  A reply whose parent isn't in the bag hangs off the root, so nothing fetched is lost; root is null when the
  *  root itself wasn't found. Replies are oldest first at every level.

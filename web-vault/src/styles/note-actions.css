@@ -28,3 +28,7 @@
 .compose-target .note-text { margin-top: 6px; font: var(--t-sub); max-height: 9.5em; overflow: hidden; }
 .compose-target .compose-label { display: flex; align-items: center; gap: 6px; color: var(--text-2); font: var(--t-foot); }
 .compose-target .compose-label .author-name { font: inherit; font-weight: 600; color: var(--text); }
+/* "reply to @name" under a reply's head (FeedNoteRow+Layout): small, quiet, the name still a link. */
+.reply-to { display: flex; align-items: center; gap: 4px; margin: 4px 0 -2px; color: var(--text-2); font: var(--t-foot); min-width: 0; }
+.reply-to svg { flex: none; color: var(--accent); opacity: .6; }
+.reply-to .mention { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
