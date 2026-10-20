@@ -9,6 +9,7 @@
 import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, verifyEvent } from "nostr-tools/pure"
 import * as nip44 from "nostr-tools/nip44"
 import { makeAuthEvent } from "nostr-tools/nip42"
+import { normalizeURL } from "nostr-tools/utils"
 import { HavenClient } from "../../../web-relay/src/haven/client.js"
 import { deviceKey } from "../haven/vault.js"
 import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
@@ -344,7 +345,29 @@ const sendError = message => Object.assign(new Error(message), { fixed: true })
 /** What the screen says when a send fails: sendMessage's own sentence, never anyone else's error text. */
 export const sendFailure = err => (err?.fixed ? String(err.message) : SEND_FAILED.other)
 
-export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
+/**
+ * NIP-42 for one DM publish (DMService.publishAuthenticated). A relay that turns the wrap away with "auth-required"
+ * (a Haven inbox does, to check who's writing) gets a kind 22242 signed by the sending account. nostr-tools sends the
+ * wrap once more after that AUTH is accepted. Only a bare AUTH for this relay is signed: anything else the pool
+ * hands over is refused before it reaches the signer. As on the iPhone, the relay learns which account sent the
+ * wrap (the wrap itself still doesn't say).
+ */
+export function authFor(ctx, url) {
+  const me = ctx.session.pubkey
+  return async template => {
+    const tags = template?.tags ?? []
+    const relay = tags.find(t => t[0] === "relay")?.[1]
+    const challenge = tags.find(t => t[0] === "challenge")?.[1]
+    if (template?.kind !== 22242 || template.content !== "" || tags.length !== 2 || typeof challenge !== "string" || !relay || normalizeURL(relay) !== normalizeURL(url))
+      throw new Error("not an AUTH for this relay")
+    return checkSigned(await ctx.signer.signEvent(template), template, me)
+  }
+}
+
+// How long one relay gets to take a wrap. A bunker signs an AUTH over its own relay, so it gets longer.
+const PUBLISH_WAIT = { nip46: 20_000, other: 8000 }
+
+export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts) } = {}) {
   const me = ctx.session.pubkey
   const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
   if (c.reason) throw sendError(`Can't send: ${c.reason}`)
@@ -362,7 +385,8 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
     toThem = self ? toMe : await wrapFor(rumor, env, peer)
   } catch (e) { throw sendError(e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer) }
   const send = async (urls, ev, to) => {
-    const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev)[0], timeout(8000)])))
+    const wait = ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other
+    const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev, { onauth: authFor(ctx, url) })[0], timeout(wait)])))
     return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
   }
   // Their wrap first: the self-copy goes out only once a recipient relay took theirs, so a refused message never
