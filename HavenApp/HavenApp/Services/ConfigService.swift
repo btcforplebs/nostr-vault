@@ -18,6 +18,9 @@ class ConfigService: ObservableObject {
         }
     }
     @Published var isSwitchingAccount: Bool = false
+    /// config.json existed but would not load. Until a copy of it is kept,
+    /// save() writes nothing, so the key inside it is never overwritten.
+    @Published private(set) var loadFailed = false
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -61,38 +64,42 @@ class ConfigService: ObservableObject {
         
         var loadedSuccessfully = false
         
-        // Load existing config or create default
-        if let data = try? Data(contentsOf: configURL) {
-            do {
-                let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
-                config = loaded
-                loadedSuccessfully = true
-                #if DEBUG
-                print("ConfigService: Successfully loaded configuration from disk")
-                #endif
-
-                // Ensure defaults are applied for empty arrays
-                if config.importSeedRelays.isEmpty {
-                    config.importSeedRelays = HavenConfig.default.importSeedRelays
-                }
-                if config.blastrRelays.isEmpty {
-                    config.blastrRelays = HavenConfig.default.blastrRelays
-                }
-                if config.blossomMirrors.isEmpty {
-                    config.blossomMirrors = HavenConfig.default.blossomMirrors
-                    #if DEBUG
-                    print("ConfigService: Applied default Blossom mirrors: \(config.blossomMirrors)")
-                    #endif
-                } else {
-                    #if DEBUG
-                    print("ConfigService: Loaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
-                    #endif
-                }
-            } catch {
-                RelayProcessManager.shared.addLog("Error decoding configuration: \(error.localizedDescription)", level: "ERROR")
-                config = HavenConfig.default
+        // Load existing config or create default. A config.json that would
+        // not load is never written over until a copy of it is kept (save()).
+        switch ConfigFileStore(url: configURL).load(HavenConfig.self) {
+        case .loaded(let loaded, let fromBackup):
+            config = loaded
+            loadedSuccessfully = true
+            loadFailed = fromBackup && FileManager.default.fileExists(atPath: configURL.path)
+            if fromBackup {
+                RelayProcessManager.shared.addLog("config.json would not load; restored from config.json.bak", level: "ERROR")
             }
-        } else {
+            #if DEBUG
+            print("ConfigService: Successfully loaded configuration from disk")
+            #endif
+
+            // Ensure defaults are applied for empty arrays
+            if config.importSeedRelays.isEmpty {
+                config.importSeedRelays = HavenConfig.default.importSeedRelays
+            }
+            if config.blastrRelays.isEmpty {
+                config.blastrRelays = HavenConfig.default.blastrRelays
+            }
+            if config.blossomMirrors.isEmpty {
+                config.blossomMirrors = HavenConfig.default.blossomMirrors
+                #if DEBUG
+                print("ConfigService: Applied default Blossom mirrors: \(config.blossomMirrors)")
+                #endif
+            } else {
+                #if DEBUG
+                print("ConfigService: Loaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
+                #endif
+            }
+        case .unreadable(let error):
+            RelayProcessManager.shared.addLog("Error decoding configuration: \(error.localizedDescription)", level: "ERROR")
+            config = HavenConfig.default
+            loadFailed = true
+        case .missing:
             #if DEBUG
             print("ConfigService: No config.json found at \(configURL.path), using defaults")
             #endif
@@ -217,9 +224,24 @@ class ConfigService: ObservableObject {
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
 
+        let store = ConfigFileStore(url: configURL)
+        if loadFailed {
+            // Defaults (or a half-done setup) must not replace the unreadable
+            // file. Once there is a real config to keep, copy the old file
+            // aside first; if even that fails, keep refusing.
+            guard config.hasCompletedSetup else { return }
+            do {
+                try store.preserveUnreadable()
+                loadFailed = false
+            } catch {
+                RelayProcessManager.shared.addLog("Not saving config: could not keep a copy of the unreadable config.json (\(error.localizedDescription))", level: "ERROR")
+                return
+            }
+        }
+
         do {
             let data = try JSONEncoder().encode(config)
-            try data.write(to: configURL)
+            try store.write(data)
 
             #if DEBUG
             print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
@@ -258,7 +280,7 @@ class ConfigService: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         if let data = try? encoder.encode(config) {
-            try? data.write(to: configURL) // Save main config again just in case
+            try? ConfigFileStore(url: configURL).write(data) // Save main config again just in case
         }
         
         RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
@@ -318,12 +340,14 @@ class ConfigService: ObservableObject {
             try? fileManager.removeItem(at: relayDataDir)
         }
         
-        // 2. Delete config.json in Application Support
-        if fileManager.fileExists(atPath: configURL.path) {
-            try? fileManager.removeItem(at: configURL)
-        }
-        
-        // 3. Reset in-memory config
+        // 2. Delete config.json and its backup in Application Support
+        ConfigFileStore(url: configURL).removeAll()
+        loadFailed = false
+
+        // 3. Keychain passwords, notifications and widget data
+        ResetLeftovers.clear()
+
+        // 4. Reset in-memory config
         config = HavenConfig.default
         // The account went with it; services listening for a switch drop its state.
         refreshActiveAccountHex()
@@ -331,21 +355,16 @@ class ConfigService: ObservableObject {
         LocalTLSTrust.forgetAll()
     }
     
-    /// Programmatically quit the application
+    #if canImport(AppKit)
+    /// Quits the Mac app after a factory reset. iOS has no counterpart: an
+    /// app may not quit itself there, and with the config cleared the root
+    /// view already shows the setup wizard.
     static func quitApp() {
-        #if canImport(AppKit)
         DispatchQueue.main.async {
             NSApp.terminate(nil)
         }
-        #else
-        DispatchQueue.main.async {
-            // Suspend to home screen instead of exit(0) — Apple rejects apps that
-            // programmatically terminate. The config is already cleared by resetApp(),
-            // so the next launch will start fresh.
-            UIControl().sendAction(#selector(URLSessionTask.suspend), to: UIApplication.shared, for: nil)
-        }
-        #endif
     }
+    #endif
     
     /// Reconstructs critical configuration from the existing .env file
     private func recoverFromEnv() {

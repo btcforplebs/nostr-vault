@@ -59,12 +59,27 @@ struct AdvancedSettingsView: View {
                 relayManager.stopRelay {
                     Task { @MainActor in
                         configService.resetApp()
+                        #if canImport(AppKit)
                         ConfigService.quitApp()
+                        #endif
                     }
                 }
             }
         } message: {
-            Text("This action cannot be undone. All your relay data will be lost and the app will quit.")
+            Text(resetConsequence)
         }
+    }
+
+    /// Says outright that the private key goes, not just relay data: the key
+    /// lives in config.json, which the reset deletes.
+    private var resetConsequence: String {
+        let npub = configService.config.ownerNpub
+        let key = npub.isEmpty ? "the private key stored on this device" : "the private key for \(npub.prefix(12))… stored on this device"
+        #if canImport(AppKit)
+        let after = "The app will then quit."
+        #else
+        let after = "The app then starts over at setup."
+        #endif
+        return "This deletes \(key), and the keys of any other accounts here, along with all relay data and saved passwords. If you have no backup of your key elsewhere, it cannot be recovered. \(after)"
     }
 }
