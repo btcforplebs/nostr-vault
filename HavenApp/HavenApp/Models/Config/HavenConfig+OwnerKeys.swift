@@ -1,6 +1,13 @@
 import Foundation
 
 extension HavenConfig {
+    /// Whether this config holds any private key: the owner's (encrypted or
+    /// legacy plaintext) or a stored account credential. config.json.bak is
+    /// never replaced by a config without one while it has one itself.
+    var hasKeyMaterial: Bool {
+        !ownerNcryptsec.isEmpty || !ownerNsec.isEmpty || !accountCredentials.isEmpty
+    }
+
     /// Returns the hex private key decoded from ownerNsec (fallback for old plaintext keys)
     var ownerHexKey: String? {
         let clean = ownerNsec.trimmingCharacters(in: .whitespacesAndNewlines)

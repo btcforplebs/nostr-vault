@@ -23,6 +23,9 @@ enum NVWidgetBridge {
     private static let minimumInterval: TimeInterval = 60
 
     static func publish(force: Bool = false) {
+        // After a factory reset the widgets stay empty until setup is done;
+        // feeds still in memory must not be written back.
+        guard ConfigService.shared.config.hasCompletedSetup else { return }
         guard force || Date().timeIntervalSince(lastPublished) >= minimumInterval else { return }
         lastPublished = Date()
 
