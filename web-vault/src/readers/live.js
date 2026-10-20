@@ -158,6 +158,3 @@ export function chatRows(evs, blocked = new Set(), max = 200) {
   for (const ev of evs) { const r = chatRow(ev); if (r && !blocked.has(r.who) && !by.has(r.id)) by.set(r.id, r) }
   return [...by.values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)).slice(-max)
 }
-
-/** Can this browser play HLS by itself (Safari, iOS)? Elsewhere the stream opens on zap.stream. */
-export const playsHls = (video = globalThis.document?.createElement("video")) => !!video?.canPlayType?.("application/vnd.apple.mpegurl")
