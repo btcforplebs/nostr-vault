@@ -65,7 +65,9 @@ const linksFile = "wot_links.json"
 // batch had collected when one seed relay was slow to send EOSE.
 // wotCacheVersion 3: an owner who follows nobody is no longer seeded from a
 // starter pack, so graphs built from those seeds are thrown away.
-const wotCacheVersion = 3
+// wotCacheVersion 4: an owner with fewer follows than the bar gets their
+// follows' follows (newAccountWeb), so their thin graphs are rebuilt.
+const wotCacheVersion = 4
 
 // listBatchSize is how many follows' lists one request asks for. Seed relays
 // quietly answer oversized author filters with little or nothing: measured
@@ -550,6 +552,22 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	})
 
 	slog.Info("🫥 pruned pubkeys without minimum common followers", "🚧minimum", minimumFollowers, "🫂kept", len(newWot), "🗑️eliminated", pubkeyFollowers.Size()-len(newWot))
+
+	// Only a new account's small web is copied out; a full one never is.
+	if len(follows) < int(minimumFollowers) {
+		counts := make(map[string]int)
+		pubkeyFollowers.Range(func(pubkey string, followers *atomic.Int64) bool {
+			counts[pubkey] = int(followers.Load())
+			return true
+		})
+		people := newAccountWeb(counts, newWot, len(follows), int(minimumFollowers))
+		for _, pk := range people {
+			vouches[pk] = counts[pk]
+			newWot[pk] = true
+			found(pk, previous)
+		}
+		slog.Info("🌱 new account: web widened to its follows' follows", "follows", len(follows), "🫂added", len(people))
+	}
 
 	for pk, from := range links {
 		if _, owner := wt.WhitelistedPubKeys[pk]; owner || !newWot[pk] {
