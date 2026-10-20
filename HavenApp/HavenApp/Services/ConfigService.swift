@@ -66,7 +66,7 @@ class ConfigService: ObservableObject {
         
         // Load existing config or create default. A config.json that would
         // not load is never written over until a copy of it is kept (save()).
-        switch ConfigFileStore(url: configURL).load(HavenConfig.self) {
+        switch ConfigFileStore(url: configURL).load(HavenConfig.self, hasKey: \.hasKeyMaterial) {
         case .loaded(let loaded, let fromBackup):
             config = loaded
             loadedSuccessfully = true

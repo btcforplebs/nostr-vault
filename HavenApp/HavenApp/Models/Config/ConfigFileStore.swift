@@ -21,14 +21,18 @@ struct ConfigFileStore {
     private var fileManager: FileManager { .default }
 
     /// Loads config.json, falling back to the backup. A good config.json
-    /// becomes the new backup.
-    func load<Value: Decodable>(_ type: Value.Type) -> Loaded<Value> {
+    /// becomes the new backup, unless it holds no key and the backup does:
+    /// a file that merely decodes (every field is optional) must not erase
+    /// the last copy of the key.
+    func load<Value: Decodable>(_ type: Value.Type, hasKey: (Value) -> Bool) -> Loaded<Value> {
         var mainError: Error?
         if fileManager.fileExists(atPath: url.path) {
             do {
                 let data = try Data(contentsOf: url)
                 let value = try JSONDecoder().decode(type, from: data)
-                try? data.write(to: backupURL, options: .atomic)
+                if hasKey(value) || !backupHasKey(type, hasKey: hasKey) {
+                    try? data.write(to: backupURL, options: .atomic)
+                }
                 return .loaded(value, fromBackup: false)
             } catch {
                 mainError = error
@@ -44,6 +48,12 @@ struct ConfigFileStore {
         }
         if let mainError { return .unreadable(mainError) }
         return .missing
+    }
+
+    private func backupHasKey<Value: Decodable>(_ type: Value.Type, hasKey: (Value) -> Bool) -> Bool {
+        guard let data = try? Data(contentsOf: backupURL),
+              let backup = try? JSONDecoder().decode(type, from: data) else { return false }
+        return hasKey(backup)
     }
 
     /// Replaces config.json in one step, so a crash leaves the old file or the

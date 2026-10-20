@@ -27,7 +27,7 @@ final class ConfigFileStoreTests: XCTestCase {
     }
 
     func testNoFilesIsAFreshInstall() {
-        guard case .missing = store.load(HavenConfig.self) else { return XCTFail("expected .missing") }
+        guard case .missing = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial) else { return XCTFail("expected .missing") }
     }
 
     /// The case that lost keys: a write cut short leaves half a file. The
@@ -35,11 +35,11 @@ final class ConfigFileStoreTests: XCTestCase {
     func testTruncatedConfigLoadsFromBackup() throws {
         let good = try configWithKey()
         try store.write(good)
-        guard case .loaded(_, fromBackup: false) = store.load(HavenConfig.self) else { return XCTFail("good file should load") }
+        guard case .loaded(_, fromBackup: false) = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial) else { return XCTFail("good file should load") }
 
         try good.prefix(good.count / 2).write(to: store.url)
 
-        guard case .loaded(let config, fromBackup: true) = store.load(HavenConfig.self) else {
+        guard case .loaded(let config, fromBackup: true) = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial) else {
             return XCTFail("truncated config.json should fall back to the backup")
         }
         XCTAssertEqual(config.ownerNcryptsec, "ncryptsec1owner")
@@ -48,18 +48,58 @@ final class ConfigFileStoreTests: XCTestCase {
     /// A truncated file must not replace the backup it would be rescued from.
     func testUnreadableFileDoesNotOverwriteBackup() throws {
         try store.write(try configWithKey())
-        _ = store.load(HavenConfig.self)
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
         try Data("{\"owner".utf8).write(to: store.url)
-        _ = store.load(HavenConfig.self)
-        _ = store.load(HavenConfig.self)
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
 
         let backup = try JSONDecoder().decode(HavenConfig.self, from: Data(contentsOf: store.backupURL))
         XCTAssertEqual(backup.ownerNcryptsec, "ncryptsec1owner")
     }
 
+    /// Tron's path: config.json would not load, .env recovery wrote a valid
+    /// config with no key. On the next launch that file decodes, and it must
+    /// not replace the backup that still has the key.
+    func testKeylessConfigDoesNotReplaceKeyBearingBackup() throws {
+        try store.write(try configWithKey())
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
+
+        var keyless = HavenConfig.default
+        keyless.hasCompletedSetup = true
+        try store.write(try JSONEncoder().encode(keyless))
+        guard case .loaded(_, fromBackup: false) = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial) else {
+            return XCTFail("a valid keyless config.json still loads")
+        }
+
+        let backup = try JSONDecoder().decode(HavenConfig.self, from: Data(contentsOf: store.backupURL))
+        XCTAssertEqual(backup.ownerNcryptsec, "ncryptsec1owner")
+    }
+
+    /// With no key on either side the backup still follows config.json.
+    func testKeylessConfigRefreshesKeylessBackup() throws {
+        var first = HavenConfig.default
+        first.relayURL = "first"
+        try store.write(try JSONEncoder().encode(first))
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
+        var second = HavenConfig.default
+        second.relayURL = "second"
+        try store.write(try JSONEncoder().encode(second))
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
+
+        let backup = try JSONDecoder().decode(HavenConfig.self, from: Data(contentsOf: store.backupURL))
+        XCTAssertEqual(backup.relayURL, "second")
+    }
+
+    func testHasKeyMaterial() {
+        var config = HavenConfig.default
+        XCTAssertFalse(config.hasKeyMaterial)
+        config.accountCredentials = ["npub1a": "ncryptsec1a"]
+        XCTAssertTrue(config.hasKeyMaterial)
+    }
+
     func testUnreadableWithNoBackup() throws {
         try Data("not json".utf8).write(to: store.url)
-        guard case .unreadable = store.load(HavenConfig.self) else { return XCTFail("expected .unreadable") }
+        guard case .unreadable = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial) else { return XCTFail("expected .unreadable") }
     }
 
     /// Before anything is written over an unreadable file, its bytes are kept.
@@ -90,13 +130,13 @@ final class ConfigFileStoreTests: XCTestCase {
     /// back from it on the next launch.
     func testRemoveAllTakesTheBackupToo() throws {
         try store.write(try configWithKey())
-        _ = store.load(HavenConfig.self)
+        _ = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial)
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.backupURL.path))
 
         store.removeAll()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.backupURL.path))
-        guard case .missing = store.load(HavenConfig.self) else { return XCTFail("expected .missing after reset") }
+        guard case .missing = store.load(HavenConfig.self, hasKey: \.hasKeyMaterial) else { return XCTFail("expected .missing after reset") }
     }
 }
