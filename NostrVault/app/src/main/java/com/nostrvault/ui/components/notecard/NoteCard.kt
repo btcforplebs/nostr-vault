@@ -140,6 +140,12 @@ fun NoteCard(
                 },
             ),
         )
+        // An article, recipe or stream opens in the web app that shows it best.
+        // A repost resolved to its original carries the original's tags; one
+        // that isn't has no `d` tag, so no link.
+        NostrWebLinks.forEvent(note.displayKind, note.effectiveAuthor, note.tags)?.let { link ->
+            add(NoteAction(NostrVaultIcons.OpenExternal, link.label) { NostrWebLinks.open(menuContext, link.url) })
+        }
         // iOS lets you select the note's text in place. Here a long-press on
         // the body would fight the row's tap-to-open and the list's scroll,
         // so the text is copied whole from the menu instead.

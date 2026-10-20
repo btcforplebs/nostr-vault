@@ -18,6 +18,7 @@ import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.CustomZapSheet
+import com.nostrvault.ui.components.NostrWebLinks
 import com.nostrvault.ui.components.threadLink
 import com.nostrvault.ui.theme.*
 
@@ -70,6 +71,14 @@ fun ArticleReaderScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back", tint = colors.primary)
+                    }
+                },
+                actions = {
+                    // Recipes to zap.cooking, other articles to YakiHonne.
+                    note?.let { NostrWebLinks.forEvent(it.kind, it.pubkey, it.tags) }?.let { link ->
+                        IconButton(onClick = { NostrWebLinks.open(context, link.url) }) {
+                            Icon(NostrVaultIcons.OpenExternal, contentDescription = link.label, tint = colors.primary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WindowBackground),

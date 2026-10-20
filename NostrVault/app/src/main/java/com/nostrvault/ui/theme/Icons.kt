@@ -5,6 +5,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Poll
@@ -274,6 +275,7 @@ object NostrVaultIcons {
     val Document: ImageVector = Icons.Filled.Description         // doc.text
     val TagIcon: ImageVector = Icons.Filled.Tag                  // number/hashtag
     val LinkIcon: ImageVector = Icons.Filled.Link                // link
+    val OpenExternal: ImageVector = Icons.AutoMirrored.Filled.OpenInNew // arrow.up.right.square
     val At: ImageVector = Icons.Filled.AlternateEmail            // at (tagged filter)
     val OutsideNetwork: ImageVector = Icons.Filled.PersonSearch  // person.crop.circle.badge.questionmark
     val Received: ImageVector = Icons.Filled.MoveToInbox         // tray.and.arrow.down.fill

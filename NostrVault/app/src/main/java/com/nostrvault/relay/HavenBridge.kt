@@ -505,6 +505,25 @@ object HavenBridge {
         return bech32Encode("nsec", bytes)
     }
 
+    /**
+     * Encode a hex public key, plus relay hints, to an nprofile bech32 string
+     * (NIP-19 TLV: type 0 pubkey, type 1 per relay). Hints too long for one
+     * TLV are dropped rather than failing the whole link.
+     */
+    fun encodeNprofile(hexPubkey: String, relays: List<String> = emptyList()): String? {
+        val pubBytes = hexToByteArray(hexPubkey) ?: return null
+        if (pubBytes.size != 32) return null
+        val tlv = mutableListOf<Byte>()
+        fun appendTLV(type: Int, value: ByteArray) {
+            tlv.add(type.toByte())
+            tlv.add(value.size.toByte())
+            value.forEach { tlv.add(it) }
+        }
+        appendTLV(0, pubBytes)
+        relays.map { it.toByteArray(Charsets.UTF_8) }.filter { it.size in 1..255 }.forEach { appendTLV(1, it) }
+        return bech32Encode("nprofile", tlv.toByteArray())
+    }
+
     /** Decode an nprofile bech32 string. Returns JSON: {"pubkey":"...","relays":[...]} */
     fun decodeNprofile(nprofile: String): String? {
         val (pubkey, relays) = nprofileParts(nprofile) ?: return null

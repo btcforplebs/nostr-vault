@@ -279,6 +279,16 @@ fun LiveStreamScreen(
                             Icon(NostrVaultIcons.More, contentDescription = "Stream options", tint = colors.primary)
                         }
                         DropdownMenu(expanded = showHostMenu, onDismissRequest = { showHostMenu = false }) {
+                            com.nostrvault.ui.components.NostrWebLinks.forStream(stream)?.let { link ->
+                                DropdownMenuItem(
+                                    text = { Text(link.label) },
+                                    leadingIcon = { Icon(NostrVaultIcons.OpenExternal, contentDescription = null) },
+                                    onClick = {
+                                        showHostMenu = false
+                                        com.nostrvault.ui.components.NostrWebLinks.open(context, link.url)
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Report stream") },
                                 leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },

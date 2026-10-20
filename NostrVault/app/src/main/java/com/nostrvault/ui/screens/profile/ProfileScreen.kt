@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
+import com.nostrvault.ui.components.NostrWebLinks
 import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -139,6 +140,7 @@ fun ProfileScreen(
     LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
+    val brainstormLink = remember(pubkey) { NostrWebLinks.forProfile(pubkey) }
     val lane = LocalNotificationManager.current
     val clipboard = LocalClipboardManager.current
 
@@ -341,6 +343,8 @@ fun ProfileScreen(
                         copyNpub()
                         lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
                     },
+                    webLink = brainstormLink,
+                    onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
                 )
                 // One rule above the tabs instead of one between every block.
                 HorizontalDivider(

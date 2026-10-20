@@ -38,6 +38,9 @@ internal fun ProfileActionRow(
     onZapLongPress: () -> Unit,
     onTrustWeb: () -> Unit,
     onCopyNpub: () -> Unit,
+    /** Their page on the web (Brainstorm), to check trust off the device. */
+    webLink: com.nostrvault.ui.components.NostrWebLinks.WebLink? = null,
+    onOpenWebLink: () -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
     val tint = colors.primary.copy(alpha = 0.12f)
@@ -83,6 +86,13 @@ internal fun ProfileActionRow(
                             leadingIcon = { Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp)) },
                             onClick = { menuOpen = false; onCopyNpub() },
                         )
+                        webLink?.let { link ->
+                            DropdownMenuItem(
+                                text = { Text(link.label) },
+                                leadingIcon = { Icon(NostrVaultIcons.OpenExternal, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                onClick = { menuOpen = false; onOpenWebLink() },
+                            )
+                        }
                         HorizontalDivider()
                         val blockColor = if (isBlocked) Color(0xFFFF9800) else ErrorRed
                         DropdownMenuItem(
