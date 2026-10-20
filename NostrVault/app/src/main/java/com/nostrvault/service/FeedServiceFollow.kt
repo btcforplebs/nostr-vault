@@ -51,7 +51,7 @@ import com.nostrvault.ui.notification.FollowKind
             // signed or loaded: two in one second tie, and relays keep the
             // lower id, dropping the other's follows.
             val event = contactListPublishMutex.withLock {
-                delay(ContactManager.followListSignDelayMs(System.currentTimeMillis(), lastContactListCreatedAt))
+                delay(ContactManager.followListSignDelayMs(System.currentTimeMillis(), lastContactListCreatedAt.get()))
                 runCatching { nostrService.signEventAsync(
                     kind = 3,
                     content = content,
@@ -63,7 +63,7 @@ import com.nostrvault.ui.notification.FollowKind
                         if (e is PostingAccount.AccountChangedException) return@launch
                         null
                     }
-                    ?.also { lastContactListCreatedAt = maxOf(lastContactListCreatedAt, it.createdAt) }
+                    ?.also { signed -> lastContactListCreatedAt.updateAndGet { maxOf(it, signed.createdAt) } }
             }
             if (event == null) fail(null)
             event?.let {
@@ -221,7 +221,7 @@ import com.nostrvault.ui.notification.FollowKind
         contactListContent = content
         // The backup's own tags, plus the current list's non-follow tags it
         // lacks (a relay-history backup holds only its p tags).
-        contactListTags = pTags + contactListTags.filter { it.firstOrNull() != "p" && it !in pTags }
+        contactListTags = pTags + contactListTags.filter { it.isNotEmpty() && it[0] != "p" && it !in pTags }
         publishContactList(contactResult.pubkeys)
     }
 

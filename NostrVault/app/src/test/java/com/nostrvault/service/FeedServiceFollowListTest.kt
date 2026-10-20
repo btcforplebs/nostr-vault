@@ -89,10 +89,24 @@ class FeedServiceFollowListTest {
         feed._followedPubkeys.value = listOf(alice, bob)
         feed.contactListContent = "{\"wss://a\":{}}"
         feed.contactListTags = listOf(listOf("p", bob), listOf("t", "bitcoin"))
-        feed.clearInMemoryFeedState()
+        feed.forgetFollowListForAccountSwitch()
         assertEquals(emptyList<String>(), feed._followedPubkeys.value)
         assertEquals("", feed.contactListContent)
         assertEquals(emptyList<List<String>>(), feed.contactListTags)
+    }
+
+    @Test
+    fun `Reload Feed on the same account keeps the follow list`() {
+        // Settings > Reload Feed runs forceReload, i.e. clearInMemoryFeedState.
+        // A load that then finds no list but is confirmed must not leave an
+        // empty set for the next follow tap to publish over the real one.
+        feed._followedPubkeys.value = listOf(alice, bob)
+        feed.contactListContent = "{\"wss://a\":{}}"
+        feed.contactListTags = listOf(listOf("p", bob), listOf("t", "bitcoin"))
+        feed.clearInMemoryFeedState()
+        assertEquals(listOf(alice, bob), feed._followedPubkeys.value)
+        assertEquals("{\"wss://a\":{}}", feed.contactListContent)
+        assertEquals(listOf(listOf("p", bob), listOf("t", "bitcoin")), feed.contactListTags)
     }
 
     @Test

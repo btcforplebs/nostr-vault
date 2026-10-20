@@ -98,7 +98,7 @@ import java.util.concurrent.ConcurrentHashMap
                         contactListContent = content
                         contactListTags = tags
                         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, createdAt)
-                        lastContactListCreatedAt = maxOf(lastContactListCreatedAt, createdAt)
+                        lastContactListCreatedAt.updateAndGet { maxOf(it, createdAt) }
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                         recomputeFilteredNotes()
@@ -125,7 +125,7 @@ import java.util.concurrent.ConcurrentHashMap
                     Log.w(TAG, "loadContactList: relay kind-3 stale (relay created_at=${result.createdAt} < local $ownContactListCreatedAt) — keeping ${_followedPubkeys.value.size} local follows and re-publishing")
                     withContext(Dispatchers.Main.immediate) {
                         contactListConfirmed = true
-                        lastContactListCreatedAt = maxOf(lastContactListCreatedAt, result.createdAt)
+                        lastContactListCreatedAt.updateAndGet { maxOf(it, result.createdAt) }
                         // After a relaunch the local list's other tags are not in
                         // memory; the relay copy's are the newest known.
                         if (contactListTags.isEmpty()) contactListTags = result.tags

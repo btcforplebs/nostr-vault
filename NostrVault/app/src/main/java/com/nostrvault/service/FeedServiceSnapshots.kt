@@ -129,6 +129,19 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         scope.launch { loadContactList() }
     }
 
+    /**
+     * The previous account's follows, forgotten on an account switch only: a
+     * new account whose load finds no list (but is confirmed) would otherwise
+     * publish them as its own. Not part of [clearInMemoryFeedState], which
+     * Settings > Reload Feed also runs on the same account, where the list in
+     * memory is the one a follow tap must publish over.
+     */
+    internal fun FeedService.forgetFollowListForAccountSwitch() {
+        _followedPubkeys.value = emptyList()
+        contactListContent = ""
+        contactListTags = emptyList()
+    }
+
     internal fun FeedService.clearInMemoryFeedState() {
         // A merge still running would publish the old account's notes and
         // counts into the cleared feed.
@@ -148,11 +161,6 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         unavailableSince.clear()
         _unavailableNoteIds.value = emptySet()
         relayListRequested.clear()
-        // The previous account's follows: a new account whose load finds no
-        // list (but is confirmed) would otherwise publish them as its own.
-        _followedPubkeys.value = emptyList()
-        contactListContent = ""
-        contactListTags = emptyList()
         contactListConfirmed = false
         pendingFollowActions.clear()
         notificationManager.clearPendingFollows()

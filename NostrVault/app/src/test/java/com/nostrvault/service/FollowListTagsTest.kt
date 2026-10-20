@@ -50,6 +50,14 @@ class FollowListTagsTest {
         assertEquals(listOf(listOf("p", alice)), ContactManager.contactListTags(listOf(alice), loaded))
     }
 
+    @Test fun publishDropsEmptyTags() {
+        // Strict relays reject an event with an empty tag; never copy one forward.
+        assertEquals(
+            listOf(listOf("t", "nostr"), listOf("p", alice)),
+            ContactManager.contactListTags(listOf(alice), listOf(emptyList(), listOf("t", "nostr"), listOf("p", alice))),
+        )
+    }
+
     @Test fun noLoadedTagsIsPlainPTags() {
         assertEquals(listOf(listOf("p", alice), listOf("p", bob)), ContactManager.contactListTags(listOf(alice, bob), emptyList()))
     }

@@ -87,7 +87,8 @@ object ContactManager {
         val tags = mutableListOf<List<String>>()
         for (tag in loadedTags) {
             when {
-                tag.firstOrNull() != "p" -> tags.add(tag)
+                tag.isEmpty() -> Unit
+                tag[0] != "p" -> tags.add(tag)
                 isFollowTag(tag) && tag[1] in wanted && placed.add(tag[1]) -> tags.add(tag)
             }
         }

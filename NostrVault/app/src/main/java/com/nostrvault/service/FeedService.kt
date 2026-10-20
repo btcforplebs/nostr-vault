@@ -450,7 +450,7 @@ class FeedService @Inject constructor(
     internal var contactListTags: List<List<String>> = emptyList()
     // One follow list signed at a time, each in a later second than the last (see publishContactList).
     internal val contactListPublishMutex = kotlinx.coroutines.sync.Mutex()
-    @Volatile internal var lastContactListCreatedAt: Long = 0L
+    internal val lastContactListCreatedAt = java.util.concurrent.atomic.AtomicLong(0L)
     // created_at of the contact list we last published/committed locally. The
     // relay-fetch overwrite is only accepted when its created_at is >= this value;
     // otherwise the relay copy is older than our latest local edit (e.g. a fresh
