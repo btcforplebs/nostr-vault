@@ -35,7 +35,7 @@ struct KeyPasswordStep: View {
                     .font(.appSystem(size: 24, weight: .bold))
                     .foregroundColor(WizardColors.textPrimary)
                 if !isTyping {
-                    Text("Choose a password to lock your secret key on this phone.")
+                    Text("Choose a password to lock your secret key on this device.")
                         .font(.appSystem(size: 15))
                         .foregroundColor(WizardColors.textSecondary)
                         .multilineTextAlignment(.center)

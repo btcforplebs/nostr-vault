@@ -380,7 +380,7 @@ struct VaultDashboardView: View {
             DashboardRow(
                 icon: "doc.zipper",
                 title: "Backup file",
-                detail: VaultHistory.lastNotesBackup.map { "Last made \(relative($0))." } ?? "Never made. Keep one somewhere off this phone.",
+                detail: VaultHistory.lastNotesBackup.map { "Last made \(relative($0))." } ?? "Never made. Keep one somewhere off this device.",
                 state: VaultHistory.lastNotesBackup == nil ? .todo : .done
             ) {
                 RowButton(title: VaultHistory.lastNotesBackup == nil ? "Make one" : "Make new", isLoading: exporter.running == .notes) {

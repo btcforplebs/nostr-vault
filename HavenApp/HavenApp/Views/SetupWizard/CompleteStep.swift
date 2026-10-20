@@ -77,7 +77,7 @@ struct CompleteStep: View {
             if isNewUser {
                 // How the on-device relay and Blossom reach everyone else.
                 VStack(alignment: .leading, spacing: 12) {
-                    explainerRow(icon: "antenna.radiowaves.left.and.right", text: "Your relay lives on this phone and sends your posts out to public relays so people can see them.")
+                    explainerRow(icon: "antenna.radiowaves.left.and.right", text: "Your relay lives on this device and sends your posts out to public relays so people can see them.")
                     explainerRow(icon: "photo.on.rectangle", text: "Blossom does the same for photos and videos: they're kept here and copied to public media servers.")
                 }
                 .padding(16)
