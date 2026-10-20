@@ -25,8 +25,10 @@ internal fun gatedStatusText(authorName: String, priceSats: Int): String =
     "Locked by $authorName for $priceSats sats."
 
 /**
- * The teaser and a lock card, or the article when this reader unlocked it
- * before. Nostr Vault does not unlock articles: no pay button, no key request.
+ * The body of a gated article. A Fanfares article gets the pay-to-unlock card
+ * ([FanfaresGatedArticleBody]). Any other gated article shows its teaser and
+ * a lock card, or the article when this reader unlocked it before: Nostr
+ * Vault does not unlock those (no pay button, no key request).
  */
 @Composable
 internal fun GatedArticleBody(
@@ -36,19 +38,44 @@ internal fun GatedArticleBody(
     author: FeedProfile?,
     bodyStyle: TextStyle,
 ) {
-    val colors = LocalNostrVaultColors.current
-    val unlocked = remember(note.id, note.tags, service.activeReader) { service.open(note, gated) }
-
-    if (unlocked != null) {
-        MarkdownText(
-            markdown = unlocked,
-            style = bodyStyle,
-            linkColor = colors.primary,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    if (gated.isFanfares) {
+        FanfaresGatedArticleBody(note, gated, service, author, bodyStyle)
         return
     }
+    val unlocked = remember(note.id, note.tags, service.activeReader) { service.storedBody(note, gated) }
 
+    if (unlocked != null) {
+        GatedUnlockedBody(unlocked, bodyStyle)
+        return
+    }
+    GatedLockFrame(note, gated, bodyStyle) {
+        Text(
+            text = gatedStatusText(author?.bestName ?: "the author", gated.priceSats),
+            color = SecondaryText,
+            fontSize = 14.sp,
+        )
+    }
+}
+
+@Composable
+internal fun GatedUnlockedBody(markdown: String, bodyStyle: TextStyle) {
+    MarkdownText(
+        markdown = markdown,
+        style = bodyStyle,
+        linkColor = LocalNostrVaultColors.current.primary,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** The teaser, then the lock card: title row with the price, then [content]. */
+@Composable
+internal fun GatedLockFrame(
+    note: FeedNote,
+    gated: GatedArticle,
+    bodyStyle: TextStyle,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         val teaser = GatedArticleTeaser.strip(note.content)
         val summary = com.nostrvault.data.model.ArticleMeta.from(note).summary
@@ -71,11 +98,7 @@ internal fun GatedArticleBody(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                     }
                 }
-                Text(
-                    text = gatedStatusText(author?.bestName ?: "the author", gated.priceSats),
-                    color = SecondaryText,
-                    fontSize = 14.sp,
-                )
+                content()
             }
         }
     }

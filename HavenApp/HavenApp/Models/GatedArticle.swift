@@ -1,20 +1,37 @@
 import Foundation
 import CryptoKit
 
-/// A long-form article whose body is sold for a zap elsewhere (Fanfares'
-/// "zap N sats to unlock"). The app shows it as locked and never pays for it;
-/// it only opens one with a key an earlier version stored.
+/// A long-form article whose body is sold for a zap ("zap N sats to unlock").
 ///
-/// There is no merged NIP for this (Fanfares' NIP-108, nostr-protocol/nips#827,
-/// closed unmerged). The event carries
-/// `["encrypted", "aes-256-gcm", <base64>, <key URL>]` and
-/// `["price", "42", "SATS"]`; `content` is only a teaser plus a link. The
-/// base64 blob is WebCrypto's AES-GCM layout: a 12-byte IV, then the
-/// ciphertext with the 16-byte tag appended.
+/// There is no merged NIP for this. Fanfares proposed one as NIP-108
+/// (nostr-protocol/nips#827, closed unmerged) and what they ship today is
+/// assembled from standard parts, which is what lets any client unlock it:
+///
+/// - the event carries `["encrypted", "aes-256-gcm", <base64>, <key URL>]`
+///   and `["price", "42", "SATS"]`; `content` is only a teaser plus a link;
+/// - payment is an ordinary NIP-57 zap receipt carrying the article's `a`
+///   coordinate, from the reader's own pubkey, so a zap sent from any client
+///   counts;
+/// - the key comes from the key URL behind NIP-98 HTTP auth: the server checks
+///   the receipts for the signing pubkey and answers 402 until they cover the
+///   price, then returns the AES key as 64 hex characters;
+/// - the base64 blob is WebCrypto's AES-GCM layout: a 12-byte IV, then the
+///   ciphertext with the 16-byte tag appended.
 struct GatedArticle: Equatable {
     /// Base64 of IV ‖ ciphertext ‖ tag.
     let ciphertext: String
+    /// Where the author's tag says the key lives. This is also the `u` the
+    /// NIP-98 event must name, even when the request goes to a proxy.
+    let keyURL: URL
     let priceSats: Int
+    /// Who the price is paid to, and how much each must receive.
+    let shares: [Share]
+
+    struct Share: Equatable {
+        let pubkey: String
+        let relay: String?
+        let sats: Int
+    }
 
     /// nil for an ordinary article, or for a gated one we can't act on (no key
     /// URL, an algorithm we don't speak, no usable price).
@@ -23,7 +40,7 @@ struct GatedArticle: Equatable {
               let enc = tags.first(where: { $0.first == "encrypted" }),
               enc.count >= 4, enc[1].lowercased() == "aes-256-gcm",
               !enc[2].isEmpty,
-              URL(string: enc[3])?.scheme == "https"
+              let keyURL = URL(string: enc[3]), keyURL.scheme == "https"
         else { return nil }
 
         guard let priceTag = tags.first(where: { $0.first == "price" && $0.count >= 2 }),
@@ -35,10 +52,76 @@ struct GatedArticle: Equatable {
         guard currency == "SATS" || currency == "SAT" else { return nil }
 
         self.ciphertext = enc[2]
+        self.keyURL = keyURL
         self.priceSats = amount
+        self.shares = Self.split(price: amount, authorPubkey: pubkey, tags: tags)
     }
 
-    /// Decrypts the body with a stored key. nil when the key
+    /// Splits the price across the event's NIP-57 `zap` tags by weight, the way
+    /// Fanfares' own payment check does: a recipient listed twice has its
+    /// weights summed, no `zap` tag means the author takes it all, and each
+    /// share rounds UP, so paying every share always covers the check.
+    static func split(price: Int, authorPubkey: String, tags: [[String]]) -> [Share] {
+        var order: [String] = []
+        var weights: [String: Int] = [:]
+        var relays: [String: String] = [:]
+        for tag in tags where tag.first == "zap" && tag.count >= 2 {
+            let pubkey = tag[1].lowercased()
+            guard pubkey.count == 64, pubkey.allSatisfy(\.isHexDigit) else { continue }
+            // Fanfares reads a missing, zero or unparseable weight as 1.
+            let weight = tag.count >= 4 ? max(Int(tag[3]) ?? 1, 1) : 1
+            if weights[pubkey] == nil { order.append(pubkey) }
+            weights[pubkey, default: 0] += weight
+            if relays[pubkey] == nil, tag.count >= 3, !tag[2].isEmpty { relays[pubkey] = tag[2] }
+        }
+        let total = order.reduce(0) { $0 + (weights[$1] ?? 0) }
+        guard total > 0 else { return [Share(pubkey: authorPubkey, relay: nil, sats: price)] }
+        return order.map { pubkey in
+            let weight = weights[pubkey] ?? 1
+            let sats = total == price ? weight : Int((Double(weight) / Double(total) * Double(price)).rounded(.up))
+            return Share(pubkey: pubkey, relay: relays[pubkey], sats: sats)
+        }
+    }
+
+    /// Relays the zap receipt should also land on, so the key server can find
+    /// it: the ones the author named in their `zap` tags.
+    var receiptRelays: [String] {
+        var seen = Set<String>()
+        return shares.compactMap(\.relay).filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    /// True for an article sold on Fanfares: its key lives on Fanfares'
+    /// servers. Only these are unlocked from the app; any other gated article
+    /// stays locked unless a key is already stored.
+    var isFanfares: Bool {
+        guard let host = keyURL.host?.lowercased() else { return false }
+        return ["fanfares.live", "fanfares.io"].contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// Where Fanfares sells and shows the article, by its naddr.
+    static func fanfaresURL(naddr: String) -> URL? {
+        URL(string: "https://fanfares.io/naddr/" + naddr)
+    }
+
+    /// The URL to send the key request to.
+    ///
+    /// Fanfares' tag names its backend, which wants a private API key; its web
+    /// app reaches the backend through its own public proxy, and so must we.
+    /// The NIP-98 `u` still names the tag's URL — that's what the proxy checks.
+    var requestURL: URL {
+        if keyURL.host?.lowercased() == "api.fanfares.live" {
+            return URL(string: "https://fanfares.io/api" + keyURL.path) ?? keyURL
+        }
+        return keyURL
+    }
+
+    /// The tags of the NIP-98 (kind 27235) event that asks for the key. Its
+    /// `content` is the article's naddr.
+    var httpAuthTags: [[String]] {
+        [["u", keyURL.absoluteString], ["method", "GET"]]
+    }
+
+    /// Decrypts the body with the key the server returned. nil when the key
     /// isn't 32 bytes of hex or doesn't open the box — a wrong key and a
     /// corrupted body look the same, and both mean "don't show anything".
     func decrypt(keyHex: String) -> String? {
@@ -59,11 +142,40 @@ struct GatedArticle: Equatable {
         }
     }
 
+    /// The NIP-19 `naddr` TLV payload for an article, entries in the order
+    /// nostr-tools writes them (kind, author, relay, d), so the bech32 string
+    /// we sign is byte-identical to the one Fanfares' own site signs.
+    static func naddrTLV(identifier: String, relay: String?, pubkey: String, kind: Int) -> Data? {
+        guard let author = Data(gatedHex: pubkey), author.count == 32 else { return nil }
+        func entry(_ type: UInt8, _ value: Data) -> Data? {
+            guard value.count <= 255 else { return nil }
+            return Data([type, UInt8(value.count)]) + value
+        }
+        var k = UInt32(kind).bigEndian
+        var out = Data([3, 4]) + Data(bytes: &k, count: 4)
+        out += Data([2, 32]) + author
+        if let relay, !relay.isEmpty, let r = entry(1, Data(relay.utf8)) { out += r }
+        guard let d = entry(0, Data(identifier.utf8)) else { return nil }
+        out += d
+        return out
+    }
 }
 
 /// Teaser text a gated article ships in `content`, minus the "zap to unlock …
-/// <link>" call to action, which the app doesn't offer.
+/// <link>" call to action that the lock panel replaces.
 enum GatedArticleTeaser {
+    /// The author's own link to the article: the first URL on or after the
+    /// call-to-action line, never an image earlier in the teaser.
+    static func unlockURL(_ content: String) -> URL? {
+        let lines = content.components(separatedBy: .newlines)
+        guard let cta = lines.lastIndex(where: { $0.range(of: "to unlock", options: .caseInsensitive) != nil }) else {
+            return nil
+        }
+        let tail = lines[cta...].joined(separator: "\n")
+        guard let range = tail.range(of: #"https://[^\s)\]]+"#, options: .regularExpression) else { return nil }
+        return URL(string: String(tail[range]))
+    }
+
     static func strip(_ content: String) -> String {
         let lines = content.components(separatedBy: .newlines)
         guard let cta = lines.lastIndex(where: { $0.range(of: "to unlock", options: .caseInsensitive) != nil }) else {

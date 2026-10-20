@@ -33,7 +33,8 @@ class ZapSendService @Inject constructor(
         class LnurlFailed : ZapError("Failed to resolve lightning address")
         class SignFailed : ZapError("Failed to sign zap request")
         class InvoiceFailed : ZapError("Failed to fetch invoice from provider")
-        class PaymentFailed(detail: String) : ZapError("Payment failed: $detail")
+        /** [notPaid]: the wallet never paid (it was never asked, or refused), so trying again can't pay twice. */
+        class PaymentFailed(val detail: String, val notPaid: Boolean = false) : ZapError("Payment failed: $detail")
     }
 
     /**
@@ -47,6 +48,12 @@ class ZapSendService @Inject constructor(
      *   to, e.g. `30311:<host>:<d>` for a live stream. Live clients read the
      *   `a` tag to decide which room a zap belongs in — without it the zap
      *   pays the host but never appears in the stream's chat.
+     * @param extraReceiptRelays relays someone else needs to find the receipt
+     *   on: a gated article's key server reads the relays its author named in
+     *   the `zap` tags. They go first in the `relays` tag (never cut by the
+     *   cap), and the first one is the `a` tag's relay hint. When given, the
+     *   live-stream relays are not added: the zap is for that article, not a
+     *   room. iOS ZapService.zapNote(..., extraReceiptRelays:).
      */
     suspend fun zapNote(
         noteId: String,
@@ -54,12 +61,13 @@ class ZapSendService @Inject constructor(
         amountSats: Int,
         message: String = "Zap from Nostr Vault",
         addressTag: String? = null,
+        extraReceiptRelays: List<String> = emptyList(),
     ): Result<Unit> {
         if (amountSats <= 0) {
-            return Result.failure(ZapError.PaymentFailed("Zap amount must be greater than 0"))
+            return Result.failure(ZapError.PaymentFailed("Zap amount must be greater than 0", notPaid = true))
         }
         if (amountSats > MAX_ZAP_SATS) {
-            return Result.failure(ZapError.PaymentFailed("Zap amount exceeds safety limit"))
+            return Result.failure(ZapError.PaymentFailed("Zap amount exceeds safety limit", notPaid = true))
         }
         val config = configStore.config.value
         if (config.nwcURI.isNullOrBlank()) {
@@ -87,7 +95,7 @@ class ZapSendService @Inject constructor(
         if (amountMsat < lnurlResponse.minSendable || amountMsat > lnurlResponse.maxSendable) {
             val min = lnurlResponse.minSendable / 1000
             val max = lnurlResponse.maxSendable / 1000
-            return Result.failure(ZapError.PaymentFailed("Amount outside provider limits ($min–$max sats)"))
+            return Result.failure(ZapError.PaymentFailed("Amount outside provider limits ($min–$max sats)", notPaid = true))
         }
 
         // 2. Sign the kind-9734 zap request (only when the provider supports
@@ -106,18 +114,19 @@ class ZapSendService @Inject constructor(
                         feedRelays = config.activeFeedRelays,
                         myInbox = relayLists[nostrService.activeHexPubkey].orEmpty(),
                         recipientInbox = relayLists[notePubkey].orEmpty(),
+                        extra = extraReceiptRelays,
                     ),
                 )
                 // A stream zap has to be published where the room is watching,
                 // or the receipt never shows up in its chat.
-                if (addressTag != null) addAll(LiveChatService.STREAMING_RELAYS)
+                if (addressTag != null && extraReceiptRelays.isEmpty()) addAll(LiveChatService.STREAMING_RELAYS)
             }.distinct()
             val tags = buildList {
                 add(listOf("p", notePubkey))
                 add(listOf("relays") + relayList)
                 add(listOf("amount", amountMsat.toString()))
                 if (noteId.isNotEmpty()) add(listOf("e", noteId))
-                addressTag?.let { add(listOf("a", it, LiveChatService.STREAMING_RELAYS.first())) }
+                addressTag?.let { add(listOf("a", it, extraReceiptRelays.firstOrNull() ?: LiveChatService.STREAMING_RELAYS.first())) }
                 if (lnurlTag.isNotEmpty()) add(listOf("lnurl", lnurlTag))
             }
             val signed = try {
@@ -147,7 +156,8 @@ class ZapSendService @Inject constructor(
             Log.i(TAG, "Zap paid ($amountSats sats): $preimage")
         } catch (e: Exception) {
             Log.w(TAG, "NWC payment failed: ${e.message}")
-            return Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error"))
+            val notPaid = e is NWCNotSentException || (e is NWCWalletException && e.refusedBeforePaying)
+            return Result.failure(ZapError.PaymentFailed(e.message ?: "unknown error", notPaid))
         }
 
         // Optimistic local bump; the real kind-9735 receipt overwrites this
