@@ -467,7 +467,9 @@ struct ProfileEditView: View {
             return .failure(SaveFailure(message: "Could not encode profile."))
         }
 
-        guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: []) else {
+        // The tags go too: NIP-39 `i` identities and NIP-30 emoji set in
+        // other clients would be dropped by an empty list.
+        guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: lookup.event?.tags ?? []) else {
             return .failure(SaveFailure(message: "Could not sign event. Check that your key is available."))
         }
 
