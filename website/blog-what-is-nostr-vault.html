@@ -437,7 +437,9 @@
         <p>
             Nostr Vault integrates <strong>Lightning payments</strong> through Nostr Wallet Connect (NWC). Connect
             your existing Lightning wallet &mdash; Alby, Mutiny, or any NWC-compatible wallet &mdash; and you can
-            send zaps directly from the feed, note detail, or profile view.
+            send zaps directly from the feed, note detail, or profile view. On iPhone and iPad the zap button on
+            posts and live streams is opt-in: add &#9889;&#65039; under Settings &rarr; Appearance &rarr; Post buttons.
+            Profile zaps are always available.
         </p>
 
         <p>
@@ -479,7 +481,7 @@
 
         <ol>
             <li>Fetches your UTXOs from a self-hosted Mempool instance you configure.</li>
-            <li>Displays your spendable balance in sats and the live BTC/USD fiat equivalent.</li>
+            <li>Displays your spendable balance in sats.</li>
             <li>Constructs a raw Taproot transaction using key-path spending (<code>tapTweakHash</code>).</li>
             <li>Signs it with Schnorr signatures using your nsec (the same key you use to sign Nostr events).</li>
             <li>Broadcasts the transaction directly to the network.</li>

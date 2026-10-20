@@ -68,9 +68,9 @@
           },
           "featureList": [
             "Personal Nostr relay embedded in the app",
-            "Following, Discover, Global, Popular, Media, Reels, Articles, Recipes, Live and Music feeds",
+            "Following, Discover, Global, Hashtags, Popular, Media, diVines, Articles, Recipes, Marketplace, Live, Polls and Music feeds",
             "NIP-49 encrypted private keys and NIP-46 remote signing",
-            "Lightning zaps and wallet via Nostr Wallet Connect",
+            "Opt-in Lightning zaps via Nostr Wallet Connect",
             "On-chain Taproot address and sweep derived from your Nostr key",
             "Blossom media server",
             "Web of Trust spam filtering",
@@ -255,7 +255,7 @@
             <img src="assets/screens/iphone-feeds.webp" alt="The Nostr Vault feed menu on iPhone listing Following, Discover, Global, Popular, Media, Reels, Articles, Recipes, Live, Music and Dashboard" width="900" height="1957" loading="lazy">
         </figure>
         <div class="split-copy">
-            <p class="eyebrow fade-in-up">One app. Eleven feeds.</p>
+            <p class="eyebrow fade-in-up">One app. Thirteen feeds.</p>
             <h2 class="fade-in-up">Everything Nostr publishes, one tap away.</h2>
             <p class="fade-in-up delay-100">Nostr is more than short notes. Nostr Vault reads every kind the network
                 speaks and gives each one a home, so you switch between them from a single menu instead of a single
@@ -263,10 +263,10 @@
             <ul class="feed-list fade-in-up delay-200">
                 <li><strong>Following</strong> &mdash; the people you chose, threaded or condensed, your call.</li>
                 <li><strong>Discover &amp; Popular</strong> &mdash; the second hop of your follow graph, ranked by real people, not reaction spam.</li>
-                <li><strong>Global</strong> &mdash; the whole network, behind a Web of Trust filter so it fails closed, not open.</li>
-                <li><strong>Reels</strong> &mdash; a full-screen vertical video feed with likes, replies and zaps while you watch.</li>
+                <li><strong>Global &amp; Hashtags</strong> &mdash; the whole network, or one topic, behind a Web of Trust filter so it fails closed, not open.</li>
+                <li><strong>diVines</strong> &mdash; a full-screen vertical video feed you can like and reply to while you watch.</li>
                 <li><strong>Articles</strong> &mdash; long-form posts drawn as articles, with a proper reader.</li>
-                <li><strong>Recipes, Live &amp; Music</strong> &mdash; zapcooking recipes, NIP-53 live streams with chat, and trending tracks from Wavlake.</li>
+                <li><strong>Recipes, Marketplace, Live, Polls &amp; Music</strong> &mdash; zapcooking recipes, Nostr marketplace listings, NIP-53 live streams with chat, polls, and trending tracks from Wavlake.</li>
                 <li><strong>Media</strong> &mdash; a grid of every photo, GIF and video from your follows, sorted by date.</li>
             </ul>
         </div>
@@ -309,10 +309,11 @@
                     iPhone and Android.</p>
             </article>
             <article class="card fade-in-up delay-200">
-                <h3>Zaps and a Lightning wallet</h3>
-                <p>Send and receive sats through Nostr Wallet Connect with a live balance, invoice amounts shown
-                    before you pay, lightning addresses and a history tab. Zap a note, a reel or a live stream without
-                    leaving it.</p>
+                <h3>Zaps, when you want them</h3>
+                <p>Connect your own Lightning wallet through Nostr Wallet Connect and zap straight from it, with
+                    invoice amounts shown before you pay. Profile zaps are always there. On iPhone and iPad the zap
+                    button on posts and live streams is opt-in: add &#9889;&#65039; under Settings &rarr; Appearance
+                    &rarr; Post buttons.</p>
             </article>
             <article class="card fade-in-up">
                 <h3>Your nsec is a Bitcoin wallet</h3>
@@ -321,8 +322,8 @@
             </article>
             <article class="card fade-in-up delay-100">
                 <h3>Web of Trust, on by default</h3>
-                <p>Global feeds are filtered by the trust graph of your follows, so a fresh account starts with a
-                    seeded graph instead of the raw firehose. Language filters, mute-list sync and per-account block
+                <p>Global feeds are filtered by the trust graph of your follows, so you see people your graph can
+                    vouch for instead of the raw firehose. Language filters, mute-list sync and per-account block
                     lists round it out.</p>
             </article>
             <article class="card fade-in-up delay-200">
@@ -337,13 +338,13 @@
             </article>
             <article class="card fade-in-up delay-100">
                 <h3>Widgets and a real iPad layout</h3>
-                <p>Vault Pulse, Feed Glance, Quick Actions, Sats, Mosaic and Lock Screen widgets on iOS and iPadOS,
+                <p>Feed Glance, Quick Actions, Mosaic and Lock Screen widgets on iOS and iPadOS,
                     with home-screen widgets on Android too. On iPad the feed and relay become true columns with a
                     draggable divider.</p>
             </article>
             <article class="card fade-in-up delay-200">
                 <h3>Native on every platform</h3>
-                <p>SwiftUI on iPhone, iPad and Mac. Jetpack Compose on Android. Six accent themes, one motion
+                <p>SwiftUI on iPhone, iPad and Mac. Jetpack Compose on Android. One motion
                     vocabulary that honours Reduce Motion, a GIF keyboard in the composer, and a menu-bar status panel
                     on the Mac.</p>
             </article>
@@ -419,9 +420,9 @@
                     via key-path spending and broadcasts it, all inside the app.</p>
             </article>
             <article class="card fade-in-up delay-200">
-                <h3>Live balance and price</h3>
-                <p>The pre-sweep screen loads your spendable balance live from Mempool with a fiat equivalent from the
-                    built-in price service. No surprises before you sign.</p>
+                <h3>Your balance before you sign</h3>
+                <p>The pre-sweep screen loads your spendable balance in sats from Mempool and walks you through a
+                    three-step warning. No surprises before you sign.</p>
             </article>
         </div>
     </section>
