@@ -71,11 +71,34 @@ struct Bech32 {
     }
 
     // MARK: - TLV Helper
-    static func encodeTLV(type: UInt8, data: Data) -> Data {
-        var result = Data([type])
-        result.append(UInt8(data.count))
+    /// One NIP-19 TLV entry, or nil when `data` is over 255 bytes: the length
+    /// is a single byte. Relay-supplied values (a d tag) can be any length.
+    static func tlvEntry(type: UInt8, data: Data) -> Data? {
+        guard let length = UInt8(exactly: data.count) else { return nil }
+        var result = Data([type, length])
         result.append(data)
         return result
+    }
+
+    /// Like `tlvEntry`, but an oversized entry is left out (empty Data)
+    /// instead of trapping. Callers that must not lose the entry use
+    /// `tlvEntry` and bail on nil.
+    static func encodeTLV(type: UInt8, data: Data) -> Data {
+        tlvEntry(type: type, data: data) ?? Data()
+    }
+
+    /// NIP-19 `nevent` for an event id and author (both hex). The kind entry
+    /// is optional in NIP-19 and is left out when `kind` does not fit its
+    /// 4 bytes; a relay can send any integer there.
+    static func encodeNevent(idHex: String, pubkeyHex: String, kind: Int) -> String? {
+        guard let idData = hexToData(idHex), let pubData = hexToData(pubkeyHex),
+              let idEntry = tlvEntry(type: 0, data: idData),
+              let authorEntry = tlvEntry(type: 2, data: pubData) else { return nil }
+        var tlv = idEntry + authorEntry
+        if let kind32 = UInt32(exactly: kind) {
+            tlv.append(encodeTLV(type: 3, data: withUnsafeBytes(of: kind32.bigEndian) { Data($0) }))
+        }
+        return encode(hrp: "nevent", data: tlv)
     }
 
     // MARK: - Private Helpers

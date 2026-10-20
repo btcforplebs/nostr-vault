@@ -150,16 +150,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     }
 
     var nevent: String {
-        guard let idData = Bech32.hexToData(id),
-              let pubData = Bech32.hexToData(pubkey) else { return note1 }
-
-        var tlv = Data()
-        tlv.append(Bech32.encodeTLV(type: 0, data: idData))
-        tlv.append(Bech32.encodeTLV(type: 2, data: pubData))
-        let kindBytes = withUnsafeBytes(of: UInt32(kind).bigEndian) { Data($0) }
-        tlv.append(Bech32.encodeTLV(type: 3, data: kindBytes))
-
-        return Bech32.encode(hrp: "nevent", data: tlv) ?? note1
+        Bech32.encodeNevent(idHex: id, pubkeyHex: pubkey, kind: kind) ?? note1
     }
 
     // MARK: - Static parsers (called once at init)

@@ -1,0 +1,1 @@
+../../../HavenApp/Services/Bech32.swift

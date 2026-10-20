@@ -1,21 +1,12 @@
 import Foundation
 
-// Stand-ins for the three app types HavenConfig names but that cannot build
-// here (SwiftUI theming, the relay socket's Bech32, CryptoKit NIP-49). They
+// Stand-ins for the app types HavenConfig names but that cannot build here
+// (SwiftUI theming, CryptoKit NIP-49). Bech32 is the real one, symlinked. They
 // cover only what HavenConfig touches; nothing the relay-launch tests assert
 // on goes through them.
 
 enum AppTheme: String {
     case orange
-}
-
-struct Bech32 {
-    struct Decoded {
-        let hrp: String
-        let hexString: String
-    }
-
-    static func decode(_ string: String) -> Decoded? { nil }
 }
 
 enum NIP49Service {
