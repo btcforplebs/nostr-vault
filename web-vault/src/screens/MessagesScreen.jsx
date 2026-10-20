@@ -11,7 +11,7 @@ import { MentionPicker } from "../components/MentionPicker.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
-import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, watchMessages } from "../net/dms.js"
+import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
 if (import.meta.env) import("../styles/compose.css")
@@ -23,6 +23,8 @@ export async function inboxRelays(ctx) {
   const mine = await dmRelaysFor(ctx.session.pubkey, lookup, { fallback: [] }).catch(() => [])
   return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
 }
+
+let lastDrop = null
 
 /** Messages state for a screen, loading once and re-rendering as messages land. `refresh` (the iPhone's pull to
  *  refresh) looks at the relays again; `retry` also asks again for every message that isn't open (the signer refused
@@ -51,9 +53,13 @@ export function useMessages(ctx) {
     // Both screens may be mounted (desktop list + thread): claimResync lets only one of them look.
     const back = () => { if (document.visibilityState === "visible" && claimResync()) setRound(r => r + 1) }
     const online = () => { if (claimResync({ after: 10_000 })) setRound(r => r + 1) }
+    // A relay dropped after a failed AUTH (dms.js) took its live subscription with it: look again at once. Each drop
+    // hands every listener the same list, so with both screens mounted only the first one looks.
+    const dropped = urls => { if (urls === lastDrop) return; lastDrop = urls; setRound(r => r + 1) }
+    const offDropped = onResyncNeeded(dropped)
     document.addEventListener("visibilitychange", back)
     addEventListener("online", online)
-    return () => { document.removeEventListener("visibilitychange", back); removeEventListener("online", online) }
+    return () => { offDropped(); document.removeEventListener("visibilitychange", back); removeEventListener("online", online) }
   }, [])
   // Refresh looks again without forgetting what was settled: wraps found not to be the user's, and ones refused past
   // MAX_REFUSALS, stay settled, so a routine tap never costs a bunker user a run of prompts. Only "Try again" does.
