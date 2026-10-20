@@ -1,8 +1,9 @@
 // Post a note: signed by the user's signer, stored in the in-page Haven first, then sent to the relays
 // publishRelays picks (write list + the iPhone app's broadcast set). "#/compose?reply=<id>" and "?quote=<id>"
 // (a note card's Reply and Quote) post a reply with NIP-10 tags, or a quote with a q tag and the nevent.
-// As on the iPhone: photos (picked, dropped or pasted) go up to the account's media servers as they're added and into
-// the note as links with imeta tags; "@" suggests people and tags them; what isn't posted yet is kept as a draft.
+// As on the iPhone: photos and videos (picked, dropped or pasted) go up to the account's media servers as they're added
+// and into the note as links with imeta tags, each with its own ALT description; "@" suggests people and tags them;
+// what isn't posted yet is kept as a draft.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks"
 import { publishNote } from "../net/sync.js"
 import { composeTarget, findNote, quoteOf, replyTags } from "../net/actions.js"
@@ -12,6 +13,7 @@ import { NoteText } from "../components/NoteText.jsx"
 import { MentionPicker, mentionAt, mentionedPubkeys, toNostr, uniqueToken } from "../components/MentionPicker.jsx"
 import { getProfile } from "../net/profiles.js"
 import { hashtagTags } from "../net/hashtags.js"
+import { Dialog } from "../components/Moderation.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -76,11 +78,15 @@ export function idbDrafts(pubkey, idb = globalThis.indexedDB) {
   }
 }
 
-/** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the photos already uploaded. */
+/** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the media already uploaded. */
 export const draftOf = (text, mentions, photos) => ({
   text, mentions: Object.fromEntries(Object.entries(mentions).filter(([t]) => text.includes(t))),
-  photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height }) => ({ url, sha256, mime, size, width, height })),
+  photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height, alt }) => ({ url, sha256, mime, size, width, height, ...(alt?.trim() ? { alt } : {}) })),
 })
+
+/** What the picker, a drop or a paste may attach: photos and videos (ComposeView+Attachments), nothing else. */
+export const isMedia = f => /^(image|video)\//.test(f?.type ?? "")
+export const isVideo = m => /^video\//.test(m?.mime ?? m?.type ?? m?.file?.type ?? "")
 const emptyDraft = d => !d.text.trim() && !d.photos.length
 
 /** Content and tags for a post: tokens -> nostr:npub, photo links appended (as the iPhone does), then the reply or
@@ -97,9 +103,23 @@ export function buildPost({ text, mentions, photos, target, parent }) {
   return { content: base.content, tags }
 }
 
-// Pixel size, so readers can reserve the box before the photo loads.
+// Pixel size, so readers can reserve the box before the photo or video loads.
 async function pixelSize(file) {
+  if (/^video\//.test(file.type)) return videoSize(file)
   try { const b = await createImageBitmap(file); const s = { width: b.width, height: b.height }; b.close?.(); return s } catch { return {} }
+}
+
+// A video's size from its metadata. A file the browser can't read (or that never answers) just goes without one.
+function videoSize(file) {
+  return new Promise(resolve => {
+    const v = document.createElement("video"), url = URL.createObjectURL(file)
+    const done = s => { clearTimeout(timer); v.removeAttribute("src"); v.load(); URL.revokeObjectURL(url); resolve(s) }
+    const timer = setTimeout(() => done({}), 5000)
+    v.preload = "metadata"; v.muted = true
+    v.onloadedmetadata = () => done(v.videoWidth > 0 && v.videoHeight > 0 ? { width: v.videoWidth, height: v.videoHeight } : {})
+    v.onerror = () => done({})
+    v.src = url
+  })
 }
 
 let nextPhoto = 0
@@ -109,7 +129,8 @@ let nextPhoto = 0
 export function ComposeScreen({ ctx, fixed = null, inline = false }) {
   const [text, setText] = useState("")
   const [mentions, setMentions] = useState({}) // { "@Name": pubkey }
-  const [photos, setPhotos] = useState([]) // { id, preview, status: "uploading" | "done" | "failed", error?, file?, url?, ... }
+  const [photos, setPhotos] = useState([]) // photos and videos: { id, preview, status: "uploading" | "done" | "failed", error?, file?, url?, alt?, ... }
+  const [altFor, setAltFor] = useState(null) // the id whose ALT is being written
   const [mention, setMention] = useState(null) // the "@query" at the caret
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -168,13 +189,13 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
     })
   }
   const addFiles = files => {
-    const images = [...files].filter(f => /^image\//.test(f.type))
-    if (!images.length) return
+    const media = [...files].filter(isMedia)
+    if (!media.length) return
     setErr("")
     setPhotos(ps => {
       const room = MAX_PHOTOS - ps.length
-      if (images.length > room) setErr(`A note can carry ${MAX_PHOTOS} photos.`)
-      const added = images.slice(0, Math.max(0, room)).map(file => ({ id: ++nextPhoto, file, preview: URL.createObjectURL(file), status: "queued" }))
+      if (media.length > room) setErr(`A note can carry ${MAX_PHOTOS} attachments.`)
+      const added = media.slice(0, Math.max(0, room)).map(file => ({ id: ++nextPhoto, file, preview: URL.createObjectURL(file), status: "queued" }))
       queueMicrotask(() => added.forEach(p => upload(p.id, p.file)))
       return [...ps, ...added]
     })
@@ -225,30 +246,46 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
           aria-autocomplete="list" aria-expanded={!!mention} aria-controls={mention ? "mention-picker" : undefined}
           onInput={e => { setText(e.currentTarget.value); track(e.currentTarget) }}
           onKeyUp={e => { if (e.key.startsWith("Arrow") && !mention) track(e.currentTarget) }} onClick={e => track(e.currentTarget)}
-          onPaste={e => { const files = [...(e.clipboardData?.files ?? [])]; if (files.some(f => /^image\//.test(f.type))) { e.preventDefault(); addFiles(files) } }} />
+          onPaste={e => { const files = [...(e.clipboardData?.files ?? [])]; if (files.some(isMedia)) { e.preventDefault(); addFiles(files) } }} />
         {mention && <MentionPicker ctx={ctx} query={mention.query} onPick={pick} onClose={closePicker} input={box} />}
         {photos.length > 0 && (
-          <ul class="compose-photos" aria-label="Photos">
-            {photos.map((p, i) => (
+          <ul class="compose-photos" aria-label="Attachments">
+            {photos.map((p, i) => {
+              const kind = isVideo(p) ? "Video" : "Photo", described = !!p.alt?.trim()
+              return (
               <li key={p.id} class={`compose-photo ${p.status}`}>
-                <img src={p.preview} alt={`Photo ${i + 1}`} />
+                {kind === "Video"
+                  ? <video src={p.preview} muted playsinline preload="metadata" aria-label={described ? p.alt : `${kind} ${i + 1}`} />
+                  : <img src={p.preview} alt={described ? p.alt : `${kind} ${i + 1}`} />}
+                {kind === "Video" && <span class="compose-photo-kind" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></svg>
+                </span>}
                 {p.status !== "done" && p.status !== "failed" && <span class="compose-photo-state" role="status">Uploading…</span>}
                 {p.status === "failed" && <span class="compose-photo-state" title={p.error}>Didn't upload</span>}
                 {p.status === "failed" && p.file && <button type="button" class="compose-photo-retry" onClick={() => upload(p.id, p.file)}>Retry</button>}
-                <button type="button" class="compose-photo-remove" aria-label={`Remove photo ${i + 1}`} onClick={() => removePhoto(p.id)}>
+                {/* Filled once described, hollow while not, so an undescribed one shows at a glance (ComposeView+Chrome altChip). */}
+                {p.status !== "failed" && <button type="button" class={described ? "compose-alt described" : "compose-alt"}
+                  aria-label={described ? `Edit description of ${kind.toLowerCase()} ${i + 1}` : `Add description to ${kind.toLowerCase()} ${i + 1}`}
+                  title={described ? p.alt : "Describe this for screen readers"} onClick={() => setAltFor(p.id)}>ALT</button>}
+                <button type="button" class="compose-photo-remove" aria-label={`Remove ${kind.toLowerCase()} ${i + 1}`} onClick={() => removePhoto(p.id)}>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                 </button>
               </li>
-            ))}
+              )
+            })}
           </ul>
+        )}
+        {altFor != null && photos.some(p => p.id === altFor) && (
+          <AltDialog value={photos.find(p => p.id === altFor).alt ?? ""} video={isVideo(photos.find(p => p.id === altFor))}
+            onSave={alt => { update(altFor, { alt }); setAltFor(null) }} onClose={() => setAltFor(null)} />
         )}
         {photos.filter(p => p.status === "failed").map(p => <p key={p.id} class="error small compose-photo-error">{p.error}</p>)}
         <div class="compose-tools">
           <button type="button" class="small compose-add-photo" disabled={photos.length >= MAX_PHOTOS} onClick={() => picker.current.click()}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></svg>
-            Photo
+            Photo or video
           </button>
-          <input ref={picker} type="file" accept="image/*" multiple hidden onChange={e => { addFiles(e.currentTarget.files); e.currentTarget.value = "" }} />
+          <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={e => { addFiles(e.currentTarget.files); e.currentTarget.value = "" }} />
           {photos.length > 0 && <span class="muted small">{photos.length} of {MAX_PHOTOS}</span>}
           {loaded === key && (text.trim() || ready.length > 0) && !result && <span class="muted small compose-draft">Draft saved</span>}
         </div>
@@ -257,5 +294,24 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}
     </main>
+  )
+}
+
+/** Writing one attachment's NIP-92 alt (ComposeView+Chrome altEditorSheet). */
+function AltDialog({ value, video, onSave, onClose }) {
+  const [text, setText] = useState(value)
+  const box = useRef(null)
+  useEffect(() => { box.current?.focus() }, [])
+  return (
+    <Dialog label="Describe this media" onClose={onClose}>
+      <h3>Describe this {video ? "video" : "photo"}</h3>
+      <p class="muted small">Published as its ALT text. Screen readers read this instead of the {video ? "video" : "picture"}.</p>
+      <textarea ref={box} class="compose-alt-text" rows={4} value={text} aria-label="Media description"
+        onInput={e => setText(e.currentTarget.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(text.trim()) } }} />
+      <div class="mod-row">
+        <button type="button" onClick={onClose}>Cancel</button>
+        <button type="button" class="primary" onClick={() => onSave(text.trim())}>Save</button>
+      </div>
+    </Dialog>
   )
 }

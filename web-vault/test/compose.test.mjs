@@ -9,7 +9,7 @@ import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import { decode, npubEncode } from "nostr-tools/nip19"
 import { putProfile } from "../src/net/profiles.js"
-import { DEFAULT_MEDIA_SERVERS, imetaTag, mediaServers, serverList, sha256Hex, uploadAuthTemplate, uploadPhoto } from "../src/net/upload.js"
+import { DEFAULT_MEDIA_SERVERS, imetaTag, mediaServers, megabytes, refusal, serverList, sha256Hex, uploadAuthTemplate, uploadPhoto } from "../src/net/upload.js"
 import { storeNames } from "../src/haven/vault.js"
 
 registerHooks({
@@ -22,7 +22,7 @@ registerHooks({
   },
 })
 const { mentionAt, mentionedPubkeys, rankPeople, resolveMentions, toNostr, uniqueToken } = await import("../src/components/MentionPicker.jsx")
-const { buildPost, draftKey, draftOf } = await import("../src/screens/ComposeScreen.jsx")
+const { buildPost, draftKey, draftOf, isMedia, isVideo } = await import("../src/screens/ComposeScreen.jsx")
 
 const me = generateSecretKey(), other = generateSecretKey()
 const pk = sk => getPublicKey(sk)
@@ -212,4 +212,35 @@ test("sign-out deletes the drafts database on browsers without indexedDB.databas
   const pubkey = pk(me)
   const names = await storeNames(pubkey, {}) // Firefox < 126: no databases()
   assert.ok(names.includes(`haven:${pubkey}:drafts`))
+})
+
+test("photos and videos can be attached, nothing else; a tile knows a video by its mime or its file", () => {
+  assert.ok(isMedia({ type: "image/heic" }) && isMedia({ type: "video/mp4" }) && isMedia({ type: "video/quicktime" }))
+  assert.ok(!isMedia({ type: "application/pdf" }) && !isMedia({ type: "" }) && !isMedia(null))
+  assert.ok(isVideo({ mime: "video/mp4" }) && isVideo({ file: { type: "video/webm" } }))
+  assert.ok(!isVideo({ mime: "image/png" }) && !isVideo({}))
+})
+
+test("a draft keeps each attachment's ALT, and a blank one not at all", () => {
+  const d = draftOf("", {}, [{ id: 1, url: "https://m/v.mp4", mime: "video/mp4", alt: "A dog on a beach", status: "done" }, { id: 2, url: "https://m/p.png", alt: "  ", status: "done" }])
+  assert.equal(d.photos[0].alt, "A dog on a beach")
+  assert.ok(!("alt" in d.photos[1]))
+})
+
+test("a video goes in the note as a link with its own imeta, ALT included", () => {
+  const { content, tags } = buildPost({ text: "look", mentions: {}, target: null, parent: null,
+    photos: [{ url: "https://m/v.mp4", mime: "video/mp4", sha256: "ab", width: 1920, height: 1080, size: 5e6, alt: "Waves\nat dusk" }] })
+  assert.equal(content, "look\nhttps://m/v.mp4")
+  assert.deepEqual(tags.find(t => t[0] === "imeta"), ["imeta", "url https://m/v.mp4", "m video/mp4", "x ab", "dim 1920x1080", "size 5000000", "alt Waves at dusk"])
+})
+
+test("a size refusal says so, with the file's size and the server's reason", async () => {
+  const res = (status, reason) => ({ status, headers: { get: h => (h === "X-Reason" ? reason : null) } })
+  assert.equal(refusal(res(413, "max 100 MB"), 250e6), "too large (250 MB), max 100 MB")
+  assert.equal(refusal(res(413, null), 4.2e6), "too large (4.2 MB)")
+  assert.equal(refusal(res(401, "auth required"), 1), "auth required")
+  assert.equal(refusal(res(500, null), 1), "HTTP 500")
+  assert.equal(megabytes(12.6e6), "13 MB")
+  const fetch = async () => fail(413, "file too big")
+  await assert.rejects(uploadPhoto(photo(), { ctx: ctxFor(), servers: ["https://a.example"], fetch }), /a\.example: too large \(0\.0 MB\), file too big/)
 })
