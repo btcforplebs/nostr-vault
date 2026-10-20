@@ -300,7 +300,7 @@ extension NostrService {
         var urls: [URL] = []
         for result in results {
             let urlString = nsString.substring(with: result.range)
-            if let url = URL(string: urlString) {
+            if let url = URL(string: urlString), SupportedMediaFormats.isMediaURL(url) {
                 urls.append(url)
             }
         }

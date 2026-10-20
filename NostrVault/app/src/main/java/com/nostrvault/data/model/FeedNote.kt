@@ -240,13 +240,67 @@ data class FeedNote(
 
         // Regex patterns (compiled once)
         private val MEDIA_REGEX = Regex(
-            """https?://[^\s<>")\]]*\.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff|avif|mp4|mov|webm|avi|mkv|m4v|mp3|m4a|wav|ogg|aac|flac|opus)(?:[?#][^\s<>")\]]*[^\s<>")\].,;:!?'"])?""",
+            // The extension has to end the URL's text, or https://www.avid.com
+            // matched as https://www.avi. Same rule as iOS SupportedMediaFormats.
+            """https?://[^\s<>")\]]*?\.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff|avif|mp4|mov|webm|avi|mkv|m4v|mp3|m4a|wav|ogg|aac|flac|opus)(?=$|[^\w/.\-]|[.\-](?!\w))(?:[?#][^\s<>")\]]*[^\s<>")\].,;:!?'"])?""",
             RegexOption.IGNORE_CASE,
         )
         private val BLOSSOM_REGEX = Regex(
             """https?://\S+/[a-f0-9]{64}(?=\s|$)""",
             RegexOption.IGNORE_CASE,
         )
+        private val MEDIA_EXTENSIONS = setOf(
+            "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "avif",
+            "mp4", "mov", "webm", "avi", "mkv", "m4v",
+            "mp3", "m4a", "wav", "ogg", "aac", "flac", "opus",
+        )
+        private val HEX_64 = Regex("^[a-fA-F0-9]{64}$")
+
+        /**
+         * Nostr web clients and gateways. They serve a web page, not a file, at
+         * `/<64-hex>` (an event id or pubkey), so their hex links aren't Blossom
+         * blobs. Exact hosts: blossom.primal.net is a real Blossom server.
+         * Same list as iOS SupportedMediaFormats.webPageHosts.
+         */
+        val WEB_PAGE_HOSTS = setOf(
+            "njump.me", "njump.to", "primal.net", "nostr.band", "snort.social",
+            "iris.to", "coracle.social", "nostrudel.ninja", "habla.news",
+            "yakihonne.com", "nostter.app", "jumble.social", "nostr.com",
+            "damus.io", "zap.stream", "highlighter.com", "nostr.at", "nostr.eu",
+            "nostrrr.com", "flycat.club", "nostrapp.link", "nostr.watch",
+        )
+
+        private fun uri(url: String): java.net.URI? =
+            try { java.net.URI(url) } catch (_: Exception) { null }
+
+        private fun extensionOf(path: String): String =
+            path.substringAfterLast('/').substringAfterLast('.', "").lowercase()
+
+        private fun isWebPageHost(host: String?): Boolean =
+            host?.lowercase()?.removePrefix("www.") in WEB_PAGE_HOSTS
+
+        /**
+         * Whether [url] names a file the media grid can draw: a media extension
+         * on its path (not its host: .mov is also a TLD), or a Blossom SHA-256
+         * path on a host that isn't a web page. iOS SupportedMediaFormats.isMediaURL.
+         */
+        fun isMediaUrl(url: String): Boolean {
+            val u = uri(url) ?: return false
+            val scheme = u.scheme?.lowercase()
+            if (scheme != "http" && scheme != "https") return false
+            val path = u.rawPath.orEmpty()
+            if (extensionOf(path) in MEDIA_EXTENSIONS) return true
+            val last = path.substringAfterLast('/')
+            return HEX_64.matches(last) && !isWebPageHost(u.host)
+        }
+
+        /** An imeta URL is media unless it is a web page: no media extension on a web-client host. */
+        fun isImetaMediaUrl(url: String): Boolean {
+            val u = uri(url) ?: return true
+            if (extensionOf(u.rawPath.orEmpty()) in MEDIA_EXTENSIONS) return true
+            return !isWebPageHost(u.host)
+        }
+
         private val HTTP_URL_REGEX = Regex(
             """https?://[^\s<>")\]]*[^\s<>")\].,;:!?'"]""",
             RegexOption.IGNORE_CASE,
@@ -330,6 +384,7 @@ data class FeedNote(
                 if (tag.firstOrNull() != "imeta" || tag.size < 2) return@mapNotNull null
                 tag.drop(1).firstOrNull { it.startsWith("url ") }
                     ?.removePrefix("url ")?.trim()
+                    ?.takeIf(::isImetaMediaUrl)
             }
             val seen = mutableSetOf<String>()
             val mediaURLs = (contentMediaUrls + imetaUrls).filter { seen.add(it) }
@@ -365,7 +420,7 @@ data class FeedNote(
             val urls = mutableListOf<String>()
             urls += MEDIA_REGEX.findAll(content).map { it.value }
             urls += BLOSSOM_REGEX.findAll(content).map { it.value }
-            return urls
+            return urls.filter(::isMediaUrl)
         }
 
         /** Every non-media http(s) URL in [content], in order, each once. */
