@@ -66,10 +66,15 @@ import java.io.File
                             // Before the graph: its collectors read the vouches straight away.
                             _wotVouches.value = vouches
                             if (loaded != _wotPubkeys.value) {
+                                val reask = graphArrivalReasksGlobal(
+                                    _wotPubkeys.value, loaded, _feedMode.value,
+                                    configStore.config.value.globalShowsEveryone,
+                                )
                                 _wotPubkeys.value = loaded
                                 // Global is filtered against this set; notes
                                 // already on screen have to be re-judged.
                                 recomputeFilteredNotes()
+                                if (reask) resubscribePrimaryToConnected()
                             }
                         }
                     }
@@ -79,3 +84,11 @@ import java.io.File
             }
         }
     }
+
+/**
+ * Whether Global asks its relays again as the trust graph loads: its REQ
+ * went out while the web was empty, so it named nobody, and a new account
+ * stayed blank until the next refresh (iOS #824 `resubscribeGlobalForNewGraph`).
+ */
+internal fun graphArrivalReasksGlobal(old: Set<String>, new: Set<String>, mode: FeedMode, everyone: Boolean): Boolean =
+    old.isEmpty() && new.isNotEmpty() && mode == FeedMode.GLOBAL && !everyone
