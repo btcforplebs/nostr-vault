@@ -199,13 +199,20 @@ class ProfileEditViewModel @Inject constructor(
         val existing = existing ?: return
         if (!ProfileMetadataMerge.hasChanges(initial, edited)) return
         val pubkey = existing.pubkey
-        val shownBefore = nostrService.profiles.value[pubkey]
         unsavedDraft = null
-        nostrService.showLocalProfile(pubkey, ProfileMetadataMerge.preview(existing, initial, edited))
         // Taken now: the publish runs after the sheet is gone, behind a
         // lookup of up to 6 s, and a switch in that window must not sign
         // this profile as the other account.
         val lock = nostrService.lockPostingAccount()
+        // The form was filled from [existing]'s profile. If the account
+        // changed while the sheet was open, signing it as the one active now
+        // would publish that profile as theirs, so nothing is saved.
+        if (lock.hex != pubkey) {
+            notificationManager.showError(PostingAccount.MESSAGE)
+            return
+        }
+        val shownBefore = nostrService.profiles.value[pubkey]
+        nostrService.showLocalProfile(pubkey, ProfileMetadataMerge.preview(existing, initial, edited))
         appScope.launch(Dispatchers.Main) {
             val published = publish(existing, initial, edited, lock)
             if (published != null) {

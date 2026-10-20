@@ -101,4 +101,40 @@ class ProfileEditAccountLockTest {
         vm.open()
         assertEquals("b", vm.name.value)
     }
+
+    /**
+     * Opened as A, switched to B with the sheet still up (a tapped
+     * notification switches first), then dismissed: nothing may be signed,
+     * or B's profile becomes A's.
+     */
+    @Test fun aSwitchBeforeSaveSignsNothing() {
+        val scope = TestScope(dispatcher)
+        val active = MutableStateFlow("hex-a")
+        val nostr = mockk<NostrService>(relaxed = true)
+        every { nostr.profiles } returns MutableStateFlow(mapOf(
+            "hex-a" to FeedProfile(pubkey = "hex-a", name = "a"),
+            "hex-b" to FeedProfile(pubkey = "hex-b", name = "b"),
+        ))
+        every { nostr.outboxRelays } returns MutableStateFlow(emptyMap())
+        every { nostr.relayLists } returns MutableStateFlow(emptyMap())
+        every { nostr.lockPostingAccount() } answers { PostingAccount.Lock(npub = "npub-" + active.value, hex = active.value) }
+        coEvery { nostr.lookupNewestReplaceable(any(), any(), any(), any(), any()) } returns
+            NostrService.ReplaceableLookup(event = null, asked = 1, answered = 1)
+        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) } returns
+            NostrEvent("id", "hex-b", 0, 0, emptyList(), "{}", "sig")
+        val config = mockk<ConfigStore>()
+        every { config.activeAccountHexPubkey } returns active
+
+        val vm = ProfileEditViewModel(nostr, config, mockk<NotificationManager>(relaxed = true), scope, mockk(relaxed = true))
+        vm.open()
+        vm.setName("alice-edited")
+        active.value = "hex-b"
+        vm.close(discard = false)
+        scope.advanceUntilIdle()
+
+        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { nostr.postEvent(any(), any()) }
+        vm.open()
+        assertEquals("b", vm.name.value)
+    }
 }
