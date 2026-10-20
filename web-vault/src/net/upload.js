@@ -1,4 +1,4 @@
-// Photos for a post, uploaded as the iPhone app uploads them (BlossomService+PostUpload / +UploadAuth): BUD-02
+// Photos and videos for a post, uploaded as the iPhone app uploads them (BlossomService+PostUpload / +UploadAuth): BUD-02
 // `PUT /upload` with a kind 24242 authorisation signed by the user's signer, to the account's media servers
 // (kind 10063) or, with none listed, the iPhone's new-account servers. The first server that takes the photo gives the
 // URL that goes in the note, with a NIP-92 imeta tag (NoteTagging.imetaTag).
@@ -53,10 +53,18 @@ export const uploadAuthTemplate = (sha256, now = Math.floor(Date.now() / 1000)) 
 const base64 = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
 export const authHeader = event => `Nostr ${base64(JSON.stringify(event))}`
 
+/** A server's no, in words: its own X-Reason when it gives one, and a size refusal said as one (with the file's size). */
+export function refusal(res, size) {
+  const reason = res.headers?.get?.("X-Reason")?.trim()
+  if (res.status === 413) return `too large (${megabytes(size)})${reason ? `, ${reason}` : ""}`
+  return reason || `HTTP ${res.status}`
+}
+export const megabytes = n => `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`
+
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
 /**
- * Hash, sign and upload one photo to the first server that takes it. -> { url, sha256, mime, size, server };
+ * Hash, sign and upload one photo or video to the first server that takes it. -> { url, sha256, mime, size, server };
  * throws with every server's reason when none did. A server whose answer names another hash, or none, is not used.
  */
 export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch }) {
@@ -69,7 +77,7 @@ export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch
   for (const server of servers) {
     try {
       const res = await fetch(`${server}/upload`, { method: "PUT", headers: { Authorization: auth, "Content-Type": mime }, body: bytes })
-      if (!res.ok) { errors.push(`${hostOf(server)}: ${res.headers?.get?.("X-Reason") || `HTTP ${res.status}`}`); continue }
+      if (!res.ok) { errors.push(`${hostOf(server)}: ${refusal(res, bytes.length)}`); continue }
       const d = await res.json()
       // A BUD-02 blob descriptor always names the hash; no hash is as unproven as a wrong one.
       if (d?.sha256 !== sha256) { errors.push(`${hostOf(server)}: ${d?.sha256 ? "sent back a different file" : "didn't confirm the file's hash"}`); continue }

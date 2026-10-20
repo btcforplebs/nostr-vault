@@ -82,7 +82,7 @@ export function MoreMenu({ note, pubkey, className = "" }) {
 }
 
 /** A modal <dialog>, open while mounted. Closing it (Escape, Cancel) calls onClose. */
-function Dialog({ label, onClose, children }) {
+export function Dialog({ label, onClose, children }) {
   const ref = useRef(null)
   useEffect(() => {
     const d = ref.current
