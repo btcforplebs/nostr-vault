@@ -446,6 +446,11 @@ class FeedService @Inject constructor(
 
     // Contact list content (for safety checks)
     internal var contactListContent: String = ""
+    // Every tag of the loaded kind 3, so a publish keeps its `t`/`a` tags and p-tag hints.
+    internal var contactListTags: List<List<String>> = emptyList()
+    // One follow list signed at a time, each in a later second than the last (see publishContactList).
+    internal val contactListPublishMutex = kotlinx.coroutines.sync.Mutex()
+    @Volatile internal var lastContactListCreatedAt: Long = 0L
     // created_at of the contact list we last published/committed locally. The
     // relay-fetch overwrite is only accepted when its created_at is >= this value;
     // otherwise the relay copy is older than our latest local edit (e.g. a fresh

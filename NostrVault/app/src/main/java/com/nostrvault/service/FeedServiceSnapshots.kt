@@ -148,6 +148,11 @@ import com.nostrvault.service.FeedService.Companion.AVATAR_PREWARM_COUNT
         unavailableSince.clear()
         _unavailableNoteIds.value = emptySet()
         relayListRequested.clear()
+        // The previous account's follows: a new account whose load finds no
+        // list (but is confirmed) would otherwise publish them as its own.
+        _followedPubkeys.value = emptyList()
+        contactListContent = ""
+        contactListTags = emptyList()
         contactListConfirmed = false
         pendingFollowActions.clear()
         notificationManager.clearPendingFollows()

@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.data.model.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import com.nostrvault.service.FeedService.Companion.TAG
 import com.nostrvault.ui.notification.FollowKind
@@ -21,7 +22,10 @@ import com.nostrvault.ui.notification.FollowKind
     ) {
         // The key has a list now; from here on its load must find it.
         FreshAccountKeys.clear(appContext, nostrService.activeHexPubkey)
-        val tags = pubkeys.map { listOf("p", it) }
+        val tags = ContactManager.contactListTags(pubkeys, contactListTags)
+        // Signed as the account this list belongs to: a switch while a signer
+        // prompt is open must not put A's follows under B's key.
+        val lock = nostrService.lockPostingAccount()
         val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {
                 val restore = followRollback(_followedPubkeys.value, pubkeys, rollback)
@@ -41,12 +45,26 @@ import com.nostrvault.ui.notification.FollowKind
             ?: configStore.config.value.ownerNpub
         ownContactListAccountKey = accountKey
         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, System.currentTimeMillis() / 1000L)
+        val content = contactListContent
         scope.launch(Dispatchers.IO) {
-            val event = runCatching { nostrService.signEventAsync(
-                kind = 3,
-                content = contactListContent,
-                tags = tags,
-            ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }.getOrNull()
+            // One at a time, each in a later second than the newest list
+            // signed or loaded: two in one second tie, and relays keep the
+            // lower id, dropping the other's follows.
+            val event = contactListPublishMutex.withLock {
+                delay(ContactManager.followListSignDelayMs(System.currentTimeMillis(), lastContactListCreatedAt))
+                runCatching { nostrService.signEventAsync(
+                    kind = 3,
+                    content = content,
+                    tags = tags,
+                    lockedTo = lock,
+                ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }
+                    .getOrElse { e ->
+                        // The list is the previous account's: nothing to roll back here.
+                        if (e is PostingAccount.AccountChangedException) return@launch
+                        null
+                    }
+                    ?.also { lastContactListCreatedAt = maxOf(lastContactListCreatedAt, it.createdAt) }
+            }
             if (event == null) fail(null)
             event?.let {
                 // Record the published list's created_at + a durable backup so a
@@ -55,7 +73,7 @@ import com.nostrvault.ui.notification.FollowKind
                 followingBackupService.maybeCreateSnapshot(
                     pubkeys = pubkeys,
                     pTags = tags,
-                    contactListContent = contactListContent,
+                    contactListContent = content,
                     contactListCreatedAt = it.createdAt,
                     forAccountKey = accountKey,
                 )
@@ -201,6 +219,9 @@ import com.nostrvault.ui.notification.FollowKind
         val contactResult = contactManager.parseContactList(pTags, ownerHex, whitelistedNpubs)
         _followedPubkeys.value = contactResult.pubkeys
         contactListContent = content
+        // The backup's own tags, plus the current list's non-follow tags it
+        // lacks (a relay-history backup holds only its p tags).
+        contactListTags = pTags + contactListTags.filter { it.firstOrNull() != "p" && it !in pTags }
         publishContactList(contactResult.pubkeys)
     }
 

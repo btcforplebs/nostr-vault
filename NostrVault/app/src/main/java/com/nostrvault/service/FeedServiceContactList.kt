@@ -87,16 +87,18 @@ import java.util.concurrent.ConcurrentHashMap
                     if (BuildConfig.DEBUG) Log.d(TAG, "loadContactList: discarding stale result (generation $myGeneration superseded)")
                     return@withContext
                 }
-                if (result != null && result.third >= ownContactListCreatedAt &&
-                    result.third != refusedContactListCreatedAt
+                if (result != null && result.createdAt >= ownContactListCreatedAt &&
+                    result.createdAt != refusedContactListCreatedAt
                 ) {
-                    val (pubkeys, content, createdAt) = result
+                    val (pubkeys, content, createdAt, tags) = result
                     if (BuildConfig.DEBUG) Log.d(TAG, "loadContactList: committing ${pubkeys.size} followed pubkeys (created_at=$createdAt)")
                     withContext(Dispatchers.Main.immediate) {
                         contactListConfirmed = true
                         _followedPubkeys.value = pubkeys
                         contactListContent = content
+                        contactListTags = tags
                         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, createdAt)
+                        lastContactListCreatedAt = maxOf(lastContactListCreatedAt, createdAt)
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                         recomputeFilteredNotes()
@@ -120,18 +122,22 @@ import java.util.concurrent.ConcurrentHashMap
                     // follow) hasn't propagated to these relays yet, so committing it
                     // would silently drop follows. Keep the local set and re-publish
                     // so the network catches up (self-heal).
-                    Log.w(TAG, "loadContactList: relay kind-3 stale (relay created_at=${result.third} < local $ownContactListCreatedAt) — keeping ${_followedPubkeys.value.size} local follows and re-publishing")
+                    Log.w(TAG, "loadContactList: relay kind-3 stale (relay created_at=${result.createdAt} < local $ownContactListCreatedAt) — keeping ${_followedPubkeys.value.size} local follows and re-publishing")
                     withContext(Dispatchers.Main.immediate) {
                         contactListConfirmed = true
+                        lastContactListCreatedAt = maxOf(lastContactListCreatedAt, result.createdAt)
+                        // After a relaunch the local list's other tags are not in
+                        // memory; the relay copy's are the newest known.
+                        if (contactListTags.isEmpty()) contactListTags = result.tags
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                         // Not over a relay copy more than twice its size: the
                         // local list may be an old cached one, not a fresh edit.
                         val local = _followedPubkeys.value
-                        if (ContactManager.mayRepublish(local.size, relaySize = result.first.size)) {
+                        if (ContactManager.mayRepublish(local.size, relaySize = result.pubkeys.size)) {
                             publishContactList(local)
                         } else {
-                            Log.w(TAG, "loadContactList: not re-publishing ${local.size} local follows over ${result.first.size} on relays")
+                            Log.w(TAG, "loadContactList: not re-publishing ${local.size} local follows over ${result.pubkeys.size} on relays")
                         }
                     }
                 } else {
@@ -160,7 +166,10 @@ import java.util.concurrent.ConcurrentHashMap
     }
 
     /** One follow-list fetch: the newest list found, and whether the list is known (see ContactManager.loadConfirmsList). */
-    private data class ContactFetch(val best: Triple<List<String>, String, Long>?, val confirmed: Boolean)
+    private data class ContactFetch(val best: ContactListCopy?, val confirmed: Boolean)
+
+    /** One relay copy of the list: its follows, content, created_at and every tag. */
+    private data class ContactListCopy(val pubkeys: List<String>, val content: String, val createdAt: Long, val tags: List<List<String>>)
 
     private suspend fun FeedService.fetchContactListFromRelays(): ContactFetch? {
         val config = configStore.config.value
@@ -186,7 +195,7 @@ import java.util.concurrent.ConcurrentHashMap
             // first-to-arrive let a stale relay copy overwrite a fresh local edit —
             // e.g. unfollow someone, refresh, and they came back because an older
             // kind-3 won the race. Collect across relays and keep the newest.
-            var best: Triple<List<String>, String, Long>? = null   // pubkeys, content, createdAt
+            var best: ContactListCopy? = null
             var graceJob: Job? = null
             val tally = ContactManager.EOSETally()
 
@@ -242,8 +251,8 @@ import java.util.concurrent.ConcurrentHashMap
                                         if (BuildConfig.DEBUG) Log.d(TAG, "fetchContactList: kind:3 from $relayUrl tags=${tags.size} parsed=${pubkeys.size} created_at=$createdAt")
                                         if (pubkeys.isNotEmpty()) {
                                             lock.withLock {
-                                                if (best == null || createdAt > best!!.third) {
-                                                    best = Triple(pubkeys, content, createdAt)
+                                                if (best == null || createdAt > best!!.createdAt) {
+                                                    best = ContactListCopy(pubkeys, content, createdAt, tags)
                                                 }
                                                 // On the first result, start a short grace window so a
                                                 // newer kind-3 from another relay can still win, then resume.

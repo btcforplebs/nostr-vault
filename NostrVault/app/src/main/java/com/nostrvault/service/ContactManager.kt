@@ -40,9 +40,13 @@ object ContactManager {
         ownerHex: String,
         whitelistedNpubs: List<String>,
     ): ContactListResult {
-        val relayCount = pTags.size
-        val finalPTags = pTags.toMutableList()
-        val existingPubkeys = pTags.mapNotNull { if (it.size >= 2) it[1] else null }.toSet()
+        // Only `p` tags naming a 64-hex key are follows. A kind 3 can also
+        // carry `t`, `a` and other tags (Amethyst writes hashtag follows);
+        // reading element [1] of those made "bitcoin" a followed "pubkey".
+        val followTags = pTags.filter { isFollowTag(it) }
+        val relayCount = followTags.size
+        val finalPTags = followTags.toMutableList()
+        val existingPubkeys = followTags.map { it[1] }.toSet()
 
         // Ensure owner is in the list
         if (ownerHex !in existingPubkeys) {
@@ -62,6 +66,45 @@ object ContactManager {
 
         val pubkeys = finalPTags.mapNotNull { if (it.size >= 2) it[1] else null }
         return ContactListResult(finalPTags, pubkeys, relayCount)
+    }
+
+    private val hexKey = Regex("^[0-9a-f]{64}$")
+
+    /** A `p` tag whose value is a 64-hex pubkey. */
+    fun isFollowTag(tag: List<String>): Boolean =
+        tag.size >= 2 && tag[0] == "p" && hexKey.matches(tag[1])
+
+    /**
+     * The tags to publish for [pubkeys], given the [loadedTags] of the list
+     * they came from: every tag that is not a follow (`t`, `a`, ...) is kept
+     * where it was, a follow that stays keeps its own tag (relay hint,
+     * petname), and new follows go at the end. A `p` tag without a 64-hex
+     * value is dropped: it is not a follow, and an older build wrote those.
+     */
+    fun contactListTags(pubkeys: List<String>, loadedTags: List<List<String>>): List<List<String>> {
+        val wanted = pubkeys.toSet()
+        val placed = mutableSetOf<String>()
+        val tags = mutableListOf<List<String>>()
+        for (tag in loadedTags) {
+            when {
+                tag.firstOrNull() != "p" -> tags.add(tag)
+                isFollowTag(tag) && tag[1] in wanted && placed.add(tag[1]) -> tags.add(tag)
+            }
+        }
+        for (pk in pubkeys) if (placed.add(pk)) tags.add(listOf("p", pk))
+        return tags
+    }
+
+    /**
+     * How long to wait before signing a follow list so its created_at (the
+     * signer's current second) is later than [lastCreatedAt], the newest list
+     * signed or loaded. Two lists in one second tie, relays keep the lower id,
+     * and the follows in the other one vanish. A clock more than [maxWaitMs]
+     * behind is not waited out.
+     */
+    fun followListSignDelayMs(nowMs: Long, lastCreatedAt: Long, maxWaitMs: Long = 3_000): Long {
+        val wait = (lastCreatedAt + 1) * 1000 - nowMs
+        return if (wait <= 0 || wait > maxWaitMs) 0 else wait
     }
 
     /**
