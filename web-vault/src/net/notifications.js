@@ -59,6 +59,25 @@ function foldKey(n) {
   return null
 }
 
+/** The Mentions filter: someone wrote to or about the user (VaultActivityList: replies, mentions and quotes). */
+export const MENTION_TYPES = new Set(["reply", "mention", "quote"])
+export const filterRows = (rows, filter) => filter === "mentions" ? rows.filter(r => MENTION_TYPES.has(r.type)) : rows
+
+/** Where the account's "seen up to" time is kept (unix seconds). Not secret: only when the list was last open. */
+export const seenKey = pubkey => `nv:notifications-seen:${pubkey}`
+
+/**
+ * The list coming on screen (`arriving`) or leaving it, as the iPhone marks it (VaultActivityList.activityVisit).
+ * Both move the mark to now. Arriving returns the last visit's time: rows newer than it are unread. A first visit
+ * returns now, so nothing reads as new.
+ */
+export function visitNotifications(pubkey, { arriving, storage = globalThis.localStorage, now = Math.floor(Date.now() / 1000) } = {}) {
+  let last = 0
+  try { last = Number(storage?.getItem(seenKey(pubkey))) || 0 } catch {}
+  try { storage?.setItem(seenKey(pubkey), String(now)) } catch {}
+  return arriving ? (last > 0 ? last : now) : null
+}
+
 /** One event -> { type, who, noteId, sats, emoji, comment, created_at, event }, or null when it isn't a notification for the user. */
 export function classify(ev, pubkey) {
   if (!ev || !Array.isArray(ev.tags)) return null
