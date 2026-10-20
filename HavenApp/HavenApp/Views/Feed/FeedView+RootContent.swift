@@ -204,15 +204,15 @@ extension FeedView {
                 .frame(minWidth: 520, minHeight: 480)
                 #endif
         }
-        .sheet(isPresented: $isShowingGridMediaViewer) {
+        .sheet(item: $gridMediaViewer) { route in
             ZStack {
                 Color.black
                     .opacity(max(0.1, 1.0 - (abs(galleryDragOffset.height) / 500.0)))
                     .ignoresSafeArea()
                 
-                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true, showsPositionBar: false) { noteId in
-                    if let note = gridMediaSnapshot.first(where: { $0.id == noteId }), let firstMediaURL = note.mediaURLs.first {
-                        FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
+                MediaPagerView(items: route.notes.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true, showsPositionBar: false) { noteId in
+                    if let note = route.notes.first(where: { $0.id == noteId }), let firstMediaURL = note.mediaURLs.first {
+                        FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { gridMediaViewer = nil })
                             #if os(iOS)
                             .transition(.opacity.animation(Motion.media))
                             #endif
@@ -230,7 +230,7 @@ extension FeedView {
                         .onEnded { gesture in
                             if abs(galleryDragOffset.height) > 120 {
                                 withAnimation(Motion.dismiss) {
-                                    isShowingGridMediaViewer = false
+                                    gridMediaViewer = nil
                                     galleryDragOffset = .zero
                                 }
                             } else {

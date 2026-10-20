@@ -39,9 +39,8 @@ extension FeedView {
                             gridCell(for: note, url: firstMediaURL)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    gridMediaSnapshot = filteredNotes
                                     selectedGridMediaNoteId = note.id
-                                    isShowingGridMediaViewer = true
+                                    gridMediaViewer = GridMediaViewerRoute(notes: filteredNotes)
                                 }
                                 .onLongPressGesture(minimumDuration: 0.5) {
                                     showingNoteId = note.id

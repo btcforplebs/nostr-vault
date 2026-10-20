@@ -31,8 +31,10 @@ struct FeedView: View {
     @StateObject var reelsService = ReelsFeedService.shared
     @State var playingStream: LiveStream?
     @State var selectedGridMediaNoteId: String?
-    @State var isShowingGridMediaViewer = false
-    @State var gridMediaSnapshot: [FeedNote] = []
+    /// The grid viewer's notes travel with the presentation: a separate
+    /// `[FeedNote]` state set in the same tap as an `isPresented` flag was
+    /// read empty by the sheet's first build, so it opened black.
+    @State var gridMediaViewer: GridMediaViewerRoute?
     @State var galleryDragOffset: CGSize = .zero
     @State var isRefreshing = false
     @State var showingGlobalEveryoneWarning = false
@@ -160,4 +162,10 @@ struct FeedView: View {
     /// Zero until measured; the grid reads that as the phone count.
     @State var mediaGridWidth: CGFloat = 0
 
+}
+
+/// The notes the Media grid viewer pages through, captured at the tap.
+struct GridMediaViewerRoute: Identifiable {
+    let id = UUID()
+    let notes: [FeedNote]
 }

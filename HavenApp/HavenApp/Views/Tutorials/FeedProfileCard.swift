@@ -115,6 +115,10 @@ struct FeedProfileCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isFollowing ? "Following \(name). Tap to unfollow." : "Follow \(name)")
 
+                if !pinsFullProfileButton {
+                    fullProfileButton
+                }
+
                 Text("Recent posts")
                     .font(.appCaption.weight(.semibold))
                     .textCase(.uppercase)
@@ -143,19 +147,35 @@ struct FeedProfileCard: View {
             .padding(20)
         }
         // Pinned under the scrolling part, so the half-height card never
-        // cuts it off.
+        // cuts it off. Not on iPad: its form sheet put this inset halfway
+        // up the card, over Follow, so there it sits under Follow instead.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Button("See full profile") { showingFullProfile = true }
-                .font(.appSubheadline.weight(.semibold))
-                .foregroundColor(.havenPurple)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.bottom, 4)
-                .background(.bar)
+            if pinsFullProfileButton {
+                fullProfileButton
+                    .padding(.bottom, 4)
+                    .background(.bar)
+            }
         }
         .task(id: pubkey) { await load() }
         .sheet(isPresented: $showingFullProfile) {
             ProfileView(pubkey: pubkey, onDismiss: { showingFullProfile = false })
         }
+    }
+
+    private var pinsFullProfileButton: Bool {
+        #if os(iOS)
+        // The idiom, not the size class: a sheet's size class varies.
+        UIDevice.current.userInterfaceIdiom != .pad
+        #else
+        true
+        #endif
+    }
+
+    private var fullProfileButton: some View {
+        Button("See full profile") { showingFullProfile = true }
+            .font(.appSubheadline.weight(.semibold))
+            .foregroundColor(.havenPurple)
+            .frame(maxWidth: .infinity, minHeight: 44)
     }
 
     private func toggleFollow() {

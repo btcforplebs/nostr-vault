@@ -586,7 +586,7 @@ private struct HintCard: View {
     var body: some View {
         GuideCard(step: 3, onSkip: guide.closeGuide) {
             title("Find people you like")
-            bodyText("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot down by the tabs. Five builds your web of trust.")
+            bodyText("Tap anyone to see their profile and posts first. When you like what you see, follow them. Each follow fills a spot in the meter at the bottom. Five builds your web of trust.")
             HStack {
                 Spacer()
                 PrimaryButton(title: "Got it", action: guide.dismissHint)

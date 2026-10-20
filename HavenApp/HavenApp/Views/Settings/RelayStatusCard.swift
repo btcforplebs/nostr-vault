@@ -48,43 +48,67 @@ struct RelayStatusCard: View {
         return "ws://127.0.0.1:\(configService.config.relayPort)"
     }
 
+    private var relayIcon: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.havenPurple.opacity(0.18))
+                .frame(width: 44, height: 44)
+            Image(systemName: "externaldrive.connected.to.line.below")
+                .font(.appSystem(size: 20, weight: .semibold))
+                .foregroundColor(.havenPurple)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Your Vault Relay")
+                .font(.appHeadline)
+                // Wraps at the word in a narrow column, never "Rel…".
+                .fixedSize(horizontal: false, vertical: true)
+                .settingInfo(.relayStatus)
+            Text(address)
+                .font(.appSystem(size: 12, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var statusBadge: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(status.color)
+                .frame(width: 8, height: 8)
+            Text(status.label)
+                .font(.appSubheadline.weight(.semibold))
+                .foregroundColor(status.color)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Relay \(status.label)")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.havenPurple.opacity(0.18))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "externaldrive.connected.to.line.below")
-                        .font(.appSystem(size: 20, weight: .semibold))
-                        .foregroundColor(.havenPurple)
+            // The iPad's Settings list column is ~200pt: one row there
+            // squeezed the title to a letter per line. When it doesn't fit,
+            // the status drops under the address instead.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 12) {
+                    relayIcon
+                    titleBlock
+                    Spacer(minLength: 8)
+                    statusBadge
                 }
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Your Vault Relay")
-                        .font(.appHeadline)
-                        .settingInfo(.relayStatus)
-                    Text(address)
-                        .font(.appSystem(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                HStack(alignment: .center, spacing: 12) {
+                    relayIcon
+                    VStack(alignment: .leading, spacing: 6) {
+                        titleBlock
+                        statusBadge
+                    }
+                    Spacer(minLength: 0)
                 }
-
-                Spacer(minLength: 8)
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(status.color)
-                        .frame(width: 8, height: 8)
-                    Text(status.label)
-                        .font(.appSubheadline.weight(.semibold))
-                        .foregroundColor(status.color)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Relay \(status.label)")
             }
 
             if status == .stopped {
