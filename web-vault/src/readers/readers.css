@@ -33,3 +33,18 @@
 .md a { color: var(--accent-light); }
 .md hr { border: 0; border-top: 1px solid var(--hair); margin: 16px 0; }
 .md-image { display: block; width: 100%; max-height: 420px; object-fit: cover; border-radius: 10px; margin: 0 0 12px; }
+
+/* Recipes: category chips, then image tiles (RecipeCardView: 130px image, two-line title, author). */
+.reader-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 0 var(--gutter) 10px; }
+.reader-chips button { flex: none; min-height: 28px; padding: 0 12px; border-radius: 999px; font: var(--t-foot); font-weight: 600;
+  background: var(--accent-pale); color: var(--accent-light); border: 0; }
+.reader-chips button.on { background: var(--accent); color: #fff; }
+.recipe-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 var(--gutter) 16px; }
+@media (min-width: 700px) { .recipe-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
+.recipe-tile { background: var(--s1); border: 0.5px solid var(--hair); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+.recipe-tile:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.recipe-tile img, .recipe-blank { display: block; width: 100%; height: 130px; object-fit: cover; }
+.recipe-blank { display: grid; place-items: center; background: var(--accent-pale); font-size: 28px; }
+.recipe-text { padding: 10px; display: grid; gap: 4px; }
+.recipe-text h3 { margin: 0; font: 700 14px/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.recipe-text h3 a { color: inherit; text-decoration: none; }
