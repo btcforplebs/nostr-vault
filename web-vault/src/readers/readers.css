@@ -138,3 +138,12 @@
 .reader-lock { margin: 16px 0; padding: 16px; border-radius: 14px; background: var(--s1); border: 1px solid var(--accent-line); }
 .reader-lock p { margin: 8px 0 12px; }
 .reader-lock-open { display: block; text-align: center; padding: 12px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
+
+/* Article likes, comments and highlights (read-only) */
+.reader-engage { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--hair); }
+.reader-engage-loading { margin-top: 24px; }
+.reader-engage-head { font: var(--t-sub); font-weight: 600; margin: 20px 0 10px; }
+.reader-highlight { margin: 0 0 12px; }
+.reader-highlight blockquote { margin: 0 0 4px; padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--accent-pale); }
+.reader-comment { padding: 10px 0; border-bottom: 1px solid var(--hair); }
+.reader-comment-text { margin: 6px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }

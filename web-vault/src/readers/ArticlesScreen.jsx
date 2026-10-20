@@ -12,6 +12,7 @@ import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { ARTICLE_SCOPES, PAGE, fetchArticles, loadScope, saveScope } from "./articles.js"
 import { displayDate, displayTitle, longFormLink, longFormMeta, plainText, readingMinutes } from "./longform.js"
 import { Markdown } from "./Markdown.jsx"
+import { ArticleEngagement } from "./Engagement.jsx"
 import { fanfaresLink, gatedArticle, lockStatus, stripTeaser } from "./gated.js"
 import { useProfile } from "../components/useProfile.js"
 
@@ -44,7 +45,7 @@ export function ArticlesScreen({ ctx }) {
   }
   useEffect(() => { setItems(null); setOpen(null); load() }, [scope, follows.length])
 
-  if (open) return <ArticleReader event={open} onBack={() => setOpen(null)} />
+  if (open) return <ArticleReader event={open} onBack={() => setOpen(null)} ctx={ctx} />
   const pick = s => { saveScope(s); setScope(s) }
   const shown = items && visibleNotes(items, blocked)
   return (
@@ -98,8 +99,9 @@ export function ArticleRow({ event, onOpen }) {
   )
 }
 
-/** The article, full width: image, title, author line, the body, and Open in YakiHonne (zap.cooking for a recipe). */
-export function ArticleReader({ event, onBack }) {
+/** The article, full width: image, title, author line, the body, and Open in YakiHonne (zap.cooking for a recipe).
+ *  With `ctx`, its likes, comments, zaps and highlights follow, read-only. */
+export function ArticleReader({ event, onBack, ctx }) {
   const m = longFormMeta(event)
   const gated = gatedArticle(event)
   const minutes = gated ? null : readingMinutes(event.content)
@@ -121,6 +123,7 @@ export function ArticleReader({ event, onBack }) {
       </a>
       {m.summary && <p class="reader-summary">{m.summary}</p>}
       {gated ? <LockedBody event={event} gated={gated} summary={m.summary} /> : <Markdown body={event.content} />}
+      {ctx && <ArticleEngagement ctx={ctx} article={event} />}
     </article>
   )
 }
