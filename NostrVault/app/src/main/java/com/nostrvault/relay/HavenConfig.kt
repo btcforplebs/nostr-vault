@@ -20,6 +20,9 @@ data class HavenConfig(
 
     // Account management
     val activeAccountNpub: String? = null,
+    // The owner's raw secret key. Held in memory only: ConfigStore keeps it in
+    // CredentialStore (under the owner's pubkey), not in nostrvault_config.json.
+    @kotlinx.serialization.Transient
     val ownerHexKey: String? = null,
     val ownerNcryptsec: String? = null,
     val signingMode: String = "local", // "local", "nip46", "amber"

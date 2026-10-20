@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
 
 /**
  * Encrypted credential storage -- port of CredentialStore.swift.
@@ -21,26 +22,70 @@ object CredentialStore {
     private const val OWNER_ACCOUNT = "owner-key-password"
 
     private lateinit var prefs: SharedPreferences
+    private var openFailed = false
 
+    /**
+     * Opens the store. A store that can't be opened (a keyset the keystore no
+     * longer has a key for, as after some OS updates or a restore) is set
+     * aside and opened fresh; the keys in it can't be read either way. If even
+     * a fresh one fails, the store stays closed: reads find nothing and writes
+     * fail, but the app still starts.
+     */
     fun init(context: Context) {
-        if (::prefs.isInitialized) return
-
-        try {
-            val masterKey = MasterKey.Builder(context.applicationContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            prefs = EncryptedSharedPreferences.create(
-                context.applicationContext,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create EncryptedSharedPreferences: ${e.message}")
-            throw e
+        if (::prefs.isInitialized || openFailed) return
+        val app = context.applicationContext
+        val opened = openRecovering(
+            open = { open(app) },
+            setAside = { setAside(app) },
+        )
+        if (opened == null) {
+            openFailed = true
+            return
         }
+        prefs = opened
         repairSwappedKeychainPasswords()
+    }
+
+    private fun open(context: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    /**
+     * Copies the unreadable file next to itself, then deletes it through
+     * [Context.deleteSharedPreferences], which also drops the copy the
+     * process has cached (a plain rename would leave the bad keyset loaded).
+     */
+    private fun setAside(context: Context) {
+        val file = File(context.filesDir.parentFile, "shared_prefs/$PREFS_NAME.xml")
+        if (file.exists()) {
+            file.copyTo(File(file.parentFile, "$PREFS_NAME.unreadable-${System.currentTimeMillis()}.xml"), overwrite = true)
+        }
+        context.deleteSharedPreferences(PREFS_NAME)
+    }
+
+    /** [open], or after [setAside] a second [open]; null if both fail. */
+    internal fun <T> openRecovering(open: () -> T, setAside: () -> Unit): T? {
+        try {
+            return open()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open EncryptedSharedPreferences, setting it aside: ${e.message}")
+        }
+        return try {
+            setAside()
+            open()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open a fresh EncryptedSharedPreferences: ${e.message}")
+            null
+        }
     }
 
     /**
