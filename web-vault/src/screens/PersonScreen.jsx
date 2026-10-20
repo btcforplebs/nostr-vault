@@ -1,8 +1,9 @@
-// Someone else's profile (opened from Search): their kind 0, Follow / Unfollow, and their notes. Notes come
+// Someone else's profile (opened from Search): their kind 0, Follow / Unfollow, and their notes, replies, media and
+// articles (ProfileTabs.jsx). Notes come
 // from their write relays and Haven /feed (net/person.js keeps fetched ones in memory); follows: net/follows.js.
 import { useEffect, useState } from "preact/hooks"
 import { ProfileHeader } from "../components/ProfileHeader.jsx"
-import { NoteCard } from "../components/NoteCard.jsx"
+import { ProfileTabs } from "./ProfileTabs.jsx"
 import { ZapButton } from "../components/ZapButton.jsx"
 import { MoreMenu, UnblockDialog } from "../components/Moderation.jsx"
 import { useBlocks } from "../components/useBlocks.js"
@@ -10,7 +11,7 @@ import { useProfile } from "../components/useProfile.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { fetchProfiles } from "../net/profiles.js"
 import { followsOf, relation, setFollow } from "../net/follows.js"
-import { fetchPersonLists, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
+import { fetchPersonArticles, fetchPersonLists, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import "../styles/person.css"
 
@@ -18,6 +19,7 @@ export function PersonScreen({ ctx, pubkey }) {
   const { vault, account, session } = ctx
   const [notes, setNotes] = useState(null)
   const [lists, setLists] = useState(null) // { relays, contacts } once their lists came back
+  const [articles, setArticles] = useState(null) // fetched when the Articles tab is first opened
   const [status, setStatus] = useState("")
   const [end, setEnd] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -65,6 +67,12 @@ export function PersonScreen({ ctx, pubkey }) {
     setNotes(n => [...n, ...more.filter(m => !n.some(x => x.id === m.id))])
   }
 
+  const loadArticles = async () => {
+    if (articles) return
+    if (!navigator.onLine) return setArticles([])
+    setArticles(await fetchPersonArticles(pubkey, lists?.relays.write ?? DEFAULT_RELAYS).catch(() => []))
+  }
+
   const iFollow = account.follows.includes(pubkey)
   const followsMe = followsOf(lists?.contacts).includes(session.pubkey)
   const toggle = async () => {
@@ -102,11 +110,9 @@ export function PersonScreen({ ctx, pubkey }) {
       )}
       {status && !isBlocked && <div class="status-line">{status}</div>}
       {isBlocked ? null : notes === null ? <p class="empty">Opening your relay…</p>
-        : !notes.length ? (!status && <p class="empty">No notes found.</p>)
-        : <>
-            {notes.map(n => <NoteCard key={n.id} event={n} />)}
-            {end ? <p class="person-end">That's all the notes their relays have.</p> : <button class="more" onClick={older}>Older notes</button>}
-          </>}
+        : <ProfileTabs notes={notes} articles={articles} onTab={id => id === "articles" && loadArticles()}
+            empty={status ? { notes: "", replies: "", media: "" } : { notes: "No notes found." }}
+            more={!notes.length ? null : end ? <p class="person-end">That's all the notes their relays have.</p> : <button class="more" onClick={older}>Older notes</button>} />}
     </main>
   )
 }
