@@ -16,6 +16,12 @@ import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import { useMessages, SignerTrouble, OpenMore } from "./MessagesScreen.jsx"
 
+/** Return sends, as on the Mac app and every desktop chat; Shift or Option + Return is a new line. On a touch screen
+ *  Return is a new line and Send is the button, as on the iPhone. Never mid-composition (an IME's Return picks a word). */
+export const sendsOnEnter = (e, touch) => e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing && e.keyCode !== 229 && !touch
+const coarse = () => globalThis.matchMedia?.("(pointer: coarse)").matches ?? false
+const fiveLines = el => { const cs = getComputedStyle(el); return parseFloat(cs.lineHeight || "20") * 5 + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2 }
+
 // A pasted image can come without a type; preparePhoto decides whether it's a drawable image.
 const isImageFile = f => !f.type || /^image\//.test(f.type)
 
@@ -30,6 +36,9 @@ export function ConversationScreen({ ctx, peer }) {
   const [dragging, setDragging] = useState(false)
   const end = useRef(null)
   const picker = useRef(null)
+  const field = useRef(null)
+  // Grows with the text up to five lines, then scrolls (DMThreadView lineLimit(1...5)); back to one line once sent.
+  useEffect(() => { const el = field.current; if (el) { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, fiveLines(el))}px` } }, [text])
   const me = ctx.session.pubkey
   const rows = thread(messages, peer)
   const isBlocked = blocked.has(peer)
@@ -115,7 +124,8 @@ export function ConversationScreen({ ctx, peer }) {
           <div class="dm-compose-row">
             <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={busy || preparing} aria-label="Attach photo">{preparing ? "Photo…" : "Photo"}</button>
             <input ref={picker} type="file" accept="image/*" hidden onChange={e => { attach(e.currentTarget.files); e.currentTarget.value = "" }} />
-            <input value={text} onInput={e => setText(e.currentTarget.value)} placeholder="Message…" disabled={busy} aria-label="Message"
+            <textarea ref={field} rows={1} value={text} onInput={e => setText(e.currentTarget.value)} placeholder="Message…" disabled={busy} aria-label="Message"
+              onKeyDown={e => { if (sendsOnEnter(e, coarse())) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }}
               onPaste={e => {
                 const files = [...(e.clipboardData?.files ?? [])]
                 if (!files.some(isImageFile)) return
