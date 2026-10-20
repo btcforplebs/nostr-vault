@@ -7,6 +7,7 @@ import { useProfile } from "./useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { onQuotes, parseRef, quoteSource } from "../net/quotes.js"
 import { QuotedNote } from "./QuotedNote.jsx"
+import { splitHashtags } from "../net/hashtags.js"
 
 const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+)/gi
 const IMAGE = /\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i
@@ -29,7 +30,7 @@ export function NoteText({ content, depth = 0, dm = false, memoryOnly = false, i
   return (
     <div class="note-text">
       {parts.map((s, i) => {
-        if (i % 2 === 0) return s
+        if (i % 2 === 0) return withHashtags(s, i)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
         if (IMAGE.test(s)) return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
         if (VIDEO.test(s) && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
@@ -38,6 +39,14 @@ export function NoteText({ content, depth = 0, dm = false, memoryOnly = false, i
       })}
     </div>
   )
+}
+
+/** Plain text with each #tag a link to that tag's feed (FeedNoteRow's hashtag links), spelled as the author wrote it. */
+function withHashtags(text, key) {
+  const parts = splitHashtags(text)
+  if (parts.length === 1) return text
+  return parts.map((s, i) => i % 2 === 0 ? s
+    : <a key={`${key}-${i}`} class="hashtag" href={`#/feed?tag=${encodeURIComponent(s.slice(1).toLowerCase())}`} onClick={e => e.stopPropagation()}>{s}</a>)
 }
 
 /** An image link in a stranger's DM: nothing is fetched until it is tapped. */

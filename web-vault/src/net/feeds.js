@@ -44,6 +44,13 @@ export function normalizeTag(text) {
   return t && !/\s/.test(t) ? t : ""
 }
 
+/** The feed a #tag link asks for ("#/feed?tag=bitcoin", NoteText), or null when the address names no tag. */
+export function tagChoice(hash = "") {
+  const i = hash.indexOf("?")
+  const tag = normalizeTag(new URLSearchParams(i < 0 ? "" : hash.slice(i + 1)).get("tag"))
+  return tag ? { mode: "hashtag", tag } : null
+}
+
 /** The relay filter for a stranger feed, or null when there is nothing to ask for (Hashtag with no tag). */
 export function feedFilter({ mode, tag }, { limit = 100, until } = {}) {
   const page = { limit, ...(until ? { until } : {}) }

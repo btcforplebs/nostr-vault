@@ -11,6 +11,7 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
 import { MentionPicker, mentionAt, mentionedPubkeys, toNostr, uniqueToken } from "../components/MentionPicker.jsx"
 import { getProfile } from "../net/profiles.js"
+import { hashtagTags } from "../net/hashtags.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -91,6 +92,8 @@ export function buildPost({ text, mentions, photos, target, parent }) {
   const tags = [...base.tags]
   for (const pk of mentionedPubkeys(text, mentions)) if (!tags.some(t => t[0] === "p" && t[1] === pk)) tags.push(["p", pk])
   for (const p of photos) { const t = imetaTag(p); if (t) tags.push(t) }
+  // NIP-24 t tags for the typed #hashtags (ComposeView+Posting), so hashtag feeds find the note.
+  for (const t of hashtagTags(text)) if (!tags.some(x => x[0] === "t" && x[1] === t[1])) tags.push(t)
   return { content: base.content, tags }
 }
 
