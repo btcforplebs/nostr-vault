@@ -15,6 +15,7 @@ import { deviceKey } from "../haven/vault.js"
 import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
 import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
+import { AUTH_WAIT, authedSubscribe, queryWithAuth } from "./dm-read-auth.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -256,7 +257,10 @@ export function loadMessages(ctx, relays, opts = {}) {
   return oneAtATime(() => load(ctx, relays, opts))
 }
 
-async function load({ vault, session, signer }, relays, { crypto, query = (r, f, o) => pool.querySync(r, f, o), chat, clock = Date.now } = {}) {
+// The DM reads answer AUTH (dm-read-auth.js): a Haven inbox hands its wraps only to its owner. `net` is for tests.
+const readSigning = ctx => ({ sign: (url, template) => authFor(ctx, url)(template), authWait: ctx.session?.method === "nip46" ? AUTH_WAIT.nip46 : AUTH_WAIT.other })
+async function load({ vault, session, signer }, relays, { crypto, net = pool, wait = 8000, chat, clock = Date.now,
+  query = (r, f, o) => queryWithAuth(net, r, f, { ...o, ...readSigning({ session, signer }) }) } = {}) {
   const me = session.pubkey
   lastLoad = clock()
   if (state.pubkey !== me) resetMessages(me)
@@ -272,9 +276,9 @@ async function load({ vault, session, signer }, relays, { crypto, query = (r, f,
     // One filter per query: pool.querySync wraps its filter in an array itself, so a list here would reach the relay
     // as ["REQ", id, [f1, f2]], which every relay refuses.
     const [wraps, legacyTo, legacyFrom] = await Promise.all([
-      query(urls, { kinds: [1059], "#p": [me], limit: 500 }, { maxWait: 8000 }),
-      query(urls, { kinds: [4], "#p": [me], limit: 200 }, { maxWait: 8000 }),
-      query(urls, { kinds: [4], authors: [me], limit: 200 }, { maxWait: 8000 }),
+      query(urls, { kinds: [1059], "#p": [me], limit: 500 }, { maxWait: wait }),
+      query(urls, { kinds: [4], "#p": [me], limit: 200 }, { maxWait: wait }),
+      query(urls, { kinds: [4], authors: [me], limit: 200 }, { maxWait: wait }),
     ])
     for (const w of wraps) if (!opened.has(w.id) && (await store.event(w).catch(() => ({ ok: false }))).ok) stored++
     await take([...wraps, ...legacyTo, ...legacyFrom], c, me, { limit: Math.max(0, budget) })
@@ -292,7 +296,8 @@ export const WATCH_SINCE = 2 * 86400 + 3600
 export const LIVE_PER_MINUTE = { nip46: 6, other: 30 }
 
 /** Keep listening for new wraps while a screen is open. `subscribe` and `clock` are for tests. -> close() */
-export function watchMessages({ vault, session, signer }, relays, { crypto, chat, subscribe = (r, f, o) => pool.subscribe(r, f, o), clock = () => Date.now() } = {}) {
+export function watchMessages({ vault, session, signer }, relays, { crypto, chat, net = pool, clock = () => Date.now(),
+  subscribe = (r, f, o) => authedSubscribe(net, r, f, { ...o, ...readSigning({ session, signer }) }) } = {}) {
   const me = session.pubkey
   const c = crypto ?? cryptoFor(session, { signer })
   if (c.reason || !relays.length) return () => {}
