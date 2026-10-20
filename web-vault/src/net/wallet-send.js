@@ -62,6 +62,9 @@ export function invoiceAmount(invoice) {
 /** The range an LNURL service takes, in whole sats, and whether `sats` fits it (LNURLAmountRange.check). */
 export function checkAmount({ minMsat, maxMsat }, sats) {
   const minSats = Math.ceil(minMsat / 1000), maxSats = Math.floor(maxMsat / 1000)
+  // A range with no whole sat in it (2,500 msat fixed; 500 to 900 msat): nothing typed can fit, so say that once
+  // instead of "too small" and "too large" for neighbouring numbers. iOS LNURLAmountRange has the same gap.
+  if (minSats > maxSats) return { unpayable: true, minSats, maxSats }
   if (!(Number.isInteger(sats) && sats > 0)) return { invalid: true, minSats, maxSats }
   if (sats > maxSats) return { tooLarge: true, minSats, maxSats }
   if (sats * 1000 < minMsat) return { tooSmall: true, minSats, maxSats }
@@ -113,6 +116,7 @@ export async function resolvePayTarget(target, fetchImpl = globalThis.fetch) {
  */
 export async function payLnurl(conn, pay, { sats, comment = "" }, { fetchImpl = globalThis.fetch, pay: payImpl = payInvoice } = {}) {
   const check = checkAmount(pay, sats)
+  if (check.unpayable) throw new Error("It only takes amounts that aren't a whole number of sats, so this wallet can't pay it.")
   if (!check.ok) throw new Error(`It takes ${check.minSats.toLocaleString()} to ${check.maxSats.toLocaleString()} sats.`)
   const cb = new URL(pay.callback)
   cb.searchParams.set("amount", String(check.msat))

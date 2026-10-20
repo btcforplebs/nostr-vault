@@ -94,9 +94,26 @@ export async function getBalance(conn, opts) {
   return balance
 }
 
+// After a payment the balance and History are stale. Every pay_invoice that went through, or got no answer in time,
+// tells the wallet screens to read them again. A timeout tells them twice, the second time a little later, as the
+// iPhone does (WalletLightningTab+LNURL: fetchBalance + loadHistory after ~5 s): "check History before sending
+// again" only works if History shows the payment once it has happened.
+export const PAID_RECHECK_MS = 5_000
+const paidListeners = new Set()
+/** Call `f` after each payment settles or times out. -> unsubscribe */
+export function onPaid(f) { paidListeners.add(f); return () => paidListeners.delete(f) }
+function paid() { for (const f of [...paidListeners]) try { f() } catch {} }
+
 /** Pay a bolt11 invoice (NIP-47 pay_invoice) -> the preimage, or "" when the wallet didn't send one. */
-export async function payInvoice(conn, invoice, opts) {
-  const { preimage } = await walletRequest(conn, "pay_invoice", { invoice }, opts)
+export async function payInvoice(conn, invoice, { recheckMs = PAID_RECHECK_MS, ...opts } = {}) {
+  let preimage
+  try {
+    ({ preimage } = await walletRequest(conn, "pay_invoice", { invoice }, opts))
+  } catch (e) {
+    if (e instanceof WalletTimeout) { paid(); setTimeout(paid, recheckMs).unref?.() }
+    throw e
+  }
+  paid()
   return typeof preimage === "string" ? preimage : ""
 }
 

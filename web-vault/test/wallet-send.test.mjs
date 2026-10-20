@@ -122,3 +122,13 @@ test("the Send card loads", async () => {
   })
   assert.equal(typeof (await import("../src/screens/WalletSend.jsx")).WalletSend, "function")
 })
+
+test("a range with no whole sat in it says so once, and nothing is asked or paid", async () => {
+  assert.equal(checkAmount({ minMsat: 2500, maxMsat: 2500 }, 2).unpayable, true)
+  assert.equal(checkAmount({ minMsat: 2500, maxMsat: 2500 }, 3).unpayable, true)
+  assert.equal(checkAmount({ minMsat: 500, maxMsat: 900 }, 1).unpayable, true)
+  let asked = 0, paid = 0
+  const pay = { callback: "https://service.example/cb", minMsat: 2500, maxMsat: 2500, commentAllowed: 0, host: "service.example" }
+  await assert.rejects(payLnurl({}, pay, { sats: 3 }, { fetchImpl: async () => { asked++ }, pay: async () => { paid++ } }), /whole number of sats/)
+  assert.equal(asked + paid, 0)
+})

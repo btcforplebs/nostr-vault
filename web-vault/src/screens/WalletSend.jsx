@@ -7,7 +7,7 @@ import { checkAmount, invoiceAmount, parsePayTarget, payBolt11, payLnurl, resolv
 
 const IRREVERSIBLE = "Lightning payments cannot be reversed."
 
-export function WalletSend({ wallet, onSent, resolve = resolvePayTarget, payInvoiceText = payBolt11, payAddress = payLnurl }) {
+export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText = payBolt11, payAddress = payLnurl }) {
   const [text, setText] = useState("")
   const [pay, setPay] = useState(null) // the resolved LNURL pay request
   const [looking, setLooking] = useState(false)
@@ -58,8 +58,7 @@ export function WalletSend({ wallet, onSent, resolve = resolvePayTarget, payInvo
       if (target.kind === "invoice") await payInvoiceText(wallet.conn, target.invoice)
       else await payAddress(wallet.conn, pay, { sats: n, comment })
       setDone(target.kind === "invoice" && amount.sats == null ? "Payment sent." : `Sent ${(amount?.sats ?? n).toLocaleString()} sats.`)
-      setText(""); setSats("")
-      onSent?.()
+      setText(""); setSats("") // the balance and History reload themselves (wallet.js onPaid)
     } catch (e) {
       // No answer is not a failure: the wallet may still pay. Clear the box so Pay isn't one click from paying twice.
       if (e instanceof WalletTimeout) { setErr("Your wallet didn't confirm in time. The payment may still go through, so check History before sending again."); setText("") }
@@ -81,7 +80,9 @@ export function WalletSend({ wallet, onSent, resolve = resolvePayTarget, payInvo
       {lookErr && <p class="error" role="alert">{lookErr}</p>}
       {pay && <div class="wallet-lnurl">
         <p class="wallet-to"><strong>To {target?.address ?? pay.host}</strong>{pay.note && <span class="muted small">{pay.note}</span>}</p>
-        {check.minSats === check.maxSats
+        {check.unpayable
+          ? <p class="error">This service only takes amounts that aren't a whole number of sats, so this wallet can't pay it.</p>
+          : check.minSats === check.maxSats
           ? <p class="wallet-paying">Amount: {check.minSats.toLocaleString()} sats</p>
           : <><label class="wallet-row"><span>Amount</span>
               <input class="wallet-sats" type="number" inputmode="numeric" min={check.minSats} max={check.maxSats} placeholder="sats" value={sats}
