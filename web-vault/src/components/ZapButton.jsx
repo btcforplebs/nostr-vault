@@ -3,6 +3,7 @@ import { actionContext } from "../net/actions.js"
 import { formatSats } from "../net/notifications.js"
 import { ensureWallet, onWallet, walletState } from "../net/wallet.js"
 import { MAX_ZAP_SATS, PRESET_SATS, onZapTotals, wantTotals, zap, zapTotal } from "../net/zaps.js"
+import { ZappersList } from "./ZappersList.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
@@ -31,6 +32,7 @@ export function ZapButton({ note, pubkey }) {
   const [total, setTotal] = useState(() => id ? zapTotal(id) : null)
   const [state, setState] = useState(null) // null | "busy" | "sent" | { error }
   const [picking, setPicking] = useState(false)
+  const [listing, setListing] = useState(false) // who zapped (ZappersListView)
   const hold = useRef(null), held = useRef(false)
 
   useEffect(() => {
@@ -43,10 +45,19 @@ export function ZapButton({ note, pubkey }) {
 
   if (!ctx) return null
   const sats = total?.sats ?? 0
+  const trusted = pk => pk === ctx.session.pubkey || ctx.account?.follows?.includes(pk)
+  const list = listing && <ZappersList noteId={id} trusted={trusted} onClose={() => setListing(false)}
+    onPerson={pk => { setListing(false); location.hash = `#/profile/${pk}` }} />
   if (wallet.status !== "ready" || ctx.signer?.readOnly) { // read-only can't sign the zap request
     if (!sats) return null
-    // No wallet to zap from, but the sats others sent still show.
-    return <span class="note-action zap-total" role="img" aria-label={`${formatSats(sats)} sats zapped`}><Bolt filled />{formatSats(sats)}</span>
+    // No wallet to zap from, but the sats others sent still show, and who sent them.
+    return (
+      <span class="zap">
+        <button type="button" class="note-action zap-total" aria-label={`${formatSats(sats)} sats zapped. Show who zapped`} aria-haspopup="dialog"
+          aria-expanded={listing} onClick={e => { e.stopPropagation(); setListing(!listing) }}><Bolt filled />{formatSats(sats)}</button>
+        {list}
+      </span>
+    )
   }
 
   const send = async amount => {
@@ -71,15 +82,18 @@ export function ZapButton({ note, pubkey }) {
 
   return (
     <span class="zap">
-      <button type="button" class={`note-action zap-button${zapped ? " sent" : ""}${error ? " failed" : ""}${sats || !note ? " wide" : ""}`}
+      <button type="button" class={`note-action zap-button${zapped ? " sent" : ""}${error ? " failed" : ""}${!note ? " wide" : ""}`}
         aria-label={name} title={name} aria-busy={busy || undefined} aria-haspopup="dialog" aria-expanded={picking}
         onPointerDown={down} onPointerUp={up} onPointerLeave={up} onClick={click}
         onContextMenu={e => { e.preventDefault(); up(); if (!busy) setPicking(true) }}>
         <Bolt filled={zapped} />
-        {note ? (sats > 0 && formatSats(sats)) : verb}
+        {!note && verb}
       </button>
+      {note && sats > 0 && <button type="button" class="note-action zap-count" aria-label={`${formatSats(sats)} sats zapped. Show who zapped`}
+        aria-haspopup="dialog" aria-expanded={listing} onClick={e => { e.stopPropagation(); setPicking(false); setListing(!listing) }}>{formatSats(sats)}</button>}
       {error && <span class="zap-error" role="alert">{error}</span>}
       {picking && <AmountPicker initial={wallet.defaultSats} onZap={send} onClose={() => setPicking(false)} />}
+      {list}
     </span>
   )
 }

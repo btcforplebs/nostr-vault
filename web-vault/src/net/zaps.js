@@ -168,8 +168,11 @@ export async function zap(ctx, { recipient, note, sats }, { fetchImpl = globalTh
 // note shown twice reads the same. Cards ask through wantTotals; asks within a moment go out together.
 const totals = new Map()
 const seen = new Map() // note id -> Set of receipt ids already counted
+const zappers = new Map() // note id -> [{ id, sender, sats, comment, created_at }], from receipts with a valid zap request
 const listeners = new Set()
 export const zapTotal = id => totals.get(id) ?? { sats: 0, mine: false }
+/** Who zapped note `id` (ZappersListView): biggest first, then newest. */
+export const zappersOf = id => [...(zappers.get(id) ?? [])].sort((a, b) => b.sats - a.sats || b.created_at - a.created_at)
 export function onZapTotals(f) { listeners.add(f); return () => listeners.delete(f) }
 function add(id, sats, mine) {
   const t = zapTotal(id)
@@ -206,7 +209,14 @@ export async function countReceipts(events, ids, me, lnOf, fetchImpl = globalThi
     if (publisher && publisher !== ev.pubkey) continue
     if (counted.has(ev.id)) continue // counted while the publisher was being resolved
     counted.add(ev.id)
-    add(target, sats, zapRequest(ev)?.pubkey === me)
+    // Who zapped is the zap request's signer, never the receipt's publisher; a receipt without a valid request still
+    // counts toward the total (as on the iPhone) but names nobody in the list.
+    const req = zapRequest(ev)
+    if (req) {
+      if (!zappers.has(target)) zappers.set(target, [])
+      zappers.get(target).push({ id: ev.id, sender: req.pubkey, sats, comment: (req.content ?? "").trim(), created_at: ev.created_at })
+    }
+    add(target, sats, req?.pubkey === me)
   }
 }
 
