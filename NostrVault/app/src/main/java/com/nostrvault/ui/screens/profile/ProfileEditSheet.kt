@@ -23,6 +23,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.notification.NotificationManager
 import kotlin.coroutines.cancellation.CancellationException
@@ -198,23 +199,42 @@ class ProfileEditViewModel @Inject constructor(
         val existing = existing ?: return
         if (!ProfileMetadataMerge.hasChanges(initial, edited)) return
         val pubkey = existing.pubkey
-        val shownBefore = nostrService.profiles.value[pubkey]
         unsavedDraft = null
+        // Taken now: the publish runs after the sheet is gone, behind a
+        // lookup of up to 6 s, and a switch in that window must not sign
+        // this profile as the other account.
+        val lock = nostrService.lockPostingAccount()
+        // The form was filled from [existing]'s profile. If the account
+        // changed while the sheet was open, signing it as the one active now
+        // would publish that profile as theirs, so nothing is saved.
+        if (lock.hex != pubkey) {
+            notificationManager.showError(PostingAccount.MESSAGE)
+            return
+        }
+        val shownBefore = nostrService.profiles.value[pubkey]
         nostrService.showLocalProfile(pubkey, ProfileMetadataMerge.preview(existing, initial, edited))
         appScope.launch(Dispatchers.Main) {
-            val published = publish(existing, initial, edited)
+            val published = publish(existing, initial, edited, lock)
             if (published != null) {
                 nostrService.showLocalProfile(pubkey, published)
             } else {
                 nostrService.showLocalProfile(pubkey, shownBefore)
-                unsavedDraft = edited
+                // Kept for the next open only while it is still this
+                // account's form; after a switch it would fill the other
+                // account's profile with these fields.
+                if (nostrService.lockPostingAccount() == lock) unsavedDraft = edited
                 notificationManager.showError("Profile not saved. Pull down to try again.")
             }
         }
     }
 
     /** Publishes the changed fields as a new kind 0; the profile it describes, or null if nothing was published. */
-    private suspend fun publish(existing: FeedProfile, initial: Map<String, String>, edited: Map<String, String>): FeedProfile? {
+    private suspend fun publish(
+        existing: FeedProfile,
+        initial: Map<String, String>,
+        edited: Map<String, String>,
+        lock: PostingAccount.Lock,
+    ): FeedProfile? {
         // A kind 0 replaces the whole profile. Start from the newest one on
         // the relays so lud06 and every key this form doesn't show
         // survive; if it can't be fetched, publishing would wipe them, so
@@ -225,10 +245,10 @@ class ProfileEditViewModel @Inject constructor(
         val lookup = nostrService.lookupNewestReplaceable(0, pubkey, alsoAsk)
         if (lookup.event == null && !lookup.confirmedNone) return null
         val merged = ProfileMetadataMerge.merge(ProfileMetadataMerge.parseContent(lookup.event?.content), initial, edited)
-        // A bunker timeout or an Amber rejection throws; uncaught here it
-        // crashed the app.
+        // A bunker timeout, an Amber rejection or a switch away from [lock]
+        // throws; uncaught here it crashed the app.
         val event = try {
-            nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = emptyList())
+            nostrService.signEventAsync(kind = 0, content = merged.toString(), tags = emptyList(), lockedTo = lock)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

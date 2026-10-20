@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -23,6 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class PendingPostManager @Inject constructor(
     @ApplicationContext context: Context,
+    configStore: ConfigStore,
 ) {
 
     companion object {
@@ -90,6 +92,14 @@ class PendingPostManager @Inject constructor(
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    init {
+        // A repost or delete signs when its countdown ends, with whichever
+        // account is active then, so one left running across a switch would
+        // go out as the new account (and link the two). Take back whatever
+        // is pending instead, as iOS does (PendingPostManager.swift init).
+        scope.launch { configStore.accountSwitches.collect { this@PendingPostManager.cancel() } }
+    }
 
     /**
      * Draft ids whose post is on its way: uploading or signing in
