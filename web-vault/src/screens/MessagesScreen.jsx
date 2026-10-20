@@ -1,16 +1,20 @@
 // Messages: the user's conversations, newest first (iPhone DMInboxView). Read from Haven's /chat and the relays
 // through net/dms.js; the text is decrypted in memory only. Blocked people's conversations are left out. Unread
 // conversations are bold with a count, as on the iPhone (net/dm-read.js).
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { decode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { MentionPicker } from "../components/MentionPicker.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, watchMessages } from "../net/dms.js"
+
+// The people strip under "New message" is the composer's @mention picker; its styles come with it.
+if (import.meta.env) import("../styles/compose.css")
 
 /** The relays the user's own DMs are read from: their DM inbox list, read list, defaults and this browser's extras. */
 export async function inboxRelays(ctx) {
@@ -101,7 +105,11 @@ export function MessagesScreen({ ctx }) {
   const { blocked } = useBlocks(ctx)
   const [to, setTo] = useState("")
   const [err, setErr] = useState("")
+  const toBox = useRef(null)
+  const [people, setPeople] = useState(false) // the people strip: open while the box has focus, until Escape
   const list = conversations(messages, blocked)
+  // Only a name is looked up: a key (whole or mistyped) or an address would tell the search relays who you mean to write to.
+  const showPeople = people && peopleQuery(to)
   const { counts, total } = useUnread(ctx, messages, blocked)
 
   useEffect(() => {
@@ -112,7 +120,7 @@ export function MessagesScreen({ ctx }) {
   const open = e => {
     e.preventDefault()
     const pk = pubkeyOf(to.trim())
-    if (!pk) return setErr("Paste an npub, nprofile or hex public key.")
+    if (!pk) return setErr("Pick someone from the list, or paste an npub, nprofile or hex public key.")
     setErr(""); setTo("")
     location.hash = `#/dm/${pk}`
   }
@@ -131,9 +139,18 @@ export function MessagesScreen({ ctx }) {
       <SignerTrouble trouble={trouble} retry={retry} />
       <OpenMore ctx={ctx} more={more} />
       <form class="dm-new" onSubmit={open}>
-        <input value={to} onInput={e => setTo(e.currentTarget.value)} placeholder="New message to npub…" autocapitalize="off" autocorrect="off" spellcheck={false} aria-label="New message to" />
+        <input ref={toBox} value={to} onInput={e => { setTo(e.currentTarget.value); setErr(""); setPeople(true) }}
+          onFocus={() => setPeople(true)} onBlur={() => setPeople(false)} placeholder="New message to a name or npub…" autocapitalize="off" autocorrect="off" spellcheck={false}
+          aria-label="New message to" aria-controls={showPeople ? "mention-picker" : undefined} />
         <button type="submit" class="small" disabled={!to.trim()}>Open</button>
       </form>
+      {/* MessageComposerView's search: people by name (follows first, then a NIP-50 search), picked to open the thread. */}
+      {showPeople && (
+        <div class="dm-people">
+          <MentionPicker ctx={ctx} query={to.trim()} input={toBox} onClose={() => setPeople(false)}
+            onPick={pk => { setTo(""); setErr(""); location.hash = `#/dm/${pk}` }} />
+        </div>
+      )}
       {err && <div class="status-line error">{err}</div>}
       {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
         : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
@@ -149,6 +166,12 @@ export function MessagesScreen({ ctx }) {
         ) })}
     </main>
   )
+}
+
+/** Whether what's in "New message" is a name to look up: not a key, a near-key or an address. */
+export const peopleQuery = s => {
+  const q = String(s ?? "").trim()
+  return !!q && !/^(npub1|nprofile1|nostr:)/i.test(q) && !/^[0-9a-f]{8,}$/i.test(q) && !q.includes("@") && !pubkeyOf(q)
 }
 
 /** npub / nprofile / 64-hex -> hex pubkey, else null. */

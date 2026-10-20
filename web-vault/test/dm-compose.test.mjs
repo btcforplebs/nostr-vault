@@ -30,3 +30,10 @@ test("an input method's Return picks a word, it doesn't send", () => {
   assert.equal(sendsOnEnter(key("Enter", { keyCode: 229 }), false), false)
 })
 test("other keys don't send", () => assert.equal(sendsOnEnter(key("a"), false), false))
+
+test("New message looks up names only: a key, near-key or address never goes to the search relays", async () => {
+  const { peopleQuery } = await import("../src/screens/MessagesScreen.jsx")
+  for (const q of ["alice", "Bob Smith", "j"]) assert.equal(peopleQuery(q), true, q)
+  for (const q of ["", "   ", "npub1abc", "NPUB1xyz", "nprofile1qqs", "nostr:npub1x", "deadbeef01", "a".repeat(64), "bob@example.com", "@alice"])
+    assert.equal(peopleQuery(q), false, q)
+})
