@@ -123,9 +123,15 @@ extension FeedService {
     /// without this the user would sit in front of an empty screen labelled
     /// "No notes found" and reasonably conclude the app is broken.
     var curatedGraphPendingStatus: String {
-        hasNoWebOfTrustYet
+        waitsForFirstFollow
             ? "Follow people to build your web of trust"
             : "Building your web of trust…"
+    }
+
+    /// The graph names nobody and neither do your follows. Someone who has
+    /// just followed is waiting for the relay's next rebuild, not for a follow.
+    var waitsForFirstFollow: Bool {
+        hasNoWebOfTrustYet && followedPubkeys.isEmpty
     }
 
     /// Re-read the trust graph until the relay has written one, then re-filter.
@@ -144,10 +150,12 @@ extension FeedService {
                     return
                 }
                 self.curatedGraphPollAttempts += 1
-                // ~2 minutes. If the graph has not appeared by then the relay
-                // could not reach its seed relays, and retrying forever just
-                // burns battery behind a screen that is already honest.
-                guard self.needsCuratedGraph, self.curatedGraphPollAttempts <= 40 else {
+                // ~5 minutes: the relay rebuilds a graph that names nobody
+                // every 2 minutes, so a first follow can take two rounds to
+                // land. If it has not appeared by then the relay could not
+                // reach its seed relays, and retrying forever just burns
+                // battery behind a screen that is already honest.
+                guard self.needsCuratedGraph, self.curatedGraphPollAttempts <= 100 else {
                     timer.invalidate()
                     self.curatedGraphPollTimer = nil
                     return
@@ -165,10 +173,31 @@ extension FeedService {
                         return
                     }
                     self.recomputeFilteredNotes()
+                    self.resubscribeGlobalForNewGraph()
                     self.connectionStatus = self.filteredNotes.isEmpty ? "No notes found" : "Live"
                 }
             }
         }
+    }
+
+    /// Ask every connected Global relay for the trusted authors now the graph
+    /// has loaded: the primary REQ was built while the web was empty.
+    private func resubscribeGlobalForNewGraph() {
+        guard isGlobalLikeMode, let trust = globalTrustSet(), !trust.isEmpty else { return }
+        for (key, client) in feedClients where !key.hasPrefix("page-") && client.connectionState == .connected {
+            sendTrustedAuthorsSubscription(client: client, label: key, trust: trust)
+        }
+    }
+
+    /// What a finished load reports. "Live" over an empty Global that is
+    /// still waiting for its graph read as a feed that works and has nothing.
+    var liveOrPendingStatus: String {
+        filteredNotes.isEmpty && globalAwaitsGraph ? curatedGraphPendingStatus : "Live"
+    }
+
+    /// Global is filtering by a web of trust that has not loaded yet.
+    var globalAwaitsGraph: Bool {
+        isGlobalLikeMode && !curatedGraphReady && !ConfigService.shared.config.globalShowsEveryone
     }
 
     /// "No notes found" is a lie while the Global feed is waiting for its
@@ -176,8 +205,13 @@ extension FeedService {
     /// cannot vouch for.
     func emptyFeedStatus() -> String {
         if !filteredNotes.isEmpty { return "Live" }
-        if needsCuratedGraph && !curatedGraphReady { return curatedGraphPendingStatus }
+        if needsCuratedGraph && !curatedGraphReady && !everyoneGlobal { return curatedGraphPendingStatus }
         return "No notes found"
+    }
+
+    /// Global with the shield on Everyone: no graph is needed to show it.
+    private var everyoneGlobal: Bool {
+        isGlobalLikeMode && ConfigService.shared.config.globalShowsEveryone
     }
 
     /// Feeds that cannot be rendered without the trust graph. Global filters

@@ -303,7 +303,15 @@ extension FeedService {
         let subId = feedSubId(for: label)
         subIdToRelayKey[subId] = label
 
-        let req = ["REQ", subId, filter] as [Any]
+        // Global under Web of Trust asks twice, once for trusted authors and
+        // once open. Asked open only, a new account's small web matched almost
+        // nothing in a page of strangers and Global rendered blank.
+        var req: [Any] = ["REQ", subId]
+        if isGlobalLikeMode && !isInbox {
+            req.append(contentsOf: Self.trustScopedFilters(filter, trust: globalTrustSet()) as [Any])
+        } else {
+            req.append(filter)
+        }
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
@@ -318,6 +326,25 @@ extension FeedService {
             } else {
                 subscribedAuthorsByRelay[label] = []
             }
+        }
+    }
+
+    /// The trusted-author half of a Global REQ on its own subscription, for a
+    /// graph that loaded after the primary REQ went out. Its own subId keeps
+    /// its EOSE out of the primary count, which would end a running load early.
+    func sendTrustedAuthorsSubscription(client: WebSocketClient, label: String, trust: Set<String>) {
+        guard label != localInboxURL?.absoluteString else { return }
+        let (since, limitVal) = feedSinceAndLimit()
+        let filter: [String: Any] = [
+            "kinds": primaryFeedKinds,
+            "since": since,
+            "limit": limitVal,
+            "authors": Array(trust.sorted().prefix(Self.trustedAuthorsCap))
+        ]
+        let req: [Any] = ["REQ", "wot-" + feedSubId(for: label), filter]
+        if let data = try? JSONSerialization.data(withJSONObject: req),
+           let str = String(data: data, encoding: .utf8) {
+            client.send(text: str)
         }
     }
 

@@ -46,7 +46,8 @@ extension FeedService {
                     }
                     if self.isLoadingFeed { self.isLoadingFeed = false }
                     if self.isSyncing { self.isSyncing = false }
-                    if self.connectionStatus != "Live" { self.connectionStatus = "Live" }
+                    let status = self.liveOrPendingStatus
+                    if self.connectionStatus != status { self.connectionStatus = status }
                     if finishing {
                         self.processingQueue.async { [weak self] in
                             self?.bgAccumulator.isInitialLoad = false

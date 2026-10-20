@@ -139,6 +139,11 @@ extension FeedView {
                                                 onPost: configService.activeAccountHexPubkey.isEmpty ? nil : { modeComposer = .poll })
                         }
 
+                        if feedService.feedMode == .global && feedService.filteredNotes.isEmpty
+                            && !(feedService.isLoadingFeed && feedService.notes.isEmpty) {
+                            GlobalFeedEmptyState(feedService: feedService)
+                        }
+
                         if isThreadedModeActive {
                             ForEach(feedThreads) { thread in
                                 feedThreadCard(thread, proxy: proxy)
