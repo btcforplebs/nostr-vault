@@ -44,6 +44,15 @@ object MediaGalleryBridge {
     var currentItems: List<BlossomMediaItem> = emptyList()
 }
 
+/**
+ * [items] as the viewer gets them: each with the note that posted it, from
+ * the same hash → note index the long-press menu reads, so the viewer's View
+ * Note shows for the same files (iOS `findNoteId`). A blob carries no note
+ * reference of its own; the lowercase sha256 is the only join.
+ */
+internal fun withNoteIds(items: List<BlossomMediaItem>, noteIdByHash: Map<String, String>): List<BlossomMediaItem> =
+    items.map { item -> noteIdByHash[item.sha256.lowercase()]?.let { item.copy(noteId = it) } ?: item }
+
 /** What the Media tab shows instead of the grid. Port of iOS `MediaGalleryGrid.mediaContent`. */
 internal enum class MediaEmptyState(val title: String, val detail: String?) {
     /** Nothing to show yet and a scan is running. */

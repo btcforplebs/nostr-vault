@@ -443,7 +443,7 @@ fun MediaGalleryScreen(
                                 noteId = noteIdByHash[item.sha256.lowercase()],
                                 onNoteClick = onNoteClick,
                                 onTap = {
-                                    MediaGalleryBridge.currentItems = filteredItems
+                                    MediaGalleryBridge.currentItems = withNoteIds(filteredItems, noteIdByHash)
                                     onMediaClick(index)
                                 },
                                 onLongPress = { contextMenuTarget = index },
@@ -508,7 +508,7 @@ fun MediaGalleryScreen(
                                 noteId = noteIdByHash[item.sha256.lowercase()],
                                 onNoteClick = onNoteClick,
                                 onTap = {
-                                    MediaGalleryBridge.currentItems = filteredItems
+                                    MediaGalleryBridge.currentItems = withNoteIds(filteredItems, noteIdByHash)
                                     onMediaClick(index)
                                 },
                                 onLongPress = { contextMenuTarget = index },

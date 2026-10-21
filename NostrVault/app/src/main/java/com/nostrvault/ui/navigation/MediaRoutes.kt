@@ -25,6 +25,11 @@ internal fun NavGraphBuilder.mediaRoutes(
         MediaViewerScreen(
             initialIndex = index,
             onBack = { navController.popBackStack() },
+            // As iOS: View Note closes the viewer, then opens the note.
+            onNoteClick = { noteId ->
+                navController.popBackStack()
+                navController.navigate(Screen.NoteDetail.createRoute(noteId))
+            },
             autoplayVideos = config.autoplayVideos,
         )
     }
