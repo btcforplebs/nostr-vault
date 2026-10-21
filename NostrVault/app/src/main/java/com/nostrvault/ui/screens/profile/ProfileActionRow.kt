@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -179,9 +180,11 @@ private fun ActionChip(
                 },
                 onLongClickLabel = longClickLabel,
             )
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp)
+            // Read once: the label, or the fuller description ("Zap 21 sats").
+            .semantics { if (description != label) contentDescription = description },
     ) {
-        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(12.dp))
+        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(12.dp))
         Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
     }
 }
