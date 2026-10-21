@@ -78,7 +78,8 @@ fun buildAccountInfos(
         AccountInfo(
             npub = npub,
             hexPubkey = hex,
-            displayName = profile?.bestName ?: if (isOwner) "Owner" else npub.take(12) + "…",
+            // iOS names an unknown account by the first 8 characters of its npub.
+            displayName = profile?.bestName ?: if (isOwner) "Owner" else npub.take(8),
             isOwner = isOwner,
             isActive = npub == active,
             hasKey = isOwner || npub in config.accountNpubs,
@@ -107,7 +108,7 @@ fun AccountSwitcherSheet(
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
             // Header
             Text(
-                text = "Accounts",
+                text = "Switch Account",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = PrimaryText,

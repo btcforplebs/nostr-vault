@@ -283,9 +283,9 @@ fun NostrVaultNavHost(
                         when (screen) {
                             Screen.Feed -> feedService.requestScrollToTop()
                             // The Vault tab's half on screen scrolls to the top;
-                            // the WOT globe goes back to you; the Profile tab
-                            // scrolls to the top.
-                            Screen.Dashboard, Screen.WOT, Screen.Profile -> {
+                            // the WOT globe goes back to you; the Profile and
+                            // Search tabs scroll to the top (iOS SearchScrollToTop).
+                            Screen.Dashboard, Screen.WOT, Screen.Profile, Screen.Search -> {
                                 TabReselect.request(screen)
                             }
                             else -> {
@@ -294,8 +294,14 @@ fun NostrVaultNavHost(
                             }
                         }
                     },
-                    onAccountSwitcher = { showAccountSwitcher = true },
+                    // As iOS: holding the avatar does nothing with one account.
+                    onAccountSwitcher = {
+                        if (buildAccountInfos(config, profiles, includeWhitelisted = true).size > 1) {
+                            showAccountSwitcher = true
+                        }
+                    },
                     condensedActionIcon = condensedActionIcon,
+                    condensedActionLabel = if (opensVaultDashboard) "Vault Dashboard" else "Compose new post",
                     condensedActionTint = condensedActionTint,
                     onCondensedAction = onCondensedAction,
                     onExpand = { ScrollChrome.expand(scope) },

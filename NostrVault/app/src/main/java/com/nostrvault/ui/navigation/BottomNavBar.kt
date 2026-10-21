@@ -73,7 +73,7 @@ import com.nostrvault.ui.theme.ZapOrange
 
 /**
  * Floating pill-shaped bottom navigation bar matching the iOS tab structure.
- * Tab order: Feed | Search | Profile (center, avatar) | Vault | WOT
+ * Tab order: Feed | Search | Profile (center, avatar) | WoT | Vault
  *
  * Profile tab shows user avatar with a colored ring and supports
  * long-press to trigger account switching.
@@ -126,6 +126,8 @@ fun BottomNavBar(
     onReselect: (Screen) -> Unit = {},
     onAccountSwitcher: () -> Unit,
     condensedActionIcon: ImageVector = NostrVaultIcons.Compose,
+    /** Spoken name of the folded bar's action (iOS collapsedFABLabel). */
+    condensedActionLabel: String = "Compose new post",
     condensedActionTint: Color? = null,
     onCondensedAction: () -> Unit = {},
     onExpand: () -> Unit = {},
@@ -141,7 +143,8 @@ fun BottomNavBar(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            // iOS: 16pt each side, sitting on the home-indicator inset.
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
         // Morph between the full 5-tab row and a condensed avatar + action
@@ -154,7 +157,8 @@ fun BottomNavBar(
         val folded by remember { derivedStateOf { progress() > 0.5f } }
         Layout(
             content = {
-                Box(Modifier.glassPillBackground(isOled = isOled, accentColor = colors.primary))
+                // No accent wash: the iOS capsule is plain glass.
+                Box(Modifier.glassPillBackground(isOled = isOled, accentColor = Color.Transparent))
                 ExpandedNavRow(
                     currentRoute = currentRoute,
                     primaryColor = colors.primary,
@@ -178,6 +182,7 @@ fun BottomNavBar(
                     showBadge = hasUnreadDMs || hasNewRelayActivity,
                     primaryColor = colors.primary,
                     actionIcon = condensedActionIcon,
+                    actionLabel = condensedActionLabel,
                     actionTint = condensedActionTint ?: colors.primary,
                     onAction = onCondensedAction,
                     onExpand = onExpand,
@@ -253,7 +258,7 @@ private fun ExpandedNavRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -326,6 +331,7 @@ private fun CondensedNavCluster(
     showBadge: Boolean,
     primaryColor: Color,
     actionIcon: ImageVector,
+    actionLabel: String,
     actionTint: Color,
     onAction: () -> Unit,
     onExpand: () -> Unit,
@@ -334,11 +340,9 @@ private fun CondensedNavCluster(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
-    val ringColor = if (isOwner) primaryColor else ZapOrange
-
     Row(
         modifier = modifier
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(6.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -361,16 +365,16 @@ private fun CondensedNavCluster(
                     .semantics { if (showBadge) stateDescription = "New activity" }
                     .zapFlightOrigin()
                     .size(36.dp)
-                    .border(width = 1.5.dp, color = ringColor, shape = CircleShape)
-                    .padding(2.dp)
                     .clip(CircleShape)
-                    .background(SecondaryGroupedBg),
+                    .background(SecondaryGroupedBg)
+                    .border(width = 2.dp, color = primaryColor.copy(alpha = 0.6f), shape = CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
+                // iOS: a 36pt avatar under an accent ring at 60%, 2pt.
                 AvatarImage(
                     url = activeAvatarUrl,
                     pubkey = activeAccountPubkey,
-                    size = 28.dp,
+                    size = 36.dp,
                     displayName = activeDisplayName,
                 )
             }
@@ -393,9 +397,9 @@ private fun CondensedNavCluster(
         ) {
             Icon(
                 imageVector = actionIcon,
-                contentDescription = "Action",
+                contentDescription = actionLabel,
                 tint = actionTint,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
             )
         }
     }
@@ -414,8 +418,10 @@ private fun NavTab(
     modifier: Modifier = Modifier,
 ) {
     val pickerOpen = holdToPick != null && FeedTabPicker.isOpen
+    // iOS grows only the Feed tab, and only while its list is open; a
+    // selected tab is marked by colour and weight, not size.
     val scale by animateFloatAsState(
-        targetValue = if (pickerOpen) 1.18f else if (selected) 1.1f else 1.0f,
+        targetValue = if (pickerOpen) 1.08f else 1.0f,
         animationSpec = Motion.control(),
         label = "tabScale",
     )
@@ -459,7 +465,7 @@ private fun NavTab(
                 .then(gesture)
                 .padding(vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Icon(
                 imageVector = icon,
@@ -501,12 +507,6 @@ private fun ProfileTab(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
-    val scale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1.0f,
-        animationSpec = Motion.control(),
-        label = "profileScale",
-    )
-    val ringColor = if (isOwner) selectedColor else ZapOrange
 
     Column(
         modifier = modifier
@@ -521,29 +521,27 @@ private fun ProfileTab(
             )
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        // Avatar placeholder with ring
+        // Avatar with ring: accent at 2pt when selected, white 50% at 1pt when not (iOS).
         Box {
             Box(
                 modifier = Modifier
                     .zapFlightOrigin()
                     .size(24.dp)
-                    .scale(scale)
-                    .border(
-                        width = if (selected) 1.5.dp else 0.dp,
-                        color = if (selected) ringColor else Color.Transparent,
-                        shape = CircleShape,
-                    )
-                    .padding(1.dp)
                     .clip(CircleShape)
-                    .background(SecondaryGroupedBg),
+                    .background(SecondaryGroupedBg)
+                    .border(
+                        width = if (selected) 2.dp else 1.dp,
+                        color = if (selected) selectedColor else Color.White.copy(alpha = 0.5f),
+                        shape = CircleShape,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 AvatarImage(
                     url = activeAvatarUrl,
                     pubkey = activeAccountPubkey,
-                    size = 22.dp,
+                    size = 24.dp,
                     displayName = activeDisplayName,
                 )
             }

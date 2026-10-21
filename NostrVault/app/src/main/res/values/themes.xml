@@ -5,8 +5,8 @@
         The actual theming is handled entirely by Jetpack Compose (NostrVaultTheme).
     -->
     <style name="Theme.NostrVault" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#FF141419</item>
-        <item name="android:statusBarColor">#FF141419</item>
+        <item name="android:windowBackground">#FF000000</item>
+        <item name="android:statusBarColor">#FF000000</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <!-- windowLightNavigationBar is API 27+ and already defaults to false,

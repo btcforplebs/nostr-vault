@@ -28,6 +28,9 @@ import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.navigation.HashtagLink
 import com.nostrvault.ui.navigation.LocalOpenHashtag
+import com.nostrvault.ui.navigation.Screen
+import com.nostrvault.ui.navigation.TabReselect
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -67,6 +70,15 @@ fun SearchScreen(
     val colors = LocalNostrVaultColors.current
     // The post bar's Web of Trust button: the author whose map is open.
     var trustWebAuthor by remember { mutableStateOf<String?>(null) }
+    // Tapping the Search tab while it shows scrolls to the top, as iOS does.
+    val discoveryListState = rememberLazyListState()
+    val resultsListState = rememberLazyListState()
+    LaunchedEffect(Unit) {
+        TabReselect.of(Screen.Search).collect {
+            discoveryListState.animateScrollToItem(0)
+            resultsListState.animateScrollToItem(0)
+        }
+    }
 
     // Hashtags and links are read out of the matching notes, as on the iPhone.
     val hashtagResults = remember(results.notes, query) { SearchResultSections.hashtags(results.notes, query) }
@@ -254,6 +266,7 @@ fun SearchScreen(
 
             if (hasDiscovery) {
                 LazyColumn(
+                    state = discoveryListState,
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding() + 16.dp,
                         bottom = padding.calculateBottomPadding() + 88.dp,
@@ -391,6 +404,7 @@ fun SearchScreen(
             }
         } else {
             LazyColumn(
+                state = resultsListState,
                 contentPadding = PaddingValues(
                     top = padding.calculateTopPadding(),
                     bottom = padding.calculateBottomPadding() + 88.dp,
