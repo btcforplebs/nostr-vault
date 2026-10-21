@@ -198,8 +198,6 @@ class FeedService @Inject constructor(
      */
     val blobNoteIndex: StateFlow<Map<String, String>> = blobNoteIndexStore.index
 
-    init { startObservers() }
-
     internal val _filteredNotes = MutableStateFlow<List<FeedNote>>(emptyList())
     val filteredNotes: StateFlow<List<FeedNote>> = _filteredNotes.asStateFlow()
 
@@ -813,6 +811,13 @@ class FeedService @Inject constructor(
 
     fun repostNote(noteId: String) { repostNoteImpl(noteId) }
 
+    // Last in the class on purpose: Kotlin runs initializers in source order,
+    // and a collector started here can run before the constructor returns.
+    // `withContext(Dispatchers.IO)` does not suspend when its block finishes
+    // first, as loading a missing interaction-state file does on a new
+    // install, so the observer went on to read `_myReactions` while it was
+    // still null and the app crashed at launch. Every field must exist first.
+    init { startObservers() }
 }
 
 // AccumulatorBatch replaced by BackgroundAccumulator.Snapshot in FeedServiceTypes.kt
