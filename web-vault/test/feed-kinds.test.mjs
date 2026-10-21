@@ -74,3 +74,13 @@ test("Event Info lists your relays once, ticks the write ones, and sends only th
   assert.deepEqual(Object.keys(signedFields(ev)), ["id", "pubkey", "created_at", "kind", "tags", "content", "sig"])
   assert.equal(kindName(30023), "Article"); assert.equal(kindName(4242), "Event")
 })
+
+test("how a reaction shows on the Like button (reactionDisplayEmoji)", async () => {
+  const { displayEmoji, firstEmoji } = await import("../src/components/ReactionButton.jsx")
+  for (const c of ["", "+", "+1", "❤", "❤️"]) assert.equal(displayEmoji(c), "❤️", JSON.stringify(c))
+  assert.equal(displayEmoji("-"), "👎")
+  assert.equal(displayEmoji("🔥🔥"), "🔥")
+  assert.equal(displayEmoji("👍🏽"), "👍🏽")
+  assert.equal(displayEmoji(":shaka:"), "❤️")
+  assert.equal(firstEmoji("hello"), ""); assert.equal(firstEmoji(" 🇺🇸 "), "🇺🇸")
+})

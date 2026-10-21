@@ -3,7 +3,7 @@
 // click opens the parent's thread. Placeholder while it loads; after 12 s with nothing, "Could not load original
 // note" and Retry. Read from Haven /feed, then the relays (the e tag's hint too); `memoryOnly` writes nothing.
 import { useEffect, useState } from "preact/hooks"
-import { Avatar } from "./Avatar.jsx"
+import { AvatarMenu } from "./AuthorQuickMenu.jsx"
 import { AuthorName } from "./NoteCard.jsx"
 import { Badges } from "./Badges.jsx"
 import { useQuote } from "./QuotedNote.jsx"
@@ -37,7 +37,7 @@ export function ParentPreview({ id, relay, memoryOnly = false }) {
     const open = e => { if (e.target.closest("a, button")) return; e.stopPropagation(); location.hash = `#/thread/${ev.id}` }
     return (
       <div class="parent-preview" role="link" tabIndex={0} aria-label="Open the note this replies to" onClick={open} onKeyDown={e => e.key === "Enter" && open(e)}>
-        <div class="parent-rail"><a href={`#/profile/${ev.pubkey}`} aria-label="Profile" onClick={e => e.stopPropagation()}><Avatar pubkey={ev.pubkey} /></a><span class="parent-line" aria-hidden="true" /></div>
+        <div class="parent-rail"><AvatarMenu pubkey={ev.pubkey} /><span class="parent-line" aria-hidden="true" /></div>
         <div class="parent-main">
           <div class="parent-head">
             <a class="parent-name" href={`#/profile/${ev.pubkey}`} onClick={e => e.stopPropagation()}><AuthorName pubkey={ev.pubkey} /></a>

@@ -37,3 +37,20 @@
   .note-action.sent svg { animation: nv-burst .35s ease-out; }
 }
 @keyframes nv-burst { 0% { transform: scale(1) } 40% { transform: scale(1.35) } 100% { transform: scale(1) } }
+/* Reactions (FeedNoteRow+Reactions, ReactionTapback): your emoji on the button on accent at 18%; the tapback bar 12 px
+   above it, 44 px slots; the picker a dialog. */
+.reaction { position: relative; display: inline-flex; }
+.note-actions .like.sent.emoji { background: rgb(230 115 38 / .18); }
+.reaction-emoji { font-size: 16px; line-height: 1; }
+.tapback { position: absolute; bottom: calc(100% + 12px); left: -6px; z-index: 30; display: flex; padding: 6px; border-radius: 28px;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); box-shadow: 0 6px 16px rgb(0 0 0 / .4); }
+.tapback button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; font-size: 24px; line-height: 1; }
+.tapback button.on { background: rgb(230 115 38 / .25); }
+.tapback .tapback-more { color: var(--text-2); font: 300 26px var(--font); }
+@media (prefers-reduced-motion: no-preference) { .tapback { animation: qm-pop .18s ease-out both; transform-origin: bottom left; } }
+.picker-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.picker-cell { aspect-ratio: 1; padding: 0; border: 0; border-radius: 8px; background: none; font-size: 22px; line-height: 1; }
+.picker-cell:hover { background: var(--s2); } .picker-cell.on { background: rgb(230 115 38 / .25); }
+.picker-custom { display: flex; gap: 8px; }
+.picker-custom input, .picker-search { flex: 1; min-width: 0; }
+.picker-scroll { max-height: 260px; overflow: auto; }

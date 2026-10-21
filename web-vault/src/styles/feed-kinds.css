@@ -49,3 +49,20 @@
 .info-relay-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 13px var(--mono); }
 .info-relay-state { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .info-send { width: 100%; margin-top: 8px; }
+/* The profile picture's quick menu (AuthorQuickMenu): a glass column of icons under the picture. */
+.avatar-menu { position: relative; flex: none; line-height: 0; }
+.avatar-menu-photo { display: block; line-height: 0; }
+.quick-menu { position: absolute; left: 50%; top: calc(100% + 4px); z-index: 30; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 4px; border-radius: 14px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair);
+  box-shadow: 0 3px 8px rgb(0 0 0 / .12); line-height: normal; }
+.quick-menu > button, .quick-menu > a { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: none; }
+.quick-menu .follow { color: rgb(51 217 128 / .85); } .quick-menu .unfollow { color: rgb(255 214 10 / .85); }
+.quick-menu .wot { color: rgb(230 115 38 / .85); } .quick-menu .block { color: rgb(255 69 58 / .85); }
+.quick-menu hr { width: 20px; margin: 2px 0; border: 0; border-top: 1px solid var(--hair); }
+.quick-menu-note { position: absolute; left: calc(100% + 6px); top: 4px; width: max-content; max-width: 220px; padding: 6px 8px; border-radius: 8px; background: var(--s2); color: var(--text); font: 12px var(--font); }
+@media (prefers-reduced-motion: no-preference) { .quick-menu > * { animation: qm-pop .18s ease-out both; } .quick-menu > :nth-child(2) { animation-delay: .06s } .quick-menu > :nth-child(4) { animation-delay: .12s } }
+@keyframes qm-pop { from { transform: scale(.01); opacity: 0 } to { transform: none; opacity: 1 } }
+.kind-poll-option { width: 100%; text-align: left; color: var(--text); cursor: pointer; }
+.kind-poll-option:disabled { cursor: default; opacity: 1; }
+.kind-poll-vote { width: 100%; min-height: 36px; border-radius: 10px; }
+.kind-poll-error { margin: 0; color: var(--danger); font: 12px var(--font); }

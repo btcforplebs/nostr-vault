@@ -119,6 +119,11 @@ function put(id, kind, value) {
   for (const f of listeners) f(id)
 }
 
+// The emoji this account reacted to each note with, so the button shows it (FeedNoteRow+Reactions).
+const emojiOf = new Map()
+/** This account's reaction to a note, or null. */
+export const reactionOf = id => emojiOf.get(id) ?? null
+
 // The ids of this account's likes on each note, so Unlike knows what to delete.
 const likeIds = new Map()
 const addLikes = (id, ids) => likeIds.set(id, [...new Set([...(likeIds.get(id) ?? []), ...ids])])
@@ -136,21 +141,26 @@ export async function loadSent(ctx, id) {
   for (const ev of mine) {
     if (ev.kind === 7 && (gone.has(ev.id) || deleted.has(ev.id))) continue
     const kind = ev.kind === 7 ? "like" : "repost"
-    if (kind === "like") addLikes(id, [ev.id])
+    if (kind === "like") { addLikes(id, [ev.id]); if (!emojiOf.has(id)) emojiOf.set(id, ev.content || REACTION) }
     if (actionState(id)[kind] === undefined) put(id, kind, "sent")
   }
 }
 
-/** Like or repost `note` once. A second tap on a sent repost does nothing; on a sent like it is Unlike. */
-export async function act(ctx, kind, note) {
+/** Like or repost `note` once. A second tap on a sent repost does nothing; on a sent like it is Unlike. `emoji`
+ *  (the tapback or the picker) reacts with that emoji: the same one again takes the reaction back, another one
+ *  swaps it, the old kind 7 deleted before the new one is signed (FeedActions.react). */
+export async function act(ctx, kind, note, emoji) {
   const cur = actionState(note.id)[kind]
+  if (cur === "busy") return
   // A failed Unlike says so on the heart ({ error, unlike }); a tap on it tries the rest again.
-  if (kind === "like" && (cur === "sent" || cur?.unlike)) return unlike(ctx, note).catch(() => {})
-  if (cur === "busy" || cur === "sent") return
+  if (kind === "like" && (cur === "sent" || cur?.unlike)) {
+    if (!emoji || cur?.unlike || emoji === emojiOf.get(note.id)) return unlike(ctx, note).catch(() => {})
+    try { await unlike(ctx, note) } catch { return }
+  } else if (cur === "sent") return
   put(note.id, kind, "busy")
   try {
-    const { event } = await publishAction(ctx, kind === "like" ? reactionTemplate(note) : repostTemplate(note))
-    if (kind === "like") addLikes(note.id, [event.id])
+    const { event } = await publishAction(ctx, kind === "like" ? reactionTemplate(note, emoji ?? REACTION) : repostTemplate(note))
+    if (kind === "like") { addLikes(note.id, [event.id]); emojiOf.set(note.id, emoji ?? REACTION) }
     put(note.id, kind, "sent")
   } catch (e) {
     put(note.id, kind, { error: String(e?.message ?? e) })
@@ -180,6 +190,7 @@ export async function unlike(ctx, note) {
       markDeleted([id])
     }
     likeIds.delete(note.id)
+    emojiOf.delete(note.id)
     put(note.id, "like", undefined)
   } catch (e) {
     put(note.id, "like", { error: String(e?.message ?? e), unlike: true })
