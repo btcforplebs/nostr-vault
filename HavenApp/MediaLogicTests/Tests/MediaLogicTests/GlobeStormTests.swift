@@ -219,4 +219,23 @@ final class GlobeStormTests: XCTestCase {
         XCTAssertTrue(stats.summary.hasPrefix("work 50.5/"))
         XCTAssertTrue(stats.summary.contains("gap 16.7/16.7 ms"))
     }
+
+    // MARK: Frame rate and retries (Logen's phone ran hot, 10/20)
+
+    func testOnlyAFingerGetsTheScreensFullRateAndAStormIsCappedAt60() {
+        XCTAssertNil(GlobeArcs.FrameRate.pick(finger: true, busy: false).perSecond)
+        XCTAssertNil(GlobeArcs.FrameRate.pick(finger: true, busy: true).perSecond)
+        XCTAssertEqual(GlobeArcs.FrameRate.pick(finger: false, busy: true).perSecond, 60)
+        XCTAssertEqual(GlobeArcs.FrameRate.pick(finger: false, busy: false).perSecond, 30)
+    }
+
+    func testADeadRelayIsTriedAgainLessAndLessOftenUpToFiveMinutes() {
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 1), 5)
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 2), 10)
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 3), 20)
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 6), 160)
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 7), 300)
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 1000), 300)
+        XCTAssertEqual(GlobeArcs.ownRetryWait(attempts: 0), 5)
+    }
 }

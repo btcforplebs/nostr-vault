@@ -30,7 +30,8 @@ extension TrustWebView {
                              myFollows: myFollows, haze: globeHaze, closeHaze: globeCloseHaze, ringFaces: ringFaces,
                              layerFaces: outerFaces,
                              filterLit: globeLit,
-                             running: !wotSheetOpen,
+                             // My Web's sheet covers it too: no clock, no live connections.
+                             running: !wotSheetOpen && !myWebOpen,
                              layer: isWOTTab && centerKey == me ? layer : .everyone,
                              summary: summary,
                              avatar: avatar, name: name, onTap: tapped,
