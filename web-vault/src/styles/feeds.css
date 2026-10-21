@@ -71,3 +71,33 @@
 .thread-open .reply-to { display: none; }
 .thread-open .note-head .avatar { width: 32px !important; height: 32px !important; }
 .thread-open.reply .note-head .avatar { width: 26px !important; height: 26px !important; }
+
+/* Placeholder rows, empty Following, New Posts pill, feed options, Older (FeedNoteSkeletonRow, FeedView+EmptyStates,
+   newPostsButton, FeedView+ToolbarMenu). */
+.note.skeleton { display: flex; flex-direction: column; gap: 8px; }
+.sk-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.sk-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--s2); flex: none; }
+.sk-lines { display: flex; flex-direction: column; gap: 6px; }
+.sk-bar { display: block; height: 12px; border-radius: 4px; background: var(--s2); width: 100%; }
+@media (prefers-reduced-motion: no-preference) { .note.skeleton { animation: sk-pulse 1.2s ease-in-out infinite alternate; } }
+@keyframes sk-pulse { from { opacity: .55 } to { opacity: 1 } }
+.feed-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px var(--gutter); text-align: center; }
+.feed-empty h3 { margin: 4px 0 0; font: 700 22px/1.2 var(--font); letter-spacing: .2px; }
+.feed-empty p { margin: 0; color: var(--text-2); font: 13px var(--mono); letter-spacing: .3px; }
+.feed-empty button { margin-top: 8px; }
+.new-posts { position: sticky; top: 12px; z-index: 5; display: flex; align-items: center; gap: 8px; margin: 0 auto 8px; padding: 10px 20px;
+  border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 700 13px var(--font); box-shadow: 0 4px 8px rgb(0 0 0 / .4); font-variant-numeric: tabular-nums; }
+.new-posts.small { gap: 4px; padding: 5px 10px; font-size: 12px; box-shadow: 0 2px 4px rgb(0 0 0 / .4); }
+.feed-filter { position: relative; margin-left: 8px; }
+.screen-head .feed-filter > button.small { display: inline-flex; align-items: center; }
+.feed-filter-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 200px; padding: 6px; display: flex; flex-direction: column;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); border-radius: 12px; }
+.feed-filter-menu button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: none; border: 0; border-radius: 8px; color: var(--text); font: var(--t-sub); text-align: left; }
+.feed-filter-menu button:hover { background: var(--s2); }
+.feed-filter-menu .check { width: 14px; color: var(--accent); font-weight: 700; }
+.feed-end { text-align: center; font: var(--t-foot); margin: 12px 0; }
+.more .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--hair); border-top-color: var(--accent); border-radius: 50%; vertical-align: -2px; }
+@media (prefers-reduced-motion: no-preference) { .more .spinner { animation: spin .8s linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg) } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.screen-head .feed-filter + button { margin-left: 8px; }
