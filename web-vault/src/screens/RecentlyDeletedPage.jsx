@@ -14,10 +14,10 @@ export function RecentlyDeletedPage({ ctx }) {
   if (!posts) return <p class="empty">Loading…</p>
   return (
     <>
-      <p class="settings-note muted small">Posts you delete here are kept for {KEEP_DAYS} days in this browser. {UNDELETE_NOTE}</p>
       {msg && <p class="settings-note small">{msg}</p>}
       {posts.length ? posts.map(p => <DeletedRow key={p.id} ctx={ctx} post={p} onDone={m => { setMsg(m); reload() }} />)
-        : <p class="empty">Nothing deleted in the last {KEEP_DAYS} days.</p>}
+        : <p class="empty">No deleted posts.</p>}
+      <p class="settings-note muted small">Posts you delete in this browser stay here for {KEEP_DAYS} days. {UNDELETE_NOTE}</p>
     </>
   )
 }
@@ -30,16 +30,16 @@ function DeletedRow({ ctx, post, onDone }) {
   const again = async () => {
     setBusy("undelete"); setErr("")
     try { await undelete(ctx, post); onDone("Posted again.") }
-    catch (e) { setErr(`Couldn't post it again (${e?.message ?? e}). The copy is kept here.`) }
+    catch (e) { setErr(`Couldn't post it again: it wasn't signed, or no relay took it (${e?.message ?? e}). The copy is kept here.`) }
     finally { setBusy("") }
   }
-  const forget = async () => { setBusy("forget"); await forgetDeleted(ctx, post).catch(() => {}); setBusy(""); onDone("Deleted forever.") }
+  const forget = async () => { setBusy("forget"); await forgetDeleted(ctx, post).catch(() => {}); setBusy(""); onDone("") }
   return (
     <article class="note deleted-post">
       <NoteText content={post.content} images />
-      <div class="muted small">Deleted {ago(post.deletedAt)} ago · posted {new Date(post.created_at * 1000).toLocaleDateString()}</div>
+      <div class="muted small">Deleted {ago(post.deletedAt)} ago</div>
       {readOnly ? <p class="muted small">{READ_ONLY}</p> : asking
-        ? <div class="row"><span class="small">Delete the copy for good? The post stays deleted.</span><button class="danger small" disabled={!!busy} onClick={forget}>Delete Forever</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+        ? <div class="row"><span class="small">This removes the saved copy. You won't be able to un-delete this post.</span><button class="danger small" disabled={!!busy} onClick={forget}>Delete Forever</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
         : <div class="row"><button class="primary small" disabled={!!busy} onClick={again}>{busy === "undelete" ? "Posting…" : "Un-delete"}</button><button class="danger small" disabled={!!busy} onClick={() => setAsking(true)}>Delete Forever</button></div>}
       {err && <p class="error small">{err}</p>}
     </article>
