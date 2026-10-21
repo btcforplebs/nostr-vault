@@ -21,8 +21,9 @@ import com.nostrvault.ui.theme.*
 
 /**
  * One Media grid tile. Audio has no picture, so it gets iOS's dark tile with
- * a waveform. Long-press opens iOS `MediaGridItem`'s menu: the same on your
- * own profile, plus Report Media / Block User on someone else's.
+ * a waveform. A Blossom file carries the backup badge bottom-right, as iOS.
+ * Long-press opens iOS `MediaGridItem`'s menu: the same on your own profile,
+ * plus Report Media / Block User on someone else's.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -64,6 +65,7 @@ internal fun ProfileMediaTile(
     if (isAudio) {
         Box(contentAlignment = Alignment.Center, modifier = tileModifier.semantics { contentDescription = "Audio" }) {
             Icon(NostrVaultIcons.Waveform, contentDescription = null, tint = colors.primary, modifier = Modifier.size(36.dp))
+            ProfileTileBackupBadge(url, Modifier.align(Alignment.BottomEnd))
         }
     } else {
         // iOS grid tiles hold a GIF still (`shouldAnimate: false`); a grid of
@@ -89,6 +91,7 @@ internal fun ProfileMediaTile(
                     modifier = Modifier.size(40.dp),
                 )
             }
+            ProfileTileBackupBadge(url, Modifier.align(Alignment.BottomEnd))
         }
     }
 
