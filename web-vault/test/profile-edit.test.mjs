@@ -65,7 +65,7 @@ test("latestProfile: own relays count, the defaults and purplepag.es don't; a fu
   const ask = async url => (url === "wss://r.example" ? { events: [net, future], answered: true } : { events: [], answered: false })
   const r = await latestProfile(ctxWith(fakeVault()), { ask })
   assert.equal(r.event.id, net.id)
-  assert.deepEqual([r.asked, r.answered, r.netFound, r.fromNet], [2, 1, true, true])
+  assert.deepEqual([r.asked, r.answered, r.netFound, r.fromNet, r.future], [2, 1, true, true, true])
   const viaIndex = await latestProfile(ctxWith(fakeVault()), { ask: async url => ({ events: url === PROFILE_RELAYS[0] ? [net] : [], answered: true }) })
   assert.deepEqual([viaIndex.netFound, viaIndex.fromNet, viaIndex.answered], [false, true, 2])
 })
@@ -93,8 +93,21 @@ test("guard: a local-only copy needs most relays answering and to be under 7 day
   assert.equal(profileGuard({ event: local, asked: 3, answered: 2, netFound: false, fromNet: false }, at), "")
   assert.match(profileGuard({ event: old, asked: 3, answered: 3, netFound: false, fromNet: false }, at), /this browser's copy is from/)
   assert.equal(profileGuard({ event: old, asked: 3, answered: 3, netFound: false, fromNet: true }, at), "", "found on purplepag.es")
-  assert.equal(profileGuard({ event: undefined, asked: 3, answered: 2, netFound: false, fromNet: false }, at), "")
-  assert.match(profileGuard({ event: undefined, asked: 0, answered: 0, netFound: false, fromNet: false }, at), /None of your relays/)
+  assert.match(profileGuard({ event: undefined, asked: 3, answered: 2, netFound: false, fromNet: false }, at), /Only 2 of your 3.*all of them/, "Tron #946: none anywhere needs every own relay")
+  assert.equal(profileGuard({ event: undefined, asked: 3, answered: 3, netFound: false, fromNet: false }, at), "")
+  assert.match(profileGuard({ event: undefined, asked: 3, answered: 3, netFound: false, fromNet: false, future: true }, at), /dated in the future/)
+  assert.match(profileGuard({ event: undefined, asked: 0, answered: 0, netFound: false, fromNet: false }, at), /no relays set/)
+})
+
+test("guard (Tron #946 re-check): 2 of 3 own relays empty, the silent one holds the profile -> nothing published", async () => {
+  let published = false
+  const ctx = ctxWith(fakeVault())
+  ctx.account.relays = { read: ["wss://a.example", "wss://b.example", "wss://c.example"], write: [] }
+  const ask = async url => (url === "wss://c.example" ? { events: [], answered: false } : { events: [], answered: true })
+  await assert.rejects(saveProfile(ctx, formFields(), { ...formFields(), display_name: "Satoshi" },
+    { lookup: c => latestProfile(c, { ask }), publish: urls => { published = true; return okPublish(urls) } }),
+  /Only 2 of your 3/)
+  assert.equal(published, false)
 })
 
 test("save refuses when the guard does, and publishes nothing", async () => {
