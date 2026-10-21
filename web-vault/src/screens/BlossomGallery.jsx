@@ -121,12 +121,12 @@ function Viewer({ ctx, blob, servers, onClose, onDeleted, onMirrored }) {
         <div class="row">
           <button class="small" disabled={!!busy} onClick={copy}>Copy link</button>
           <a class="button small" href={blob.url} target="_blank" rel="noopener noreferrer">Open</a>
-          {!readOnly && missing.length > 0 && <button class="small" disabled={!!busy} onClick={mirror}>{busy === "mirror" ? "Copying…" : `Copy to ${missing.length} more`}</button>}
+          {!readOnly && missing.length > 0 && <button class="small" disabled={!!busy} onClick={mirror} aria-busy={busy === "mirror" || undefined}>{busy === "mirror" ? "Copying…" : `Copy to ${missing.length} more`}</button>}
         </div>
         {!readOnly && (asking
           ? <>
               <p class="muted small">Delete this file from {blob.servers.length === 1 ? hostOf(blob.servers[0]) : `all ${blob.servers.length} servers that hold it`}? Notes that show it will show a broken picture. This can't be undone.</p>
-              <div class="row"><button class="danger small" disabled={!!busy} onClick={remove}>{busy === "delete" ? "Deleting…" : "Delete everywhere"}</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+              <div class="row"><button class="danger small" disabled={!!busy} onClick={remove} aria-busy={busy === "delete" || undefined}>{busy === "delete" ? "Deleting…" : "Delete everywhere"}</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
             </>
           : <button class="danger small" disabled={!!busy} onClick={() => setAsking(true)}>Delete…</button>)}
         {readOnly && <p class="muted small">{READ_ONLY}</p>}

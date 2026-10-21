@@ -38,7 +38,7 @@ export function ReadOnlySignIn({ disabled, onSignedIn }) {
         <span>Or just look: your name, npub or NIP-05 (read-only)</span>
         <input value={who} onInput={e => { setWho(e.currentTarget.value); setPeople(null) }} placeholder="Your name, npub1… or you@example.com" autocapitalize="off" autocorrect="off" spellcheck={false} />
       </label>
-      <button type="submit" disabled={disabled || !!busy || !who.trim()}>
+      <button type="submit" disabled={disabled || !!busy || !who.trim()} aria-busy={!!busy || undefined}>
         {busy === "search" ? "Searching…" : busy ? "Looking you up…" : namesAKey(who) ? "Sign in read-only" : "Find me"}
       </button>
       {people?.length === 0 && <p class="muted small">Nobody found by that name. Try your npub or NIP-05 instead.</p>}

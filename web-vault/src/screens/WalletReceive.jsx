@@ -31,7 +31,7 @@ export function WalletReceive({ wallet, pubkey, make = makeInvoice }) {
         <label class="wallet-row"><span>Description</span>
           <input type="text" maxLength={200} placeholder="Optional" value={description} onInput={e => setDescription(e.currentTarget.value)} /></label>
         {err && <p class="error" role="alert">{err}</p>}
-        <button class="primary" disabled={busy || !(Number(sats) >= 1)}>{busy ? "Creating…" : "Create invoice"}</button>
+        <button class="primary" disabled={busy || !(Number(sats) >= 1)} aria-busy={busy || undefined}>{busy ? "Creating…" : "Create invoice"}</button>
       </form>
       {invoice && <Invoice invoice={invoice} />}
     </section>

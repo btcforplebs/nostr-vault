@@ -104,10 +104,10 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
           : confirm
             ? <>
                 <p class="muted small">This removes {name} from Nostr Vault in this browser, along with its relay's copy here{account.method === "nip46" ? " and its bunker connection" : ""}. Nothing on the relays changes, but you will need its signer again to sign back in.</p>
-                <div class="row"><button class="danger" disabled={!!busy} onClick={doRemove}>{busy === "remove" ? "Removing…" : "Remove Account"}</button><button disabled={!!busy} onClick={() => setConfirm(false)}>Cancel</button></div>
+                <div class="row"><button class="danger" disabled={!!busy} onClick={doRemove} aria-busy={busy === "remove" || undefined}>{busy === "remove" ? "Removing…" : "Remove Account"}</button><button disabled={!!busy} onClick={() => setConfirm(false)}>Cancel</button></div>
               </>
             : <div class="row">
-                <button class="primary" disabled={!!busy} onClick={doSwitch}>{busy === "switch" ? "Switching…" : "Switch to This Account"}</button>
+                <button class="primary" disabled={!!busy} onClick={doSwitch} aria-busy={busy === "switch" || undefined}>{busy === "switch" ? "Switching…" : "Switch to This Account"}</button>
                 <button class="danger" disabled={!!busy} onClick={() => setConfirm(true)}>Remove Account</button>
               </div>}
         {err && <p class="error small">{err}</p>}
@@ -153,7 +153,7 @@ function BackupCard({ ctx }) {
       <h3>Backup</h3>
       <p class="muted small">Your notes, private notes, messages and feed cache from this browser's relay, as a .zip. It's the same file the iPhone app makes in Settings › Backup, so either one restores the other. Photos and videos aren't in it.</p>
       <div class="row">
-        <button disabled={!!busy} onClick={doExport}>{busy === "export" ? "Exporting…" : "Export notes"}</button>
+        <button disabled={!!busy} onClick={doExport} aria-busy={busy === "export" || undefined}>{busy === "export" ? "Exporting…" : "Export notes"}</button>
         <label class={busy ? "button disabled" : "button"}>
           {busy === "import" ? "Restoring…" : "Import notes"}
           <input type="file" accept=".zip,application/zip" disabled={!!busy} onChange={doImport} hidden />

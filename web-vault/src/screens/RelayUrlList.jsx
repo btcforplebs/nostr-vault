@@ -3,6 +3,7 @@
 // (NIP-17); 10006 is the relays your apps should never connect to (NIP-51).
 import { useEffect, useState } from "preact/hooks"
 import { latestList, publishList, relayUrl, relayUrlError, urlEntries, urlTags, addUrl, removeUrl, sameRows } from "../net/list-edit.js"
+import { SkeletonList } from "../components/Loading.jsx"
 
 export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false }) {
   const readOnly = !!ctx.signer?.readOnly
@@ -38,7 +39,7 @@ export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false }
     <section class="settings-group relay-list">
       <div class="section-label">{title}</div>
       <p class="settings-note muted small">{note}</p>
-      {!loaded ? <p class="empty">Loading…</p> : <>
+      {!loaded ? <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your list…" /> : <>
         {!loaded.checked && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list.</p>}
         {!urls.length && <p class="settings-note muted small">{empty}</p>}
         {urls.map(u => (
@@ -54,7 +55,7 @@ export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false }
           </form>
           {dirty && (
             <div class="settings-note row">
-              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save}>{busy ? "Publishing…" : "Save and publish"}</button>
+              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save} aria-busy={busy || undefined}>{busy ? "Publishing…" : "Save and publish"}</button>
               <button disabled={busy} onClick={() => { setUrls(saved); setErr("") }}>Discard changes</button>
             </div>
           )}

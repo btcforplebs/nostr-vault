@@ -128,7 +128,7 @@ export function BlockDialog({ ctx, pubkey, name, onClose }) {
       {err && <p class="error small" role="alert">{err}</p>}
       <div class="mod-row">
         <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="button" class="danger-fill" disabled={busy} onClick={go}>{busy ? waiting(ctx) ?? "Blocking…" : "Block"}</button>
+        <button type="button" class="danger-fill" disabled={busy} onClick={go} aria-busy={busy || undefined}>{busy ? waiting(ctx) ?? "Blocking…" : "Block"}</button>
       </div>
     </Dialog>
   )
@@ -145,7 +145,7 @@ export function DeleteDialog({ ctx, note, onClose }) {
       {err && <p class="error small" role="alert">{err}</p>}
       <div class="mod-row">
         <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="button" class="danger-fill" disabled={busy} onClick={go}>{busy ? waiting(ctx) ?? "Deleting…" : "Delete"}</button>
+        <button type="button" class="danger-fill" disabled={busy} onClick={go} aria-busy={busy || undefined}>{busy ? waiting(ctx) ?? "Deleting…" : "Delete"}</button>
       </div>
     </Dialog>
   )
@@ -161,7 +161,7 @@ export function UnblockDialog({ ctx, pubkey, name, onClose }) {
       {err && <p class="error small" role="alert">{err}</p>}
       <div class="mod-row">
         <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="button" class="primary" disabled={busy} onClick={go}>{busy ? waiting(ctx) ?? "Unblocking…" : "Unblock"}</button>
+        <button type="button" class="primary" disabled={busy} onClick={go} aria-busy={busy || undefined}>{busy ? waiting(ctx) ?? "Unblocking…" : "Unblock"}</button>
       </div>
     </Dialog>
   )
@@ -202,7 +202,7 @@ export function ReportDialog({ ctx, note, pubkey, name, onClose }) {
       {err && <p class="error small" role="alert">{err}</p>}
       <div class="mod-row">
         <button type="button" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="button" class="danger-fill" disabled={busy} onClick={go}>{busy ? waiting(ctx) ?? "Reporting…" : "Report & Block"}</button>
+        <button type="button" class="danger-fill" disabled={busy} onClick={go} aria-busy={busy || undefined}>{busy ? waiting(ctx) ?? "Reporting…" : "Report & Block"}</button>
       </div>
     </Dialog>
   )

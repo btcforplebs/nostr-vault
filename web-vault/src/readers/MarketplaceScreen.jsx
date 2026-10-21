@@ -10,6 +10,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
 import { MARKET_SCOPES, fetchListings, loadScope, marketCategories, plebeianUrl, priceLabel, saveScope } from "./market.js"
+import { SkeletonGrid } from "../components/Loading.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -62,7 +63,7 @@ export function MarketplaceScreen({ ctx }) {
       {status && listings !== null && <div class="status-line">{status}</div>}
       {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see what they sell, or switch to Global."
           : "Global shows sellers your web of trust vouches for. Follow a few people first."}</p>
-        : listings === null ? <p class="empty">Loading listings…</p>
+        : listings === null ? <SkeletonGrid count={6} gridClass="market-grid" tileClass="sk-card" label="Loading listings…" />
         : !shown.length ? (listings.length && !unblocked.length ? <p class="empty">Every listing loaded here is from someone you blocked.</p>
           : <MarketEmpty scope={scope} failed={failed} onGlobal={() => pick("global")} onRetry={load} />)
         : <div class="market-grid">{shown.map(l => <MarketTile key={l.id} listing={l} onOpen={() => setOpen(l)} />)}</div>}

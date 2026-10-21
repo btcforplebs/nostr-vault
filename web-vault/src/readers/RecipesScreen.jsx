@@ -11,6 +11,7 @@ import { ArticleReader, Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
 import { displayTitle, longFormLink, longFormMeta } from "./longform.js"
 import { RECIPE_SCOPES, fetchRecipes, inCategory, loadScope, recipeCategories, saveScope } from "./recipes.js"
+import { SkeletonGrid } from "../components/Loading.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -64,7 +65,7 @@ export function RecipesScreen({ ctx }) {
       {status && <div class="status-line">{status}</div>}
       {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see their recipes here."
           : "Global shows recipes from people your web of trust vouches for. Follow a few people first."}</p>
-        : recipes === null ? <p class="empty">Loading recipes…</p>
+        : recipes === null ? <SkeletonGrid count={6} gridClass="recipe-grid" tileClass="sk-recipe" label="Loading recipes…" />
         : !shown.length ? (recipes.length && !unblocked.length ? <p class="empty">Every recipe loaded here is from someone you blocked.</p>
           : recipes.length ? <p class="empty">No recipes in this category.</p>
           : <RecipesEmpty scope={scope} failed={failed} onGlobal={() => pick("global")} onRetry={load} />)

@@ -59,7 +59,7 @@ function UploadButton({ ctx, servers, onAdded }) {
   return (
     <div class="status-line" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <input ref={input} type="file" accept="image/*,video/*" multiple hidden onChange={pick} />
-      <button type="button" class="small" disabled={!!busy} onClick={() => input.current?.click()}>{busy || "Upload photos or videos"}</button>
+      <button type="button" class="small" disabled={!!busy} onClick={() => input.current?.click()} aria-busy={!!busy || undefined}>{busy || "Upload photos or videos"}</button>
       {note && <span role="status">{note}</span>}
     </div>
   )

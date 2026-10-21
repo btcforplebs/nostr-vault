@@ -16,6 +16,7 @@ import { attachHls, playMode } from "./hls.js"
 import { PlayerBar } from "./PlayerBar.jsx"
 import { liveAt, playLive, stop } from "./player.js"
 import { LIVE_SCOPES, chatFilter, chatRelays, chatRows, fetchStreams, loadScope, saveScope, startScope, streamLink } from "./live.js"
+import { SkeletonGrid, Spinner } from "../components/Loading.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -55,7 +56,7 @@ export function LiveScreen({ ctx }) {
       {status && streams !== null && <div class="status-line">{status}</div>}
       {scope === "global" && !follows.length && streams?.length > 0 && <div class="status-line">👁 Unfiltered: people you don't know yet</div>}
       {scope === "following" && !follows.length && !account.loaded ? <p class="empty">Loading your follows…</p>
-        : streams === null ? <p class="empty">Looking for live streams…</p>
+        : streams === null ? <SkeletonGrid count={4} gridClass="live-grid" tileClass="sk-wide" label="Looking for live streams…" />
         : !streams.length ? <LiveEmpty {...liveEmpty({ scope, follows, failed })} onGlobal={() => pick("global")} onRetry={load} />
         : <div class="live-grid">{streams.map(s => <LiveTile key={s.address} stream={s} onOpen={() => setOpen(s)} />)}</div>}
       <PlayerBar onOpenLive={st => setOpen(st)} />
@@ -174,7 +175,7 @@ function LiveChat({ ctx, stream: s }) {
     <section class="live-chat" aria-label="Live chat">
       <h2 class="live-chat-head">Chat</h2>
       <div class="live-chat-rows" ref={box}>
-        {rows === null ? <p class="muted small">Loading chat…</p>
+        {rows === null ? <p class="muted small"><Spinner /> Loading chat…</p>
           : !rows.length ? <p class="muted small">No messages yet.</p>
           : rows.map(r => (
             <div key={r.id} class={r.sats ? "live-row zap" : "live-row"}>

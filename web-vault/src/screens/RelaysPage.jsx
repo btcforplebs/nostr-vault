@@ -5,6 +5,7 @@ import { READ_ONLY } from "../signer/readonly.js"
 import { isDead } from "../net/pool.js"
 import { RelayUrlList } from "./RelayUrlList.jsx"
 import { latestList, publishList, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem, sameRows } from "../net/list-edit.js"
+import { SkeletonList } from "../components/Loading.jsx"
 
 export function RelaysPage({ ctx }) {
   const readOnly = !!ctx.signer?.readOnly
@@ -37,7 +38,7 @@ export function RelaysPage({ ctx }) {
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
-  if (!loaded) return <p class="empty">Loading…</p>
+  if (!loaded) return <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your relays…" />
   return (
     <>
       {!loaded.checked && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
@@ -61,7 +62,7 @@ export function RelaysPage({ ctx }) {
           </form>
           {dirty && (
             <div class="settings-note row">
-              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save}>{busy ? "Publishing…" : "Save and publish"}</button>
+              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save} aria-busy={busy || undefined}>{busy ? "Publishing…" : "Save and publish"}</button>
               <button disabled={busy} onClick={() => { setRows(saved); setErr("") }}>Discard changes</button>
             </div>
           )}

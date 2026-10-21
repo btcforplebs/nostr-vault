@@ -61,7 +61,7 @@ export function EditProfile({ ctx, onClose }) {
       <header class="screen-head">
         <button type="button" class="small" disabled={busy} onClick={onClose}>Cancel</button>
         <h2>Edit Profile</h2>
-        <button type="button" class="small save" disabled={busy || !changed} onClick={save}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" class="small save" disabled={busy || !changed} onClick={save} aria-busy={saving || undefined}>{saving ? "Saving…" : "Save"}</button>
       </header>
       {isUrl(form.banner) && <div class="edit-banner" aria-label="Banner preview"><img src={form.banner.trim()} alt="" /></div>}
       <div class="edit-preview">

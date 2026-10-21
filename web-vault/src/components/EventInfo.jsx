@@ -108,7 +108,7 @@ function EventInfo({ event, account, onClose }) {
           </label>
         ))}
         {missing.length > 0 && <button type="button" class="small" onClick={() => setTicked(new Set([...ticked, ...missing]))}>Select missing ({missing.length})</button>}
-        <button type="button" class="primary info-send" disabled={!ticked.size || busy} onClick={broadcast}>
+        <button type="button" class="primary info-send" disabled={!ticked.size || busy} onClick={broadcast} aria-busy={busy || undefined}>
           {!ticked.size ? "Pick a relay" : `Broadcast to ${ticked.size} ${ticked.size === 1 ? "relay" : "relays"}`}
         </button>
       </section>

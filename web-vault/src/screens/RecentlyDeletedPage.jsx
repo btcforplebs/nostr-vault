@@ -5,13 +5,14 @@ import { NoteText } from "../components/NoteText.jsx"
 import { ago } from "../components/time.js"
 import { READ_ONLY } from "../signer/readonly.js"
 import { deletedPosts, undelete, forgetDeleted, UNDELETE_NOTE, KEEP_DAYS } from "../net/recently-deleted.js"
+import { SkeletonRows } from "../components/FeedExtras.jsx"
 
 export function RecentlyDeletedPage({ ctx }) {
   const [posts, setPosts] = useState(null)
   const [msg, setMsg] = useState("")
   const reload = () => deletedPosts(ctx.session.pubkey).then(setPosts).catch(e => { setPosts([]); setMsg(String(e?.message ?? e)) })
   useEffect(() => { reload() }, [ctx.session.pubkey])
-  if (!posts) return <p class="empty">Loading…</p>
+  if (!posts) return <SkeletonRows count={2} label="Loading deleted posts…" />
   return (
     <>
       {msg && <p class="settings-note small">{msg}</p>}
@@ -39,8 +40,8 @@ function DeletedRow({ ctx, post, onDone }) {
       <NoteText content={post.content} images />
       <div class="muted small">Deleted {ago(post.deletedAt)} ago</div>
       {readOnly ? <p class="muted small">{READ_ONLY}</p> : asking
-        ? <div class="row"><span class="small">This removes the saved copy. You won't be able to un-delete this post.</span><button class="danger small" disabled={!!busy} onClick={forget}>Delete Forever</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
-        : <div class="row"><button class="primary small" disabled={!!busy} onClick={again}>{busy === "undelete" ? "Posting…" : "Un-delete"}</button><button class="danger small" disabled={!!busy} onClick={() => setAsking(true)}>Delete Forever</button></div>}
+        ? <div class="row"><span class="small">This removes the saved copy. You won't be able to un-delete this post.</span><button class="danger small" disabled={!!busy} onClick={forget} aria-busy={busy === "forget" || undefined}>Delete Forever</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+        : <div class="row"><button class="primary small" disabled={!!busy} onClick={again} aria-busy={busy === "undelete" || undefined}>{busy === "undelete" ? "Posting…" : "Un-delete"}</button><button class="danger small" disabled={!!busy} onClick={() => setAsking(true)}>Delete Forever</button></div>}
       {err && <p class="error small">{err}</p>}
     </article>
   )
