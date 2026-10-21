@@ -98,14 +98,14 @@ import kotlin.math.max
                 arcProjector.facing, { arcProjector.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) })
         }
 
-        // A soft tint behind each face, and embers for those behind the globe.
+        // Embers, in the face's own colour as iOS, cross-fading with the face
+        // over them; then a soft tint behind each face that shows.
         for (spot in spots) {
             val c = Offset(spot.x.toFloat(), spot.y.toFloat())
-            if (spot.ember) {
-                // In the face's own colour, as iOS.
-                drawCircle(spot.tint.copy(alpha = spot.alpha.toFloat().coerceIn(0f, 1f)), radius = spot.r.toFloat(), center = c)
-                continue
+            if (spot.emberAlpha > 0 && spot.emberR > 0) {
+                drawCircle(spot.tint.copy(alpha = spot.emberAlpha.toFloat().coerceIn(0f, 1f)), radius = spot.emberR.toFloat(), center = c)
             }
+            if (spot.ember) continue
             val r = spot.r.toFloat()
             if (r <= 0f) continue
             drawCircle(

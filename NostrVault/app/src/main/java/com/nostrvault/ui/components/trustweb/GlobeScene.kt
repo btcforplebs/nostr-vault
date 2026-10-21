@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.GlobeCamera
+import com.nostrvault.data.model.GlobeEdge
 import com.nostrvault.data.model.GlobeStorm
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.Vec3
@@ -56,10 +57,13 @@ internal class GlobeScene(
         val r: Double,
         val alpha: Double,
         val depth: Double,
-        /** Behind the globe: a warm ember, not a face. */
+        /** No picture this frame: round the back, or its seat faded out. */
         val ember: Boolean,
         val core: Boolean,
         val tint: Color,
+        /** The ember under a face, cross-fading with it at the rim ([GlobeFaceFade]); 0 for none. */
+        val emberR: Double = 0.0,
+        val emberAlpha: Double = 0.0,
     )
 
     internal class Projected(val x: Double, val y: Double, val depth: Double, val scale: Double) {
@@ -147,6 +151,9 @@ internal class GlobeScene(
     private var threadsBorn = 0.0
     private var threadProgress = 1.0
     private var settling = false
+    /** Each face's seat, fading in and out, and the last frame's step (iOS `seatFade`, `lastDt`). */
+    private val seatFades = GlobeSeatFades()
+    private var lastDt = 0.0
 
     // ── Data ─────────────────────────────────────────────────────────
 
@@ -395,6 +402,7 @@ internal class GlobeScene(
     fun tick(now: Double) {
         val dt = lastTick?.let { min(GlobeCamera.MAX_STEP, max(0.0, now - it)) } ?: 0.0
         lastTick = now
+        lastDt = dt
         reduceMotion = Motion.isReduced
         // Turned on mid-spin: stop, or the spin never decays and the clock never sleeps.
         if (reduceMotion) camera.spin = Vec3.ZERO
@@ -408,7 +416,7 @@ internal class GlobeScene(
             layerDim += (dimTarget - layerDim) * (1 - exp(-dt * 8))
             if (abs(dimTarget - layerDim) < 0.005 || reduceMotion) layerDim = dimTarget
         }
-        val fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget
+        val fading = weights != weightTarget || filterMix < 1 || layerDim != dimTarget || seatFades.fading
         if (weights != weightTarget) {
             val ease = 1 - exp(-dt * 8)
             fun step(from: Double, to: Double) = if (abs(to - from) < 0.005) to else from + (to - from) * ease
@@ -717,20 +725,29 @@ internal class GlobeScene(
         )
         seated = seats
 
+        // A seat comes and goes over a quarter second, so a face that loses its
+        // room cross-fades with the star it becomes instead of popping. Asleep,
+        // a seat that changed (a resize) wakes the clock to fade it.
+        val dt = if (awake) lastDt else 0.0
+        seatFades.begin()
         val out = ArrayList<Spot>(drawn.size + 1)
         for (face in drawn) {
+            val fade = seatFades.step(face.key, face.key in seats, dt, reduceMotion)
             val a = min(1.0, (index[face.key] ?: coreStar).let { it.alpha * weight(it) })
             val faint = if (traceTarget == null && face.key in layerFaceSet) 1 - (1 - DIM_FACE) * layerDim else 1.0
             val dim = (0.35 + 0.65 * face.p.front) * a * faint
-            val behind = face.p.depth < -0.1 && face.key != author
-            // No room for its picture here: a bright star in its colour.
-            val held = !behind && face.key !in seats
-            val r = if (behind) 3.2 * face.p.scale * zoom * density
-            else if (held) 3.6 * face.p.scale * zoom * density
-            else faceR(face)
-            out += Spot(face.key, face.p.x, face.p.y, r, dim, face.p.depth, ember = behind || held, core = false,
-                tint = face.tint)
+            // Rolling toward the rim the face fades and shrinks into the ember
+            // it is round the back; losing its seat, into a star (iOS GlobeScene.draw).
+            val edge = GlobeFaceFade.edge(face.p.depth, face.key == author)
+            val shown = edge * fade
+            out += Spot(face.key, face.p.x, face.p.y, GlobeEdge.faceRadius(faceR(face), shown),
+                GlobeFaceFade.pictureAlpha(dim, shown), face.p.depth,
+                ember = shown <= GlobeFaceFade.PICTURE_MIN, core = false, tint = face.tint,
+                emberR = GlobeFaceFade.emberRadius(edge, face.p.scale, zoom) * density,
+                emberAlpha = GlobeFaceFade.emberAlpha(dim, shown))
         }
+        seatFades.end()
+        if (seatFades.fading && !awake) wake()
         // The core last: it is always in front of its own shell.
         out += Spot(center, core.x, core.y, coreR, 1.0, core.depth, ember = false, core = true,
             tint = if (center == me) GlobeAccent else Color.White)
