@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,54 +53,46 @@ fun SetupWizardScreen(
             return@Box
         }
 
+        // As iOS: a "‹ Back" row, the step, then the dots pinned below it.
+        // No brand header after the front door.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp)
                 .statusBarsPadding()
                 .navigationBarsPadding(),
         ) {
-            Spacer(Modifier.height(32.dp))
-
-            // Back button
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 24.dp, top = 12.dp)
+                    .height(36.dp),
             ) {
-                IconButton(onClick = viewModel::goBack) {
+                TextButton(
+                    onClick = viewModel::goBack,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
                     Icon(
                         imageVector = NostrVaultIcons.Back,
-                        contentDescription = "Back",
-                        tint = SecondaryText,
+                        contentDescription = null,
+                        tint = WizardTextMuted,
+                        modifier = Modifier.size(16.dp),
                     )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Back", color = WizardTextMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
             }
 
-            // App brand
-            Text(
-                text = "Nostr Vault",
-                color = WizardAccent,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Your personal relay",
-                color = SecondaryText,
-                fontSize = 16.sp,
-            )
-
-            // Step dots. The front door is not step 1 of N, so they count
-            // from the screen after it.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 24.dp),
+            ) {
             Spacer(Modifier.height(16.dp))
-            StepDots(
-                totalSteps = viewModel.activeSteps.size - 1,
-                currentIndex = viewModel.currentStepIndex - 1,
-            )
-
-            Spacer(Modifier.height(32.dp))
 
             AnimatedContent(
                 targetState = step,
@@ -134,7 +127,15 @@ fun SetupWizardScreen(
                 }
             }
 
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(24.dp))
+            }
+
+            // The front door is not step 1 of N, so the dots count from the
+            // screen after it.
+            StepDots(
+                totalSteps = viewModel.activeSteps.size - 1,
+                currentIndex = viewModel.currentStepIndex - 1,
+            )
         }
     }
 }
@@ -148,20 +149,21 @@ private fun StepDots(totalSteps: Int, currentIndex: Int) {
     Row(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
     ) {
         for (i in 0 until totalSteps) {
+            // iOS: every dot up to the current one is lit; the current one is
+            // 10pt with a glow, the rest 6pt.
+            val current = i == currentIndex
             Box(
                 modifier = Modifier
-                    .size(if (i == currentIndex) 10.dp else 8.dp)
+                    .then(
+                        if (current) Modifier.shadow(4.dp, CircleShape, ambientColor = WizardAccentGlow, spotColor = WizardAccentGlow)
+                        else Modifier
+                    )
+                    .size(if (current) 10.dp else 6.dp)
                     .clip(CircleShape)
-                    .background(
-                        when {
-                            i < currentIndex -> WizardAccent.copy(alpha = 0.4f)
-                            i == currentIndex -> WizardAccent
-                            else -> WizardBorderSubtle
-                        }
-                    ),
+                    .background(if (i <= currentIndex) WizardAccent else WizardBorderSubtle),
             )
             if (i < totalSteps - 1) {
                 Spacer(Modifier.width(8.dp))

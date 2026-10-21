@@ -38,7 +38,8 @@ internal fun CompleteStep(
             Text(
                 text = when (setupPath) {
                     SetupPath.NEW_TO_NOSTR -> "Welcome to Nostr!"
-                    else -> "You're all set!"
+                    SetupPath.BROWSE -> "Ready to Browse"
+                    else -> "You're All Set"
                 },
                 color = WizardAccent,
                 fontSize = 24.sp,
@@ -65,7 +66,7 @@ internal fun CompleteStep(
                     ) {
                         CompleteExplainerRow(
                             Icons.Default.CellTower,
-                            "Your relay lives on this phone and sends your posts out to public relays so people can see them.",
+                            "Your relay lives on this device and sends your posts out to public relays so people can see them.",
                         )
                         CompleteExplainerRow(
                             Icons.Default.PhotoLibrary,
@@ -95,21 +96,14 @@ internal fun CompleteStep(
                     )
                 }
                 SetupPath.BROWSE -> {
-                    WizardCheckItem("Connected to Nostr")
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "You're in browse mode. Upgrade to full setup for signing, your own relay, and media storage.",
-                        color = SecondaryText,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center,
-                    )
+                    WizardCheckItem("Connected to the Nostr network")
+                    WizardCheckItem("Re-run setup to unlock posting, DMs, and zaps")
                 }
                 else -> {
-                    WizardCheckItem("Relay is running")
-                    WizardCheckItem("DMs enabled")
-                    WizardCheckItem("Blossom media active")
-                    WizardCheckItem("Posts being broadcast")
+                    WizardCheckItem("Your relay is running locally")
+                    WizardCheckItem("Encrypted DMs enabled")
+                    WizardCheckItem("Blossom media hosting active")
+                    WizardCheckItem("Posts broadcast to the Nostr network")
                 }
             }
         }
@@ -118,7 +112,7 @@ internal fun CompleteStep(
         WizardPrimaryButton(
             text = when (setupPath) {
                 SetupPath.NEW_TO_NOSTR -> "Start Exploring"
-                else -> "Open Nostr Vault"
+                else -> "Launch Nostr Vault"
             },
             onClick = onFinish,
         )

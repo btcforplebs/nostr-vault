@@ -106,21 +106,8 @@ internal fun FrontDoor(onChoose: (SetupPath) -> Unit) {
             ) {
                 WizardPrimaryButton(text = "Create an account", onClick = { onChoose(SetupPath.NEW_TO_NOSTR) })
                 FrontDoorSecondaryButton(text = "I already use Nostr", onClick = { onChoose(SetupPath.USE_NOSTR) })
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(role = Role.Button) { onChoose(SetupPath.BROWSE) },
-                ) {
-                    Text(
-                        text = "Just look around",
-                        color = SecondaryText,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
+                // "Just look around" is Mac-only on iOS (WelcomeStepView), so a
+                // phone offers just these two.
             }
         }
     }

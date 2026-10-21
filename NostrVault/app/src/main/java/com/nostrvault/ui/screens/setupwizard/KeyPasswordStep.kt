@@ -64,7 +64,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
         Text("Protect Your Key", color = PrimaryText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         AnimatedVisibility(visible = !isTyping) {
             Text(
-                text = "Choose a password to lock your secret key on this phone.",
+                text = "Choose a password to lock your secret key on this device.",
                 color = SecondaryText,
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,
