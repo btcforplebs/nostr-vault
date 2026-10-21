@@ -12,8 +12,6 @@ import kotlinx.serialization.Serializable
 data class FipsMeshSettings(
     /** Name, role and switches per device, by mesh npub. The list itself is fipsPeers plus the home vault. */
     val devices: List<FipsDevice> = emptyList(),
-    /** List this phone's mesh address in the owner's media servers while it is shared. On by default, as iOS. */
-    @SerialName("list_in_media_servers") val listInMediaServers: Boolean = true,
     /** Where new photos go: "public" server, "mac", or "both". Stored only for now. */
     @SerialName("photos_go_to") val photosGoTo: String = PHOTOS_PUBLIC,
     /** Finder relays the mesh posts its address to. Empty means [DEFAULT_FINDER_RELAYS]. */
@@ -148,8 +146,27 @@ object MyDevicesRules {
         }
     }
 
-    /** A mesh address: a bech32 npub, 63 characters. */
-    fun isMeshNpub(s: String): Boolean = Regex("^npub1[02-9ac-hj-np-z]{58}$").matches(s)
+    /** A mesh address: a 63-character npub whose bech32 checksum holds, so a one-character typo is refused. */
+    fun isMeshNpub(s: String): Boolean = Regex("^npub1[02-9ac-hj-np-z]{58}$").matches(s) && bech32ChecksumOk(s)
+
+    private const val BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+    /** BIP-173 checksum over the human part and the data, as every Nostr client checks an npub. */
+    internal fun bech32ChecksumOk(s: String): Boolean {
+        val sep = s.lastIndexOf('1')
+        if (sep < 1) return false
+        val hrp = s.substring(0, sep)
+        val data = s.substring(sep + 1).map { BECH32.indexOf(it).takeIf { i -> i >= 0 } ?: return false }
+        val values = hrp.map { it.code shr 5 } + 0 + hrp.map { it.code and 31 } + data
+        var chk = 1
+        val gen = intArrayOf(0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3)
+        for (v in values) {
+            val top = chk ushr 25
+            chk = ((chk and 0x1ffffff) shl 5) xor v
+            for (i in 0 until 5) if ((top shr i) and 1 == 1) chk = chk xor gen[i]
+        }
+        return chk == 1
+    }
 
     /** A finder relay a user may add: wss://, a host, nothing else. */
     fun isFinderRelay(s: String): Boolean = Regex("^wss://[a-z0-9.-]+(:\\d{1,5})?(/\\S*)?$").matches(s.trim().lowercase())

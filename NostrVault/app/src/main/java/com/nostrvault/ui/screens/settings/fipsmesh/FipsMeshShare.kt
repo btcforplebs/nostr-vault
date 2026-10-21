@@ -74,15 +74,12 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     val busy by viewModel.busy.collectAsState()
     MeshSection(
         "Share With Others",
-        footer = "Sharing pauses once the mesh has downloaded the amount above; one visitor gets at most 256 MB of it. " +
-            "Listing links your account to this phone's mesh address in public, and turning it off later doesn't undo that.",
+        footer = "Sharing pauses once the mesh has downloaded the amount above; one visitor gets at most 256 MB of it.",
     ) {
-        MeshSwitchRow("Kiosk mode", "Share this vault on the mesh", shareRelay, enabled = viewModel.isAvailable && !busy, onChange = viewModel::setShareRelay)
+        MeshSwitchRow("Kiosk mode", "Share this vault on the mesh", shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
         MeshDivider()
         // The library takes the limit at start, so it is fixed while sharing.
         Picker("Pause after", serveLimit, SERVE_LIMITS.map { it to bytesLabel(it) }, enabled = !shareRelay && !busy) { viewModel.setServeLimit(it) }
-        MeshDivider()
-        MeshSwitchRow("List in my media servers", null, settings.listInMediaServers) { on -> viewModel.updateSettings { it.copy(listInMediaServers = on) } }
         MeshDivider()
         Picker("Photos go to", settings.photosGoTo, PHOTOS_GO_TO) { v -> viewModel.updateSettings { it.copy(photosGoTo = v) } }
         if (shareRelay && status.running) {

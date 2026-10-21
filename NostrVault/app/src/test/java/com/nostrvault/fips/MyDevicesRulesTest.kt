@@ -10,11 +10,11 @@ import org.junit.Test
 
 /** FIPS Mesh → My Devices: one list both ways (the allowlist), the home vault one of its roles. */
 class MyDevicesRulesTest {
-    private fun npub(c: Char) = "npub1" + c.toString().repeat(58)
-    private val mac = npub('q')
-    private val kiosk = npub('p')
-    private val phone = npub('z')
-    private val me = npub('r')
+    // Real npubs (random test keys, nobody's), so the bech32 checksum holds.
+    private val mac = "npub1k3rr0umjwn65yz8en8s3cmpxya72k7swcuj98anxkvhq26qmnrkqduad7c"
+    private val kiosk = "npub1qqwvy6rnfsfuehqcqjkhcejhdvxp37kj8enxm0h0l2sc73q8ex9q9emf0g"
+    private val phone = "npub197rquuc9m0dx7ccvv46tz4ayzm7f7j4fy8pm6yvhfej50mt7z65s7ga2vz"
+    private val me = "npub1v9aafscx5r7l5zk7h73z8wyhgx9uys2mflgvl3m20pzflthazceqnma53d"
 
     @Test fun `the list is the allowlist plus a home vault not on it, with names and roles`() {
         val labels = listOf(FipsDevice(mac, DeviceRole.MAC, "MacBook"), FipsDevice(phone, DeviceRole.HOME_VAULT, "stale role"))
@@ -27,7 +27,7 @@ class MyDevicesRulesTest {
     }
 
     @Test fun `status line counts devices in reach`() {
-        val list = MyDevicesRules.list(listOf(mac, phone, kiosk, npub('x')), null, emptyList(), listOf(mac, phone, kiosk))
+        val list = MyDevicesRules.list(listOf(mac, phone, kiosk, me), null, emptyList(), listOf(mac, phone, kiosk))
         assertEquals("On · 3 of 4 devices in reach", MyDevicesRules.statusLine(true, list))
         assertEquals("On · 0 of 1 device in reach", MyDevicesRules.statusLine(true, list.take(1).map { it.copy(inReach = false) }))
         assertEquals("On", MyDevicesRules.statusLine(true, emptyList()))
@@ -59,7 +59,12 @@ class MyDevicesRulesTest {
     @Test fun `this phone's own address and non-addresses are refused`() {
         assertNull(MyDevicesRules.add(emptyList(), null, emptyList(), me, me, DeviceRole.PHONE, ""))
         assertNull(MyDevicesRules.add(emptyList(), null, emptyList(), me, "npub1short", DeviceRole.PHONE, ""))
-        assertNull(MyDevicesRules.add(emptyList(), null, emptyList(), me, "npub1" + "b".repeat(58), DeviceRole.PHONE, ""), )
+        assertNull(MyDevicesRules.add(emptyList(), null, emptyList(), me, "npub1" + "b".repeat(58), DeviceRole.PHONE, ""))
+        // One character off: right shape, broken checksum. It would be a dead allowlist entry.
+        val typo = mac.dropLast(1) + (if (mac.last() == 'q') 'p' else 'q')
+        assertFalse(MyDevicesRules.isMeshNpub(typo))
+        assertTrue(MyDevicesRules.isMeshNpub(mac))
+        assertNull(MyDevicesRules.add(emptyList(), null, emptyList(), me, typo, DeviceRole.PHONE, ""))
     }
 
     @Test fun `removing takes it out of the allowlist and ends a home vault`() {

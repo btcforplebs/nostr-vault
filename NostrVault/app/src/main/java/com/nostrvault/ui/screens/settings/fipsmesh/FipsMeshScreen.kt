@@ -75,7 +75,6 @@ fun FipsMeshScreen(
 ) {
     val status by viewModel.status.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
-    val busy by viewModel.busy.collectAsState()
     val devices by viewModel.devices.collectAsState()
     var adding by rememberSaveable { mutableStateOf(false) }
 
@@ -107,19 +106,20 @@ fun FipsMeshScreen(
                 else "Turn the mesh on to reach your Mac, your home vault and your browser page from this phone.",
             ) {
                 MeshSwitchRow(
-                    "Mesh", null, status.running, enabled = viewModel.isAvailable && !busy,
+                    "Mesh", null, status.running, enabled = viewModel.isAvailable,
                     below = { StatusDot(MyDevicesRules.statusLine(status.running, devices), status.running, Modifier.padding(top = 2.dp)) },
                     onChange = viewModel::setEnabled,
                 )
             }
             lastError?.let { MeshFooter(it, ErrorRed) }
 
-            if (status.running) {
-                ThisDeviceSection(status)
-                MyDevicesSection(devices, status.running, onOpenDevice) { adding = true }
-                SyncSection(viewModel)
-                ShareSection(viewModel, status)
-            }
+            // Only This Device needs the mesh running (its address comes from the engine). My Devices and Share With
+            // Others stay usable when it is off: taking a lost phone out, or turning kiosk mode off, must never need
+            // the mesh on first, which would announce this phone and let that phone dial in (Tron, #981).
+            if (status.running) ThisDeviceSection(status)
+            MyDevicesSection(devices, status.running, onOpenDevice) { adding = true }
+            SyncSection(viewModel)
+            ShareSection(viewModel, status)
             MeshSection(title = null) {
                 MeshValueRow("Advanced", "Finder relays, middle server", chevron = true, onClick = onOpenAdvanced)
             }

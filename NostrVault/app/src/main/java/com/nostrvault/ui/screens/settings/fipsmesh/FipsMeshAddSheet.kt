@@ -41,6 +41,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.nostrvault.fips.DeviceRole
 import com.nostrvault.fips.HomeVaultRules
+import com.nostrvault.fips.MyDevicesRules
 import com.nostrvault.ui.theme.CardBackground
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -57,7 +58,8 @@ internal fun AddDeviceSheet(viewModel: FipsMeshViewModel, onDismiss: () -> Unit)
     var address by rememberSaveable { mutableStateOf("") }
     var role by rememberSaveable { mutableStateOf(DeviceRole.MAC) }
     var name by rememberSaveable { mutableStateOf("") }
-    val npub = remember(address) { HomeVaultRules.meshNpubFromInput(address) }
+    // A mesh address whose checksum holds: a one-character typo would be a dead entry in the allowlist.
+    val npub = remember(address) { HomeVaultRules.meshNpubFromInput(address)?.takeIf(MyDevicesRules::isMeshNpub) }
     val isSelf = npub != null && npub == status.npub
     val scanner = rememberLauncherForActivityResult(ScanContract()) { r -> r.contents?.trim()?.let { address = it } }
 
@@ -92,7 +94,7 @@ internal fun AddDeviceSheet(viewModel: FipsMeshViewModel, onDismiss: () -> Unit)
                     modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                 )
             }
-            if (address.isNotBlank() && npub == null) MeshFooter("That isn't a mesh address.", ErrorRed)
+            if (address.isNotBlank() && npub == null) MeshFooter("That isn't a mesh address. Check it for a typo, or copy it again.", ErrorRed)
             if (isSelf) MeshFooter("That is this phone's own address.", ErrorRed)
             if (suggestions.isNotEmpty() && address.isBlank()) {
                 MeshSection("In Your Media Servers", footer = "Kiosks your account lists. Tap one to use its address.") {
