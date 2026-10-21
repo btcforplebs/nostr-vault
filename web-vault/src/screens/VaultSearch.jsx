@@ -1,6 +1,6 @@
 // The Vault's search (iPhone VaultSearchBar + VaultSearchResults): a field over the Vault's list that searches this
 // browser's relay, with All / People / Notes / Articles / Media / Hashtags / Links chips. "All" shows a few of each
-// with "See all"; a hashtag searches for itself; a link opens, and its note is a tap away.
+// with "See all"; a hashtag opens its feed; a link opens, and its note is a tap away.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { decode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -11,7 +11,10 @@ import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { SECTIONS, searchVault, terms } from "../net/vault-search.js"
 
-const PREVIEW = 3
+/** Rows per section under "All", and rows in one section: the relay walk keeps every match, and the cap keeps a
+ *  common word from building thousands of rows (VaultSearchResults.preview / sectionCap). */
+export const PREVIEW = 5
+export const SECTION_CAP = 200
 
 export function VaultSearch({ ctx, onClose }) {
   const { vault, account, session } = ctx
@@ -46,7 +49,7 @@ export function VaultSearch({ ctx, onClose }) {
     <div class="vault-search">
       <form class="vault-search-bar" role="search" onSubmit={e => { e.preventDefault(); now(text) }}>
         <input ref={input} type="search" value={text} onInput={e => setText(e.currentTarget.value)} onKeyDown={e => { if (e.key === "Escape") onClose() }}
-          placeholder="Search your vault" aria-label="Search your vault" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck={false} />
+          placeholder="Search your Vault" aria-label="Search your Vault" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck={false} />
         <button type="button" class="small" onClick={onClose}>Done</button>
       </form>
       {found && total > 0 && (
@@ -55,17 +58,19 @@ export function VaultSearch({ ctx, onClose }) {
           {SECTIONS.filter(s => counts[s.id]).map(s => <Chip key={s.id} on={section === s.id} onClick={() => setSection(s.id)}>{s.title} {counts[s.id]}</Chip>)}
         </div>
       )}
-      {busy && <div class="status-line">Searching…</div>}
-      {!busy && found?.cut && <div class="status-line">Showing the newest matches; there may be more. Add a word to narrow it.</div>}
-      {!found ? <p class="empty">{text.trim().length === 1 ? "Type at least two letters." : "Search the people, notes, articles and media in your vault. Every word has to match."}</p>
-        : total === 0 ? <p class="empty">Nothing in your vault matches “{found.query}”.</p>
+      {busy && <div class="status-line">Searching your Vault…</div>}
+      {!busy && found?.cut && <div class="status-line">Your Vault has more matches than shown, so older items may be missing. Add a word to narrow it.</div>}
+      {!found ? (text.trim().length === 1 ? <p class="empty">Type at least two letters.</p>
+          : <Message title="Search your Vault" detail="Notes, people, hashtags, links, articles and media stored in this browser's relay." />)
+        : total === 0 ? <Message title="Nothing in your Vault matches" detail={`“${found.query}”`} />
         : shown.map(s => {
           const all = found[s.id]
-          const list = section === "all" ? all.slice(0, PREVIEW) : all
+          const list = section === "all" ? all.slice(0, PREVIEW) : all.slice(0, SECTION_CAP)
           return (
             <section key={s.id} class="vault-search-section">
               <div class="section-label vault-search-head"><span>{s.title}</span>{section === "all" && all.length > PREVIEW && <button class="link" onClick={() => setSection(s.id)}>See all {all.length}</button>}</div>
-              {list.map(item => <Row key={item.id ?? item.url ?? item} kind={s.id} item={item} trusted={trusted} onTag={t => now(`#${t}`)} />)}
+              {list.map(item => <Row key={item.id ?? item.url ?? item} kind={s.id} item={item} trusted={trusted} />)}
+              {section !== "all" && all.length > SECTION_CAP && <p class="muted small">Showing the newest {SECTION_CAP} of {all.length}.</p>}
             </section>
           )
         })}
@@ -73,14 +78,19 @@ export function VaultSearch({ ctx, onClose }) {
   )
 }
 
+const Message = ({ title, detail }) => <div class="empty"><p><strong>{title}</strong></p><p class="muted small">{detail}</p></div>
+
 const Chip = ({ on, onClick, children }) => <button role="tab" aria-selected={on} class={`chip ${on ? "on" : ""}`} onClick={onClick}>{children}</button>
 
-function Row({ kind, item, trusted, onTag }) {
+/** A hashtag opens that tag's feed, as a #tag in a note does (NoteText). */
+export const hashtagHref = tag => `#/feed?tag=${encodeURIComponent(String(tag).toLowerCase())}`
+
+export function Row({ kind, item, trusted }) {
   switch (kind) {
     case "people": return <a class="person-row" href={`#/profile/${item}`}><Avatar pubkey={item} size={40} load={trusted(item)} /><span class="person-names"><AuthorName pubkey={item} /></span></a>
     case "articles": return <ArticleCard event={item} />
     case "notes": case "media": return <NoteCard event={item} />
-    case "hashtags": return <button class="settings-row vault-search-row" onClick={() => onTag(item)}><span class="settings-title">#{item}</span></button>
+    case "hashtags": return <a class="settings-row vault-search-row" href={hashtagHref(item)}><span class="settings-title">#{item}</span></a>
     case "links": return (
       <div class="settings-row vault-search-row">
         <a class="settings-title" href={item.url} target="_blank" rel="noopener noreferrer" title={item.url}>{item.title}</a>
