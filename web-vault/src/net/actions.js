@@ -4,7 +4,7 @@
 import { neventEncode } from "nostr-tools/nip19"
 import { pool, publishRelays } from "./pool.js"
 import { checkSigned } from "./sync.js"
-import { repostedId, verifiedCopy } from "./thread.js"
+import { repostInner, repostedId, verifiedCopy } from "./thread.js"
 import { keepDeletedCopy } from "./recently-deleted.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -61,9 +61,8 @@ export function quoteOf(quoted, text) {
 export function actionTarget(event) {
   if (event?.kind === 1) return event
   if (event?.kind !== 6) return null
-  let inner
-  try { inner = JSON.parse(event.content) } catch { return null }
-  return inner?.kind === 1 ? verifiedCopy(inner) : null
+  const inner = repostInner(event)
+  return inner?.kind === 1 ? inner : null
 }
 
 /**

@@ -2,9 +2,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode } from "nostr-tools/nip19"
-import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure"
+import { finalizeEvent, generateSecretKey, getPublicKey, verifiedSymbol } from "nostr-tools/pure"
 import { fipsRef, meshVaults } from "../src/net/fips-ref.js"
-import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, CLOSE_MS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
+import { LIST_RETRY_MS, createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, CLOSE_MS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
 import { noteMedia } from "../src/net/note-media.js"
 
 const A = "a1".repeat(32), B = "b2".repeat(32), SHA = "487dc1578912f424773b0befc4eff491f026f0f24652f1d4ff66a85639455217"
@@ -84,7 +84,7 @@ test("a 10063 that fails its signature lists no vaults", async () => {
   const lists = {
     tampered: { ...good, tags: [["server", `fipsmesh://${npubEncode(B)}/`]] },
     unsigned: { ...good, sig: undefined },
-    flagged: { ...good, tags: [["server", `fipsmesh://${npubEncode(B)}/`]], [Symbol.for("verified")]: true },
+    flagged: { ...good, tags: [["server", `fipsmesh://${npubEncode(B)}/`]], [verifiedSymbol]: true },
   }
   for (const [name, ev] of Object.entries(lists)) {
     const fm = createFipsMedia({ allow: () => true, startReader: fakeReader().startReader, query: async () => [ev] })
@@ -92,6 +92,25 @@ test("a 10063 that fails its signature lists no vaults", async () => {
   }
   const fm = createFipsMedia({ allow: () => true, query: async () => [good] })
   assert.deepEqual(await fm.authorVaults(P), [A], "the signed list counts")
+})
+
+test("an author whose 10063 was missing or failed is asked again after LIST_RETRY_MS; a list with vaults is kept", async () => {
+  let now = 0, answer = async () => { throw new Error("no relay yet") }, queries = 0
+  const fm = createFipsMedia({ allow: () => true, clock: () => now, startReader: fakeReader({ have: new Map([[A, new Set([SHA])]]) }).startReader,
+    query: async (...a) => (queries++, answer(...a)) })
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/)
+  answer = async () => []
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/)
+  assert.equal(queries, 1, "not again inside the retry window")
+  now += LIST_RETRY_MS
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/)
+  assert.equal(queries, 2, "an empty list is asked again too")
+  answer = listing(A)
+  now += LIST_RETRY_MS
+  assert.match(await fm.fallback({ url: link(A) }, P), /^blob:/, "the list that arrived late counts")
+  now += 10 * LIST_RETRY_MS
+  await fm.authorVaults(P)
+  assert.equal(queries, 3, "a list with vaults is not asked again")
 })
 
 test("an https photo with a hash falls back to the author's mesh vaults from their 10063, in order", async () => {

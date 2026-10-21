@@ -17,6 +17,9 @@ export const MAX_READS = 2
 export const READ_TIMEOUT_MS = 45_000
 /** One photo, start to bytes, across all its vaults; no new vault is tried past it. */
 export const PHOTO_TIMEOUT_MS = 90_000
+/** An author whose 10063 query failed or listed no vault is asked again after this long, not never again: a query
+ *  that ran before a relay connected must not stop their .fips photos for the page's life. */
+export const LIST_RETRY_MS = 60_000
 /** Vaults one photo may ask: a 10063 can list any number, only the first few are tried. */
 export const MAX_VAULTS = 3
 /** Photos kept as blob: URLs once nothing on the page shows them; past this the oldest is released. */
@@ -67,7 +70,7 @@ export function createFipsMedia({
   const allowed = new Set() // vaults a read is asking right now: the shim drops segments from anyone else
   const asking = new Map() // vault -> reads asking it
   const photos = new Map() // sha256 -> entry, oldest first
-  const lists = new Map() // author -> Promise<vaults>
+  const lists = new Map() // author -> { p: Promise<vaults>, until: retry time for an empty list }
   const waiting = [] // { go, entry }
   let reader, running = 0, idle
 
@@ -198,17 +201,19 @@ export function createFipsMedia({
     entry.p.catch(() => {})
   }
 
-  /** The author's mesh vaults from their newest signed 10063; [] when they list none. One query per author. */
+  /** The author's mesh vaults from their newest signed 10063; [] when they list none. One query per author while it
+   *  runs; a list with vaults is kept, an empty or failed one only for LIST_RETRY_MS. */
   function authorVaults(pubkey) {
     if (!SHA256.test(String(pubkey ?? ""))) return Promise.resolve([])
-    let p = lists.get(pubkey)
-    if (!p) {
-      p = query(relays, { kinds: [10063], authors: [pubkey] }, { maxWait: 4000 })
-        .then(evs => meshVaults((evs ?? []).filter(e => e?.kind === 10063 && e.pubkey === pubkey && verifiedCopy(e)).sort((a, b) => b.created_at - a.created_at)[0]))
-        .catch(() => [])
-      lists.set(pubkey, p)
-    }
-    return p
+    const had = lists.get(pubkey)
+    if (had && !(had.until <= clock())) return had.p
+    const entry = { p: undefined, until: undefined }
+    entry.p = query(relays, { kinds: [10063], authors: [pubkey] }, { maxWait: 4000 })
+      .then(evs => meshVaults((evs ?? []).filter(e => e?.kind === 10063 && e.pubkey === pubkey && verifiedCopy(e)).sort((a, b) => b.created_at - a.created_at)[0]))
+      .catch(() => [])
+      .then(vaults => { if (!vaults.length) entry.until = clock() + LIST_RETRY_MS; return vaults })
+    lists.set(pubkey, entry)
+    return entry.p
   }
 
   /** Where a media item's image is on the mesh: its .fips link, if the author's 10063 lists that vault, else its imeta

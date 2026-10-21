@@ -125,6 +125,17 @@ export function verifiedCopy(ev) {
   } catch { return null }
 }
 
+const repostInners = new WeakMap()
+/** The note a kind 6 carries in its content, checked against its signature (verifiedCopy), or null. Cached per repost
+ *  object, since feed cards ask on every render and a schnorr check costs about a millisecond. */
+export function repostInner(ev) {
+  if (repostInners.has(ev)) return repostInners.get(ev)
+  let inner = null
+  try { inner = verifiedCopy(JSON.parse(ev.content)) } catch {}
+  repostInners.set(ev, inner)
+  return inner
+}
+
 /** Everything Haven /feed has for this thread. Works offline. */
 export async function readThread(vault, rootId) {
   const [stored, replies] = await Promise.all([

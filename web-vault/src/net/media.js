@@ -1,5 +1,7 @@
 // The Media feed: the image and video notes among the Following feed's (Haven /feed), one tile each, as the
 // iPhone's media grid (FeedView+MediaGrid.swift). A repost shows the note inside it.
+import { repostInner } from "./thread.js"
+
 const IMAGE = /\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i
 const VIDEO = /\.(mp4|webm|mov|m4v)(\?\S*)?$/i
 const URL_RE = /https?:\/\/[^\s<>"]+/gi
@@ -10,10 +12,11 @@ export function mediaType(url) {
   return VIDEO.test(path) ? "video" : IMAGE.test(path) ? "image" : ""
 }
 
-/** The note a tile stands for: a kind 1 itself, or the note inside a kind 6 repost. */
+/** The note a tile or a Compact/Threaded row stands for: a kind 1 itself, or the note inside a kind 6 repost if its
+ *  signature checks. Otherwise null, and the row fetches the note by id: a forged inner pubkey is never drawn as the
+ *  author (whose mesh vault a photo would dial). */
 export function tileNote(ev) {
-  if (ev.kind !== 6) return ev
-  try { const inner = JSON.parse(ev.content); return inner?.id && inner.pubkey ? inner : null } catch { return null }
+  return ev.kind === 6 ? repostInner(ev) : ev
 }
 
 /** The image and video links in a note, in order, once each: its text and its NIP-92 imeta tags. */
