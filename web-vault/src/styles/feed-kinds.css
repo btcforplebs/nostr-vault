@@ -33,3 +33,19 @@
 .translate-text { margin: 0; padding-left: 10px; border-left: 2px solid rgb(230 115 38 / .6); color: rgb(255 255 255 / .92); font: 17px/1.4 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .translate-button { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 13px var(--font); }
 .translate-button.failed { color: rgb(255 69 58 / .8); }
+/* Event Info (EventBroadcastSheet). */
+.info-head { display: flex; align-items: center; justify-content: space-between; }
+.info-who { display: flex; flex-direction: column; gap: 4px; }
+.info-sig { font: 600 12px var(--font); }
+.info-sig.ok { color: var(--verified); } .info-sig.bad { color: var(--danger); }
+.info-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.info-tiles button { min-height: 40px; border-radius: 10px; background: var(--s2); border: 0; color: var(--text); font: 600 12px var(--font); }
+.info-section { margin: 4px 0; color: var(--text-2); font: 600 11px var(--font); letter-spacing: .06em; background: none; border: 0; padding: 0; text-align: left; }
+.info-id { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 6px 0; background: none; border: 0; text-align: left; color: var(--text); }
+.info-id code { font: 11px var(--mono); overflow-wrap: anywhere; }
+.info-json { max-height: 240px; overflow: auto; padding: 10px; border-radius: 8px; background: var(--s2); font: 11px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.info-relay { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.info-relay input { accent-color: var(--accent); }
+.info-relay-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 13px var(--mono); }
+.info-relay-state { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-send { width: 100%; margin-top: 8px; }

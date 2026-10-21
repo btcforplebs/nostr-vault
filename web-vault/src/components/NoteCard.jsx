@@ -15,6 +15,7 @@ import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
 import { TranslateButton } from "./TranslateButton.jsx"
+import { EventInfoButton } from "./EventInfo.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/note-actions.css")
@@ -128,6 +129,7 @@ function NoteActions({ note }) {
       <ActionButton label="Quote" off={off} icon={ICONS.quote} onClick={() => compose("quote", note)} />
       <ActionButton label="Like" off={off} doneLabel="Liked. Tap to unlike" kind="like" undo state={s.like} icon={ICONS.heart} onClick={() => act(ctx, "like", note)} />
       <ZapButton note={note} />
+      <EventInfoButton event={note} account={ctx.account} />
       {!off && <span class="note-actions-end"><MoreMenu note={note} className="note-action" /></span>}
     </div>
   )
