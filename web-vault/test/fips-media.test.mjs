@@ -3,7 +3,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode } from "nostr-tools/nip19"
 import { fipsRef, meshVaults } from "../src/net/fips-ref.js"
-import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, MAX_READS, MAX_VAULTS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
+import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
 import { noteMedia } from "../src/net/note-media.js"
 
 const A = "a1".repeat(32), B = "b2".repeat(32), SHA = "487dc1578912f424773b0befc4eff491f026f0f24652f1d4ff66a85639455217"
@@ -230,4 +230,52 @@ test("only notes from you or people you follow use the mesh, and none with the s
   assert.equal(started + queried, 0, "a stranger's note starts no reader and reads no 10063")
   assert.match(await fm.fallback({ url: link(A) }, friend), /^blob:/)
   setMeshPeople(undefined, [])
+})
+
+test("a photo that leaves mid-read gives its slot back at once, not at its timeout", async () => {
+  const asked = []
+  const fm = createFipsMedia({ allow: () => true, startReader: async () => ({
+    getBlob: (v, sha, { signal }) => {
+      asked.push(sha)
+      if (sha === key(3)) return Promise.resolve({ bytes: new Uint8Array(1), type: "image/png" })
+      return new Promise((_, no) => signal.addEventListener("abort", () => no(Object.assign(new Error("reset"), { name: "AbortError" }))))
+    },
+  }) })
+  const ctls = [new AbortController(), new AbortController()]
+  const slow = ctls.map((c, i) => fm.photo([A], key(i + 1), { signal: c.signal }))
+  await tick(); await tick()
+  assert.equal(asked.length, MAX_READS, "both slots taken by slow vaults")
+  const honest = fm.photo([B], key(3))
+  await tick(); await tick()
+  assert.equal(asked.length, MAX_READS, "the next photo waits its turn")
+  for (const c of ctls) c.abort()
+  assert.match(await honest, /^blob:/, "and gets a slot as soon as they leave")
+  await Promise.allSettled(slow)
+})
+
+test("after a good read the vault stays allowed until its stream has closed", async () => {
+  let close
+  const fm = createFipsMedia({ allow: () => true, startReader: async () => ({
+    getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png", closed: new Promise(r => { close = r }) }),
+  }) })
+  assert.match(await fm.photo([A], SHA), /^blob:/)
+  assert.deepEqual([...fm.allowed], [A], "its ACK/FIN can still get in")
+  close(); await tick()
+  assert.equal(fm.allowed.size, 0, "and not after")
+})
+
+test("the gate tells mounted photos when it changes, and only when it does", () => {
+  let n = 0
+  const off = onMeshGate(() => n++)
+  try {
+    setMeshPeople("c3".repeat(32), [A])
+    const base = n
+    setMeshPeople("c3".repeat(32), [A]) // a new array, same people
+    assert.equal(n, base, "same people: no change")
+    setMeshPeople("c3".repeat(32), [A, B])
+    assert.equal(n, base + 1, "a new follow")
+    const m = new Map(), st = { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: k => m.delete(k) }
+    setMeshPhotosOn(false, st)
+    assert.equal(n, base + 2, "the switch")
+  } finally { off(); setMeshPeople(undefined, []) }
 })

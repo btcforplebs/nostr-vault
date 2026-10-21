@@ -5,7 +5,7 @@
 // reader: a fresh key, never saved, the public seeds only, no relay, nothing published; it stops again once no photo
 // needs it. Each photo is read by hash and checked against it (blob-get.js), then shown from a blob: URL. One read
 // per hash; reads take turns one vault at a time, so no note's vault list can hold the line; a vault may answer the
-// page only while a read is asking it.
+// page only while a read is asking it (and its stream is closing).
 import { fipsRef, meshVaults } from "./fips-ref.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, BROADCAST_RELAYS, uniq } from "./pool.js"
 
@@ -26,13 +26,25 @@ export const IDLE_STOP_MS = 60_000
 const KEY = "nv:fips-photos"
 /** Settings switch: FIPS photos on unless the person turned them off in this browser. */
 export const meshPhotosOn = (storage = globalThis.localStorage) => { try { return storage?.getItem(KEY) !== "off" } catch { return true } }
-export const setMeshPhotosOn = (on, storage = globalThis.localStorage) => { try { on ? storage?.removeItem(KEY) : storage?.setItem(KEY, "off") } catch {} }
+export const setMeshPhotosOn = (on, storage = globalThis.localStorage) => {
+  try { on ? storage?.removeItem(KEY) : storage?.setItem(KEY, "off") } catch {}
+  gateChanged()
+}
+
+// A photo already on the page re-checks the gate when it changes (MediaImage): a follow added or the switch flipped.
+const watchers = new Set()
+/** Call `fn` whenever who may use the mesh changes; returns the unsubscribe. */
+export const onMeshGate = fn => { watchers.add(fn); return () => watchers.delete(fn) }
+const gateChanged = () => { for (const fn of [...watchers]) fn() }
 
 // Whose notes may use the mesh: the signed-in account and the people it follows (main.jsx keeps this current).
 let me, follows = [], followSet = new Set()
 export function setMeshPeople(pubkey, list = []) {
-  me = pubkey
-  if (list !== follows) { follows = list; followSet = new Set(list) }
+  if (pubkey === me && list === follows) return
+  const next = new Set(list)
+  const same = pubkey === me && next.size === followSet.size && [...next].every(k => followSet.has(k))
+  me = pubkey; follows = list; followSet = next
+  if (!same) gateChanged()
 }
 /** May this author's note photos use the mesh? Yours or a follow's, with the switch on. */
 export const meshAllowed = (author, on = meshPhotosOn()) => on && !!author && (author === me || followSet.has(author))
@@ -91,13 +103,19 @@ export function createFipsMedia({
       if (left <= 0) throw last ?? new Error("timed out")
       await slot(entry)
       ask(vault)
+      const c = (entry.attempt = new AbortController())
+      let closed
       try {
-        const { bytes, type } = await r.getBlob(vault, entry.sha, { timeoutMs: Math.min(READ_TIMEOUT_MS, left) })
-        return URL.createObjectURL(new Blob([bytes], { type }))
+        const got = await r.getBlob(vault, entry.sha, { timeoutMs: Math.min(READ_TIMEOUT_MS, left), signal: c.signal })
+        closed = got.closed
+        return URL.createObjectURL(new Blob([got.bytes], { type: got.type }))
       } catch (e) {
         last = e
       } finally {
-        unask(vault)
+        entry.attempt = undefined
+        // The slot frees now; the vault stays allowed until a polite close has finished, so its ACK/FIN still gets in.
+        if (closed) Promise.resolve(closed).then(() => unask(vault), () => unask(vault))
+        else unask(vault)
         release()
       }
     }
@@ -165,9 +183,10 @@ export function createFipsMedia({
     })
   }
 
-  // No one wants it any more: leave the queue now; a vault attempt already under way ends at its own timeout.
+  // No one wants it any more: leave the queue, and reset a vault attempt under way so its slot frees at once.
   function cancel(entry) {
     for (let i = waiting.length - 1; i >= 0; i--) if (waiting[i].entry === entry) waiting.splice(i, 1)[0].stop(aborted())
+    entry.attempt?.abort()
     entry.p.catch(() => {})
   }
 

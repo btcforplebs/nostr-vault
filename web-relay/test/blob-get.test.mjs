@@ -233,3 +233,20 @@ test("only raster image and video types survive; svg and html come back as octet
     assert.equal((await t.client.get(t.vaultKey, h3)).type, "image/webp", "control: a raster type is kept")
   } finally { await t.stop() }
 })
+
+test("an aborted read resets at once (AbortError, not the timeout); a finished one says when its stream is closed", async () => {
+  const [h, b] = blob(2000)
+  const t = await setup({ blobs: new Map([[h, b]]) })
+  try {
+    t.setTamper(d => (d.src === t.vaultKey ? { ...d, src: key() } : d)) // the vault never answers
+    const c = new AbortController(), t0 = Date.now()
+    setTimeout(() => c.abort(), 300)
+    await assert.rejects(t.client.get(t.vaultKey, h, { timeoutMs: 30_000, signal: c.signal }), e => e.name === "AbortError")
+    assert.ok(Date.now() - t0 < 5_000, "well before the 30 s timeout")
+    await assert.rejects(t.client.get(t.vaultKey, h, { signal: AbortSignal.abort() }), e => e.name === "AbortError")
+    t.setTamper(undefined)
+    const got = await t.client.get(t.vaultKey, h)
+    assert.equal(sha(got.bytes), h)
+    await got.closed
+  } finally { await t.stop() }
+})
