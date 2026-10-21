@@ -30,22 +30,23 @@ export function AccountsScreen({ ctx }) {
 
   return (
     <main class="screen accounts">
-      <header class="screen-head"><h2>Accounts</h2></header>
-      <div class="section-label">On this browser</div>
+      <header class="screen-head"><a class="button small" href="#/settings">‹ Settings</a><h2>Accounts &amp; Keys</h2><span style="width: 92px" /></header>
+      <div class="section-label">Accounts</div>
       {accounts.map(a => (
         <AccountRow key={a.pubkey} account={a} active={a.pubkey === active} open={open === a.pubkey} ctx={ctx} others={accounts.length > 1}
           onToggle={() => setOpen(open === a.pubkey ? "" : a.pubkey)}
           onRemoved={msg => { setAccounts(loadAccounts()); setOpen(""); setNote(msg) }} />
       ))}
+      <p class="settings-note muted small">Tap an account to manage it.</p>
       {note && <p class="status-line">{note}</p>}
       {adding
         ? <section class="card add-account">
-            <h3>Add an account</h3>
+            <h3>Add Account</h3>
             <p class="muted small">Sign in with the account's own extension or bunker. Your current account stays signed in.</p>
             <SignInOptions onSignedIn={added} />
             <button onClick={() => setAdding(false)}>Cancel</button>
           </section>
-        : <button class="add-account-button" onClick={() => { setAdding(true); setNote("") }}>Add account</button>}
+        : <button class="add-account-button" onClick={() => { setAdding(true); setNote("") }}>+ Add Account</button>}
       <BackupCard ctx={ctx} />
       <section class="card">
         <h3>Paired vaults</h3>
@@ -86,7 +87,7 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
           <span class="author-name">{name}</span>
           <span class="person-sub">{methodLabel(account)}</span>
         </span>
-        {active && <span class="you-badge">ACTIVE</span>}
+        {active && <span class="you-badge">Active</span>}
       </button>
       {open && <div class="account-actions">
         <NpubLine pubkey={account.pubkey} />
@@ -99,12 +100,12 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
             : <button class="danger" onClick={() => setConfirm(true)}>Sign out</button>
           : confirm
             ? <>
-                <p class="muted small">This removes {name} from this browser and deletes its relay's copy here{account.method === "nip46" ? ", and asks its bunker to drop this browser's connection" : ""}. Nothing on other relays changes. You'll need its signer to add it again.</p>
-                <div class="row"><button class="danger" disabled={!!busy} onClick={doRemove}>{busy === "remove" ? "Removing…" : "Remove account"}</button><button disabled={!!busy} onClick={() => setConfirm(false)}>Cancel</button></div>
+                <p class="muted small">This removes {name} from Nostr Vault in this browser, along with its relay's copy here{account.method === "nip46" ? " and its bunker connection" : ""}. Nothing on the relays changes, but you will need its signer again to sign back in.</p>
+                <div class="row"><button class="danger" disabled={!!busy} onClick={doRemove}>{busy === "remove" ? "Removing…" : "Remove Account"}</button><button disabled={!!busy} onClick={() => setConfirm(false)}>Cancel</button></div>
               </>
             : <div class="row">
-                <button class="primary" disabled={!!busy} onClick={doSwitch}>{busy === "switch" ? "Switching…" : "Switch to this account"}</button>
-                <button class="danger" disabled={!!busy} onClick={() => setConfirm(true)}>Remove account</button>
+                <button class="primary" disabled={!!busy} onClick={doSwitch}>{busy === "switch" ? "Switching…" : "Switch to This Account"}</button>
+                <button class="danger" disabled={!!busy} onClick={() => setConfirm(true)}>Remove Account</button>
               </div>}
         {err && <p class="error small">{err}</p>}
       </div>}
