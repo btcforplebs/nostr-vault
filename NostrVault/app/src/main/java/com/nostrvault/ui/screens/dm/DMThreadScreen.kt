@@ -279,18 +279,19 @@ fun DMThreadScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable { onProfileClick(counterpartyPubkey) },
                     ) {
-                        AsyncImage(
-                            model = counterpartyProfile?.pictureURL,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape),
+                        // iOS: a 28pt avatar with the generated fallback, name in 15 semibold.
+                        AvatarImage(
+                            url = counterpartyProfile?.pictureURL,
+                            pubkey = counterpartyPubkey,
+                            size = 28.dp,
+                            displayName = counterpartyProfile?.bestName,
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = counterpartyProfile?.bestName
-                                ?: counterpartyPubkey.take(8) + "...",
+                                ?: counterpartyPubkey.take(8) + "\u2026",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -364,8 +365,9 @@ fun DMThreadScreen(
             } else {
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    // iOS spacing: 10 between bubbles, 12 at the sides.
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(
@@ -609,11 +611,12 @@ private fun MessageInputBar(
                         contentDescription = "Attached image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(72.dp)
+                            .size(64.dp)
                             .clip(RoundedCornerShape(10.dp)),
                     )
                     IconButton(
                         onClick = onClearImage,
+                        enabled = !isSending,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .size(22.dp),
@@ -650,6 +653,7 @@ private fun MessageInputBar(
 
                 Spacer(Modifier.width(8.dp))
 
+                // iOS: a white arrow in a filled circle, purple when it can send.
                 IconButton(
                     onClick = onSend,
                     enabled = canSend,
@@ -661,11 +665,22 @@ private fun MessageInputBar(
                             color = colors.primary,
                         )
                     } else {
-                        Icon(
-                            imageVector = NostrVaultIcons.Send,
-                            contentDescription = "Send",
-                            tint = if (canSend) colors.primary else TertiaryText,
-                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(
+                                    if (canSend) colors.primary else SecondaryText.copy(alpha = 0.25f),
+                                    CircleShape,
+                                ),
+                        ) {
+                            Icon(
+                                imageVector = NostrVaultIcons.ArrowUp,
+                                contentDescription = "Send",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }
