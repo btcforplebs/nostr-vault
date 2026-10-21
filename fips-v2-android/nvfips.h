@@ -1,7 +1,8 @@
 // nvfips: the FIPS mesh engine, C ABI for the iOS app.
 // Return codes: 0 ok; -1 config, -2 unsupported, -3 not running,
 // -4 a different port is already shared, -5 start failed, -6 bad npub,
-// -7 relay link off (no relay_socket at start), -8 not a list of signed events.
+// -7 relay link off (no relay_socket at start), -8 not a list of signed events,
+// -9 ingress to an npub outside own_devices.
 // Strings returned here are freed with NvFipsFreeString.
 #ifndef NVFIPS_H
 #define NVFIPS_H

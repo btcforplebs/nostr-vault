@@ -1,12 +1,14 @@
 //! Device check of the library path the app uses: start, export a port,
 //! print the status, run until killed.
-//!   share <peer-npub> <local-port> [--lan] [--file <path>] [--read] [--relay <url>]...
+//!   share <peer-npub> <local-port> [--lan] [--file <path>] [--read] [--relay <url>]... [--own <npub>]...
 //! With --file, also serves <path> over plain HTTP on 127.0.0.1:<local-port>,
 //! so a phone can be tested without anything else listening on it.
 //! With --read, also opens the peer's share on a loopback port (printed), and
 //! prints the status every 10 s.
 //! With --no-peers, starts with an empty peer list: --read then has to add
 //! the peer at runtime, the way the app reaches a vault it was not told about.
+//! With --own, starts in own-devices mode, as the Mac app does: only those
+//! npubs reach the shared port.
 use std::io::{Read, Write};
 
 fn serve_file(port: u16, path: String) {
@@ -45,6 +47,7 @@ fn main() {
         peers: if args.iter().any(|a| a == "--no-peers") { Vec::new() } else { vec![args[1].clone()] },
         lan: args.iter().any(|a| a == "--lan"),
         relays: args.windows(2).filter(|w| w[0] == "--relay").map(|w| w[1].clone()).collect(),
+        own_devices: args.windows(2).filter(|w| w[0] == "--own").map(|w| w[1].clone()).collect(),
         ..Default::default()
     };
     let nsec_path = std::env::var("NVFIPS_NSEC").unwrap_or_else(|_| "/tmp/nvfips-share.nsec".into());

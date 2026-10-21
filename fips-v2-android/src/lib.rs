@@ -13,6 +13,7 @@
 #[path = "../../fips-v2/src/stack.rs"]
 mod stack;
 
+pub mod own_devices;
 pub mod relay_link;
 pub use relay_link::relay_push;
 
@@ -53,6 +54,9 @@ pub struct StartOptions {
     /// Path for the node's datagram API socket, inside the app's sandbox.
     /// Empty leaves it off, and with it `relay_push`.
     pub relay_socket: String,
+    /// The owner's devices. Set, only they reach this node: see
+    /// [`own_devices`]. Empty leaves the node open to anyone, as before.
+    pub own_devices: Vec<String>,
 }
 
 /// What sharing gives the mesh before it stops, unless the app sets its own.
@@ -63,6 +67,11 @@ const SERVE_PER_PEER: u64 = 256 << 20;
 const SERVE_PER_PEER_OPEN: usize = 6;
 
 fn serve_limits(opts: &StartOptions) -> stack::ServeLimits {
+    // Own-devices mode serves no visitors: the owner's full-history copy
+    // runs uncapped, as it did through the fipsv2-probe helper.
+    if !opts.own_devices.is_empty() {
+        return stack::ServeLimits::default();
+    }
     let total = if opts.max_serve_bytes == 0 { DEFAULT_SERVE_TOTAL } else { opts.max_serve_bytes };
     stack::ServeLimits {
         total_bytes: total,
@@ -142,6 +151,8 @@ struct Running {
     stack_thread: std::thread::JoinHandle<()>,
     /// The datagram API socket `relay_push` connects through; `None` when off.
     relay_socket: Option<std::path::PathBuf>,
+    /// Set in own-devices mode: the only npubs `ingress` dials.
+    own: Option<own_devices::OwnDevices>,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -169,6 +180,9 @@ pub const ERR_BAD_NPUB: i32 = -6;
 pub const ERR_RELAY_OFF: i32 = -7;
 /// `relay_push` was handed something that is not a list of signed events.
 pub const ERR_BAD_EVENTS: i32 = -8;
+/// `ingress` to an npub outside `own_devices`: the dial would send this
+/// node's address to it.
+pub const ERR_NOT_OWN: i32 = -9;
 
 /// Every caller string is decoded or quoted before it reaches the template:
 /// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
@@ -181,8 +195,17 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
         let list: Vec<String> = opts.relays.iter().map(|r| serde_json::Value::from(r.as_str()).to_string()).collect();
         format!("      advert_relays: [{0}]\n      dm_relays: [{0}]\n", list.join(", "))
     };
+    let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
+    let allowlist = own.as_ref().map(own_devices::OwnDevices::allowlist_yaml).unwrap_or_default();
+    let mut dialed: Vec<String> = Vec::new();
+    for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
+        let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
+        if !dialed.contains(&npub) {
+            dialed.push(npub);
+        }
+    }
     let mut peers = String::new();
-    for npub in &opts.peers {
+    for npub in &dialed {
         let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
         peers.push_str(&format!(
             "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"nat\"\n    via_nostr: true\n    connect_policy: auto_connect\n"
@@ -208,7 +231,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
       enabled: true
       advertise: true
       policy: configured_only
-      share_local_candidates: {lan}
+{allowlist}      share_local_candidates: {lan}
       signal_ttl_secs: {SIGNAL_TTL_SECS}
 {relays}dns:
   enabled: false
@@ -222,6 +245,7 @@ transports:
         lan = opts.lan,
         port = opts.udp_port,
         native_api = native_api,
+        allowlist = allowlist,
     )))
 }
 
@@ -236,6 +260,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         return Ok(());
     }
     let yaml = config_yaml(nsec, opts)?;
+    let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
     let relay_socket = relay_link::socket_path(&opts.relay_socket)?;
     if let Some(path) = &relay_socket {
         // A socket file left by a run that was killed would fail the bind.
@@ -304,6 +329,23 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     ctl.set_limits(serve_limits(opts));
     let stack_ctl = ctl.clone();
     let (to_mesh, from_mesh) = tun;
+    // Own-devices mode: strangers' packets stop here, before the stack.
+    let from_mesh = match &own {
+        None => from_mesh,
+        Some(own) => {
+            let (to_stack, stack_rx) = std::sync::mpsc::channel();
+            let addresses = own.addresses.clone();
+            let filter = std::thread::Builder::new().name("fips-own-only".into()).spawn(move || {
+                own_devices::filter(from_mesh, address, addresses, to_stack)
+            });
+            if let Err(e) = filter {
+                let _ = stop_tx.send(());
+                let _ = node_thread.join();
+                return Err(e.into());
+            }
+            stack_rx
+        }
+    };
     let stack_thread = std::thread::Builder::new().name("fips-stack".into()).spawn(move || {
         if let Err(e) = stack::run_with(address, mtu, to_mesh, from_mesh, &stack_ctl) {
             tracing::warn!("fips stack stopped: {e:#}");
@@ -327,6 +369,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         control,
         stack_thread,
         relay_socket,
+        own,
         stop: stop_tx,
         node_thread,
     });
@@ -373,6 +416,7 @@ pub fn unexport() -> i32 {
 /// vaults stay open; opening one more closes the least recently read.
 pub fn ingress(npub: &str) -> Result<String, i32> {
     let control = match state().as_ref() {
+        Some(run) if run.own.as_ref().is_some_and(|own| !own.contains(npub)) => return Err(ERR_NOT_OWN),
         Some(run) => run.control.clone(),
         None => return Err(ERR_NOT_RUNNING),
     };
@@ -815,6 +859,8 @@ mod tests {
         assert_eq!((small.total_bytes, small.per_peer_bytes), (100 << 20, 100 << 20));
         let opts: StartOptions = serde_json::from_str(r#"{"max_serve_bytes": 5368709120}"#).unwrap();
         assert_eq!(serve_limits(&opts).total_bytes, 5 << 30);
+        let own = StartOptions { own_devices: vec![Identity::generate().npub()], max_serve_bytes: 100 << 20, ..Default::default() };
+        assert_eq!(serve_limits(&own), stack::ServeLimits::default(), "own devices are not capped");
     }
 
     #[test]
