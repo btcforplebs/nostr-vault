@@ -111,18 +111,21 @@ test("a photo over the per-photo cap is aborted; the page's byte budget stops th
   assert.equal(f.calls.gets.length, 2, "the third never asks")
 })
 
-test("the reader stops once nothing is left to read; leaving the page revokes the photos", async () => {
+test("the reader stops after a quiet while, not per photo; leaving the page revokes the photos", async () => {
   let leave
   const revoked = [], f = fakeReader([V1])
-  const a = img({ failed: true }), later = img()
-  await wireMeshPhotos(doc([a, later]), { ...f, revoke: u => revoked.push(u), onLeave: fn => { leave = fn } })
-  await settle()
-  assert.equal(f.calls.stops, 1)
+  const a = img({ failed: true }), later = img(), last = img({ x: "f1".repeat(32) })
+  await wireMeshPhotos(doc([a, later, last]), { ...f, idleStopMs: 30, revoke: u => revoked.push(u), onLeave: fn => { leave = fn } })
   later.fail(); await settle()
+  assert.equal(f.calls.starts, 1, "a failure inside the quiet while reuses the reader")
+  assert.equal(f.calls.stops, 0)
+  await new Promise(r => setTimeout(r, 50))
+  assert.equal(f.calls.stops, 1)
+  last.fail(); await settle()
   assert.equal(f.calls.starts, 2, "a later failure starts a fresh reader")
-  assert.equal(f.calls.stops, 2)
-  leave()
-  assert.deepEqual(revoked, [a.src, later.src])
+  leave(); await settle()
+  assert.equal(f.calls.stops, 2, "leaving stops it at once")
+  assert.deepEqual(revoked, [a.src, later.src, last.src])
 })
 
 test("end to end: the real photo-only reader fetches the blob, hash-checked, from the named vault", async () => {

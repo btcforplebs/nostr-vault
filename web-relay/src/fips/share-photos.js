@@ -11,6 +11,7 @@ export const MAX_PHOTOS = 8 // mesh reads per page; the rest keep their dead lin
 export const MAX_PARALLEL = 2
 export const MAX_PHOTO_BYTES = 16 * 1024 * 1024 // a share-page photo, not a 64 MiB blob
 export const MAX_PAGE_BYTES = 48 * 1024 * 1024
+const IDLE_STOP_MS = 15_000 // lazy photos fail one by one: keep the reader (one key, one seed handshake) a while
 
 /** The hash and vaults the page wrote on an <img>, or undefined when it has none usable. */
 export function meshTarget(img) {
@@ -31,14 +32,16 @@ export function wireMeshPhotos(doc, {
   revoke = url => URL.revokeObjectURL(url),
   onLeave = fn => globalThis.addEventListener?.("pagehide", fn, { once: true }),
   timeoutMs = READ_TIMEOUT_MS,
+  idleStopMs = IDLE_STOP_MS,
   limits: { photos = MAX_PHOTOS, parallel = MAX_PARALLEL, photoBytes = MAX_PHOTO_BYTES, pageBytes = MAX_PAGE_BYTES } = {},
 } = {}) {
   const allowed = new Set() // only the vaults this page named
   const urls = []
   const waiting = []
-  let reader, active = 0, used = 0, leaving = false
+  let reader, active = 0, used = 0, leaving = false, idle
   const getReader = () => (reader ??= start(() => allowed).catch(e => { reader = undefined; throw e }))
   const stopReader = () => {
+    clearTimeout(idle)
     const r = reader
     reader = undefined
     r?.then(x => x.stop?.()).catch(() => {})
@@ -74,14 +77,16 @@ export function wireMeshPhotos(doc, {
     while (active < parallel && waiting.length) {
       const { img, t, done } = waiting.shift()
       active++
-      readOne(img, t).then(state => {
+      clearTimeout(idle)
+      readOne(img, t).catch(() => "failed").then(state => {
         img.dataset.mesh = state
         active--
         done()
         next()
       })
     }
-    if (!active && !waiting.length) stopReader() // a later failure starts a fresh one
+    // Nothing left to read: stop after a quiet while; a later failure starts a fresh reader.
+    if (!active && !waiting.length && reader) { clearTimeout(idle); idle = setTimeout(stopReader, idleStopMs); idle?.unref?.() }
   }
 
   let queued = 0
