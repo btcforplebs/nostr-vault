@@ -40,7 +40,7 @@ test("the screens use the iPhone's words", () => {
   const inbox = readFileSync(new URL("../src/screens/MessagesScreen.jsx", import.meta.url), "utf8")
   const conv = readFileSync(new URL("../src/screens/ConversationScreen.jsx", import.meta.url), "utf8")
   assert.match(inbox, /No Messages Yet/)
-  assert.match(inbox, /Start an encrypted conversation<br \/>with the compose button above/)
+  assert.match(inbox, /Start an encrypted conversation<br \/>with New message above/)
   assert.match(conv, />Start a conversation</)
   assert.match(conv, /Some messages use NIP-04 \(legacy encryption\)\. New messages default to NIP-17\./)
 })
