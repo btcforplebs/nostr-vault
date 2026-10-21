@@ -180,3 +180,9 @@
 .market-chevron { margin-left: auto; color: var(--text-3); font-size: 20px; }
 .market-description { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .live-dot { color: var(--danger); }
+.music-head-row { display: flex; align-items: baseline; justify-content: space-between; }
+.music-head-row button.link { background: none; border: 0; color: var(--accent-light); cursor: pointer; font-weight: 500; }
+.music-cover { position: relative; flex: none; display: inline-block; }
+.music-cover-on { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 6px; background: rgb(0 0 0 / .45); color: #fff; font-size: 14px; }
+.music-sats { color: #ff9f0a; font-weight: 600; white-space: nowrap; }
+.music-tracks li.on .music-track-title { color: var(--accent-light); }

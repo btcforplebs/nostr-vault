@@ -93,7 +93,8 @@ export function YourArtists({ blocked, onOpen }) {
   useEffect(() => onPlayer(() => setRecent(wl.loadRecent())), [])
   const shown = wl.visibleArtists(recent, blocked)
   if (!shown.length) return null
-  return <><h3 class="music-head">Your artists</h3><Row items={artistTiles(shown, onOpen)} /></>
+  const clear = () => { wl.clearRecent(); setRecent([]) }
+  return <><h3 class="music-head music-head-row">Your artists<button type="button" class="link small" onClick={clear}>Clear artists</button></h3><Row items={artistTiles(shown, onOpen)} /></>
 }
 
 /** The Wavlake artists among the people you follow, then their ranked songs. */
@@ -175,7 +176,7 @@ function AlbumPage({ id, seed, blocked, onOpen, onBack }) {
       <div class="music-hero">{al.art ? <img src={al.art} alt="" referrerpolicy="no-referrer" /> : <div class="music-art" />}<div>
         <h2>{al.title}</h2>
         {al.artist && (al.artistId ? <button type="button" class="link" onClick={() => onOpen({ type: "artist", artist: { id: al.artistId, name: al.artist, art: null, npub: null } })}>{al.artist}</button> : <p class="muted">{al.artist}</p>)}
-        {data && <p class="muted small">{[al.year, wl.songs(tracks.length)].filter(Boolean).join(" · ")}</p>}
+        {data && <p class="muted small">{[al.year, wl.songs(tracks.length), albumMinutes(tracks)].filter(Boolean).join(" · ")}</p>}
       </div></div>
       {error ? <p class="empty">{error}</p> : !data ? <p class="empty">Loading…</p> : <>
         <PlayButtons tracks={tracks} play="▶ Play" />
@@ -183,6 +184,14 @@ function AlbumPage({ id, seed, blocked, onOpen, onBack }) {
       </>}
     </div>
   )
+}
+
+/** "42 min", "1 hr 5 min": an album's running time (MusicCount.minutes), or null when no song says how long it is. */
+export function albumMinutes(tracks) {
+  const seconds = tracks.reduce((n, t) => n + (t.duration > 0 ? t.duration : 0), 0)
+  if (!seconds) return null
+  const m = Math.max(1, Math.round(seconds / 60))
+  return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`
 }
 
 /** Play and Shuffle (the iPhone's MusicPlayButtons), and an extra pill such as On Nostr. */
@@ -227,9 +236,11 @@ export function Tracks({ tracks, numbered = false }) {
       <li key={t.id} class={on ? "on" : ""}>
         <button type="button" class="music-track" onClick={() => playList(tracks, i)} aria-label={`${on && s.playing ? "Pause" : "Play"} ${t.title} by ${t.artist}`}>
           {numbered ? <span class="music-num">{on && s.playing ? "▮▮" : i + 1}</span>
-            : t.art ? <img src={t.art} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <div class="music-art small" />}
-          <span class="music-track-text"><span class="music-track-title">{t.title}</span><span class="muted small">{t.artist}{t.sats ? ` · ⚡ ${formatSats(t.sats)}` : ""}</span></span>
-          <span class="muted small">{on && s.playing ? "Playing" : wl.clock(t.duration)}</span>
+            : <span class="music-cover">{t.art ? <img src={t.art} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <div class="music-art small" />}
+                {on && <span class="music-cover-on" aria-hidden="true">{s.playing ? "▮▮" : "▶"}</span>}</span>}
+          <span class="music-track-text"><span class="music-track-title">{t.title}</span><span class="muted small">{t.artist}</span></span>
+          {t.sats > 0 && <span class="music-sats small">⚡ {formatSats(t.sats)}</span>}
+          <span class="muted small">{wl.clock(t.duration)}</span>
         </button>
       </li>
     )
