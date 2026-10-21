@@ -1,5 +1,6 @@
-// Vault › Media (iPhone MediaGalleryView): your files on your Blossom servers, by day, newest first, filtered to
-// Photos, Videos or GIFs. A tile opens the file with Copy link, the servers that hold it, Copy to the servers missing
+// Vault › Media (iPhone MediaGalleryView): your files on your Blossom servers, filtered to Photos, Videos or GIFs and
+// sorted Newest first (by day), Oldest first (by day) or by Media type, as the iPhone's MediaSortOption. Every tile
+// says how many of your servers hold it. A tile opens the file with Copy link, the servers that hold it, Copy to the servers missing
 // it, and Delete (from every server, after asking). "In your notes" keeps the pictures your notes carry.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
@@ -7,22 +8,38 @@ import { mediaServers } from "../net/upload.js"
 import { listBlobs, deleteBlob, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
-const EMPTY = { all: "No files on your media servers yet. Photos you attach to a note are uploaded there.", photos: "No photos on your media servers.", videos: "No videos on your media servers.", gifs: "No GIFs on your media servers." }
 
-export function BlossomGallery({ ctx, filter = "all" }) {
+/** The iPhone's sorts, less "On relay first": the web has no relay-held media to put first. */
+export const SORTS = [{ id: "newest", label: "Newest first" }, { id: "oldest", label: "Oldest first" }, { id: "type", label: "Media type" }]
+const SORT_KEY = "nv-gallery-sort"
+export const loadSort = (storage = globalThis.localStorage) => { const s = storage?.getItem(SORT_KEY); return SORTS.some(x => x.id === s) ? s : "newest" }
+const saveSort = (s, storage = globalThis.localStorage) => { try { storage?.setItem(SORT_KEY, s) } catch {} }
+
+/** Photos, GIFs, videos, audio, then anything else (MediaGalleryView.typeRank). */
+export const isAudio = b => b.kind === "other" && /^audio\//i.test(b.type ?? "")
+export const typeRank = b => ({ photo: 0, gif: 1, video: 2 })[b.kind] ?? (isAudio(b) ? 3 : 4)
+
+/** The files in `sort` order, as sections: dated runs for the date sorts, one untitled run otherwise. */
+export function sections(blobs, sort, locale) {
+  if (sort === "type") return blobs.length ? [{ day: "", blobs: [...blobs].sort((a, b) => typeRank(a) - typeRank(b) || b.uploaded - a.uploaded) }] : []
+  return byDay([...blobs].sort((a, b) => (sort === "oldest" ? a.uploaded - b.uploaded : b.uploaded - a.uploaded)), locale)
+}
+
+export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   const [servers, setServers] = useState(null)
   const [found, setFound] = useState(null) // { blobs, status }
   const [open, setOpen] = useState(null) // sha256
   const [note, setNote] = useState("")
+  const [sort, setSort] = useState(loadSort)
   const load = async () => {
     setFound(null)
     const s = await mediaServers(ctx).catch(() => [])
     setServers(s)
     setFound(await listBlobs(s, ctx.session.pubkey, { ctx }))
   }
-  useEffect(() => { load() }, [ctx.session.pubkey])
+  useEffect(() => { load() }, [ctx.session.pubkey, refreshes])
 
-  if (!found) return <p class="empty">Asking your media servers…</p>
+  if (!found) return <div class="empty"><p><strong>Loading media…</strong></p><p class="muted small">Asking your media servers</p></div>
   const blobs = found.blobs.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
   const down = Object.entries(found.status).filter(([, s]) => s !== "ok")
   const current = found.blobs.find(b => b.sha256 === open)
@@ -31,14 +48,22 @@ export function BlossomGallery({ ctx, filter = "all" }) {
     <div class="blossom">
       <div class="status-line">{found.blobs.length} file{found.blobs.length === 1 ? "" : "s"} on {servers.length - down.length} of {servers.length} server{servers.length === 1 ? "" : "s"}{down.length ? ` · ${down.map(([s, r]) => `${hostOf(s)}: ${r}`).join(" · ")}` : ""}</div>
       {note && <div class="status-line">{note}</div>}
-      {!blobs.length ? <p class="empty">{EMPTY[filter] ?? EMPTY.all}</p> : byDay(blobs).map(g => (
-        <section key={g.day}>
-          <div class="section-label blossom-day">{g.day}</div>
+      {found.blobs.length > 1 && (
+        <label class="status-line blossom-sort">Sort by{" "}
+          <select value={sort} onChange={e => { setSort(e.currentTarget.value); saveSort(e.currentTarget.value) }}>
+            {SORTS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </label>
+      )}
+      {!blobs.length ? <div class="empty"><p><strong>No media found</strong></p>{found.blobs.length > 0 && <p class="muted small">Try changing your filter settings</p>}</div>
+        : sections(blobs, sort).map(g => (
+        <section key={g.day || "all"}>
+          {g.day && <div class="section-label blossom-day">{g.day}</div>}
           <div class="vault-grid">
             {g.blobs.map(b => (
-              <button key={b.sha256} class="vault-thumb blossom-tile" onClick={() => setOpen(b.sha256)} aria-label={`${b.kind} uploaded ${g.day}`}>
+              <button key={b.sha256} class="vault-thumb blossom-tile" onClick={() => setOpen(b.sha256)} aria-label={`${isAudio(b) ? "audio" : b.kind}${g.day ? ` uploaded ${g.day}` : ""}`}>
                 <Thumb blob={b} />
-                {b.servers.length < servers.length && <span class="blossom-badge" title="Not on every server">{b.servers.length}/{servers.length}</span>}
+                {servers.length > 0 && <span class="blossom-badge" title={b.servers.length < servers.length ? "Not on every server" : "On every server"}>{b.servers.length}/{servers.length}</span>}
               </button>
             ))}
           </div>
@@ -53,7 +78,7 @@ export function BlossomGallery({ ctx, filter = "all" }) {
 
 function Thumb({ blob, big = false }) {
   if (blob.kind === "video") return <video src={big ? blob.url : `${blob.url}#t=0.1`} preload="metadata" muted={!big} controls={big} playsinline />
-  if (blob.kind === "other") return <span class="blossom-file">{(blob.type || "file").split("/").pop()}</span>
+  if (blob.kind === "other") return <span class="blossom-file" style={{ overflowWrap: "anywhere", textAlign: "center", padding: 4 }}>{isAudio(blob) ? "♪ " : ""}{blob.type || "file"}</span>
   return <img src={blob.url} alt="" loading={big ? "eager" : "lazy"} decoding="async" />
 }
 
