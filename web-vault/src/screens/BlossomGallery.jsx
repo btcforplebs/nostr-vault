@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
+import { BlossomUpload } from "./BlossomUpload.jsx"
 import { listBlobs, deleteBlob, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -47,6 +48,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   return (
     <div class="blossom">
       <BlossomStats blobs={found.blobs} servers={servers} status={found.status} />
+      <BlossomUpload ctx={ctx} servers={servers} onAdded={added => setFound(x => ({ ...x, blobs: [...added, ...x.blobs.filter(b => !added.some(a => a.sha256 === b.sha256))] }))} />
       {note && <div class="status-line">{note}</div>}
       {found.blobs.length > 1 && (
         <label class="status-line blossom-sort">Sort by{" "}
