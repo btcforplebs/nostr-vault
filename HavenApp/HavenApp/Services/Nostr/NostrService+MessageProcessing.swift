@@ -67,13 +67,10 @@ extension NostrService {
                 let createdAt = event.created_at
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
-                    if let result = ProfileRepository.parseMetadataContent(content, pubkey: pubkey, existingProfile: self.profiles[pubkey], createdAt: createdAt),
+                    let existing = self.profileWrites.current(pubkey, stored: self.profiles)
+                    if let result = ProfileRepository.parseMetadataContent(content, pubkey: pubkey, existingProfile: existing, createdAt: createdAt),
                        result.changed {
-                        self.profiles[pubkey] = result.profile
-                        self.profilesInFlight.remove(pubkey)
-                        self.saveProfilesThrottled()
-                        self.eventUpdateSubject.send()
-                        self.noteProfileUpdated(pubkey)
+                        self.queueProfileWrite(result.profile)
                     }
                 }
                 return

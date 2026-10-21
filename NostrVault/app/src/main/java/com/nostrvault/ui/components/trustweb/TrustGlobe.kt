@@ -81,9 +81,6 @@ private data class LoadKey(
 /** Spinning and turning to a person both take about this long; a new person's globe settles in after it. */
 private const val TURN_DELAY_MS = 380L
 
-/** One frame at 30 fps, for a globe where only a few arcs move (iOS `GlobeScene.slowRate`). */
-private const val SLOW_FRAME_MS = 33L
-
 /** Pictures are laid out at this size and scaled to each face. */
 private const val PICTURE_DP = 64f
 
@@ -168,8 +165,9 @@ internal fun TrustGlobe(
             scene.lastTick = null
             while (scene.awake) {
                 val started = withFrameNanos { scene.tick(it / 1e9); it }
-                // No finger on it: 30 fps rather than every frame keeps the phone cool.
-                if (scene.slowFrames) delay(max(0L, SLOW_FRAME_MS - (System.nanoTime() - started) / 1_000_000))
+                // No finger on it: 60 fps in a storm, else 30, rather than every frame keeps the phone cool.
+                val frameMs = scene.frameRate.frameMs
+                if (frameMs > 0) delay(max(0L, frameMs - (System.nanoTime() - started) / 1_000_000))
             }
         }
     }

@@ -21,6 +21,27 @@ extension NostrService {
         }
     }
 
+    /// Queues a parsed kind 0 and writes the batch to `profiles` shortly
+    /// after: one redraw of every watching screen per batch, not one per
+    /// profile. Must be called on the main thread.
+    func queueProfileWrite(_ profile: FeedProfile) {
+        profileWrites.add(profile)
+        guard !profileWriteFlushScheduled else { return }
+        profileWriteFlushScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            self.profileWriteFlushScheduled = false
+            guard !self.profileWrites.isEmpty else { return }
+            // Still in flight until stored, so nothing asks for it again meanwhile.
+            self.profilesInFlight.subtract(self.profileWrites.pending.keys)
+            let written = self.profileWrites.flush(into: &self.profiles)
+            guard !written.isEmpty else { return }
+            self.saveProfilesThrottled()
+            self.eventUpdateSubject.send()
+            for pubkey in written { self.noteProfileUpdated(pubkey) }
+        }
+    }
+
     func updateOwnerHex() {
         let npub = ConfigService.shared.config.ownerNpub
         if let hex = Bech32.decode(npub)?.hexString {
