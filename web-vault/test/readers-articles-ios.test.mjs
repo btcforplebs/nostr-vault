@@ -1,5 +1,5 @@
 // Articles and Recipes against the iPhone: topic chips, a tappable author, Share and Copy link to
-// mynostrspace.com/thread/<nevent>, the locked meta, comment times, and the iPhone's empty states.
+// nostrvault.app/thread/<nevent>, the locked meta, comment times, and the iPhone's empty states.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { registerHooks } from "node:module"
@@ -22,9 +22,9 @@ registerHooks({
 const A = "a".repeat(64), ID = "f".repeat(64)
 const art = { id: ID, kind: 30023, pubkey: A, created_at: 100, content: "body", tags: [["d", "x"], ["title", "T"], ["t", "bitcoin"], ["t", "nostr"], ["t", "art"], ["t", "fourth"]] }
 
-test("the share link is mynostrspace.com/thread/<nevent> with id, author and kind", () => {
+test("the share link is nostrvault.app/thread/<nevent> with id, author and kind", () => {
   const url = threadLink(art)
-  assert.match(url, /^https:\/\/mynostrspace\.com\/thread\/nevent1/)
+  assert.match(url, /^https:\/\/nostrvault\.app\/thread\/nevent1/)
   const d = decode(url.split("/").pop())
   assert.deepEqual([d.data.id, d.data.author, d.data.kind], [ID, A, 30023])
   assert.equal(threadLink({ ...art, id: "bad" }), null)

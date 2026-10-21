@@ -32,7 +32,7 @@ struct EventBroadcastSheet: View {
         _inspector = StateObject(wrappedValue: EventInspector(note: note))
     }
 
-    private var shareURL: String { "https://mynostrspace.com/thread/\(note.nevent)" }
+    private var shareURL: String { "https://nostrvault.app/thread/\(note.nevent)" }
 
     private var authorNpub: String {
         guard let data = Bech32.hexToData(note.pubkey),

@@ -555,7 +555,7 @@ private struct ReelPageView: View {
 
             railButton(icon: "text.bubble", label: "Thread", action: onOpenNote)
 
-            ShareLink(item: URL(string: "https://mynostrspace.com/thread/\(reel.note.nevent)")!) {
+            ShareLink(item: URL(string: "https://nostrvault.app/thread/\(reel.note.nevent)")!) {
                 railItem("square.and.arrow.up", tint: .white, label: "Share")
             }
             .buttonStyle(.plain)
