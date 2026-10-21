@@ -72,6 +72,9 @@ class NewMessageViewModel @Inject constructor(
     /** Optional pre-locked recipient (e.g. opened from a profile). null = free picker. */
     private val lockedRecipient: String? = savedStateHandle["pubkey"]
 
+    /** Opened from a profile: the recipient is fixed, so the chip shows no X. */
+    val recipientLocked: Boolean get() = lockedRecipient != null
+
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
 
     private val _selectedRecipient = MutableStateFlow(lockedRecipient)
@@ -251,7 +254,8 @@ fun NewMessageScreen(
                 RecipientChip(
                     pubkey = recipient,
                     profile = viewModel.profileFor(recipient),
-                    onClear = { viewModel.clearRecipient() },
+                    // Null hides the X: a recipient locked from a profile can't be cleared.
+                    onClear = if (viewModel.recipientLocked) null else viewModel::clearRecipient,
                 )
             } else {
                 RecipientSearch(
@@ -466,12 +470,12 @@ private fun SearchResultRow(
     }
 }
 
-/** The picked recipient on a card. Its X clears it, unless it came locked from a profile. */
+/** The picked recipient on a card, with an X to clear it unless it came locked from a profile. */
 @Composable
 private fun RecipientChip(
     pubkey: String,
     profile: FeedProfile?,
-    onClear: () -> Unit,
+    onClear: (() -> Unit)?,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -493,13 +497,15 @@ private fun RecipientChip(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
-            Icon(
-                imageVector = NostrVaultIcons.Dismiss,
-                contentDescription = "Clear recipient",
-                tint = SecondaryText.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp),
-            )
+        if (onClear != null) {
+            IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    imageVector = NostrVaultIcons.Dismiss,
+                    contentDescription = "Clear recipient",
+                    tint = SecondaryText.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }
