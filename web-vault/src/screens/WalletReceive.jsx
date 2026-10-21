@@ -4,7 +4,7 @@ import { useState } from "preact/hooks"
 import { encode } from "uqr"
 import { makeInvoice } from "../net/wallet.js"
 import { invoiceMsat } from "../net/zaps.js"
-import { getProfile } from "../net/profiles.js"
+import { useProfile } from "../components/useProfile.js"
 
 export function WalletReceive({ wallet, pubkey, make = makeInvoice }) {
   const [sats, setSats] = useState("")
@@ -12,7 +12,8 @@ export function WalletReceive({ wallet, pubkey, make = makeInvoice }) {
   const [invoice, setInvoice] = useState(null)
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
-  const address = (getProfile(pubkey)?.lud16 ?? "").trim()
+  // Live, so the address shows once the profile arrives, not only when it was already cached.
+  const address = (useProfile(pubkey)?.lud16 ?? "").trim()
   const create = async e => {
     e.preventDefault()
     setBusy(true); setErr(""); setInvoice(null)
