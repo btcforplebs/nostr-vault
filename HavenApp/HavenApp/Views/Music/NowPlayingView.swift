@@ -84,7 +84,7 @@ struct NowPlayingView: View {
     /// takes on the song's colours and text stays readable in light and dark.
     private var backdrop: some View {
         ZStack {
-            if let url = player.current?.artworkURL {
+            if let url = MediaCacheService.offMeshURL(player.current?.artworkURL) {
                 AsyncImage(url: url) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {

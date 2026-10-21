@@ -30,10 +30,11 @@ enum AvatarThumbnail {
         return URL(string: "https://\(host)/?\(query)") ?? original
     }
 
-    /// The service can't reach the device relay, the LAN or Tor, and
-    /// shouldn't learn their addresses.
+    /// The service can't reach the device relay, the LAN, Tor or the FIPS
+    /// mesh, and shouldn't learn their addresses (a `.fips` host is a vault's npub).
     private static func isPublic(host: String) -> Bool {
-        if host == Self.host || host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".onion") {
+        if host == Self.host || host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".onion")
+            || host.hasSuffix(".fips") {
             return false
         }
         if host.contains(":") { return false } // IPv6 literal

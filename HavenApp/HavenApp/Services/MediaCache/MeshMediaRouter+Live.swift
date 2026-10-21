@@ -166,14 +166,22 @@ extension MediaCacheService {
 
     /// True for a `.fips` URL on iOS, where only the mesh engine can reach it:
     /// there is no FIPS daemon, so a plain fetch would only send the vault's
-    /// npub to DNS and take whatever a resolver answers. Every loader outside
-    /// the mesh path checks this before going to the network.
+    /// npub to DNS and take whatever a resolver answers. `fetchData`,
+    /// `RetryableAsyncImage`, `CachedAsyncImage`, `AvatarImageCache` and the
+    /// music artwork check this before going to the network.
     static func isMeshOnly(_ url: URL) -> Bool {
         #if os(iOS)
         return MeshMediaRouter.meshNpub(inHost: url.host) != nil
         #else
         return false
         #endif
+    }
+
+    /// `url`, or nil when only the mesh could reach it: for loaders, such as
+    /// `AsyncImage`, that go to the network themselves.
+    static func offMeshURL(_ url: URL?) -> URL? {
+        guard let url, !isMeshOnly(url) else { return nil }
+        return url
     }
 
     /// A `.fips` URL outside the mesh engine. The iPhone has no FIPS daemon,
