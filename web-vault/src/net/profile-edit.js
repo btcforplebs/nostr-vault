@@ -89,23 +89,23 @@ export async function latestProfile(ctx, { ask = askRelay, at = now() } = {}) {
 
 /**
  * Why a save may not go out, or "" (follows.js wipeGuard). A kind 0 replaces the whole profile, so the base must be
- * known: a copy came from the account's own relays; or, with most of them answering, one from elsewhere (a local one
- * only under MAX_LOCAL_AGE old); or none anywhere (a first profile), only when every one of them answered, as iOS's
- * confirmedNone. A copy dated ahead would hide the save, so with nothing else to build on it refuses too.
+ * known: a copy came from the account's own relays; or, with most of them answering, one from elsewhere (this browser,
+ * a default relay, purplepag.es) under MAX_LOCAL_AGE old; or none anywhere (a first profile), only when every one of
+ * them answered, as iOS's confirmedNone. A signed copy dated ahead would hide any save, so it always refuses.
  */
-export function profileGuard({ event, asked, answered, netFound, fromNet, future }, at = now()) {
+export function profileGuard({ event, asked, answered, netFound, future }, at = now()) {
+  if (future) return "Your profile on the relays is dated in the future, so a save wouldn't show and nothing was changed."
   if (netFound) return ""
   if (!asked) return "You have no relays set, so your current profile isn't known and nothing was changed. Add your relays first."
   if (!answered) return "None of your relays answered, so your current profile isn't known and nothing was changed. Try again when they're reachable."
   if (!event) {
-    if (future) return "Your profile on the relays is dated in the future, so a save wouldn't show and nothing was changed."
     if (answered < asked) return `Only ${answered} of your ${asked} relays answered and none had your profile, so your current one isn't known and nothing was changed. Try again when all of them are reachable.`
     return ""
   }
   if (answered * 2 <= asked) return `Only ${answered} of your ${asked} relays answered and none had your profile, so your current one isn't known and nothing was changed. Try again when most of them are reachable.`
-  if (!fromNet && event.created_at < at - MAX_LOCAL_AGE) {
+  if (event.created_at < at - MAX_LOCAL_AGE) {
     const day = new Date(event.created_at * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-    return `Your relays don't have your profile and this browser's copy is from ${day}, so nothing was changed. Try again when your relays have it.`
+    return `Your relays don't have your profile and the only copy found is from ${day}, so nothing was changed. Try again when your relays have it.`
   }
   return ""
 }
