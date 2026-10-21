@@ -11,6 +11,7 @@ import { MentionPicker } from "../components/MentionPicker.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
+import { forgetDeclinedAuth } from "../net/dm-read-auth.js"
 import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
@@ -63,8 +64,9 @@ export function useMessages(ctx) {
   }, [])
   // Refresh looks again without forgetting what was settled: wraps found not to be the user's, and ones refused past
   // MAX_REFUSALS, stay settled, so a routine tap never costs a bunker user a run of prompts. Only "Try again" does.
-  const retry = () => { forgetUnopened(); setRound(r => r + 1) }
-  return { ...m, syncing, retry, refresh: () => setRound(r => r + 1) }
+  // Both also ask again about an inbox whose AUTH was declined; a return to the tab doesn't (dm-read-auth.js).
+  const retry = () => { forgetUnopened(); forgetDeclinedAuth(); setRound(r => r + 1) }
+  return { ...m, syncing, retry, refresh: () => { forgetDeclinedAuth(); setRound(r => r + 1) } }
 }
 
 /** Unread counts per conversation, re-counted as messages land or are read. -> { counts: Map peer -> n, total } */
