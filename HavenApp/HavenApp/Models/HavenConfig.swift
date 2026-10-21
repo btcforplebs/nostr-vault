@@ -439,9 +439,10 @@ struct HavenConfig: Codable, Equatable {
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
         fipsAddressSource = try container.decodeIfPresent(String.self, forKey: .fipsAddressSource) ?? defaults.fipsAddressSource
         fipsCustomNpub = try container.decodeIfPresent(String.self, forKey: .fipsCustomNpub) ?? defaults.fipsCustomNpub
-        // A list a newer app wrote (a role this one doesn't know) must not
-        // stop the whole config from loading.
-        meshDevices = (try? container.decodeIfPresent([MeshDevice].self, forKey: .meshDevices)) ?? defaults.meshDevices
+        // An entry a newer app wrote (a role this one doesn't know) is skipped
+        // on its own, so it neither stops the config loading nor drops the rest.
+        meshDevices = (try? container.decodeIfPresent([LossyMeshDevice].self, forKey: .meshDevices))?
+            .compactMap(\.device) ?? defaults.meshDevices
         meshPhotoDestination = try container.decodeIfPresent(String.self, forKey: .meshPhotoDestination) ?? defaults.meshPhotoDestination
 
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile

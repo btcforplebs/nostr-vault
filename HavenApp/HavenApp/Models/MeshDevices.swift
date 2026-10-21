@@ -54,6 +54,16 @@ struct MeshDevice: Codable, Hashable, Identifiable {
     }
 }
 
+/// One stored My Devices entry, or nil when this build can't read it (a role
+/// from a newer build). Lets the list decode entry by entry.
+struct LossyMeshDevice: Decodable {
+    let device: MeshDevice?
+
+    init(from decoder: Decoder) throws {
+        device = try? MeshDevice(from: decoder)
+    }
+}
+
 /// Where a photo goes when it is posted. Stored only: the upload path reads
 /// it (nv-3.0, Tom).
 enum MeshPhotoDestination: String, CaseIterable, Identifiable {
@@ -143,6 +153,21 @@ enum MeshDevicesLogic {
             out.append(device)
         }
         return out
+    }
+
+    /// Every role whose setting names `npub`. One address can be two of them
+    /// (the Mac that is also the home vault), and the list shows it once, so
+    /// Remove has to clear them all.
+    static func rolesNaming(
+        _ npub: String,
+        macNpub: String?,
+        homeVaultNpub: String?,
+        browserNpub: String?
+    ) -> [MeshDeviceRole] {
+        let sources: [(MeshDeviceRole, String?)] = [
+            (.mac, macNpub), (.homeVault, homeVaultNpub), (.browser, browserNpub),
+        ]
+        return sources.filter { $0.1 == npub }.map(\.0)
     }
 
     static func removing(npub: String, from stored: [MeshDevice]) -> [MeshDevice] {

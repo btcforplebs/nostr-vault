@@ -72,6 +72,30 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(phones.count, 3)
     }
 
+    // MARK: rolesNaming
+
+    func testOneAddressThatIsTwoSettingsNamesBothRoles() {
+        XCTAssertEqual(MeshDevicesLogic.rolesNaming(mac, macNpub: mac, homeVaultNpub: mac, browserNpub: page), [.mac, .homeVault])
+        XCTAssertEqual(MeshDevicesLogic.rolesNaming(page, macNpub: mac, homeVaultNpub: mac, browserNpub: page), [.browser])
+        XCTAssertEqual(MeshDevicesLogic.rolesNaming(moto, macNpub: mac, homeVaultNpub: home, browserNpub: nil), [])
+    }
+
+    /// The Mac that is also the home vault shows once; Remove must clear both
+    /// settings or the row comes back under the other role (Tron, PR 974).
+    func testRemovingAnAddressThatIsTwoSettingsLeavesNoRow() {
+        let stored = [MeshDevice(npub: mac, name: "", role: .mac)]
+        XCTAssertEqual(MeshDevicesLogic.merged(stored: stored, macNpub: mac, homeVaultNpub: mac, browserNpub: nil).map(\.role), [.mac])
+        var sources: [MeshDeviceRole: String] = [.mac: mac, .homeVault: mac]
+        for role in MeshDevicesLogic.rolesNaming(mac, macNpub: sources[.mac], homeVaultNpub: sources[.homeVault], browserNpub: nil) {
+            sources[role] = nil
+        }
+        let after = MeshDevicesLogic.merged(
+            stored: MeshDevicesLogic.removing(npub: mac, from: stored),
+            macNpub: sources[.mac], homeVaultNpub: sources[.homeVault], browserNpub: nil
+        )
+        XCTAssertEqual(after, [])
+    }
+
     func testRemoving() {
         let stored = [MeshDevice(npub: moto, name: "", role: .phone), MeshDevice(npub: mac, name: "", role: .mac)]
         XCTAssertEqual(MeshDevicesLogic.removing(npub: moto, from: stored).map(\.npub), [mac])
@@ -119,11 +143,27 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(back.photoDestination, .both)
     }
 
-    func testAnUnknownRoleDropsTheListNotTheConfig() throws {
-        let json = #"{"relayPort": 4869, "meshDevices": [{"npub": "npub1x", "name": "", "role": "toaster"}], "meshPhotoDestination": "carrier-pigeon"}"#
+    func testAnUnknownRoleDropsOnlyThatEntry() throws {
+        let json = #"""
+        {"relayPort": 4869, "meshDevices": [
+            {"npub": "npub1moto", "name": "Moto", "role": "phone"},
+            {"npub": "npub1x", "name": "", "role": "toaster"},
+            {"npub": "npub1home", "name": "Pi", "role": "homeVault"}
+        ], "meshPhotoDestination": "carrier-pigeon"}
+        """#
+        let config = try JSONDecoder().decode(HavenConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(config.relayPort, 4869)
+        XCTAssertEqual(config.meshDevices, [
+            MeshDevice(npub: moto, name: "Moto", role: .phone),
+            MeshDevice(npub: home, name: "Pi", role: .homeVault),
+        ])
+        XCTAssertEqual(config.photoDestination, .publicServer)
+    }
+
+    func testAListThatIsNotAListLoadsEmpty() throws {
+        let json = #"{"relayPort": 4869, "meshDevices": "nope"}"#
         let config = try JSONDecoder().decode(HavenConfig.self, from: Data(json.utf8))
         XCTAssertEqual(config.relayPort, 4869)
         XCTAssertEqual(config.meshDevices, [])
-        XCTAssertEqual(config.photoDestination, .publicServer)
     }
 }

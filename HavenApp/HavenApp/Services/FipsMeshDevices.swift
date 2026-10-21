@@ -9,14 +9,27 @@ import Foundation
 @MainActor
 enum FipsMeshDevices {
     static func current(_ config: HavenConfig) -> [MeshDevice] {
-        let owner = NostrService.shared.activeHexPubkey
-        let home = HomeVaultSender.shared.homeVault.flatMap { $0.ownerHex == owner ? $0.meshNpub : nil }
+        let sources = sources(config)
         return MeshDevicesLogic.merged(
             stored: config.meshDevices,
-            macNpub: config.macRelayMeshNpub,
-            homeVaultNpub: home,
-            browserNpub: BrowserRelaySender.shared.relay?.meshNpub
+            macNpub: sources.mac,
+            homeVaultNpub: sources.home,
+            browserNpub: sources.browser
         )
+    }
+
+    /// The address each setting names for this account. A home vault or
+    /// browser page set up under another account isn't this account's device.
+    private static func sources(_ config: HavenConfig) -> (mac: String?, home: String?, browser: String?) {
+        let owner = NostrService.shared.activeHexPubkey
+        let home = HomeVaultSender.shared.homeVault.flatMap { $0.ownerHex == owner ? $0.meshNpub : nil }
+        let browser = BrowserRelaySender.shared.relay.flatMap { $0.ownerHex == owner ? $0.meshNpub : nil }
+        return (config.macRelayMeshNpub, home, browser)
+    }
+
+    private static func rolesNaming(_ npub: String, config: HavenConfig) -> [MeshDeviceRole] {
+        let sources = sources(config)
+        return MeshDevicesLogic.rolesNaming(npub, macNpub: sources.mac, homeVaultNpub: sources.home, browserNpub: sources.browser)
     }
 
     /// Adds `device`, or says in plain words why it can't. `address` is what
@@ -28,13 +41,20 @@ enum FipsMeshDevices {
         if let own = FipsMeshService.shared.ownMeshNpub ?? FipsMeshService.meshNpubFromKey(), npub == own {
             return "That is this phone's own address."
         }
-        let owner = NostrService.shared.activeHexPubkey
-        switch role {
-        case .mac:
+        if role == .mac {
             let typed = config.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
             if !typed.isEmpty, config.config.macRelayMeshNpub == nil {
                 return "Your Mac is set by its web address in Sync with Vault on Mac. Clear it there first, then add it here."
             }
+        }
+        // One address, one role: the same address under another role leaves
+        // that role's setting first, so only the new one sends to it.
+        for old in rolesNaming(npub, config: config.config) where old != role {
+            clearSetting(old, npub: npub, config: config)
+        }
+        let owner = NostrService.shared.activeHexPubkey
+        switch role {
+        case .mac:
             config.config.macRelayURL = npub
         case .homeVault:
             HomeVaultSender.shared.setHomeVault(.init(ownerHex: owner, meshNpub: npub))
@@ -44,10 +64,6 @@ enum FipsMeshDevices {
             Task { _ = await FipsMeshService.shared.connectForBrowserRelay() }
         case .phone:
             break
-        }
-        // The same address under another role leaves that role's setting.
-        if let old = current(config.config).first(where: { $0.npub == npub }), old.role != role {
-            clearSetting(for: old, config: config)
         }
         let device = MeshDevice(npub: npub, name: name.trimmingCharacters(in: .whitespacesAndNewlines), role: role)
         config.config.meshDevices = MeshDevicesLogic.adding(device, to: config.config.meshDevices)
@@ -63,19 +79,21 @@ enum FipsMeshDevices {
     }
 
     static func remove(_ device: MeshDevice, config: ConfigService) {
-        clearSetting(for: device, config: config)
+        for role in rolesNaming(device.npub, config: config.config) {
+            clearSetting(role, npub: device.npub, config: config)
+        }
         config.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: config.config.meshDevices)
         config.save()
     }
 
-    private static func clearSetting(for device: MeshDevice, config: ConfigService) {
-        switch device.role {
+    private static func clearSetting(_ role: MeshDeviceRole, npub: String, config: ConfigService) {
+        switch role {
         case .mac:
-            if config.config.macRelayMeshNpub == device.npub { config.config.macRelayURL = "" }
+            if config.config.macRelayMeshNpub == npub { config.config.macRelayURL = "" }
         case .homeVault:
-            if HomeVaultSender.shared.homeVault?.meshNpub == device.npub { HomeVaultSender.shared.setHomeVault(nil) }
+            if HomeVaultSender.shared.homeVault?.meshNpub == npub { HomeVaultSender.shared.setHomeVault(nil) }
         case .browser:
-            if BrowserRelaySender.shared.relay?.meshNpub == device.npub { BrowserRelaySender.shared.setRelay(nil) }
+            if BrowserRelaySender.shared.relay?.meshNpub == npub { BrowserRelaySender.shared.setRelay(nil) }
         case .phone:
             break
         }
