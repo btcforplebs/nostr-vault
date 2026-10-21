@@ -233,6 +233,13 @@ object HomeVaultRules {
      */
     fun meshOnlyUrl(vaultNpub: String, sha256: String): String = "http://$vaultNpub.fips/$sha256"
 
+    /**
+     * The npub a mesh-only link names: the home vault's blob node when it has
+     * one (strangers can reach only that node), else the home vault itself
+     * (a kiosk phone, which has no blob node).
+     */
+    fun photoNpub(homeVault: String, blob: String?): String = blob?.takeIf { it.isNotBlank() } ?: homeVault
+
     fun candidates(ownerServerList: List<String>, ownMeshNpub: String?): List<String> =
         ownerServerList.mapNotNull { FipsMediaRouter.meshNpubIn(it) }
             .filter { it != ownMeshNpub }

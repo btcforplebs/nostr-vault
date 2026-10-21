@@ -26,10 +26,11 @@ export async function loadRelayIdentity(storage) {
 /**
  * @param haven      Haven's entry point handle (src/haven/haven.js), already started
  * @param getOwners  () => Set<x-only hex>
+ * @param getPhotoVaults () => Set<x-only hex>: vaults' blob nodes, read from for photos only (never owners)
  * @param storage    the page's storage (src/page-storage.js), which holds the relay's FIPS key
  * @param onStatus   (status) => void, called on every change
  */
-export async function startFipsRelay({ haven, getOwners, storage, onStatus = () => {}, seeds = PUBLIC_SEEDS }) {
+export async function startFipsRelay({ haven, getOwners, getPhotoVaults = () => new Set(), storage, onStatus = () => {}, seeds = PUBLIC_SEEDS }) {
   const identity = await loadRelayIdentity(storage)
   const status = { npub: encodeNpub(identity.xOnlyPubkey), seeds: new Map(), owners: new Map(), sessions: new Map(), server: undefined, errors: 0, lastError: "" }
   const emit = () => onStatus(status)
@@ -78,8 +79,9 @@ export async function startFipsRelay({ haven, getOwners, storage, onStatus = () 
 
   const server = new TcpFipsRelayServer(node, haven, getOwners)
   status.server = server.stats
-  // Photos from the owners' vaults (GET /<sha256> on mesh port 80), over the same session as the 7447 stream.
-  const blobs = new MeshBlobClient(node, identity.publicKey, { allow: k => isOwner(getOwners(), k) })
+  // Photos from the owners' vaults (GET /<sha256> on mesh port 80), over the same session as the 7447 stream,
+  // and from the photo vaults (blob nodes): those reach only this reader, never the relay above.
+  const blobs = new MeshBlobClient(node, identity.publicKey, { allow: k => isOwner(getOwners(), k) || isOwner(getPhotoVaults(), k) })
   status.blobs = blobs.stats
   await node.start()
   server.start()
@@ -106,7 +108,7 @@ export async function startFipsRelay({ haven, getOwners, storage, onStatus = () 
     status,
     /** Ask an owner's vault for a direct WebRTC link (needs an existing FIPS route, i.e. a session). */
     goDirect,
-    /** A blob from an owner's vault by sha256: { bytes, type }, hash-checked. See blob-get.js. */
+    /** A blob from an owner's vault or a photo vault by sha256: { bytes, type }, hash-checked. See blob-get.js. */
     getBlob: (vault, sha256, opts) => blobs.get(vault, sha256, opts),
     stop: async () => {
       clearInterval(statsTimer)

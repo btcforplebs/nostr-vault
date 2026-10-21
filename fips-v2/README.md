@@ -20,8 +20,11 @@ traversal offers are answered. On the Mac, `--forward` is the Mac relay (127.0.0
 fipsv2-probe serve --peer <npub-of-phone> --peer <npub-of-ipad> --forward 127.0.0.1:3355 --blobs
 ```
 
-`--blobs` starts a second node, the **blob node**, with its own key (`<state>/blob-nsec`; its
-npub is printed as `blob npub`). Readers fetch from the blob npub, not the main one. Only the
+`--blobs` starts a second node, the **blob node**, with its own key (`<state>/blob-nsec`; its npub is
+printed as `blob npub` and written to `<state>/blob-npub`, with a relay-page link
+`nostrvault.app/relay/#blob=<npub>` that adds it as a read-only photo address). Readers fetch
+from the blob npub, not the main one. Back up `blob-nsec` (every photo link names its npub) and
+never publish the blob npub under the main npub (#979). Only the
 blob node links to the public seeds (as a leaf, with no Nostr rendezvous: it publishes nothing
 and answers no offer); the main node stays own-devices-only, so strangers can fill only the
 blob node's session table, never the one Logen's devices use. The blob node serves a gate:

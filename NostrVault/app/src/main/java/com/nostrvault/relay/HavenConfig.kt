@@ -146,6 +146,12 @@ data class HavenConfig(
     // media over the mesh: its mesh npub, from their 10063. Null for none.
     val homeVaultNpub: String? = null,
 
+    // The home vault's blob node (fips-v2 --blobs): the separate mesh npub
+    // strangers read photos from. Mesh-only links name it; uploads still go to
+    // homeVaultNpub. Private: never in the 10063 or anything signed by the
+    // owner, or the two npubs become linkable. Null: links name homeVaultNpub.
+    val homeVaultBlobNpub: String? = null,
+
     // What one sharing session may send to the mesh before sharing stops (NIP-F1).
     val fipsServeLimitBytes: Long = 1L shl 30,
 
