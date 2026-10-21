@@ -175,6 +175,12 @@ struct HavenConfig: Codable, Equatable {
     var fipsAddressSource: String = "detected"  // "detected" | "owner" | "custom"
     var fipsCustomNpub: String = ""
 
+    // FIPS Mesh: the owner's own devices (one list both ways) and where a
+    // posted photo goes (MeshPhotoDestination raw value; stored only, the
+    // upload path reads it).
+    var meshDevices: [MeshDevice] = []
+    var meshPhotoDestination: String = MeshPhotoDestination.publicServer.rawValue
+
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
     // Default broadcast relays (Logen, 2026-10-07). nos.lol and nostr.mom
@@ -292,6 +298,7 @@ struct HavenConfig: Codable, Equatable {
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
         case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
+        case meshDevices, meshPhotoDestination
         case blastrRelaysFile, blastrRelays
         case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays, droppedDeadRelays
         case whitelistedNpubs, whitelistedNpubsFile
@@ -432,6 +439,10 @@ struct HavenConfig: Codable, Equatable {
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
         fipsAddressSource = try container.decodeIfPresent(String.self, forKey: .fipsAddressSource) ?? defaults.fipsAddressSource
         fipsCustomNpub = try container.decodeIfPresent(String.self, forKey: .fipsCustomNpub) ?? defaults.fipsCustomNpub
+        // A list a newer app wrote (a role this one doesn't know) must not
+        // stop the whole config from loading.
+        meshDevices = (try? container.decodeIfPresent([MeshDevice].self, forKey: .meshDevices)) ?? defaults.meshDevices
+        meshPhotoDestination = try container.decodeIfPresent(String.self, forKey: .meshPhotoDestination) ?? defaults.meshPhotoDestination
 
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile
         blastrRelays = try container.decodeIfPresent([String].self, forKey: .blastrRelays) ?? defaults.blastrRelays

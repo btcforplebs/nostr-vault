@@ -9,12 +9,8 @@ struct BlossomSettingsView: View {
     @ObservedObject private var waitingPosts = MediaPostQueue.shared
 
     @State private var newMirrorURL = ""
-    #if os(macOS)
-    @StateObject private var fipsDetection = FIPSDetectionService()
-    #else
+    #if os(iOS)
     @State private var isVPNActive = false
-    @ObservedObject private var mesh = FipsMeshService.shared
-    @AppStorage(FipsMeshService.serveLimitKey) private var meshServeLimit = 0
     #endif
     
     var body: some View {
@@ -227,168 +223,17 @@ struct BlossomSettingsView: View {
                 Text("Offline Copies")
             }
 
-            // Section 4: FIPS
+            // Section 4: FIPS. Your own mesh (address, devices, sharing)
+            // lives on the FIPS Mesh page; this is about other people's servers.
             #if os(macOS)
             Section {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(fipsStatusColor)
-                        .frame(width: 8, height: 8)
-                    Text(fipsStatusText)
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
-                }
-
-                Toggle(isOn: Binding(
-                    get: { configService.config.fipsPublishEnabled },
-                    set: { newValue in
-                        configService.config.fipsPublishEnabled = newValue
-                        configService.save()
-                        NostrService.shared.publishServerList(fipsDetectedNpub: fipsDetection.detectedNpub)
-                    }
-                )) {
-                    Text("Publish .fips Address")
-                        .font(.appBody)
-                        .settingInfo(.shareFIPS)
-                }
-
-                if configService.config.fipsPublishEnabled {
-                    Picker("Address Source", selection: Binding(
-                        get: { configService.config.fipsAddressSource },
-                        set: { newValue in
-                            configService.config.fipsAddressSource = newValue
-                            configService.save()
-                            NostrService.shared.publishServerList(fipsDetectedNpub: fipsDetection.detectedNpub)
-                        }
-                    )) {
-                        Text("My Nostr npub").tag("owner")
-                        if fipsDetection.detectedNpub != nil {
-                            Text("Detected (nostr-vpn)").tag("detected")
-                        }
-                        Text("Custom").tag("custom")
-                    }
-
-                    if configService.config.fipsAddressSource == "custom" {
-                        TextField("npub1...", text: Binding(
-                            get: { configService.config.fipsCustomNpub },
-                            set: { newValue in
-                                configService.config.fipsCustomNpub = newValue
-                                configService.save()
-                            }
-                        ))
-                        .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
-                        .font(.appSystem(size: 12, design: .monospaced))
-                    }
-
-                    if let url = configService.config.fipsBlossomURL(detectedNpub: fipsDetection.detectedNpub) {
-                        HStack {
-                            Text(url)
-                                .font(.appSystem(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                                .lineLimit(1)
-                            Spacer()
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(url, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.appSystem(size: 12))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Text("A FIPS transport (e.g. nostr-vpn) must be running to make this address reachable.")
-                        .font(.appCaption2)
-                        .foregroundColor(.secondary.opacity(0.7))
-                }
+                FipsMeshLinkRow()
             } header: {
                 Text("FIPS")
             } footer: {
-                Text("Expose your Blossom server over the FIPS overlay network. Clients with a FIPS transport can reach your media without a public IP or domain.")
+                Text("Your .fips address and what you share on the mesh are under FIPS Mesh.")
             }
             #else
-            Section {
-                Toggle(isOn: Binding(
-                    get: { mesh.kioskActive || mesh.starting },
-                    set: { on in on ? mesh.startKiosk() : mesh.stopKiosk() }
-                )) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Kiosk mode")
-                            .font(.appBody)
-                            .foregroundColor(.white)
-                        Text("Share this vault on the FIPS mesh while the app stays open")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Picker("Pause after", selection: $meshServeLimit) {
-                    ForEach(FipsMeshService.serveLimitChoices, id: \.self) { bytes in
-                        Text(bytes == 0 ? "No limit" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).tag(Int(bytes))
-                    }
-                }
-                .disabled(mesh.kioskActive || mesh.starting)
-                if mesh.kioskActive, let status = mesh.status {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(!status.running ? Color.gray : mesh.pausedUntil == nil ? Color.havenOnline : Color.orange)
-                            .frame(width: 8, height: 8)
-                        Text(!status.running ? "Mesh stopped" : mesh.pausedUntil == nil ? "Sharing on the mesh" : "Sharing paused")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
-                    if let until = mesh.pausedUntil {
-                        Text("Paused: the mesh downloaded your limit for one session. Sharing starts again at \(until.formatted(date: .omitted, time: .shortened)).")
-                            .font(.appCaption)
-                            .foregroundColor(.orange)
-                    }
-                    if let counters = status.counters {
-                        Text("Served \(counters.served_total) requests, \(ByteCountFormatter.string(fromByteCount: Int64(counters.served_tx), countStyle: .file))")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
-                    if let url = mesh.meshServerURL {
-                        // Your other phones scan this under Home vault: they
-                        // list it themselves, so this phone needs no key.
-                        if let qr = HomeVaultSection.qrImage(for: url) {
-                            Image(uiImage: qr)
-                                .interpolation(.none)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxWidth: 200)
-                                .frame(maxWidth: .infinity)
-                                .accessibilityLabel("Mesh address QR code")
-                        }
-                        Text(url)
-                            .font(.appCaption2)
-                            .foregroundColor(.secondary)
-                            .textSelection(.enabled)
-                        Button("Copy mesh address") { UIPasteboard.general.string = url }
-                            .font(.appCaption)
-                    }
-                    if !ConfigService.shared.config.hasPublicBlossomMirror {
-                        Text("Not listed: add a public Blossom server first, so apps without the mesh can still load your media.")
-                            .font(.appCaption)
-                            .foregroundColor(.orange)
-                    }
-                }
-                if let error = mesh.lastError {
-                    Text(error)
-                        .font(.appCaption)
-                        .foregroundColor(.red)
-                }
-            } header: {
-                Text("FIPS Mesh")
-            } footer: {
-                Text("Keeps the screen on and lists your vault's mesh address in your Blossom server list. Anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app pauses kiosk mode, and it turns on again when you come back. Listing it links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
-            }
-
-            HomeVaultSection()
-
-            BrowserRelaySection()
-
             Section {
                 HStack(spacing: 8) {
                     Circle()
@@ -401,16 +246,14 @@ struct BlossomSettingsView: View {
                 Text("To access media from .fips servers, enable your FIPS VPN (e.g. nostr-vpn) and add the server's .fips address as an Additional Server above.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
+                FipsMeshLinkRow()
             } header: {
                 Text("FIPS")
             }
             #endif
         }
         .groupedFormStyleCompat()
-        #if os(macOS)
-        .onAppear { fipsDetection.startPolling() }
-        .onDisappear { fipsDetection.stopPolling() }
-        #else
+        #if os(iOS)
         .onAppear { isVPNActive = Self.checkVPNActive() }
         #endif
         #if os(iOS)
@@ -418,24 +261,7 @@ struct BlossomSettingsView: View {
         #endif
     }
 
-    #if os(macOS)
-    private var fipsStatusColor: Color {
-        switch fipsDetection.status {
-        case .running: return .havenOnline
-        case .installed, .stale: return .yellow
-        case .notInstalled: return .gray
-        }
-    }
-
-    private var fipsStatusText: String {
-        switch fipsDetection.status {
-        case .running: return "FIPS transport active"
-        case .stale: return "FIPS transport not responding"
-        case .installed: return "FIPS transport installed but not running"
-        case .notInstalled: return "No FIPS transport detected"
-        }
-    }
-    #else
+    #if os(iOS)
     static func checkVPNActive() -> Bool {
         var addrs: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&addrs) == 0 else { return false }
