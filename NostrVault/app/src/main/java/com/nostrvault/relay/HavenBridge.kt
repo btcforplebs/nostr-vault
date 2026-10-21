@@ -89,6 +89,14 @@ object HavenBridge {
      */
     external fun requestMacSyncCheck()
 
+    /**
+     * Tell the relay whether the app is on screen. Work that only serves the
+     * screen (the Popular tally's engagement firehose) pauses while it isn't.
+     * Until this is first called the relay treats the app as on screen.
+     * Maps to Go: SetAppForegroundC(on)
+     */
+    external fun setAppForeground(on: Boolean)
+
     // -----------------------------------------------------------------------
     // Database operations
     // -----------------------------------------------------------------------
