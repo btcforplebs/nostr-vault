@@ -82,6 +82,38 @@ class DMSignerRetryTest {
     }
 
     @Test
+    fun `Retry asks Amber once, silently, and stops when it still cannot open`() = runTest {
+        val amber = mockk<AmberSignerService>(relaxed = true)
+        io.mockk.coEvery { amber.nip44Decrypt(any(), any(), any()) } returns null
+        service = DMService(
+            configStore = mockk<ConfigStore>(relaxed = true) {
+                every { config } returns this@DMSignerRetryTest.config
+                every { accountSwitches } returns emptyFlow()
+            },
+            credentialStore = CredentialStore,
+            nostrService = mockk(relaxed = true),
+            amberSignerService = amber,
+        )
+        repeat(2) { n ->
+            service.pendingDecryptQueue.add(buildJsonObject {
+                put("id", "$n".repeat(64)); put("kind", 1059); put("pubkey", "c".repeat(64)); put("content", "x")
+            })
+        }
+        service._decryptBlocked.value = true
+        service.lastBlockedSize = 2
+
+        service.retryWaitingForSigner()
+        io.mockk.coVerify(exactly = 1) { amber.nip44Decrypt(any(), any(), true) }
+        io.mockk.coVerify(exactly = 0) { amber.nip44Decrypt(any(), any(), false) }
+        assertEquals(2, service.pendingDecryptQueue.size)
+        assertEquals(true, service.decryptBlocked.value)
+
+        // The guard is back: the next automatic pass asks nothing.
+        service.decryptPending()
+        io.mockk.coVerify(exactly = 1) { amber.nip44Decrypt(any(), any(), any()) }
+    }
+
+    @Test
     fun `Retry does nothing outside signer mode`() = runTest {
         blockedWithOneQueued()
         config.value = HavenConfig(ownerNpub = owner, ownerHexKey = "b".repeat(64))

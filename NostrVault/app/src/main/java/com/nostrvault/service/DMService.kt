@@ -253,8 +253,7 @@ class DMService @Inject constructor(
      */
     suspend fun retryWaitingForSigner() {
         if (!isAmberMode() || pendingDecryptQueue.isEmpty()) return
-        decryptDrainMutex.withLock { lastBlockedSize = -1 }
-        decryptPending()
+        decryptPending(force = true)
     }
 
     /**
@@ -263,9 +262,12 @@ class DMService @Inject constructor(
      * on arrival). The drain mutex guarantees a single drainer even if the inbox
      * and a thread both request it.
      */
-    suspend fun decryptPending() {
+    suspend fun decryptPending(force: Boolean = false) {
         if (!isAmberMode()) return
         decryptDrainMutex.withLock {
+            // Retry's one extra pass: forget the stop inside this same lock, so a
+            // cancelled retry can't leave the guard off for a later automatic pass.
+            if (force) lastBlockedSize = -1
             // If we already blocked and nothing new has queued since, don't retry —
             // this stops the UI's pendingDecryptCount collector from spinning the
             // drain (and re-hitting the signer) in a tight loop while blocked.

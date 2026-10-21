@@ -113,9 +113,17 @@ class DMInboxViewModel @Inject constructor(
 
     fun markAllAsRead() = dmService.markAllAsRead()
 
+    private val _retrying = MutableStateFlow(false)
+    /** True while a Retry runs, so the banner holds instead of blinking off (iOS keeps its count). */
+    val retrying: StateFlow<Boolean> = _retrying.asStateFlow()
+
     /** The banner's Retry: one more pass over what the signer couldn't open. */
     fun retryWaitingForSigner() {
-        viewModelScope.launch { dmService.retryWaitingForSigner() }
+        if (_retrying.value) return
+        viewModelScope.launch {
+            _retrying.value = true
+            try { dmService.retryWaitingForSigner() } finally { _retrying.value = false }
+        }
     }
 
     fun refresh() {
@@ -183,6 +191,7 @@ private fun DMInboxList(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val pendingDecrypt by viewModel.pendingDecryptCount.collectAsState()
     val decryptBlocked by viewModel.decryptBlocked.collectAsState()
+    val retrying by viewModel.retrying.collectAsState()
     val dmUnavailable by viewModel.dmUnavailable.collectAsState()
     val colors = LocalNostrVaultColors.current
 
@@ -223,7 +232,8 @@ private fun DMInboxList(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // iOS: messages the signer hasn't opened yet, in a banner above the list.
-            if (decryptBlocked && pendingDecrypt > 0) {
+            // A normal drain shows nothing, as on iOS (the old "Decrypting N" pill is gone on purpose).
+            if ((decryptBlocked || retrying) && pendingDecrypt > 0) {
                 DMSignerWaitingBanner(count = pendingDecrypt, onRetry = viewModel::retryWaitingForSigner)
             }
             // iOS has no loading state: the list, or its empty state, straight away.
