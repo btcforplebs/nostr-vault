@@ -68,6 +68,8 @@ enum FipsMeshDevices {
         let device = MeshDevice(npub: npub, name: name.trimmingCharacters(in: .whitespacesAndNewlines), role: role)
         config.config.meshDevices = MeshDevicesLogic.adding(device, to: config.config.meshDevices)
         config.save()
+        // The Mac is listed in the 10063 by this phone (HomeVaultLogic.phoneMeshEntries).
+        if role == .mac { NostrService.shared.publishServerList() }
         return nil
     }
 
@@ -79,11 +81,13 @@ enum FipsMeshDevices {
     }
 
     static func remove(_ device: MeshDevice, config: ConfigService) {
-        for role in rolesNaming(device.npub, config: config.config) {
+        let roles = rolesNaming(device.npub, config: config.config)
+        for role in roles {
             clearSetting(role, npub: device.npub, config: config)
         }
         config.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: config.config.meshDevices)
         config.save()
+        if roles.contains(.mac) { NostrService.shared.publishServerList() }
     }
 
     private static func clearSetting(_ role: MeshDeviceRole, npub: String, config: ConfigService) {

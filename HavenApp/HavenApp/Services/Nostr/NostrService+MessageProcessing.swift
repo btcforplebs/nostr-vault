@@ -125,6 +125,8 @@ extension NostrService {
                     // Also for a list already seen: the newest one replays at
                     // every launch and is never "newer" than itself.
                     if signed { PhotoNode.ensureListed(owner: pubkey, nostr: self) }
+                    #elseif os(iOS)
+                    if signed { LinkedMacEntry.ensureListed(owner: pubkey, nostr: self) }
                     #endif
                 }
                 return
