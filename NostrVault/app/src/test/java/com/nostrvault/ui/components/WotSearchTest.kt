@@ -21,6 +21,13 @@ class WotSearchTest {
         assertTrue(wotSearchesRelays("npub"))
     }
 
+    @Test fun staleSearchCannotStopTheNewOnesSpinner() {
+        assertTrue(isCurrentWotSearch("jo", "jo"))
+        assertTrue(isCurrentWotSearch("jo", " jo "))
+        assertFalse(isCurrentWotSearch("jo", "joe"))
+        assertFalse(isCurrentWotSearch("jo", ""))
+    }
+
     @Test fun spinnerCapIsSixSeconds() {
         assertEquals(6_000L, WOT_SEARCH_SPINNER_CAP_MS)
     }

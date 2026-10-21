@@ -3,6 +3,8 @@ package com.nostrvault.ui.components
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import com.nostrvault.service.NostrService
 import kotlinx.coroutines.delay
 
@@ -13,6 +15,13 @@ import kotlinx.coroutines.delay
  */
 internal fun wotSearchesRelays(text: String): Boolean =
     text.length >= 2 && !text.lowercase().startsWith("npub1")
+
+/**
+ * Whether an answer or timeout for the search [asked] still belongs to the
+ * field's [query], so an older search can't switch off a newer one's spinner.
+ * iOS `query.trimmingCharacters(in:) == trimmed`.
+ */
+internal fun isCurrentWotSearch(asked: String, query: String): Boolean = query.trim() == asked
 
 /**
  * Names not cached yet come from the relays, after a pause in typing. Their
@@ -27,25 +36,28 @@ internal fun WotRelaySearchEffect(
     nostrService: NostrService,
     onSearching: (Boolean) -> Unit,
 ) {
+    val currentQuery by rememberUpdatedState(query)
     LaunchedEffect(query) {
         val text = query.trim()
+        // The last search's answers stop here; this one starts clean.
+        nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
         if (pasted != null) {
-            nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
             onSearching(false)
             nostrService.fetchMissingProfiles(listOf(pasted))
             return@LaunchedEffect
         }
         if (!wotSearchesRelays(text)) {
-            nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
             onSearching(false)
             return@LaunchedEffect
         }
         onSearching(true)
         delay(WOT_SEARCH_DEBOUNCE_MS)
-        nostrService.globalSearch(text, NostrService.SearchCaller.WOT) { onSearching(false) }
+        nostrService.globalSearch(text, NostrService.SearchCaller.WOT) {
+            if (isCurrentWotSearch(text, currentQuery)) onSearching(false)
+        }
         // A relay that never answers mustn't leave the spinner on.
         delay(WOT_SEARCH_SPINNER_CAP_MS)
-        onSearching(false)
+        if (isCurrentWotSearch(text, currentQuery)) onSearching(false)
     }
     DisposableEffect(Unit) {
         onDispose { nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT) }

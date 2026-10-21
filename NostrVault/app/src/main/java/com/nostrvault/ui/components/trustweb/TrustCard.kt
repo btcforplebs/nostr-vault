@@ -197,7 +197,7 @@ internal fun TrustCard(
                             },
                         )
                     }
-                    HorizontalDivider()
+                    if (onMessage != null || webLink != null) HorizontalDivider()
                     val blockTint = if (blocked) PrimaryText else ErrorRed
                     DropdownMenuItem(
                         text = { Text(if (blocked) "Unblock" else "Block", color = blockTint) },
