@@ -6,13 +6,15 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
-import { fetchProfiles } from "../net/profiles.js"
+import { fetchProfiles, getProfile } from "../net/profiles.js"
 import { pool } from "../net/pool.js"
 import { formatSats } from "../net/notifications.js"
 import { receiptTrust } from "../net/zaps.js"
 import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
 import { attachHls, playMode } from "./hls.js"
+import { PlayerBar } from "./PlayerBar.jsx"
+import { liveAt, playLive, stop } from "./player.js"
 import { LIVE_SCOPES, chatFilter, chatRelays, chatRows, fetchStreams, loadScope, saveScope, startScope, streamLink } from "./live.js"
 
 if (import.meta.env) import("./readers.css")
@@ -45,6 +47,7 @@ export function LiveScreen({ ctx }) {
   useEffect(() => { setOpen(null); setStreams(null); load() }, [scope, follows.length, blocked.size])
 
   if (open) return <LivePlayer ctx={ctx} stream={open} onBack={() => setOpen(null)} />
+  // A minimized stream (or a song) plays on in the bar; "Back to the stream" opens its window again.
   const pick = s => { saveScope(s); setScope(s) }
   return (
     <div class="reader-feed">
@@ -55,6 +58,7 @@ export function LiveScreen({ ctx }) {
         : streams === null ? <p class="empty">Looking for live streams…</p>
         : !streams.length ? <LiveEmpty {...liveEmpty({ scope, follows, failed })} onGlobal={() => pick("global")} onRetry={load} />
         : <div class="live-grid">{streams.map(s => <LiveTile key={s.address} stream={s} onOpen={() => setOpen(s)} />)}</div>}
+      <PlayerBar onOpenLive={st => setOpen(st)} />
     </div>
   )
 }
@@ -95,10 +99,15 @@ export function LiveTile({ stream: s, onOpen }) {
 /** The stream: video (or the link out), host, title and summary, Open in zap.stream, then the chat. */
 export function LivePlayer({ ctx, stream: s, onBack }) {
   const link = streamLink(s)
+  // Back from minimized: the window takes the sound over, so it isn't playing twice.
+  useEffect(() => { if (liveAt(s.address)) stop() }, [s.address])
+  const p = getProfile(s.host)
+  const minimize = () => { playLive(s, p?.display_name || p?.name || ""); onBack() }
   return (
     <div class="reader live-player">
       <div class="reader-bar">
         <button type="button" class="small" onClick={onBack}>‹ Back</button>
+        {s.streaming && <button type="button" class="small" onClick={minimize} title="Keep listening while you browse">Minimize</button>}
         <a class="reader-web small" href={link} target="_blank" rel="noopener noreferrer">Open in zap.stream</a>
       </div>
       <LiveVideo stream={s} link={link} />

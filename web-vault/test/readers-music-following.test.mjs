@@ -115,6 +115,6 @@ test("Following screen: the iPhone's messages, and blocks applied when drawn", (
 })
 
 test("the player puts each song's artist in Your artists; opening an artist page does too", () => {
-  assert.match(readFileSync(new URL("../src/readers/player.js", import.meta.url), "utf8"), /nowPlaying\(t\)\n\s*rememberRecent\(trackArtist\(t\)\)/)
+  assert.match(readFileSync(new URL("../src/readers/player.js", import.meta.url), "utf8"), /nowPlaying\(t\)\n\s*if \(!t\.live\) rememberRecent\(trackArtist\(t\)\)/)
   assert.match(readFileSync(new URL("../src/readers/MusicScreen.jsx", import.meta.url), "utf8"), /if \(p\.type === "artist"\) wl\.rememberRecent\(p\.artist\)/)
 })
