@@ -55,6 +55,14 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         com.nostrvault.vaultguide.FillYourVaultCoordinator.init(this)
         Motion.install(this)
         createNotificationChannels()
+        // The relay pauses its screen-only work while no activity is visible.
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+            com.nostrvault.relay.AppForegroundReporter { on ->
+                if (com.nostrvault.relay.HavenBridge.isLoaded) {
+                    runCatching { com.nostrvault.relay.HavenBridge.setAppForeground(on) }
+                }
+            },
+        )
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
         applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)

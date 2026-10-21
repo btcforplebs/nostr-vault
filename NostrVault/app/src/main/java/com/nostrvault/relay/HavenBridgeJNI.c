@@ -57,6 +57,7 @@ extern void StartRelayC(int importMode);
 extern void StopRelayC(void);
 extern void RequestRelaySyncC(void);
 extern void RequestMacSyncCheckC(void);
+extern void SetAppForegroundC(int on);
 extern void UpdateBlacklistC(const char* npubsJSON);
 extern int BackupDatabaseC(const char* outputPath);
 extern int RestoreDatabaseC(const char* inputPath);
@@ -145,6 +146,11 @@ Java_com_nostrvault_relay_HavenBridge_requestRelaySync(JNIEnv *env, jobject thiz
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_requestMacSyncCheck(JNIEnv *env, jobject thiz) {
     RequestMacSyncCheckC();
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_setAppForeground(JNIEnv *env, jobject thiz, jboolean on) {
+    SetAppForegroundC(on ? 1 : 0);
 }
 
 JNIEXPORT void JNICALL
