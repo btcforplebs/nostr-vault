@@ -72,6 +72,7 @@ export function VaultScreen({ ctx, desk = false }) {
   const { blocked } = useBlocks(ctx)
   const seenAt = useRef(followersSeenAt(me))
   const [searching, setSearching] = useState(false)
+  const [refreshes, setRefreshes] = useState(0) // Refresh also asks the media servers again (BlossomGallery)
 
   useEffect(() => { const f = () => { const m = modeOf(); if (m) pick(m) }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
@@ -149,12 +150,12 @@ export function VaultScreen({ ctx, desk = false }) {
             </Menu>
           )}
           <button class="vault-pill-btn" onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} /></button>
-          <button class="vault-pill-btn" onClick={load} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
+          <button class="vault-pill-btn" onClick={() => { setRefreshes(n => n + 1); load() }} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
         </div>
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       {status && <div class="status-line">{status}</div>}
-      {!loaded ? <p class="empty">Loading…</p> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} />}
+      {!loaded ? <p class="empty">Loading…</p> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} />}
       </>}
     </main>
   )
@@ -188,7 +189,7 @@ function Menu({ label, title, align = "left", children }) {
 }
 const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={on ? "on" : ""} aria-checked={on} onClick={onClick}>{children}</button>
 
-function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted }) {
+function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted, refreshes = 0 }) {
   switch (mode) {
     case "activity": {
       const follows = followers
@@ -208,7 +209,7 @@ function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt,
       return list.length ? list.map(h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
     }
     case "media": {
-      if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} />
+      if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
       const list = mediaFor(own)
       return list.length
         ? <div class="vault-grid">{list.map(p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><img src={p.url} alt="" loading="lazy" /></a>)}</div>
