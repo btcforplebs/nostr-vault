@@ -30,6 +30,7 @@ import { WotScreen } from "./src/screens/WotScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { tabOf } from "./src/components/tabs.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
+import { Splash } from "./src/components/Loading.jsx"
 import { DesktopShell } from "./src/desktop/DesktopShell.jsx"
 import { deskModeFor, deskRedirect, phoneRedirect, isListHash } from "./src/desktop/routes.js"
 import "./src/styles/app.css"
@@ -151,7 +152,7 @@ function App() {
   if (leaving) return <SignOutScreen {...leaving} onRetry={retryWipe} onDone={restart} />
   if (!session) return <SignInScreen onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
-  if (!vault || !account) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Starting your relay…</p></main>
+  if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
   // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.
   const reloadAccount = async () => setAccount({ ...(await readAccount(vault, session.pubkey)), loaded: true })
@@ -194,7 +195,7 @@ function PhoneScreens({ ctx, route, arg, other }) {
 
 // Sign-out says plainly what it couldn't do: a store still open (another tab) or a bunker grant still live.
 function SignOutScreen({ busy, failed = [], revoked, error, onRetry, onDone }) {
-  if (busy && !failed.length) return <main class="splash"><img src="./icon.svg" alt="" /><p class="muted">Signing out…</p></main>
+  if (busy && !failed.length) return <Splash>Signing out…</Splash>
   return (
     <main class="screen">
       <h2>Signing out</h2>

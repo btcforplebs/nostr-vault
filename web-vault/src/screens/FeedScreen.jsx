@@ -200,7 +200,8 @@ export function FeedScreen({ ctx }) {
       <FeedPicker choice={choice} onPick={pick} />
       <PullIndicator pull={pull} busy={syncing && pull > 0} />
       {Reader ? <Reader ctx={ctx} /> : <>
-      {status && <div class="status-line">{status}</div>}
+      {/* Always there, so the list doesn't move when "Syncing…" comes and goes. */}
+      <div class="status-line keep">{status}</div>
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
       {newCount > 0 && <NewPostsPill count={newCount} onShow={showPending} />}
       {following
