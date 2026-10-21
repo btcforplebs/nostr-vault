@@ -143,6 +143,9 @@ class NostrService: ObservableObject {
     }
 
     @Published var profiles: [String: FeedProfile] = [:]
+    /// Kind-0 profiles waiting to be written to `profiles` in one go.
+    var profileWrites = ProfileWriteBatch()
+    var profileWriteFlushScheduled = false
     var ownerHexPubkey: String = ""
 
     @Published var profileUpdates = ProfileUpdateSignal()

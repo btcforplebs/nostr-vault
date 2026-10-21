@@ -217,4 +217,12 @@ class GlobeStormTest {
         assertNull(GlobeRelayLink.eventOf("""["EVENT","arcs-bbbbbbbb",$event]""", mine))
         assertNotNull(GlobeRelayLink.eventOf("""["EVENT","arcs-aaaaaaaa-1",$event]""", mine))
     }
+
+    @Test
+    fun onlyAFingerGetsTheScreensFullRateAndAStormIsCappedAt60() {
+        assertEquals(0L, GlobeStorm.FrameRate.pick(finger = true, busy = false).frameMs)
+        assertEquals(0L, GlobeStorm.FrameRate.pick(finger = true, busy = true).frameMs)
+        assertEquals(16L, GlobeStorm.FrameRate.pick(finger = false, busy = true).frameMs)
+        assertEquals(33L, GlobeStorm.FrameRate.pick(finger = false, busy = false).frameMs)
+    }
 }

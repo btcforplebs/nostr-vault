@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 import com.nostrvault.data.model.GlobeArcs
 import com.nostrvault.data.model.GlobeCamera
+import com.nostrvault.data.model.GlobeStorm
 import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.Vec3
 import com.nostrvault.ui.theme.Motion
@@ -423,10 +424,10 @@ internal class GlobeScene(
         if (arcs.step(now, me, center)) seatFaces()
         frameCount.longValue++
         val still = !settling && !fading && !camera.wantsFrames(now, reduceMotion)
-        // Full rate only under a finger (a drag or pinch, a flick's spin) or in
-        // a storm of arrivals; drift, settling and a few arcs at 30 fps. The
-        // idle globe was the heat. iOS `GlobeScene.handsOn`.
-        slowFrames = !camera.dragging && camera.spin.isZero && !arcs.busy
+        // Full rate only under a finger (a drag or pinch, a flick's spin); a
+        // storm of arrivals at 60 fps, drift, settling and a few arcs at 30.
+        // iOS `GlobeScene.wantedRate`.
+        frameRate = GlobeStorm.FrameRate.pick(finger = camera.dragging || !camera.spin.isZero, busy = arcs.busy)
         if (still && arcs.idle) awake = false
     }
 
@@ -436,8 +437,8 @@ internal class GlobeScene(
     internal val arcs = GlobeSceneArcs()
     /** Pictured only as a line's end, not as one of the globe's own faces: drawn white. */
     internal var arcOnlyKeys: Set<String> = emptySet()
-    /** No finger on the globe and no storm: the clock runs at 30 fps, which keeps the phone cool (iOS `slowRate`). */
-    var slowFrames = false
+    /** How fast the clock runs: full rate under a finger, 60 fps in a storm, else 30 (iOS `frameRate`). */
+    var frameRate = GlobeStorm.FrameRate.SLOW
         private set
     /** This frame's projection and scale, for drawing the arcs where the faces are. */
     internal var lastProjector: Projector? = null

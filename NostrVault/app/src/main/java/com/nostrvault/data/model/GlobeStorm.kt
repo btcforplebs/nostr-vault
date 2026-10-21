@@ -16,12 +16,39 @@ import kotlin.math.roundToInt
  * few batches, and how the globe's REQs share the feed's open connections.
  */
 object GlobeStorm {
-    /** From this many lines in flight the globe draws at full frame rate; below it, 30 fps. */
+    /** From this many lines in flight the sky is a storm: 60 fps, faces change at most every [FACE_REFRESH]. */
     const val BUSY_LINES = 12
     /** People pictured at the ends of lines. The rest stay stars. */
     const val MAX_ARC_FACES = 24
     /** In a storm the faces change at most this often (seconds): each change lays out pictures. */
     const val FACE_REFRESH = 0.5
+
+    // ── Frame rate ──
+
+    /**
+     * How fast the globe's clock runs. Only a finger gets the screen's full
+     * rate: a storm left uncapped ran a 120 Hz phone hot (iOS
+     * `GlobeArcs.FrameRate`, 10/20).
+     */
+    enum class FrameRate(
+        /** Least time between frames in ms; 0 for as fast as the screen goes. */
+        val frameMs: Long,
+    ) {
+        /** A finger turning or pinching the globe, or the flick it left. */
+        FINGER(0L),
+        /** A storm of arrivals: 60 fps. */
+        STORM(16L),
+        /** Drift, settling and a few arcs: 30 fps. */
+        SLOW(33L);
+
+        companion object {
+            fun pick(finger: Boolean, busy: Boolean): FrameRate = when {
+                finger -> FINGER
+                busy -> STORM
+                else -> SLOW
+            }
+        }
+    }
 
     // ── Batched drawing ──
 
