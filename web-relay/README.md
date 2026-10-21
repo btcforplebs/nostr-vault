@@ -21,6 +21,11 @@ A Nostr relay that runs inside a browser page. It's served as a static PWA at `h
   Each TCP connection becomes one Haven stream in `nip01` mode on the outbox route `/`. The page picks the route; the stream can't.
 - Only owner npubs get past the datagram gate (`ownerGatedEndpoint`), so a stranger's SYN never gets a reply.
 - Pair by pasting the vault npub, or with `nostrvault.app/relay/#owner=npub1…`.
+- **Photos from a paired vault** (`src/fips/blob-get.js`): paste a sha256 or a NIP-F1 link `http://<vault-npub>.fips/<sha256>.jpg`
+  and the page does `GET /<sha256>` on the vault's mesh port 80, over the same FIPS session (through the seed), and shows it
+  only if the bytes hash to that sha256. A native vault serves port 80 as real TCP inside the FIPS IPv6 shim (FSP port 256,
+  smoltcp in `fips-v2/src/stack.rs`); `src/fips/ipv6-shim.js` translates that to the TCP/FIPS `@fips/tcp` speaks
+  (checksums, the version option). Reads go only to owner vaults, and segments from anyone else are dropped.
 - fips-ts and fips-tcp come from GitHub release tarballs, pinned by sha512 in `package-lock.json`.
 
 ```sh
@@ -30,6 +35,8 @@ npm run build    # writes ../website/relay/, built at deploy time and not commit
 npm run serve    # http://localhost:8787/relay/, beacons go to beacons.jsonl
 npm test         # TCP/FIPS server + page client against a contract stub; the real haven.wasm under node when built
 node tools/vault-sim.mjs <secretHex> <relayNpub>   # stand-in vault over the public seed: REQ -> EOSE
+node tools/blob-vault-sim.mjs both [file]           # photo read over the public seed, throwaway keys: stand-in vault + the page's reader
+node tools/blob-vault-sim.mjs get <vaultNpub> <sha256> [file]   # the page's reader against any vault sharing port 80
 ```
 
 Nothing builds `website/relay/` automatically yet: a fresh clone serves `/relay/` as 404 until `npm run build` runs.
