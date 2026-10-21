@@ -29,8 +29,10 @@ export const isClosed = (poll, now = Date.now() / 1000) => poll.endsAt != null &
 const MAX_RELAY_URL = 256
 
 /** A public wss/ws relay: a stranger's poll must not make this browser dial into a LAN or loopback. IPv6 literals are
- *  checked without their brackets (loopback, IPv4-mapped, unique-local fc00::/7, link-local fe80::/10), and a
- *  trailing dot doesn't hide a name. */
+ *  checked without their brackets (anything under ::/16 — loopback, IPv4-mapped, the old IPv4-compatible [::a.b.c.d] —
+ *  NAT64 64:ff9b::, unique-local fc00::/7, link-local fe80::/10), and a trailing dot doesn't hide a name. IPv4 also
+ *  refuses CGNAT 100.64.0.0/10 (Tailscale's range) and 192.0.0.0/24. The URL parser has already compressed every
+ *  IPv6 form and read every IPv4 form as dotted decimal. */
 export function isPublicRelay(url) {
   let u
   const raw = String(url ?? "").trim()
@@ -40,10 +42,11 @@ export function isPublicRelay(url) {
   if (isLoopback(raw)) return false
   const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "")
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".onion") || h === "0.0.0.0" || h === "::" || h === "::1") return false
-  if (h.includes(":") && (/^::ffff:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h))) return false
+  if (h.includes(":") && (/^::/.test(h) || /^64:ff9b:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h))) return false
   const p = h.split(".").map(Number)
   if (p.length === 4 && p.every(n => Number.isInteger(n))) {
-    if (p[0] === 10 || p[0] === 127 || (p[0] === 192 && p[1] === 168) || (p[0] === 169 && p[1] === 254) || (p[0] === 172 && p[1] >= 16 && p[1] <= 31)) return false
+    if (p[0] === 0 || p[0] === 10 || p[0] === 127 || (p[0] === 192 && p[1] === 168) || (p[0] === 169 && p[1] === 254) || (p[0] === 172 && p[1] >= 16 && p[1] <= 31)) return false
+    if ((p[0] === 100 && p[1] >= 64 && p[1] <= 127) || (p[0] === 192 && p[1] === 0 && p[2] === 0)) return false
   }
   return true
 }

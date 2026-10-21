@@ -100,5 +100,11 @@ test("review fixes (#928): your own reaction takes it back however it was stored
   for (const bad of ["wss://[::ffff:127.0.0.1]", "wss://[fc00::1]", "wss://[fd12::1]", "wss://[fe80::1]", "wss://localhost.", "wss://[::1]", "wss://a.localhost", `wss://${"x".repeat(300)}.example`])
     assert.equal(isPublicRelay(bad), false, bad)
   assert.equal(isPublicRelay("wss://[2001:db8::1]"), true)
+  // Tron's second round: CGNAT 100.64/10, 192.0.0.0/24, NAT64 64:ff9b::/96, the IPv4-compatible [::a.b.c.d], 0/8.
+  for (const bad of ["wss://100.64.1.1", "wss://100.127.255.254", "wss://192.0.0.8", "wss://[::127.0.0.1]", "wss://[0:0:0:0:0:0:7f00:1]",
+    "wss://[64:ff9b::7f00:1]", "wss://[64:ff9b::10.0.0.1]", "wss://[64:ff9b:1::1]", "wss://0.1.2.3"])
+    assert.equal(isPublicRelay(bad), false, bad)
+  for (const ok of ["wss://100.63.255.255", "wss://100.128.0.1", "wss://192.0.1.1", "wss://192.1.0.1", "wss://010.0.0.1", "wss://[2606:4700::1111]", "wss://relay.damus.io"])
+    assert.equal(isPublicRelay(ok), true, ok)
   assert.deepEqual(voteTags(p, ["y"], `wss://${"x".repeat(300)}.example`)[0], ["e", p.id, ""])
 })
