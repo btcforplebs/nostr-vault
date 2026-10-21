@@ -109,7 +109,9 @@ extension NostrService {
         ownMesh = FipsMeshService.shared.ownMeshNpub
         // Kiosk mode: this vault is on the FIPS mesh, listed last. Never the
         // only usable entry (NIP-F1): the merge refuses a mesh-only list.
+        // The owner can keep it unlisted (FIPS Mesh → List in my media servers).
         shareOwnMesh = FipsMeshService.shared.meshServerURL != nil && ConfigService.shared.config.hasPublicBlossomMirror
+            && FipsMeshSettings.listInServers
         // The home vault this phone sends to: listed by the sender, so the
         // kiosk itself never needs the owner's key.
         if let vault = HomeVaultSender.shared.homeVault, vault.ownerHex == owner {

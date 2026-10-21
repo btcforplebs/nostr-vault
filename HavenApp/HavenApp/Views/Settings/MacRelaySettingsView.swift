@@ -10,8 +10,6 @@ struct MacRelaySettingsView: View {
     /// Track computed URLs from the previous save so we can migrate array entries on URL change.
     @State private var prevWssURL: String = ""
     @State private var prevHttpsURL: String = ""
-    /// Read from the mesh key (FipsMeshService.meshNpubFromKey) once a mesh npub is entered.
-    @State private var phoneMeshNpub: String?
 
     var body: some View {
         Form {
@@ -110,26 +108,6 @@ struct MacRelaySettingsView: View {
                 }
             }
 
-            if configService.config.macRelayMeshNpub != nil {
-                Section {
-                    Label("Reached over FIPS, from this phone only. Feeds, other people and Blossom don't use it.", systemImage: "point.3.connected.trianglepath.dotted")
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
-                    if let phoneNpub = phoneMeshNpub {
-                        Text("This phone's mesh address. The Mac answers only the addresses on its list, so add this one there:")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                        Text(phoneNpub)
-                            .font(.appSystem(size: 12, design: .monospaced))
-                            .textSelection(.enabled)
-                        Button("Copy this phone's mesh address") { UIPasteboard.general.string = phoneNpub }
-                            .font(.appCaption)
-                    }
-                } header: {
-                    Text("Mesh")
-                }
-            }
-
             if !wssURL.isEmpty || configService.config.macRelayMeshNpub != nil {
                 // ── Sync ───────────────────────────────────────────────
                 Section {
@@ -147,10 +125,6 @@ struct MacRelaySettingsView: View {
         }
         .onChange(of: configService.config.macRelayURL) { _, _ in
             migrateRelayURLs()
-        }
-        .task(id: configService.config.macRelayMeshNpub) {
-            guard configService.config.macRelayMeshNpub != nil, phoneMeshNpub == nil else { return }
-            phoneMeshNpub = await Task.detached { FipsMeshService.meshNpubFromKey() }.value
         }
     }
 

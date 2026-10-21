@@ -42,6 +42,8 @@ extension Notification.Name {
     static let havenOpenNotificationNote = Notification.Name("com.haven.openNotificationNote")
     /// Posted when the user taps feed relays in the dashboard — navigates to Settings > Feed Relays.
     static let havenOpenFeedRelaySettings = Notification.Name("com.haven.openFeedRelaySettings")
+    /// Posted by the FIPS link on Media Servers (Mac): switches Settings to FIPS Mesh.
+    static let havenOpenFipsMeshSettings = Notification.Name("com.haven.openFipsMeshSettings")
     /// Posted to open the Settings view from any context (e.g. profile toolbar, footer gear).
     static let havenOpenSettings = Notification.Name("com.haven.openSettings")
     /// Posted by FeedView when scroll direction changes — object is Bool (true = scrolling down = collapse tab bar).

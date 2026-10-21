@@ -24,6 +24,10 @@ final class FipsMeshService: ObservableObject {
         var max_serve_bytes: UInt64?
         /// The engine can hand notes to a browser relay page (relay_push).
         var relay_link: Bool?
+        /// Npubs the engine is connected to now: My Devices' in-reach dots.
+        var peers: [String]?
+        /// This phone's mesh IP.
+        var address: String?
 
         struct Counters: Decodable {
             var served_open: UInt64
@@ -122,6 +126,10 @@ final class FipsMeshService: ObservableObject {
 
     func startKiosk() {
         guard !kioskActive, !starting else { return }
+        guard FipsMeshSettings.enabled else {
+            lastError = Self.offMessage
+            return
+        }
         // A client engine was started with LAN candidates for the owner's own
         // vault; kiosk mode is open to anyone, so it starts fresh without them.
         if clientActive {
@@ -233,6 +241,38 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
+    // MARK: - Mesh on/off
+
+    static let offMessage = "The mesh is off. Turn it on in Settings → FIPS Mesh."
+
+    /// The Mesh switch. Off stops kiosk mode and any client engine, and every
+    /// later start (kiosk, home vault, browser relay, the Mac) is refused
+    /// until it is on again.
+    func setEnabled(_ on: Bool) {
+        guard on != FipsMeshSettings.enabled else { return }
+        FipsMeshSettings.enabled = on
+        lastError = nil
+        if !on {
+            stopKiosk()
+            if starting {
+                starting = false
+                startGen += 1
+            }
+            if clientActive {
+                clientActive = false
+                if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+                clientBackgroundObserver = nil
+            }
+            stopEngine()
+            status = nil
+        }
+        // The relay dials a Mac set by its mesh address once, at start:
+        // restart it so it drops that link, or makes it again.
+        if ConfigService.shared.config.macRelayMeshNpub != nil {
+            Task { _ = await RelayProcessManager.shared.gracefulRestart() }
+        }
+    }
+
     // MARK: - Client: reaching another vault
 
     /// A loopback base, `http://127.0.0.1:<port>/<token>`, whose requests reach
@@ -241,6 +281,7 @@ final class FipsMeshService: ObservableObject {
     /// shares: the relay's mesh door stays shut unless kiosk mode opened it.
     /// Can take ~10 s (the node finds the vault through its advert).
     func ingressURL(meshNpub: String) async -> URL? {
+        guard FipsMeshSettings.enabled else { return nil }
         let sharing = kioskActive || starting
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> URL? in
@@ -285,24 +326,17 @@ final class FipsMeshService: ObservableObject {
     /// libnvfips: the engine was started without the relay link.
     nonisolated private static let errRelayOff: Int32 = -7
 
-    /// Advert and signaling relays, the same list the Mac helper uses. The
-    /// engine's defaults (damus, nos.lol, offchain.pub) carried no offers
-    /// from Logen's network on 2026-10-21: damus answers his IP with 503,
-    /// offchain.pub refuses, and nos.lol never relayed a kind 21059 offer.
-    nonisolated static let signalRelays = [
-        "wss://relay.nostr.net",
-        "wss://nostr.bitcoiner.social",
-        "wss://relay.btcforplebs.com",
-    ]
-
-    /// Start options for every engine start. With a browser relay set up, the
-    /// engine also joins the public seeds (the page's route) and opens its
-    /// datagram API socket, so `relayPush` works whichever start came first.
+    /// Start options for every engine start. Advert and signaling relays are
+    /// the owner's finder relays (FIPS Mesh → Advanced; the defaults are
+    /// MeshDevicesLogic.defaultFinderRelays). With a browser relay set up, the
+    /// engine also opens its datagram API socket, so `relayPush` works
+    /// whichever start came first, and joins the public seeds (the page's
+    /// route) unless the middle server is set to None.
     nonisolated static func startOptions(_ base: [String: Any] = [:]) -> String {
         var options = base
-        options["relays"] = signalRelays
+        options["relays"] = FipsMeshSettings.finderRelays
         if BrowserRelaySender.isOn {
-            options["public_seeds"] = true
+            if FipsMeshSettings.middleServer == .publicSeeds { options["public_seeds"] = true }
             options["relay_socket"] = relaySocketPath
         }
         guard let data = try? JSONSerialization.data(withJSONObject: options),
@@ -319,6 +353,10 @@ final class FipsMeshService: ObservableObject {
     /// Starts the engine as a client with the relay link, if nothing runs yet,
     /// so the page can find this phone. Returns this phone's mesh npub.
     func connectForBrowserRelay() async -> String? {
+        guard FipsMeshSettings.enabled else {
+            lastError = Self.offMessage
+            return nil
+        }
         let sharing = kioskActive || starting
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> Bool in
@@ -339,6 +377,7 @@ final class FipsMeshService: ObservableObject {
     /// JSON from libnvfips, or an error in plain words. Can take up to
     /// `timeoutMs` while the page opens its session to this phone.
     func relayPush(relayNpub: String, eventsJSON: String, timeoutMs: UInt32 = 90_000) async -> Result<String, MeshError> {
+        guard FipsMeshSettings.enabled else { return .failure(MeshError(message: Self.offMessage)) }
         let sharing = kioskActive || starting
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> Result<String, MeshError> in
