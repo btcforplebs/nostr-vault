@@ -92,6 +92,7 @@ import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.RepostGreen
+import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.WarningYellow
 import com.nostrvault.ui.theme.ZapOrange
@@ -145,6 +146,8 @@ class VaultActivityViewModel @Inject constructor(
         const val OLDER_PAGE = 200
         const val QUERY_TIMEOUT_MS = 8_000L
         const val SHOW_STEP = 50
+        /** The first page is twice a step, as on iOS; a filter change starts again at one step. */
+        const val FIRST_SHOW = 100
         /** Kinds of others' events that reach the list. */
         val TAGGED_KINDS: Set<Int> = VaultMode.RELAY_TAB_NOTE_KINDS + setOf(7, 16, 9735)
     }
@@ -161,8 +164,14 @@ class VaultActivityViewModel @Inject constructor(
     /** Every line, newest first; the list shows the first [shown]. */
     val lines: StateFlow<List<VaultActivity>> = _lines.asStateFlow()
 
-    private val _shown = MutableStateFlow(SHOW_STEP)
+    private val _shown = MutableStateFlow(FIRST_SHOW)
     val shown: StateFlow<Int> = _shown.asStateFlow()
+
+    /** A new filter shows its first step again (iOS resets to 50). Returns how many now show. */
+    fun filterChanged(): Int {
+        _shown.value = SHOW_STEP
+        return SHOW_STEP
+    }
 
     private val _hasLoadedOnce = MutableStateFlow(false)
     val hasLoadedOnce: StateFlow<Boolean> = _hasLoadedOnce.asStateFlow()
@@ -197,7 +206,7 @@ class VaultActivityViewModel @Inject constructor(
                 eventsMutex.withLock { events.clear() }
                 noOlder = false
                 _lines.value = emptyList()
-                _shown.value = SHOW_STEP
+                _shown.value = FIRST_SHOW
                 _hasLoadedOnce.value = false
                 _unreadSince.value = Long.MAX_VALUE
                 follows = emptyList()
@@ -397,10 +406,11 @@ internal fun VaultActivityScreen(
     }
     val filterNote = rememberFilterNoteState()
     fun pick(next: VaultActivityFilter) {
+        val shownAfter = if (next != filter) activity.filterChanged() else shownCount
         filter = next
         val matching = all.count { next.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
-        val count = minOf(matching, shownCount)
-        val capped = matching > shownCount
+        val count = minOf(matching, shownAfter)
+        val capped = matching > shownAfter
         filterNote.show(
             if (next == VaultActivityFilter.MENTIONS) countNote(NostrVaultIcons.At, "Mentions", count, capped, "No mentions yet")
             else countNote(NostrVaultIcons.Layers, "Everything", count, capped, "Nothing new yet"),
@@ -603,7 +613,8 @@ private fun VaultActivityRow(
                             pubkey = pubkey,
                             size = 30.dp,
                             displayName = profile?.bestName,
-                            modifier = Modifier.offset(x = (-8 * index).dp),
+                            // A ring keeps overlapping faces apart (iOS).
+                            modifier = Modifier.offset(x = (-8 * index).dp).border(2.dp, SecondaryGroupedBg, CircleShape),
                         )
                     }
                     if (line.actors.size > AVATAR_LIMIT) {
