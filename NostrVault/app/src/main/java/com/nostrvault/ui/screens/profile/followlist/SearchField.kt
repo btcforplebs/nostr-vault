@@ -5,13 +5,23 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material3.Icon
@@ -42,38 +52,55 @@ import com.nostrvault.ui.theme.SecondaryText
 internal fun SearchField(query: String, placeholder: String, onChange: (String) -> Unit) {
     val colors = LocalNostrVaultColors.current
     val focusManager = LocalFocusManager.current
+    val focus = remember { FocusRequester() }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
             .fillMaxWidth()
+            // Fixed: the 48dp clear target must not make the box grow as text appears.
+            .height(38.dp)
             .clip(RoundedCornerShape(10.dp))
             // iOS Color.secondary.opacity(0.1): the secondary grey, faded further.
             .background(SecondaryText.copy(alpha = SecondaryText.alpha * 0.1f))
-            .padding(horizontal = 8.dp, vertical = 9.dp),
+            // A tap anywhere on the grey box puts the cursor in the field.
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.requestFocus() }
+            .padding(start = 8.dp, end = 4.dp),
     ) {
         Icon(NostrVaultIcons.Search, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(18.dp))
-        Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Text(placeholder, color = PlaceholderText, fontSize = 15.sp, maxLines = 1)
-            BasicTextField(
-                value = query,
-                onValueChange = onChange,
-                singleLine = true,
-                textStyle = TextStyle(color = PrimaryText, fontSize = 15.sp),
-                cursorBrush = SolidColor(colors.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        BasicTextField(
+            value = query,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = TextStyle(color = PrimaryText, fontSize = 15.sp),
+            cursorBrush = SolidColor(colors.primary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+            // TalkBack reads the field by its placeholder, as iOS reads the prompt.
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focus)
+                .semantics { contentDescription = placeholder },
+            decorationBox = { inner ->
+                Box {
+                    if (query.isEmpty()) Text(placeholder, color = PlaceholderText, fontSize = 15.sp, maxLines = 1)
+                    inner()
+                }
+            },
+        )
         if (query.isNotEmpty()) {
-            // xmark.circle.fill
-            Icon(
-                Icons.Filled.Cancel,
-                contentDescription = "Clear",
-                tint = SecondaryText,
-                modifier = Modifier.size(16.dp).clickable(role = Role.Button) { onChange("") },
-            )
+            // xmark.circle.fill: drawn 16dp, tapped across 48dp.
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .clickable(role = Role.Button, onClickLabel = "Clear") { onChange("") }
+                    .semantics { contentDescription = "Clear" },
+            ) {
+                Icon(Icons.Filled.Cancel, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(16.dp))
+            }
+        } else {
+            Spacer(Modifier.width(4.dp))
         }
     }
 }

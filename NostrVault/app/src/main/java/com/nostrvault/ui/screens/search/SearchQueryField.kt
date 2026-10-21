@@ -5,13 +5,23 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material3.Icon
@@ -46,41 +56,55 @@ internal fun SearchQueryField(
     accent: Color,
     modifier: Modifier = Modifier,
 ) {
+    val placeholder = "Search users, notes, hashtags..."
+    val focus = remember { FocusRequester() }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier
             .fillMaxWidth()
+            // Fixed: the 48dp clear target must not make the box grow as text appears.
+            .height(40.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(searchSecondary(0.1f))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            // A tap anywhere on the grey box puts the cursor in the field.
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { focus.requestFocus() }
+            .padding(start = 12.dp, end = 4.dp),
     ) {
         Icon(NostrVaultIcons.Search, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(18.dp))
-        Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) {
-                Text("Search users, notes, hashtags...", color = PlaceholderText, fontSize = 14.sp, maxLines = 1)
-            }
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                singleLine = true,
-                textStyle = TextStyle(color = PrimaryText, fontSize = 14.sp),
-                cursorBrush = SolidColor(accent),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            singleLine = true,
+            textStyle = TextStyle(color = PrimaryText, fontSize = 14.sp),
+            cursorBrush = SolidColor(accent),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+            // TalkBack reads the field by its placeholder, as iOS reads the prompt.
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focus)
+                .semantics { contentDescription = placeholder },
+            decorationBox = { inner ->
+                Box {
+                    if (query.isEmpty()) Text(placeholder, color = PlaceholderText, fontSize = 14.sp, maxLines = 1)
+                    inner()
+                }
+            },
+        )
         if (query.isNotEmpty()) {
-            // xmark.circle.fill
-            Icon(
-                Icons.Filled.Cancel,
-                contentDescription = "Clear",
-                tint = SecondaryText,
+            // xmark.circle.fill: drawn 16dp, tapped across 48dp.
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(16.dp)
-                    .clickable(role = Role.Button, onClick = onClear),
-            )
+                    .minimumInteractiveComponentSize()
+                    .clickable(role = Role.Button, onClickLabel = "Clear", onClick = onClear)
+                    .semantics { contentDescription = "Clear" },
+            ) {
+                Icon(Icons.Filled.Cancel, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(16.dp))
+            }
+        } else {
+            Spacer(Modifier.width(8.dp))
         }
     }
 }

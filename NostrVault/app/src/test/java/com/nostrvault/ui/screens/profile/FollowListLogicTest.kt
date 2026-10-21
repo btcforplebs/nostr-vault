@@ -119,8 +119,11 @@ class FollowListLogicTest {
         // As many loaded as the profile says: no more pages, no "N+".
         assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 250))
         assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 260))
-        // No count from the profile: nothing to page towards.
-        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = null, loaded = 0))
+        // No count from the profile yet: keep paging until the relays run dry.
+        assertTrue(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = null, loaded = 0))
+        assertTrue(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = null, loaded = 500))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = true, profileTotal = null, loaded = 500))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = true, exhausted = false, profileTotal = null, loaded = 500))
         assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = true, profileTotal = 250, loaded = 100))
         assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = true, exhausted = false, profileTotal = 250, loaded = 100))
     }

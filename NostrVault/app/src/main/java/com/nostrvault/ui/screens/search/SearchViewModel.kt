@@ -271,6 +271,7 @@ class SearchViewModel @Inject constructor(
             if (eventId != null) {
                 val existing = feedService.findNote(eventId)
                 if (existing != null) {
+                    _pendingNoteId.value = null
                     _directLookup.tryEmit(DirectLookupResult.NavigateToNote(eventId))
                 } else {
                     _pendingNoteId.value = eventId
@@ -289,6 +290,10 @@ class SearchViewModel @Inject constructor(
                 return
             }
         }
+
+        // Not a note ID (or one that didn't decode): no note is being looked up,
+        // so "Looking up note..." can't show over an ordinary search.
+        _pendingNoteId.value = null
 
         // Bech32 direct lookup: npub1
         if (lower.startsWith("npub1")) {

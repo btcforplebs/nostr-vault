@@ -137,11 +137,12 @@ object FollowListLogic {
      * Whether another follower page is worth asking for (iOS
      * `followListPage`): never for your own complete ledger, not once the
      * relays ran dry, and not once the list holds as many people as the
-     * profile's follower count says there are. With no count to page towards
-     * there is no next page, and the count shows no "+".
+     * profile's follower count says there are. The count is a snapshot
+     * taken when the page opened; if the profile had none yet, paging runs
+     * until the relays run dry.
      */
     fun followersHaveMore(isOwnLedger: Boolean, exhausted: Boolean, profileTotal: Int?, loaded: Int): Boolean =
-        !isOwnLedger && !exhausted && (profileTotal ?: 0) > loaded
+        !isOwnLedger && !exhausted && (profileTotal == null || profileTotal > loaded)
 
     /** The page title for a profile with no name yet: `abcd1234…wxyz` (iOS `ProfileFormat.shortPubkey`). */
     fun shortPubkey(hex: String): String = hex.take(8) + "…" + hex.takeLast(4)
