@@ -16,13 +16,17 @@ import java.util.*
 // ── Inline loading row (iOS "Loading thread…" / "Loading replies…") ──
 
 @Composable
-internal fun InlineLoadingRow(text: String, color: androidx.compose.ui.graphics.Color) {
+internal fun InlineLoadingRow(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    verticalPadding: androidx.compose.ui.unit.Dp = 16.dp,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp),
+            .padding(vertical = verticalPadding),
     ) {
         CircularProgressIndicator(
             color = color,
@@ -30,6 +34,13 @@ internal fun InlineLoadingRow(text: String, color: androidx.compose.ui.graphics.
             modifier = Modifier.size(16.dp),
         )
         Spacer(Modifier.width(8.dp))
-        Text(text = text, color = SecondaryText, fontSize = 12.sp)
+        // iOS: 12pt medium monospace.
+        Text(
+            text = text,
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+        )
     }
 }

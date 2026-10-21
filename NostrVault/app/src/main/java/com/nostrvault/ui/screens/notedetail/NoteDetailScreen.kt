@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.ui.components.*
+import androidx.compose.ui.text.font.FontFamily
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.flow.*
 import java.util.*
@@ -415,7 +416,11 @@ fun NoteDetailScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                CircularProgressIndicator(color = colors.primary)
+                // iOS NoteDetailViewWrapper: spinner over "Fetching note...".
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = colors.primary)
+                    Text("Fetching note...", color = SecondaryText, modifier = Modifier.padding(16.dp))
+                }
             }
         } else if (focusedNote == null) {
             Box(
@@ -424,7 +429,11 @@ fun NoteDetailScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                Text("Note not found", color = SecondaryText, fontSize = 16.sp)
+                // iOS: warning triangle over "Could not find note".
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(NostrVaultIcons.Alert, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(34.dp))
+                    Text("Could not find note", color = PrimaryText, modifier = Modifier.padding(16.dp))
+                }
             }
         } else {
             PullToRefreshBox(
@@ -514,8 +523,8 @@ fun NoteDetailScreen(
                                 )
                             }
                         }
-                        // Thread connector line
-                        ThreadConnectorLine(color = colors.primary)
+                        // iOS stacks parent cards 12pt apart, no connector line.
+                        Spacer(Modifier.height(12.dp))
                     }
                 }
 
@@ -567,16 +576,17 @@ fun NoteDetailScreen(
                 // ── Replies: loading / empty / header ───────────
                 if (showsBlockedPlaceholder) {
                     // Nothing under the placeholder: its replies went with it.
-                } else if (isLoadingReplies && directReplies.isEmpty()) {
+                } else if (isLoadingReplies && directReplies.isEmpty() && outsideReplies == 0) {
                     item(key = "replies_loading") {
-                        InlineLoadingRow(text = "Loading replies…", color = colors.primary)
+                        InlineLoadingRow(text = "Loading replies…", color = colors.primary, verticalPadding = 24.dp)
                     }
-                } else if (directReplies.isEmpty()) {
-                    if (outsideReplies == 0) item(key = "replies_empty") {
+                } else if (directReplies.isEmpty() && outsideReplies == 0) {
+                    item(key = "replies_empty") {
                         Text(
                             text = "No replies yet",
                             color = SecondaryText,
                             fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 24.dp),
@@ -584,13 +594,16 @@ fun NoteDetailScreen(
                         )
                     }
                 } else {
+                    // iOS: plain uppercase "REPLIES", also above the
+                    // outside-network button when that is all there is.
                     item(key = "replies_header") {
                         Text(
-                            text = "${directReplies.size} ${if (directReplies.size == 1) "Reply" else "Replies"}",
+                            text = "REPLIES",
                             color = SecondaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp),
                         )
                     }
                 }
@@ -647,12 +660,15 @@ fun NoteDetailScreen(
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
                         onEngagementClick = { kind, id -> engagementSheet = EngagementSheetTarget(kind, id) },
-                        modifier = Modifier.padding(horizontal = ThreadSideInset),
+                        // iOS fullRepliesList: 12pt between top-level replies.
+                        modifier = Modifier
+                            .padding(horizontal = ThreadSideInset)
+                            .padding(bottom = 12.dp),
                     )
                 }
 
                 // Replies from outside your network, folded until asked for.
-                if (!isLoadingReplies && outsideReplies > 0) {
+                if (outsideReplies > 0) {
                     item(key = "outside_replies") {
                         val count = outsideReplies
                         Row(
