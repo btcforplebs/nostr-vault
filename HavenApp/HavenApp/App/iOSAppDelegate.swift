@@ -8,7 +8,6 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        FipsHostBlocker.install()
         // Ignore SIGPIPE so broken pipe writes don't kill the process
         signal(SIGPIPE, SIG_IGN)
 
