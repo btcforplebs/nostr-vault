@@ -179,7 +179,9 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(opts["own_devices"] as? [String], [moto, page], "this Mac is never its own device")
         XCTAssertEqual(opts["relays"] as? [String], ["wss://a"])
         XCTAssertNil(opts["peers"])
-        XCTAssertNil(opts["public_seeds"])
+        // Strangers come in through the seeds, capped, never through an offer.
+        XCTAssertEqual(opts["public_seeds"] as? Bool, true)
+        XCTAssertEqual(opts["strangers"] as? Bool, true)
     }
 
     func testNoDevicesMeansTheMacEngineStaysOff() {

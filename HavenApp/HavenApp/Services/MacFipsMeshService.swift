@@ -5,11 +5,13 @@ import Security
 /// The FIPS mesh in the Mac app: libnvfips (nvfips.h), the engine iPhone and
 /// Android run, in place of the separate fipsv2-probe helper.
 ///
-/// Only My Devices reach it: the engine starts with them as `own_devices`,
-/// so it answers their offers alone, dials each one, and drops everyone
-/// else's packets. Their connections go to this Mac's relay port, as the
-/// helper's `serve --peer … --forward 127.0.0.1:<relay port>` did. With no
-/// devices it does not start, since an empty list would be open to anyone.
+/// My Devices reach all of it: the engine starts with them as `own_devices`,
+/// so it answers their offers alone, dials each one, and gives them this
+/// Mac's relay port uncapped, as the helper's `serve --peer … --forward
+/// 127.0.0.1:<relay port>` did. Everyone else (`strangers`) comes in through
+/// the public seeds to the same port, capped, and Haven decides what they may
+/// read or write, as for an https visitor. With no devices it does not start,
+/// since an empty list would be open to anyone.
 @MainActor
 final class MacFipsMeshService: ObservableObject {
     static let shared = MacFipsMeshService()
@@ -37,7 +39,7 @@ final class MacFipsMeshService: ObservableObject {
 
     /// The Mesh switch on the Mac. Off by default: the Mac starts sharing
     /// with its devices only when the owner turns it on.
-    private static let enabledKey = "fipsMesh.macEngine"
+    nonisolated private static let enabledKey = "fipsMesh.macEngine"
     @Published private(set) var enabled = UserDefaults.standard.bool(forKey: MacFipsMeshService.enabledKey)
 
     /// This Mac's mesh npub, from its stored key, so the page shows it (and
@@ -45,7 +47,7 @@ final class MacFipsMeshService: ObservableObject {
     /// My Devices before the Mac has anyone to start for.
     @Published private(set) var storedNpub: String? = UserDefaults.standard.string(forKey: MacFipsMeshService.ownNpubKey)
     var ownNpub: String? { status?.npub ?? storedNpub }
-    private static let ownNpubKey = "fipsMesh.macOwnNpub"
+    nonisolated private static let ownNpubKey = "fipsMesh.macOwnNpub"
 
     var running: Bool { status?.running == true }
 
@@ -64,6 +66,15 @@ final class MacFipsMeshService: ObservableObject {
         enabled = on
         UserDefaults.standard.set(on, forKey: Self.enabledKey)
         sync()
+        // The photo node (PhotoNode) is listed while the switch is on.
+        if on { NostrService.shared.publishServerList() }
+    }
+
+    /// This Mac's mesh npub while the switch is on: the photo node strangers
+    /// read from. Any thread; nil before the key exists.
+    nonisolated static func photoNpub() -> String? {
+        guard UserDefaults.standard.bool(forKey: enabledKey) else { return nil }
+        return UserDefaults.standard.string(forKey: ownNpubKey)
     }
 
     /// Brings the engine in line with the switch and My Devices: starts it,
@@ -154,7 +165,7 @@ final class MacFipsMeshService: ObservableObject {
             NvFipsStop()
             return "Could not share the relay (\(shared))"
         }
-        print("FipsMesh: Mac engine live, own devices only, relay port \(port)")
+        print("FipsMesh: Mac engine live, own devices and capped strangers, relay port \(port)")
         return nil
     }
 

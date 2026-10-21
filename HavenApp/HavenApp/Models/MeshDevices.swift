@@ -197,7 +197,14 @@ enum MeshDevicesLogic {
             npubs.append(device.npub)
         }
         guard !npubs.isEmpty else { return nil }
-        return ["own_devices": npubs, "relays": relays.isEmpty ? defaultFinderRelays : relays]
+        // Strangers reach the Mac through the public seeds and read what
+        // Haven lets an https visitor read, capped (fips-v2-android strangers.rs).
+        return [
+            "own_devices": npubs,
+            "relays": relays.isEmpty ? defaultFinderRelays : relays,
+            "public_seeds": true,
+            "strangers": true,
+        ]
     }
 
     /// A finder relay as typed: `wss://` added when missing, trailing
