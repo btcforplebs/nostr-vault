@@ -64,3 +64,13 @@ test("link cards: web links only, once each, three at most; translate offers onl
   assert.equal(shouldOffer(null, "en"), false)
   assert.equal(shouldOffer("und", "en"), false)
 })
+
+test("Event Info lists your relays once, ticks the write ones, and sends only the signed fields", async () => {
+  const { infoRelays, signedFields, kindName } = await import("../src/components/EventInfo.jsx")
+  const { relays, ticked } = infoRelays({ relays: { read: ["wss://a.example/", "wss://b.example"], write: ["wss://b.example/", "wss://c.example", "https://nope"] } })
+  assert.deepEqual(relays, ["wss://a.example", "wss://b.example", "wss://c.example"])
+  assert.deepEqual([...ticked].filter(r => relays.includes(r)), ["wss://b.example", "wss://c.example"])
+  const ev = { id: "1", pubkey: "2", created_at: 3, kind: 1, tags: [], content: "x", sig: "s", seenOn: ["r"], _local: true }
+  assert.deepEqual(Object.keys(signedFields(ev)), ["id", "pubkey", "created_at", "kind", "tags", "content", "sig"])
+  assert.equal(kindName(30023), "Article"); assert.equal(kindName(4242), "Event")
+})
