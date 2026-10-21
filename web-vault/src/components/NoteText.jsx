@@ -11,6 +11,7 @@ import { splitHashtags } from "../net/hashtags.js"
 import { mediaType } from "../net/media.js"
 import { noteMedia } from "../net/note-media.js"
 import { NoteMedia } from "./NoteMedia.jsx"
+import { inlineMarks } from "../net/inline-md.js"
 
 const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+)/gi
 const MAX_QUOTE_DEPTH = 1
@@ -36,7 +37,7 @@ export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = fa
   return (
     <div class="note-text">
       {parts.map((s, i) => {
-        if (i % 2 === 0) return withHashtags(s, i)
+        if (i % 2 === 0) return withMarks(s, i)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
         const type = mediaType(s)
         if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
@@ -60,6 +61,19 @@ export function withoutLinks(parts, drop) {
   out[0] = out[0].trimStart()
   out[out.length - 1] = out.at(-1).trimEnd()
   return out
+}
+
+/** Plain text with its inline markdown drawn (bold, italic, strike, code), and #tags linked inside it. */
+function withMarks(text, key) {
+  const marks = inlineMarks(text)
+  if (marks.length === 1 && marks[0].type === "text") return withHashtags(text, key)
+  return marks.map((m, j) => {
+    const k = `${key}.${j}`
+    if (m.type === "code") return <code key={k}>{m.text}</code>
+    const body = withHashtags(m.text, k)
+    return m.type === "strong" ? <strong key={k}>{body}</strong> : m.type === "em" ? <em key={k}>{body}</em>
+      : m.type === "del" ? <del key={k}>{body}</del> : <span key={k}>{body}</span>
+  })
 }
 
 /** Plain text with each #tag a link to that tag's feed (FeedNoteRow's hashtag links), spelled as the author wrote it. */
