@@ -269,6 +269,17 @@ enum RelayConfiguration {
         return relays
     }
 
+    /// The Go relay's soft memory limit on a phone, from its RAM: a quarter,
+    /// between 256 MiB and 3 GiB. Go's flat 256 MiB phone default
+    /// (haven-go config.go) is a limit a populated vault's live heap reaches,
+    /// and then the collector runs back to back: on Logen's iPhone 18 Pro
+    /// (2026-10-21, build 39) 69% of all CPU samples were Go GC mark workers
+    /// with almost no other Go work, ~420% CPU, thermal state Serious.
+    static func phoneGoMemLimitMB(physicalMemory: UInt64) -> Int {
+        let quarter = Int(physicalMemory / 4 / (1 << 20))
+        return min(max(quarter, 256), 3072)
+    }
+
     /// Build the full environment dictionary from a HavenConfig.
     /// `relayDataDir` is passed explicitly so this function has no
     /// dependency on ConfigService.shared.
@@ -288,7 +299,7 @@ enum RelayConfiguration {
         // while the host has SetMeshServingC(1).
         let meshPlainPort = String(config.meshPlainPort)
 
-        return [
+        var env: [String: String] = [
             "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
             "RELAY_PORT": String(config.relayPort),
@@ -405,6 +416,10 @@ enum RelayConfiguration {
             "HAVEN_ENABLE_TLS": enableTLS,
             "HAVEN_MESH_PLAIN_PORT": meshPlainPort,
         ]
+        #if os(iOS)
+        env["GO_MEM_LIMIT_MB"] = String(phoneGoMemLimitMB(physicalMemory: ProcessInfo.processInfo.physicalMemory))
+        #endif
+        return env
     }
 
     /// Relays the app sends an event it just posted to, alongside handing it
