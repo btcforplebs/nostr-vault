@@ -159,6 +159,10 @@ class ProfileViewModel @Inject constructor(
         tabReveal.extrasLoadStarted()
     }
 
+    private val _zapBursts = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** One per profile zap that went through: the zap button's burst (iOS ZapBurstView). */
+    val zapBursts: SharedFlow<Unit> = _zapBursts.asSharedFlow()
+
     fun npubToHex(npub: String): String? = nostrService.npubToHex(npub)
 
     /** Makes [note] resolvable by id for the article reader; returns that id. */
@@ -774,7 +778,7 @@ class ProfileViewModel @Inject constructor(
             // The zap pill reports the result (docs/pills.md).
             notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, pk), amount) {
                 zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
-            }
+            }.onSuccess { _zapBursts.tryEmit(Unit) }
         }
     }
 

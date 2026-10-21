@@ -357,6 +357,7 @@ fun ProfileScreen(
                     },
                     webLink = brainstormLink,
                     onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
+                    zapBursts = viewModel.zapBursts,
                 )
                 // One rule above the tabs instead of one between every block.
                 HorizontalDivider(

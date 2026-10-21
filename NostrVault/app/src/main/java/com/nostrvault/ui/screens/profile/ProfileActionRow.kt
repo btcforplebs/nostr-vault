@@ -45,6 +45,8 @@ internal fun ProfileActionRow(
     /** Their page on the web (Brainstorm), to check trust off the device. */
     webLink: com.nostrvault.ui.components.NostrWebLinks.WebLink? = null,
     onOpenWebLink: () -> Unit = {},
+    /** One per profile zap that went through; each plays the burst on the zap button. */
+    zapBursts: kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow(),
 ) {
     val colors = LocalNostrVaultColors.current
     val tint = colors.primary.copy(alpha = 0.12f)
@@ -78,7 +80,12 @@ internal fun ProfileActionRow(
                     ActionChip("Message", NostrVaultIcons.Chat, colors.primary, tint, onClick = onMessage, modifier = Modifier.weight(1f))
                 }
                 if (canZap) {
-                    ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, onLongClick = onZapLongPress, longClickLabel = "Choose an amount", modifier = Modifier.weight(1f), description = "Zap $zapSats sats")
+                    // The burst sits over the chip, outside its clip (iOS overlay).
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f)) {
+                        ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, onLongClick = onZapLongPress, longClickLabel = "Choose an amount", modifier = Modifier.fillMaxWidth(), description = "Zap $zapSats sats")
+                        // Over the chip without sizing the row: the burst is wider than it is tall.
+                        ProfileZapBurst(zapBursts, Modifier.matchParentSize())
+                    }
                 }
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
                 var menuOpen by remember { mutableStateOf(false) }
