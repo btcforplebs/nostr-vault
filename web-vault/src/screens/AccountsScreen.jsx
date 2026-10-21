@@ -12,6 +12,9 @@ import { useProfile } from "../components/useProfile.js"
 import { SignInOptions, accountName, methodLabel } from "./SignInScreen.jsx"
 import "../styles/accounts.css"
 
+// "Tap" on a touch screen (as on the iPhone), "Click" with a mouse or trackpad.
+const coarse = () => globalThis.matchMedia?.("(pointer: coarse)").matches ?? false
+
 export function AccountsScreen({ ctx }) {
   const [accounts, setAccounts] = useState(loadAccounts)
   const [open, setOpen] = useState("") // the account whose actions are showing
@@ -37,7 +40,7 @@ export function AccountsScreen({ ctx }) {
           onToggle={() => setOpen(open === a.pubkey ? "" : a.pubkey)}
           onRemoved={msg => { setAccounts(loadAccounts()); setOpen(""); setNote(msg) }} />
       ))}
-      <p class="settings-note muted small">Tap an account to manage it.</p>
+      <p class="settings-note muted small">{coarse() ? "Tap" : "Click"} an account to manage it.</p>
       {note && <p class="status-line">{note}</p>}
       {adding
         ? <section class="card add-account">
