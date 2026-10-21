@@ -187,7 +187,7 @@ export function FeedScreen({ ctx }) {
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
   const shown = list && visibleNotes(media ? list : applyFilters(list, filters, { threaded }), blocked)
   const newCount = following && !media ? visibleNotes(applyFilters(pending, filters, { threaded }), blocked).length : 0
-  const tiles = media && shown && mediaTiles(shown)
+  const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   const label = FEEDS.find(f => f.id === choice.mode).label
   return (
     <main class="screen">

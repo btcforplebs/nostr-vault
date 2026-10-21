@@ -3,7 +3,8 @@
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 
-export const FEED_KINDS = [1, 6]
+// Notes and reposts, plus the articles, polls and highlights the iPhone shows in Following (FeedServiceTypes.timelineKinds).
+export const FEED_KINDS = [1, 6, 30023, 1068, 9802]
 const now = () => Math.floor(Date.now() / 1000)
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 

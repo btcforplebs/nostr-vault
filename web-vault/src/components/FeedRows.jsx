@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "preact/hooks"
 import { NoteCard } from "./NoteCard.jsx"
 import { CondensedNote } from "./CondensedNote.jsx"
 import { FeedThreadCard } from "./FeedThreadCard.jsx"
+import { hasKindBody } from "./FeedKinds.jsx"
 import { buildThreads } from "../net/feed-layout.js"
 import { tileNote } from "../net/media.js"
 import { fetchNotes } from "../net/notifications.js"
@@ -28,7 +29,7 @@ export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = fa
 function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpenId }) {
   // id -> the root event, or null once a fetch came back without it.
   const [fetched, setFetched] = useState(() => new Map())
-  const threads = useMemo(() => buildThreads(notes.filter(n => n.kind === 1 || n.kind === 6), { keepFeedOrder, resolve: id => fetched.get(id) ?? null }), [notes, fetched, keepFeedOrder])
+  const threads = useMemo(() => buildThreads(notes.filter(n => n.kind === 1 || n.kind === 6 || hasKindBody(n)), { keepFeedOrder, resolve: id => fetched.get(id) ?? null }), [notes, fetched, keepFeedOrder])
   const missing = threads.filter(t => !t.root && !fetched.has(t.rootId)).map(t => t.rootId)
   const key = missing.join()
   useEffect(() => {

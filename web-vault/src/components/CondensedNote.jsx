@@ -13,6 +13,7 @@ import { mediaType, mediaUrls, tileNote } from "../net/media.js"
 import { gateIds } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
 import { replyRefs, repostedId } from "../net/thread.js"
+import { displayTitle } from "../readers/longform.js"
 
 const URL_RE = /https?:\/\/[^\s<>"]+/gi
 const NOSTR_RE = /nostr:(npub|nprofile|note|nevent|naddr)1[a-z0-9]+/gi
@@ -87,7 +88,7 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
   if (!placeholder) rememberNote(note)
   const media = placeholder ? [] : mediaUrls(note)
   const links = placeholder ? [] : linkUrls(note)
-  const parts = placeholder ? [placeholder] : textParts(note.content)
+  const parts = placeholder ? [placeholder] : note.kind === 30023 ? [displayTitle(note)] : textParts(note.content)
   const root = depth === 0
   const go = onOpen && !placeholder ? tap(note.id, () => onOpen(note)) : open(note.id)
   return (
@@ -105,6 +106,7 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
             {root && note.kind === 1 && replyRefs(note).parent && <Mark kind="reply" />}
             {reposter && <span class="condensed-repost"><Mark kind="repost" /><AuthorName pubkey={reposter} /></span>}
             {!placeholder && quotes(note) && <Mark kind="quote" />}
+            {KIND_MARK[note.kind] && <Mark kind={KIND_MARK[note.kind]} />}
           </span>
         </div>
         {parts.length > 0 && <p class={`condensed-text${placeholder ? " muted" : ""}`} style={`-webkit-line-clamp: ${lines ?? 3}`}>
@@ -118,9 +120,14 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
   )
 }
 
+// An article, highlight or poll says so, as CondensedNoteLine.kindMarker does.
+const KIND_MARK = { 30023: "article", 9802: "highlight", 1068: "poll" }
 const MARKS = {
   reply: ["Reply", "M10 4 3 11l7 7v-4.2c5 0 8.4 1.6 11 5.2-1-5-4-10-11-11V4z", true],
   repost: ["Repost", "M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3", false],
+  article: ["Article", "M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6", false],
+  highlight: ["Highlight", "M15 4l5 5-9 9H6v-5zM4 21h7", false],
+  poll: ["Poll", "M4 20V10M10 20V4M16 20v-7M22 20H2", false],
   quote: ["Quote", "M14 15c3.5-1 5-3.5 5-7.5V6h-5v5h3M5 15c3.5-1 5-3.5 5-7.5V6H5v5h3", false],
 }
 /** The iPhone's glyphs on the right of a line's header: it is a reply, a repost, a quote. */

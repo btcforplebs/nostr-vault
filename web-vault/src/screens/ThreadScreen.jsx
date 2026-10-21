@@ -7,6 +7,7 @@ import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { isBlockedNote, visibleReplies } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 
 const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain still fits a phone
 
@@ -16,13 +17,16 @@ const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain sti
  *  -> { rootId, extra: [event] } */
 export async function threadStart(vault, id) {
   const [stored] = await vault.feed.query({ ids: [id] })
-  if (stored) return { rootId: rootIdOf(stored), extra: [] }
+  if (stored) return { rootId: selfRooted(stored) ? stored.id : rootIdOf(stored), extra: [] }
   const carried = await repostedNote(vault, id)
   if (!carried) return { rootId: id, extra: [] }
   const rid = rootIdOf(carried)
   const rootStored = rid !== id && (await vault.feed.query({ ids: [rid] })).length > 0
   return { rootId: rootStored ? rid : id, extra: [carried] }
 }
+
+/** Posts other than notes and reposts (an article, a poll, a highlight) start their own thread. */
+const selfRooted = ev => !!ev && ev.kind !== 1 && ev.kind !== 6
 
 export function ThreadScreen({ ctx, id }) {
   const { vault, account } = ctx
@@ -37,14 +41,21 @@ export function ThreadScreen({ ctx, id }) {
   // read or sync for the previous thread can't take over this one's root, extra or status.
   const reload = async (rid, isLive) => {
     const evs = await readThread(vault, rid)
-    if (isLive()) setThread(buildThread(rid, [...evs, ...extra.current]))
+    const all = [...evs, ...extra.current]
+    const t = buildThread(rid, all)
+    // buildThread roots only notes; an article, poll or highlight is the root of its own thread.
+    if (!t.root) t.root = all.find(e => e.id === rid && selfRooted(e)) ?? null
+    if (isLive()) setThread(t)
   }
   const sync = async isLive => {
     if (!navigator.onLine) return setStatus("Offline: showing the saved thread")
     setStatus("Loading replies…")
     try {
-      const { rootId: rid } = await syncThread(vault, id, relays)
+      const synced = await syncThread(vault, id, relays)
       if (!isLive()) return
+      // An article, poll or highlight is its own thread's root, whatever notes it tags.
+      const [self] = await vault.feed.query({ ids: [id] })
+      const rid = selfRooted(self) ? id : synced.rootId
       setRootId(rid)
       await reload(rid, isLive)
       if (isLive()) setStatus("")
@@ -75,6 +86,8 @@ export function ThreadScreen({ ctx, id }) {
   // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back.
   const rows = thread ? flattenThread(visibleReplies(thread.replies, blocked)) : []
   const rootBlocked = thread?.root && isBlockedNote(thread.root, blocked)
+  // An article opens as the article, with its likes, comments, zaps and highlights, as the iPhone's does.
+  if (thread?.root?.kind === 30023 && !rootBlocked) return <main class="screen"><ArticleReader event={thread.root} ctx={ctx} onBack={() => history.back()} /></main>
   return (
     <main class="screen">
       <header class="screen-head">
