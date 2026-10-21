@@ -450,18 +450,22 @@ func initRelays(ctx context.Context) error {
 	relayCtx := ctx
 	blastQ := openBlastQueue(blastPendingFile)
 	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx, blastQ) })
-	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
+	blastStored := func(ctx context.Context, event *nostr.Event) error {
 		slog.Info("event stored")
 		// The relay's context, not the connection's: a sender that hangs up
 		// right after OK (the other phone over the mesh) must not cut the blast.
 		runsafe.Go("blast", func() { blastOrKeep(relayCtx, blastQ, event) })
 		return nil
-	})
+	}
+	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, blastStored)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
 	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
-	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
+	// khatru hands replaceable kinds (0, 3, 10002, 10063, 30023…) to ReplaceEvent,
+	// never StoreEvent, so they are blasted here too: a phone's 10063 sent only
+	// to this relay otherwise never reaches the public relays.
+	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent, blastStored)
 
 	mux = outboxRelay.Router()
 
