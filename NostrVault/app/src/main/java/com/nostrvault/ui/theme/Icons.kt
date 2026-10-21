@@ -129,6 +129,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.OfflineBolt
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.filled.Translate
@@ -265,10 +266,10 @@ object NostrVaultIcons {
     val PeopleList: ImageVector = Icons.AutoMirrored.Filled.FormatListBulleted // list.bullet
 
     // Tab bar (iOS BottomTabBar)
-    val TabFeed: ImageVector = Icons.Filled.People           // person.2.wave.2
+    val TabFeed: ImageVector = Icons.Outlined.People         // person.2.wave.2 (a line glyph, not .fill)
     val TabMedia: ImageVector = Icons.Filled.PhotoLibrary    // photo.on.rectangle
     /** The Vault tab and its Vault Dashboard (Media and Relay in one). */
-    val TabVault: ImageVector = Icons.Filled.Inventory2      // lock.rectangle.stack
+    val TabVault: ImageVector = Icons.Outlined.Inventory2    // lock.rectangle.stack (a line glyph, not .fill)
     /** The Vault tab's Highlights list (NIP-84). */
     val Highlights: ImageVector = Icons.Filled.BorderColor   // highlighter
     val ChevronDown: ImageVector = Icons.Filled.KeyboardArrowDown // chevron.down
