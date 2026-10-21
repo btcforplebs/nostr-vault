@@ -53,12 +53,12 @@ struct RepostedNoteView: View {
             if !urls.isEmpty {
                 if urls.count == 1 {
                     FeedMediaView(url: urls[0], maxHeight: 250, portraitMaxHeight: 350, isThumbnail: false)
-                        .meshMediaAuthor(inner.pubkey)
+                        .meshMediaNote(author: inner.pubkey, tags: inner.tags)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
                     MediaPagerView(items: Array(urls.prefix(4))) { url in
                         FeedMediaView(url: url, maxHeight: 250, portraitMaxHeight: 350, isThumbnail: false)
-                            .meshMediaAuthor(inner.pubkey)
+                            .meshMediaNote(author: inner.pubkey, tags: inner.tags)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             #if os(iOS)
                             .transition(.opacity.animation(Motion.media))

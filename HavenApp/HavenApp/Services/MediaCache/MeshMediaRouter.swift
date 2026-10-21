@@ -6,10 +6,11 @@ import CryptoKit
 /// A vault on the mesh lists `fipsmesh://<npub>/` in its owner's kind 10063.
 /// A photo is found by its sha256: the `.fips` URL's path
 /// (`http://<npub>.fips/<sha>.<ext>`), any Blossom-style path, or the note's
-/// `imeta x`. The read goes only to the author of the note being drawn, never
-/// to whoever first mentioned a blob, or anyone could post someone else's URL
-/// and pull readers to their node. Only authors the owner follows (or the
-/// owner) are dialled: dialling shows the vault this device's address.
+/// note's own `imeta x`. The read goes only to a vault the author of the note
+/// being drawn lists in their own 10063, never to whoever first mentioned a
+/// blob or to a node a `.fips` URL merely names, or anyone could pull readers
+/// to their node. Only authors the owner follows (or the owner) are dialled:
+/// dialling shows the vault this device's address.
 ///
 /// The vault is trusted no more than any other server: the whole body is read,
 /// capped, and hashed before any of it is used. Wrong bytes drop that vault for
@@ -64,7 +65,12 @@ actor MeshMediaRouter {
     struct Plan: Equatable {
         var sha256: String
         /// The vault a `.fips` URL names; nil means the author's 10063 decides.
+        /// Either way the vault must be one the author lists.
         var hostNpub: String?
+        /// The hash is the URL's own (its path), so bytes that match it are
+        /// that URL's bytes for every note. A hash from a note's `imeta` only
+        /// speaks for that note: its bytes are kept under the hash, never the URL.
+        var hashFromPath: Bool = true
         /// A `.fips` URL is only reachable over the mesh (or a FIPS daemon),
         /// so the mesh goes first. Any other URL is tried as usual first.
         var meshFirst: Bool { hostNpub != nil }
@@ -75,8 +81,29 @@ actor MeshMediaRouter {
         let host = meshNpub(inHost: url.host)
         // A path hash is what the URL itself names; the imeta hash only
         // speaks for URLs that carry none.
-        guard let sha = sha256(inPath: url) ?? normalizedSha256(imetaSha256) else { return nil }
-        return Plan(sha256: sha, hostNpub: host)
+        if let sha = sha256(inPath: url) { return Plan(sha256: sha, hostNpub: host) }
+        guard let sha = normalizedSha256(imetaSha256) else { return nil }
+        return Plan(sha256: sha, hostNpub: host, hashFromPath: false)
+    }
+
+    /// The disk and image cache key for bytes found by a note's `imeta` hash:
+    /// the hash itself, so they never stand in for the URL in another note.
+    static func blobCacheKey(sha256: String) -> URL {
+        URL(string: "fipsmesh-blob:\(sha256)")!
+    }
+
+    /// Each media URL's `x` in a note's own `imeta` tags (NIP-92), by URL string.
+    static func imetaSha256s(tags: [[String]]) -> [String: String] {
+        var hashes: [String: String] = [:]
+        for tag in tags where tag.first == "imeta" {
+            var url: String?, sha: String?
+            for field in tag.dropFirst() {
+                if field.hasPrefix("url ") { url = field.dropFirst(4).trimmingCharacters(in: .whitespaces) }
+                if field.hasPrefix("x ") { sha = normalizedSha256(field.dropFirst(2).trimmingCharacters(in: .whitespaces)) }
+            }
+            if let url, let sha { hashes[url] = sha }
+        }
+        return hashes
     }
 
     /// `<npub>.fips` exactly (any case), or nil.
@@ -98,9 +125,12 @@ actor MeshMediaRouter {
         return value
     }
 
-    /// The first vault an author lists in their 10063.
-    static func meshNpub(inServerList list: [String]) -> String? {
-        list.lazy.compactMap(HomeVaultLogic.meshNpub(fromEntry:)).first
+    /// The vault a read may dial: the one a `.fips` URL names only when the
+    /// author lists it, else the author's first listed vault.
+    static func vault(for plan: Plan, serverList list: [String]) -> String? {
+        let listed = HomeVaultLogic.meshEntries(serverList: list, excluding: nil)
+        guard let host = plan.hostNpub else { return listed.first }
+        return listed.contains(host) ? host : nil
     }
 
     static func hashMatches(_ data: Data, sha256: String) -> Bool {
@@ -112,20 +142,17 @@ actor MeshMediaRouter {
     /// The photo's bytes from the author's vault, checked against its hash,
     /// or nil (not followed, no vault listed, unreachable, wrong bytes).
     func read(plan: Plan, author: String) async -> Data? {
-        guard await deps.mayDial(author) else { return nil }
-        let npub: String
-        if let host = plan.hostNpub {
-            // The author picked this vault for this blob.
-            npub = host
-        } else if let listed = await listedVault(of: author) {
-            npub = listed
-        } else {
-            return nil
-        }
+        guard await deps.mayDial(author),
+              let list = await serverList(of: author),
+              // A `.fips` URL may name any node; only the author's own signed
+              // list says which are theirs.
+              let npub = Self.vault(for: plan, serverList: list)
+        else { return nil }
         guard !distrusted.contains(npub), let base = await ingressBase(npub) else { return nil }
         guard let reply = await deps.get(base.appendingPathComponent(plan.sha256), Self.maxBytes) else {
-            // The node restarted or the vault went away: dial again next time.
-            ingressCache[npub] = nil
+            // The node restarted or the vault went away: dial again, but not
+            // once per photo.
+            ingressCache[npub] = (nil, deps.now())
             return nil
         }
         // Honestly missing, or honestly too big (a video): the vault keeps its standing.
@@ -139,11 +166,11 @@ actor MeshMediaRouter {
         return data
     }
 
-    /// The author's listed vault. A 10063 never seen is asked for, and a read
-    /// that just asked waits a few seconds for it, so the first photo of a
-    /// newly followed author still loads by scrolling.
-    private func listedVault(of author: String) async -> String? {
-        if let list = await deps.serverList(author) { return Self.meshNpub(inServerList: list) }
+    /// The author's 10063. One never seen is asked for, and a read that just
+    /// asked waits a few seconds for it, so the first photo of a newly
+    /// followed author still loads by scrolling.
+    private func serverList(of author: String) async -> [String]? {
+        if let list = await deps.serverList(author) { return list }
         let now = deps.now()
         if let last = requested[author], now.timeIntervalSince(last) < Self.requestRetry { return nil }
         requested[author] = now
@@ -152,7 +179,7 @@ actor MeshMediaRouter {
         while waited < Self.listWait {
             await deps.sleep(Self.listPoll)
             waited += Self.listPoll
-            if let list = await deps.serverList(author) { return Self.meshNpub(inServerList: list) }
+            if let list = await deps.serverList(author) { return list }
         }
         return nil
     }

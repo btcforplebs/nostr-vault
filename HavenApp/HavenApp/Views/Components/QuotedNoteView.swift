@@ -156,7 +156,7 @@ struct QuotedNoteView: View {
                 portraitMaxHeight: 220,
                 isThumbnail: false
             )
-            .meshMediaAuthor(note.pubkey)
+            .meshMediaNote(author: note.pubkey, tags: note.tags)
             .allowsHitTesting(false)
         }
     }

@@ -30,7 +30,8 @@ final class MeshMediaRouterTests: XCTestCase {
 
     func testImetaXOnlySpeaksForAURLWithNoHash() {
         let other = String(repeating: "b", count: 64)
-        XCTAssertEqual(MeshMediaRouter.plan(url: URL(string: "https://cdn.example/p/photo.jpg")!, imetaSha256: sha)?.sha256, sha)
+        XCTAssertEqual(MeshMediaRouter.plan(url: URL(string: "https://cdn.example/p/photo.jpg")!, imetaSha256: sha),
+                       .init(sha256: sha, hostNpub: nil, hashFromPath: false))
         XCTAssertEqual(MeshMediaRouter.plan(url: URL(string: "https://blossom.band/\(sha).jpg")!, imetaSha256: other)?.sha256, sha,
                        "the path hash is what the URL names")
         XCTAssertNil(MeshMediaRouter.plan(url: URL(string: "https://cdn.example/p/photo.jpg")!, imetaSha256: nil))
@@ -46,25 +47,53 @@ final class MeshMediaRouterTests: XCTestCase {
     }
 
     func testTheFirstListedVaultWins() {
-        XCTAssertEqual(MeshMediaRouter.meshNpub(inServerList: ["https://blossom.band/", "fipsmesh://\(vault)/", "fipsmesh://\(other)/"]), vault)
-        XCTAssertNil(MeshMediaRouter.meshNpub(inServerList: ["https://blossom.band/", "fipsmesh://\(vault)/x"]))
+        let plain = MeshMediaRouter.Plan(sha256: sha, hostNpub: nil)
+        XCTAssertEqual(MeshMediaRouter.vault(for: plain, serverList: ["https://blossom.band/", "fipsmesh://\(vault)/", "fipsmesh://\(other)/"]), vault)
+        XCTAssertNil(MeshMediaRouter.vault(for: plain, serverList: ["https://blossom.band/", "fipsmesh://\(vault)/x"]))
+    }
+
+    func testAFipsHostCountsOnlyWhenTheAuthorListsIt() {
+        let fips = MeshMediaRouter.Plan(sha256: sha, hostNpub: other)
+        XCTAssertEqual(MeshMediaRouter.vault(for: fips, serverList: ["fipsmesh://\(vault)/", "fipsmesh://\(other)/"]), other)
+        XCTAssertNil(MeshMediaRouter.vault(for: fips, serverList: ["fipsmesh://\(vault)/"]),
+                     "a URL naming someone else's node is not the author's vault")
+        XCTAssertNil(MeshMediaRouter.vault(for: fips, serverList: []))
+    }
+
+    func testANoteOnlyVouchesForItsOwnImetaHashes() {
+        let tags = [["imeta", "url https://cdn.example/a.jpg", "x \(sha.uppercased())", "m image/jpeg"],
+                    ["imeta", "url https://cdn.example/b.jpg", "x nope"],
+                    ["imeta", "x \(sha)"],
+                    ["p", sha]]
+        XCTAssertEqual(MeshMediaRouter.imetaSha256s(tags: tags), ["https://cdn.example/a.jpg": sha])
+        XCTAssertEqual(MeshMediaRouter.blobCacheKey(sha256: sha).absoluteString, "fipsmesh-blob:\(sha)")
+        XCTAssertNotEqual(MeshMediaRouter.blobCacheKey(sha256: sha), URL(string: "https://cdn.example/a.jpg"))
     }
 
     // MARK: - Reading
 
     func testAFollowedAuthorsFipsPhotoIsReadFromTheVaultTheURLNames() async {
-        let fake = Fake(photo: photo, base: base)
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(other)/", "fipsmesh://\(vault)/"]])
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let data = await router.read(plan: .init(sha256: sha, hostNpub: vault), author: author)
         XCTAssertEqual(data, photo)
         let state = await fake.snapshot()
-        XCTAssertEqual(state.dials, [vault])
+        XCTAssertEqual(state.dials, [vault], "the listed vault the URL names, not the first listed")
         XCTAssertEqual(state.gets, [base.appendingPathComponent(sha)])
-        XCTAssertEqual(state.listLookups, 0, "the URL already named the vault")
+    }
+
+    func testAFipsURLNamingANodeTheAuthorDoesNotListIsNeverDialled() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let data = await router.read(plan: .init(sha256: sha, hostNpub: other), author: author)
+        XCTAssertNil(data)
+        let state = await fake.snapshot()
+        XCTAssertEqual(state.dials, [], "dialling would hand that node this device's address")
+        XCTAssertEqual(state.gets, [])
     }
 
     func testSomeoneNotFollowedIsNeverDialled() async {
-        let fake = Fake(photo: photo, base: base)
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
         let router = MeshMediaRouter(fake.deps(follows: []))
         let data = await router.read(plan: .init(sha256: sha, hostNpub: vault), author: author)
         XCTAssertNil(data)
@@ -118,7 +147,7 @@ final class MeshMediaRouterTests: XCTestCase {
     }
 
     func testWrongBytesDropTheVaultForTheSession() async {
-        let fake = Fake(photo: Data("not the photo".utf8), base: base)
+        let fake = Fake(photo: Data("not the photo".utf8), base: base, lists: [author: ["fipsmesh://\(vault)/"]])
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
         let first = await router.read(plan: plan, author: author)
@@ -132,7 +161,7 @@ final class MeshMediaRouterTests: XCTestCase {
     }
 
     func testAMissingOrOversizedBlobKeepsTheVaultsStanding() async {
-        let fake = Fake(photo: photo, base: base)
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
         await fake.setStatus(404)
@@ -152,7 +181,7 @@ final class MeshMediaRouterTests: XCTestCase {
     }
 
     func testPhotosFromOneVaultShareOneDial() async {
-        let fake = Fake(photo: photo, base: base, dialDelayPolls: 5)
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]], dialDelayPolls: 5)
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
         async let a = router.read(plan: plan, author: author)
@@ -165,7 +194,7 @@ final class MeshMediaRouterTests: XCTestCase {
     }
 
     func testADeadVaultCostsOneWaitThenIsTriedAgainLater() async {
-        let fake = Fake(photo: photo, base: base)
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
         await fake.setDialFails(true)
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
@@ -181,17 +210,22 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(dials.count, 2)
     }
 
-    func testABrokenConnectionDialsAgainNextTime() async {
-        let fake = Fake(photo: photo, base: base)
+    func testABrokenConnectionBacksOffThenDialsAgain() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
         await fake.setGetFails(true)
         let failed = await router.read(plan: plan, author: author)
         XCTAssertNil(failed)
         await fake.setGetFails(false)
+        let soon = await router.read(plan: plan, author: author)
+        XCTAssertNil(soon, "a vault that dials but never answers is not dialled per photo")
+        var dials = await fake.snapshot().dials
+        XCTAssertEqual(dials.count, 1)
+        await fake.advance(MeshMediaRouter.ingressRetry + 1)
         let data = await router.read(plan: plan, author: author)
         XCTAssertEqual(data, photo)
-        let dials = await fake.snapshot().dials
+        dials = await fake.snapshot().dials
         XCTAssertEqual(dials.count, 2, "the old loopback base may be dead")
     }
 }

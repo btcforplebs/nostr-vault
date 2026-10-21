@@ -34,82 +34,171 @@ extension MeshMediaRouter.Dependencies {
     }
 }
 
-/// A whole-blob GET over a loopback mesh ingress, streamed to disk so an
-/// oversized or endless body never sits in memory.
+/// A whole-blob GET over a loopback mesh ingress, capped while it streams:
+/// the moment a body passes `maxBytes` the transfer is cancelled, so a vault
+/// that never stops sending costs at most `maxBytes`, in memory or on disk.
 private enum MeshMediaGet {
-    static let session: URLSession = {
+    static let configuration: URLSessionConfiguration = {
         let config = URLSessionConfiguration.ephemeral
         // A quiet vault gives up like a slow server; a big photo may still trickle in.
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 120
         config.urlCache = nil
-        return URLSession(configuration: config)
+        return config
     }()
 
     static func get(_ url: URL, maxBytes: Int) async -> MeshMediaRouter.Reply? {
         // A Range answer could never match the hash: plain GET, all of it.
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        do {
-            let (file, response) = try await session.download(for: request)
-            defer { try? FileManager.default.removeItem(at: file) }
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let size = ((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? NSNumber)?.intValue ?? 0
-            guard size <= maxBytes else { return .init(status: status, data: nil) }
-            return .init(status: status, data: try Data(contentsOf: file))
-        } catch {
-            return nil
+        let collector = CappedCollector(maxBytes: maxBytes)
+        let session = URLSession(configuration: configuration, delegate: collector, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        let task = session.dataTask(with: request)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                collector.start(task, continuation)
+            }
+        } onCancel: {
+            task.cancel()
         }
+    }
+}
+
+/// Collects one body, cancelling the transfer past its cap.
+private final class CappedCollector: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let maxBytes: Int
+    private let lock = NSLock()
+    private var data = Data()
+    private var status = 0
+    private var oversized = false
+    private var continuation: CheckedContinuation<MeshMediaRouter.Reply?, Never>?
+
+    init(maxBytes: Int) {
+        self.maxBytes = maxBytes
+    }
+
+    func start(_ task: URLSessionDataTask, _ continuation: CheckedContinuation<MeshMediaRouter.Reply?, Never>) {
+        lock.withLock { self.continuation = continuation }
+        task.resume()
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        let declared = response.expectedContentLength
+        lock.withLock {
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if declared > Int64(maxBytes) { oversized = true }
+        }
+        completionHandler(declared > Int64(maxBytes) ? .cancel : .allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive chunk: Data) {
+        let over = lock.withLock { () -> Bool in
+            guard !oversized else { return true }
+            if data.count + chunk.count > maxBytes {
+                oversized = true
+                data = Data()
+                return true
+            }
+            data.append(chunk)
+            return false
+        }
+        if over { dataTask.cancel() }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let (reply, continuation) = lock.withLock { () -> (MeshMediaRouter.Reply?, CheckedContinuation<MeshMediaRouter.Reply?, Never>?) in
+            defer { self.continuation = nil }
+            // Over the cap: an honest answer, nothing kept.
+            if oversized { return (.init(status: status, data: nil), self.continuation) }
+            if error != nil { return (nil, self.continuation) }
+            return (.init(status: status, data: data), self.continuation)
+        }
+        continuation?.resume(returning: reply)
     }
 }
 
 extension MediaCacheService {
     /// `fetchData`, plus the note author's own vault on the FIPS mesh (NIP-F1).
     /// A `.fips` photo is read over the mesh first; any other photo with a
-    /// known hash only when its URL fails. A mesh read is cached under the
-    /// note's URL, so scrolling back never dials again.
-    func fetchData(url: URL, meshAuthor: String?) async -> Data? {
+    /// known hash only when its URL fails. Returns the bytes and the key they
+    /// are cached under: the URL when its own path names the hash, else the
+    /// hash, so a note's `imeta` can never put its bytes under someone else's URL.
+    func fetchData(url: URL, meshAuthor: String?, imetaSha256: String?) async -> (data: Data, cacheKey: URL)? {
         guard let author = meshAuthor,
-              let plan = MeshMediaRouter.plan(url: url, imetaSha256: MediaHints.shared.hint(for: url)?.sha256)
-        else { return await fetchData(url: url) }
+              let plan = MeshMediaRouter.plan(url: url, imetaSha256: imetaSha256)
+        else { return await fetchData(url: url).map { ($0, url) } }
+
+        let key = plan.hashFromPath ? url : MeshMediaRouter.blobCacheKey(sha256: plan.sha256)
+        if !plan.hashFromPath, let cached = loadFromCache(url: key) { return (cached, key) }
 
         if plan.meshFirst {
-            if let cached = loadFromCache(url: url) { return cached }
-            if let data = await readOverMesh(plan: plan, author: author, url: url) { return data }
-            // Someone running a FIPS daemon can still open the URL as it is.
-            return await fetchData(url: url)
+            if plan.hashFromPath, let cached = loadFromCache(url: url) { return (cached, url) }
+            if let data = await readOverMesh(plan: plan, author: author, key: key) { return (data, key) }
+            return await fetchFipsURL(url, plan: plan).map { ($0, url) }
         }
-        if let data = await fetchData(url: url) { return data }
-        return await readOverMesh(plan: plan, author: author, url: url)
+        if let data = await fetchData(url: url) { return (data, url) }
+        return await readOverMesh(plan: plan, author: author, key: key).map { ($0, key) }
     }
 
-    private func readOverMesh(plan: MeshMediaRouter.Plan, author: String, url: URL) async -> Data? {
+    /// A `.fips` URL outside the mesh engine. The iPhone has no FIPS daemon,
+    /// so there it would only leak the vault's npub to DNS and fetch whatever a
+    /// resolver answers: skipped. A Mac may run a daemon; there the bytes must
+    /// match the hash the URL names, and wrong ones leave the cache.
+    private func fetchFipsURL(_ url: URL, plan: MeshMediaRouter.Plan) async -> Data? {
+        #if os(iOS)
+        return nil
+        #else
+        guard plan.hashFromPath, let data = await fetchData(url: url) else { return nil }
+        guard MeshMediaRouter.hashMatches(data, sha256: plan.sha256) else {
+            try? FileManager.default.removeItem(at: cachePath(for: url))
+            return nil
+        }
+        return data
+        #endif
+    }
+
+    private func readOverMesh(plan: MeshMediaRouter.Plan, author: String, key: URL) async -> Data? {
         guard let data = await MeshMediaRouter.shared.read(plan: plan, author: author) else { return nil }
         // print reaches relay.log, the file pulled off a device.
         print("FipsMesh: read \(plan.sha256.prefix(8)) over the mesh (\(data.count) bytes)")
-        saveToCache(url: url, data: data)
+        saveToCache(url: key, data: data)
         return data
     }
 }
 
 // MARK: - Which note a photo belongs to
 
-private struct MeshMediaAuthorKey: EnvironmentKey {
-    static let defaultValue: String? = nil
+/// The note whose media is drawn below: its author (hex), the only one whose
+/// listed vault a photo may be read from over the mesh, and the hashes its
+/// own `imeta` tags declare.
+struct MeshMediaNote: Equatable {
+    var author: String
+    var imetaSha256: [String: String]
+
+    init(author: String, tags: [[String]]) {
+        self.author = author
+        self.imetaSha256 = MeshMediaRouter.imetaSha256s(tags: tags)
+    }
+}
+
+private struct MeshMediaNoteKey: EnvironmentKey {
+    static let defaultValue: MeshMediaNote? = nil
 }
 
 extension EnvironmentValues {
-    /// The author (hex) of the note whose media is drawn below: the only vault
-    /// a photo may be read from over the mesh. nil keeps media off the mesh.
-    var meshMediaAuthor: String? {
-        get { self[MeshMediaAuthorKey.self] }
-        set { self[MeshMediaAuthorKey.self] = newValue }
+    /// nil keeps media off the mesh.
+    var meshMediaNote: MeshMediaNote? {
+        get { self[MeshMediaNoteKey.self] }
+        set { self[MeshMediaNoteKey.self] = newValue }
     }
 }
 
 extension View {
-    /// Let the photos below be read from `pubkey`'s vault on the FIPS mesh.
-    func meshMediaAuthor(_ pubkey: String?) -> some View {
-        environment(\.meshMediaAuthor, pubkey)
+    /// Let the photos below be read from `pubkey`'s vault on the FIPS mesh,
+    /// checked against the hashes in this note's own `tags`.
+    func meshMediaNote(author pubkey: String, tags: [[String]]) -> some View {
+        environment(\.meshMediaNote, MeshMediaNote(author: pubkey, tags: tags))
     }
 }
