@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -175,7 +174,7 @@ func meshUploadAuthorized(r *http.Request) (*nostr.Event, int, string) {
 	if !strings.HasPrefix(token, "Nostr ") {
 		return nil, http.StatusUnauthorized, "missing \"Authorization\" header"
 	}
-	raw, err := base64.StdEncoding.DecodeString(token[6:])
+	raw, err := decodeNostrAuthToken(token[6:])
 	if err != nil {
 		return nil, http.StatusBadRequest, "invalid base64 token"
 	}
