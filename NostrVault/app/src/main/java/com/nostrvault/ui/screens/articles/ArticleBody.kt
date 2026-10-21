@@ -28,7 +28,8 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.theme.*
-import dev.jeziellago.compose.markdowntext.MarkdownText
+import com.nostrvault.data.model.MarkdownParser
+import com.nostrvault.ui.components.FullScreenMediaRouter
 import java.text.DateFormat
 
 @Composable
@@ -50,8 +51,12 @@ internal fun ArticleBody(
     val gated = remember(note.id, note.tags) { com.nostrvault.data.model.GatedArticle.from(note) }
     val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
     val readMinutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
-    val blocks = remember(note.content) { ArticleEngagement.blocks(note.content) }
-    val placed = remember(blocks, highlights) { ArticleEngagement.place(highlights, blocks) }
+    val blocks = remember(note.content) { MarkdownParser.parse(note.content) }
+    // Highlights land on the text blocks only; keys go back to block indexes.
+    val placed = remember(blocks, highlights) {
+        val textBlocks = blocks.withIndex().mapNotNull { (i, b) -> b.highlightableText?.let { i to it } }
+        ArticleEngagement.place(highlights, textBlocks.map { it.second }).mapKeys { textBlocks[it.key].first }
+    }
     val colors = LocalNostrVaultColors.current
 
     Column(modifier = modifier) {
@@ -109,79 +114,23 @@ internal fun ArticleBody(
         actions()
         Spacer(Modifier.height(20.dp))
         val bodyStyle = TextStyle(color = PrimaryText, fontSize = 16.sp, lineHeight = 24.sp)
-        if (gated != null && gatedArticles != null) {
-            GatedArticleBody(note, gated, gatedArticles, author, bodyStyle)
-        } else if (onHighlightBlock == null && placed.isEmpty()) {
-            MarkdownText(
-                markdown = note.content,
-                style = bodyStyle,
-                linkColor = colors.primary,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else if (onHighlightBlock == null) {
-            // Block by block, so a passage other people highlighted gets a
-            // soft yellow tint and a count that opens who highlighted it.
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                blocks.forEachIndexed { index, block ->
-                    val shown = placed[index]
-                    if (shown == null) {
-                        MarkdownText(markdown = block, style = bodyStyle, linkColor = colors.primary,
-                            modifier = Modifier.fillMaxWidth())
-                    } else {
-                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            MarkdownText(
-                                markdown = block,
-                                style = bodyStyle,
-                                linkColor = colors.primary,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(HighlightYellow.copy(alpha = 0.16f))
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(HighlightYellow.copy(alpha = 0.16f))
-                                    .clickable(onClickLabel = if (shown.size == 1) "1 highlight" else "${shown.size} highlights") {
-                                        onShowHighlights(shown)
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                            ) {
-                                Icon(Icons.Outlined.BorderColor, contentDescription = null, tint = SecondaryText,
-                                    modifier = Modifier.size(13.dp))
-                                Text("${shown.size}", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            // Highlight mode: one tappable block per paragraph, tinted so the
-            // reader can see what a tap will pick up.
+        if (onHighlightBlock != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.BorderColor, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
                 Text("Tap a paragraph to highlight it", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
             Spacer(Modifier.height(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                blocks.forEach { block ->
-                    Text(
-                        text = ArticleEngagement.plainText(block),
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        lineHeight = 24.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(colors.primary.copy(alpha = 0.08f))
-                            .clickable { onHighlightBlock(ArticleEngagement.plainText(block)) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
-                }
-            }
+        }
+        if (gated != null && gatedArticles != null) {
+            GatedArticleBody(note, gated, gatedArticles, author, bodyStyle)
+        } else {
+            MarkdownBody(
+                blocks = blocks,
+                onImageTap = { url -> FullScreenMediaRouter.open(listOf(url), 0) },
+                onHighlight = onHighlightBlock,
+                highlights = placed,
+                onShowHighlights = onShowHighlights,
+            )
         }
         if (highlights.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
