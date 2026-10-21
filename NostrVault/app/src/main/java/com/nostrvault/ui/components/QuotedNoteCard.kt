@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,7 +83,6 @@ fun QuotedNoteCard(
         return
     }
 
-    val colors = LocalNostrVaultColors.current
     val meta = if (note.kind == ArticleMeta.KIND) {
         remember(note.id, note.tags) { ArticleMeta.from(note) }
     } else null
@@ -90,12 +90,9 @@ fun QuotedNoteCard(
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = TertiaryGroupedBg,
-        border = BorderStroke(
-            // Embedded in a note, so it tracks NoteCard's OLED bump
-            // rather than sitting fainter than the card it lives inside.
-            if (LocalOledMode.current) 0.8.dp else 0.5.dp,
-            colors.primary.copy(alpha = if (LocalOledMode.current) 0.18f else 0.12f),
-        ),
+        // iOS QuotedNoteView: a 1pt borderStrong stroke, the only real cue
+        // that the card is nested inside another (the fill step alone is a seam).
+        border = BorderStroke(1.dp, BorderStrong),
         modifier = modifier
             .fillMaxWidth()
             .clickable {
@@ -116,11 +113,11 @@ fun QuotedNoteCard(
                     displayName = profile?.bestName,
                 )
 
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
 
                 Text(
-                    text = profile?.bestName ?: note.pubkey.take(8) + "...",
-                    color = PrimaryText,
+                    text = profile?.bestName ?: "Someone",
+                    color = PrimaryText.copy(alpha = 0.9f),
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
                     maxLines = 1,
@@ -132,8 +129,9 @@ fun QuotedNoteCard(
 
                 Text(
                     text = formatTimestamp(note.createdAt.time / 1000),
-                    color = TertiaryText,
+                    color = SecondaryText.copy(alpha = 0.7f),
                     fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
                 )
             }
 
@@ -143,7 +141,7 @@ fun QuotedNoteCard(
             } else {
                 // Content
                 if (note.content.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(
                         text = remember(note.content, profiles, note.mediaURLs) {
                             NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet())
@@ -306,7 +304,6 @@ fun QuotedNotePlaceholder(
         )
         return
     }
-    val colors = LocalNostrVaultColors.current
     // An unresolved naddr is a coordinate, not an event id, so handing it to
     // the note screen opens a route that can never load. Once it resolves the
     // card replaces this and is tappable.
@@ -315,12 +312,9 @@ fun QuotedNotePlaceholder(
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = TertiaryGroupedBg,
-        border = BorderStroke(
-            // Embedded in a note, so it tracks NoteCard's OLED bump
-            // rather than sitting fainter than the card it lives inside.
-            if (LocalOledMode.current) 0.8.dp else 0.5.dp,
-            colors.primary.copy(alpha = if (LocalOledMode.current) 0.18f else 0.12f),
-        ),
+        // iOS QuotedNoteView: a 1pt borderStrong stroke, the only real cue
+        // that the card is nested inside another (the fill step alone is a seam).
+        border = BorderStroke(1.dp, BorderStrong),
         modifier = modifier
             .fillMaxWidth()
             .then(if (isCoordinate) Modifier else Modifier.clickable { onClick(identifier) }),

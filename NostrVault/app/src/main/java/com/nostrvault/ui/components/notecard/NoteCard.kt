@@ -9,12 +9,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +31,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.PostEngagement
 import com.nostrvault.data.model.poll
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 
 /**
@@ -50,8 +49,8 @@ fun NoteCard(
     isReposted: Boolean = false,
     isFocused: Boolean = false,
     showReplyContext: Boolean = false,
+    /** The parent is the row above: no parent preview (iOS showParent: !parentIsNext). */
     parentIsNext: Boolean = false,
-    hasReplyBelow: Boolean = false,
     parentNote: FeedNote? = null,
     repostedByProfile: FeedProfile? = null,
     replyToProfile: FeedProfile? = null,
@@ -179,40 +178,10 @@ fun NoteCard(
     val cardCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val zoomView = LocalView.current
 
-    // Thread connector lines drawn behind the card
-    val drawConnectors = parentIsNext || hasReplyBelow
-    val connectorModifier = if (drawConnectors) {
-        // Avatar center X = 14dp padding + 20dp (half avatar) = 34dp
-        // Avatar center Y = 14dp padding + repost row height (if any) + 20dp (half avatar)
-        Modifier.drawBehind {
-            val lineX = 34.dp.toPx()
-            val lineWidth = 2.dp.toPx()
-            val avatarTop = 14.dp.toPx() + if (note.repostedBy != null) 24.dp.toPx() else 0f
-            val avatarCenter = avatarTop + 20.dp.toPx()
-
-            // Line from card top down to avatar center (connects to card above)
-            if (parentIsNext) {
-                drawLine(
-                    color = connectorColor,
-                    start = Offset(lineX, 0f),
-                    end = Offset(lineX, avatarCenter),
-                    strokeWidth = lineWidth,
-                )
-            }
-            // Line from avatar bottom down to card bottom (connects to card below)
-            if (hasReplyBelow) {
-                drawLine(
-                    color = connectorColor,
-                    start = Offset(lineX, avatarCenter),
-                    end = Offset(lineX, size.height),
-                    strokeWidth = lineWidth,
-                )
-            }
-        }
-    } else {
-        Modifier
-    }
-
+    // The 🔥 rank sits above the card, clear of the time and menu (iOS
+    // FeedView.feedNoteRowContent, 6pt gap).
+    Column(modifier = modifier.fillMaxWidth()) {
+    popularRank?.let { PopularRankLine(it) }
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = SecondaryGroupedBg.copy(alpha = 0.85f),
@@ -241,9 +210,8 @@ fun NoteCard(
         // No shadow: 8dp of it is not legible on a near-black surface. The 2dp
         // accent border above is what says "focused".
         shadowElevation = 0.dp,
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .then(connectorModifier)
             .onGloballyPositioned { cardCoords[0] = it }
             .clickable {
                 // The thread view zooms open out of this card (iOS #306).
@@ -264,7 +232,6 @@ fun NoteCard(
         Column(
             modifier = Modifier.padding(14.dp),
         ) {
-            popularRank?.let { PopularRankLine(it) }
             // Parent note preview (inside card, matching iOS)
             val showParentPreview = showReplyContext && note.isReply && !parentIsNext && note.parentEventId != null
             if (showParentPreview) {
@@ -297,46 +264,45 @@ fun NoteCard(
                         ParentNoteSkeleton(connectorColor = connectorColor)
                     }
                 }
-                // Connector stub bridging parent preview to current note's avatar
-                Box(
-                    modifier = Modifier
-                        .padding(start = 19.dp) // center of 40dp avatar - 1dp half width
-                        .width(2.dp)
-                        .height(8.dp)
-                        .background(connectorColor),
-                )
+                Spacer(Modifier.height(10.dp))
             }
 
             // Repost attribution
             if (note.repostedBy != null) {
+                // iOS: 10pt icon + 11pt medium text, all green at 70%,
+                // indented to the name column, 10pt above the header.
+                val repostTint = RepostGreen.copy(alpha = 0.7f)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 6.dp, start = 40.dp),
+                    modifier = Modifier.padding(bottom = 10.dp, start = 52.dp),
                 ) {
                     Icon(
                         imageVector = NostrVaultIcons.Repost,
                         contentDescription = null,
-                        tint = RepostGreen,
-                        modifier = Modifier.size(12.dp),
+                        tint = repostTint,
+                        modifier = Modifier.size(10.dp),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = "${repostedByProfile?.bestName ?: note.repostedBy!!.take(8) + "..."} reposted",
-                        color = SecondaryText,
-                        fontSize = 12.sp,
+                        text = "${repostedByProfile?.bestName ?: shortKey(note.repostedBy!!)} reposted",
+                        color = repostTint,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
 
-            // Author header
+            // Author header (iOS FeedNoteRow wide layout): avatar and name
+            // column top-aligned, 12pt apart; the reply line sits under the
+            // name inside the column.
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 // Avatar: the quick menu in the feed, the profile elsewhere
-                val authorName = profile?.bestName ?: note.pubkey.take(8) + "..."
+                val authorName = profile?.bestName ?: shortKey(note.pubkey)
                 AvatarWithMenu(
                     pubkey = note.pubkey,
                     displayName = authorName,
@@ -353,9 +319,12 @@ fun NoteCard(
                     )
                 }
 
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = authorName,
@@ -376,7 +345,7 @@ fun NoteCard(
 
                         // NIP-05 verification badge
                         if (!profile?.nip05.isNullOrBlank()) {
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(6.dp))
                             Icon(
                                 imageVector = NostrVaultIcons.Verified,
                                 contentDescription = "Verified",
@@ -385,7 +354,7 @@ fun NoteCard(
                             )
                         }
                         if (note.isFromNostrVault) {
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(6.dp))
                             NostrVaultBadge(size = 12.dp)
                         }
 
@@ -398,51 +367,61 @@ fun NoteCard(
                             fontFamily = FontFamily.Monospace,
                             letterSpacing = 0.2.sp,
                         )
-                    }
-                }
 
-                // More menu
-                Box {
-                    IconButton(onClick = { showMoreMenu = true }) {
-                        Icon(
-                            imageVector = NostrVaultIcons.More,
-                            contentDescription = "More",
-                            tint = SecondaryText,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        Spacer(Modifier.width(6.dp))
+                        // iOS: a small 28x20 ellipsis at the end of the name row.
+                        Box {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(width = 28.dp, height = 20.dp)
+                                    .clickable { showMoreMenu = true }
+                                    .semantics { contentDescription = "More" },
+                            ) {
+                                Icon(
+                                    imageVector = NostrVaultIcons.More,
+                                    contentDescription = null,
+                                    tint = SecondaryText,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                            NoteActionsMenu(
+                                expanded = showMoreMenu,
+                                actions = moreActions,
+                                onDismiss = { showMoreMenu = false },
+                            )
+                        }
                     }
-                    NoteActionsMenu(
-                        expanded = showMoreMenu,
-                        actions = moreActions,
-                        onDismiss = { showMoreMenu = false },
-                    )
+
+                    // Reply indicator — subtle (iOS): purple arrow at 60%, then
+                    // "reply to X" in 10pt monospace. The arrow shows even
+                    // before the target is known.
+                    if (note.isReply) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = NostrVaultIcons.Reply,
+                                contentDescription = null,
+                                tint = colors.primary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                            note.replyToPubkey?.let { target ->
+                                Spacer(Modifier.width(3.dp))
+                                Text(
+                                    text = "reply to ${replyToProfile?.bestName ?: shortKey(target)}",
+                                    color = SecondaryText.copy(alpha = 0.7f),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    letterSpacing = 0.1.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
-            // Reply indicator
-            if (note.isReply && note.replyToPubkey != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 4.dp, start = 50.dp),
-                ) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Reply,
-                        contentDescription = null,
-                        tint = SecondaryText,
-                        modifier = Modifier.size(12.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "replying to ${replyToProfile?.bestName ?: note.replyToPubkey!!.take(8) + "..."}",
-                        color = SecondaryText,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Content text (rich: clickable mentions, links, hashtags). Text,
             // quotes, links and media run the card's full width under the
@@ -566,4 +545,5 @@ fun NoteCard(
         }
         } // Box (focused tint overlay)
     }
+    } // Column (rank above the card)
 }

@@ -9,6 +9,9 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.SubdirectoryArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -120,6 +123,8 @@ fun FeedThreadCard(
                 shape = RoundedCornerShape(12.dp),
             )
             .padding(vertical = 8.dp, horizontal = 6.dp),
+        // iOS FeedThreadCard: VStack(spacing: 2) between lines.
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         val root = thread.root
         if (root != null) {
@@ -147,7 +152,8 @@ fun FeedThreadCard(
 
         if (hiddenReplyCount > 0) {
             ThreadFoldButton(
-                icon = NostrVaultIcons.ChevronDown,
+                // iOS arrow.turn.down.right (Icons.kt is the theme lane's file)
+                icon = Icons.Filled.SubdirectoryArrowRight,
                 title = "Show $hiddenReplyCount earlier ${if (hiddenReplyCount == 1) "reply" else "replies"}",
                 themeColor = themeColor,
                 onClick = { onExpandedChange(true) },
@@ -174,7 +180,7 @@ fun FeedThreadCard(
 
         if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
             ThreadFoldButton(
-                icon = NostrVaultIcons.ChevronDown,
+                icon = Icons.Filled.KeyboardArrowUp, // iOS chevron.up
                 title = "Show fewer replies",
                 themeColor = themeColor,
                 onClick = { onExpandedChange(false) },
