@@ -41,3 +41,9 @@
   color: #fff; font: var(--t-foot); font-variant-numeric: tabular-nums; pointer-events: none; }
 .lightbox .media-nav { width: 44px; height: 44px; }
 @media (prefers-reduced-motion: reduce) { .media-nav { transition: none; } }
+
+/* A photo on a FIPS vault while it loads, or when it can't be reached (MediaImage). */
+.media-mesh { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 160px; max-height: 400px;
+  color: var(--text-2); font: var(--t-foot); }
+.media-slide .media-mesh { height: 100%; max-height: none; }
+.lightbox-page .media-mesh { color: #ccc; }

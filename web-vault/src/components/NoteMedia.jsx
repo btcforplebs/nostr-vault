@@ -4,6 +4,7 @@
 import { useRef, useState } from "preact/hooks"
 import { MediaLightbox } from "./MediaLightbox.jsx"
 import { Chevron, InlineVideo } from "./MediaParts.jsx"
+import { MediaImage } from "./MediaImage.jsx"
 import { pageOf, scrollToPage } from "./pager.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -11,29 +12,30 @@ if (import.meta.env) import("../styles/media.css")
 
 const MAX_DOTS = 10 // past this the "2/14" counter says it; a row of dots wouldn't fit
 
-/** `items`: [{ url, type: "image" | "video", width?, height? }] (noteMedia). */
-export function NoteMedia({ items }) {
+/** `items`: [{ url, type: "image" | "video", width?, height?, x? }] (noteMedia); `author`: the note's pubkey, whose
+ *  10063 may name a mesh vault for a photo its server can't serve (MediaImage). */
+export function NoteMedia({ items, author }) {
   const [open, setOpen] = useState(-1)
   return (
     <div class="media-box">
       {items.length === 1
-        ? <div class="media-one"><MediaItem item={items[0]} onOpen={() => setOpen(0)} /></div>
-        : <MediaCarousel items={items} onOpen={setOpen} />}
-      {open >= 0 && <MediaLightbox items={items} start={open} onClose={() => setOpen(-1)} />}
+        ? <div class="media-one"><MediaItem item={items[0]} author={author} onOpen={() => setOpen(0)} /></div>
+        : <MediaCarousel items={items} author={author} onOpen={setOpen} />}
+      {open >= 0 && <MediaLightbox items={items} author={author} start={open} onClose={() => setOpen(-1)} />}
     </div>
   )
 }
 
-function MediaItem({ item, onOpen }) {
+function MediaItem({ item, author, onOpen }) {
   if (item.type === "video") return <InlineVideo src={item.url} />
   return (
     <button type="button" class="media-tap" aria-label="View image" onClick={onOpen}>
-      <img src={item.url} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" width={item.width} height={item.height} />
+      <MediaImage item={item} author={author} loading="lazy" decoding="async" width={item.width} height={item.height} />
     </button>
   )
 }
 
-function MediaCarousel({ items, onOpen }) {
+function MediaCarousel({ items, author, onOpen }) {
   const track = useRef(), [at, setAt] = useState(0), n = items.length
   const go = i => scrollToPage(track.current, i, n)
   return (
@@ -41,7 +43,7 @@ function MediaCarousel({ items, onOpen }) {
       <div class="media-track" ref={track} onScroll={() => setAt(pageOf(track.current))}>
         {items.map((it, i) => (
           <div key={it.url} class="media-slide" role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${n}`}>
-            <MediaItem item={it} onOpen={() => onOpen(i)} />
+            <MediaItem item={it} author={author} onOpen={() => onOpen(i)} />
           </div>
         ))}
       </div>
