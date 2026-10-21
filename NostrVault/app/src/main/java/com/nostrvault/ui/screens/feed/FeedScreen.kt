@@ -206,7 +206,8 @@ fun FeedScreen(
             lastVisible >= listState.layoutInfo.totalItemsCount - 5
         }
     }
-    LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, viewModel::loadMore)
+    // Articles is its own list and pages from its own scroll (ArticleList).
+    LoadMoreEffect(shouldLoadMore && feedMode != FeedMode.ARTICLES, isLoadingMore, notes.size, viewModel::loadMore)
 
     // Load the next rows' photos and avatars while these are on screen.
     // Reads the lists through rememberUpdatedState inside the effect, so a
@@ -490,6 +491,10 @@ fun FeedScreen(
                     scopeFollowing = !scopeGlobal,
                     onShowGlobal = { viewModel.setScope(feedMode, global = true) },
                     loadFailed = feedMode == FeedMode.RECIPES && feedRelaysUnreachable && !isLoadingFeed,
+                    isLoading = isLoadingFeed,
+                    isLoadingMore = isLoadingMore,
+                    onLoadMore = viewModel::loadMore,
+                    onAuthorClick = openProfile,
                 )
             } else if (feedMode == FeedMode.MEDIA) {
                 MediaFeedGrid(

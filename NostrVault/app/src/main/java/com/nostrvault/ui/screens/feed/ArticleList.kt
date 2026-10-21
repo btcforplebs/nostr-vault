@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.nostrvault.ui.components.NoteCardSkeleton
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -66,9 +68,37 @@ internal fun ArticleList(
     onShowGlobal: () -> Unit = {},
     /** Recipes: no relay answered, so the empty grid says so. */
     loadFailed: Boolean = false,
+    /** The first page is on its way: Articles shows skeleton rows. */
+    isLoading: Boolean = false,
+    isLoadingMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
+    /** The byline's avatar opens the author. */
+    onAuthorClick: (String) -> Unit = {},
 ) {
+    // Its own list, so its own load-more: the feed's watches the note list's
+    // state, which this list never scrolls. iOS pages when the end appears.
+    val listState = rememberLazyListState()
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            // Recipes draw a grid, so this state is never attached there.
+            val total = listState.layoutInfo.totalItemsCount
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total > 0 && last >= total - 3
+        }
+    }
+    LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, onLoadMore)
+
     if (notes.isEmpty()) {
-        if (!isRefreshing) ScopedEmptyPlaceholder(mode, scopeFollowing, onRefresh, onShowGlobal, loadFailed = loadFailed)
+        // iOS: three skeleton rows while the first page loads.
+        if (isLoading && mode == FeedMode.ARTICLES) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(contentPadding).padding(top = 12.dp),
+            ) {
+                // The skeleton insets itself 10dp; 6 more makes iOS's 16.
+                repeat(3) { NoteCardSkeleton(modifier = Modifier.padding(horizontal = 6.dp)) }
+            }
+        } else if (!isRefreshing) ScopedEmptyPlaceholder(mode, scopeFollowing, onRefresh, onShowGlobal, loadFailed = loadFailed)
         return
     }
 
@@ -128,62 +158,22 @@ internal fun ArticleList(
         return
     }
     LazyColumn(
-        contentPadding = contentPadding,
+        state = listState,
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding() + 16.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(shown, key = { it.id }) { note ->
-            val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onArticleClick(note.id) }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-            ) {
-                meta.imageUrl?.let { url ->
-                    AsyncImage(
-                        model = url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                    )
-                    Spacer(Modifier.height(10.dp))
-                }
-                Text(
-                    text = meta.title,
-                    color = PrimaryText,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 22.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                meta.summary?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = it,
-                        color = SecondaryText,
-                        fontSize = 14.sp,
-                        lineHeight = 19.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = buildString {
-                        append(profiles[note.pubkey]?.bestName ?: note.pubkey.take(8))
-                        append(" · ")
-                        append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(meta.publishedAt))
-                        if (!isRecipes) ArticleMeta.readingTimeMinutes(note.content)?.let { append(" · $it min read") }
-                    },
-                    color = TertiaryText,
-                    fontSize = 12.sp,
-                )
-            }
-            HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
+            ArticleCard(
+                note = note,
+                profile = profiles[note.pubkey],
+                onClick = { onArticleClick(note.id) },
+                onAuthorClick = onAuthorClick,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
     }
 }
