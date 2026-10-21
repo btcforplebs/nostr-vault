@@ -230,7 +230,7 @@ struct ArticleReaderView: View {
             actionButton("highlighter", tint: highlighting ? .havenPurple : .secondary, label: "Highlight") {
                 withAnimation(Motion.panel) { highlighting.toggle() }
             }
-            ShareLink(item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!) {
+            ShareLink(item: URL(string: "https://nostrvault.app/thread/\(note.nevent)")!) {
                 actionIcon("square.and.arrow.up", tint: .secondary)
             }
             .accessibilityLabel(Text("Share"))

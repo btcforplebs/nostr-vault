@@ -8,7 +8,7 @@ package com.nostrvault.ui.components
  * that wants to share a note would have built a fourth. If the host ever
  * changes, it changes here.
  */
-internal const val THREAD_LINK_HOST = "https://mynostrspace.com"
+internal const val THREAD_LINK_HOST = "https://nostrvault.app"
 
 /** Shareable web link for a note, given its `nevent1…` (or `note1…`) reference. */
 internal fun threadLink(reference: String): String = "$THREAD_LINK_HOST/thread/$reference"
