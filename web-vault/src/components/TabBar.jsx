@@ -20,7 +20,7 @@ export function TabBar({ ctx, route, pubkey }) {
     <nav class="tabbar" aria-label="Sections">
       {TABS.map(([id, label, d]) => (
         <a key={id} href={`#/${id}`} class={route === id ? "tab on" : "tab"} aria-current={route === id ? "page" : undefined}
-          aria-label={id === "vault" && unread ? `${label}, ${unread} unread` : undefined}>
+          aria-label={id === "vault" && unread ? `${label}, ${unread} unread` : undefined} onClick={id === "feed" && route === "feed" ? retapFeed : undefined}>
           {id === "profile" && pubkey
             ? <span class="tab-avatar"><Avatar pubkey={pubkey} size={26} /></span>
             : <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d || "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0"} /></svg>}
@@ -30,6 +30,13 @@ export function TabBar({ ctx, route, pubkey }) {
       ))}
     </nav>
   )
+}
+
+/** Feed tapped while on the Feed, as on the iPhone: back to the top, and from the top, a refresh (FeedScreen listens). */
+function retapFeed(e) {
+  e.preventDefault()
+  if (scrollY > 0) scrollTo({ top: 0, behavior: "smooth" })
+  else dispatchEvent(new Event("nv:feed-refresh"))
 }
 
 /** The orange floating Post button (iOS FeedView), one row above the tab bar. Opens #/compose. */

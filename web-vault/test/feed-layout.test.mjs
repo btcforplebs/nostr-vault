@@ -129,3 +129,14 @@ test("Replies and Reposts switches, and the notes the New Posts pill holds", asy
   assert.equal(loadFilters(storage).reposts, false)
   assert.deepEqual(newerNotes([note, reply], [{ id: "d", created_at: 20 }, reply, { id: "e", created_at: 5 }, { id: "f", created_at: 30 }]).map(n => n.id), ["f", "d"])
 })
+
+test("a reply to someone you blocked is hidden with them; a bare repost of them too (FeedFilterEngine)", async () => {
+  const { visibleNotes } = await import("../src/net/blocks.js")
+  const bad = "b".repeat(64), ok = "c".repeat(64)
+  const theirs = { id: "1".repeat(64), kind: 1, pubkey: bad, created_at: 1, tags: [] }
+  const reply = { id: "2".repeat(64), kind: 1, pubkey: ok, created_at: 2, tags: [["e", theirs.id, "", "reply"]] }
+  const bare = { id: "3".repeat(64), kind: 6, pubkey: ok, created_at: 3, content: "", tags: [["e", "9".repeat(64)], ["p", bad]] }
+  const mine = { id: "4".repeat(64), kind: 1, pubkey: ok, created_at: 4, tags: [] }
+  assert.deepEqual(visibleNotes([theirs, reply, bare, mine], new Set([bad])).map(n => n.id), [mine.id])
+  assert.equal(visibleNotes([theirs, reply, bare, mine], new Set()).length, 4)
+})

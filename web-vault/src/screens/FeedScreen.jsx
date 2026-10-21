@@ -16,7 +16,7 @@ import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
 import { LAYOUT_NAME, hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
 import { applyFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
-import { EmptyFollowing, FilterMenu, NewPostsPill, OlderButton, SkeletonRows } from "../components/FeedExtras.jsx"
+import { EmptyFollowing, FilterMenu, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
 
@@ -170,6 +170,18 @@ export function FeedScreen({ ctx }) {
     if (!following && strange?.length) fetchProfiles(vault, noteAuthors(strange), account.relays.read, { save: false }).catch(() => {})
   }, [strange, following])
 
+  // Refresh three ways, as on the iPhone: the header button, a pull down from the top, and the Feed tab tapped at the top.
+  const refresh = () => (Reader ? null : following ? sync() : loadStrange(choice))
+  const refreshNow = useRef(refresh)
+  refreshNow.current = refresh
+  const pull = usePullToRefresh(() => refreshNow.current(), { enabled: !Reader })
+  useEffect(() => {
+    if (!globalThis.addEventListener) return
+    const on = () => refreshNow.current()
+    addEventListener("nv:feed-refresh", on)
+    return () => removeEventListener("nv:feed-refresh", on)
+  }, [])
+
   // Blocked people's notes stay where they are and are only left out here, so unblocking brings them back.
   const list = following ? notes : strange
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
@@ -183,9 +195,10 @@ export function FeedScreen({ ctx }) {
         <h2>{choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : label}</h2>
         {!Reader && hasLayouts(choice.mode) && <LayoutButton layout={layout} onClick={cycleLayout} />}
         {!Reader && hasLayouts(choice.mode) && <FilterMenu filters={filters} onChange={changeFilters} replies={choice.mode !== "global" && !threaded} autoLoad={following} />}
-        {!Reader && <button class="small" onClick={() => (following ? sync() : loadStrange(choice))}>Refresh</button>}
+        {!Reader && <button class="small" onClick={refresh}>Refresh</button>}
       </header>
       <FeedPicker choice={choice} onPick={pick} />
+      <PullIndicator pull={pull} busy={syncing && pull > 0} />
       {Reader ? <Reader ctx={ctx} /> : <>
       {status && <div class="status-line">{status}</div>}
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
