@@ -104,7 +104,9 @@ class FipsMeshViewModel @Inject constructor(
         configStore.update { it.copy(fipsMesh = change(it.fipsMesh)) }
     }
 
-    fun setFinderRelays(relays: List<String>) = guarded { mesh.setFinderRelays(relays) }
+    fun setFinderRelays(relays: List<String>) = guarded { mesh.setAdvanced(relays, configStore.config.value.fipsMesh.middleServer) }
+    fun setMiddleServer(key: String) = guarded { mesh.setAdvanced(configStore.config.value.fipsMesh.finderRelays, key) }
+    fun resetAdvanced() = guarded { mesh.setAdvanced(emptyList(), FipsMeshSettings.MIDDLE_NONE) }
 
     /**
      * Apply one My Devices change, start to finish. On the app's scope, not this screen's: Remove closes the device

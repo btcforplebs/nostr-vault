@@ -147,8 +147,9 @@ class FipsMeshManager @Inject constructor(
         engineGen++
         return FipsStartOptions(
             peers = configStore.config.value.fipsPeers,
-            // FIPS Mesh → Advanced → Finder Relays; empty keeps the library's own.
-            relays = configStore.config.value.fipsMesh.finderRelays,
+            // FIPS Mesh → Advanced: the finder relays (the same three as iPhone and Mac by default) and the middle server.
+            relays = configStore.config.value.fipsMesh.engineFinderRelays,
+            publicSeeds = configStore.config.value.fipsMesh.middleServer == com.nostrvault.fips.FipsMeshSettings.MIDDLE_PUBLIC,
             lan = true,
             maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, engineBase),
         )
@@ -203,10 +204,12 @@ class FipsMeshManager @Inject constructor(
         refresh()
     }
 
-    /** The finder relays the mesh posts its address to (empty: the library's own). Applied by a restart. */
-    suspend fun setFinderRelays(relays: List<String>) = withContext(Dispatchers.IO) {
+    /** Finder relays and middle server, both read at start: a running node restarts to apply them. */
+    suspend fun setAdvanced(relays: List<String>, middleServer: String) = withContext(Dispatchers.IO) {
         val cleaned = relays.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(finderRelays = cleaned)) }
+            // The defaults are stored as "none chosen", so a later change to them reaches this phone too.
+            .takeUnless { it == FipsMeshSettings.DEFAULT_FINDER_RELAYS }.orEmpty()
+        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(finderRelays = cleaned, middleServer = middleServer)) }
         if (_status.value.running) restartKeepingAllowance()
         refresh()
     }

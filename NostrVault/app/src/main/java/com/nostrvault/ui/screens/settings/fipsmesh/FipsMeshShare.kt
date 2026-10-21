@@ -79,8 +79,6 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     ) {
         MeshSwitchRow("Kiosk mode", "Share this vault on the mesh", shareRelay, enabled = viewModel.isAvailable && !busy, onChange = viewModel::setShareRelay)
         MeshDivider()
-        Picker("Who can view", settings.whoCanView, WHO_CAN_VIEW) { v -> viewModel.updateSettings { it.copy(whoCanView = v) } }
-        MeshDivider()
         // The library takes the limit at start, so it is fixed while sharing.
         Picker("Pause after", serveLimit, SERVE_LIMITS.map { it to bytesLabel(it) }, enabled = !shareRelay && !busy) { viewModel.setServeLimit(it) }
         MeshDivider()
@@ -96,7 +94,6 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
     }
 }
 
-internal val WHO_CAN_VIEW = listOf(FipsMeshSettings.WHO_ANYONE to "Anyone on the mesh", FipsMeshSettings.WHO_DEVICES to "Only my devices")
 internal val PHOTOS_GO_TO = listOf(
     FipsMeshSettings.PHOTOS_PUBLIC to "Public server",
     FipsMeshSettings.PHOTOS_MAC to "My Mac",

@@ -12,27 +12,30 @@ import kotlinx.serialization.Serializable
 data class FipsMeshSettings(
     /** Name, role and switches per device, by mesh npub. The list itself is fipsPeers plus the home vault. */
     val devices: List<FipsDevice> = emptyList(),
-    /** Who can view this vault while it is shared: "devices" (only my devices) or "anyone" (anyone on the mesh). */
-    @SerialName("who_can_view") val whoCanView: String = WHO_DEVICES,
-    /** List this phone's mesh address in the owner's media servers while it is shared. */
-    @SerialName("list_in_media_servers") val listInMediaServers: Boolean = false,
+    /** List this phone's mesh address in the owner's media servers while it is shared. On by default, as iOS. */
+    @SerialName("list_in_media_servers") val listInMediaServers: Boolean = true,
     /** Where new photos go: "public" server, "mac", or "both". Stored only for now. */
     @SerialName("photos_go_to") val photosGoTo: String = PHOTOS_PUBLIC,
-    /** Finder relays the mesh posts its address to. Empty keeps the library's built-in ones. */
+    /** Finder relays the mesh posts its address to. Empty means [DEFAULT_FINDER_RELAYS]. */
     @SerialName("finder_relays") val finderRelays: List<String> = emptyList(),
-    /** Middle server: "public" (fips1/fips2.iris.to), "own" ([middleServerOwn]) or "none". */
+    /** Middle server: "public" (the fips1/fips2.iris.to seeds) or "none". None by default: Android never joined them. */
     @SerialName("middle_server") val middleServer: String = MIDDLE_NONE,
-    @SerialName("middle_server_own") val middleServerOwn: String = "",
 ) {
+    /** The relays the engine is started with: the user's, or the same three as iPhone and Mac. */
+    val engineFinderRelays: List<String> get() = finderRelays.ifEmpty { DEFAULT_FINDER_RELAYS }
+
     companion object {
-        const val WHO_DEVICES = "devices"
-        const val WHO_ANYONE = "anyone"
         const val PHOTOS_PUBLIC = "public"
         const val PHOTOS_MAC = "mac"
         const val PHOTOS_BOTH = "both"
         const val MIDDLE_PUBLIC = "public"
-        const val MIDDLE_OWN = "own"
         const val MIDDLE_NONE = "none"
+
+        /**
+         * The finder relays every Nostr Vault starts its mesh with (iOS MeshDevicesLogic.defaultFinderRelays). Devices
+         * find each other only through relays they share, so Android uses these too, not the library's own.
+         */
+        val DEFAULT_FINDER_RELAYS = listOf("wss://relay.nostr.net", "wss://nostr.bitcoiner.social", "wss://relay.btcforplebs.com")
     }
 }
 
@@ -49,10 +52,11 @@ data class FipsDevice(
 
 @Serializable
 enum class DeviceRole(val label: String, val blurb: String) {
+    // Labels and lines as iOS MeshDeviceRole, so the three apps say the same thing.
     @SerialName("mac") MAC("Vault on Mac", "Keeps your full history. Syncs both ways."),
-    @SerialName("phone") PHONE("Phone", "Another phone with your vault. Syncs both ways."),
-    @SerialName("home_vault") HOME_VAULT("Home vault", "Gets your posts and media and passes your posts on to the regular relays."),
-    @SerialName("browser") BROWSER("Browser page", "A Nostr Vault page open in a browser. Reaches your vault while it is open."),
+    @SerialName("phone") PHONE("Phone", "Another phone of yours on the mesh."),
+    @SerialName("home_vault") HOME_VAULT("Home vault", "Gets your new notes and media, and sends your notes on."),
+    @SerialName("browser") BROWSER("Browser page", "Gets your new notes while this app is open."),
 }
 
 /** One row of My Devices. */
@@ -65,7 +69,8 @@ data class MyDevice(
     val sendNotes: Boolean,
     val sendMedia: Boolean,
 ) {
-    val title: String get() = name.ifBlank { npub.take(12) + "…" + npub.takeLast(6) }
+    /** Its name, or its role when it has none (iOS MeshDevice.title). */
+    val title: String get() = name.trim().ifBlank { role.label }
 }
 
 /**

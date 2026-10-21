@@ -23,7 +23,7 @@ class MyDevicesRulesTest {
         assertEquals(listOf(DeviceRole.MAC, DeviceRole.PHONE, DeviceRole.HOME_VAULT), list.map { it.role })
         assertEquals("MacBook", list[0].title)
         assertTrue(list[0].inReach); assertFalse(list[2].inReach)
-        assertEquals(kiosk.take(12) + "…" + kiosk.takeLast(6), list[2].title)
+        assertEquals("a device with no name goes by its role, as on iPhone", "Home vault", list[2].title)
     }
 
     @Test fun `status line counts devices in reach`() {
@@ -83,6 +83,12 @@ class MyDevicesRulesTest {
         assertEquals("5 min ago", MyDevicesRules.lastSeenText(1000, false, 1300))
     }
 
+    @Test fun `the engine starts with the iPhone's three finder relays unless the user picked others`() {
+        assertEquals(listOf("wss://relay.nostr.net", "wss://nostr.bitcoiner.social", "wss://relay.btcforplebs.com"), FipsMeshSettings().engineFinderRelays)
+        assertEquals(listOf("wss://relay.example"), FipsMeshSettings(finderRelays = listOf("wss://relay.example")).engineFinderRelays)
+        assertEquals("Android never joined the public seeds: None until the user picks Public", FipsMeshSettings.MIDDLE_NONE, FipsMeshSettings().middleServer)
+    }
+
     @Test fun `finder relays must be wss hosts`() {
         assertTrue(MyDevicesRules.isFinderRelay("wss://relay.nostr.net"))
         assertTrue(MyDevicesRules.isFinderRelay(" wss://relay.example:4443/path "))
@@ -97,7 +103,7 @@ class MyDevicesRulesTest {
         assertEquals(FipsMeshSettings(), old.fipsMesh)
         assertEquals(FipsMeshSettings.PHOTOS_PUBLIC, old.fipsMesh.photosGoTo)
         val set = old.copy(fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(mac, DeviceRole.MAC, "Mac")), photosGoTo = FipsMeshSettings.PHOTOS_BOTH,
-            finderRelays = listOf("wss://relay.nostr.net"), whoCanView = FipsMeshSettings.WHO_ANYONE))
+            finderRelays = listOf("wss://relay.example"), middleServer = FipsMeshSettings.MIDDLE_PUBLIC))
         assertEquals(set, json.decodeFromString(HavenConfig.serializer(), json.encodeToString(HavenConfig.serializer(), set)))
     }
 }

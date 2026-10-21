@@ -49,8 +49,8 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
     val busy by viewModel.busy.collectAsState()
     val colors = LocalNostrVaultColors.current
     var draft by rememberSaveable { mutableStateOf("") }
-    var own by rememberSaveable { mutableStateOf(settings.middleServerOwn) }
-    val relays = settings.finderRelays
+    // What the engine runs with: the user's list, or the three every Nostr Vault starts with.
+    val relays = settings.engineFinderRelays
 
     Scaffold(
         topBar = {
@@ -65,13 +65,13 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             MeshSection(
                 "Finder Relays",
-                footer = "Your devices post where they are here, so the others can find them. They see this phone's IP address the way any relay does." +
-                    if (relays.isEmpty()) " None added: the mesh uses its built-in ones." else "",
+                footer = "Your devices post where they are here, so the others can find them. They see this phone's IP address the way any relay does.",
             ) {
                 relays.forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text(r, color = PrimaryText, fontSize = 13.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f).padding(vertical = 14.dp))
-                        TextButton(onClick = { viewModel.setFinderRelays(relays - r) }, enabled = !busy) { Text("Remove", fontSize = 13.sp) }
+                        // The last one stays: with none, devices could not find each other.
+                        TextButton(onClick = { viewModel.setFinderRelays(relays - r) }, enabled = !busy && relays.size > 1) { Text("Remove", fontSize = 13.sp) }
                     }
                     MeshDivider()
                 }
@@ -97,27 +97,16 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
                 MIDDLE_SERVERS.forEachIndexed { i, (key, label) ->
                     if (i > 0) MeshDivider()
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
-                        .clickable { viewModel.updateSettings { it.copy(middleServer = key) } }.padding(vertical = 14.dp)) {
+                        .clickable(enabled = !busy) { viewModel.setMiddleServer(key) }.padding(vertical = 14.dp)) {
                         Text(label, color = PrimaryText, fontSize = 16.sp, modifier = Modifier.weight(1f))
                         if (settings.middleServer == key) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = colors.primary)
                     }
                 }
-                if (settings.middleServer == FipsMeshSettings.MIDDLE_OWN) {
-                    OutlinedTextField(
-                        value = own, onValueChange = { own = it; viewModel.updateSettings { s -> s.copy(middleServerOwn = it.trim()) } },
-                        singleLine = true, placeholder = { Text("host:port", fontFamily = FontFamily.Monospace, fontSize = 13.sp) },
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    )
-                }
             }
 
             MeshSection(null) {
-                Text("Reset to defaults", color = colors.primary, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) {
-                    viewModel.setFinderRelays(emptyList())
-                    viewModel.updateSettings { it.copy(middleServer = FipsMeshSettings.MIDDLE_NONE, middleServerOwn = "") }
-                    own = ""
-                }.padding(vertical = 14.dp))
+                Text("Reset to defaults", color = colors.primary, fontSize = 16.sp,
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { viewModel.resetAdvanced() }.padding(vertical = 14.dp))
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -125,7 +114,6 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
 }
 
 internal val MIDDLE_SERVERS = listOf(
-    FipsMeshSettings.MIDDLE_PUBLIC to "Public (fips1.iris.to, fips2.iris.to)",
-    FipsMeshSettings.MIDDLE_OWN to "My own",
+    FipsMeshSettings.MIDDLE_PUBLIC to "Public (fips1, fips2.iris.to)",
     FipsMeshSettings.MIDDLE_NONE to "None",
 )
