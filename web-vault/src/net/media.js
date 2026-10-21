@@ -1,7 +1,7 @@
 // The Media feed: the image and video notes among the Following feed's (Haven /feed), one tile each, as the
 // iPhone's media grid (FeedView+MediaGrid.swift). A repost shows the note inside it.
 import { repostInner } from "./thread.js"
-import { meshHost } from "./fips-ref.js"
+import { fipsRef, meshHost } from "./fips-ref.js"
 
 const IMAGE = /\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i
 const VIDEO = /\.(mp4|webm|mov|m4v)(\?\S*)?$/i
@@ -20,13 +20,14 @@ export function tileNote(ev) {
   return ev.kind === 6 ? repostInner(ev) : ev
 }
 
-/** The image and video links in a note, in order, once each: its text and its NIP-92 imeta tags. Not a .fips link:
- *  these feed plain <img>/<video> tags (Media grid, Compact thumbs, reply previews), which would look the name up
- *  over DNS. Cards read .fips photos over the mesh instead (noteMedia, MediaImage). */
+/** The image and video links in a note, in order, once each: its text and its NIP-92 imeta tags. A NIP-F1 photo link
+ *  (http://<npub>.fips/<sha256>) is kept, as an image: the Media grid, Compact thumbs and reply previews draw images
+ *  with MediaImage, which reads it over the mesh. Any other .fips link is left out: a <video>, or an <img> MediaImage
+ *  doesn't read, would look the name up over DNS. */
 export function mediaUrls(note) {
   const urls = (String(note.content ?? "").match(URL_RE) ?? []).map(u => u.replace(/[.,;:!?)]+$/, ""))
   for (const t of note.tags ?? []) if (t[0] === "imeta") for (const part of t.slice(1)) if (part.startsWith("url ")) urls.push(part.slice(4).trim())
-  return [...new Set(urls)].filter(u => mediaType(u) && !meshHost(u))
+  return [...new Set(urls)].filter(u => fipsRef(u) || (mediaType(u) && !meshHost(u)))
 }
 
 /** One tile per note with media, newest first as given: { id, note, url, type, count }. A repost of a note already
@@ -39,7 +40,7 @@ export function mediaTiles(events) {
     const urls = mediaUrls(note)
     if (!urls.length) continue
     seen.add(note.id)
-    tiles.push({ id: note.id, note, url: urls[0], type: mediaType(urls[0]), count: urls.length })
+    tiles.push({ id: note.id, note, url: urls[0], type: mediaType(urls[0]) || "image", count: urls.length })
   }
   return tiles
 }

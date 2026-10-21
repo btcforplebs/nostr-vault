@@ -47,3 +47,8 @@
   color: var(--text-2); font: var(--t-foot); }
 .media-slide .media-mesh { height: 100%; max-height: none; }
 .lightbox-page .media-mesh { color: #ccc; }
+/* In a small square (Media grid, Compact thumb, Vault) it fills the square; "not reachable" is the tooltip only. */
+.media-tile .media-mesh, .condensed-thumb .media-mesh, .vault-thumb .media-mesh { height: 100%; min-height: 0; }
+.vault-thumbs .media-mesh { width: 72px; height: 72px; min-height: 0; border-radius: 8px; background: var(--s2); }
+.media-mesh.failed:is(.media-tile *, .condensed-thumb *, .vault-thumb *, .vault-thumbs *) { font-size: 0; }
+.parent-preview .media-mesh { min-height: 80px; max-height: 150px; margin-top: 4px; }

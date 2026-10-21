@@ -9,11 +9,15 @@ import { fipsRef } from "../net/fips-ref.js"
 import { fipsMedia, meshAllowed, onMeshGate } from "../net/fips-media.js"
 import { Spinner } from "./Loading.jsx"
 
+// Vite only (the node tests have no CSS loader): the spinner and "not reachable" box, wherever a photo is drawn.
+if (import.meta.env) import("../styles/media.css")
+
 const NEAR = "600px" // start the read this far before the photo scrolls into view
 
-/** `item`: { url, x?, width?, height? } (noteMedia); `author`: the note's pubkey, for its 10063. `media`, `allowed`,
- *  `gate`: tests. */
-export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAllowed, gate = onMeshGate, ...img }) {
+/** `item`: { url, x?, width?, height? } (noteMedia, imageItem); `author`: the note's pubkey, for its 10063.
+ *  `onError`: the caller's, run only when the image stays broken (no mesh try follows). `media`, `allowed`, `gate`:
+ *  tests. */
+export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAllowed, gate = onMeshGate, onError: broken, ...img }) {
   const first = () => (fipsRef(item.url) ? (allowed(author) ? "wait" : "failed") : "web")
   // "web": the url itself; "wait": a mesh read is due; "mesh": src is a blob: URL; "failed": nothing reached it
   const [state, setState] = useState(first)
@@ -58,10 +62,10 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
   }, [state, item.url])
 
   // A web photo whose server fails gets one mesh try when there is a hash to ask for and the author may use the mesh.
-  const onError = () => {
-    if (state !== "web" || !item.x) return
-    if (allowed(author)) setState("wait")
-    else gated.current = true // the image stays broken; a later follow or the switch can still start a mesh try
+  const onError = e => {
+    if (state === "web" && item.x && allowed(author)) return setState("wait")
+    if (state === "web" && item.x) gated.current = true // a later follow or the switch can still start a mesh try
+    broken?.(e)
   }
 
   if (state === "wait") return <span ref={box} class="media-mesh" style={ratio(item)}><Spinner label="Loading photo" /></span>

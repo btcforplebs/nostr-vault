@@ -56,6 +56,19 @@ export function imetaMedia(tags) {
   return out
 }
 
+// A Blossom link names its blob in its path: /<sha256>[.ext] (BUD-01).
+const BLOSSOM_PATH = /\/([0-9a-f]{64})(\.[a-z0-9]{1,8})?$/i
+const pathHash = url => { try { return BLOSSOM_PATH.exec(new URL(url).pathname)?.[1].toLowerCase() } catch { return undefined } }
+
+/** One image link of a note as a MediaImage item, for the places that draw a single picture (Media grid, Compact
+ *  thumbs, reply previews, Vault): its imeta entry when `tags` has one, else the link. With no imeta hash, the hash
+ *  a Blossom path names, so a photo whose server lost it can still come from the author's mesh vault. */
+export function imageItem(url, tags) {
+  const m = imetaMedia(tags).get(url) ?? { url, type: "image" }
+  const x = m.x ?? (fipsRef(url) ? undefined : pathHash(url))
+  return x && !m.x ? { ...m, x } : m
+}
+
 /** The links in a note's text (already trimmed of trailing punctuation) and its tags -> its media, in order, each
  *  once: text media first, then imeta-only media. A text link imeta describes (an extensionless Blossom url) is media
  *  too, and keeps its place in the text order. */
