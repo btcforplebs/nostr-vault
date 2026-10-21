@@ -274,3 +274,22 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 /* The hint shares Post's row; under an error or a post result it drops below them. */
 .desk-compose .desk-compose-hint { margin-top: -42px; padding: 0 140px 12px var(--gutter); line-height: 38px; }
 .desk-compose:has(.screen > .error, .screen > .result) .desk-compose-hint { margin-top: 0; line-height: inherit; }
+
+/* Settings on desktop is a sidebar section with its pages beside it, so the phone's Close (list) and ‹ Settings
+   (page) buttons, and the spacers that centred the title between them, have nothing to do. One column at
+   760–1023px has its own ‹ Back. */
+.desk-app .screen-head > a.button.small[href="#/settings"], .desk-app .settings > .screen-head > a.button.small[href="#/profile"],
+.desk-app .screen-head > span:empty { display: none; }
+
+/* A page in the note column (a setting, Accounts, Wallet, a conversation) keeps its 640px measure, but its toolbar
+   runs the column's full width like the list's, rather than stopping at the measure. */
+.desk-detail { container-type: inline-size; --measure-pad: max(0px, (100cqw - 640px) / 2); }
+.desk-detail > .desk-pane:not(.desk-thread) > .screen { max-width: none; padding-inline: var(--measure-pad); }
+.desk-detail > .desk-pane:not(.desk-thread) > .screen > .screen-head { margin-inline: calc(-1 * var(--measure-pad));
+  padding-inline: calc(var(--measure-pad) + var(--gutter)) calc(var(--measure-pad) + 12px); }
+
+/* One column (760–1023px): ‹ Back sits inside the open page's toolbar instead of on a row of its own above it. */
+.desk-split.single .desk-back { height: 0; padding: 0; z-index: 8; }
+.desk-split.single .desk-back button { transform: translate(var(--gutter), 9px); }
+.desk-split.single .desk-detail > .desk-pane > .screen > .screen-head, .desk-split.single .desk-detail > .desk-pane > .desk-detail-head {
+  padding-left: max(calc(var(--measure-pad) + var(--gutter)), 100px); }
