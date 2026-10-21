@@ -134,8 +134,13 @@ class ProfileViewModel @Inject constructor(
         if (_pubkey.value.isNotEmpty()) shop.load(_pubkey.value, force = true)
     }
 
+    /** Which section tabs show; the late ones come in together. */
+    private val tabReveal = ProfileTabReveal(viewModelScope)
+    val visibleSections = tabReveal.visible
+    fun setOpensAsTab(value: Boolean) { tabReveal.opensAsTab.value = value }
+
     /** This person's articles, diVines and music, each a tab when they have any. */
-    private val extras = ProfileExtrasLoader(viewModelScope, nostrService)
+    private val extras = ProfileExtrasLoader(tabReveal.extrasScope, nostrService)
     val articles = extras.articles
     val reels = extras.reels
     val tracks = extras.tracks
@@ -149,8 +154,14 @@ class ProfileViewModel @Inject constructor(
             feedRelays = config.activeFeedRelays,
             outbox = nostrService.outboxRelays.value[pubkey].orEmpty(),
         )
+        tabReveal.extrasLoadStarting()
         extras.load(pubkey, relays, force)
+        tabReveal.extrasLoadStarted()
     }
+
+    private val _zapBursts = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** One per profile zap that went through: the zap button's burst (iOS ZapBurstView). */
+    val zapBursts: SharedFlow<Unit> = _zapBursts.asSharedFlow()
 
     fun npubToHex(npub: String): String? = nostrService.npubToHex(npub)
 
@@ -265,6 +276,7 @@ class ProfileViewModel @Inject constructor(
     // first suspension, while the constructor is still running.
 
     init {
+        tabReveal.bind(_selectedSection, articles, reels, tracks, shop.isLoading, shop.listings)
         if (_pubkey.value.isNotEmpty()) {
             loadProfile()
             shop.load(_pubkey.value)
@@ -301,6 +313,7 @@ class ProfileViewModel @Inject constructor(
             loadProfile()
             shop.load(pubkey)
             loadExtras(pubkey)
+            tabReveal.reset()
         }
     }
 
@@ -652,7 +665,8 @@ class ProfileViewModel @Inject constructor(
             moderationTarget = mediaModerationTarget(author),
             // iOS ProfileView.mediaGrid: your own files, and only a Blossom
             // file (named by its hash) can be deleted.
-            canDelete = sha != null && _isOwnProfile.value && isOwnNote(author),
+            // Not on your profile opened from a note (iOS canDeleteMedia).
+            canDelete = sha != null && tabReveal.opensAsTab.value && _isOwnProfile.value && isOwnNote(author),
         )
     }
 
@@ -765,7 +779,7 @@ class ProfileViewModel @Inject constructor(
             // The zap pill reports the result (docs/pills.md).
             notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, pk), amount) {
                 zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
-            }
+            }.onSuccess { _zapBursts.tryEmit(Unit) }
         }
     }
 

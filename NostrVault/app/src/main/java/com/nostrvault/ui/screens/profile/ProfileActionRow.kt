@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,6 +46,14 @@ internal fun ProfileActionRow(
     /** Their page on the web (Brainstorm), to check trust off the device. */
     webLink: com.nostrvault.ui.components.NostrWebLinks.WebLink? = null,
     onOpenWebLink: () -> Unit = {},
+    /**
+     * Your own profile opened from a note or a list rather than the Profile
+     * tab: it shows you as others see you, with a way to the tab, where
+     * editing lives (iOS PersonProfileView `isYou`).
+     */
+    onOpenMyProfile: (() -> Unit)? = null,
+    /** One per profile zap that went through; each plays the burst on the zap button. */
+    zapBursts: kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow(),
 ) {
     val colors = LocalNostrVaultColors.current
     val tint = colors.primary.copy(alpha = 0.12f)
@@ -57,7 +66,11 @@ internal fun ProfileActionRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            if (isOwnProfile) {
+            if (isOwnProfile && onOpenMyProfile != null) {
+                // Nothing to follow, message or zap; editing is on the tab.
+                ActionChip("Open My Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onOpenMyProfile, modifier = Modifier.weight(1f))
+                ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+            } else if (isOwnProfile) {
                 // Post is the floating button. Pulling the page down opens
                 // Edit Profile too; the button stays for TalkBack and anyone
                 // who has not found the pull.
@@ -78,7 +91,12 @@ internal fun ProfileActionRow(
                     ActionChip("Message", NostrVaultIcons.Chat, colors.primary, tint, onClick = onMessage, modifier = Modifier.weight(1f))
                 }
                 if (canZap) {
-                    ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, onLongClick = onZapLongPress, longClickLabel = "Choose an amount", modifier = Modifier.weight(1f), description = "Zap $zapSats sats")
+                    // The burst sits over the chip, outside its clip (iOS overlay).
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f)) {
+                        ActionChip(if (compact < 2) "Zap $zapSats" else "$zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap, onLongClick = onZapLongPress, longClickLabel = "Choose an amount", modifier = Modifier.fillMaxWidth(), description = "Zap $zapSats sats")
+                        // Over the chip without sizing the row: the burst is wider than it is tall.
+                        ProfileZapBurst(zapBursts, Modifier.matchParentSize())
+                    }
                 }
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
                 var menuOpen by remember { mutableStateOf(false) }
@@ -162,9 +180,11 @@ private fun ActionChip(
                 },
                 onLongClickLabel = longClickLabel,
             )
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp)
+            // Read once: the label, or the fuller description ("Zap 21 sats").
+            .semantics { if (description != label) contentDescription = description },
     ) {
-        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(12.dp))
+        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(12.dp))
         Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
     }
 }
