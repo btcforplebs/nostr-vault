@@ -1,7 +1,8 @@
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Mention, NoteText } from "./NoteText.jsx"
-import { useQuote } from "./QuotedNote.jsx"
+import { useBlocked, useQuote } from "./QuotedNote.jsx"
+import { repostState } from "../net/blocks.js"
 import { useProfile } from "./useProfile.js"
 import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
@@ -108,9 +109,10 @@ function genericRepost(event, memoryOnly) {
  *  any kind a timeline draws). */
 const NOTE_ONLY = new Set([1])
 function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY }) {
-  const ev = useQuote(q, memoryOnly)
-  if (ev === undefined) return <div class="note-text muted">Loading the reposted note…</div>
-  if (!kinds.has(ev?.kind)) return <div class="note-text muted">The reposted note couldn't be found</div>
+  const ev = useQuote(q, memoryOnly), state = repostState(ev, kinds, useBlocked())
+  if (state === "loading") return <div class="note-text muted">Loading the reposted note…</div>
+  if (state === "missing") return <div class="note-text muted">The reposted note couldn't be found</div>
+  if (state === "blocked") return <div class="note-text muted">Repost of someone you blocked</div>
   rememberNote(ev)
   return <><NoteBody event={ev} memoryOnly={memoryOnly} /><NoteActions note={ev} /></>
 }

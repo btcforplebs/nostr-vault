@@ -140,3 +140,14 @@ test("a reply to someone you blocked is hidden with them; a bare repost of them 
   assert.deepEqual(visibleNotes([theirs, reply, bare, mine], new Set([bad])).map(n => n.id), [mine.id])
   assert.equal(visibleNotes([theirs, reply, bare, mine], new Set()).length, 4)
 })
+
+test("a repost line opens the note it carries only if that note's signature checks", async () => {
+  const { finalizeEvent, generateSecretKey } = await import("nostr-tools/pure")
+  const { shownId } = await import("../src/components/FeedThreadCard.jsx")
+  const real = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "hi" }, generateSecretKey())
+  const repost = inner => ({ id: "r".repeat(64), kind: 6, pubkey: "b".repeat(64), created_at: 2, content: JSON.stringify(inner), tags: [["e", real.id]] })
+  assert.equal(shownId(repost(real)), real.id)
+  assert.equal(shownId(repost({ ...real, id: "9".repeat(64) })), "r".repeat(64), "a forged inner id can't aim Open thread elsewhere")
+  assert.equal(shownId({ ...repost(real), content: "" }), "r".repeat(64))
+  assert.equal(shownId(real), real.id)
+})
