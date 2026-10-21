@@ -147,6 +147,9 @@ class FipsMeshManager @Inject constructor(
         engineGen++
         return FipsStartOptions(
             peers = configStore.config.value.fipsPeers,
+            // FIPS Mesh → Advanced: the finder relays (the same three as iPhone and Mac by default) and the middle server.
+            relays = configStore.config.value.fipsMesh.engineFinderRelays,
+            publicSeeds = configStore.config.value.fipsMesh.middleServer == com.nostrvault.fips.FipsMeshSettings.MIDDLE_PUBLIC,
             lan = true,
             maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, engineBase),
         )
@@ -197,6 +200,16 @@ class FipsMeshManager @Inject constructor(
     suspend fun setPeers(npubs: List<String>) = withContext(Dispatchers.IO) {
         val cleaned = npubs.map { it.trim() }.filter { it.startsWith("npub1") }.distinct()
         configStore.updateAsync { it.copy(fipsPeers = cleaned) }
+        if (_status.value.running) restartKeepingAllowance()
+        refresh()
+    }
+
+    /** Finder relays and middle server, both read at start: a running node restarts to apply them. */
+    suspend fun setAdvanced(relays: List<String>, middleServer: String) = withContext(Dispatchers.IO) {
+        val cleaned = relays.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            // The defaults are stored as "none chosen", so a later change to them reaches this phone too.
+            .takeUnless { it == FipsMeshSettings.DEFAULT_FINDER_RELAYS }.orEmpty()
+        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(finderRelays = cleaned, middleServer = middleServer)) }
         if (_status.value.running) restartKeepingAllowance()
         refresh()
     }

@@ -92,7 +92,12 @@ sealed class Screen(val route: String) {
     data object FollowingBackup : Screen("settings/following_backup")
     data object NotificationSettings : Screen("settings/notifications")
     data object HavenRelaySettings : Screen("settings/haven_relay")
+    /** Settings → Mesh → FIPS Mesh, and its device and Advanced pages. */
     data object MeshSettings : Screen("settings/mesh")
+    data object FipsMeshDevice : Screen("settings/mesh/device/{npub}") {
+        fun createRoute(npub: String) = "settings/mesh/device/$npub"
+    }
+    data object FipsMeshAdvanced : Screen("settings/mesh/advanced")
 
     // Dashboard
     /**

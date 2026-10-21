@@ -322,17 +322,18 @@ private fun AlsoUsedForSection(rows: List<Pair<String, String>>) {
     }
 }
 
-/** The copy from the Mac and its missing-events check, with a re-run button. */
+/** The copy from the Mac and its missing-events check, with a re-run button. Also FIPS Mesh → Sync (no header). */
 @Composable
-private fun MacSyncSection(
+internal fun MacSyncSection(
     view: MacSync.View,
     checkRequested: Boolean,
     relayReady: Boolean,
     onCheck: () -> Unit,
+    showHeader: Boolean = true,
 ) {
     val colors = LocalNostrVaultColors.current
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
+        if (showHeader) Text(
             text = "SYNC",
             color = SecondaryText,
             fontSize = 12.sp,

@@ -173,11 +173,12 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
     )),
     SettingsGroup("Your Vault Relay", listOf(
         SettingsRow("Sync with Vault on Mac", NostrVaultIcons.SettingsMacRelay, SettingsTile.Teal, Screen.HavenRelaySettings),
-        // Android only: the FIPS mesh settings (on iPhone they sit under Media Servers).
-        SettingsRow("Mesh", NostrVaultIcons.Domain, SettingsTile.Green, Screen.MeshSettings),
         SettingsRow("Who Can Reach You", NostrVaultIcons.SettingsRelayAccess, SettingsTile.Blue, Screen.RelayAccessSettings),
         SettingsRow("Import Notes", NostrVaultIcons.Import, SettingsTile.Orange, Screen.ImportSettings),
         SettingsRow("Backup & Restore", NostrVaultIcons.SettingsBackup, SettingsTile.Indigo, Screen.BackupSettings),
+    )),
+    SettingsGroup("Mesh", listOf(
+        SettingsRow("FIPS Mesh", NostrVaultIcons.SettingsRelays, SettingsTile.Teal, Screen.MeshSettings),
     )),
     SettingsGroup("Help", listOf(
         SettingsRow("Tutorials", NostrVaultIcons.Tutorials, SettingsTile.Purple, Screen.TutorialsSettings),

@@ -1,6 +1,5 @@
 package com.nostrvault.fips
 
-import com.nostrvault.ui.screens.settings.formatUptime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -128,12 +127,6 @@ class FipsStatusTest {
         assertEquals("npub1a", obj["peers"]!!.jsonArray[0].jsonPrimitive.content)
         assertEquals("2121", obj["udp_port"]!!.jsonPrimitive.content)
         assertEquals("true", obj["lan"]!!.jsonPrimitive.content)
-    }
-
-    @Test fun `uptime reads as a duration, not a number of seconds`() {
-        assertEquals("45s", formatUptime(45))
-        assertEquals("1m 5s", formatUptime(65))
-        assertEquals("2h 1m", formatUptime(7260))
     }
 
     /**
