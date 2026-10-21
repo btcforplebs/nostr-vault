@@ -66,7 +66,7 @@ internal fun ProfileSectionTabs(
                             section.icon,
                             contentDescription = null,
                             tint = if (isSelected) colors.primary else SecondaryText,
-                            modifier = Modifier.size(17.dp),
+                            modifier = Modifier.size(14.dp),
                         )
                         if (fitsCount && label != null) {
                             Text(

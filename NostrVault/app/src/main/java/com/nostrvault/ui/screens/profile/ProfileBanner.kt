@@ -48,15 +48,15 @@ import kotlinx.coroutines.withContext
  * so they can be tested.
  */
 object ProfileBannerStyle {
-    /** A profile without a banner gets a short wash instead. */
-    const val WASH_HEIGHT_DP = 64f
-
     /** How far the avatar reaches up over the banner's lower edge. */
     val avatarOverlap: Dp = 36.dp
 
-    /** A banner is about a third as tall as it is wide, within 110–210 dp. */
-    fun heightDp(hasBanner: Boolean, widthDp: Float): Float =
-        if (!hasBanner) WASH_HEIGHT_DP else (widthDp / 3f).coerceIn(110f, 210f)
+    /**
+     * A third as tall as it is wide, within 110–210 dp, with or without a
+     * banner (the wash stands in at the same height), so nothing below it
+     * moves when the profile or its banner arrives. As iOS `bannerHeight`.
+     */
+    fun heightDp(widthDp: Float): Float = (widthDp / 3f).coerceIn(110f, 210f)
 
     /**
      * A picture's average color is usually a muddy dark gray. Keep its hue but
@@ -100,7 +100,7 @@ internal fun ProfileBanner(
     onTap: (String) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val target = ProfileBannerStyle.heightDp(bannerUrl != null, maxWidth.value).dp
+        val target = ProfileBannerStyle.heightDp(maxWidth.value).dp
         val height by animateDpAsState(target, label = "bannerHeight")
         var loaded by remember(bannerUrl) { mutableStateOf(false) }
         val imageAlpha by animateFloatAsState(if (loaded) 1f else 0f, tween(300), label = "bannerFade")

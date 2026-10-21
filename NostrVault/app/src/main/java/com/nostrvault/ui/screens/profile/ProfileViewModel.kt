@@ -32,13 +32,13 @@ enum class ProfileSection(val displayName: String) {
     REPLIES("Replies"),
     /** This person's kind-6 reposts, kept out of Notes. */
     REPOSTS("Reposts"),
+    TAGGED("Tagged"),
     /** Long-form posts (kind 30023). Shown only when there are some. */
     ARTICLES("Articles"),
     /** Short videos (kind 34236). Shown only when there are some. */
     DIVINES("diVines"),
     /** Wavlake songs. Shown only when the artist is found. */
     MUSIC("Music"),
-    TAGGED("Tagged"),
     /** Marketplace listings. Shown only when there are some, or on your own profile. */
     SHOP("Shop"),
     ;

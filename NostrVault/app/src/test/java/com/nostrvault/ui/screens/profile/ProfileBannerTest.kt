@@ -32,10 +32,9 @@ class ProfileBannerTest {
 
     @Test
     fun bannerIsAThirdOfTheWidthWithinBounds() {
-        assertEquals(130f, ProfileBannerStyle.heightDp(true, 390f), 0.01f)
-        assertEquals(110f, ProfileBannerStyle.heightDp(true, 300f), 0.01f)
-        assertEquals(210f, ProfileBannerStyle.heightDp(true, 900f), 0.01f)
-        assertEquals(64f, ProfileBannerStyle.heightDp(false, 390f), 0.01f)
+        assertEquals(130f, ProfileBannerStyle.heightDp(390f), 0.01f)
+        assertEquals(110f, ProfileBannerStyle.heightDp(300f), 0.01f)
+        assertEquals(210f, ProfileBannerStyle.heightDp(900f), 0.01f)
     }
 
     @Test

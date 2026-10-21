@@ -1,6 +1,9 @@
 package com.nostrvault.ui.screens.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PersonAddAlt1
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -57,12 +60,12 @@ internal fun ProfileActionRow(
                 // Post is the floating button. Pulling the page down opens
                 // Edit Profile too; the button stays for TalkBack and anyone
                 // who has not found the pull.
-                ActionChip("Edit Profile", NostrVaultIcons.Edit, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
+                ActionChip("Edit Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
             } else {
                 ActionChip(
                     if (isFollowing) "Unfollow" else "Follow",
-                    NostrVaultIcons.PersonAdd,
+                    if (isFollowing) Icons.Filled.PersonRemove else NostrVaultIcons.PersonAdd,
                     if (isFollowing) Color.White else colors.primary,
                     if (isFollowing) colors.primary else tint,
                     onClick = onFollow,
@@ -94,10 +97,18 @@ internal fun ProfileActionRow(
                             )
                         }
                         HorizontalDivider()
-                        val blockColor = if (isBlocked) Color(0xFFFF9800) else ErrorRed
+                        // iOS: Block is destructive red; Unblock is an ordinary item.
+                        val blockColor = if (isBlocked) LocalContentColor.current else ErrorRed
                         DropdownMenuItem(
-                            text = { Text(if (isBlocked) "Unblock" else "Block", color = blockColor) },
-                            leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = blockColor, modifier = Modifier.size(20.dp)) },
+                            text = { Text(if (isBlocked) "Unblock" else "Block", color = if (isBlocked) Color.Unspecified else blockColor) },
+                            leadingIcon = {
+                                Icon(
+                                    if (isBlocked) Icons.Filled.PersonAddAlt1 else NostrVaultIcons.Blocked,
+                                    contentDescription = null,
+                                    tint = if (isBlocked) LocalContentColor.current else blockColor,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
                             onClick = { menuOpen = false; onBlock() },
                         )
                     }
@@ -149,9 +160,9 @@ private fun ActionChip(
                 },
                 onLongClickLabel = longClickLabel,
             )
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 12.dp),
     ) {
-        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(14.dp))
+        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(12.dp))
         Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
     }
 }

@@ -40,6 +40,8 @@ internal fun ProfileMediaTile(
     val clipboard = LocalClipboardManager.current
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val isAudio = remember(url) { com.nostrvault.ui.components.isAudioUrl(url) }
+    val isVideo = remember(url) { com.nostrvault.ui.components.isVideoUrl(url) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     // Keyed by url: rows are by position, so new posts can shift a tile under an open menu.
     var menuOpen by remember(url) { mutableStateOf(false) }
     val busyUrl by viewModel.mediaBusyUrl.collectAsState()
@@ -49,7 +51,7 @@ internal fun ProfileMediaTile(
 
     val tileModifier = Modifier
         .fillMaxSize()
-        .clip(RoundedCornerShape(6.dp))
+        .clip(RoundedCornerShape(8.dp))
         .background(if (isAudio) AudioTileBg else SecondaryGroupedBg)
         .combinedClickable(
             onClick = onOpen,
@@ -64,14 +66,36 @@ internal fun ProfileMediaTile(
             Icon(NostrVaultIcons.Waveform, contentDescription = null, tint = colors.primary, modifier = Modifier.size(36.dp))
         }
     } else {
-        AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = tileModifier)
+        // iOS grid tiles hold a GIF still (`shouldAnimate: false`); a grid of
+        // looping GIFs is noise. The first frame comes from the plain decoder.
+        val model = remember(url) {
+            if (!isGifUrl(url)) url
+            else coil.request.ImageRequest.Builder(context)
+                .data(url)
+                .decoderFactory(coil.decode.BitmapFactoryDecoder.Factory())
+                .build()
+        }
+        Box(contentAlignment = Alignment.Center, modifier = tileModifier) {
+            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            if (isVideo) {
+                // iOS VideoThumbnailView: a 40pt play.circle.fill over the frame.
+                Icon(
+                    NostrVaultIcons.PlayCircle,
+                    contentDescription = "Video",
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
     }
 
     if (menuOpen) {
         val busy = busyUrl == url
         val actions = viewModel.mediaMenu(url, author, presence)
+        var deleteOpen by remember { mutableStateOf(false) }
         DropdownMenu(expanded = true, onDismissRequest = { menuOpen = false }) {
             fun close() { menuOpen = false }
+            val deletes = actions.filter { it == ProfileMediaAction.DELETE_FROM_MIRRORS || it == ProfileMediaAction.DELETE_EVERYWHERE }
             actions.forEach { action ->
                 when (action) {
                     ProfileMediaAction.COPY_LINK -> DropdownMenuItem(
@@ -96,20 +120,30 @@ internal fun ProfileMediaTile(
                         leadingIcon = { Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         onClick = { close(); viewModel.mirrorMediaToBlossom(url) },
                     )
-                    // Order and wording as the Vault grid's menu; each asks first.
-                    ProfileMediaAction.DELETE_FROM_MIRRORS -> {
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("Delete from mirrors", color = ErrorRed) },
-                            leadingIcon = { Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
-                            onClick = { close(); blossomHashOf(url)?.let { onDelete(it, com.nostrvault.ui.screens.DeleteScope.MIRRORS) } },
-                        )
+                    // iOS: one "Delete" item holding both choices; each asks first.
+                    ProfileMediaAction.DELETE_FROM_MIRRORS, ProfileMediaAction.DELETE_EVERYWHERE -> {
+                        if (action == deletes.first()) {
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                leadingIcon = { Icon(NostrVaultIcons.Delete, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                trailingIcon = { Icon(if (deleteOpen) NostrVaultIcons.ChevronDown else NostrVaultIcons.Navigate, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = { deleteOpen = !deleteOpen },
+                            )
+                        }
+                        if (deleteOpen) {
+                            val mirrors = action == ProfileMediaAction.DELETE_FROM_MIRRORS
+                            DropdownMenuItem(
+                                text = { Text(if (mirrors) "Delete from mirrors" else "Delete everywhere", color = ErrorRed) },
+                                leadingIcon = { Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
+                                contentPadding = PaddingValues(start = 28.dp, end = 12.dp),
+                                onClick = {
+                                    close()
+                                    val scope = if (mirrors) com.nostrvault.ui.screens.DeleteScope.MIRRORS else com.nostrvault.ui.screens.DeleteScope.EVERYWHERE
+                                    blossomHashOf(url)?.let { onDelete(it, scope) }
+                                },
+                            )
+                        }
                     }
-                    ProfileMediaAction.DELETE_EVERYWHERE -> DropdownMenuItem(
-                        text = { Text("Delete everywhere", color = ErrorRed) },
-                        leadingIcon = { Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
-                        onClick = { close(); blossomHashOf(url)?.let { onDelete(it, com.nostrvault.ui.screens.DeleteScope.EVERYWHERE) } },
-                    )
                     ProfileMediaAction.MARK_404, ProfileMediaAction.UNMARK_404 -> {
                         HorizontalDivider()
                         DropdownMenuItem(
@@ -139,3 +173,7 @@ internal fun ProfileMediaTile(
 
 /** iOS MediaGridItem's audio tile: Color(red: 0.1, green: 0.1, blue: 0.14). */
 private val AudioTileBg = Color(0xFF1A1A24)
+
+/** A `.gif` link, query and fragment aside. */
+internal fun isGifUrl(url: String): Boolean =
+    url.substringBefore('#').substringBefore('?').endsWith(".gif", ignoreCase = true)
