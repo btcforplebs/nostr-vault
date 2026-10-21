@@ -7,7 +7,7 @@ import { Avatar } from "./Avatar.jsx"
 import { AuthorName, Undeleted } from "./NoteCard.jsx"
 import { Mention } from "./NoteText.jsx"
 import { useQuote } from "./QuotedNote.jsx"
-import { useProfile } from "./useProfile.js"
+import { Badges } from "./Badges.jsx"
 import { ago } from "./time.js"
 import { mediaType, mediaUrls, tileNote } from "../net/media.js"
 import { gateIds } from "../net/actions.js"
@@ -61,8 +61,7 @@ export const domainOf = url => { try { return new URL(url).hostname.replace(/^ww
 /** It quotes another note: a q tag, or a nostr:note / nevent in its text (the full card's Quote). */
 export const quotes = note => (note.tags ?? []).some(t => t[0] === "q") || /nostr:(note|nevent)1/.test(note.content ?? "")
 
-/** Sent from Nostr Vault on any platform: the client tag every Nostr Vault note carries. */
-export const fromNostrVault = note => (note.tags ?? []).some(t => t[0] === "client" && String(t[1] ?? "").startsWith("Nostr Vault"))
+export { fromNostrVault } from "./Badges.jsx"
 
 /** Gone at once when this account deletes it, as a full card is (NoteCard Undeleted). */
 export function CondensedNote(props) {
@@ -117,15 +116,6 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
       {media.length > 0 && <Thumb url={media[0]} more={media.length - 1} big={root} />}
     </div>
   )
-}
-
-/** The verified seal (a NIP-05 on the profile) and the Nostr Vault badge, after the name. */
-function Badges({ pubkey, note }) {
-  const p = useProfile(pubkey)
-  return <>
-    {p?.nip05 && <span class="condensed-seal" title={p.nip05.replace(/^_@/, "")} role="img" aria-label="Verified">✓</span>}
-    {fromNostrVault(note) && <span class="condensed-nv" title="Sent from Nostr Vault" role="img" aria-label="Sent from Nostr Vault" />}
-  </>
 }
 
 const MARKS = {

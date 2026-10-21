@@ -29,11 +29,15 @@ export function useQuote(q, memoryOnly = false) {
 
 export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   const ev = useQuote(q, memoryOnly)
+  // A quote no relay answers for gives up after 12 s, as the iPhone's does, instead of loading forever.
+  const [late, setLate] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setLate(true), 12_000); return () => clearTimeout(t) }, [quoteKey(q)])
   useEffect(() => {
     const src = quoteSource()
     if (ev && src) fetchProfiles(src.vault, [ev.pubkey], src.relays, { save: !memoryOnly }).catch(() => {})
   }, [ev?.pubkey])
 
+  if (ev === undefined && late) return <div class="quote quote-missing">Quoted note unavailable</div>
   if (ev === undefined) return <div class="quote quote-pending"><span class="quote-ref">{short}</span> Loading…</div>
   if (ev === null) return <div class="quote quote-missing"><span class="quote-ref">{short}</span> Note not found</div>
 
