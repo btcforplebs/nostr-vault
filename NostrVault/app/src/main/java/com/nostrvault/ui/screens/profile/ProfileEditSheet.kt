@@ -2,7 +2,6 @@ package com.nostrvault.ui.screens.profile
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,7 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.style.TextOverflow
 import com.nostrvault.ui.components.AvatarImage
 import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
@@ -324,10 +323,8 @@ fun ProfileEditSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .verticalScroll(rememberScrollState()),
         ) {
-            Spacer(Modifier.height(16.dp))
             BannerPreview(bannerUrl)
             ProfilePreview(
                 pubkey = viewModel.pubkey,
@@ -337,16 +334,33 @@ fun ProfileEditSheet(
                 nip05 = nip05,
                 about = about,
             )
-            HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 16.dp))
-            ProfileField("Display Name", displayName, viewModel::setDisplayName)
-            ProfileField("Username", name, viewModel::setName)
-            ProfileField("About", about, viewModel::setAbout, singleLine = false, minLines = 3)
-            ProfilePhotoButtons(uploading, uploadError, viewModel::uploadPhoto)
-            ProfileField("Profile Picture URL", pictureUrl, viewModel::setPictureUrl)
-            ProfileField("Banner URL", bannerUrl, viewModel::setBannerUrl)
-            ProfileField("NIP-05 Identifier", nip05, viewModel::setNip05)
-            ProfileField("Lightning Address", lud16, viewModel::setLud16)
-            ProfileField("Website", website, viewModel::setWebsite)
+            // iOS ProfileEditView: IDENTITY, BIO, MEDIA, LIGHTNING, a rule before each.
+            val values = mapOf(
+                ProfileMetadataMerge.DISPLAY_NAME to (displayName to viewModel::setDisplayName),
+                ProfileMetadataMerge.NAME to (name to viewModel::setName),
+                ProfileMetadataMerge.ABOUT to (about to viewModel::setAbout),
+                ProfileMetadataMerge.PICTURE to (pictureUrl to viewModel::setPictureUrl),
+                ProfileMetadataMerge.BANNER to (bannerUrl to viewModel::setBannerUrl),
+                ProfileMetadataMerge.NIP05 to (nip05 to viewModel::setNip05),
+                ProfileMetadataMerge.LUD16 to (lud16 to viewModel::setLud16),
+                ProfileMetadataMerge.WEBSITE to (website to viewModel::setWebsite),
+            )
+            for (group in ProfileEditLayout.groups) {
+                ProfileEditGroupDivider()
+                ProfileEditGroupTitle(group.title)
+                if (group.photoPickers) {
+                    // Its own 12 below; the 12 above and 16 sides match a field row.
+                    Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
+                        ProfilePhotoButtons(uploading, uploadError, viewModel::uploadPhoto)
+                    }
+                    ProfileEditFieldDivider()
+                }
+                group.fields.forEachIndexed { index, field ->
+                    if (index > 0) ProfileEditFieldDivider()
+                    val (value, onChange) = values.getValue(field.key)
+                    ProfileEditFieldRow(field, value, onChange)
+                }
+            }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -396,8 +410,8 @@ private fun EditSheetHeader(hasChanges: Boolean, uploading: Boolean, onDiscard: 
 }
 
 /**
- * The Banner URL at the 3:1 shape the profile draws it in; nothing until the
- * field holds a link.
+ * The Banner URL at the 3:1 shape the profile draws it in, edge to edge as
+ * iOS; nothing until the field holds a link.
  */
 @Composable
 private fun BannerPreview(bannerUrl: String) {
@@ -410,10 +424,9 @@ private fun BannerPreview(bannerUrl: String) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(3f)
-            .clip(RoundedCornerShape(8.dp))
+            .clipToBounds()
             .background(LocalNostrVaultColors.current.primary.copy(alpha = 0.12f)),
     )
-    Spacer(Modifier.height(12.dp))
 }
 
 /** How the profile will look, updating as the fields are edited. */
@@ -433,8 +446,7 @@ private fun ProfilePreview(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .padding(bottom = 8.dp),
+            .padding(16.dp),
     ) {
         AvatarImage(
             url = pictureUrl.trim().ifEmpty { null },
@@ -455,31 +467,4 @@ private fun ProfilePreview(
             }
         }
     }
-}
-
-@Composable
-private fun ProfileField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    singleLine: Boolean = true,
-    minLines: Int = 1,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = singleLine,
-        minLines = minLines,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = LocalNostrVaultColors.current.primary,
-            unfocusedBorderColor = SeparatorColor,
-            cursorColor = LocalNostrVaultColors.current.primary,
-            focusedLabelColor = LocalNostrVaultColors.current.primary,
-        ),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp),
-    )
 }
