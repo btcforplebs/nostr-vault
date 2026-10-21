@@ -108,11 +108,15 @@ extension NostrService {
                 let servers = ProfileRepository.parseServerListTags(event.tags)
                 let pubkey = event.pubkey
                 let createdAt = event.created_at, eventId = event.id
+                // This list picks the mesh node a photo is read from: a relay can
+                // serve any event under any author, so only a signature makes it the
+                // author's (Tara's NIP-F1 check). Checked here, off the main thread.
+                let signed = NostrEventVerifier.isValid(eventDict)
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     // A relay replaying an older list must not undo a newer one:
                     // every phone merges into the list it keeps here.
-                    guard self.acceptServerListStamp(pubkey: pubkey, createdAt: createdAt, id: eventId) else { return }
+                    guard self.acceptServerListStamp(pubkey: pubkey, createdAt: createdAt, id: eventId, signedByAuthor: signed) else { return }
                     if !servers.isEmpty { self.serverLists[pubkey] = servers }
                     self.saveProfilesThrottled()
                     #if os(macOS)

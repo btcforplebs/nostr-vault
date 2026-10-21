@@ -81,15 +81,17 @@ extension NostrService {
     /// Pass fipsDetectedNpub when available to include the detected .fips address.
     @MainActor
     /// Keeps the newest 10063 per author (persisted), so a replay is ignored.
+    /// `signedByAuthor`: the event's signature was checked and is the pubkey's;
+    /// an event that wasn't is refused and never moves the stamp.
     @discardableResult
-    func acceptServerListStamp(pubkey: String, createdAt: Int64, id: String) -> Bool {
+    func acceptServerListStamp(pubkey: String, createdAt: Int64, id: String, signedByAuthor: Bool) -> Bool {
         var stamps = UserDefaults.standard.dictionary(forKey: Self.serverListStampsKey) as? [String: String] ?? [:]
         let seen = stamps[pubkey].flatMap { s -> (createdAt: Int64, id: String)? in
             let parts = s.split(separator: ":", maxSplits: 1)
             guard parts.count == 2, let t = Int64(parts[0]) else { return nil }
             return (t, String(parts[1]))
         }
-        guard HomeVaultLogic.isNewer(createdAt: createdAt, id: id, than: seen) else { return false }
+        guard HomeVaultLogic.keepsServerList(signedByAuthor: signedByAuthor, createdAt: createdAt, id: id, than: seen) else { return false }
         stamps[pubkey] = "\(createdAt):\(id)"
         UserDefaults.standard.set(stamps, forKey: Self.serverListStampsKey)
         return true
@@ -130,7 +132,8 @@ extension NostrService {
             let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [])
             let existing: [String]
             if let newest = lookup.event {
-                if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id) {
+                // lookupNewestReplaceable keeps only events whose author and signature it checked.
+                if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id, signedByAuthor: true) {
                     serverLists[owner] = ProfileRepository.parseServerListTags(newest.tags)
                 }
                 existing = serverLists[owner] ?? []
@@ -154,7 +157,8 @@ extension NostrService {
             let tags = merged.map { ["server", $0] }
             if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
                 // Ours is now the newest: merge from it next time, even before it echoes back.
-                if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id) {
+                // Signed here, by this account.
+                if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id, signedByAuthor: true) {
                     serverLists[event.pubkey] = merged
                 }
                 UserDefaults.standard.set(current, forKey: managedKey)
