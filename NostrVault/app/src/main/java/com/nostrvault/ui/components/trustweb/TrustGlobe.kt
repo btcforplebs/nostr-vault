@@ -312,9 +312,8 @@ internal fun TrustGlobe(
                             key == center -> Color.White
                             key == (scene.traceTarget ?: author) -> AuthorTint
                             key in scene.arcOnlyKeys -> GlobeSceneArcs.FaceTint
-                            // The core is the author: these are their follows.
-                            center == author && scene.traceTarget == null -> RingColor
-                            else -> accent
+                            // Follows pale blue, the outer shells violet (iOS).
+                            else -> scene.shellTint(key) ?: accent
                         }
                         val profile = profiles[key]
                         AvatarImage(

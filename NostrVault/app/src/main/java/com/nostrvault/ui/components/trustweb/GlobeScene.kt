@@ -113,6 +113,16 @@ internal class GlobeScene(
     private var filterFrom: Set<String>? = null
     private var filterTo: Set<String>? = null
     private var filterMix = 1.0
+    /** A follow's or a shell's face ring colour, as [Spot.tint] draws it; null for the rest. Re-read on each load. */
+    fun shellTint(key: String): Color? {
+        version.intValue
+        return when {
+            traceTarget != null -> null
+            key in ringFaceSet -> RingColor
+            key in layerFaceSet -> HazeColor
+            else -> null
+        }
+    }
     /** Faces drawn with a picture last frame, so they keep their seat. */
     private var seated: Set<String> = emptySet()
     private var direct = false
@@ -679,10 +689,11 @@ internal class GlobeScene(
         val dimLayer = dimLayerFaces && filterTo == null
         for (key in faces) {
             val p = index[key]?.let { project.of(it) } ?: continue
+            // iOS: your follows' faces 14 in the ring's colour, the shells' in theirs.
             drawn += when {
+                traceTarget == null && key in ringFaceSet -> Drawn(key, p, RingColor, 14.0)
                 traceTarget == null && key in layerFaceSet ->
                     Drawn(key, p, HazeColor, 14.0 - 2.0 * layerDim, dimLayer)
-                traceTarget == null && key in ringFaceSet -> Drawn(key, p, RingColor, 15.0)
                 else -> Drawn(key, p, GlobeAccent, 15.0)
             }
         }

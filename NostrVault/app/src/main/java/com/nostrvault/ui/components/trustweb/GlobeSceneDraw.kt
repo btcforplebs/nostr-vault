@@ -102,7 +102,8 @@ import kotlin.math.max
         for (spot in spots) {
             val c = Offset(spot.x.toFloat(), spot.y.toFloat())
             if (spot.ember) {
-                drawCircle(accent.copy(alpha = spot.alpha.toFloat().coerceIn(0f, 1f)), radius = spot.r.toFloat(), center = c)
+                // In the face's own colour, as iOS.
+                drawCircle(spot.tint.copy(alpha = spot.alpha.toFloat().coerceIn(0f, 1f)), radius = spot.r.toFloat(), center = c)
                 continue
             }
             val r = spot.r.toFloat()
