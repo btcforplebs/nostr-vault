@@ -80,7 +80,7 @@ fun NostrContentText(
 
                     is ContentSegment.Mention -> {
                         val displayName = profiles[segment.pubkey]?.bestName
-                            ?: (segment.pubkey.take(8) + "...")
+                            ?: mentionFallbackLabel(segment)
                         pushStringAnnotation("profile", segment.pubkey)
                         withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Medium)) {
                             append("@$displayName")
@@ -212,7 +212,8 @@ internal fun withContentLinks(
 
 internal sealed class ContentSegment {
     data class PlainText(val text: String) : ContentSegment()
-    data class Mention(val pubkey: String) : ContentSegment()
+    /** [identifier] is the bech32 as written (npub1…/nprofile1…), for the label before a profile loads. */
+    data class Mention(val pubkey: String, val identifier: String = "") : ContentSegment()
     data class Url(val url: String, val displayUrl: String) : ContentSegment()
     /** [text] as written ("#Bitcoin"); [tag] is what its feed asks for ("bitcoin"). */
     data class Hashtag(val text: String, val tag: String) : ContentSegment()
@@ -254,7 +255,7 @@ internal fun parseContentSegments(
         val identifier = m.groupValues[1]
         val pubkey = NostrMentions.resolvePubkey(identifier)
         if (pubkey != null) {
-            matches.add(Match(m.range, ContentSegment.Mention(pubkey)))
+            matches.add(Match(m.range, ContentSegment.Mention(pubkey, identifier)))
         }
     }
 
@@ -272,13 +273,7 @@ internal fun parseContentSegments(
         if (url in strippedURLs) {
             matches.add(Match(m.range, ContentSegment.MediaUrl(url)))
         } else {
-            val displayUrl = url
-                .removePrefix("https://")
-                .removePrefix("http://")
-                .removePrefix("www.")
-                .take(50)
-                .let { if (it.length == 50) "$it..." else it }
-            matches.add(Match(m.range, ContentSegment.Url(url, displayUrl)))
+            matches.add(Match(m.range, ContentSegment.Url(url, linkDisplayLabel(url))))
         }
     }
 
@@ -338,3 +333,22 @@ private fun closeGaps(segments: List<ContentSegment>): List<ContentSegment> {
     (tidied.lastOrNull() as? ContentSegment.PlainText)?.let { tidied[tidied.lastIndex] = ContentSegment.PlainText(it.text.trimEnd()) }
     return tidied.filterNot { it is ContentSegment.PlainText && it.text.isEmpty() }
 }
+
+/**
+ * A link's label in the text (iOS NostrContentFormatter): the domain without
+ * `www.`, plus the path cut at 20 characters; the URL itself if it won't parse.
+ */
+internal fun linkDisplayLabel(url: String): String {
+    val uri = runCatching { java.net.URI(url) }.getOrNull()
+    val host = uri?.host ?: return url
+    val domain = host.removePrefix("www.")
+    // Foundation's URL.path drops a trailing slash; java.net.URI keeps it.
+    val path = uri.path.orEmpty().let { if (it.length > 1) it.trimEnd('/') else it }
+    if (path.length <= 1) return domain
+    return domain + if (path.length > 20) path.take(20) + "..." else path
+}
+
+/** iOS: "@" is added by the caller; the bech32's first 12 characters and "..." until the profile loads. */
+internal fun mentionFallbackLabel(segment: ContentSegment.Mention): String =
+    if (segment.identifier.isNotEmpty()) segment.identifier.take(12) + "..."
+    else segment.pubkey.take(8) + "..."

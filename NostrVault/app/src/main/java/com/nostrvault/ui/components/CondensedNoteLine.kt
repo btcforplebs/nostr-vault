@@ -249,7 +249,11 @@ fun CondensedNoteLine(
                         fontSize = nameSize,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
+                        // The name opens the profile, as on a full post; the
+                        // photo opens the quick menu (iOS CondensedNoteLine).
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clickable { onProfileClick(authorPubkey) },
                     )
                     if (!profile?.nip05.isNullOrBlank()) {
                         Spacer(Modifier.width(3.dp))
@@ -318,15 +322,17 @@ fun CondensedNoteLine(
                 }
                 val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
                     NostrMentions.collapseGaps(
-                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet()).replace("\n", " ")
+                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet())
                     ).trim()
                 }
                 if (plainText.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     val line = @Composable {
+                        // iOS: full white on the root line, 85% (80% OLED) on
+                        // replies; newlines stay inside the line limit.
                         Text(
                             text = plainText,
-                            color = SecondaryText,
+                            color = PrimaryText.copy(alpha = if (isRoot) 1f else if (isOled) 0.8f else 0.85f),
                             fontSize = bodySize,
                             maxLines = bodyLineLimit,
                             overflow = TextOverflow.Ellipsis,
@@ -457,7 +463,8 @@ private fun CondensedMediaThumbnail(mediaURLs: List<String>, isRoot: Boolean) {
     }
 }
 
-private fun shortKey(key: String): String =
+/** iOS FeedNoteRow.shortKey: "npub…" and the key's last six characters. */
+internal fun shortKey(key: String): String =
     if (key.length < 12) key else "npub…" + key.takeLast(6)
 
 /** Sent from Nostr Vault on any platform: the `client` tag every Nostr Vault note carries. */

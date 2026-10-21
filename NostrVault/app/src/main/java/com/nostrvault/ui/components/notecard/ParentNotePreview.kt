@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,7 +64,7 @@ internal fun ParentNotePreview(
             if (avatarMenu != null) {
                 AvatarWithMenu(
                     pubkey = parentNote.pubkey,
-                    displayName = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
+                    displayName = parentProfile?.bestName ?: shortKey(parentNote.pubkey),
                     menu = avatarMenu,
                     onProfileClick = onProfileClick,
                     onTrustWeb = onTrustWeb,
@@ -97,38 +98,47 @@ internal fun ParentNotePreview(
 
         // Right column: header + content + media
         Column(modifier = Modifier.weight(1f)) {
-            // Header: name + NIP-05 badge, timestamp on line below
-            Column(modifier = Modifier.padding(top = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
-                        color = Color(0xFFD9D9D9), // iOS: rgb(0.85, 0.85, 0.85)
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
+            // Header (iOS): name, seal, badge, then the time right-aligned
+            // on the same line in 11pt monospace. The name opens the profile.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 4.dp),
+            ) {
+                Text(
+                    text = parentProfile?.bestName ?: shortKey(parentNote.pubkey),
+                    color = Color(0xFFD9D9D9), // iOS: rgb(0.85, 0.85, 0.85)
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .clickable { onProfileClick(parentNote.pubkey) },
+                )
 
-                    if (!parentProfile?.nip05.isNullOrBlank()) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = NostrVaultIcons.Verified,
-                            contentDescription = "Verified",
-                            tint = Color(0xFF33CC99),
-                            modifier = Modifier.size(12.dp),
-                        )
-                    }
-                    if (parentNote.isFromNostrVault) {
-                        Spacer(Modifier.width(4.dp))
-                        NostrVaultBadge(size = 10.dp)
-                    }
+                if (!parentProfile?.nip05.isNullOrBlank()) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        imageVector = NostrVaultIcons.Verified,
+                        contentDescription = "Verified",
+                        tint = Color(0xFF33CC99),
+                        modifier = Modifier.size(12.dp),
+                    )
                 }
+                if (parentNote.isFromNostrVault) {
+                    Spacer(Modifier.width(6.dp))
+                    NostrVaultBadge(size = 10.dp)
+                }
+
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(6.dp))
 
                 Text(
                     text = formatTimestamp(parentNote.createdAt.time / 1000),
                     color = SecondaryText,
                     fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.2.sp,
                 )
             }
 
@@ -137,7 +147,7 @@ internal fun ParentNotePreview(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = remember(parentNote.content, profiles) {
-                        NostrMentions.toPlainText(parentNote.content, profiles, parentNote.mediaURLs.toSet()).replace("\n", " ")
+                        NostrMentions.toPlainText(parentNote.content, profiles, parentNote.mediaURLs.toSet()).trim()
                     },
                     color = Color(0xFFB3B3B3), // iOS: rgb(0.7, 0.7, 0.7)
                     fontSize = 14.sp,

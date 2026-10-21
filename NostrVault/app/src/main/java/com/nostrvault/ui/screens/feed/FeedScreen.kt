@@ -501,8 +501,10 @@ fun FeedScreen(
                     onNoteClick = onNoteClick,
                     onLoadMore = viewModel::loadMore,
                 )
-            } else if (notes.isEmpty() && isRefreshing) {
-                // Shimmer skeleton loading
+            } else if (notes.isEmpty() && (isRefreshing || (isLoadingFeed && !(feedMode == FeedMode.DISCOVERY && isRelayBooting)))) {
+                // Five skeleton rows whenever the feed is loading with nothing
+                // to show yet, first load included (iOS FeedView "Loading
+                // header"); the empty states wait until loading ends.
                 SkeletonFeed(count = 5)
             } else if (notes.isEmpty() && feedMode == FeedMode.POLLS) {
                 // iOS PollsEmptyStateView: the title follows the status filter,
