@@ -81,8 +81,8 @@ internal fun FollowListRow(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (!profile?.nip05.isNullOrBlank()) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(NostrVaultIcons.Verified, "Verified", tint = Color(0xFF33CC99), modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Icon(NostrVaultIcons.Verified, "Verified", tint = Color(0xFF33CC99), modifier = Modifier.size(11.dp))
                     }
                     if (followsYou) {
                         Spacer(Modifier.width(5.dp))
@@ -107,7 +107,7 @@ internal fun FollowListRow(
             }
         }
         if (followState != null) {
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             FollowButton(followState, name, onToggleFollow)
         }
     }

@@ -1,6 +1,8 @@
 package com.nostrvault.ui.screens.profile
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -109,5 +111,23 @@ class FollowListLogicTest {
         assertEquals("Builder. Bitcoin nostr", FollowListLogic.bioLine("Builder.\n\n  Bitcoin  \nnostr"))
         assertNull(FollowListLogic.bioLine(" \n "))
         assertNull(FollowListLogic.bioLine(null))
+    }
+
+    @Test
+    fun followerPagingStopsOnceTheProfileCountIsLoaded() {
+        assertTrue(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 100))
+        // As many loaded as the profile says: no more pages, no "N+".
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 250))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 260))
+        // No count from the profile: nothing to page towards.
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = null, loaded = 0))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = true, profileTotal = 250, loaded = 100))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = true, exhausted = false, profileTotal = 250, loaded = 100))
+    }
+
+    @Test
+    fun shortPubkeyKeepsTheFirstEightAndLastFour() {
+        val hex = "abcd1234" + "0".repeat(52) + "wxyz"
+        assertEquals("abcd1234…wxyz", FollowListLogic.shortPubkey(hex))
     }
 }

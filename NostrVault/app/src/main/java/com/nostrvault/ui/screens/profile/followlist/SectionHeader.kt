@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -21,6 +23,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.WindowBackground
@@ -54,11 +57,13 @@ internal fun SectionHeader(section: FollowListSection, collapsible: Boolean, ope
         )
         Spacer(Modifier.weight(1f))
         if (collapsible) {
+            // chevron.right, 11pt, turning down as the group opens (iOS).
+            val turn by animateFloatAsState(if (open) 90f else 0f, Motion.fade(), label = "outside-chevron")
             Icon(
-                NostrVaultIcons.ChevronDown,
+                NostrVaultIcons.Navigate,
                 contentDescription = if (open) "Hide this group" else "Show this group",
                 tint = SecondaryText,
-                modifier = Modifier.size(18.dp).rotate(if (open) 0f else -90f),
+                modifier = Modifier.size(11.dp).rotate(turn),
             )
         }
     }
