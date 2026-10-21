@@ -1,10 +1,13 @@
 // The Music player (the iPhone's MusicPlayerService): one audio element for the page, a queue, play/pause, previous
 // and next, and on to the next song when one ends. It lives outside the Music screen, so switching feeds keeps the
-// song playing. Wavlake's mediaUrl is a plain MP3. Every song that starts puts its artist in Your artists.
+// song playing. Wavlake's mediaUrl is a plain MP3. Every song that starts puts its artist in Your artists. Shuffle,
+// repeat (off / all / one) and stop work as the iPhone's toggleShuffle, cycleRepeat and stop.
 import { rememberRecent, trackArtist } from "./wavlake.js"
 const listeners = new Set()
 let audio = null
-let state = { queue: [], index: -1, playing: false, time: 0, duration: 0, error: "" }
+const EMPTY = { queue: [], index: -1, playing: false, time: 0, duration: 0, error: "", shuffled: false, repeat: "off", unshuffled: [] }
+let state = { ...EMPTY }
+export const REPEATS = ["off", "all", "one"]
 
 const set = patch => { state = { ...state, ...patch }; for (const f of listeners) f(state) }
 export const playerState = () => state
@@ -20,7 +23,7 @@ export function element(make = () => new Audio()) {
   audio.addEventListener("pause", () => set({ playing: false }))
   audio.addEventListener("timeupdate", () => set({ time: audio.currentTime || 0 }))
   audio.addEventListener("durationchange", () => set({ duration: Number.isFinite(audio.duration) ? audio.duration : 0 }))
-  audio.addEventListener("ended", () => next())
+  audio.addEventListener("ended", ended)
   audio.addEventListener("error", () => set({ playing: false, error: "This song didn't load." }))
   return audio
 }
@@ -52,8 +55,56 @@ export function playList(tracks, at = 0) {
   const t = tracks[at]
   if (!t) return
   if (current()?.id === t.id) return toggle()
-  state = { ...state, queue: tracks.slice() }
+  state = { ...state, queue: tracks.slice(), shuffled: false, unshuffled: [] }
   load(at)
+}
+
+/** Fisher–Yates; `random` is for tests. */
+export function shuffled(list, random = Math.random) {
+  const out = list.slice()
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [out[i], out[j]] = [out[j], out[i]] }
+  return out
+}
+
+/** Plays `tracks` in a random order with shuffle on, so turning it off goes back to the list's own order. */
+export function playShuffled(tracks, random) {
+  if (!tracks.length) return
+  state = { ...state, queue: shuffled(tracks, random), shuffled: true, unshuffled: tracks.slice() }
+  load(0)
+}
+
+/** Shuffles everything but the song playing, which stays on top and keeps playing; off puts the list's order back
+ *  with the current song in its place. */
+export function toggleShuffle(random) {
+  const t = current()
+  if (!t) return
+  if (state.shuffled) {
+    const back = state.unshuffled.length ? state.unshuffled : state.queue
+    set({ queue: back, index: Math.max(0, back.findIndex(x => x.id === t.id)), shuffled: false, unshuffled: [] })
+  } else {
+    const rest = state.queue.filter((_, i) => i !== state.index)
+    set({ unshuffled: state.queue, queue: [t, ...shuffled(rest, random)], index: 0, shuffled: true })
+  }
+}
+
+/** Off → repeat all → repeat one → off. */
+export const cycleRepeat = () => set({ repeat: REPEATS[(REPEATS.indexOf(state.repeat) + 1) % REPEATS.length] })
+
+/** Is there a song after this one: later in the queue, or round again under repeat all. */
+export const hasNext = (s = state) => s.index + 1 < s.queue.length || (s.repeat === "all" && s.queue.length > 0)
+
+/** Stops and clears the queue; the player bar goes away. Repeat stays as chosen, as on the iPhone. */
+export function stop() {
+  const a = element()
+  a.pause()
+  a.removeAttribute?.("src")
+  set({ ...EMPTY, repeat: state.repeat })
+}
+
+function ended() {
+  const a = element()
+  if (state.repeat === "one") { a.currentTime = 0; const p = a.play(); if (p?.catch) p.catch(() => {}); return }
+  next()
 }
 
 export function toggle() {
@@ -62,10 +113,11 @@ export function toggle() {
   if (a.paused) { const p = a.play(); if (p?.catch) p.catch(() => {}) } else a.pause()
 }
 
-/** Next song; at the end of the queue it stops. */
+/** Next song; under repeat all the end of the queue goes round to the first, otherwise it stops there. */
 export function next() {
   if (state.index + 1 < state.queue.length) load(state.index + 1)
-  else { element().pause(); set({ playing: false }) }
+  else if (hasNext()) load(0)
+  else { const a = element(); a.pause(); a.currentTime = 0; set({ playing: false }) }
 }
 
 /** Past three seconds, back to the start of this song; otherwise the song before. */
@@ -78,4 +130,4 @@ export function previous() {
 export function seek(seconds) { const a = element(); if (current()) a.currentTime = Math.max(0, seconds) }
 
 /** For tests: forget the element and the queue. */
-export function resetPlayer() { audio = null; state = { queue: [], index: -1, playing: false, time: 0, duration: 0, error: "" }; for (const f of listeners) f(state) }
+export function resetPlayer() { audio = null; state = { ...EMPTY }; for (const f of listeners) f(state) }
