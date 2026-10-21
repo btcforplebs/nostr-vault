@@ -69,6 +69,7 @@ class LocalNotificationService @Inject constructor(
     private val imageLoader: Lazy<ImageLoader>,
     private val dmService: Lazy<DMService>,
     private val feedService: Lazy<FeedService>,
+    private val feedActivityNotifier: Lazy<FeedActivityNotifier>,
 ) {
     /** Who the folded strangers' alert counts, and how many. */
     data class FoldedFollowers(val members: List<String> = emptyList(), val count: Int = 0) {
@@ -370,6 +371,12 @@ class LocalNotificationService @Inject constructor(
 
         if (isDm(type)) {
             announceDm(id, type, author, recipientHex, npub, blocked)
+            return
+        }
+
+        // "While you were away" only after a real absence, once per absence (iOS).
+        if (type == "summary" && !feedActivityNotifier.get().claimRelaySummary()) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: summary, not away 2 h or already announced")
             return
         }
 

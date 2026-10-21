@@ -84,6 +84,7 @@ class FeedActivityNotifier @Inject constructor(
         private const val KEY_FOREGROUND = "lastForegroundAt"
         private const val KEY_FEED_SUMMARY = "lastFeedSummaryAt"
         private const val KEY_FEED_NOTE = "lastAnnouncedFeedNoteAt"
+        private const val KEY_RELAY_SUMMARY = "lastRelaySummaryAt"
         private const val CHECK_INTERVAL_MS = 15 * 60 * 1000L
         private const val AUTHORS_PER_FILTER = 500
     }
@@ -99,6 +100,18 @@ class FeedActivityNotifier @Inject constructor(
      * The user is here, or leaving: either way the feed on screen counts as
      * seen and any absence ends (or starts) now. Call from onStart and onStop.
      */
+    /**
+     * Whether the relay's catch-up "summary" may fire now, and if so records
+     * it. The relay re-runs that round on every background wake, so like iOS
+     * (catchUpSummaryAllowed) it fires only after 2 h away, once per absence.
+     */
+    fun claimRelaySummary(): Boolean {
+        val now = System.currentTimeMillis() / 1000
+        if (!FeedNotesPolicy.shouldAnnounceAbsenceSummary(now, read(KEY_FOREGROUND), read(KEY_RELAY_SUMMARY))) return false
+        store(KEY_RELAY_SUMMARY, now)
+        return true
+    }
+
     fun recordForeground() {
         store(KEY_FOREGROUND, System.currentTimeMillis() / 1000)
         feedService.get().notes.value.maxOfOrNull { it.createdAt.time / 1000 }?.let(::recordAnnouncedFeedNote)
