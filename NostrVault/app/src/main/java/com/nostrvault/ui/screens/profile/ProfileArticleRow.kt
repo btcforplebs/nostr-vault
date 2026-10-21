@@ -2,7 +2,7 @@ package com.nostrvault.ui.screens.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +25,7 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.GatedArticle
 import com.nostrvault.data.model.GatedArticleTeaser
 import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.NostrWebLinks
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -50,8 +51,10 @@ internal object ProfileArticleCardText {
  * One of this person's articles as iOS draws it on the profile
  * (`ArticleCardView`): a rounded card with the cover across the top, then
  * title, summary, up to three topics and author · date · reading time (or
- * Locked). Opens the reader.
+ * Locked). Opens the reader; a long-press offers "Open in …" on the web,
+ * as iOS's `openInWebContextMenu`.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun ProfileArticleRow(note: FeedNote, onClick: () -> Unit) {
     val colors = LocalNostrVaultColors.current
@@ -65,6 +68,10 @@ internal fun ProfileArticleRow(note: FeedNote, onClick: () -> Unit) {
         nostrService.profiles.map { it[note.pubkey] }.distinctUntilChanged()
     }.collectAsState(initial = nostrService.profiles.value[note.pubkey])
     val cardShape = RoundedCornerShape(14.dp)
+    val context = LocalContext.current
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val webLink = remember(note.id, note.tags) { NostrWebLinks.forEvent(note.kind, note.pubkey, note.tags) }
+    var menuOpen by remember(note.id) { mutableStateOf(false) }
 
     // iOS lays the cards out 12 apart inside 16 of padding.
     Column(
@@ -74,7 +81,17 @@ internal fun ProfileArticleRow(note: FeedNote, onClick: () -> Unit) {
             .clip(cardShape)
             .background(SecondaryGroupedBg)
             .border(0.5.dp, SeparatorColor, cardShape)
-            .clickable(onClickLabel = "Read article", onClick = onClick),
+            .combinedClickable(
+                onClickLabel = "Read article",
+                onClick = onClick,
+                onLongClick = webLink?.let {
+                    {
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        menuOpen = true
+                    }
+                },
+                onLongClickLabel = webLink?.label,
+            ),
     ) {
         meta.imageUrl?.let { url ->
             AsyncImage(
@@ -164,6 +181,18 @@ internal fun ProfileArticleRow(note: FeedNote, onClick: () -> Unit) {
                     Dot()
                     Text("$minutes min read", color = SecondaryText, fontSize = 12.sp, maxLines = 1)
                 }
+            }
+        }
+        webLink?.let { link ->
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(link.label) },
+                    leadingIcon = { Icon(NostrVaultIcons.OpenExternal, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    onClick = {
+                        menuOpen = false
+                        NostrWebLinks.open(context, link.url)
+                    },
+                )
             }
         }
     }
