@@ -157,6 +157,7 @@ fun DMInboxScreen(
                 onConversationClick = onConversationClick,
                 onNewMessage = onNewMessage,
                 viewModel = viewModel,
+                showChevrons = true,
             )
         }
     }
@@ -169,10 +170,11 @@ private fun DMInboxList(
     onNewMessage: () -> Unit,
     viewModel: DMInboxViewModel,
     selected: String? = null,
+    /** iOS list rows push a thread and show a chevron; the two-pane sidebar doesn't. */
+    showChevrons: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val conversations by viewModel.conversations.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val pendingDecrypt by viewModel.pendingDecryptCount.collectAsState()
     val decryptBlocked by viewModel.decryptBlocked.collectAsState()
@@ -244,46 +246,37 @@ private fun DMInboxList(
             }
         },
     ) { padding ->
-        if (isLoading) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                CircularProgressIndicator(color = colors.primary)
-            }
-        } else {
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = viewModel::refresh,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                val blocked = dmUnavailable
-                if (blocked != null && conversations.isEmpty()) {
-                    // A watch-only account has no key here, so the inbox can
-                    // only ever be empty: say that instead of "no messages yet".
-                    DMUnavailableNotice(blocked)
-                } else if (conversations.isEmpty()) {
-                    DMInboxEmptyState()
-                } else {
-                    // iOS: one grouped surface, no separators between rows.
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(
-                            items = conversations,
-                            key = { it.id },
-                        ) { conversation ->
-                            ConversationRow(
-                                conversation = conversation,
-                                profile = viewModel.profileFor(conversation.id),
-                                isSelected = conversation.id == selected,
-                                onClick = { onConversationClick(conversation.id) },
-                            )
-                        }
+        // iOS has no loading state: the list, or its empty state, straight away.
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            val blocked = dmUnavailable
+            if (blocked != null && conversations.isEmpty()) {
+                // A watch-only account has no key here, so the inbox can
+                // only ever be empty: say that instead of "no messages yet".
+                DMUnavailableNotice(blocked)
+            } else if (conversations.isEmpty()) {
+                DMInboxEmptyState()
+            } else {
+                // iOS: one grouped surface, no separators between rows.
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(
+                        items = conversations,
+                        key = { it.id },
+                    ) { conversation ->
+                        ConversationRow(
+                            conversation = conversation,
+                            profile = viewModel.profileFor(conversation.id),
+                            isSelected = conversation.id == selected,
+                            showChevron = showChevrons,
+                            onClick = { onConversationClick(conversation.id) },
+                        )
                     }
                 }
             }
@@ -363,6 +356,7 @@ private fun ConversationRow(
     onClick: () -> Unit,
     /** The conversation open beside the list on a wide screen. */
     isSelected: Boolean = false,
+    showChevron: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val hasUnread = conversation.unreadCount > 0
@@ -437,7 +431,8 @@ private fun ConversationRow(
                 if (conversation.unreadCount > 1) {
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = if (conversation.unreadCount > 99) "99+" else conversation.unreadCount.toString(),
+                        // iOS shows the full count.
+                        text = conversation.unreadCount.toString(),
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -447,6 +442,15 @@ private fun ConversationRow(
                     )
                 }
             }
+        }
+        if (showChevron) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                NostrVaultIcons.Navigate,
+                contentDescription = null,
+                tint = TertiaryText,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
