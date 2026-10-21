@@ -266,4 +266,10 @@ extension View {
     func meshMediaNote(author pubkey: String, tags: [[String]]) -> some View {
         environment(\.meshMediaNote, MeshMediaNote(author: pubkey, tags: tags))
     }
+
+    /// The same for a gallery item: its note's author and tags, or nothing
+    /// (off the mesh) when the item has no known author.
+    func meshMediaNote(for item: MediaItem) -> some View {
+        environment(\.meshMediaNote, item.pubkey.map { MeshMediaNote(author: $0, tags: item.tags ?? []) })
+    }
 }

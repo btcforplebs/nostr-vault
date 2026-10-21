@@ -2,6 +2,9 @@ import SwiftUI
 
 struct RetryableAsyncImage: View {
     @EnvironmentObject var configService: ConfigService
+    /// The note this photo belongs to, when the caller knows it: lets a
+    /// photo whose URL fails be read from the author's vault on the mesh.
+    @Environment(\.meshMediaNote) private var meshNote
     let url: URL
     let contentMode: ContentMode
     var targetSize: CGSize? = nil
@@ -106,6 +109,12 @@ struct RetryableAsyncImage: View {
         // If we already have it from init (in-memory cache), we're done
         if cachedImage != nil { return }
 
+        // A photo read by its note's imeta hash is cached under that hash.
+        if let blobKey = meshBlobKey, let image = MediaCacheService.shared.cachedImage(for: blobKey) {
+            cachedImage = image
+            return
+        }
+
         // 2. Try to load it directly from disk cache (General cache or Blossom)
         if let data = MediaCacheService.shared.loadFromCache(url: url) {
             Task {
@@ -138,13 +147,13 @@ struct RetryableAsyncImage: View {
     private func autoCache() {
         isLoading = true
         Task {
-            if let data = await MediaCacheService.shared.fetchData(url: url),
+            if let (data, cacheKey) = await MediaCacheService.shared.fetchData(url: url, meshAuthor: meshNote?.author, imetaSha256: meshImetaSha256),
                let image = await decode(data: data) {
                 await MainActor.run {
                     self.cachedImage = image
                     self.isLoading = false
                     // Cache in memory for next time
-                    MediaCacheService.shared.cacheImage(image, for: url)
+                    MediaCacheService.shared.cacheImage(image, for: cacheKey)
                 }
             } else {
                 await MainActor.run {
@@ -153,6 +162,10 @@ struct RetryableAsyncImage: View {
             }
         }
     }
+
+    private var meshImetaSha256: String? { meshNote?.imetaSha256[url.absoluteString] }
+
+    private var meshBlobKey: URL? { meshImetaSha256.map { MeshMediaRouter.blobCacheKey(sha256: $0) } }
 
     nonisolated private func decode(data: Data) async -> PlatformImage? {
         if let targetSize = targetSize,
