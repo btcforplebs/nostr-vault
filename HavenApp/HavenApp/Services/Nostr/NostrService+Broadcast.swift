@@ -151,10 +151,17 @@ extension NostrService {
         //    too, not only through the local relay. See
         //    RelayConfiguration.directBroadcastRelays for why.
         if directBroadcast {
+            // The same list the relay blasts to, so a Mac reached over the
+            // mesh is asked too and its OK confirms the post.
+            #if os(iOS)
+            let mesh = RelayConfiguration.macMeshRelay
+            #else
+            let mesh: RelayConfiguration.MacMeshRelay? = nil
+            #endif
             let relays = RelayConfiguration.directBroadcastRelays(
                 kind: event.kind,
                 tags: event.tags,
-                blastrRelays: ConfigService.shared.config.activeBlastrRelays
+                blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh)
             )
             if let onBroadcastOutcome {
                 broadcastConfirmed(eventDict, to: relays, attemptsLeft: 3, completion: onBroadcastOutcome)
