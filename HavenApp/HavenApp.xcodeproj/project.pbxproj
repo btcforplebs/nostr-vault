@@ -1035,6 +1035,7 @@
 		C5C8191696EA0207483291CF /* MediaCacheService+Sources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140A9D83B992BBCA74D259C2 /* MediaCacheService+Sources.swift */; };
 		C61C638C785450F8CCFDB9B7 /* GlobeScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2E0E2740A5B3C348F5DE28 /* GlobeScene.swift */; };
 		C6371C617568CEE961B57ED8 /* FeedNoteRow+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD316B1F53D755B6C3CBED9 /* FeedNoteRow+Layout.swift */; };
+		C696526E01A20FFAFD69FEC8 /* MacFipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */; };
 		C6E868B6BF1508377CF818C3 /* ProfileFeedLoader+Loading.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE90DEB009D5712F5E377FEE /* ProfileFeedLoader+Loading.swift */; };
 		C70896D50470F8951B7ECBD2 /* FollowingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */; };
 		C71CE09138EF387FD0B1448E /* OwnerSessionWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */; };
@@ -1045,6 +1046,7 @@
 		C8314546237A2FC0EC680732 /* UploadProgressDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D090A7CDA296F45DA4F4DC /* UploadProgressDelegate.swift */; };
 		C83ECE827421BEFBC4B0DDC5 /* FeedService+PopularFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 918CED92E3B0E0AEAC5CE1AA /* FeedService+PopularFeed.swift */; };
 		C8964A36C8E95821A10803B8 /* RelayProcessManager+Import.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DEF13CE5C8F624796A5B4F /* RelayProcessManager+Import.swift */; };
+		C8BF90EF7401FB5C2772C5E4 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB737FAA07F1DCC8EA29556C /* libnvfips.a */; };
 		C8F706D1FAECE83D36322A6E /* CondensedNoteLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */; };
 		C8F9F8DCF05C8D05CBFD37F2 /* MediaItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2060B412DD17816F0495D8 /* MediaItem.swift */; };
 		C9C99A8E5942468C4B4278E3 /* GlobeBoltPainter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FDBFD96B130AC27F03D79C2 /* GlobeBoltPainter.swift */; };
@@ -1140,6 +1142,7 @@
 		DA455878A98B3172DC89DA14 /* TrustGlobeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */; };
 		DA4D22419FAD927F58025331 /* FilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE65F95458326DF0C43FCEAC /* FilterButton.swift */; };
 		DACEFF32366C05635FF82E03 /* NIP46Error.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCE06AC36BF540013C789B2 /* NIP46Error.swift */; };
+		DADD47CE66A0FE71FD19A897 /* MacFipsMeshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */; };
 		DAE4A7A278DB13A04F024920 /* ImportedVideoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A623FB39DA0A3C42E9249A /* ImportedVideoFile.swift */; };
 		DB1158550F7E716883D5BF64 /* AuthorQuickMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */; };
 		DB27F3B8347422198AD4B586 /* DMService+MessageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FBCB45EE5F7F14C5CCFF74 /* DMService+MessageProcessing.swift */; };
@@ -1866,6 +1869,7 @@
 		AA754FD69CE3C70A03501C91 /* RelayConfigStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayConfigStep.swift; sourceTree = "<group>"; };
 		AA979A3F7ED54EAB8F501F2E /* WalletLightningTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletLightningTab.swift; sourceTree = "<group>"; };
 		AAB509F2A30B9B45176A3489 /* BlossomService+LocalUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BlossomService+LocalUpload.swift"; sourceTree = "<group>"; };
+		AB737FAA07F1DCC8EA29556C /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/libnvfips.a; sourceTree = SDKROOT; };
 		AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelsFeedService.swift; sourceTree = "<group>"; };
 		ABC7040B1702C92C635F0E6D /* CollapsedNowPlayingButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedNowPlayingButton.swift; sourceTree = "<group>"; };
 		ABD60255398375B7A8772D93 /* VaultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultView.swift; sourceTree = "<group>"; };
@@ -1990,6 +1994,7 @@
 		DC5A48EC3F65D58FED0264EA /* NoteDetailView+Sections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+Sections.swift"; sourceTree = "<group>"; };
 		DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayStatusCard.swift; sourceTree = "<group>"; };
 		DC89BDDBB2688F79D256888B /* WavlakeTrackCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WavlakeTrackCard.swift; sourceTree = "<group>"; };
+		DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshService.swift; sourceTree = "<group>"; };
 		DDB3FEB452DBB79FE900D89B /* ZappersListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZappersListView.swift; sourceTree = "<group>"; };
 		DDC2FBF6CDE5043844A3DFA3 /* FeedService+SubscriptionReconciliation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+SubscriptionReconciliation.swift"; sourceTree = "<group>"; };
 		DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftNIP46Handshake.swift; sourceTree = "<group>"; };
@@ -2096,6 +2101,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */,
+				C8BF90EF7401FB5C2772C5E4 /* libnvfips.a in Frameworks */,
 				A48F920B274A38D5BD818EBB /* SilentPaymentsKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2314,6 +2320,7 @@
 				DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */,
 				27A87225270090D65AC98D48 /* libhaven.a */,
 				B7AE5C3CB89D22373BCC0664 /* libnvfips.a */,
+				AB737FAA07F1DCC8EA29556C /* libnvfips.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -3085,6 +3092,7 @@
 				2B14053AFA5E916B43335BEE /* LNURLService.swift */,
 				48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */,
 				49F43AE6D03159B7716D9F71 /* LogStore.swift */,
+				DD5FA4141163EFF726CBBBD1 /* MacFipsMeshService.swift */,
 				AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */,
 				950DEF1556C6F464FAF31F81 /* MediaCache */,
 				8B294C3B4DE4C63104876789 /* MediaCacheService.swift */,
@@ -3272,6 +3280,7 @@
 			buildConfigurationList = 511D342B4D1165AF2165B56E /* Build configuration list for PBXNativeTarget "HavenApp" */;
 			buildPhases = (
 				E607D2B8B06A5D00090F816C /* Build Go Library (macOS) */,
+				E69799B284509F731B3145C8 /* Build FIPS Mesh Library (macOS) */,
 				534F20CBA2F65451DA2F55A4 /* Sources */,
 				1C3BC55A1BE93D9DAD999290 /* Resources */,
 				5817AA002E25C8D7779F2888 /* Frameworks */,
@@ -3413,6 +3422,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PROJECT_DIR}/HavenApp/App/build_haven.sh\"\n";
+		};
+		E69799B284509F731B3145C8 /* Build FIPS Mesh Library (macOS) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build FIPS Mesh Library (macOS)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(PROJECT_DIR)/build/libnvfips.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/HavenApp/App/build_fips_macos.sh\"\n";
 		};
 		F05EADC0061FD61FD31F9FFF /* Build FIPS Mesh Library (iOS) */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -3755,6 +3784,7 @@
 				25ECCEBF4F6DD214E5813735 /* LongFormComposeView.swift in Sources */,
 				2994C3A0BE9AFB6C41AD71FA /* LongFormContent.swift in Sources */,
 				C2B745C62BE0ABD77308B82F /* LongFormPreviewSection.swift in Sources */,
+				C696526E01A20FFAFD69FEC8 /* MacFipsMeshService.swift in Sources */,
 				AAFF0C3ABA9668AE9FC3E94C /* MacFipsMeshSettingsView.swift in Sources */,
 				21B7CF7CF4861D17CFDB2A1B /* MacRelayDomainSettingsView.swift in Sources */,
 				1790AE2C685C35F4DE2198A5 /* MacRelaySettingsView.swift in Sources */,
@@ -4439,6 +4469,7 @@
 				F7DA9A4C222DB17EAA3826A6 /* LongFormComposeView.swift in Sources */,
 				1DE283F1E6062C16E37DAAD5 /* LongFormContent.swift in Sources */,
 				43E57289E37F9E02582EB8D9 /* LongFormPreviewSection.swift in Sources */,
+				DADD47CE66A0FE71FD19A897 /* MacFipsMeshService.swift in Sources */,
 				E39D3F9F80B7ED124F5AE5FA /* MacFipsMeshSettingsView.swift in Sources */,
 				DFFC01343DA4371437214187 /* MacRelayDomainSettingsView.swift in Sources */,
 				959AA396A3577E7A92167500 /* MacRelaySettingsView.swift in Sources */,

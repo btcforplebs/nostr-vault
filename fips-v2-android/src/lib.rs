@@ -13,7 +13,10 @@
 #[path = "../../fips-v2/src/stack.rs"]
 mod stack;
 
+mod node;
+pub mod own_devices;
 pub mod relay_link;
+pub mod strangers;
 pub use relay_link::relay_push;
 
 use std::net::{Ipv6Addr, SocketAddr};
@@ -23,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use fips::identity::{Identity, PeerIdentity, decode_nsec, encode_nsec};
-use fips::{Config, Node};
+use fips::Config;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -53,6 +56,15 @@ pub struct StartOptions {
     /// Path for the node's datagram API socket, inside the app's sandbox.
     /// Empty leaves it off, and with it `relay_push`.
     pub relay_socket: String,
+    /// The owner's devices. Set, only they reach this node: see
+    /// [`own_devices`]. Empty leaves the node open to anyone, as before.
+    pub own_devices: Vec<String>,
+    /// With `own_devices`: everyone else may reach this loopback port while
+    /// sharing, capped ([`strangers`]). It is Haven's mesh door
+    /// (`HAVEN_MESH_PLAIN_PORT`), never the relay port own devices get: the
+    /// door is the policy layer for mesh visitors. They find this node
+    /// through `public_seeds`. 0: they get silence.
+    pub strangers_port: u16,
 }
 
 /// What sharing gives the mesh before it stops, unless the app sets its own.
@@ -63,6 +75,11 @@ const SERVE_PER_PEER: u64 = 256 << 20;
 const SERVE_PER_PEER_OPEN: usize = 6;
 
 fn serve_limits(opts: &StartOptions) -> stack::ServeLimits {
+    // Own-devices mode serves no visitors: the owner's full-history copy
+    // runs uncapped, as it did through the fipsv2-probe helper.
+    if !opts.own_devices.is_empty() {
+        return stack::ServeLimits::default();
+    }
     let total = if opts.max_serve_bytes == 0 { DEFAULT_SERVE_TOTAL } else { opts.max_serve_bytes };
     stack::ServeLimits {
         total_bytes: total,
@@ -89,6 +106,18 @@ struct Status {
     max_serve_bytes: u64,
     /// `relay_push` can run: the datagram API socket is on.
     relay_link: bool,
+    /// Own-devices mode with `strangers` on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strangers: Option<StrangersOut>,
+}
+
+#[derive(Serialize)]
+struct StrangersOut {
+    open: usize,
+    total: u64,
+    refused: u64,
+    rx: u64,
+    tx: u64,
 }
 
 #[derive(Serialize)]
@@ -142,6 +171,11 @@ struct Running {
     stack_thread: std::thread::JoinHandle<()>,
     /// The datagram API socket `relay_push` connects through; `None` when off.
     relay_socket: Option<std::path::PathBuf>,
+    /// Set in own-devices mode: the only npubs `ingress` dials.
+    own: Option<own_devices::OwnDevices>,
+    strangers: Option<strangers::Strangers>,
+    /// Where strangers go while sharing (`StartOptions::strangers_port`).
+    strangers_port: u16,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -169,6 +203,9 @@ pub const ERR_BAD_NPUB: i32 = -6;
 pub const ERR_RELAY_OFF: i32 = -7;
 /// `relay_push` was handed something that is not a list of signed events.
 pub const ERR_BAD_EVENTS: i32 = -8;
+/// `ingress` to an npub outside `own_devices`: the dial would send this
+/// node's address to it.
+pub const ERR_NOT_OWN: i32 = -9;
 
 /// Every caller string is decoded or quoted before it reaches the template:
 /// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
@@ -181,8 +218,19 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
         let list: Vec<String> = opts.relays.iter().map(|r| serde_json::Value::from(r.as_str()).to_string()).collect();
         format!("      advert_relays: [{0}]\n      dm_relays: [{0}]\n", list.join(", "))
     };
+    let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
+    // An open node already serves everyone.
+    anyhow::ensure!(opts.strangers_port == 0 || own.is_some(), "strangers_port needs own_devices");
+    let allowlist = own.as_ref().map(own_devices::OwnDevices::allowlist_yaml).unwrap_or_default();
+    let mut dialed: Vec<String> = Vec::new();
+    for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
+        let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
+        if !dialed.contains(&npub) {
+            dialed.push(npub);
+        }
+    }
     let mut peers = String::new();
-    for npub in &opts.peers {
+    for npub in &dialed {
         let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
         peers.push_str(&format!(
             "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"nat\"\n    via_nostr: true\n    connect_policy: auto_connect\n"
@@ -208,7 +256,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
       enabled: true
       advertise: true
       policy: configured_only
-      share_local_candidates: {lan}
+{allowlist}      share_local_candidates: {lan}
       signal_ttl_secs: {SIGNAL_TTL_SECS}
 {relays}dns:
   enabled: false
@@ -222,6 +270,7 @@ transports:
         lan = opts.lan,
         port = opts.udp_port,
         native_api = native_api,
+        allowlist = allowlist,
     )))
 }
 
@@ -236,6 +285,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         return Ok(());
     }
     let yaml = config_yaml(nsec, opts)?;
+    let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
     let relay_socket = relay_link::socket_path(&opts.relay_socket)?;
     if let Some(path) = &relay_socket {
         // A socket file left by a run that was killed would fail the bind.
@@ -244,59 +294,8 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     let config: Config = serde_yaml::from_str(&yaml).context("mesh config")?;
     drop(yaml);
 
-    // The node lives on its own thread and runtime: `start` must run inside a
-    // runtime, and the rx loop then owns the node until it is told to stop.
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let node_thread = std::thread::Builder::new()
-        .name("fips-node".into())
-        .spawn(move || {
-            let rt = match tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-            {
-                Ok(rt) => rt,
-                Err(e) => {
-                    let _ = ready_tx.send(Err(anyhow::anyhow!("runtime: {e}")));
-                    return;
-                }
-            };
-            rt.block_on(async move {
-                let mut node = match Node::new(config) {
-                    Ok(n) => n,
-                    Err(e) => {
-                        let _ = ready_tx.send(Err(anyhow::anyhow!("Node::new: {e}")));
-                        return;
-                    }
-                };
-                let tun = node.enable_app_owned_tun();
-                let control = node.enable_embedded_control();
-                let npub = node.npub();
-                let address = node.identity().address().to_ipv6();
-                let mtu = node.effective_ipv6_mtu() as usize;
-                if let Err(e) = node.start().await {
-                    let _ = ready_tx.send(Err(anyhow::anyhow!("start: {e}")));
-                    return;
-                }
-                let _ = ready_tx.send(Ok((npub, address, mtu, tun, control)));
-                if let Err(e) = node
-                    .run_rx_loop_with_shutdown(async {
-                        let _ = stop_rx.await;
-                    })
-                    .await
-                {
-                    tracing::warn!("fips rx loop ended: {e}");
-                }
-                if let Err(e) = node.stop().await {
-                    tracing::warn!("fips stop: {e}");
-                }
-            });
-        })?;
-
-    let (npub, address, mtu, tun, control) = ready_rx
-        .recv_timeout(Duration::from_secs(30))
-        .context("node did not report ready")??;
+    let node::Spawned { npub, address, mtu, tun, control, stop: stop_tx, thread: node_thread } =
+        node::spawn(config, "fips-node")?;
     tracing::info!(%npub, %address, mtu, "fips mesh started");
 
     // One stack serves and reads over the TUN. It starts with sharing off.
@@ -304,6 +303,42 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     ctl.set_limits(serve_limits(opts));
     let stack_ctl = ctl.clone();
     let (to_mesh, from_mesh) = tun;
+    // Own-devices mode: strangers' packets stop here, before the owner's
+    // stack, and go to their own capped one or nowhere.
+    let mut stranger_side = None;
+    let from_mesh = match &own {
+        None => from_mesh,
+        Some(own) => {
+            let (to_stack, stack_rx) = std::sync::mpsc::channel();
+            let to_strangers = if opts.strangers_port != 0 {
+                let (tx, rx) = std::sync::mpsc::channel();
+                match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx) {
+                    Ok(s) => stranger_side = Some(s),
+                    Err(e) => {
+                        let _ = stop_tx.send(());
+                        let _ = node_thread.join();
+                        return Err(e);
+                    }
+                }
+                Some(tx)
+            } else {
+                None
+            };
+            let addresses = own.addresses.clone();
+            let filter = std::thread::Builder::new().name("fips-own-only".into()).spawn(move || {
+                own_devices::filter(from_mesh, address, addresses, to_stack, to_strangers)
+            });
+            if let Err(e) = filter {
+                if let Some(s) = stranger_side.take() {
+                    s.stop();
+                }
+                let _ = stop_tx.send(());
+                let _ = node_thread.join();
+                return Err(e.into());
+            }
+            stack_rx
+        }
+    };
     let stack_thread = std::thread::Builder::new().name("fips-stack".into()).spawn(move || {
         if let Err(e) = stack::run_with(address, mtu, to_mesh, from_mesh, &stack_ctl) {
             tracing::warn!("fips stack stopped: {e:#}");
@@ -312,6 +347,9 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     let stack_thread = match stack_thread {
         Ok(t) => t,
         Err(e) => {
+            if let Some(s) = stranger_side.take() {
+                s.stop();
+            }
             let _ = stop_tx.send(());
             let _ = node_thread.join();
             return Err(e.into());
@@ -327,6 +365,9 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         control,
         stack_thread,
         relay_socket,
+        own,
+        strangers: stranger_side,
+        strangers_port: opts.strangers_port,
         stop: stop_tx,
         node_thread,
     });
@@ -335,6 +376,8 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
 
 /// Share a local TCP port (the relay, which also serves Blossom) on mesh :80.
 /// Sharing one port at a time; a different port needs `unexport` first.
+/// In own-devices mode `port` is for own devices only; strangers go to
+/// `strangers_port` at the same time.
 pub fn export(port: u16) -> i32 {
     let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
@@ -346,11 +389,30 @@ pub fn export(port: u16) -> i32 {
             None => {}
         }
     }
-    if !run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
+    if !share_split(&run.ctl, run.strangers.as_ref(), port, run.strangers_port) {
         return ERR_START;
     }
     run.exported = Some(port);
     0
+}
+
+/// Own devices' stack to `port`, strangers' to `strangers_port`. Strangers
+/// first, so a failure leaves nothing shared.
+fn share_split(own: &stack::Control, strangers: Option<&strangers::Strangers>, port: u16, strangers_port: u16) -> bool {
+    // The relay port is never the strangers' door.
+    if strangers.is_some() && strangers_port == port {
+        return false;
+    }
+    if strangers.is_some_and(|s| !s.share(Some(strangers_port))) {
+        return false;
+    }
+    if !own.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
+        if let Some(s) = strangers {
+            s.share(None);
+        }
+        return false;
+    }
+    true
 }
 
 /// Stop sharing. Friends' connections in progress are cut; reading continues.
@@ -358,7 +420,8 @@ pub fn unexport() -> i32 {
     let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     run.exported = None;
-    if !run.ctl.set_serve(None) {
+    let strangers_off = run.strangers.as_ref().is_none_or(|s| s.share(None));
+    if !run.ctl.set_serve(None) || !strangers_off {
         return ERR_START;
     }
     0
@@ -373,6 +436,7 @@ pub fn unexport() -> i32 {
 /// vaults stay open; opening one more closes the least recently read.
 pub fn ingress(npub: &str) -> Result<String, i32> {
     let control = match state().as_ref() {
+        Some(run) if run.own.as_ref().is_some_and(|own| !own.contains(npub)) => return Err(ERR_NOT_OWN),
         Some(run) => run.control.clone(),
         None => return Err(ERR_NOT_RUNNING),
     };
@@ -451,8 +515,11 @@ fn add_peer(
 
 /// Stop the node, and the stack with it.
 pub fn stop() {
-    let Some(run) = state().take() else { return };
-    // Stack first, so its resets still have a node to leave through.
+    let Some(mut run) = state().take() else { return };
+    // Stacks first, so their resets still have a node to leave through.
+    if let Some(s) = run.strangers.take() {
+        s.stop();
+    }
     run.ctl.stop();
     let _ = run.stack_thread.join();
     let _ = run.stop.send(());
@@ -478,6 +545,7 @@ pub fn status_json() -> String {
             cap_reached: false,
             max_serve_bytes: 0,
             relay_link: false,
+            strangers: None,
         },
         Some(run) => Status {
             running: true,
@@ -491,6 +559,17 @@ pub fn status_json() -> String {
             cap_reached: run.ctl.cap_reached(),
             max_serve_bytes: run.ctl.limits().total_bytes,
             relay_link: run.relay_socket.is_some(),
+            strangers: run.strangers.as_ref().map(|s| {
+                let get = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed);
+                let c = &s.counters;
+                StrangersOut {
+                    open: c.open.load(Ordering::Relaxed),
+                    total: get(&c.total),
+                    refused: get(&c.refused) + get(&s.ctl.counters.served_refused),
+                    rx: get(&c.rx),
+                    tx: get(&c.tx),
+                }
+            }),
         },
     };
     serde_json::to_string(&status).unwrap_or_else(|_| "{\"running\":false}".into())
@@ -515,137 +594,7 @@ pub fn init_logging() {
     });
 }
 
-/// C ABI for the iOS app (Swift through a bridging header, `nvfips.h`).
-/// Same calls and return codes as the JNI side. Returned strings are owned
-/// by the caller and freed with `NvFipsFreeString`.
-mod c_api {
-    use super::*;
-    use std::ffi::{CStr, CString, c_char};
-
-    fn arg(p: *const c_char) -> Option<String> {
-        if p.is_null() {
-            return None;
-        }
-        // SAFETY: non-null, and the caller passes a NUL-terminated string.
-        unsafe { CStr::from_ptr(p) }.to_str().ok().map(str::to_owned)
-    }
-
-    fn out(s: String) -> *mut c_char {
-        CString::new(s).map(CString::into_raw).unwrap_or(std::ptr::null_mut())
-    }
-
-    /// A panic must not unwind into Swift; report it as a failure code.
-    fn guarded<T>(fallback: T, f: impl FnOnce() -> T + std::panic::UnwindSafe) -> T {
-        std::panic::catch_unwind(f).unwrap_or(fallback)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsStart(nsec: *const c_char, options_json: *const c_char) -> i32 {
-        init_logging();
-        let Some(nsec) = arg(nsec).map(Zeroizing::new) else { return ERR_CONFIG };
-        let opts_raw = arg(options_json).unwrap_or_default();
-        let opts: StartOptions = if opts_raw.trim().is_empty() {
-            StartOptions::default()
-        } else {
-            match serde_json::from_str(&opts_raw) {
-                Ok(o) => o,
-                Err(e) => {
-                    tracing::warn!("mesh options: {e}");
-                    return ERR_CONFIG;
-                }
-            }
-        };
-        if config_yaml(&nsec, &opts).is_err() {
-            return ERR_CONFIG;
-        }
-        guarded(ERR_START, move || match start(&nsec, &opts) {
-            Ok(()) => 0,
-            Err(e) => {
-                tracing::warn!("mesh start failed: {e:#}");
-                ERR_START
-            }
-        })
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsGenerateNsec() -> *mut c_char {
-        guarded(None, || Some(generate_nsec())).map_or(std::ptr::null_mut(), out)
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsStatusJSON() -> *mut c_char {
-        out(guarded("{\"running\":false}".to_string(), status_json))
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsExport(port: u16) -> i32 {
-        guarded(ERR_START, move || export(port))
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsUnexport() -> i32 {
-        guarded(ERR_START, unexport)
-    }
-
-    /// 0 and `*url_out` set (free it with `NvFipsFreeString`), or a negative
-    /// code and `*url_out` left alone.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsIngress(npub: *const c_char, url_out: *mut *mut c_char) -> i32 {
-        if url_out.is_null() {
-            return ERR_CONFIG;
-        }
-        let Some(npub) = arg(npub) else { return ERR_BAD_NPUB };
-        match guarded(Err(ERR_START), move || ingress(&npub)) {
-            Ok(url) => {
-                // SAFETY: checked non-null above; the caller owns the slot.
-                unsafe { *url_out = out(url) };
-                0
-            }
-            Err(code) => code,
-        }
-    }
-
-    /// Hand signed events to a browser relay page; see [`relay_push`]. 0 and
-    /// `*result_out` set to the result JSON (free it with `NvFipsFreeString`),
-    /// or a negative code and `*result_out` left alone. Blocks up to
-    /// `timeout_ms`: call it off the main thread.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsRelayPush(
-        relay_npub: *const c_char,
-        events_json: *const c_char,
-        timeout_ms: u32,
-        result_out: *mut *mut c_char,
-    ) -> i32 {
-        if result_out.is_null() {
-            return ERR_CONFIG;
-        }
-        let Some(relay) = arg(relay_npub) else { return ERR_BAD_NPUB };
-        let Some(events) = arg(events_json) else { return ERR_BAD_EVENTS };
-        let timeout = Duration::from_millis(timeout_ms.into());
-        match guarded(Err(ERR_START), move || relay_push(&relay, &events, timeout)) {
-            Ok(json) => {
-                // SAFETY: checked non-null above; the caller owns the slot.
-                unsafe { *result_out = out(json) };
-                0
-            }
-            Err(code) => code,
-        }
-    }
-
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsStop() {
-        guarded((), stop);
-    }
-
-    /// Free a string returned by this library. Null is ignored.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn NvFipsFreeString(s: *mut c_char) {
-        if !s.is_null() {
-            // SAFETY: `s` came from `CString::into_raw` in `out`.
-            drop(unsafe { CString::from_raw(s) });
-        }
-    }
-}
+mod c_api;
 
 #[cfg(target_os = "android")]
 mod jni_api {
@@ -815,6 +764,8 @@ mod tests {
         assert_eq!((small.total_bytes, small.per_peer_bytes), (100 << 20, 100 << 20));
         let opts: StartOptions = serde_json::from_str(r#"{"max_serve_bytes": 5368709120}"#).unwrap();
         assert_eq!(serve_limits(&opts).total_bytes, 5 << 30);
+        let own = StartOptions { own_devices: vec![Identity::generate().npub()], max_serve_bytes: 100 << 20, ..Default::default() };
+        assert_eq!(serve_limits(&own), stack::ServeLimits::default(), "own devices are not capped");
     }
 
     #[test]

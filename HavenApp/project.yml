@@ -124,9 +124,19 @@ targets:
         # phase entirely once the .a exists, so every Go change was silently
         # missing from incremental builds.
         basedOnDependencyAnalysis: false
+      - name: Build FIPS Mesh Library (macOS)
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/build_fips_macos.sh"
+        outputFiles:
+          - $(PROJECT_DIR)/build/libnvfips.a
+        # Checksums the Rust sources itself, like the Go phase above.
+        basedOnDependencyAnalysis: false
 
     dependencies:
       - sdk: build/libhaven.a
+        embed: false
+        implicit: true
+      - sdk: build/libnvfips.a
         embed: false
         implicit: true
       - package: SilentPaymentsKit

@@ -405,24 +405,13 @@ extension NostrService {
 }
 
 #if os(macOS)
-/// The Mac's photo node: the second fips node (the blob node) that serves
-/// photos by hash to anyone, through the public seeds only. Its npub goes in
-/// the owner's 10063; the main node's never does.
+/// The Mac's photo node: its own mesh node (MacFipsMeshService), which also
+/// lets strangers read photos by hash through the public seeds, capped. Its
+/// npub goes in the owner's 10063.
 enum PhotoNode {
-    /// The blob node's npub, or nil when this Mac runs none. For now the
-    /// hand-run fips-v2 helper writes it (`--blobs`, `<state>/blob-npub`);
-    /// when the blob node moves into the app, only this function changes.
+    /// This Mac's mesh npub while its Mesh switch is on, else nil.
     static func npub() -> String? {
-        guard let text = try? String(contentsOf: stateFile, encoding: .utf8) else { return nil }
-        return HomeVaultLogic.meshNpub(fromInput: text)
-    }
-
-    /// `~/fips-mac-probe/state/blob-npub` in the user's real home: the app is
-    /// sandboxed, so its own home is the container. Read-only entitlement for
-    /// exactly this file (HavenApp.entitlements).
-    private static var stateFile: URL {
-        let home = getpwuid(getuid()).flatMap { String(validatingCString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-        return URL(fileURLWithPath: home).appendingPathComponent("fips-mac-probe/state/blob-npub")
+        MacFipsMeshService.photoNpub().flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
     }
 
     /// Republish once per launch when the owner's newest 10063 lacks the photo
