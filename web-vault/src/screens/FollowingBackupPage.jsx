@@ -48,18 +48,19 @@ export function FollowingBackupPage({ ctx }) {
         <p class="muted small">{current === undefined ? "Checking your relays…" : current ? `${follows(followsOf(current).length)}, from ${day(current.created_at)}.` : "No follow list of yours was found."}</p>
       </div>
       <section class="settings-group">
-        <div class="section-label">Saved in this browser</div>
-        <p class="settings-note muted small">A copy is kept each time this page sees a new list, up to 50.</p>
-        {snaps.length ? snaps.map(s => <ListRow key={s.id} list={s} current={current} onOpen={() => setOpen(s)} onDelete={async () => { await store.remove(s.id); reload() }} />)
-          : <p class="settings-note muted small">None yet.</p>}
-      </section>
-      <section class="settings-group">
-        <div class="section-label">Recover from your relays</div>
-        <p class="settings-note muted small">Asks your relays for every follow list of yours they still hold. Most keep only the newest; some keep older ones.</p>
-        {found && (found.length ? found.map(l => <ListRow key={l.id} list={l} current={current} onOpen={() => setOpen(l)} />) : <p class="settings-note muted small">Your relays hold no follow list of yours.</p>)}
-        <div class="settings-note"><button disabled={scanning} onClick={scan}>{scanning ? "Asking your relays…" : found ? "Scan again" : "Scan relays"}</button></div>
+        <div class="section-label">Recover Following List</div>
+        {found ? (found.length ? found.map(l => <ListRow key={l.id} list={l} current={current} onOpen={() => setOpen(l)} />) : <p class="settings-note muted small">Your relays hold no follow list of yours.</p>)
+          : !scanning && <p class="settings-note muted small">Tap "Scan Relays" to search for historical contact lists.</p>}
+        <div class="settings-note"><button disabled={scanning} onClick={scan}>{scanning ? "Asking your relays…" : found ? "Rescan Relays" : "Scan Relays"}</button></div>
         {err && <p class="settings-note small error">{err}</p>}
       </section>
+      {snaps.length > 0 && (
+        <section class="settings-group">
+          <div class="section-label">Automatic Backups</div>
+          {snaps.map(s => <ListRow key={s.id} list={s} current={current} onOpen={() => setOpen(s)} onDelete={async () => { await store.remove(s.id); reload() }} />)}
+          <p class="settings-note muted small">Snapshots are saved automatically when your following list changes. Up to 50 are kept.</p>
+        </section>
+      )}
     </>
   )
 }
@@ -71,7 +72,7 @@ function ListRow({ list, current, onOpen, onDelete }) {
     <div class="settings-row static relay-edit-row">
       <button class="follow-backup-open" onClick={onOpen}>
         <span class="settings-title">{day(list.created_at)}</span>
-        <span class="muted small">{follows(n)}{isNow ? " · current" : ""}</span>
+        <span class="muted small">{n} following{isNow ? " · Current" : ""}</span>
       </button>
       {onDelete && <button class="small relay-remove" aria-label="Delete this copy" onClick={onDelete}>Delete</button>}
     </div>
@@ -120,30 +121,32 @@ function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
         <p class="muted small">{follows(followsOf(list).length)}{isNow ? ", your follow list now" : ` · you follow ${followsOf(now).length} now`}.</p>
         {!isNow && !readOnly && (asking
           ? <>
-              <p class="small">This will replace your current {follows(followsOf(shown).length)} with {follows(followsOf(list).length)} from this backup and publish it to your relays. Your current list is kept here first.</p>
-              <div class="row"><button class="danger" disabled={!!busy} onClick={restore}>{busy === "restore" ? "Restoring…" : "Restore this list"}</button><button disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+              <p class="small">This will replace your current {follows(followsOf(shown).length)} with {follows(followsOf(list).length)} from this backup and publish the updated list to your relays. Your current list is kept here first.</p>
+              <div class="row"><button class="danger" disabled={!!busy} onClick={restore}>{busy === "restore" ? "Restoring…" : "Restore"}</button><button disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
             </>
-          : <button class="primary" disabled={!!busy} onClick={ask}>{busy === "check" ? "Checking your relays…" : "Restore this list…"}</button>)}
+          : <button class="primary" disabled={!!busy} onClick={ask}>{busy === "check" ? "Checking your relays…" : "Restore This List"}</button>)}
         {readOnly && <p class="muted small">{READ_ONLY}</p>}
         {msg && <p class="muted small">{msg}</p>}
       </div>
       {!isNow && removed.length > 0 && (
         <section class="settings-group">
-          <div class="section-label">No longer following ({removed.length})</div>
+          <div class="section-label">No Longer Following ({removed.length})</div>
           {removed.map(pk => (
             <div key={pk} class="person-row">
               <Avatar pubkey={pk} size={34} />
               <span class="person-names"><a href={`#/profile/${pk}`}><AuthorName pubkey={pk} /></a></span>
-              {refollowed.has(pk) ? <span class="tag">following</span>
+              {refollowed.has(pk) ? <span class="tag">✓</span>
                 : !readOnly && <button class="small" disabled={!!busy} onClick={() => refollow(pk)}>{busy === pk ? "Following…" : "Re-follow"}</button>}
             </div>
           ))}
+          <p class="settings-note muted small">People in this backup that you no longer follow.</p>
         </section>
       )}
       {!isNow && added.length > 0 && (
         <section class="settings-group">
-          <div class="section-label">Added since ({added.length})</div>
-          {added.map(pk => <div key={pk} class="person-row"><Avatar pubkey={pk} size={34} /><span class="person-names"><a href={`#/profile/${pk}`}><AuthorName pubkey={pk} /></a></span><span class="tag">new</span></div>)}
+          <div class="section-label">Added Since ({added.length})</div>
+          {added.map(pk => <div key={pk} class="person-row"><Avatar pubkey={pk} size={34} /><span class="person-names"><a href={`#/profile/${pk}`}><AuthorName pubkey={pk} /></a></span><span class="tag">New</span></div>)}
+          <p class="settings-note muted small">People you follow now that were not in this backup.</p>
         </section>
       )}
     </>
