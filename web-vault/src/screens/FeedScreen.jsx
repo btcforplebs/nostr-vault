@@ -2,7 +2,7 @@
 // /feed in the background. Global, Hashtag and Popular come from the network into memory only: strangers' notes never
 // go into /feed.
 import { useEffect, useRef, useState } from "preact/hooks"
-import { NoteCard } from "../components/NoteCard.jsx"
+import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
@@ -14,6 +14,7 @@ import { fetchPopular } from "../net/popular.js"
 import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
+import { LAYOUT_NAME, hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
 
 if (import.meta.env) import("../styles/feeds.css")
 
@@ -35,6 +36,10 @@ export function FeedScreen({ ctx }) {
   const { blocked, privateNote } = useBlocks(ctx)
   const [choice, setChoice] = useState(pickedChoice)
   const [strange, setStrange] = useState(() => heldNotes(pickedChoice()))
+  // Expanded / Compact / Threaded, one per feed (FeedView+Layout). Re-read when the feed changes.
+  const [layouts, setLayouts] = useState({})
+  const layout = layouts[choice.mode] ?? loadLayout(choice.mode)
+  const cycleLayout = () => { const l = nextLayout(layout); saveLayout(choice.mode, l); setLayouts({ ...layouts, [choice.mode]: l }) }
   // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
   const Reader = readerFor(choice.mode)?.Screen
   const following = fromHaven(choice.mode), media = choice.mode === "media", popular = choice.mode === "popular"
@@ -134,6 +139,7 @@ export function FeedScreen({ ctx }) {
     <main class="screen">
       <header class="screen-head">
         <h2>{choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : label}</h2>
+        {!Reader && hasLayouts(choice.mode) && <LayoutButton layout={layout} onClick={cycleLayout} />}
         {!Reader && <button class="small" onClick={() => (following ? sync() : loadStrange(choice))}>Refresh</button>}
       </header>
       <FeedPicker choice={choice} onPick={pick} />
@@ -145,12 +151,13 @@ export function FeedScreen({ ctx }) {
           : notes === null ? <p class="empty">Opening your relay…</p>
           : !notes.length ? <p class="empty">{syncing ? "Fetching notes from the people you follow…" : "No notes saved yet."}</p>
           : media ? <Media tiles={tiles} blockedAll={!shown.length} onOlder={older} />
-          : <Notes shown={shown} onOlder={older} />
+          : <Notes shown={shown} onOlder={older} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
           : strange === null ? <p class="empty">{navigator.onLine ? "Loading notes…" : "This feed needs the network."}</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : "No notes found."}</p>
-          : <Notes shown={shown} memoryOnly onOlder={popular ? null : () => loadStrange(choice, strange.at(-1)?.created_at - 1)} />}
+          : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read)}
+              onOlder={popular ? null : () => loadStrange(choice, strange.at(-1)?.created_at - 1)} />}
       </>}
     </main>
   )
@@ -158,9 +165,9 @@ export function FeedScreen({ ctx }) {
 
 /** The notes left after blocks, then Older (none for Popular, which is one ranked page). When every loaded note is
  *  from someone blocked, say so above Older. `memoryOnly`: strangers' notes, so their cards write nothing to /feed. */
-export function Notes({ shown, onOlder, memoryOnly = false }) {
+export function Notes({ shown, onOlder, memoryOnly = false, layout = "expanded", keepFeedOrder = false, fetchRoots }) {
   return <>
-    {shown.length ? shown.map(n => <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} />)
+    {shown.length ? <FeedRows notes={shown} layout={layout} memoryOnly={memoryOnly} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} />
       : <p class="empty">Every note loaded here is from someone you blocked.</p>}
     {onOlder && <button class="more" onClick={onOlder}>Older notes</button>}
   </>
@@ -196,4 +203,23 @@ function FeedPicker({ choice, onPick }) {
       )}
     </div>
   )
+}
+
+/** One button cycles Expanded -> Compact -> Threaded (FeedLayoutMode.next); it names where it goes next. */
+function LayoutButton({ layout, onClick }) {
+  const next = LAYOUT_NAME[nextLayout(layout)]
+  return (
+    <button type="button" class="small layout-button" onClick={onClick} title={`${LAYOUT_NAME[layout]}. Switch to ${next}`}
+      aria-label={`${LAYOUT_NAME[layout]}. Switch to ${next}`}>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d={LAYOUT_ICON[layout]} />
+      </svg>
+      <span>{LAYOUT_NAME[layout].replace(" View", "")}</span>
+    </button>
+  )
+}
+const LAYOUT_ICON = {
+  expanded: "M4 4h16v7H4zM4 14h16v6H4z",
+  condensed: "M4 5h16M4 10h16M4 15h16M4 20h16",
+  threaded: "M4 5h16M8 10h12M8 15h12M4 20h16",
 }
