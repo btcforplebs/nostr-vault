@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,6 +31,7 @@ type forwardFixture struct {
 	answers []int        // status per upload attempt; last one repeats
 	calls   atomic.Int32
 	auth    atomic.Value // last Authorization seen
+	listed  []string     // the owner's 10063 servers
 }
 
 func newForwardFixture(t *testing.T, answers ...int) *forwardFixture {
@@ -39,10 +42,10 @@ func newForwardFixture(t *testing.T, answers ...int) *forwardFixture {
 	owner, _ := nostr.GetPublicKey(f.ownerSK)
 
 	oldFs, oldPath, oldWL := fs, config.BlossomPath, config.WhitelistedPubKeys
-	oldClient, oldRefused := forwardClient, forwardHostRefused
+	oldClient, oldRefused, oldListed := forwardClient, forwardHostRefused, forwardTargetListed
 	t.Cleanup(func() {
 		fs, config.BlossomPath, config.WhitelistedPubKeys = oldFs, oldPath, oldWL
-		forwardClient, forwardHostRefused = oldClient, oldRefused
+		forwardClient, forwardHostRefused, forwardTargetListed = oldClient, oldRefused, oldListed
 	})
 	fs = afero.NewMemMapFs()
 	config.BlossomPath = "blossom/"
@@ -66,6 +69,18 @@ func newForwardFixture(t *testing.T, answers ...int) *forwardFixture {
 	t.Cleanup(f.server.Close)
 	forwardClient = f.server.Client()
 	forwardHostRefused = func(string) bool { return false }
+	f.listed = []string{f.server.URL}
+	forwardTargetListed = func(_ context.Context, pubkey, target string) bool {
+		if pubkey != owner {
+			return false
+		}
+		for _, s := range f.listed {
+			if s == target {
+				return true
+			}
+		}
+		return false
+	}
 	return f
 }
 
@@ -84,18 +99,25 @@ func (f *forwardFixture) uploadTags(sha string, expires time.Time) nostr.Tags {
 }
 
 func (f *forwardFixture) request(target, auth string) *http.Request {
-	r := httptest.NewRequest(http.MethodPut, "/upload", nil)
+	return f.requestWithBody(target, auth, f.blob)
+}
+
+func (f *forwardFixture) requestWithBody(target, auth string, body []byte) *http.Request {
+	r := httptest.NewRequest(http.MethodPut, "/upload", bytes.NewReader(body))
 	r.Header.Set(forwardToHeader, target)
 	r.Header.Set(forwardAuthHeader, auth)
 	r.Header.Set("X-SHA-256", f.sha)
 	return r
 }
 
-// stores the blob and answers like the relay's Blossom upload.
+// reads the body, stores it under its own hash and answers like the relay's
+// Blossom upload.
 func (f *forwardFixture) relay(status int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		if status == http.StatusOK {
-			_ = afero.WriteFile(fs, config.BlossomPath+f.sha, f.blob, 0o644)
+			sum := sha256.Sum256(body)
+			_ = afero.WriteFile(fs, config.BlossomPath+hex.EncodeToString(sum[:]), body, 0o644)
 		}
 		w.WriteHeader(status)
 	})
@@ -160,15 +182,25 @@ func TestForwardRefusesBadRequests(t *testing.T) {
 	other := hex.EncodeToString(make([]byte, 32))
 	good := f.uploadTags(f.sha, time.Now().Add(time.Hour))
 	cases := map[string]*http.Request{
-		"stranger's key":  f.request(f.server.URL, f.token(t, stranger, good)),
-		"expired":         f.request(f.server.URL, f.token(t, f.ownerSK, f.uploadTags(f.sha, time.Now().Add(-time.Minute)))),
-		"other blob":      f.request(f.server.URL, f.token(t, f.ownerSK, f.uploadTags(other, time.Now().Add(time.Hour)))),
-		"not an upload":   f.request(f.server.URL, f.token(t, f.ownerSK, nostr.Tags{{"t", "delete"}, {"x", f.sha}, {"expiration", good[2][1]}})),
-		"plain http":      f.request("http://blossom.example.com", f.token(t, f.ownerSK, good)),
-		"no token":        f.request(f.server.URL, ""),
-		"garbage token":   f.request(f.server.URL, "Nostr !!!"),
-		"no expiration":   f.request(f.server.URL, f.token(t, f.ownerSK, nostr.Tags{{"t", "upload"}, {"x", f.sha}})),
-		"not PUT /upload": func() *http.Request { r := f.request(f.server.URL, f.token(t, f.ownerSK, good)); r.URL.Path = "/mirror"; return r }(),
+		"stranger's key": f.request(f.server.URL, f.token(t, stranger, good)),
+		"expired":        f.request(f.server.URL, f.token(t, f.ownerSK, f.uploadTags(f.sha, time.Now().Add(-time.Minute)))),
+		"other blob":     f.request(f.server.URL, f.token(t, f.ownerSK, f.uploadTags(other, time.Now().Add(time.Hour)))),
+		"not an upload":  f.request(f.server.URL, f.token(t, f.ownerSK, nostr.Tags{{"t", "delete"}, {"x", f.sha}, {"expiration", good[2][1]}})),
+		"plain http":     f.request("http://blossom.example.com", f.token(t, f.ownerSK, good)),
+		"no token":       f.request(f.server.URL, ""),
+		"garbage token":  f.request(f.server.URL, "Nostr !!!"),
+		"no expiration":  f.request(f.server.URL, f.token(t, f.ownerSK, nostr.Tags{{"t", "upload"}, {"x", f.sha}})),
+		"no X-SHA-256": func() *http.Request {
+			r := f.request(f.server.URL, f.token(t, f.ownerSK, good))
+			r.Header.Del("X-SHA-256")
+			return r
+		}(),
+		"target not in 10063": f.request("https://blossom.elsewhere.example", f.token(t, f.ownerSK, good)),
+		"not PUT /upload": func() *http.Request {
+			r := f.request(f.server.URL, f.token(t, f.ownerSK, good))
+			r.URL.Path = "/mirror"
+			return r
+		}(),
 	}
 	for name, r := range cases {
 		w := httptest.NewRecorder()
@@ -228,5 +260,56 @@ func TestForwardStopsAtTheTokensExpiry(t *testing.T) {
 	fwd := &blobForward{target: f.server.URL, sha256: f.sha, authB64: "x", expiresAt: time.Now().Add(20 * time.Second)}
 	if err := runBlobForward(context.Background(), fwd, time.Now, func(context.Context, time.Duration) bool { return true }); err == nil || f.calls.Load() != 1 {
 		t.Fatalf("err %v, calls %d", err, f.calls.Load())
+	}
+}
+
+// Tron, PR 971: a token for blob A sent along with blob B must not carry A
+// (already stored on the Mac) out. Headers and token all name A; only the
+// bytes are B's.
+func TestForwardIsBoundToTheUploadedBytes(t *testing.T) {
+	f := newForwardFixture(t)
+	_ = afero.WriteFile(fs, config.BlossomPath+f.sha, f.blob, 0o644) // A, stored earlier
+	auth := f.token(t, f.ownerSK, f.uploadTags(f.sha, time.Now().Add(time.Hour)))
+	w := httptest.NewRecorder()
+	serveWithForward(w, f.requestWithBody(f.server.URL, auth, []byte("blob B, something else")), f.relay(http.StatusOK))
+	time.Sleep(200 * time.Millisecond)
+	if f.calls.Load() != 0 {
+		t.Fatal("forwarded a stored blob the upload did not carry")
+	}
+}
+
+func TestServerListNamesTheTarget(t *testing.T) {
+	tags := nostr.Tags{{"server", "https://logen.btcforplebs.com/"}, {"server", "fipsmesh://npub1x/"}}
+	if !serverListNames(tags, "https://logen.btcforplebs.com") || !serverListNames(tags, "https://LOGEN.btcforplebs.com") {
+		t.Fatal("listed server not found")
+	}
+	if serverListNames(tags, "https://blossom.band") || serverListNames(nostr.Tags{{"r", "https://blossom.band"}}, "https://blossom.band") {
+		t.Fatal("unlisted server accepted")
+	}
+}
+
+// The real lookup: the signer's NEWEST 10063 on this relay decides.
+func TestForwardTargetListedReadsTheNewestServerList(t *testing.T) {
+	skipWithoutSockets(t)
+	h := startHaven(t)
+	owner, _ := nostr.GetPublicKey(h.ownerSK)
+	now := time.Now().Unix()
+	older := nostr.Event{Kind: 10063, CreatedAt: nostr.Timestamp(now - 100), Tags: nostr.Tags{{"server", "https://old.example.com"}}}
+	newer := nostr.Event{Kind: 10063, CreatedAt: nostr.Timestamp(now - 10), Tags: nostr.Tags{{"server", "https://logen.btcforplebs.com/"}}}
+	for _, ev := range []*nostr.Event{&older, &newer} {
+		if err := ev.Sign(h.ownerSK); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveAll(t, outboxDB, &older, &newer)
+	ctx := context.Background()
+	if !forwardTargetListed(ctx, owner, "https://logen.btcforplebs.com") {
+		t.Fatal("server in the newest list refused")
+	}
+	if forwardTargetListed(ctx, owner, "https://old.example.com") {
+		t.Fatal("server only in an older list accepted")
+	}
+	if forwardTargetListed(ctx, strings.Repeat("b", 64), "https://logen.btcforplebs.com") {
+		t.Fatal("another key's target accepted")
 	}
 }

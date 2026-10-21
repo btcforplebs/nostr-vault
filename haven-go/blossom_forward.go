@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -33,8 +37,8 @@ const (
 
 // blobForward is one validated request to pass a blob on.
 type blobForward struct {
-	target    string // https://host[/path], no trailing slash
-	sha256    string
+	target      string // https://host[/path], no trailing slash
+	sha256      string
 	authB64     string // padded standard base64, as khatru-style servers expect
 	contentType string
 	expiresAt   time.Time
@@ -94,13 +98,19 @@ func parseBlobForward(r *http.Request, now time.Time) (*blobForward, error) {
 	if err != nil || time.Unix(secs, 0).Before(now) {
 		return nil, errors.New("forward authorization has expired")
 	}
-	// The header may say X-SHA-256; the token is what the public server checks.
-	if h := r.Header.Get("X-SHA-256"); h != "" && !strings.EqualFold(h, (*x)[1]) {
+	// Early refusal only: the binding that counts is the hash of the bytes
+	// this upload stored (serveWithForward), not a header the caller sets.
+	if h := r.Header.Get("X-SHA-256"); h == "" || !strings.EqualFold(h, (*x)[1]) {
 		return nil, errors.New("forward authorization is for another blob")
 	}
+	// Only to a public server the signer lists as their own (10063 on this
+	// relay): a token cannot send the blob anywhere else.
+	if !forwardTargetListed(r.Context(), ev.PubKey, strings.TrimRight(u.String(), "/")) {
+		return nil, errors.New("forward target is not in the signer's media server list")
+	}
 	return &blobForward{
-		target:    strings.TrimRight(u.String(), "/"),
-		sha256:    strings.ToLower((*x)[1]),
+		target:      strings.TrimRight(u.String(), "/"),
+		sha256:      strings.ToLower((*x)[1]),
 		authB64:     base64Std(raw),
 		contentType: r.Header.Get("Content-Type"),
 		expiresAt:   time.Unix(secs, 0),
@@ -118,6 +128,36 @@ func forwardHostIsPrivate(host string) bool {
 	}
 	if ip := net.ParseIP(h); ip != nil {
 		return forwardIPIsPrivate(ip)
+	}
+	return false
+}
+
+// forwardTargetListed reports whether target is a server in pubkey's newest
+// 10063 on this relay. Replaced in tests.
+var forwardTargetListed = func(ctx context.Context, pubkey, target string) bool {
+	if outboxDB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ch, err := outboxDB.QueryEvents(ctx, nostr.Filter{Kinds: []int{10063}, Authors: []string{pubkey}, Limit: 1})
+	if err != nil {
+		return false
+	}
+	var newest *nostr.Event
+	for ev := range ch {
+		if newest == nil || ev.CreatedAt > newest.CreatedAt {
+			newest = ev
+		}
+	}
+	return newest != nil && serverListNames(newest.Tags, target)
+}
+
+func serverListNames(tags nostr.Tags, target string) bool {
+	for _, tag := range tags {
+		if len(tag) >= 2 && tag[0] == "server" && strings.EqualFold(strings.TrimRight(strings.TrimSpace(tag[1]), "/"), target) {
+			return true
+		}
 	}
 	return false
 }
@@ -228,6 +268,18 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+// hashingBody hashes a request body as it is read.
+type hashingBody struct {
+	io.ReadCloser
+	h hash.Hash
+}
+
+func (b *hashingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.h.Write(p[:n])
+	return n, err
+}
+
 // statusRecorder keeps the status an inner handler wrote.
 type statusRecorder struct {
 	http.ResponseWriter
@@ -263,9 +315,17 @@ func serveWithForward(w http.ResponseWriter, r *http.Request, next http.Handler)
 		next.ServeHTTP(w, r)
 		return
 	}
+	// Hash the bytes as the upload reads them: the token must name the blob
+	// this request stored, not some other blob already on this relay.
+	hashed := &hashingBody{ReadCloser: r.Body, h: sha256.New()}
+	r.Body = hashed
 	rec := &statusRecorder{ResponseWriter: w}
 	next.ServeHTTP(rec, r)
 	if rec.status < 200 || rec.status >= 300 {
+		return
+	}
+	if got := hex.EncodeToString(hashed.h.Sum(nil)); got != fwd.sha256 {
+		slog.Warn("blob forward refused: uploaded bytes are not the blob the token names", "token", fwd.sha256[:8], "uploaded", got[:8])
 		return
 	}
 	go func() {
