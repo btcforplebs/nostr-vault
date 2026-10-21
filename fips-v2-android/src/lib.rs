@@ -16,6 +16,7 @@ mod stack;
 mod node;
 pub mod own_devices;
 pub mod relay_link;
+pub mod strangers;
 pub use relay_link::relay_push;
 
 use std::net::{Ipv6Addr, SocketAddr};
@@ -58,6 +59,10 @@ pub struct StartOptions {
     /// The owner's devices. Set, only they reach this node: see
     /// [`own_devices`]. Empty leaves the node open to anyone, as before.
     pub own_devices: Vec<String>,
+    /// With `own_devices`: everyone else may reach the shared relay too,
+    /// capped, the way an https visitor does ([`strangers`]). They find this
+    /// node through `public_seeds`. Off, they get silence.
+    pub strangers: bool,
 }
 
 /// What sharing gives the mesh before it stops, unless the app sets its own.
@@ -99,6 +104,18 @@ struct Status {
     max_serve_bytes: u64,
     /// `relay_push` can run: the datagram API socket is on.
     relay_link: bool,
+    /// Own-devices mode with `strangers` on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strangers: Option<StrangersOut>,
+}
+
+#[derive(Serialize)]
+struct StrangersOut {
+    open: usize,
+    total: u64,
+    refused: u64,
+    rx: u64,
+    tx: u64,
 }
 
 #[derive(Serialize)]
@@ -154,6 +171,7 @@ struct Running {
     relay_socket: Option<std::path::PathBuf>,
     /// Set in own-devices mode: the only npubs `ingress` dials.
     own: Option<own_devices::OwnDevices>,
+    strangers: Option<strangers::Strangers>,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -197,6 +215,8 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
         format!("      advert_relays: [{0}]\n      dm_relays: [{0}]\n", list.join(", "))
     };
     let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
+    // An open node already serves everyone.
+    anyhow::ensure!(!opts.strangers || own.is_some(), "strangers needs own_devices");
     let allowlist = own.as_ref().map(own_devices::OwnDevices::allowlist_yaml).unwrap_or_default();
     let mut dialed: Vec<String> = Vec::new();
     for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
@@ -279,16 +299,35 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     ctl.set_limits(serve_limits(opts));
     let stack_ctl = ctl.clone();
     let (to_mesh, from_mesh) = tun;
-    // Own-devices mode: strangers' packets stop here, before the stack.
+    // Own-devices mode: strangers' packets stop here, before the owner's
+    // stack, and go to their own capped one or nowhere.
+    let mut stranger_side = None;
     let from_mesh = match &own {
         None => from_mesh,
         Some(own) => {
             let (to_stack, stack_rx) = std::sync::mpsc::channel();
+            let to_strangers = if opts.strangers {
+                let (tx, rx) = std::sync::mpsc::channel();
+                match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx) {
+                    Ok(s) => stranger_side = Some(s),
+                    Err(e) => {
+                        let _ = stop_tx.send(());
+                        let _ = node_thread.join();
+                        return Err(e);
+                    }
+                }
+                Some(tx)
+            } else {
+                None
+            };
             let addresses = own.addresses.clone();
             let filter = std::thread::Builder::new().name("fips-own-only".into()).spawn(move || {
-                own_devices::filter(from_mesh, address, addresses, to_stack)
+                own_devices::filter(from_mesh, address, addresses, to_stack, to_strangers)
             });
             if let Err(e) = filter {
+                if let Some(s) = stranger_side.take() {
+                    s.stop();
+                }
                 let _ = stop_tx.send(());
                 let _ = node_thread.join();
                 return Err(e.into());
@@ -304,6 +343,9 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     let stack_thread = match stack_thread {
         Ok(t) => t,
         Err(e) => {
+            if let Some(s) = stranger_side.take() {
+                s.stop();
+            }
             let _ = stop_tx.send(());
             let _ = node_thread.join();
             return Err(e.into());
@@ -320,6 +362,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         stack_thread,
         relay_socket,
         own,
+        strangers: stranger_side,
         stop: stop_tx,
         node_thread,
     });
@@ -342,6 +385,9 @@ pub fn export(port: u16) -> i32 {
     if !run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
         return ERR_START;
     }
+    if run.strangers.as_ref().is_some_and(|s| !s.share(Some(port))) {
+        return ERR_START;
+    }
     run.exported = Some(port);
     0
 }
@@ -351,7 +397,8 @@ pub fn unexport() -> i32 {
     let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     run.exported = None;
-    if !run.ctl.set_serve(None) {
+    let strangers_off = run.strangers.as_ref().is_none_or(|s| s.share(None));
+    if !run.ctl.set_serve(None) || !strangers_off {
         return ERR_START;
     }
     0
@@ -445,8 +492,11 @@ fn add_peer(
 
 /// Stop the node, and the stack with it.
 pub fn stop() {
-    let Some(run) = state().take() else { return };
-    // Stack first, so its resets still have a node to leave through.
+    let Some(mut run) = state().take() else { return };
+    // Stacks first, so their resets still have a node to leave through.
+    if let Some(s) = run.strangers.take() {
+        s.stop();
+    }
     run.ctl.stop();
     let _ = run.stack_thread.join();
     let _ = run.stop.send(());
@@ -472,6 +522,7 @@ pub fn status_json() -> String {
             cap_reached: false,
             max_serve_bytes: 0,
             relay_link: false,
+            strangers: None,
         },
         Some(run) => Status {
             running: true,
@@ -485,6 +536,17 @@ pub fn status_json() -> String {
             cap_reached: run.ctl.cap_reached(),
             max_serve_bytes: run.ctl.limits().total_bytes,
             relay_link: run.relay_socket.is_some(),
+            strangers: run.strangers.as_ref().map(|s| {
+                let get = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed);
+                let c = &s.counters;
+                StrangersOut {
+                    open: c.open.load(Ordering::Relaxed),
+                    total: get(&c.total),
+                    refused: get(&c.refused) + get(&s.ctl.counters.served_refused),
+                    rx: get(&c.rx),
+                    tx: get(&c.tx),
+                }
+            }),
         },
     };
     serde_json::to_string(&status).unwrap_or_else(|_| "{\"running\":false}".into())

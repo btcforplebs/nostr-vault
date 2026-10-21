@@ -5,12 +5,12 @@
 //! - traversal offers are answered only from those npubs (`offer_allowlist`),
 //!   so this node's public address goes to no one else;
 //! - each one is dialed at start, as a configured peer;
-//! - mesh packets from anyone else are dropped before the stack, so a
-//!   stranger who reaches this node another way (the public seeds) gets
-//!   silence, never the relay;
+//! - mesh packets from anyone else never reach their stack: they go to the
+//!   strangers' stack ([`crate::strangers`]), which is capped, or are
+//!   dropped when there is none;
 //! - `ingress` dials own devices only, since a dial sends this node's address.
-//! - sharing has no byte or connection caps: those are for visitors, and
-//!   there are none.
+//! - own devices' sharing has no byte or connection caps: those are for
+//!   strangers, in their own stack.
 
 use std::collections::HashSet;
 use std::net::Ipv6Addr;
@@ -67,14 +67,30 @@ fn source(pkt: &[u8]) -> Option<Ipv6Addr> {
     Some(Ipv6Addr::from(src))
 }
 
-/// Passes own devices' packets to the stack and drops everyone else's.
-/// FIPS's own ICMP (no route to a peer) carries `me` as its source and goes
-/// through, so a splice to a gone device resets instead of hanging.
-/// Returns when either side closes.
-pub fn filter(from_mesh: Receiver<Vec<u8>>, me: Ipv6Addr, own: HashSet<Ipv6Addr>, to_stack: Sender<Vec<u8>>) {
+/// Passes own devices' packets to their stack, and everyone else's to the
+/// strangers' stack (dropped without one). FIPS's own ICMP (no route to a
+/// peer) carries `me` as its source and goes to both, so a splice to a gone
+/// peer resets instead of hanging. Returns when the mesh or own stack closes.
+pub fn filter(
+    from_mesh: Receiver<Vec<u8>>,
+    me: Ipv6Addr,
+    own: HashSet<Ipv6Addr>,
+    to_stack: Sender<Vec<u8>>,
+    to_strangers: Option<Sender<Vec<u8>>>,
+) {
     for pkt in from_mesh {
-        let pass = matches!(source(&pkt), Some(src) if src == me || own.contains(&src));
-        if pass && to_stack.send(pkt).is_err() {
+        let Some(src) = source(&pkt) else { continue };
+        if src == me {
+            if let Some(s) = &to_strangers {
+                let _ = s.send(pkt.clone());
+            }
+        } else if !own.contains(&src) {
+            if let Some(s) = &to_strangers {
+                let _ = s.send(pkt);
+            }
+            continue;
+        }
+        if to_stack.send(pkt).is_err() {
             return;
         }
     }
@@ -103,9 +119,26 @@ mod tests {
             tx.send(p).unwrap();
         }
         drop(tx);
-        filter(rx, me, HashSet::from([own_dev]), stack_tx);
+        filter(rx, me, HashSet::from([own_dev]), stack_tx, None);
         let passed: Vec<_> = stack_rx.try_iter().collect();
         assert_eq!(passed, vec![v6(own_dev), v6(me)]);
+    }
+
+    #[test]
+    fn strangers_go_to_their_own_stack_never_to_the_owners() {
+        let own_dev: Ipv6Addr = "fd00::1".parse().unwrap();
+        let stranger: Ipv6Addr = "fd00::2".parse().unwrap();
+        let me: Ipv6Addr = "fd00::3".parse().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (stack_tx, stack_rx) = std::sync::mpsc::channel();
+        let (strangers_tx, strangers_rx) = std::sync::mpsc::channel();
+        for p in [v6(own_dev), v6(stranger), v6(me), vec![0x45; 60]] {
+            tx.send(p).unwrap();
+        }
+        drop(tx);
+        filter(rx, me, HashSet::from([own_dev]), stack_tx, Some(strangers_tx));
+        assert_eq!(stack_rx.try_iter().collect::<Vec<_>>(), vec![v6(own_dev), v6(me)]);
+        assert_eq!(strangers_rx.try_iter().collect::<Vec<_>>(), vec![v6(stranger), v6(me)]);
     }
 
     #[test]
@@ -141,7 +174,7 @@ mod tests {
         let cfg: fips::Config = serde_yaml::from_str(&yaml).expect("parses");
         assert_eq!(cfg.node.rendezvous.nostr.offer_allowlist, vec![phone.clone(), page.clone()]);
         let dialed: Vec<_> = cfg.peers.iter().map(|p| p.npub.clone()).collect();
-        assert_eq!(dialed, vec![phone, page], "each own device dialed once");
+        assert_eq!(dialed, vec![phone.clone(), page], "each own device dialed once");
         assert!(!yaml.contains(&friend));
         assert!(cfg.node.leaf_only);
 
@@ -150,5 +183,11 @@ mod tests {
         assert!(!open.contains("offer_allowlist"));
         let opts = crate::StartOptions { own_devices: vec!["npub1nope".into()], ..Default::default() };
         assert!(crate::config_yaml(&nsec, &opts).is_err());
+        // Strangers are a part of own-devices mode: an open node has no door.
+        let open_strangers = crate::StartOptions { strangers: true, ..Default::default() };
+        assert!(crate::config_yaml(&nsec, &open_strangers).is_err());
+        let with = crate::StartOptions { own_devices: vec![phone.clone()], strangers: true, public_seeds: true, ..Default::default() };
+        let yaml = crate::config_yaml(&nsec, &with).unwrap();
+        assert!(yaml.contains(&format!("offer_allowlist: [\"{phone}\"]")), "offers stay own-devices-only");
     }
 }
