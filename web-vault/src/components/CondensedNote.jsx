@@ -3,7 +3,7 @@
 // `depth` (0 for a root) indents a reply inside a thread card under a rail, and narrows it. With `onOpen` a click
 // opens the line in place, as the iPhone's first tap does; without it a click opens the thread.
 import { decode } from "nostr-tools/nip19"
-import { Avatar } from "./Avatar.jsx"
+import { AvatarMenu } from "./AuthorQuickMenu.jsx"
 import { AuthorName, Undeleted } from "./NoteCard.jsx"
 import { Mention } from "./NoteText.jsx"
 import { useQuote } from "./QuotedNote.jsx"
@@ -96,7 +96,7 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
       style={depth ? `--indent: ${Math.min(depth, 4) * 14}px` : undefined} role="button" tabIndex={0}
       aria-label={label(note, depth)} onClick={go} onAuxClick={open(note.id)} onKeyDown={e => { if (e.key === "Enter") go(e) }}>
       {depth > 0 && <span class="condensed-rail" aria-hidden="true" />}
-      <a class="condensed-avatar" href={`#/profile/${note.pubkey}`} aria-label="Profile"><Avatar pubkey={note.pubkey} size={root ? 32 : 26} /></a>
+      <span class="condensed-avatar"><AvatarMenu pubkey={note.pubkey} size={root ? 32 : 26} /></span>
       <div class="condensed-main">
         <div class="condensed-head">
           <a class="condensed-name" href={`#/profile/${note.pubkey}`}><AuthorName pubkey={note.pubkey} /></a>

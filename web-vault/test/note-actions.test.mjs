@@ -12,7 +12,7 @@ import { pool } from "../src/net/pool.js"
 import { publishNote } from "../src/net/sync.js"
 import {
   REACTION, act, actionState, actionTarget, composeTarget, deleteNote, deletionTemplate, findNote, gateIds, isDeleted, loadDeletions,
-  loadSent, publishAction, quoteOf, reactionTemplate, replyTags, repostTemplate, shareLink, unlike,
+  loadSent, publishAction, quoteOf, reactionOf, reactionTemplate, replyTags, repostTemplate, shareLink, unlike,
 } from "../src/net/actions.js"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -153,6 +153,40 @@ test("a second tap on a sent like takes it back: a kind 5 for that reaction, wit
   // After a reload the taken-back like no longer reads as sent.
   await loadSent(c, n.id)
   assert.equal(actionState(n.id).like, undefined)
+})
+
+test("a picked emoji reacts with it; another emoji swaps it (old kind 7 deleted first); the same one takes it back", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), n = note()
+  await act(c, "like", n, "🔥")
+  assert.equal(sent[0].ev.kind, 7); assert.equal(sent[0].ev.content, "🔥")
+  assert.equal(reactionOf(n.id), "🔥"); assert.equal(actionState(n.id).like, "sent")
+  await act(c, "like", n, "😂")
+  assert.deepEqual(sent.slice(1).map(s => [s.ev.kind, s.ev.content]), [[5, ""], [7, "😂"]])
+  assert.deepEqual(sent[1].ev.tags, [["e", sent[0].ev.id], ["k", "7"]])
+  assert.equal(reactionOf(n.id), "😂")
+  await act(c, "like", n, "😂")
+  assert.equal(sent[3].ev.kind, 5); assert.equal(actionState(n.id).like, undefined); assert.equal(reactionOf(n.id), null)
+})
+
+test("tapping your own reaction stored as \"+\" (Damus, Amethyst) takes it back: one kind 5, no new kind 7", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const n = note(), c = ctxFor()
+  await publishAction(c, reactionTemplate(n, "+"))
+  await loadSent(c, n.id)
+  sent.length = 0
+  const { pickFor, displayEmoji } = await import("./react-pick.mjs")
+  await act(c, "like", n, pickFor(displayEmoji(reactionOf(n.id)), "❤️"))
+  assert.deepEqual(sent.map(s => s.ev.kind), [5])
+  assert.equal(actionState(n.id).like, undefined)
+})
+
+test("after a reload your emoji reads back from the outbox", async t => {
+  relaysSay(t, () => Promise.resolve(""))
+  const n = note(), c = ctxFor()
+  await publishAction(c, reactionTemplate(n, "🤙"))
+  await loadSent(c, n.id)
+  assert.equal(reactionOf(n.id), "🤙")
 })
 
 test("unlike a like this browser never saw: found on the account's relays, then deleted", async t => {

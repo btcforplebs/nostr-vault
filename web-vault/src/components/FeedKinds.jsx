@@ -8,10 +8,11 @@ import { QuotedNote } from "./QuotedNote.jsx"
 import { LinkCard } from "./LinkCard.jsx"
 import { displayTitle, longFormMeta, plainText, readingMinutes } from "../readers/longform.js"
 import { gatedArticle, stripTeaser } from "../readers/gated.js"
-import { isClosed, parsePoll, pollRelays, share, tally, VOTE_KIND } from "./polls.js"
+import { isClosed, parsePoll, pollRelays, share, tally, voteTags, VOTE_KIND } from "./polls.js"
 import { pool } from "../net/pool.js"
 import { getBlocks, onBlocks } from "../net/blocks.js"
-import { actionContext } from "../net/actions.js"
+import { actionContext, publishAction } from "../net/actions.js"
+import { READ_ONLY_SHORT } from "../signer/readonly.js"
 
 if (import.meta.env) import("../styles/feed-kinds.css")
 
@@ -105,27 +106,64 @@ function PollBody({ poll, memoryOnly }) {
   const mine = t.picks.get(me) ?? []
   const results = closed || mine.length > 0
   const n = t.voters.size
+  // Voting (PollModel.vote): a kind 1018 with the picks, signed by your signer, sent to your write relays and the
+  // poll's own public ones, and counted at once. Single choice votes on the tap; multiple choice gathers picks first.
+  const [picked, setPicked] = useState(null) // multiple choice: the picks being gathered
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState("")
+  const canVote = !closed && !!me
+  const readOnly = !!ctx?.signer?.readOnly
+  const vote = async ids => {
+    if (readOnly) return setError(READ_ONLY_SHORT)
+    if (sending || !ids.length || closed) return
+    setSending(true); setError("")
+    try {
+      // The poll's own public relays, deduplicated and at most 8 (the read path's set): a stranger's poll must not
+      // choose how many hosts get your signed vote and your IP.
+      const pub = pollRelays(poll)
+      const template = { kind: VOTE_KIND, created_at: Math.floor(Date.now() / 1000), content: "", tags: voteTags(poll, ids, pub[0] ?? "") }
+      const { event } = await publishAction(ctx, template)
+      if (pub.length) Promise.allSettled(pool.publish(pub, event)).catch(() => {})
+      const store = votes.get(poll.id) ?? { events: new Map(), at: Date.now() }
+      store.events.set(event.id, event); votes.set(poll.id, store)
+      setEvs([...store.events.values()]); setPicked(null)
+    } catch (e) { setError(String(e?.message ?? e)) }
+    finally { setSending(false) }
+  }
+  const tap = id => {
+    if (!canVote || sending) return
+    if (!poll.multiple) { if (!(mine.length === 1 && mine[0] === id)) vote([id]); return }
+    const cur = new Set(picked ?? mine)
+    cur.has(id) ? cur.delete(id) : cur.add(id)
+    setPicked([...cur])
+  }
+  const gathered = picked ?? mine
+  const changed = poll.multiple && picked && picked.length > 0 && [...picked].sort().join() !== [...mine].sort().join()
   return (
     <div class="kind-poll">
       {poll.question && <p class="kind-poll-question">{poll.question}</p>}
       <div class="kind-poll-options">
         {poll.options.map(o => {
-          const s = share(t, o.id), picked = mine.includes(o.id)
+          const s = share(t, o.id), selected = poll.multiple ? gathered.includes(o.id) : mine.includes(o.id)
           return (
-            <div key={o.id} class={`kind-poll-option${picked ? " picked" : ""}`} role="img" aria-label={results ? `${o.label}, ${t.byOption.get(o.id)?.size ?? 0} votes` : o.label}>
+            <button type="button" key={o.id} class={`kind-poll-option${selected ? " picked" : ""}`} disabled={!canVote || sending}
+              aria-pressed={selected} aria-label={results ? `${o.label}, ${t.byOption.get(o.id)?.size ?? 0} votes` : o.label}
+              onClick={e => { e.stopPropagation(); tap(o.id) }}>
               {results && <span class="kind-poll-bar" style={`width: ${Math.round(s * 100)}%`} aria-hidden="true" />}
-              <span class="kind-poll-mark" aria-hidden="true">{poll.multiple ? (picked ? "☑" : "☐") : (picked ? "◉" : "○")}</span>
+              <span class="kind-poll-mark" aria-hidden="true">{poll.multiple ? (selected ? "☑" : "☐") : (selected ? "◉" : "○")}</span>
               <span class="kind-poll-label">{o.label}</span>
               {results && <span class="kind-poll-pct">{Math.round(s * 100)}%</span>}
-            </div>
+            </button>
           )
         })}
       </div>
+      {changed && <button type="button" class="primary kind-poll-vote" disabled={sending} onClick={e => { e.stopPropagation(); vote(picked) }}>{mine.length ? "Change vote" : "Vote"}</button>}
       <div class="kind-meta">
         <ChartIcon />{n === 1 ? "1 vote" : `${n} votes`}{poll.multiple ? " · Pick any" : ""}
         {poll.endsAt && (closed ? " · Final results" : ` · Ends ${endsIn(poll.endsAt)}`)}
-        {loading && <span class="kind-spinner" aria-label="Loading votes" />}
+        {(loading || sending) && <span class="kind-spinner" aria-label={sending ? "Sending your vote" : "Loading votes"} />}
       </div>
+      {error && <p class="kind-poll-error" role="alert">{error}</p>}
     </div>
   )
 }
