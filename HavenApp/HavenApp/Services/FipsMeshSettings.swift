@@ -7,7 +7,6 @@ enum FipsMeshSettings {
     private static let enabledKey = "fipsMesh.enabled"
     private static let finderRelaysKey = "fipsMesh.finderRelays"
     private static let middleServerKey = "fipsMesh.middleServer"
-    private static let listInServersKey = "fipsMesh.listInServers"
 
     /// Off: nothing starts the engine, so this phone neither reaches nor
     /// shares on the mesh. On by default, as the mesh was before the switch.
@@ -36,12 +35,6 @@ enum FipsMeshSettings {
     static var middleServer: MeshMiddleServer {
         get { MeshMiddleServer(rawValue: UserDefaults.standard.string(forKey: middleServerKey) ?? "") ?? .publicSeeds }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: middleServerKey) }
-    }
-
-    /// Kiosk mode lists this phone's mesh address in the owner's 10063.
-    static var listInServers: Bool {
-        get { UserDefaults.standard.object(forKey: listInServersKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: listInServersKey) }
     }
 
     static func resetAdvanced() {

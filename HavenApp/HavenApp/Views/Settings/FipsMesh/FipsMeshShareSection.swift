@@ -2,13 +2,13 @@ import SwiftUI
 
 #if os(iOS)
 /// FIPS Mesh → Share With Others: kiosk mode (this vault on the mesh while the
-/// app stays open), its limit, whether it is listed in the owner's media
-/// servers, what it has served, and where posted photos go.
+/// app stays open), its limit, what it has served, and where posted photos go.
+/// No listing switch: a phone's own mesh npub is never put in the 10063; the
+/// Mac's photo node is listed on its own (PhotoNode, Logen 2026-10-21).
 struct FipsMeshShareSection: View {
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var mesh = FipsMeshService.shared
     @AppStorage(FipsMeshService.serveLimitKey) private var serveLimit = 0
-    @State private var listInServers = FipsMeshSettings.listInServers
 
     var body: some View {
         Section {
@@ -32,26 +32,6 @@ struct FipsMeshShareSection: View {
             }
             .disabled(mesh.kioskActive || mesh.starting)
 
-            Toggle(isOn: Binding(
-                get: { listInServers },
-                set: { on in
-                    listInServers = on
-                    FipsMeshSettings.listInServers = on
-                    if mesh.kioskActive { NostrService.shared.publishServerList() }
-                }
-            )) {
-                Text("List in my media servers")
-                    .font(.appBody)
-                    .settingInfo(.shareFIPS)
-            }
-            .tint(Color.havenPurple)
-
-            if listInServers && !configService.config.hasPublicBlossomMirror {
-                Text("Not listed: add a public Blossom server first, so apps without the mesh can still load your media.")
-                    .font(.appCaption)
-                    .foregroundColor(.orange)
-            }
-
             if mesh.kioskActive, let status = mesh.status {
                 kioskStatus(status)
             }
@@ -69,7 +49,7 @@ struct FipsMeshShareSection: View {
         } header: {
             Text("Share With Others")
         } footer: {
-            Text("Kiosk mode keeps the screen on, and anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app pauses kiosk mode, and it turns on again when you come back. Listing links your account to this phone's mesh address in public, and turning it off later doesn't undo that.")
+            Text("Kiosk mode keeps the screen on, and anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
         }
     }
 
