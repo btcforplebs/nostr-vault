@@ -176,8 +176,23 @@ extension HomeVaultLogic {
         }
         if let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }), photo != ownMeshNpub { add("fipsmesh://\(photo)/") }
 
-        guard out.contains(where: { meshNpub(fromEntry: $0) == nil }) else { return nil }
+        // A list naming only home-network servers must not go out either: no
+        // reader outside could open one, and it would publish the home address.
+        guard out.contains(where: isPublicServer) else { return nil }
         return out
+    }
+
+    /// A server a reader without FIPS can reach: not a `fipsmesh://` entry, and
+    /// not an `http(s)://….fips` host either, which only resolves on the mesh
+    /// (Tara's NIP-F1 check). isPublicServer builds on it.
+    static func isReachableWithoutMesh(_ url: String) -> Bool {
+        guard meshNpub(fromEntry: url) == nil, !url.lowercased().hasPrefix("fipsmesh:") else { return false }
+        guard let host = URLComponents(string: url.trimmingCharacters(in: .whitespaces))?.host?.lowercased(), !host.isEmpty else {
+            return false
+        }
+        var h = host
+        while h.hasSuffix(".") { h.removeLast() }
+        return !(h == "fips" || h.hasSuffix(".fips"))
     }
 }
 
@@ -190,6 +205,15 @@ extension HomeVaultLogic {
         guard let seen else { return true }
         if createdAt != seen.createdAt { return createdAt > seen.createdAt }
         return id < seen.id
+    }
+
+    /// Whether a 10063 may replace the list kept for its author, and so pick
+    /// the mesh node a photo is read from: only one its author signed (a relay
+    /// can serve any event under any pubkey), and only if it is newer than the
+    /// one kept. An unsigned one never even moves the stamp, so a forged "newer"
+    /// list cannot shut the real one out (Tara's NIP-F1 check).
+    static func keepsServerList(signedByAuthor: Bool, createdAt: Int64, id: String, than seen: (createdAt: Int64, id: String)?) -> Bool {
+        signedByAuthor && isNewer(createdAt: createdAt, id: id, than: seen)
     }
 }
 
@@ -251,7 +275,7 @@ extension HomeVaultLogic {
     /// Public means reachable by any reader: not a mesh name, not a home
     /// network or Tailscale host, which would also tell readers about it.
     static func isPublicServer(_ server: String) -> Bool {
-        guard server.hasPrefix("https://"), !server.contains(".fips"),
+        guard server.hasPrefix("https://"), !server.contains(".fips"), isReachableWithoutMesh(server),
               let host = URL(string: server)?.host else { return false }
         return !HavenConfig.isPrivateNetworkHost(host)
     }

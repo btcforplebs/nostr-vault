@@ -181,6 +181,41 @@ final class ServerListMergeTests: XCTestCase {
                                                     ownMeshNpub: me, photoNpub: third))
     }
 
+    func testAHomeAddressOnlyListIsNeverPublished() {
+        // Tod 2026-10-21: no home address is ever published, so a LAN, Tailscale
+        // or plain-http entry does not let a 10063 go out on its own.
+        for home in ["http://192.168.1.5:4443", "https://192.168.1.5:4443/", "https://box.tail1234.ts.net/",
+                     "https://100.101.102.103/", "https://mac.local/", "http://a.example/", "https://x.FIPS./"] {
+            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [], current: [home], previouslyManaged: [], ownMeshNpub: nil),
+                         home)
+            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [home], current: [], previouslyManaged: [], ownMeshNpub: me,
+                                                        photoNpub: third), home)
+            XCTAssertFalse(HomeVaultLogic.isPublicServer(home), home)
+        }
+        // Next to a real public server it is kept, as another phone's entry.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["http://192.168.1.5:4443"], current: ["https://a.example/"],
+                                                      previouslyManaged: [], ownMeshNpub: nil),
+                       ["https://a.example/", "http://192.168.1.5:4443"])
+    }
+
+    func testAFipsHostIsMeshOnlyAndNeverCountsAsAPublicServer() {
+        // Tara's NIP-F1 check: http://npub….fips:port resolves only on the mesh; a list of only that must not go out.
+        for meshOnly in ["http://\(kiosk).fips:8080/", "https://\(kiosk).fips/", "http://\(kiosk).FIPS./", "https://box.fips", "http://fips/"] {
+            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [], current: [meshOnly], previouslyManaged: [], ownMeshNpub: nil),
+                         meshOnly)
+            XCTAssertFalse(HomeVaultLogic.isReachableWithoutMesh(meshOnly), meshOnly)
+        }
+        for usable in ["https://a.example/", "https://fips.example.com/", "https://notfips/", "http://192.168.1.5:4443"] {
+            XCTAssertTrue(HomeVaultLogic.isReachableWithoutMesh(usable), usable)
+        }
+        XCTAssertFalse(HomeVaultLogic.isReachableWithoutMesh(mesh(kiosk)))
+        XCTAssertFalse(HomeVaultLogic.isReachableWithoutMesh("not a url"))
+        // With a real public server, a .fips entry is kept, after it.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: [], current: ["https://a.example/", "http://\(kiosk).fips:8080/"],
+                                                      previouslyManaged: [], ownMeshNpub: nil),
+                       ["https://a.example/", "http://\(kiosk).fips:8080/"])
+    }
+
     func testMalformedMeshEntriesAreDropped() {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", "fipsmesh://\(kiosk)/evil"], current: [],
                                                  previouslyManaged: [], ownMeshNpub: nil)
@@ -195,6 +230,15 @@ final class ServerListStampTests: XCTestCase {
         XCTAssertFalse(HomeVaultLogic.isNewer(createdAt: 4, id: "a", than: (5, "z")), "a stale replay")
         XCTAssertTrue(HomeVaultLogic.isNewer(createdAt: 5, id: "a", than: (5, "b")))
         XCTAssertFalse(HomeVaultLogic.isNewer(createdAt: 5, id: "b", than: (5, "b")), "the same event again")
+    }
+
+    func testAnUnsignedListIsNeverKeptAndNeverBeatsTheRealOne() {
+        // Tara's NIP-F1 check: a relay can serve any 10063 under any author. Only a signed one picks the mesh node.
+        XCTAssertFalse(HomeVaultLogic.keepsServerList(signedByAuthor: false, createdAt: 9, id: "a", than: nil))
+        XCTAssertFalse(HomeVaultLogic.keepsServerList(signedByAuthor: false, createdAt: 99, id: "a", than: (5, "z")),
+                       "a forged newer list")
+        XCTAssertTrue(HomeVaultLogic.keepsServerList(signedByAuthor: true, createdAt: 6, id: "a", than: (5, "z")))
+        XCTAssertFalse(HomeVaultLogic.keepsServerList(signedByAuthor: true, createdAt: 4, id: "a", than: (5, "z")), "newest wins")
     }
 }
 
