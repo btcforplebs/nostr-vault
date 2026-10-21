@@ -460,7 +460,7 @@ fun RelayMatrixScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
                     ) {
-                        Text("RELAY", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        Text("Relay", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f))
                         Job.columns.forEach {
                             // "SEARCH" is a hair wider than its column; let it spill
@@ -611,6 +611,7 @@ fun RelayMatrixScreen(
                     viewModel.apply(RelayMatrix.removing(selected.url, lists))
                     selectedKey = null
                 },
+                onDone = { selectedKey = null },
             )
         }
     }
@@ -716,21 +717,28 @@ private fun RelayDetail(
     onSet: (Job, Boolean) -> Unit,
     onBlock: () -> Unit,
     onRemove: () -> Unit,
+    onDone: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+        // iOS: the relay's name as an inline title, Done, then its speed row.
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).background(healthColor(result), CircleShape))
-            Spacer(Modifier.width(8.dp))
-            Text(RelayMatrix.label(row.url), color = PrimaryText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(RelayMatrix.label(row.url), color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            TextButton(onClick = onDone) { Text("Done", color = accent, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
         }
-        Text(
-            row.url + when (result) {
-                is RelayProbeResult.Answered -> " · ${result.milliseconds} ms from this device"
-                RelayProbeResult.Unreachable -> " · not answering"
-                else -> ""
-            },
-            color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)) {
+            Box(Modifier.size(10.dp).background(healthColor(result), CircleShape))
+            Text(row.url, color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        when (result) {
+            is RelayProbeResult.Answered -> "${result.milliseconds} ms"
+            RelayProbeResult.Unreachable -> "Not answering"
+            else -> null
+        }?.let { speed ->
+            Row(Modifier.padding(bottom = 12.dp)) {
+                Text("Speed from this device", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text(speed, color = SecondaryText, fontSize = 15.sp)
+            }
+        }
         Job.columns.forEach { JobSwitch(it, row.has(it), accent, onSet) }
         Text("ADVANCED", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
