@@ -26,9 +26,11 @@ export const AUTH_WAIT = { nip46: 20_000, other: 8000 }
 const norm = u => { try { return normalizeURL(u) } catch { return "" } }
 const declined = new Set() // relays whose AUTH the signer didn't sign (or left unanswered)
 export const forgetDeclinedAuth = () => declined.clear()
-// relay connection -> { challenge, p }: its AUTH for that challenge, in flight or done, shared by every read on it. A
-// reconnect brings a new challenge (nostr-tools resets it, and the relay's own AUTH state, on every connect), so an
-// AUTH counts only for the challenge it answered.
+// relay -> { conn, who, p }: the one AUTH tried on its current connection, in flight or done, shared by every read on
+// it. One per connection, whatever the challenge: nostr-tools keeps a connection's first AUTH, so a second one is
+// never sent (a relay that hands out a new challenge with every "auth-required" would otherwise be asked, and the
+// signer prompted, hundreds of times a second: Tron, #879). A reconnect is a new connection (nostr-tools makes a new
+// connectionPromise, and resets its own AUTH state), so it gets its own AUTH.
 const authed = new WeakMap()
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 // A race that doesn't leave its timer running once the work is done.
@@ -43,22 +45,29 @@ async function challengeOf(relay) {
   return relay.challenge
 }
 
-/** AUTH this connection for its current challenge, once: -> the challenge answered, or null. `sign(url, template)`
- *  signs, or throws when the signer won't. `drop(url, relay)` drops a connection whose AUTH failed at the relay. */
-async function authOnce(relay, url, sign, authWait, drop) {
+/** AUTH this connection once: -> { conn } (the connection it let in) when it's in, or null. A wrapper, because an
+ *  async function's result would unwrap the connection's promise. `sign(url, template)` signs, or throws when
+ *  the signer won't; `who` is the account signing. `drop(url, relay)` drops a connection that can't be used. */
+async function authOnce(relay, url, sign, who, authWait, drop) {
   const challenge = await challengeOf(relay)
-  if (!challenge) return null
+  const conn = relay.connectionPromise
+  if (!challenge || !conn) return null
   const cached = authed.get(relay)
-  if (cached?.challenge === challenge) return cached.p
+  if (cached?.conn === conn) {
+    if (cached.who === who) return cached.p
+    // AUTHed as another account: this connection can't AUTH again, so it goes, and the next look starts afresh.
+    try { drop(url, relay) } catch {}
+    return null
+  }
   const p = (async () => {
     let signed
     // A prompt left open, or a bunker that never answers, counts as declined: quiet until Refresh / Try again.
-    try { signed = await within(authWait, sign(url, makeAuthEvent(relay.url, challenge))) } catch { declined.add(url); return null }
-    try { await within(authWait, relay.auth(async () => signed)); return challenge }
+    try { signed = await within(authWait, sign(url, makeAuthEvent(relay.url, challenge))) }
+    catch { declined.add(url); authed.delete(relay); return null } // nothing went to the relay: the connection can still AUTH later
+    try { await within(authWait, relay.auth(async () => signed)); return { conn } }
     catch { try { drop(url, relay) } catch {} ; return null } // refused or unanswered: that socket keeps the failure
   })()
-  authed.set(relay, { challenge, p })
-  p.then(ok => { if (!ok && authed.get(relay)?.p === p) authed.delete(relay) })
+  authed.set(relay, { conn, who, p })
   return p
 }
 
@@ -67,9 +76,9 @@ async function authOnce(relay, url, sign, authWait, drop) {
  * closed; `onclose([{ url, reason }])` once every relay has closed. -> { close() }, which closes every REQ, the
  * re-sent ones included.
  */
-export function authedSubscribe(net, urls, filter, { onevent, oneose, onclose, maxWait = 8000, sign, authWait = AUTH_WAIT.other, drop = dropConnection(net) } = {}) {
+export function authedSubscribe(net, urls, filter, { onevent, oneose, onclose, maxWait = 8000, sign, who = "", authWait = AUTH_WAIT.other, drop = dropConnection(net) } = {}) {
   const list = [...new Set(urls.map(norm).filter(Boolean))]
-  // `answered`: the challenge this relay's REQ was let in on; a reconnect's new challenge is AUTHed again.
+  // `answered`: the connection this relay's REQ was AUTHed on. Refused again on it means no further AUTH can help.
   const relays = new Map(list.map(url => [url, { sub: null, eosed: false, done: false, reason: "", answered: null }]))
   const seen = new Set()
   let closed = false, eoseSent = false, closeSent = false
@@ -94,10 +103,11 @@ export function authedSubscribe(net, urls, filter, { onevent, oneose, onclose, m
         const why = String(reason ?? "")
         if (closed || !why.startsWith("auth-required")) return end(r, why)
         if (declined.has(url)) return end(r, NOT_SIGNED)
-        authOnce(relay, url, sign, authWait, drop).then(ch => {
-          if (!ch) return end(r, declined.has(url) ? NOT_SIGNED : AUTH_FAILED)
-          if (ch === r.answered) return end(r, why) // AUTHed for this very challenge and still refused: don't loop
-          r.answered = ch
+        if (r.answered && r.answered === relay.connectionPromise) return end(r, AUTH_FAILED) // already AUTHed on this connection
+        authOnce(relay, url, sign, who, authWait, drop).then(ok => {
+          if (!ok) return end(r, declined.has(url) ? NOT_SIGNED : AUTH_FAILED)
+          if (ok.conn === r.answered) return end(r, AUTH_FAILED)
+          r.answered = ok.conn
           open(url, relay, r)
         })
       },
@@ -107,7 +117,19 @@ export function authedSubscribe(net, urls, filter, { onevent, oneose, onclose, m
   if (!list.length) queueMicrotask(check)
   for (const url of list) {
     const r = relays.get(url)
-    net.ensureRelay(url, { connectionTimeout: maxWait }).then(relay => open(url, relay, r), err => end(r, `connection failure: ${err?.message ?? err}`))
+    const connect = () => net.ensureRelay(url, { connectionTimeout: maxWait })
+    connect().then(async relay => {
+      // A connection AUTHed as another account would carry this one's REQs under that identity: start a new one.
+      const cached = authed.get(relay)
+      if (cached && cached.who !== who && cached.conn === relay.connectionPromise) {
+        authed.delete(relay)
+        try { drop(url, relay) } catch {}
+        relay = await connect()
+      }
+      // Another read may have just dropped it (as above): use the pool's current connection.
+      if (net.relays && net.relays.get(url) !== relay) relay = await connect()
+      open(url, relay, r)
+    }).catch(err => end(r, `connection failure: ${err?.message ?? err}`))
   }
   return {
     close() {
@@ -122,12 +144,12 @@ const dropConnection = net => (url, relay) => { if (!net.relays || net.relays.ge
 
 /** A query that answers AUTH and always ends: the events in by EOSE everywhere, or by the time an AUTH and a full
  *  wait could take. -> events */
-export function queryWithAuth(net, urls, filter, { maxWait = 8000, authWait = AUTH_WAIT.other, sign, drop = dropConnection(net) } = {}) {
+export function queryWithAuth(net, urls, filter, { maxWait = 8000, authWait = AUTH_WAIT.other, sign, who, drop = dropConnection(net) } = {}) {
   return new Promise(resolve => {
     const events = []
     let done = false, sub = null
     const finish = () => { if (done) return; done = true; clearTimeout(timer); sub?.close(); resolve(events) }
     const timer = setTimeout(finish, maxWait + 2 * authWait + 2000) // a sign and an AUTH answer, each up to authWait
-    sub = authedSubscribe(net, urls, filter, { maxWait, authWait, sign, drop, onevent: ev => events.push(ev), oneose: finish, onclose: finish })
+    sub = authedSubscribe(net, urls, filter, { maxWait, authWait, sign, who, drop, onevent: ev => events.push(ev), oneose: finish, onclose: finish })
   })
 }

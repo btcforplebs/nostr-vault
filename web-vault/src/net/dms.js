@@ -15,7 +15,7 @@ import { deviceKey } from "../haven/vault.js"
 import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
 import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
-import { AUTH_WAIT, authedSubscribe, queryWithAuth } from "./dm-read-auth.js"
+import { AUTH_WAIT, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -140,6 +140,7 @@ export function resetMessages(pubkey) {
   opened.clear()
   waiting.clear()
   refusals.clear()
+  forgetDeclinedAuth() // another account's declines aren't this one's
   changed()
 }
 
@@ -258,7 +259,7 @@ export function loadMessages(ctx, relays, opts = {}) {
 }
 
 // The DM reads answer AUTH (dm-read-auth.js): a Haven inbox hands its wraps only to its owner. `net` is for tests.
-const readSigning = ctx => ({ sign: (url, template) => authFor(ctx, url)(template), authWait: ctx.session?.method === "nip46" ? AUTH_WAIT.nip46 : AUTH_WAIT.other })
+const readSigning = ctx => ({ sign: (url, template) => authFor(ctx, url)(template), who: ctx.session?.pubkey, authWait: ctx.session?.method === "nip46" ? AUTH_WAIT.nip46 : AUTH_WAIT.other })
 async function load({ vault, session, signer }, relays, { crypto, net = pool, wait = 8000, chat, clock = Date.now,
   query = (r, f, o) => queryWithAuth(net, r, f, { ...o, ...readSigning({ session, signer }) }) } = {}) {
   const me = session.pubkey

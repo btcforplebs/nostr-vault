@@ -187,3 +187,55 @@ test("an inbox that refuses the AUTH is dropped, so the next look starts a fresh
     assert.equal(getMessages().loaded, true)
   } finally { net.destroy() }
 })
+
+// Tron, #879: a relay that hands out a new challenge with every "auth-required" (and never lets the reader in).
+// nostr-tools sends only a connection's first AUTH, so further ones can't help: one AUTH per connection, then stop.
+function rotatingRelay(log) {
+  let n = 0
+  return class RotatingSocket {
+    static OPEN = 1; static CLOSING = 2; static CLOSED = 3
+    constructor(url) { this.url = url; this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen?.(); this.reply(["AUTH", `rot-${++n}`]) }) }
+    reply(m) { setTimeout(() => this.readyState === 1 && this.onmessage?.({ data: JSON.stringify(m) })) }
+    send(raw) {
+      const [type, a] = JSON.parse(raw)
+      if (type === "AUTH") { log.auth++; return this.reply(["OK", a.id, true, ""]) }
+      if (type === "REQ") { log.req++; this.reply(["AUTH", `rot-${++n}`]); return this.reply(["CLOSED", a, "auth-required: again"]) }
+    }
+    close() { this.readyState = 3; this.onclose?.({}) }
+  }
+}
+
+test("a relay that rotates its challenge on every refusal gets one AUTH per connection, not a loop", async () => {
+  const log = { auth: 0, req: 0 }, count = { n: 0 }
+  const net = new SimplePool({ websocketImplementation: rotatingRelay(log) })
+  const ctx = { vault: {}, session, signer: signerOf(A, { count }) }
+  resetMessages(pk(A))
+  try {
+    const t0 = Date.now()
+    await loadMessages(ctx, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, wait: 300 })
+    assert.ok(Date.now() - t0 < 3000, "the load ends on its own, not by the overall timer")
+    const close = watchMessages(ctx, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net })
+    await new Promise(r => setTimeout(r, 500))
+    close()
+    assert.equal(count.n, 1, "the signer was asked once")
+    assert.equal(log.auth, 1)
+    assert.ok(log.req <= 8, `REQs stay bounded (3 queries + 1 watch, each at most twice): ${log.req}`)
+  } finally { net.destroy() }
+})
+
+test("a connection AUTHed as one account is dropped, not reused, when another account reads", async () => {
+  const log = []
+  const net = new SimplePool({ websocketImplementation: havenInbox(pk(A), [], log) })
+  const closed = []
+  const close = net.close.bind(net)
+  net.close = urls => { closed.push(...urls); close(urls) }
+  resetMessages(pk(A))
+  try {
+    await loadMessages({ vault: {}, session, signer: signerOf(A) }, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, wait: 300 })
+    assert.deepEqual(closed, [])
+    // Signed out and in as B without a reload: B's REQ is refused on A's connection, which can't AUTH again.
+    const sessionB = { method: "nip07", pubkey: pk(B) }
+    await loadMessages({ vault: {}, session: sessionB, signer: signerOf(B) }, [RELAY], { crypto: cryptoOf(B), chat: fakeChat(), net, wait: 300 })
+    assert.ok(closed.length > 0, "A's connection was dropped")
+  } finally { net.destroy() }
+})
