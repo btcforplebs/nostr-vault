@@ -9,6 +9,7 @@ import { onQuotes, parseRef, quoteSource } from "../net/quotes.js"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { splitHashtags } from "../net/hashtags.js"
 import { mediaType } from "../net/media.js"
+import { meshHost } from "../net/fips-ref.js"
 import { noteMedia } from "../net/note-media.js"
 import { NoteMedia } from "./NoteMedia.jsx"
 import { inlineMarks } from "../net/inline-md.js"
@@ -44,6 +45,9 @@ export function NoteText({ content, tags, author, depth = 0, dm = false, memoryO
       {parts.map((s, i) => {
         if (i % 2 === 0) return withMarks(s, i)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
+        // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
+        // send the name to DNS.
+        if (meshHost(s)) return <span key={i}>{s}</span>
         const type = mediaType(s)
         if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
         if (type === "video" && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
@@ -62,7 +66,7 @@ export function cardLinks(parts) {
   const out = []
   for (let i = 1; i < parts.length; i += 2) {
     const s = parts[i]
-    if (/^https?:\/\//i.test(s) && !mediaType(s) && !out.includes(s)) out.push(s)
+    if (/^https?:\/\//i.test(s) && !mediaType(s) && !meshHost(s) && !out.includes(s)) out.push(s)
   }
   return out.slice(0, MAX_LINK_CARDS)
 }

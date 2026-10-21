@@ -248,3 +248,14 @@ test("a bare npub without nostr: stays plain text", () => {
 test("non-string content is shown as text", () => {
   assert.deepEqual(parts(42), ["42"])
 })
+
+test("a .fips link left in the text is plain text: no <img>, <video>, <a> or link card", async () => {
+  const { cardLinks } = await import("../src/components/NoteText.jsx")
+  const img = "http://box.fips/" + "c".repeat(64) + ".jpg", vid = "https://box.fips./v.mp4", page = "https://box.fips/page"
+  for (const props of [{ dm: true, images: true }, { dm: true }, { images: false }]) {
+    const els = [NoteText({ content: `${img} ${vid} ${page}`, ...props }).props.children].flat(Infinity).filter(c => c && typeof c !== "string")
+    assert.deepEqual(els.map(e => e.type), ["span", "span", "span"], JSON.stringify(props))
+    assert.deepEqual(els.map(e => e.props.children), [img, vid, page])
+  }
+  assert.deepEqual(cardLinks(["", page, " ", "https://x.example/a", ""]), ["https://x.example/a"])
+})
