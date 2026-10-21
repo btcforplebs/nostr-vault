@@ -20,6 +20,8 @@ export const PHOTO_TIMEOUT_MS = 90_000
 export const MAX_VAULTS = 3
 /** Photos kept as blob: URLs once nothing on the page shows them; past this the oldest is released. */
 export const MAX_KEPT = 60
+/** Longest a vault stays allowed after a good read while its stream closes (blob-get lingers 5 s). */
+export const CLOSE_MS = 10_000
 /** With no photo reading, the reader is stopped after this long (sockets and timer gone). */
 export const IDLE_STOP_MS = 60_000
 
@@ -114,8 +116,13 @@ export function createFipsMedia({
       } finally {
         entry.attempt = undefined
         // The slot frees now; the vault stays allowed until a polite close has finished, so its ACK/FIN still gets in.
-        if (closed) Promise.resolve(closed).then(() => unask(vault), () => unask(vault))
-        else unask(vault)
+        if (closed) {
+          // Capped: a close that never settles must not leave the vault allowed into the next reader.
+          let done = false, t
+          const end = () => { if (!done) { done = true; clearTimer(t); unask(vault) } }
+          t = setTimer(end, CLOSE_MS)
+          Promise.resolve(closed).then(end, end)
+        } else unask(vault)
         release()
       }
     }

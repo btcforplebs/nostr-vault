@@ -3,7 +3,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode } from "nostr-tools/nip19"
 import { fipsRef, meshVaults } from "../src/net/fips-ref.js"
-import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
+import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, CLOSE_MS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
 import { noteMedia } from "../src/net/note-media.js"
 
 const A = "a1".repeat(32), B = "b2".repeat(32), SHA = "487dc1578912f424773b0befc4eff491f026f0f24652f1d4ff66a85639455217"
@@ -278,4 +278,16 @@ test("the gate tells mounted photos when it changes, and only when it does", () 
     setMeshPhotosOn(false, st)
     assert.equal(n, base + 2, "the switch")
   } finally { off(); setMeshPeople(undefined, []) }
+})
+
+test("a close that never settles still lets the vault go after CLOSE_MS", async () => {
+  const timers = []
+  const fm = createFipsMedia({ allow: () => true, setTimer: (fn, ms) => (timers.push({ fn, ms }), timers.length), clearTimer: () => {},
+    startReader: async () => ({ getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png", closed: new Promise(() => {}) }) }) })
+  assert.match(await fm.photo([A], SHA), /^blob:/)
+  assert.deepEqual([...fm.allowed], [A])
+  const cap = timers.find(t => t.ms === CLOSE_MS)
+  assert.ok(cap, "a cap is set")
+  cap.fn()
+  assert.equal(fm.allowed.size, 0)
 })
