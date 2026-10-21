@@ -279,18 +279,19 @@ fun DMThreadScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable { onProfileClick(counterpartyPubkey) },
                     ) {
-                        AsyncImage(
-                            model = counterpartyProfile?.pictureURL,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape),
+                        // iOS: a 28pt avatar with the generated fallback, name in 15 semibold.
+                        AvatarImage(
+                            url = counterpartyProfile?.pictureURL,
+                            pubkey = counterpartyPubkey,
+                            size = 28.dp,
+                            displayName = counterpartyProfile?.bestName,
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = counterpartyProfile?.bestName
-                                ?: counterpartyPubkey.take(8) + "...",
+                                ?: counterpartyPubkey.take(8) + "\u2026",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
