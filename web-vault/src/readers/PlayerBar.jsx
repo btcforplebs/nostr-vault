@@ -3,6 +3,7 @@
 // (off, all, one), its Wavlake page, and ✕ to stop the music and hide the bar.
 import { useEffect, useState } from "preact/hooks"
 import * as wl from "./wavlake.js"
+import { UpNext } from "./UpNext.jsx"
 import { current, cycleRepeat, hasNext, next, onPlayer, playerState, previous, seek, stop, toggle, toggleShuffle } from "./player.js"
 
 const REPEAT_LABEL = { off: "Repeat off", all: "Repeat all", one: "Repeat one" }
@@ -13,12 +14,14 @@ const Glyph = ({ d, one = false }) => (
     <path d={d} />{one && <text x="12" y="15.5" font-size="10" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">1</text>}
   </svg>
 )
+const QUEUE = "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
 const SHUFFLE = "M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"
 const REPEAT = "M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"
 
 /** `onOpen`: open the artist or album page ({ type, artist } / { type, album }), when the bar sits in Music. */
 export function PlayerBar({ onOpen }) {
   const [s, setS] = useState(playerState)
+  const [queue, setQueue] = useState(false)
   useEffect(() => onPlayer(setS), [])
   const t = current(s)
   if (!t) return null
@@ -48,7 +51,9 @@ export function PlayerBar({ onOpen }) {
         <button type="button" class="icon play" onClick={toggle} aria-label={s.playing ? "Pause" : "Play"}>{s.playing ? "⏸" : "▶"}</button>
         <button type="button" class="icon" onClick={next} aria-label="Next" disabled={!hasNext(s)}>⏭</button>
         <button type="button" class={`icon ${s.repeat !== "off" ? "on" : ""}`} onClick={cycleRepeat} aria-label={REPEAT_LABEL[s.repeat]} title={REPEAT_LABEL[s.repeat]}><Glyph d={REPEAT} one={s.repeat === "one"} /></button>
+        <button type="button" class={`icon ${queue ? "on" : ""}`} onClick={() => setQueue(!queue)} aria-pressed={queue} aria-label="Up Next" title="Up Next"><Glyph d={QUEUE} /></button>
       </div>
+      {queue && <UpNext state={s} />}
     </div>
   )
 }

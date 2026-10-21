@@ -87,6 +87,15 @@ export function toggleShuffle(random) {
   }
 }
 
+/** The songs after this one, with their places in the queue (NowPlayingView's Up Next). */
+export const upNext = (s = state) => s.queue.slice(s.index + 1).map((track, i) => ({ track, position: s.index + 1 + i }))
+
+/** Plays the queue's song at `position`, from Up Next. */
+export function jump(position) {
+  if (position === state.index || !state.queue[position]) return
+  load(position)
+}
+
 /** Off → repeat all → repeat one → off. */
 export const cycleRepeat = () => set({ repeat: REPEATS[(REPEATS.indexOf(state.repeat) + 1) % REPEATS.length] })
 
