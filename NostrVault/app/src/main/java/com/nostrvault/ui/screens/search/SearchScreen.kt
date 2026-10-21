@@ -5,6 +5,10 @@ import com.nostrvault.data.model.SearchFilter
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -18,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -26,14 +29,10 @@ import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.TrustWebDialog
-import com.nostrvault.ui.navigation.HashtagLink
 import com.nostrvault.ui.navigation.LocalOpenHashtag
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.navigation.TabReselect
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.flow.map
@@ -57,6 +56,7 @@ fun SearchScreen(
     val searchFilter by viewModel.filter.collectAsState()
     val foundAnything by viewModel.foundAnything.collectAsState()
     val sources by viewModel.sources.collectAsState()
+    val pendingNoteId by viewModel.pendingNoteId.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val trendingHashtags by viewModel.trendingHashtags.collectAsState()
     val suggestedProfiles by viewModel.suggestedProfiles.collectAsState()
@@ -90,6 +90,8 @@ fun SearchScreen(
     val showLinks = SearchResultSections.shows(resultFilter, SearchResultFilter.LINKS) && linkResults.isNotEmpty()
     val openHashtag = LocalOpenHashtag.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val hideKeyboard = { keyboard?.hide(); focusManager.clearFocus() }
     val namedPeople = remember(recommendedPeople, profiles) { namedRecommendedPeople(recommendedPeople, profiles) }
 
     // One note card for search results and "For you" picks alike.
@@ -166,13 +168,7 @@ fun SearchScreen(
                                 modifier = Modifier.size(40.dp),
                             ) {
                                 Icon(
-                                    imageVector = when (filter) {
-                                        SearchResultFilter.ALL -> NostrVaultIcons.Layers
-                                        SearchResultFilter.USERS -> NostrVaultIcons.Profile
-                                        SearchResultFilter.NOTES -> NostrVaultIcons.Document
-                                        SearchResultFilter.HASHTAGS -> NostrVaultIcons.TagIcon
-                                        SearchResultFilter.LINKS -> NostrVaultIcons.LinkIcon
-                                    },
+                                    imageVector = filter.icon,
                                     contentDescription = filter.displayName,
                                     tint = if (isSelected) colors.primary else SecondaryText,
                                     modifier = Modifier.size(25.dp),
@@ -190,37 +186,14 @@ fun SearchScreen(
                     }
                 }
 
-                // Search text field
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = viewModel::setQuery,
-                    placeholder = { Text("Search users, notes, hashtags...", color = PlaceholderText) },
-                    leadingIcon = {
-                        Icon(NostrVaultIcons.Search, null, tint = SecondaryText)
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.setQuery("") }) {
-                                Icon(NostrVaultIcons.Dismiss, "Clear", tint = SecondaryText)
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    // "#bitcoin" opens the hashtag's feed instead of a word search.
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    // Anything else is already searching as it is typed.
-                    keyboardActions = KeyboardActions(onSearch = {
-                        keyboard?.hide()
-                        val tag = HashtagLink.fromSearchQuery(query)
-                        if (tag != null && openHashtag != null) openHashtag(tag)
-                    }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = SeparatorColor,
-                        cursorColor = colors.primary,
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                // Return only hides the keyboard, as on the iPhone: typing
+                // already searches. The clear (x) also puts the tab back on All.
+                SearchQueryField(
+                    query = query,
+                    onQueryChange = viewModel::setQuery,
+                    onClear = { viewModel.clearSearch(); hideKeyboard() },
+                    onSubmit = hideKeyboard,
+                    accent = colors.primary,
                 )
                 SearchFilterCaption(filter = searchFilter, onClear = { viewModel.setFilter(SearchFilter.ALL) }, accent = colors.primary)
             }
@@ -257,6 +230,8 @@ fun SearchScreen(
             }
         },
     ) { padding ->
+      // A tap on the background hides the keyboard (iOS onTapGesture); rows keep their own taps.
+      Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { hideKeyboard() } }) {
         if (query.length < 2) {
             // Empty state with discovery sections
             val hasDiscovery = recentSearches.isNotEmpty() ||
@@ -371,176 +346,91 @@ fun SearchScreen(
                     }
                 }
             } else {
-                // Fallback empty state
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = NostrVaultIcons.Search,
-                            contentDescription = null,
-                            tint = TertiaryText,
-                            modifier = Modifier.size(48.dp),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = "Search",
-                            color = SecondaryText,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Find users, notes, hashtags and links\nOr paste a note1 or nevent1 ID",
-                            color = TertiaryText,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+                SearchFallbackState(Modifier.padding(padding))
             }
         } else {
-            LazyColumn(
-                state = resultsListState,
-                contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding(),
-                    bottom = padding.calculateBottomPadding() + 88.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = padding.calculateTopPadding()),
             ) {
-                // Per-source status: which sources are still searching, what
-                // each found, and why a silent one gave no answer.
+                // Per-source status stays above the results while they stream in.
                 if (sources.isNotEmpty()) {
-                    item(key = "search-sources") {
-                        SearchSourcesRow(sources = sources, colors = colors)
-                    }
+                    SearchSourcesRow(sources = sources)
+                    HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }
-
-                if (isSearching && !anyResults) {
-                    item(key = "search-spinner") {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                        ) {
-                            CircularProgressIndicator(color = colors.primary)
-                        }
-                    }
-                }
-
-                // Profiles section. Every match, the way the iPhone lists them;
-                // the Users chip is how to see only people.
-                if (showUsers) {
-                    item {
-                        Text(
-                            text = "Users",
-                            color = SecondaryText,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                val stateModifier = Modifier.weight(1f).padding(bottom = padding.calculateBottomPadding())
+                if (!anyResults) {
+                    if (isSearching) {
+                        SearchLoadingState(lookingUpNote = pendingNoteId != null, accent = colors.primary, modifier = stateModifier)
+                    } else {
+                        SearchNoResultsState(
+                            showClearFilter = searchFilter.isActive && foundAnything,
+                            onClearFilter = { viewModel.setFilter(SearchFilter.ALL) },
+                            accent = colors.primary,
+                            modifier = stateModifier,
                         )
                     }
-                    items(results.profiles, key = { it.pubkey }) { profile ->
-                        SearchProfileRow(
-                            profile = profile,
-                            profiles = profiles,
-                            onClick = { onProfileClick(profile.pubkey) },
-                        )
+                } else {
+                    val firstSection = when {
+                        showUsers -> SearchResultFilter.USERS
+                        showNotes -> SearchResultFilter.NOTES
+                        showHashtags -> SearchResultFilter.HASHTAGS
+                        else -> SearchResultFilter.LINKS
                     }
-                    item {
-                        HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
-                        Spacer(Modifier.height(8.dp))
-                    }
-                }
-
-                // Notes section
-                if (showNotes) {
-                    item {
-                        Text(
-                            text = "Notes",
-                            color = SecondaryText,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                    }
-                    items(results.notes, key = { it.id }) { note -> noteCard(note) }
-                }
-
-                // Hashtags written in the matching notes
-                if (showHashtags) {
-                    item(key = "hashtags-header") {
-                        SearchSectionHeader("Hashtags")
-                    }
-                    items(hashtagResults, key = { "tag-$it" }) { tag ->
-                        SearchHashtagRow(
-                            tag = tag,
-                            onClick = { viewModel.setQuery("#$tag") },
-                            colors = colors,
-                        )
-                    }
-                    item(key = "hashtags-end") { Spacer(Modifier.height(8.dp)) }
-                }
-
-                // Links the matching notes contain
-                if (showLinks) {
-                    item(key = "links-header") {
-                        SearchSectionHeader("Links")
-                    }
-                    items(linkResults, key = { "link-${it.url}" }) { link ->
-                        SearchLinkRow(link = link, colors = colors)
-                    }
-                    item(key = "links-end") { Spacer(Modifier.height(8.dp)) }
-                }
-
-                // No results
-                if (!isSearching && !anyResults) {
-                    item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("No results found", color = SecondaryText, fontSize = 15.sp)
-                                // The filter, not the query, is what emptied the screen.
-                                if (searchFilter.isActive && foundAnything) {
-                                    TextButton(onClick = { viewModel.setFilter(SearchFilter.ALL) }) {
-                                        Text("Clear filter", color = colors.primary, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
+                    LazyColumn(
+                        state = resultsListState,
+                        contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 88.dp),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    ) {
+                        // Every matching person, the way the iPhone lists them;
+                        // the Users tab is how to see only people.
+                        if (showUsers) {
+                            item(key = "users-header") { SearchSectionHeader("Users", firstSection == SearchResultFilter.USERS) }
+                            itemsIndexed(results.profiles, key = { _, it -> it.pubkey }) { i, profile ->
+                                SearchProfileRow(
+                                    profile = profile,
+                                    profiles = profiles,
+                                    onClick = { onProfileClick(profile.pubkey) },
+                                    modifier = Modifier.searchSectionRow(last = i == results.profiles.lastIndex),
+                                )
                             }
                         }
-                    }
-                } else if (!isSearching && !showUsers && !showNotes && !showHashtags && !showLinks) {
-                    // The query matched something, just not in the open tab;
-                    // a blank screen there reads as a bug.
-                    item(key = "empty-filter") {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 40.dp),
-                        ) {
-                            Text(
-                                "No ${resultFilter.displayName.lowercase()} matched \u201C${query.trim()}\u201D",
-                                color = SecondaryText,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text("Other tabs have results.", color = TertiaryText, fontSize = 12.sp)
+                        if (showNotes) {
+                            item(key = "notes-header") { SearchSectionHeader("Notes", firstSection == SearchResultFilter.NOTES) }
+                            items(results.notes, key = { it.id }) { note -> noteCard(note) }
+                        }
+                        // Hashtags written in the matching notes
+                        if (showHashtags) {
+                            item(key = "hashtags-header") { SearchSectionHeader("Hashtags", firstSection == SearchResultFilter.HASHTAGS) }
+                            itemsIndexed(hashtagResults, key = { _, it -> "tag-$it" }) { i, tag ->
+                                SearchHashtagRow(
+                                    tag = tag,
+                                    onClick = { viewModel.setQuery("#$tag") },
+                                    colors = colors,
+                                    modifier = Modifier.searchSectionRow(last = i == hashtagResults.lastIndex),
+                                )
+                            }
+                        }
+                        // Links the matching notes contain
+                        if (showLinks) {
+                            item(key = "links-header") { SearchSectionHeader("Links", firstSection == SearchResultFilter.LINKS) }
+                            itemsIndexed(linkResults, key = { _, it -> "link-${it.url}" }) { i, link ->
+                                SearchLinkRow(
+                                    link = link,
+                                    colors = colors,
+                                    modifier = Modifier.searchSectionRow(last = i == linkResults.lastIndex),
+                                )
+                            }
+                        }
+                        if (!showUsers && !showNotes && !showHashtags && !showLinks) {
+                            item(key = "empty-filter") { SearchEmptyTabState(resultFilter, query) }
                         }
                     }
                 }
             }
         }
+      }
     }
 
     trustWebAuthor?.let { author ->
