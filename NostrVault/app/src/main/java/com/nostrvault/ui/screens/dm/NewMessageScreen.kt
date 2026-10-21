@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import com.nostrvault.ui.components.AvatarImage
 import androidx.compose.foundation.layout.*
@@ -69,7 +70,7 @@ class NewMessageViewModel @Inject constructor(
 ) : ViewModel() {
 
     /** Optional pre-locked recipient (e.g. opened from a profile). null = free picker. */
-    val lockedRecipient: String? = savedStateHandle["pubkey"]
+    private val lockedRecipient: String? = savedStateHandle["pubkey"]
 
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
 
@@ -356,7 +357,7 @@ fun NewMessageScreen(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(if (canSend) colors.primary else colors.primary.copy(alpha = 0.3f))
-                            .clickable(enabled = canSend) { viewModel.send(onMessageSent) }
+                            .clickable(enabled = canSend, role = Role.Button) { viewModel.send(onMessageSent) }
                             .padding(horizontal = 18.dp, vertical = 10.dp),
                     ) {
                         Text("Send", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
