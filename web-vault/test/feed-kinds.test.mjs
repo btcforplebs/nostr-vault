@@ -52,3 +52,15 @@ test("a highlight's source: article, then note, then web page", async () => {
   assert.equal(highlightSource([["r", "javascript:alert(1)"]]), null)
   assert.equal(hasKindBody({ kind: 30023 }) && hasKindBody({ kind: 9802 }) && hasKindBody({ kind: 1068 }) && !hasKindBody({ kind: 1 }), true)
 })
+
+test("link cards: web links only, once each, three at most; translate offers only another language", async () => {
+  const { cardLinks } = await import("../src/components/NoteText.jsx")
+  const parts = ["a ", "https://x.example/a", " b ", "https://x.example/p.jpg", " ", "nostr:npub1x", " ", "https://x.example/a", " ", "https://y.example", " ", "https://z.example", " ", "https://w.example", ""]
+  assert.deepEqual(cardLinks(parts), ["https://x.example/a", "https://y.example", "https://z.example"])
+  const { translatable, shouldOffer } = await import("../src/components/TranslateButton.jsx")
+  assert.equal(translatable("Hola amigos https://x.example/a nostr:npub1abc  que tal"), "Hola amigos que tal")
+  assert.equal(shouldOffer("es", "en"), true)
+  assert.equal(shouldOffer("en-GB", "en"), false)
+  assert.equal(shouldOffer(null, "en"), false)
+  assert.equal(shouldOffer("und", "en"), false)
+})

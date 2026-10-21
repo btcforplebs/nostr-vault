@@ -14,6 +14,7 @@ import { replyRefs, replyToPubkey, repostedId } from "../net/thread.js"
 import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
+import { TranslateButton } from "./TranslateButton.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/note-actions.css")
@@ -101,7 +102,8 @@ function NoteBody({ event, memoryOnly, showParent = false }) {
         <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
       </div>
       {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
-      {hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} memoryOnly={memoryOnly} />}
+      {hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} memoryOnly={memoryOnly} linkCards />}
+      {event.kind === 1 && <TranslateButton id={event.id} content={event.content} />}
     </>
   )
 }
