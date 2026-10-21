@@ -5,6 +5,7 @@ import { useEffect, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { ago } from "../components/time.js"
 import { formatSats } from "../net/notifications.js"
 import { fetchPersonLists } from "../net/person.js"
 import { pool } from "../net/pool.js"
@@ -79,8 +80,10 @@ export function EngagementView({ article, events }) {
       {t.commentCount > 0 && <>
         <h2 class="reader-engage-head">Comments · {t.commentCount}</h2>
         {t.topLevel.map(c => (
-          <div key={c.id} class="reader-comment">
-            <a href={`#/profile/${c.pubkey}`} class="reader-byline muted small"><Avatar pubkey={c.pubkey} size={20} /><AuthorName pubkey={c.pubkey} /></a>
+          <div key={c.id} class="reader-comment" role="link" tabindex="0" onClick={e => { if (!e.target.closest("a")) location.hash = `#/thread/${c.id}` }}
+            onKeyDown={e => { if (e.key === "Enter") location.hash = `#/thread/${c.id}` }}>
+            <div class="reader-byline muted small"><a href={`#/profile/${c.pubkey}`} class="reader-author"><Avatar pubkey={c.pubkey} size={20} /><AuthorName pubkey={c.pubkey} /></a>
+              <time datetime={new Date(c.created_at * 1000).toISOString()}>{ago(c.created_at)}</time></div>
             <p class="reader-comment-text">{String(c.content ?? "").trim()}</p>
             {t.replyCounts.get(c.id) > 0 && <span class="muted small">{plural(t.replyCounts.get(c.id), "reply", "replies")}</span>}
           </div>
