@@ -102,21 +102,62 @@ func Initialize(ctx context.Context, model Model, g *ReadyGate) {
 // trust in minutes, not at the next daily refresh.
 const EmptyGraphRefreshInterval = 2 * time.Minute
 
-// RefreshWhileEmpty rebuilds the graph every interval while it names only the
-// owners, so following people fills it soon after. Once it names anyone else
-// this costs nothing; PeriodicRefresh takes over.
-func RefreshWhileEmpty(ctx context.Context, interval time.Duration) {
+// EmptyGraphFallback is the longest an owner-only graph goes without a
+// rebuild even when the follow-list stamp has not moved: follows published
+// only to relays the owner catch-up has not reached yet still arrive.
+const EmptyGraphFallback = 30 * time.Minute
+
+// RefreshWhileEmpty rebuilds the graph while it names only the owners, so
+// following people fills it soon after. Once it names anyone else this costs
+// nothing; PeriodicRefresh takes over.
+//
+// stamp names the owners' newest follow list as stored locally (its event
+// id, or "" when there is none). A tick rebuilds only when that changed since
+// the last rebuild or EmptyGraphFallback has passed; rebuilding an unchanged
+// list every 2 minutes refetched it and rewrote the cache the apps reload,
+// for an answer that could not differ. A nil stamp rebuilds every tick.
+func RefreshWhileEmpty(ctx context.Context, interval time.Duration, stamp func() string) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	var due emptyRefreshDue
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			refreshIfOnlyOwners(ctx, GetInstance())
+		case now := <-ticker.C:
+			instance := GetInstance()
+			if empty, ok := instance.(ownersOnly); !ok || !empty.NamesOnlyOwners() {
+				continue
+			}
+			current := ""
+			if stamp != nil {
+				current = stamp()
+			}
+			if stamp != nil && !due.check(current, now) {
+				continue
+			}
+			if refreshIfOnlyOwners(ctx, instance) {
+				due.ran(current, now)
+			}
 		}
 	}
+}
+
+// emptyRefreshDue remembers the follow-list stamp the last owner-only rebuild
+// saw. The zero value is due at once.
+type emptyRefreshDue struct {
+	stamp  string
+	at     time.Time
+	before bool
+}
+
+func (d *emptyRefreshDue) check(stamp string, now time.Time) bool {
+	return !d.before || stamp != d.stamp || now.Sub(d.at) >= EmptyGraphFallback
+}
+
+func (d *emptyRefreshDue) ran(stamp string, now time.Time) {
+	d.stamp, d.at, d.before = stamp, now, true
 }
 
 type ownersOnly interface {

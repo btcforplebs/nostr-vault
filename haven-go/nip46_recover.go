@@ -22,8 +22,21 @@ type signerReplies struct {
 	clientSK string
 }
 
-// How often a waiting sign_event looks for its reply on the relays itself.
+// How soon a waiting sign_event first looks for its reply on the relays
+// itself. Each later look waits twice as long, up to signRecoveryMax: a reply
+// is usually found within seconds of the person approving, and polling every
+// 3 s for a request's full 90 s kept the radio busy for nothing.
 var signRecoveryInterval = 3 * time.Second
+
+const signRecoveryMax = 24 * time.Second
+
+// nextRecoveryWait is the gap after a relay check that found nothing.
+func nextRecoveryWait(cur time.Duration) time.Duration {
+	if cur *= 2; cur > signRecoveryMax {
+		return signRecoveryMax
+	}
+	return cur
+}
 
 // signWithRecovery runs sign_event, and meanwhile reads the signer's replies
 // straight off the relays.
@@ -60,8 +73,9 @@ func signWithRecovery(ctx context.Context, sess signerReplies, evt *nostr.Event)
 	// Replies older than the request can't answer it; a little slack for
 	// clock skew between this phone and the signer.
 	since := nostr.Timestamp(time.Now().Add(-30 * time.Second).Unix())
-	ticker := time.NewTicker(signRecoveryInterval)
-	defer ticker.Stop()
+	wait := signRecoveryInterval
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
 	for {
 		select {
 		case err := <-done:
@@ -69,12 +83,14 @@ func signWithRecovery(ctx context.Context, sess signerReplies, evt *nostr.Event)
 				*evt = signed
 			}
 			return err
-		case <-ticker.C:
+		case <-timer.C:
 			if got := fetchSignReply(ctx, sess, req, since); got != nil {
 				log.Printf("NIP46SignEventC: reply recovered from relay (missed by the live subscription) kind=%d", got.Kind)
 				*evt = *got
 				return nil
 			}
+			wait = nextRecoveryWait(wait)
+			timer.Reset(wait)
 		}
 	}
 }
@@ -220,17 +236,20 @@ func signViaNIP04(ctx context.Context, sess signerReplies, evt *nostr.Event) err
 		return errors.New("no signer relay accepted the NIP-04 sign request")
 	}
 	log.Printf("NIP46SignEventC: request over NIP-44's 64kB limit, sent over NIP-04 kind=%d", req.Kind)
-	ticker := time.NewTicker(signRecoveryInterval)
-	defer ticker.Stop()
+	wait := signRecoveryInterval
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return errors.New("no reply from the signer to the NIP-04 sign request")
-		case <-ticker.C:
+		case <-timer.C:
 			if got := fetchSignReply(ctx, sess, req, since); got != nil {
 				*evt = *got
 				return nil
 			}
+			wait = nextRecoveryWait(wait)
+			timer.Reset(wait)
 		}
 	}
 }

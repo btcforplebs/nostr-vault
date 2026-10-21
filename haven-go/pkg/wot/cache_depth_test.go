@@ -198,3 +198,27 @@ func TestLinksFileFollowsTheDepth(t *testing.T) {
 		t.Error("a depth-2 build kept the depth-3 links file")
 	}
 }
+
+// The 2-minute owner-only rebuild runs once, then again only when the owner's
+// follow list changes or the fallback interval passes.
+func TestEmptyRefreshSkipsWhenNothingChanged(t *testing.T) {
+	var d emptyRefreshDue
+	now := time.Unix(1_000_000, 0)
+	if !d.check("", now) {
+		t.Fatal("the first tick was skipped")
+	}
+	d.ran("", now)
+	if d.check("", now.Add(EmptyGraphRefreshInterval)) {
+		t.Fatal("rebuilt with no follow list change")
+	}
+	if !d.check("abc", now.Add(EmptyGraphRefreshInterval)) {
+		t.Fatal("a new follow list did not trigger a rebuild")
+	}
+	d.ran("abc", now.Add(EmptyGraphRefreshInterval))
+	if d.check("abc", now.Add(4*EmptyGraphRefreshInterval)) {
+		t.Fatal("rebuilt the same follow list again")
+	}
+	if !d.check("abc", now.Add(EmptyGraphRefreshInterval+EmptyGraphFallback)) {
+		t.Fatal("the fallback rebuild never came")
+	}
+}

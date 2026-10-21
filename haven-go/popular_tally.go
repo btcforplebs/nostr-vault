@@ -526,13 +526,21 @@ func ingestPopularEngagement(ctx context.Context) {
 	go persistPopularTally(ctx)
 
 	log.Println("📊 subscribing to engagement (kinds 7/6/9735) on", len(relays), "relays")
-	backoff := time.Second
+	var backoff time.Duration
 	var watermark int64
 	for ctx.Err() == nil {
+		// The firehose only serves Popular, which nobody sees while the app
+		// is off screen; on a phone it was a constant radio and CPU cost.
+		// Coverage stops accruing while paused, so Popular backfills the gap
+		// from the network when it is next opened.
+		if !appForeground.wait(ctx) {
+			break
+		}
+		subCtx, stopSub := appForeground.context(ctx)
+		opened := time.Now()
 		since := ingestSince(watermark, time.Now())
 		filter := nostr.Filter{Kinds: []int{7, 6, 9735}, Since: &since}
 
-		sawEvent := false
 		mark := time.NewTicker(popularCoverageMarkEvery)
 		done := make(chan struct{})
 		go func() {
@@ -543,7 +551,7 @@ func ingestPopularEngagement(ctx context.Context) {
 				select {
 				case <-done:
 					return
-				case <-ctx.Done():
+				case <-subCtx.Done():
 					return
 				case now := <-mark.C:
 					popularTally.markAlive(now)
@@ -552,8 +560,7 @@ func ingestPopularEngagement(ctx context.Context) {
 		}()
 
 		popularTally.markAlive(time.Now())
-		for ev := range pool.SubscribeMany(ctx, relays, filter) {
-			sawEvent = true
+		for ev := range pool.SubscribeMany(subCtx, relays, filter) {
 			now := time.Now()
 			popularTally.markAlive(now)
 			popularTally.add(ev.Event, now)
@@ -563,20 +570,21 @@ func ingestPopularEngagement(ctx context.Context) {
 		}
 		mark.Stop()
 		close(done)
+		stopSub()
 
 		if ctx.Err() != nil {
 			break
 		}
-		if sawEvent {
-			backoff = time.Second
+		if !appForeground.isOn() {
+			log.Println("📊 popular tally paused: app in background")
+			continue
 		}
-		log.Println("📊 popular tally subscription closed, reconnecting in", backoff)
+		var wait time.Duration
+		wait, backoff = nextResubscribeBackoff(backoff, time.Since(opened))
+		log.Println("📊 popular tally subscription closed, reconnecting in", wait)
 		select {
 		case <-ctx.Done():
-		case <-time.After(backoff):
-		}
-		if backoff < 60*time.Second {
-			backoff *= 2
+		case <-time.After(wait):
 		}
 	}
 	// Best effort on the way out; the periodic save covers a hard kill.

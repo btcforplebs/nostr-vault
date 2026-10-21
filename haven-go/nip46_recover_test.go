@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip04"
@@ -120,5 +121,22 @@ func TestOversizedFollowListGoesOverNIP04(t *testing.T) {
 	}
 	if got := signReplyFor(reply, replyKeys{nip44: keys.nip44}, big); got != nil {
 		t.Fatal("NIP-04 reply decrypted without the NIP-04 key")
+	}
+}
+
+// A sign request waiting its full 90 s checks the relays a handful of times,
+// not every 3 s.
+func TestSignRecoveryBacksOff(t *testing.T) {
+	checks, elapsed, wait := 0, time.Duration(0), signRecoveryInterval
+	for elapsed+wait <= 90*time.Second {
+		elapsed += wait
+		checks++
+		wait = nextRecoveryWait(wait)
+	}
+	if checks > 8 {
+		t.Fatalf("%d relay checks in 90s, want at most 8", checks)
+	}
+	if wait != signRecoveryMax {
+		t.Fatalf("wait settled at %v, want the %v cap", wait, signRecoveryMax)
 	}
 }

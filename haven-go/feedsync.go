@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"maps"
 	"runtime/debug"
 	"slices"
 	"sync/atomic"
@@ -143,6 +144,27 @@ func ownerFollowSet(ctx context.Context) map[string]struct{} {
 		}
 	}
 	return follows
+}
+
+// ownerFollowListStamp is the id of the newest kind-3 any owner on this relay
+// has in the outbox DB, or "" when there is none. A new follow list is the
+// newest by construction, so the owner-only WoT rebuild runs when this moves.
+func ownerFollowListStamp() string {
+	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	if len(owners) == 0 || outboxDB == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	evs, err := eventstore.RelayWrapper{Store: outboxDB}.QuerySync(ctx, nostr.Filter{
+		Authors: owners,
+		Kinds:   []int{nostr.KindFollowList},
+		Limit:   1,
+	})
+	if err != nil || len(evs) == 0 {
+		return ""
+	}
+	return evs[0].ID
 }
 
 // feedSyncRelays picks the external relay set to reconcile the feed against:
