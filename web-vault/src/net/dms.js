@@ -15,7 +15,7 @@ import { deviceKey } from "../haven/vault.js"
 import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
 import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
-import { AUTH_WAIT, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
+import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -297,8 +297,9 @@ export const WATCH_SINCE = 2 * 86400 + 3600
 export const LIVE_PER_MINUTE = { nip46: 6, other: 30 }
 
 /** Keep listening for new wraps while a screen is open. `subscribe` and `clock` are for tests. -> close() */
-export function watchMessages({ vault, session, signer }, relays, { crypto, chat, net = pool, clock = () => Date.now(),
-  subscribe = (r, f, o) => authedSubscribe(net, r, f, { ...o, ...readSigning({ session, signer }) }) } = {}) {
+// The live subscription opens a relay again after it ended (dropped, closed, refused once): dm-read-auth.js LIVE_RETRY.
+export function watchMessages({ vault, session, signer }, relays, { crypto, chat, net = pool, clock = () => Date.now(), retry = LIVE_RETRY,
+  subscribe = (r, f, o) => authedSubscribe(net, r, f, { ...o, ...readSigning({ session, signer }), retry }) } = {}) {
   const me = session.pubkey
   const c = crypto ?? cryptoFor(session, { signer })
   if (c.reason || !relays.length) return () => {}

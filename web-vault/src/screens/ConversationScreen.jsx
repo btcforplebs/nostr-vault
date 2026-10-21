@@ -14,7 +14,7 @@ import { sendMessage, sendFailure, thread } from "../net/dms.js"
 import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
-import { useMessages, SignerTrouble, OpenMore } from "./MessagesScreen.jsx"
+import { useMessages, SignerTrouble, AuthTrouble, OpenMore } from "./MessagesScreen.jsx"
 
 /** Return sends, as on the Mac app and every desktop chat; Shift or Option + Return is a new line. On a touch screen
  *  Return is a new line and Send is the button, as on the iPhone. Never mid-composition (an IME's Return picks a word). */
@@ -26,7 +26,7 @@ const fiveLines = el => { const cs = getComputedStyle(el); return parseFloat(cs.
 const isImageFile = f => !f.type || /^image\//.test(f.type)
 
 export function ConversationScreen({ ctx, peer }) {
-  const { messages, note, trouble, retry, more } = useMessages(ctx)
+  const { messages, note, trouble, retry, refresh, more } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
@@ -95,6 +95,7 @@ export function ConversationScreen({ ctx, peer }) {
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
       <SignerTrouble trouble={trouble} retry={retry} />
+      <AuthTrouble refresh={refresh} />
       <OpenMore ctx={ctx} more={more} />
       {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
       <div class="dm-thread">
