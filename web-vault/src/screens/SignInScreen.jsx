@@ -33,7 +33,7 @@ export function SignInScreen({ onSignedIn }) {
   return (
     <main class="signin">
       <img src="./icon.svg" alt="" class="signin-logo" />
-      <h1>Nostr Vault</h1>
+      <h1>Nostr Vault <span class="beta">Beta</span></h1>
       <p class="muted">Your posts, messages and media, kept in this browser. Sign in with your own signer: your secret key stays with it.</p>
       {cameForPost() && <p class="signin-for-post">Sign in to reply, like or zap the post you opened. Just looking works too.</p>}
       {saved.length > 0 && <div class="saved-accounts">

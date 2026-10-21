@@ -178,6 +178,20 @@ nav {
 
 .pill-web:hover { background: rgba(255, 140, 0, 0.1); transform: scale(1.04); }
 
+.beta {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #000;
+    font-size: 0.68em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
 /* Hero */
 .hero {
     display: flex;

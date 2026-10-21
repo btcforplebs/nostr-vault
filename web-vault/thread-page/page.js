@@ -283,7 +283,7 @@ ${noindex ? `<meta name="robots" content="noindex">` : ""}
 <style>${CSS}</style>
 </head>
 <body>
-<header><a class="logo" href="/"><img src="/assets/haven_icon.png" alt="" width="28" height="28">Nostr Vault</a><nav class="top"><a class="get" href="/">Get the app</a><a class="pill" href="/vault/">Open web app</a></nav></header>
+<header><a class="logo" href="/"><img src="/assets/haven_icon.png" alt="" width="28" height="28">Nostr Vault</a><nav class="top"><a class="get" href="/">Get the app</a><a class="pill" href="/vault/">Open web app <span class="beta">Beta</span></a></nav></header>
 <main>${body}</main>
 <footer>Shared from <a href="/">Nostr Vault</a> · your own Nostr relay, on your devices and <a href="/vault/">in your browser</a>.</footer>
 </body>
@@ -299,7 +299,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 header{display:flex;align-items:center;justify-content:space-between;max-width:680px;margin:0 auto;padding:16px 20px}
 .logo{display:flex;align-items:center;gap:10px;color:var(--text);font-weight:700;letter-spacing:-.01em}.logo img{border-radius:7px}
 .top{display:flex;align-items:center;gap:14px}.get{font-size:14px;color:var(--dim)}
-.pill{font-size:14px;font-weight:600;padding:7px 14px;border-radius:999px;border:1px solid var(--accent)}.pill:hover{text-decoration:none;background:rgba(255,140,0,.1)}
+.beta{display:inline-block;margin-left:5px;padding:1px 6px;border-radius:999px;background:var(--accent);color:#000;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle}.pill{font-size:14px;font-weight:600;padding:7px 14px;border-radius:999px;border:1px solid var(--accent)}.pill:hover{text-decoration:none;background:rgba(255,140,0,.1)}
 main{max-width:680px;margin:0 auto;padding:0 16px 40px}
 .post{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px}
 .up{display:inline-block;font-size:14px;color:var(--dim);margin-bottom:12px}
