@@ -98,6 +98,12 @@ extension BlossomService {
                 appLog("post upload ok — on the home vault, which passes it on to \(forwardTo)")
                 return .hosted(link)
             }
+            // A vault was asked to pass it on and did not take it: the fix is
+            // the vault (is the app open?), not adding a server (2026-10-21).
+            if let forwardTo {
+                appLog("post upload stopped at stage 2 of 2 — saved on this device; the home vault did not take it to pass on to \(forwardTo)", level: "ERROR")
+                return .vaultDidNotTake
+            }
             appLog("post upload stopped at stage 2 of 2 — saved on this device, but no outside Blossom server is configured" + (toHomeVault ? " and the home vault did not confirm it" : ""), level: "ERROR")
             return .noOutsideServer
         }
