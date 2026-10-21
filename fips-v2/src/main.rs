@@ -13,12 +13,16 @@
 //! this node's public address goes to no one else. `serve` takes `--peer`
 //! once per own device; only those reach `--forward`.
 //!
-//! `serve --blobs` also links to the public seeds, so anyone on the mesh can
-//! read a blob by hash through them (`GET /<sha256>`), without ever learning
-//! this node's address. Their connections never reach `--forward` as is: a
-//! gate asks it only for `GET`/`HEAD /<sha256>[.ext]`, checks the bytes
-//! against the hash, and turns everything else away (no listing, no upload,
-//! no relay).
+//! `serve --blobs` also starts a second node, the blob node, with its own key
+//! (`<state>/blob-nsec`, its npub printed at start). Only it links to the
+//! public seeds, so anyone on the mesh can read a blob by hash through them
+//! (`GET /<blob npub's address>/<sha256>`) without ever learning this
+//! machine's address. Strangers fill only the blob node's session table; the
+//! main node never meets them. The blob node's connections never reach
+//! `--forward` as is: a gate asks it only for `GET`/`HEAD /<sha256>[.ext]`,
+//! checks the bytes against the hash, sends them at no more than
+//! `--blob-rate` bytes/s all readers together, and turns everything else
+//! away (no listing, no upload, no relay).
 
 // The app's runtime controls (fips-v2-android) go unused here.
 #[allow(dead_code)]
@@ -34,8 +38,8 @@ use std::net::{Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub const MESH_PORT: u16 = 80;
 
@@ -54,7 +58,12 @@ struct Args {
     relays: Vec<String>,
     lan: bool,
     blobs: bool,
+    /// Bytes per second the blob gate sends, all readers together. 0 = no cap.
+    blob_rate: u64,
 }
+
+/// Default `--blob-rate`: 1 MiB/s, a slice of a home uplink.
+const BLOB_RATE: u64 = 1 << 20;
 
 fn parse_args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
@@ -66,6 +75,7 @@ fn parse_args() -> Result<Args> {
     let mut relays = Vec::new();
     let mut lan = false;
     let mut blobs = false;
+    let mut blob_rate = BLOB_RATE;
     while let Some(flag) = it.next() {
         if flag == "--lan" {
             lan = true;
@@ -82,6 +92,7 @@ fn parse_args() -> Result<Args> {
             "--state" => state = Some(PathBuf::from(value)),
             "--udp-port" => udp_port = value.parse()?,
             "--relay" => relays.push(value),
+            "--blob-rate" => blob_rate = value.parse()?,
             _ => bail!("unknown flag {flag}"),
         }
     }
@@ -102,14 +113,15 @@ fn parse_args() -> Result<Args> {
         relays,
         lan,
         blobs,
+        blob_rate,
         mode,
     })
 }
 
-/// Load or create this probe's identity (nsec kept in the state dir).
-fn load_nsec(state: &PathBuf) -> Result<String> {
+/// Load or create an identity kept in the state dir as `file`.
+fn load_nsec(state: &PathBuf, file: &str) -> Result<String> {
     std::fs::create_dir_all(state)?;
-    let path = state.join("nsec");
+    let path = state.join(file);
     if let Ok(nsec) = std::fs::read_to_string(&path) {
         return Ok(nsec.trim().to_string());
     }
@@ -135,23 +147,11 @@ fn config_yaml(args: &Args, nsec: &str) -> String {
             "  - npub: \"{peer}\"\n    alias: \"vault-peer-{i}\"\n    addresses:\n      - transport: udp\n        addr: \"nat\"\n    via_nostr: true\n    connect_policy: auto_connect\n"
         ));
     }
-    // Readers by hash come through the seeds; a leaf carries no one else's
-    // traffic.
-    let leaf = if args.blobs {
-        for (npub, addr) in SEEDS {
-            peers.push_str(&format!(
-                "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"{addr}\"\n    connect_policy: auto_connect\n"
-            ));
-        }
-        "  leaf_only: true\n"
-    } else {
-        ""
-    };
     format!(
         r#"node:
   identity:
     nsec: "{nsec}"
-{leaf}  control:
+  control:
     enabled: false
   rendezvous:
     nostr:
@@ -175,9 +175,41 @@ peers:
     )
 }
 
-fn build_config(args: &Args, nsec: &str) -> Result<Config> {
-    let path = args.state.join("fips.yaml");
-    std::fs::write(&path, config_yaml(args, nsec))?;
+/// The blob node: linked to the seeds only, as a leaf, with no Nostr
+/// rendezvous, so it publishes nothing and answers no traversal offer.
+/// Readers reach it by routing through the seeds, never by a direct link.
+fn blob_config_yaml(nsec: &str) -> String {
+    let mut peers = String::new();
+    for (npub, addr) in SEEDS {
+        peers.push_str(&format!(
+            "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"{addr}\"\n    connect_policy: auto_connect\n"
+        ));
+    }
+    format!(
+        r#"node:
+  identity:
+    nsec: "{nsec}"
+  leaf_only: true
+  control:
+    enabled: false
+  rendezvous:
+    nostr:
+      enabled: false
+dns:
+  enabled: false
+transports:
+  udp:
+    bind_addr: "0.0.0.0:0"
+    advertise_on_nostr: false
+    public: false
+peers:
+{peers}"#
+    )
+}
+
+fn write_config(state: &std::path::Path, file: &str, yaml: &str) -> Result<Config> {
+    let path = state.join(file);
+    std::fs::write(&path, yaml)?;
     Ok(Config::load_file(&path)?)
 }
 
@@ -191,28 +223,48 @@ fn source(pkt: &[u8]) -> Option<Ipv6Addr> {
     Some(Ipv6Addr::from(src))
 }
 
-/// Own devices' packets to one stack, everyone else's to the other (or
-/// nowhere without `--blobs`), so a stranger's TCP never meets the relay.
+/// Only own devices' packets reach the stack; anyone else who finds a route
+/// to the main node is dropped (strangers belong on the blob node).
 /// FIPS's own ICMP (no route to a peer) carries `me` as its source; it goes
-/// to the own stack, so a splice to a gone device resets instead of hanging.
-fn demux(
-    from_mesh: Receiver<Vec<u8>>,
-    me: Ipv6Addr,
-    own: HashSet<Ipv6Addr>,
-    to_own: Sender<Vec<u8>>,
-    to_others: Option<Sender<Vec<u8>>>,
-) {
+/// through, so a splice to a gone device resets instead of hanging.
+fn demux(from_mesh: Receiver<Vec<u8>>, me: Ipv6Addr, own: HashSet<Ipv6Addr>, to_own: Sender<Vec<u8>>) {
     for pkt in from_mesh {
-        let to = match source(&pkt) {
-            Some(src) if src == me || own.contains(&src) => Some(&to_own),
-            Some(_) => to_others.as_ref(),
-            None => None,
-        };
-        if let Some(to) = to
-            && to.send(pkt).is_err()
-        {
+        if source(&pkt).is_some_and(|src| src == me || own.contains(&src)) && to_own.send(pkt).is_err() {
             return;
         }
+    }
+}
+
+/// A token bucket shared by every gate connection: the blob node's total
+/// send rate. Readers slow down; sharing never turns off.
+struct Bucket {
+    rate: u64,
+    /// Bytes that may go out now (at most one second's worth), and when.
+    state: Mutex<(f64, Instant)>,
+}
+
+impl Bucket {
+    fn new(rate: u64) -> Arc<Self> {
+        Arc::new(Self { rate, state: Mutex::new((rate as f64, Instant::now())) })
+    }
+
+    /// Wait until `n` bytes may go out, and take them. Returns the wait.
+    fn take(&self, n: usize) -> Duration {
+        if self.rate == 0 {
+            return Duration::ZERO;
+        }
+        let rate = self.rate as f64;
+        let wait = {
+            let mut st = self.state.lock().unwrap();
+            let now = Instant::now();
+            let tokens = (st.0 + now.duration_since(st.1).as_secs_f64() * rate).min(rate) - n as f64;
+            *st = (tokens, now);
+            // In debt: this caller sleeps it off; the next one starts deeper.
+            if tokens < 0.0 { -tokens / rate } else { 0.0 }
+        };
+        let wait = Duration::from_secs_f64(wait);
+        std::thread::sleep(wait);
+        wait
     }
 }
 
@@ -314,7 +366,7 @@ fn parse_relay_head(head: &str) -> Option<RelayHead> {
 /// Serve one stranger: read its ask, fetch exactly that blob from `relay`,
 /// and pass the bytes on only if they hash to the name. The last chunk is
 /// held back until the hash is checked, so bad bytes end in a short body.
-fn serve_ask(mut client: TcpStream, relay: SocketAddr) -> Result<()> {
+fn serve_ask(mut client: TcpStream, relay: SocketAddr, bucket: &Bucket) -> Result<()> {
     client.set_read_timeout(Some(Duration::from_secs(10)))?;
     client.set_write_timeout(Some(Duration::from_secs(60)))?;
     let mut buf = Vec::new();
@@ -398,7 +450,8 @@ fn serve_ask(mut client: TcpStream, relay: SocketAddr) -> Result<()> {
     let mut hasher = Sha256::new();
     let mut got: u64 = 0;
     let mut held: Vec<u8> = head[body_start..].to_vec();
-    let reply_until = std::time::Instant::now() + GATE_REPLY_DEADLINE;
+    // The bucket's waits are ours, not the reader's: they extend it.
+    let mut reply_until = std::time::Instant::now() + GATE_REPLY_DEADLINE;
     while got + (held.len() as u64) < length {
         if std::time::Instant::now() > reply_until {
             eprintln!("blob gate: {sha} past its deadline; cut");
@@ -415,6 +468,7 @@ fn serve_ask(mut client: TcpStream, relay: SocketAddr) -> Result<()> {
         }
         hasher.update(&held);
         got += held.len() as u64;
+        reply_until += bucket.take(held.len());
         client.write_all(&held)?;
         held.clear();
         held.extend_from_slice(&chunk[..n]);
@@ -427,13 +481,14 @@ fn serve_ask(mut client: TcpStream, relay: SocketAddr) -> Result<()> {
         let _ = socket2::SockRef::from(&client).set_linger(Some(Duration::ZERO));
         return Ok(());
     }
+    bucket.take(held.len());
     client.write_all(&held)?;
     println!("blob gate GET {sha} {length}");
     Ok(())
 }
 
 /// A loopback listener the strangers' stack forwards to.
-fn start_gate(relay: SocketAddr) -> Result<SocketAddr> {
+fn start_gate(relay: SocketAddr, bucket: Arc<Bucket>) -> Result<SocketAddr> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).context("bind blob gate")?;
     let addr = listener.local_addr()?;
     let open = Arc::new(AtomicUsize::new(0));
@@ -445,9 +500,9 @@ fn start_gate(relay: SocketAddr) -> Result<SocketAddr> {
                 refuse(&mut stream, 503);
                 continue;
             }
-            let open = open.clone();
+            let (open, bucket) = (open.clone(), bucket.clone());
             std::thread::spawn(move || {
-                if let Err(e) = serve_ask(stream, relay) {
+                if let Err(e) = serve_ask(stream, relay, &bucket) {
                     eprintln!("blob gate: {e:#}");
                 }
                 open.fetch_sub(1, Ordering::SeqCst);
@@ -467,8 +522,8 @@ async fn main() -> Result<()> {
         .init();
 
     let args = parse_args()?;
-    let nsec = load_nsec(&args.state)?;
-    let config = build_config(&args, &nsec)?;
+    let nsec = load_nsec(&args.state, "nsec")?;
+    let config = write_config(&args.state, "fips.yaml", &config_yaml(&args, &nsec))?;
     let peer_addrs = args
         .peers
         .iter()
@@ -491,30 +546,38 @@ async fn main() -> Result<()> {
         eprintln!("stack stopped: {e:#}");
         std::process::exit(1);
     };
+    let mut blob_node = None;
     if args.mode == "serve" {
-        let (to_own, own_rx) = std::sync::mpsc::channel();
-        let mut others = None;
         if args.blobs {
-            let gate = start_gate(args.local)?;
-            println!("blob gate {gate} -> {} (GET/HEAD /<sha256> only)", args.local);
-            let (to_others, others_rx) = std::sync::mpsc::channel();
+            let blob_nsec = load_nsec(&args.state, "blob-nsec")?;
+            let config = write_config(&args.state, "fips-blob.yaml", &blob_config_yaml(&blob_nsec))?;
+            let mut bn = Node::new(config)?;
+            let (blob_to_mesh, blob_from_mesh) = bn.enable_app_owned_tun();
+            let blob_addr = bn.identity().address().to_ipv6();
+            let blob_mtu = bn.effective_ipv6_mtu() as usize;
+            let gate = start_gate(args.local, Bucket::new(args.blob_rate))?;
+            println!("blob npub {}", bn.npub());
+            println!("blob addr {blob_addr}  (mtu {blob_mtu})");
+            println!("blob gate {gate} -> {} (GET/HEAD /<sha256> only, {} B/s)", args.local, args.blob_rate);
+            bn.start().await?;
             let ctl = stack::Control::new();
             ctl.set_limits(stack::ServeLimits {
                 per_peer_open: GATE_PER_PEER_OPEN,
                 per_peer_bytes: GATE_PER_PEER_BYTES,
                 ..Default::default()
             });
-            let (tx, c) = (to_mesh.clone(), ctl.clone());
+            let c = ctl.clone();
             std::thread::spawn(move || {
-                if let Err(e) = stack::run_with(my_addr, mtu, tx, others_rx, &c) {
+                if let Err(e) = stack::run_with(blob_addr, blob_mtu, blob_to_mesh, blob_from_mesh, &c) {
                     fail(e);
                 }
             });
             ctl.set_serve(Some(gate));
-            others = Some(to_others);
+            blob_node = Some(bn);
         }
+        let (to_own, own_rx) = std::sync::mpsc::channel();
         let own: HashSet<Ipv6Addr> = peer_addrs.iter().copied().collect();
-        std::thread::spawn(move || demux(from_mesh, my_addr, own, to_own, others));
+        std::thread::spawn(move || demux(from_mesh, my_addr, own, to_own));
         let forward = args.local;
         std::thread::spawn(move || {
             if let Err(e) = stack::run(my_addr, mtu, to_mesh, own_rx, stack::Mode::Serve { forward }) {
@@ -530,10 +593,24 @@ async fn main() -> Result<()> {
         });
     }
 
-    node.run_rx_loop_with_shutdown(async {
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
-    })
-    .await?;
+        let _ = stop_tx.send(true);
+    });
+    let stopped = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
+        let _ = rx.wait_for(|s| *s).await;
+    };
+    match blob_node.as_mut() {
+        Some(bn) => {
+            tokio::try_join!(
+                node.run_rx_loop_with_shutdown(stopped(stop_rx.clone())),
+                bn.run_rx_loop_with_shutdown(stopped(stop_rx)),
+            )?;
+            bn.stop().await?;
+        }
+        None => node.run_rx_loop_with_shutdown(stopped(stop_rx)).await?,
+    }
     node.stop().await?;
     Ok(())
 }
@@ -593,24 +670,44 @@ mod tests {
     }
 
     #[test]
-    fn own_devices_and_strangers_land_in_different_stacks() {
+    fn only_own_devices_and_our_own_icmp_reach_the_main_stack() {
         let own_dev: Ipv6Addr = "fd00::1".parse().unwrap();
         let stranger: Ipv6Addr = "fd00::2".parse().unwrap();
         let me: Ipv6Addr = "fd00::3".parse().unwrap();
-        for blobs in [true, false] {
-            let (tx, rx) = std::sync::mpsc::channel();
-            let (own_tx, own_rx) = std::sync::mpsc::channel();
-            let (oth_tx, oth_rx) = std::sync::mpsc::channel();
-            for p in [v6(own_dev), v6(stranger), v6(me), vec![0x45; 60], vec![0x60; 10]] {
-                tx.send(p).unwrap();
-            }
-            drop(tx);
-            demux(rx, me, HashSet::from([own_dev]), own_tx, blobs.then_some(oth_tx));
-            let own: Vec<_> = own_rx.try_iter().collect();
-            let oth: Vec<_> = oth_rx.try_iter().collect();
-            assert_eq!(own, vec![v6(own_dev), v6(me)]);
-            assert_eq!(oth, if blobs { vec![v6(stranger)] } else { vec![] });
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (own_tx, own_rx) = std::sync::mpsc::channel();
+        for p in [v6(own_dev), v6(stranger), v6(me), vec![0x45; 60], vec![0x60; 10]] {
+            tx.send(p).unwrap();
         }
+        drop(tx);
+        demux(rx, me, HashSet::from([own_dev]), own_tx);
+        assert_eq!(own_rx.try_iter().collect::<Vec<_>>(), vec![v6(own_dev), v6(me)]);
+    }
+
+    #[test]
+    fn the_bucket_holds_all_readers_to_one_rate() {
+        // 100 kB/s, a full second's burst: 300 kB more costs about 3 s,
+        // however many threads ask.
+        let b = Bucket::new(100_000);
+        b.take(100_000);
+        let t = Instant::now();
+        let hs: Vec<_> = (0..3)
+            .map(|_| {
+                let b = b.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..10 {
+                        b.take(10_000);
+                    }
+                })
+            })
+            .collect();
+        hs.into_iter().for_each(|h| h.join().unwrap());
+        let took = t.elapsed();
+        assert!(took >= Duration::from_millis(2_700) && took < Duration::from_millis(4_500), "{took:?}");
+        // No cap: no wait.
+        let t = Instant::now();
+        Bucket::new(0).take(1 << 30);
+        assert!(t.elapsed() < Duration::from_millis(50));
     }
 
     /// A stand-in relay: answers every request with `reply`, and records
@@ -667,7 +764,7 @@ mod tests {
     fn a_stranger_gets_the_blob_and_only_its_type_and_length() {
         let (body, sha) = body_and_sha();
         let (relay, seen) = fake_relay(ok_reply(&body, ""));
-        let gate = start_gate(relay).unwrap();
+        let gate = start_gate(relay, Bucket::new(0)).unwrap();
 
         let (head, got) = fetch(gate, &format!("GET /{sha}.jpg HTTP/1.1\r\nCookie: a\r\nAuthorization: Nostr x\r\n\r\n")).unwrap();
         assert!(head.starts_with("HTTP/1.1 200 OK\r\n"), "{head}");
@@ -698,7 +795,7 @@ mod tests {
             c.write_all(&reply).unwrap();
             std::thread::sleep(Duration::from_secs(60));
         });
-        let gate = start_gate(relay).unwrap();
+        let gate = start_gate(relay, Bucket::new(0)).unwrap();
         let t = std::time::Instant::now();
         let (_, got) = fetch(gate, &format!("GET /{sha} HTTP/1.1\r\n\r\n")).unwrap();
         assert!(got == body);
@@ -709,7 +806,7 @@ mod tests {
     fn listing_upload_and_the_relay_itself_never_reach_the_relay() {
         let (body, _) = body_and_sha();
         let (relay, seen) = fake_relay(ok_reply(&body, ""));
-        let gate = start_gate(relay).unwrap();
+        let gate = start_gate(relay, Bucket::new(0)).unwrap();
         for req in [
             "GET / HTTP/1.1\r\n\r\n".to_string(),
             "GET / HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n".into(),
@@ -730,7 +827,7 @@ mod tests {
         let (body, _) = body_and_sha();
         let wrong_sha = SHA; // the relay sends `body`, which hashes to something else
         let (relay, _) = fake_relay(ok_reply(&body, ""));
-        let gate = start_gate(relay).unwrap();
+        let gate = start_gate(relay, Bucket::new(0)).unwrap();
         match fetch(gate, &format!("GET /{wrong_sha} HTTP/1.1\r\n\r\n")) {
             Ok((head, got)) => {
                 assert!(head.contains(&format!("Content-Length: {}", body.len())));
@@ -751,7 +848,7 @@ mod tests {
         ];
         for (reply, want) in cases {
             let (relay, _) = fake_relay(reply);
-            let gate = start_gate(relay).unwrap();
+            let gate = start_gate(relay, Bucket::new(0)).unwrap();
             let (head, got) = fetch(gate, &format!("GET /{sha} HTTP/1.1\r\n\r\n")).unwrap();
             assert!(head.starts_with(&format!("HTTP/1.1 {want}")), "{head}");
             assert!(!head.contains("Location") && !head.contains("<script>"));
@@ -761,7 +858,7 @@ mod tests {
         }
         // Nothing listening: 502, not a hang.
         let dead = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
-        let gate = start_gate(dead).unwrap();
+        let gate = start_gate(dead, Bucket::new(0)).unwrap();
         let (head, _) = fetch(gate, &format!("GET /{sha} HTTP/1.1\r\n\r\n")).unwrap();
         assert!(head.starts_with("HTTP/1.1 502"), "{head}");
     }
@@ -780,11 +877,12 @@ mod tests {
             relays: vec![],
             lan: false,
             blobs,
+            blob_rate: BLOB_RATE,
         }
     }
 
     #[test]
-    fn offers_are_answered_from_own_devices_only_and_seeds_come_with_blobs() {
+    fn the_main_node_meets_own_devices_only_and_the_blob_node_only_the_seeds() {
         let state = std::env::temp_dir().join(format!("fipsv2-cfg-{}", std::process::id()));
         std::fs::create_dir_all(&state).unwrap();
         let nsec = encode_nsec(&Identity::generate().keypair().secret_key());
@@ -794,13 +892,23 @@ mod tests {
             let yaml = config_yaml(&a, &nsec);
             assert!(yaml.contains(&format!("offer_allowlist: [\"{phone}\", \"{pad}\"]")), "{yaml}");
             assert!(yaml.contains("policy: configured_only"));
-            assert_eq!(yaml.contains("leaf_only: true"), blobs);
             for (seed, _) in SEEDS {
-                assert_eq!(yaml.contains(seed), blobs);
+                assert!(!yaml.contains(seed), "the main node never links to a seed");
             }
-            let cfg = build_config(&a, &nsec).unwrap();
-            assert_eq!(cfg.peers.len(), 2 + if blobs { SEEDS.len() } else { 0 });
+            let cfg = write_config(&state, "fips.yaml", &yaml).unwrap();
+            assert_eq!(cfg.peers.len(), 2);
         }
+
+        let blob_nsec = encode_nsec(&Identity::generate().keypair().secret_key());
+        let yaml = blob_config_yaml(&blob_nsec);
+        let cfg = write_config(&state, "fips-blob.yaml", &yaml).unwrap();
+        assert_eq!(cfg.peers.len(), SEEDS.len());
+        for (seed, _) in SEEDS {
+            assert!(yaml.contains(seed));
+        }
+        assert!(cfg.node.leaf_only);
+        assert!(!cfg.node.rendezvous.nostr.enabled, "publishes nothing, answers no offer");
+        assert!(!yaml.contains(&phone) && !yaml.contains(&nsec));
         std::fs::remove_dir_all(&state).unwrap();
     }
 }
