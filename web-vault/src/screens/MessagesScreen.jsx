@@ -12,7 +12,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
-import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
+import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
 if (import.meta.env) import("../styles/compose.css")
@@ -184,14 +184,17 @@ export function MessagesScreen({ ctx }) {
       )}
       {err && <div class="status-line error">{err}</div>}
       {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
-        : !list.length ? <p class="empty">{note ? "" : "No messages yet."}</p>
+        : !list.length ? (note ? null : (
+          // DMInboxView's empty state: its title and subtitle, word for word.
+          <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with the compose button above</p></div>
+        ))
         : list.map(c => { const unread = counts.get(c.peer) ?? 0; return (
           <a key={c.peer} class={unread ? "dm-row unread" : "dm-row"} href={`#/dm/${c.peer}`} aria-label={unread ? `${unread} unread` : undefined}>
             {/* A stranger's picture waits: their server would learn your IP the moment the list draws. */}
             <Avatar pubkey={c.peer} size={44} load={ctx.account.follows.includes(c.peer)} />
             <span class="dm-row-text">
               <span class="dm-row-head"><AuthorName pubkey={c.peer} /><time class="note-time" datetime={new Date(c.last.at * 1000).toISOString()}>{ago(c.last.at)}</time>{unread > 0 && <span class="dm-unread">{unread > 99 ? "99+" : unread}</span>}</span>
-              <span class="dm-row-last">{c.last.from === ctx.session.pubkey ? "You: " : ""}{c.last.content.replace(/\s+/g, " ").trim() || "(empty)"}</span>
+              <span class="dm-row-last">{c.last.from === ctx.session.pubkey ? "You: " : ""}{lastPreview(c.last.content)}</span>
             </span>
           </a>
         ) })}

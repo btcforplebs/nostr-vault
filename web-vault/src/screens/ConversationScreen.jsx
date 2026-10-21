@@ -2,7 +2,6 @@
 // the bottom. Sending is NIP-17 through net/dms.js; the sent text shows at once and stays in memory only. A photo
 // (picked, pasted or dropped, one per message) is uploaded first and its link sent after the text (net/dm-photo.js).
 import { useEffect, useRef, useState } from "preact/hooks"
-import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
@@ -10,7 +9,7 @@ import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
-import { sendMessage, sendFailure, thread } from "../net/dms.js"
+import { dmPrefill, hasLegacy, sendMessage, sendFailure, thread } from "../net/dms.js"
 import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
@@ -28,7 +27,8 @@ const isImageFile = f => !f.type || /^image\//.test(f.type)
 export function ConversationScreen({ ctx, peer }) {
   const { messages, note, trouble, retry, refresh, more } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
-  const [text, setText] = useState("")
+  // A link may start the box with a message (DMThreadView initialMessage): typed in, never sent until Send.
+  const [text, setText] = useState(() => dmPrefill().text)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [photo, setPhoto] = useState(null) // { file, preview } ready to upload with the next send
@@ -44,6 +44,7 @@ export function ConversationScreen({ ctx, peer }) {
   const isBlocked = blocked.has(peer)
   const follows = ctx.account.follows.includes(peer)
 
+  useEffect(() => { const { text: t, hash } = dmPrefill(); if (t) history.replaceState(history.state, "", hash) }, [])
   useEffect(() => { fetchProfiles(ctx.vault, [peer], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [peer])
   useEffect(() => { end.current?.scrollIntoView?.({ block: "end" }) }, [rows.length])
   // What's on screen is read: on opening, and as messages land while the tab is in front (DMThreadView markAsRead).
@@ -97,9 +98,10 @@ export function ConversationScreen({ ctx, peer }) {
       <SignerTrouble trouble={trouble} retry={retry} />
       <AuthTrouble refresh={refresh} />
       <OpenMore ctx={ctx} more={more} />
+      {hasLegacy(rows) && <div class="status-line" role="note">Some messages use NIP-04 (legacy encryption). New messages default to NIP-17.</div>}
       {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
       <div class="dm-thread">
-        {!rows.length && !note && <p class="empty">No messages with {npubEncode(peer).slice(0, 12)}… yet.</p>}
+        {!rows.length && !note && <p class="empty">Start a conversation</p>}
         {rows.map(m => (
           <div key={m.id} class={m.from === me ? "dm-bubble mine" : "dm-bubble"}>
             {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write

@@ -430,3 +430,28 @@ const timeout = ms => new Promise((_, reject) => setTimeout(() => reject(new Err
 
 /** "#/dm/<hex>" -> hex, else null. */
 export const peerOf = (hash = location.hash) => /^#\/?dm\/([0-9a-f]{64})$/.exec(hash)?.[1] ?? null
+
+/** The inbox row's last line, as DMInboxView's lastMessagePreview: the first 60 characters, "…" past them, and
+ *  "No message content" for an empty message. Runs of white space are one space (the row is one line here). */
+export function lastPreview(content) {
+  const t = String(content ?? "").replace(/\s+/g, " ").trim()
+  if (!t) return "No message content"
+  const chars = [...t]
+  return chars.length > 60 ? chars.slice(0, 60).join("").trim() + "…" : t
+}
+
+/** Whether a conversation has a legacy NIP-04 message in it: the thread then says so (DMThreadView's banner). */
+export const hasLegacy = rows => rows.some(m => m.legacy)
+
+/** A message to start the box with, from "#/dm/<hex>?text=…" (or the desktop's "#/messages?dm=<hex>&text=…"), as
+ *  DMThreadView's initialMessage: typed in for the user to edit or send, never sent by itself. -> { text, hash }
+ *  where `hash` is the same address without it, so a reload doesn't type it in again. */
+export function dmPrefill(hash = location.hash) {
+  const i = hash.indexOf("?")
+  if (i < 0) return { text: "", hash }
+  const params = new URLSearchParams(hash.slice(i + 1))
+  const text = params.get("text") ?? ""
+  params.delete("text")
+  const rest = params.toString()
+  return { text, hash: hash.slice(0, i) + (rest ? `?${rest}` : "") }
+}
