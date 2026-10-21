@@ -16,7 +16,7 @@ class MediaEmptyStateTest {
     fun `nothing yet while scanning says loading`() {
         val state = mediaEmptyState(total = 0, shown = 0, isLoading = true)
         assertEquals(MediaEmptyState.LOADING, state)
-        assertEquals("Loading media…", state!!.title)
+        assertEquals("Loading media...", state!!.title)
         assertEquals("Scanning for uploads", state.detail)
     }
 

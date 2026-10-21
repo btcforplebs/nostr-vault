@@ -53,6 +53,18 @@ object MediaTypeSelection {
         else -> selection + filter
     }
 
+    /** iOS `noteMediaTypes`: "all", or the types left on, "photos, GIFs". */
+    fun noteSetting(selection: Set<MediaTypeFilter>): String {
+        if (isAll(selection)) return "all"
+        val names = mapOf(
+            MediaTypeFilter.PHOTO to "photos",
+            MediaTypeFilter.VIDEO to "videos",
+            MediaTypeFilter.GIF to "GIFs",
+            MediaTypeFilter.OTHER to "other",
+        )
+        return TYPES.filter { it in selection }.mapNotNull { names[it] }.joinToString(", ")
+    }
+
     fun toKey(selection: Set<MediaTypeFilter>): String =
         TYPES.filter { it in selection }.joinToString(",") { it.name.lowercase() }
 

@@ -18,12 +18,18 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -51,24 +57,44 @@ import kotlinx.coroutines.flow.*
 /** iOS `mediaGallery.layoutMode`. */
 private const val LAYOUT_MODE_KEY = "mediaGallery.layoutMode"
 
+/** iOS `MediaGalleryGrid.mediaContent`'s loading and empty looks. */
 @Composable
 private fun MediaEmptyStateView(state: MediaEmptyState) {
+    val colors = LocalNostrVaultColors.current
+    val loading = state == MediaEmptyState.LOADING
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        if (state == MediaEmptyState.LOADING) {
-            CircularProgressIndicator(modifier = Modifier.size(40.dp))
+        if (loading) {
+            // A large accent spinner (ProgressView .large, tinted).
+            CircularProgressIndicator(color = colors.primary, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
         } else {
+            // photo.on.rectangle in the accent gradient.
             Icon(
-                imageVector = NostrVaultIcons.Media,
+                imageVector = androidx.compose.material.icons.Icons.Outlined.PhotoLibrary,
                 contentDescription = null,
-                tint = TertiaryText,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier
+                    .size(48.dp)
+                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                    .drawWithCache {
+                        val brush = Brush.linearGradient(listOf(colors.primary, colors.primaryLight))
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(brush, blendMode = BlendMode.SrcAtop)
+                        }
+                    },
             )
         }
-        Spacer(Modifier.height(16.dp))
-        Text(state.title, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(if (loading) 16.dp else 24.dp))
+        Text(state.title, color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
         state.detail?.let {
             Spacer(Modifier.height(8.dp))
-            Text(it, color = SecondaryText, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            Text(
+                it,
+                color = if (loading) SecondaryText.copy(alpha = 0.36f) else SecondaryText,
+                fontSize = if (loading) 12.sp else 13.sp,
+                fontWeight = if (loading) FontWeight.Medium else FontWeight.Normal,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                letterSpacing = if (loading) 0.5.sp else 0.3.sp,
+            )
         }
     }
 }
@@ -303,15 +329,17 @@ fun MediaGalleryScreen(
                 // Grid view
                 LazyVerticalGrid(
                     state = gridState,
-                    columns = GridCells.Fixed(3),
+                    // iOS: 3 across on a phone, 3–6 on a tablet; 6 between
+                    // columns, 8 between rows, 8 at the sides.
+                    columns = MediaGridCells(usesWidth = LocalConfiguration.current.smallestScreenWidthDp >= 600),
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding() + 2.dp,
-                        start = 2.dp,
-                        end = 2.dp,
+                        start = 8.dp,
+                        end = 8.dp,
                         bottom = padding.calculateBottomPadding() + 88.dp,
                     ),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(MEDIA_GRID_SPACING_DP.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     for (section in sections) {
@@ -376,11 +404,11 @@ fun MediaGalleryScreen(
                     state = listState,
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding() + 4.dp,
-                        start = 8.dp,
-                        end = 8.dp,
+                        start = 12.dp,
+                        end = 12.dp,
                         bottom = padding.calculateBottomPadding() + 88.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     for (section in sections) {
@@ -479,4 +507,16 @@ fun MediaGalleryScreen(
             },
         )
     }
+}
+
+/** [mediaGridColumns] from the grid's own width, split evenly. */
+private class MediaGridCells(private val usesWidth: Boolean) : GridCells {
+    override fun androidx.compose.ui.unit.Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        val count = mediaGridColumns(availableSize.toDp().value, usesWidth)
+        val total = (availableSize - spacing * (count - 1)).coerceAtLeast(0)
+        return List(count) { total / count + if (it < total % count) 1 else 0 }
+    }
+
+    override fun equals(other: Any?) = other is MediaGridCells && other.usesWidth == usesWidth
+    override fun hashCode() = usesWidth.hashCode()
 }

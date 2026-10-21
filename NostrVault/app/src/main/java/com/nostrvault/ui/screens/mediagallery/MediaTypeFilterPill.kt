@@ -2,6 +2,8 @@ package com.nostrvault.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -49,6 +51,14 @@ internal fun MediaTypeFilterPill(
 }
 
 /**
+ * The type menu's icon: outline with every type on, filled once narrowed,
+ * as iOS `circle.grid.2x2` / `circle.grid.2x2.fill`.
+ */
+internal fun mediaTypeMenuIcon(selection: Set<MediaTypeFilter>): androidx.compose.ui.graphics.vector.ImageVector =
+    if (MediaTypeSelection.isAll(selection)) androidx.compose.material.icons.Icons.Outlined.GridView
+    else androidx.compose.material.icons.Icons.Filled.GridView
+
+/**
  * The type filters as one menu, for the Vault tab, where the mode pill takes
  * the leading cluster: All Media, then Photos, Videos and GIFs, ticked when
  * on. Same taps as [MediaTypeFilterPill] (iOS mediaTypeMenu).
@@ -64,9 +74,9 @@ internal fun MediaTypeMenu(
     Box {
         IconButton(onClick = { expanded = true }, modifier = Modifier.size(40.dp)) {
             Icon(
-                imageVector = NostrVaultIcons.GridLayout,
+                imageVector = mediaTypeMenuIcon(selection),
                 contentDescription = if (all) "Media type: all" else "Media type: filtered",
-                tint = if (all) SecondaryText else colors.primary,
+                tint = colors.primary,
                 modifier = Modifier.size(25.dp),
             )
         }

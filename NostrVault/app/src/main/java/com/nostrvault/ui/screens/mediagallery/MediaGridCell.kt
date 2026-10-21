@@ -89,7 +89,8 @@ internal fun MediaGridCell(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(2.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.1f))
             .combinedClickable(
                 onClick = onTap,
                 onLongClick = onLongPress,
@@ -116,18 +117,6 @@ internal fun MediaGridCell(
                 contentDescription = "Video",
                 tint = Color.White.copy(alpha = 0.85f),
                 modifier = Modifier.size(32.dp),
-            )
-        }
-
-        // Source indicator dot (green = local blossom)
-        if (item.isLocal) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .then(Modifier.background(Color(0xFF4CAF50))),
             )
         }
 

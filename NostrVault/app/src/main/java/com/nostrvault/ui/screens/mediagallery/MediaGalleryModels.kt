@@ -56,12 +56,29 @@ internal fun withNoteIds(items: List<BlossomMediaItem>, noteIdByHash: Map<String
 /** What the Media tab shows instead of the grid. Port of iOS `MediaGalleryGrid.mediaContent`. */
 internal enum class MediaEmptyState(val title: String, val detail: String?) {
     /** Nothing to show yet and a scan is running. */
-    LOADING("Loading media…", "Scanning for uploads"),
+    LOADING("Loading media...", "Scanning for uploads"),
     /** There is media, but the type filter hides all of it. */
     FILTERED("No media found", "Try changing your filter settings"),
     /** No media at all. */
     NONE("No media found", null),
 }
+
+/**
+ * Grid columns, as iOS `AdaptiveLayout.columns(width:, ideal: 180, spacing: 6,
+ * minimum: 3, maximum: 6)`: three across on a phone; a tablet ([usesWidth])
+ * fits as many 180 dp tiles as its width holds, three to six.
+ */
+internal fun mediaGridColumns(widthDp: Float, usesWidth: Boolean): Int {
+    if (!usesWidth || widthDp <= 0f) return MEDIA_GRID_MIN_COLUMNS
+    val fitting = ((widthDp + MEDIA_GRID_SPACING_DP) / (MEDIA_GRID_IDEAL_DP + MEDIA_GRID_SPACING_DP)).toInt()
+    return fitting.coerceIn(MEDIA_GRID_MIN_COLUMNS, MEDIA_GRID_MAX_COLUMNS)
+}
+
+internal const val MEDIA_GRID_IDEAL_DP = 180f
+/** Gap between columns; rows sit 8 apart, as on iOS. */
+internal const val MEDIA_GRID_SPACING_DP = 6f
+internal const val MEDIA_GRID_MIN_COLUMNS = 3
+internal const val MEDIA_GRID_MAX_COLUMNS = 6
 
 /** Null when there is something to show; [total] is before the filter, [shown] after. */
 internal fun mediaEmptyState(total: Int, shown: Int, isLoading: Boolean): MediaEmptyState? = when {
