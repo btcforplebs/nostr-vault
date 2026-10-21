@@ -139,7 +139,12 @@ class VaultActivityViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
     private val seenStore: FollowersSeenStore,
+    logStore: com.nostrvault.relay.LogStore,
 ) : ViewModel() {
+
+    /** The relay's own boot step while it starts ("Booting Haven..."), as iOS shows it. */
+    val relayBootStatus: StateFlow<String> = logStore.bootStatusMessage
+
 
     private companion object {
         const val PAGE = 500
@@ -396,6 +401,7 @@ internal fun VaultActivityScreen(
     val unreadSince by activity.unreadSince.collectAsState()
     val profiles by activity.profiles.collectAsState()
     val relayStatus by RelayForegroundService.relayStatus.collectAsState()
+    val bootStatus by activity.relayBootStatus.collectAsState()
     // All, or only replies, mentions and quotes (the right pill's @).
     var filter by rememberSaveable { mutableStateOf(VaultActivityFilter.ALL) }
     // In Zaps Only mode, likes are hidden.
@@ -519,7 +525,7 @@ internal fun VaultActivityScreen(
                     CircularProgressIndicator(color = colors.primary, modifier = Modifier.size(32.dp))
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        if (booting) "Starting relay..." else "Loading your vault...",
+                        if (booting) bootStatus.ifBlank { "Starting relay..." } else "Loading your vault...",
                         color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                     )
                 }
