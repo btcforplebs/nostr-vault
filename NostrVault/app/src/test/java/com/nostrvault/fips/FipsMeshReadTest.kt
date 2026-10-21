@@ -70,4 +70,20 @@ class FipsMeshReadTest {
             FipsMediaRouter.follows = emptySet()
         }
     }
+
+    @Test
+    fun theOwnersOwnNotesAreDialled() {
+        val owner = "c".repeat(64)
+        val stranger = "b".repeat(64)
+        FipsMediaRouter.follows = emptySet()
+        FipsMediaRouter.ownerHex = { owner }
+        try {
+            assertEquals(true, FipsMediaRouter.mayDial(owner))
+            assertEquals(false, FipsMediaRouter.mayDial(stranger))
+            FipsMediaRouter.ownerHex = { "" }
+            assertEquals(false, FipsMediaRouter.mayDial(""))
+        } finally {
+            FipsMediaRouter.ownerHex = { "" }
+        }
+    }
 }

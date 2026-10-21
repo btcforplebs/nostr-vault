@@ -289,6 +289,7 @@ class NostrService @Inject constructor(
         initialize()
         FipsMediaRouter.serverLists = { _serverLists.value }
         FipsMediaRouter.requestServerList = { fetchServerList(it) }
+        FipsMediaRouter.ownerHex = { ownerHexPubkey }
         homeVault.ownerHex = { ownerHexPubkey }
         homeVault.ownerIsActive = { ownerHexPubkey.isNotEmpty() && activeHexPubkey == ownerHexPubkey }
         homeVault.signerIsLocal = {
