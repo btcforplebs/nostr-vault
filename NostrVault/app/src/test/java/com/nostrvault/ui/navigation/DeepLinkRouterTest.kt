@@ -141,6 +141,8 @@ class DeepLinkRouterTest {
         assertEquals("hello", target?.seedNote?.content)
         assertNull(target?.relayFocus)
         assertEquals("npub1abc", target?.accountNpub)
+        // iOS switches to the Feed tab, then pushes the thread.
+        assertEquals(Screen.Feed.route, target?.overTab)
     }
 
     @Test fun `a mention without a carried copy still opens its post, by id`() {
@@ -163,6 +165,8 @@ class DeepLinkRouterTest {
             val byId = DeepLinkRouter.fromNotification(type, hexNote, hexAuthor, null, event = like)
             assertEquals(type, Screen.NoteDetail.createRoute(hexPost), byId?.route)
             assertNull(type, byId?.seedNote)
+            assertEquals(type, Screen.Feed.route, carried?.overTab)
+            assertEquals(type, Screen.Feed.route, byId?.overTab)
         }
     }
 
@@ -202,6 +206,13 @@ class DeepLinkRouterTest {
         assertEquals(Screen.Profile.createRoute(hexAuthor), target?.route)
         assertEquals("npub1abc", target?.accountNpub)
         assertNull(target?.relayFocus)
+        // iOS opens it over the Vault tab's Followers list.
+        assertEquals(Screen.Dashboard.route, target?.overTab)
+        assertEquals(NotificationTarget.FOLLOWERS, target?.behindFocus?.type)
+    }
+
+    @Test fun `a nostr link to a note opens on the current tab`() {
+        assertNull(DeepLinkRouter.fromUri("nostrvault://note/$hexNote", decoder)?.overTab)
     }
 
     @Test fun `the folded new-followers alert opens the Followers list`() {

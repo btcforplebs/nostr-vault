@@ -25,6 +25,14 @@ data class DeepLinkTarget(
      * opens the relay half, where a notification's list is.
      */
     val vaultMedia: Boolean = false,
+    /**
+     * A tab to switch to before pushing [route], as iOS does for a tapped
+     * notification: a post opens over the Feed tab, a follower's profile over
+     * the Vault tab.
+     */
+    val overTab: String? = null,
+    /** With [overTab] on the Vault tab: the list it shows behind [route]. */
+    val behindFocus: RelayFocusRequest? = null,
 )
 
 /**
@@ -177,8 +185,15 @@ object DeepLinkRouter {
             in NotificationTarget.RELAY_TYPES -> eventId?.takeIf { isHex64(it) }
                 ?.let { postTarget(type, it, account, event, target) }
             // A new follower opens their profile; the author is the follower.
+            // As on iOS, the Vault tab's Followers list waits behind it.
             "follow" -> author?.takeIf { isHex64(it) }
-                ?.let { DeepLinkTarget(Screen.Profile.createRoute(it), account) }
+                ?.let {
+                    DeepLinkTarget(
+                        Screen.Profile.createRoute(it), account,
+                        overTab = Screen.Dashboard.route,
+                        behindFocus = RelayFocusRequest(type = NotificationTarget.FOLLOWERS, eventId = ""),
+                    )
+                }
             // The folded strangers' alert names nobody: their Followers list.
             NotificationTarget.FOLLOWERS -> DeepLinkTarget(
                 route = Screen.Dashboard.route,
@@ -201,13 +216,13 @@ object DeepLinkRouter {
         val carried = NotificationNote.decode(event)
         val about = type == "reaction" || type == "repost" || type == "zap"
         if (!about) {
-            return DeepLinkTarget(Screen.NoteDetail.createRoute(carried?.id ?: eventId), account, seedNote = carried)
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(carried?.id ?: eventId), account, seedNote = carried, overTab = Screen.Feed.route)
         }
         NotificationNote.decode(target)?.let {
-            return DeepLinkTarget(Screen.NoteDetail.createRoute(it.id), account, seedNote = it)
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(it.id), account, seedNote = it, overTab = Screen.Feed.route)
         }
         carried?.let { NotificationTarget.targetNoteId(type, it.id, it.tags) }?.let {
-            return DeepLinkTarget(Screen.NoteDetail.createRoute(it), account)
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(it), account, overTab = Screen.Feed.route)
         }
         return DeepLinkTarget(
             route = Screen.Dashboard.route,
