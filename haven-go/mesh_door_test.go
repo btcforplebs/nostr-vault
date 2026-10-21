@@ -616,3 +616,22 @@ func TestMeshSlowUploadDropped(t *testing.T) {
 		t.Fatalf("fresh token (control): %d, want 200", code)
 	}
 }
+
+// BUD-11 clients send base64url without padding (barrydeen/haven#138).
+func TestMeshUploadAcceptsBase64URLToken(t *testing.T) {
+	h := startHaven(t)
+	door := startMeshDoor(t)
+
+	body := []byte("photo signed by a BUD-11 client")
+	raw, err := base64.StdEncoding.DecodeString(blossomUploadAuth(t, h.ownerSK, body)[6:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for len(raw)%3 == 0 { // force a token that std base64 would pad
+		raw = append(raw, ' ')
+	}
+	auth := "Nostr " + base64.RawURLEncoding.EncodeToString(raw)
+	if code := meshPut(t, door, auth, body); code != http.StatusOK {
+		t.Fatalf("base64url upload: got %d, want 200", code)
+	}
+}
