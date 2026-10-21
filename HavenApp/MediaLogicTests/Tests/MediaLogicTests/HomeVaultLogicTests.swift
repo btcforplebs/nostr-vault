@@ -310,6 +310,33 @@ final class MacMediaVaultTests: XCTestCase {
         XCTAssertNil(HomeVaultLogic.mediaVault(homeVault: nil, macMeshNpub: macNpub, ownerHex: ""), "no account, no vault")
     }
 
+    func testThePhoneListsItsLinkedMacSoAMacWithNoKeyIsNamed() {
+        let kiosk = HomeVault(ownerHex: owner, meshNpub: kioskNpub)
+        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: nil, macMeshNpub: macNpub, ownerHex: owner),
+                       ["fipsmesh://\(macNpub)/"])
+        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: kiosk, macMeshNpub: macNpub, ownerHex: owner),
+                       ["fipsmesh://\(kioskNpub)/", "fipsmesh://\(macNpub)/"], "both, not one instead of the other")
+        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: HomeVault(ownerHex: String(repeating: "b", count: 64), meshNpub: kioskNpub),
+                                                       macMeshNpub: nil, ownerHex: owner), [], "another account's vault")
+        XCTAssertEqual(HomeVaultLogic.phoneMeshEntries(homeVault: nil, macMeshNpub: macNpub, ownerHex: ""), [], "no account")
+
+        // Logen's case: the Mac's list names only https; the phone's publish adds the Mac.
+        let existing = ["https://logen.btcforplebs.com"]
+        XCTAssertTrue(HomeVaultLogic.photoNodeMissing(from: existing, photoNpub: macNpub))
+        let merged = HomeVaultLogic.mergeServerList(
+            existing: existing,
+            current: ["https://logen.btcforplebs.com"] + HomeVaultLogic.phoneMeshEntries(homeVault: nil, macMeshNpub: macNpub, ownerHex: owner),
+            previouslyManaged: [], ownMeshNpub: kioskNpub)
+        XCTAssertEqual(merged, ["https://logen.btcforplebs.com", "fipsmesh://\(macNpub)/"])
+        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: merged, photoNpub: macNpub), "listed once, no republish loop")
+
+        // Unlinking the Mac drops the entry this phone added.
+        let unlinked = HomeVaultLogic.mergeServerList(
+            existing: merged!, current: ["https://logen.btcforplebs.com"],
+            previouslyManaged: Set(["https://logen.btcforplebs.com", "fipsmesh://\(macNpub)/"]), ownMeshNpub: kioskNpub)
+        XCTAssertEqual(unlinked, ["https://logen.btcforplebs.com"])
+    }
+
     func testForwardServerIsTheFirstPublicEntryOfTheOwnersList() {
         let list = ["fipsmesh://\(kioskNpub)/", "https://192.168.1.5:4443", "https://logen.btcforplebs.com", "https://blossom.band"]
         XCTAssertEqual(HomeVaultLogic.forwardServer(phoneMirrors: [], ownerServerList: list), "https://logen.btcforplebs.com")

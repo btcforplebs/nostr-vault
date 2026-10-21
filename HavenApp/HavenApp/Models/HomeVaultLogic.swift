@@ -182,6 +182,18 @@ extension HomeVaultLogic {
         return out
     }
 
+    /// The mesh entries a phone lists in its owner's 10063: the home vault it
+    /// sends to, and the Mac it is linked to by mesh npub. A phone with the
+    /// owner's key lists the Mac, so a Mac with no key is still named (Logen,
+    /// 2026-10-21). Only the active account's own devices.
+    static func phoneMeshEntries(homeVault: HomeVault?, macMeshNpub: String?, ownerHex: String) -> [String] {
+        guard !ownerHex.isEmpty else { return [] }
+        var out: [String] = []
+        if let vault = homeVault, vault.ownerHex == ownerHex { out.append("fipsmesh://\(vault.meshNpub)/") }
+        if let mac = macMeshNpub.flatMap({ meshNpub(fromInput: $0) }) { out.append("fipsmesh://\(mac)/") }
+        return out
+    }
+
     /// Whether the owner's kept 10063 still lacks the photo node, so the Mac
     /// should republish. Nil list (none seen yet) or no photo node: no.
     static func photoNodeMissing(from kept: [String]?, photoNpub: String?) -> Bool {
