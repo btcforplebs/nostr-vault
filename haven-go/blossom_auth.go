@@ -32,3 +32,6 @@ func normalizeNostrAuthHeader(r *http.Request) {
 	}
 	r.Header.Set("Authorization", "Nostr "+base64.StdEncoding.EncodeToString(raw))
 }
+
+// base64Std is the padded standard form khatru-style servers decode.
+func base64Std(raw []byte) string { return base64.StdEncoding.EncodeToString(raw) }

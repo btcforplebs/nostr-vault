@@ -27,7 +27,9 @@ struct HomeVaultItem: Codable, Equatable, Identifiable {
     /// Not before this (per-item backoff). Optional: older queues lack it.
     var notBefore: Date?
     /// For a public copy: the server the published note names. Only that
-    /// server having the blob clears the item. Optional: older queues lack it.
+    /// server having the blob clears the item. For a blob: the public server
+    /// the vault passes it on to (photos through the Mac). Optional: older
+    /// queues lack it.
     var server: String? = nil
 }
 
@@ -206,6 +208,13 @@ extension HomeVaultLogic {
         item.attempts >= maxAttempts || (item.attempts > 0 && now.timeIntervalSince(item.added) > maxAge)
     }
 
+    /// How long the vault may keep retrying a public upload for the phone.
+    static let forwardAuthLifetime: TimeInterval = 6 * 3600
+
+    /// When the phone first checks the public server itself after asking the
+    /// vault to pass a photo on, and uploads it only if it is still missing.
+    static let forwardFallbackDelay: TimeInterval = 15 * 60
+
     /// Signer prompts one Send now tap may cause with a bunker signer.
     static let maxPromptsPerTap = 10
 
@@ -213,10 +222,7 @@ extension HomeVaultLogic {
     /// blob: where it will be once the public upload goes through (BUD-01
     /// `/<sha256>.<ext>`). Never a fipsmesh or loopback address (Tao).
     static func publicBlobURL(server: String, sha256: String, contentType: String) -> URL? {
-        // Public means reachable by any reader: not a mesh name, not a home
-        // network or Tailscale host, which would also tell readers about it.
-        guard server.hasPrefix("https://"), !server.contains(".fips"),
-              let host = URL(string: server)?.host, !HavenConfig.isPrivateNetworkHost(host) else { return nil }
+        guard isPublicServer(server) else { return nil }
         var base = server
         while base.hasSuffix("/") { base.removeLast() }
         let ext: String
@@ -237,6 +243,32 @@ extension HomeVaultLogic {
 }
 
 extension HomeVaultLogic {
+    /// Public means reachable by any reader: not a mesh name, not a home
+    /// network or Tailscale host, which would also tell readers about it.
+    static func isPublicServer(_ server: String) -> Bool {
+        guard server.hasPrefix("https://"), !server.contains(".fips"),
+              let host = URL(string: server)?.host else { return false }
+        return !HavenConfig.isPrivateNetworkHost(host)
+    }
+
+    /// Where media goes over the mesh: the kiosk picked as home vault, else
+    /// the owner's Mac when it is set by its mesh npub (photos through the
+    /// Mac, Logen 2026-10-21). Notes never use the Mac this way: the relay
+    /// already sends them to the Mac relay.
+    static func mediaVault(homeVault: HomeVault?, macMeshNpub: String?, ownerHex: String) -> HomeVault? {
+        if let homeVault { return homeVault }
+        guard let macMeshNpub, !ownerHex.isEmpty else { return nil }
+        return HomeVault(ownerHex: ownerHex, meshNpub: macMeshNpub)
+    }
+
+    /// The public server the vault passes a photo on to, when this phone has
+    /// none of its own: the first public entry of the owner's media server
+    /// list (10063). nil while the phone has servers (it uploads itself).
+    static func forwardServer(phoneMirrors: [String], ownerServerList: [String]) -> String? {
+        guard phoneMirrors.isEmpty else { return nil }
+        return ownerServerList.first(where: isPublicServer)
+    }
+
     /// The first configured server a public note may name, if any.
     static func linkServer(mirrors: [String], sha256: String, contentType: String) -> String? {
         mirrors.first { publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }

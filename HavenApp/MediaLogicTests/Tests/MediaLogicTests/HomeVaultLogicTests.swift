@@ -219,3 +219,40 @@ final class HomeVaultLinkTests: XCTestCase {
         XCTAssertNil(HomeVaultLogic.linkServer(mirrors: ["https://10.0.0.2"], sha256: sha, contentType: "image/png"))
     }
 }
+
+/// Photos through the Mac: with no server on the phone, media goes to the Mac
+/// over the mesh and the Mac passes it on to the owner's public server.
+final class MacMediaVaultTests: XCTestCase {
+    private let owner = String(repeating: "a", count: 64)
+    private let macNpub = "npub1z2g42utgkc5tv49xgwy7lplfd8048vuwv9krcc23m828kdjm3cl68tgcyy"
+    private let kioskNpub = "npub1h8ts9gragczufl8v44chxgut0a870ranmjws865ejtvphmn0czt7cp5dae"
+
+    func testMacIsTheMediaVaultOnlyWithoutAKiosk() {
+        XCTAssertEqual(HomeVaultLogic.mediaVault(homeVault: nil, macMeshNpub: macNpub, ownerHex: owner),
+                       HomeVault(ownerHex: owner, meshNpub: macNpub))
+        let kiosk = HomeVault(ownerHex: owner, meshNpub: kioskNpub)
+        XCTAssertEqual(HomeVaultLogic.mediaVault(homeVault: kiosk, macMeshNpub: macNpub, ownerHex: owner), kiosk)
+        XCTAssertNil(HomeVaultLogic.mediaVault(homeVault: nil, macMeshNpub: nil, ownerHex: owner))
+        XCTAssertNil(HomeVaultLogic.mediaVault(homeVault: nil, macMeshNpub: macNpub, ownerHex: ""), "no account, no vault")
+    }
+
+    func testForwardServerIsTheFirstPublicEntryOfTheOwnersList() {
+        let list = ["fipsmesh://\(kioskNpub)/", "https://192.168.1.5:4443", "https://logen.btcforplebs.com", "https://blossom.band"]
+        XCTAssertEqual(HomeVaultLogic.forwardServer(phoneMirrors: [], ownerServerList: list), "https://logen.btcforplebs.com")
+        XCTAssertNil(HomeVaultLogic.forwardServer(phoneMirrors: [], ownerServerList: ["http://plain.example", "https://mac.tail1.ts.net"]),
+                     "only a server any reader can open")
+        XCTAssertNil(HomeVaultLogic.forwardServer(phoneMirrors: [], ownerServerList: []))
+    }
+
+    /// A phone with its own server uploads itself; the vault forwards nothing.
+    func testNoForwardWhileThePhoneHasAServer() {
+        XCTAssertNil(HomeVaultLogic.forwardServer(phoneMirrors: ["https://blossom.band"], ownerServerList: ["https://logen.btcforplebs.com"]))
+    }
+
+    func testPublicServerRule() {
+        XCTAssertTrue(HomeVaultLogic.isPublicServer("https://logen.btcforplebs.com"))
+        for s in ["http://logen.btcforplebs.com", "https://npub1x.fips", "https://10.0.0.2", "https://127.0.0.1:3355", "fipsmesh://\(macNpub)/"] {
+            XCTAssertFalse(HomeVaultLogic.isPublicServer(s), s)
+        }
+    }
+}
