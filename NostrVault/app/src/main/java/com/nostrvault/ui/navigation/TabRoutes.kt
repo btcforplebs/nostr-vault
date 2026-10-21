@@ -226,13 +226,16 @@ private fun ProfilePage(navController: NavHostController, pubkey: String, isTab:
         // bottom bar does, then down to the tab itself: its saved stack may
         // hold the note this profile was opened from.
         onOpenMyProfile = {
-            navController.popBackStack()
-            navController.navigate(PROFILE_TAB_ROUTE) {
-                popUpTo(Screen.Feed.route) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
+            // A second tap while this page leaves would pop the tab too.
+            if (navController.currentDestination?.route == Screen.Profile.route) {
+                navController.popBackStack()
+                navController.navigate(PROFILE_TAB_ROUTE) {
+                    popUpTo(Screen.Feed.route) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+                navController.popBackStack(PROFILE_TAB_ROUTE, inclusive = false)
             }
-            navController.popBackStack(PROFILE_TAB_ROUTE, inclusive = false)
         },
         onBack = { navController.popBackStack() },
         isTab = isTab,
