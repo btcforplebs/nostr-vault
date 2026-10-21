@@ -113,6 +113,11 @@ class DMInboxViewModel @Inject constructor(
 
     fun markAllAsRead() = dmService.markAllAsRead()
 
+    /** The banner's Retry: one more pass over what the signer couldn't open. */
+    fun retryWaitingForSigner() {
+        viewModelScope.launch { dmService.retryWaitingForSigner() }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
@@ -202,36 +207,6 @@ private fun DMInboxList(
                     )
                 }
 
-                if (pendingDecrypt > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    GlassPill {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp),
-                        ) {
-                            if (decryptBlocked) {
-                                Text(
-                                    text = "$pendingDecrypt locked — enable Amber auto-sign",
-                                    color = colors.primary,
-                                    fontSize = 12.sp,
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    color = colors.primary,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Decrypting $pendingDecrypt…",
-                                    color = PrimaryText,
-                                    fontSize = 12.sp,
-                                )
-                            }
-                        }
-                    }
-                }
-
                 Spacer(Modifier.weight(1f))
 
                 // Trailing pill: compose new message
@@ -246,37 +221,41 @@ private fun DMInboxList(
             }
         },
     ) { padding ->
-        // iOS has no loading state: the list, or its empty state, straight away.
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = viewModel::refresh,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            val blocked = dmUnavailable
-            if (blocked != null && conversations.isEmpty()) {
-                // A watch-only account has no key here, so the inbox can
-                // only ever be empty: say that instead of "no messages yet".
-                DMUnavailableNotice(blocked)
-            } else if (conversations.isEmpty()) {
-                DMInboxEmptyState()
-            } else {
-                // iOS: one grouped surface, no separators between rows.
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(
-                        items = conversations,
-                        key = { it.id },
-                    ) { conversation ->
-                        ConversationRow(
-                            conversation = conversation,
-                            profile = viewModel.profileFor(conversation.id),
-                            isSelected = conversation.id == selected,
-                            showChevron = showChevrons,
-                            onClick = { onConversationClick(conversation.id) },
-                        )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // iOS: messages the signer hasn't opened yet, in a banner above the list.
+            if (decryptBlocked && pendingDecrypt > 0) {
+                DMSignerWaitingBanner(count = pendingDecrypt, onRetry = viewModel::retryWaitingForSigner)
+            }
+            // iOS has no loading state: the list, or its empty state, straight away.
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                val blocked = dmUnavailable
+                if (blocked != null && conversations.isEmpty()) {
+                    // A watch-only account has no key here, so the inbox can
+                    // only ever be empty: say that instead of "no messages yet".
+                    DMUnavailableNotice(blocked)
+                } else if (conversations.isEmpty()) {
+                    DMInboxEmptyState()
+                } else {
+                    // iOS: one grouped surface, no separators between rows.
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(
+                            items = conversations,
+                            key = { it.id },
+                        ) { conversation ->
+                            ConversationRow(
+                                conversation = conversation,
+                                profile = viewModel.profileFor(conversation.id),
+                                isSelected = conversation.id == selected,
+                                showChevron = showChevrons,
+                                onClick = { onConversationClick(conversation.id) },
+                            )
+                        }
                     }
                 }
             }

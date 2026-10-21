@@ -244,6 +244,20 @@ class DMService @Inject constructor(
     }
 
     /**
+     * The inbox's Retry (iOS retryWaitingForSigner): one more pass over the
+     * messages the signer couldn't open. Only a person's tap calls this. The
+     * automatic drain still stops while blocked with nothing new queued (see
+     * [decryptPending]); this forgets that stop for one attempt, which halts
+     * again at the first message the signer still can't open, so it can't
+     * flood the signer with approval requests.
+     */
+    suspend fun retryWaitingForSigner() {
+        if (!isAmberMode() || pendingDecryptQueue.isEmpty()) return
+        decryptDrainMutex.withLock { lastBlockedSize = -1 }
+        decryptPending()
+    }
+
+    /**
      * Drain the queued inbound DMs, decrypting them ONE AT A TIME. Call this when
      * a DM screen becomes visible. No-op in local-key mode (those decrypt eagerly
      * on arrival). The drain mutex guarantees a single drainer even if the inbox
