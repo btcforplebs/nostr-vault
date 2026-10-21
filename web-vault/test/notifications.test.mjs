@@ -244,3 +244,75 @@ test("unread: a first visit marks nothing new; the next shows what came since; l
   // A browser that won't store anything still opens the list.
   assert.equal(visitNotifications(ME, { arriving: true, storage: { getItem() { throw new Error("no") }, setItem() { throw new Error("no") } }, now: 9 }), 9)
 })
+
+// Paging past the first 100, notes from outside the network, and the emoji a folded like row shows
+// (VaultActivityList.loadMoreActivity, ContentFilter.isOutside, reactionEmojiSummary).
+test("next page: starts at the oldest time, inclusive; a page with nothing new is the end", async () => {
+  const { nextPage } = await import("../src/net/notifications.js")
+  const page = [ev(1, ALICE, [["p", ME]], "", 500), ev(1, BOB, [["p", ME]], "", 300), ev(7, BOB, [["p", ME]], "+", 400)]
+  assert.deepEqual(nextPage(page, new Set()), { until: 300, done: false })
+  assert.deepEqual(nextPage(page, new Set(page.map(e => e.id))), { until: null, done: true }, "all seen already")
+  assert.deepEqual(nextPage([], new Set()), { until: null, done: true }, "empty page")
+  assert.deepEqual(nextPage(page, new Set([page[0].id])), { until: 300, done: false }, "one new is enough")
+})
+
+test("outside: not you, not whitelisted, not trusted; an empty trusted set counts nobody as outside", async () => {
+  const { isOutside } = await import("../src/net/notifications.js")
+  const trusted = new Set([BOB])
+  assert.equal(isOutside(ALICE, ME, new Set(), trusted), true, "the control: a stranger once the graph is in")
+  assert.equal(isOutside(ME, ME, new Set(), trusted), false, "the user")
+  assert.equal(isOutside(ALICE, ME, new Set([ALICE]), trusted), false, "whitelisted")
+  assert.equal(isOutside(BOB, ME, new Set(), trusted), false, "trusted")
+  assert.equal(isOutside(ALICE, ME, new Set(), new Set()), false, "no graph yet")
+})
+
+test("trusted web: the people the follows' lists name, plus the follows; empty while no list names anyone", async () => {
+  const { trustedWeb } = await import("../src/net/notifications.js")
+  const lists = new Map([[BOB, { tags: [["p", CAROL], ["p", "nothex"], ["e", N1]] }]])
+  assert.deepEqual([...trustedWeb([BOB], lists)].sort(), [BOB, CAROL].sort())
+  assert.equal(trustedWeb([BOB], new Map()).size, 0, "no lists")
+  assert.equal(trustedWeb([BOB], new Map([[BOB, { tags: [] }]])).size, 0, "lists that name nobody")
+})
+
+test("inside rows: a stranger's reply, mention, quote, article or highlight drops; their likes, reposts, zaps and follows stay", async () => {
+  const { insideRows } = await import("../src/net/notifications.js")
+  const types = ["reply", "mention", "quote", "article", "highlight", "reaction", "repost", "zap", "follow"]
+  const rows = types.flatMap(type => [ALICE, BOB].map(who => ({ id: `${type}-${who}`, type, who: [who] })))
+  const kept = insideRows(rows, ME, { trusted: new Set([BOB]) })
+  assert.deepEqual(kept.filter(r => r.who[0] === ALICE).map(r => r.type), ["reaction", "repost", "zap", "follow"])
+  assert.equal(kept.filter(r => r.who[0] === BOB).length, types.length)
+  assert.equal(insideRows(rows, ME).length, rows.length, "no graph: nobody is outside")
+  assert.equal(insideRows(rows, ME, { trusted: new Set([BOB]), whitelist: new Set([ALICE]) }).length, rows.length, "whitelisted")
+})
+
+test("reaction display: likes are a heart, dislikes a thumbs down, else the first emoji, text and shortcodes a heart", async () => {
+  const { reactionDisplayEmoji } = await import("../src/net/notifications.js")
+  for (const c of ["", "+", "+1", "❤", "❤️", " + "]) assert.equal(reactionDisplayEmoji(c), "❤️", JSON.stringify(c))
+  assert.equal(reactionDisplayEmoji("-"), "👎")
+  assert.equal(reactionDisplayEmoji("-1"), "👎")
+  assert.equal(reactionDisplayEmoji("🔥"), "🔥")
+  assert.equal(reactionDisplayEmoji("so 🤙 good"), "🤙", "the first emoji in text")
+  assert.equal(reactionDisplayEmoji("👍🏽"), "👍🏽", "a skin tone stays with its emoji")
+  assert.equal(reactionDisplayEmoji("1️⃣"), "1️⃣", "a keycap")
+  assert.equal(reactionDisplayEmoji(":soapbox:"), "❤️", "a custom shortcode")
+  assert.equal(reactionDisplayEmoji("123"), "❤️", "plain digits are not emoji")
+  assert.equal(reactionDisplayEmoji(undefined), "❤️")
+})
+
+test("reaction summary: up to three different emoji, first seen first; a heart when none", async () => {
+  const { reactionEmojiSummary } = await import("../src/net/notifications.js")
+  assert.equal(reactionEmojiSummary(["🔥", "+", "🔥", "🤙", "😂", "👀"]), "🔥❤️🤙")
+  assert.equal(reactionEmojiSummary(["+", ""]), "❤️")
+  assert.equal(reactionEmojiSummary([]), "❤️")
+  assert.equal(reactionEmojiSummary(["🔥", "🤙"], 1), "🔥")
+})
+
+test("grouping: a folded like row keeps every reaction's raw content, newest first", () => {
+  const rows = groupNotifications([
+    ev(7, ALICE, [["e", N1], ["p", ME]], "+", 10),
+    ev(7, BOB, [["e", N1], ["p", ME]], "🔥", 30),
+    ev(7, CAROL, [["e", N1], ["p", ME]], "", 20),
+  ], ME)
+  assert.deepEqual(rows[0].emojis, ["🔥", "", "+"])
+  assert.deepEqual(groupNotifications([ev(1, ALICE, [["p", ME]], "hi")], ME)[0].emojis, [], "only reactions carry emoji")
+})

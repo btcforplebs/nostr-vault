@@ -11,17 +11,34 @@ export const NOTIFICATION_KINDS = [1, 3, 6, 7, 16, 9802, 9735, 30023]
 const HEX64 = /^[0-9a-f]{64}$/
 
 /** Fetch events of the notification kinds that tag `pubkey`, newest first, the user's own left out. */
-export async function fetchNotifications(pubkey, relays, { limit = 100, since, until, trust = async evs => evs } = {}) {
+export async function fetchNotifications(pubkey, relays, opts = {}) {
+  return groupNotifications(await fetchNotificationEvents(pubkey, relays, opts), pubkey)
+}
+
+/** One page of the raw events behind the rows, at or before `until`. The screen keeps every page's events and groups
+ *  them together, so a note's likes fold into one row across pages. */
+export async function fetchNotificationEvents(pubkey, relays, { limit = 100, since, until, trust = async evs => evs } = {}) {
   const filter = { kinds: NOTIFICATION_KINDS, "#p": [pubkey], limit, ...(since ? { since } : {}), ...(until ? { until } : {}) }
   const evs = await pool.querySync(relays, filter, { maxWait: 8000 })
-  return groupNotifications(await trust(evs), pubkey) // `trust`: zaps.js trustedReceipts, dropping forged receipts
+  return trust(evs) // `trust`: zaps.js trustedReceipts, dropping forged receipts
+}
+
+/**
+ * Where the next page starts (VaultActivityList.loadMoreActivity): the oldest time in this page, inclusive, so notes
+ * sharing that second aren't skipped. `known` holds the ids already shown; a page with nothing new means the relays
+ * have no more. -> { until, done }
+ */
+export function nextPage(page, known) {
+  const fresh = page.filter(ev => ev?.id && !known.has(ev.id))
+  if (!fresh.length) return { until: null, done: true }
+  return { until: Math.min(...page.map(ev => ev.created_at)), done: false }
 }
 
 /**
  * Turn raw events into rows, newest first: own events dropped, each event classified (who / what / which note),
  * and reposts, reactions and zaps on the same note folded into one row so ten likes aren't ten rows. A zap with a
  * comment, or on the profile, keeps its own row; follows on one day share one (VaultActivity.build).
- * -> [{ id, type, who: [pubkey...], noteId, sats, emoji, comment, created_at, events }]
+ * -> [{ id, type, who: [pubkey...], noteId, sats, emoji, emojis (reactions' raw content, newest first), comment, created_at, events }]
  */
 export function groupNotifications(evs, pubkey) {
   const seen = new Set()
@@ -40,10 +57,11 @@ export function groupNotifications(evs, pubkey) {
     if (row) {
       if (!row.who.includes(n.who)) row.who.push(n.who)
       row.sats += n.sats
+      if (n.type === "reaction") row.emojis.push(n.event.content ?? "")
       row.events.push(n.event)
       continue
     }
-    const r = { id: n.event.id, type: n.type, who: [n.who], noteId: n.noteId, sats: n.sats, emoji: n.emoji, comment: n.comment, created_at: n.created_at, events: [n.event] }
+    const r = { id: n.event.id, type: n.type, who: [n.who], noteId: n.noteId, sats: n.sats, emoji: n.emoji, emojis: n.type === "reaction" ? [n.event.content ?? ""] : [], comment: n.comment, created_at: n.created_at, events: [n.event] }
     rows.push(r)
     if (key) byKey.set(key, r)
   }
@@ -62,6 +80,33 @@ function foldKey(n) {
 /** The Mentions filter: someone wrote to or about the user (VaultActivityList: replies, mentions and quotes). */
 export const MENTION_TYPES = new Set(["reply", "mention", "quote"])
 export const filterRows = (rows, filter) => filter === "mentions" ? rows.filter(r => MENTION_TYPES.has(r.type)) : rows
+
+/** Rows whose author wrote a note that tags the user (VaultActivity.build's `isOutside` branch): replies, mentions,
+ *  quotes, articles and highlights. Likes, reposts, zaps and follows are never dropped as outside. */
+export const NOTE_TYPES = new Set(["reply", "mention", "quote", "article", "highlight"])
+
+/** Whether a note tagging the user comes from outside their network (ContentFilter.isOutside): not the user, not
+ *  whitelisted, and not in `trusted`. An empty `trusted` (no graph yet) counts nobody as outside. */
+export const isOutside = (author, owner, whitelist, trusted) =>
+  author !== owner && !whitelist.has(author) && trusted.size > 0 && !trusted.has(author)
+
+/**
+ * The trusted set (FeedService.feedTrustedPubkeys, TrustMap.web): the graph plus the user's follows, or empty while
+ * there is no graph. The web's graph is the people the follows' contact lists name (wot.js followLists).
+ */
+export function trustedWeb(follows, lists) {
+  const graph = new Set()
+  for (const ev of lists.values()) for (const t of ev.tags ?? []) if (t[0] === "p" && HEX64.test(t[1] ?? "")) graph.add(t[1])
+  if (!graph.size) return graph
+  for (const pk of follows) graph.add(pk)
+  return graph
+}
+
+/** The rows left once notes from outside the network are dropped. The web has no whitelist of other people's keys
+ *  (Haven's only whitelists this browser's device key), so `whitelist` is empty unless a caller has one. */
+export function insideRows(rows, owner, { whitelist = new Set(), trusted = new Set() } = {}) {
+  return rows.filter(r => !(NOTE_TYPES.has(r.type) && isOutside(r.who[0], owner, whitelist, trusted)))
+}
 
 /** Where the account's "seen up to" time is kept (unix seconds). Not secret: only when the list was last open. */
 export const seenKey = pubkey => `nv:notifications-seen:${pubkey}`
@@ -133,6 +178,35 @@ export function reactionEmoji(content) {
   if (c === "" || c === "+") return "❤️"
   if (c === "-") return "👎"
   return c.length > 8 ? c.slice(0, 8) : c
+}
+
+/**
+ * A reaction's raw content as the iPhone's notification row shows it (reactionDisplayEmoji): a like is a heart, a
+ * dislike a thumbs down, anything else its first emoji, and a shortcode or plain text a heart.
+ */
+export function reactionDisplayEmoji(raw) {
+  const c = (raw ?? "").trim()
+  if (["", "+", "+1", "❤", "❤️"].includes(c)) return "❤️"
+  if (c === "-" || c === "-1") return "👎"
+  for (const { segment } of new Intl.Segmenter().segment(c)) if (emojiRenderable(segment)) return segment
+  return "❤️"
+}
+
+// Character.isEmojiRenderable: an emoji-presentation first scalar, any modifier base, or an emoji first scalar with
+// more after it (a keycap, a variation selector). Plain digits are emoji code points but none of these.
+const PRESENTATION = /^\p{Emoji_Presentation}/u, MODIFIER_BASE = /\p{Emoji_Modifier_Base}/u, EMOJI = /^\p{Emoji}/u
+const emojiRenderable = g => PRESENTATION.test(g) || MODIFIER_BASE.test(g) || (EMOJI.test(g) && [...g].length > 1)
+
+/** Up to `limit` different display emojis from raw reactions, first seen first; a heart when there are none
+ *  (reactionEmojiSummary). */
+export function reactionEmojiSummary(raws, limit = 3) {
+  const out = []
+  for (const raw of raws) {
+    const e = reactionDisplayEmoji(raw)
+    if (!out.includes(e)) out.push(e)
+    if (out.length === limit) break
+  }
+  return out.length ? out.join("") : "❤️"
 }
 
 /**
