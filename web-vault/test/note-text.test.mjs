@@ -19,28 +19,30 @@ registerHooks({
 })
 const { NoteText, Mention, TapImage } = await import("../src/components/NoteText.jsx")
 const { QuotedNote } = await import("../src/components/QuotedNote.jsx")
+const { NoteMedia } = await import("../src/components/NoteMedia.jsx")
 
 // The rendered parts: strings stay strings, elements become { type, ...props }.
 function parts(content) {
-  const children = [NoteText({ content }).props.children].flat()
+  const children = [NoteText({ content }).props.children].flat(Infinity)
   return children
-    .filter(c => c !== "")
+    .filter(c => c !== "" && c !== false)
     .map(c => (typeof c === "string" ? c : { type: c.type, ...c.props }))
 }
 
 test("in a DM, video links stay links, nostr:npub stays short text, and images wait for a tap unless trusted", () => {
   const npub = npubEncode("ab".repeat(32))
   const url = "https://x.example/v.mp4"
-  const els = [NoteText({ content: `${url} nostr:${npub} https://x.example/p.png`, dm: true }).props.children].flat().filter(c => typeof c !== "string")
+  const els = [NoteText({ content: `${url} nostr:${npub} https://x.example/p.png`, dm: true }).props.children].flat(Infinity).filter(c => c && typeof c !== "string")
   assert.deepEqual(els.map(e => e.type), ["a", "span", TapImage], "a stranger's image waits for a tap: no tracking pixel")
-  const trusted = [NoteText({ content: "https://x.example/p.png", dm: true, images: true }).props.children].flat().filter(c => typeof c !== "string")
+  const trusted = [NoteText({ content: "https://x.example/p.png", dm: true, images: true }).props.children].flat(Infinity).filter(c => c && typeof c !== "string")
   assert.equal(trusted[0].type, "img", "a follow's image shows")
   assert.equal(trusted[0].props.referrerpolicy, "no-referrer")
   assert.equal(els[0].props.href, url, "a link, no <video> preload")
   assert.equal(els[1].type, "span", "no Mention component, so no profile fetch"); assert.match(els[1].props.children, /^npub1/)
   // Outside a DM the same text gets a video player and a Mention.
-  const note = [NoteText({ content: `${url} nostr:${npub}` }).props.children].flat().filter(c => typeof c !== "string")
-  assert.deepEqual(note.map(e => e.type), ["video", Mention])
+  const note = [NoteText({ content: `${url} nostr:${npub}` }).props.children].flat(Infinity).filter(c => c && typeof c !== "string")
+  assert.deepEqual(note.map(e => e.type), [Mention, NoteMedia], "the video goes under the text (NoteMedia)")
+  assert.deepEqual(note[1].props.items, [{ url, type: "video" }])
 })
 
 test("plain text is one text part", () => {
@@ -88,32 +90,26 @@ test("an http link of 48 characters after the scheme shows in full", () => {
   assert.equal([parts(url)[0].children].flat().join(""), url.slice(7))
 })
 
-test("image links become lazy inline images", () => {
+// Media leave the text and go under it as NoteMedia items, as iOS FeedNoteRow (NostrContentFormatter strips them).
+const mediaOf = out => out.find(p => p.type === NoteMedia)?.items
+
+test("image links become NoteMedia images, out of the text", () => {
   for (const ext of ["png", "jpg", "jpeg", "gif", "webp", "avif", "PNG", "JPG"]) {
     const url = `https://cdn.example.com/pic.${ext}`
-    const [img] = parts(url)
-    assert.equal(img.type, "img", ext)
-    assert.equal(img.src, url)
-    assert.equal(img.class, "note-media")
-    assert.equal(img.loading, "lazy")
-    assert.equal(img.alt, "")
+    const out = parts(url)
+    assert.equal(out.length, 1, ext)
+    assert.deepEqual(mediaOf(out), [{ url, type: "image" }], ext)
   }
 })
 
 test("an image link with a query string is still an image", () => {
-  const [img] = parts("https://cdn.example.com/pic.jpg?w=600&h=400")
-  assert.equal(img.type, "img")
-  assert.equal(img.src, "https://cdn.example.com/pic.jpg?w=600&h=400")
+  assert.deepEqual(mediaOf(parts("https://cdn.example.com/pic.jpg?w=600&h=400")), [{ url: "https://cdn.example.com/pic.jpg?w=600&h=400", type: "image" }])
 })
 
-test("video links become inline video with controls", () => {
-  for (const ext of ["mp4", "webm", "mov", "MP4"]) {
+test("video links become NoteMedia videos", () => {
+  for (const ext of ["mp4", "webm", "mov", "m4v", "MP4"]) {
     const url = `https://cdn.example.com/clip.${ext}`
-    const [video] = parts(url)
-    assert.equal(video.type, "video", ext)
-    assert.equal(video.src, url)
-    assert.equal(video.controls, true)
-    assert.equal(video.preload, "metadata")
+    assert.deepEqual(mediaOf(parts(url)), [{ url, type: "video" }], ext)
   }
 })
 
@@ -122,9 +118,22 @@ test("an extension in the middle of a path is not media", () => {
   assert.equal(parts("https://example.com/file.svg")[0].type, "a")
 })
 
-test("several links, images and text keep their order", () => {
-  const out = parts("a https://x.com/1.png b https://y.com c")
-  assert.deepEqual(out.map(p => (typeof p === "string" ? p : p.type)), ["a ", "img", " b ", "a", " c"])
+test("links and text keep their order; media go after the text, and the whitespace they leave at the ends is trimmed", () => {
+  const out = parts("a https://x.com/1.png b https://y.com c\n\nhttps://x.com/2.mp4\n")
+  assert.deepEqual(out.map(p => (typeof p === "string" ? p : p.type)), ["a  b ", "a", " c", NoteMedia])
+  assert.deepEqual(mediaOf(out).map(m => m.url), ["https://x.com/1.png", "https://x.com/2.mp4"])
+})
+
+test("imeta media show too, once: a url already in the text isn't repeated", () => {
+  const tags = [["imeta", "url https://x.com/1.png", "m image/png"], ["imeta", "url https://b.example/" + "c".repeat(64), "m video/mp4", "dim 1920x1080"]]
+  const children = [NoteText({ content: "hi https://x.com/1.png", tags }).props.children].flat(Infinity).filter(c => c && typeof c !== "string")
+  assert.equal(children.length, 1)
+  assert.deepEqual(children[0].props.items, [{ url: "https://x.com/1.png", type: "image" }, { url: "https://b.example/" + "c".repeat(64), type: "video", width: 1920, height: 1080 }])
+})
+
+test("with images off (a stranger in Notifications) an image still waits for a tap, in place", () => {
+  const els = [NoteText({ content: "a https://x.com/1.png b", images: false }).props.children].flat(Infinity).filter(c => c && typeof c !== "string")
+  assert.deepEqual(els.map(e => e.type), [TapImage])
 })
 
 test("links stop at whitespace, quotes and angle brackets", () => {
@@ -155,9 +164,9 @@ test("punctuation after a link stays in the text", () => {
 })
 
 test("an image link at the end of a sentence is still an image", () => {
-  const img = parts("look https://x.com/pic.png.").find(p => typeof p !== "string")
-  assert.equal(img.type, "img")
-  assert.equal(img.src, "https://x.com/pic.png")
+  const out = parts("look https://x.com/pic.png.")
+  assert.deepEqual(out[0], "look .")
+  assert.deepEqual(mediaOf(out), [{ url: "https://x.com/pic.png", type: "image" }])
 })
 
 test("a link keeps a ) that closes its own (", () => {
@@ -216,12 +225,12 @@ test("text around a quote keeps its place", () => {
 
 test("inside a quoted note (depth 1) a quote stays a short reference, but a mention is still a Mention", () => {
   const note = noteEncode("4cd665db9d8ac9b9ab26b2aedb4c6c2a9ed2e21b9c0aa64e7f1ac1cfcc9e5f68")
-  const inner = [NoteText({ content: `nostr:${note}`, depth: 1 }).props.children].flat().filter(c => c !== "")
+  const inner = [NoteText({ content: `nostr:${note}`, depth: 1 }).props.children].flat(Infinity).filter(c => c !== "" && c !== false)
   assert.equal(inner[0].type, "span")
   assert.equal(inner[0].props.class, "mention")
   assert.equal(inner[0].props.children, note.slice(0, 12) + "…")
   const hex = "82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"
-  assert.equal([NoteText({ content: `nostr:${hex}`, depth: 1 }).props.children].flat().filter(c => c !== "")[0].type, Mention)
+  assert.equal([NoteText({ content: `nostr:${hex}`, depth: 1 }).props.children].flat(Infinity).filter(c => c !== "" && c !== false)[0].type, Mention)
 })
 
 test("a nostr: reference that doesn't decode is shown short, as text", () => {

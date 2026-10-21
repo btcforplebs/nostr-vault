@@ -66,7 +66,7 @@ function card(event, memoryOnly, showParent) {
 // Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it. A ⌘/Ctrl-click or a
 // middle-click opens the thread in a new browser tab, as a link would.
 const openThread = id => e => {
-  if (e.target.closest("a, button, video, audio")) return
+  if (e.target.closest("a, button, video, audio, .media-box")) return
   if (e.type === "auxclick" && e.button !== 1) return
   if (e.metaKey || e.ctrlKey || e.button === 1) { open(`#/thread/${id}`, "_blank", "noopener"); return }
   location.hash = `#/thread/${id}`
@@ -100,7 +100,7 @@ function NoteBody({ event, memoryOnly, showParent = false }) {
         <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
       </div>
       {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
-      <NoteText content={event.content} memoryOnly={memoryOnly} />
+      <NoteText content={event.content} tags={event.tags} memoryOnly={memoryOnly} />
     </>
   )
 }
