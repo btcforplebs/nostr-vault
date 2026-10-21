@@ -132,6 +132,7 @@ class RelayProcessManager: ObservableObject {
         guard isUIActive else { return }
         isUIActive = false
         logStore.stopThrottler()
+        logStore.isUIActive = false
         // Hand back whatever the last sync/import round left on the Go heap.
         // Off the main thread on purpose: FreeOSMemory runs a full GC (tens to
         // hundreds of ms), and blocking cgo calls on the main thread are what
@@ -148,6 +149,7 @@ class RelayProcessManager: ObservableObject {
     func enterForeground() {
         guard !isUIActive else { return }
         isUIActive = true
+        logStore.isUIActive = true
         logStore.startThrottler()
         #if DEBUG
         print("RelayProcessManager: entering foreground mode")

@@ -101,6 +101,9 @@ extension NIP46Service {
         }
         defer { if let ticket { Task { await Self.backgroundGate.signal(ticket) } } }
         outstandingRequests += 1
+        // A signer can answer any request with an auth challenge; look for one
+        // only while something is waiting on the signer.
+        if authPollerTask == nil { startAuthURLPoller() }
         #if os(iOS)
         var bgTask: UIBackgroundTaskIdentifier = .invalid
         bgTask = UIApplication.shared.beginBackgroundTask(withName: "NIP46Request") {
@@ -112,6 +115,7 @@ extension NIP46Service {
         #endif
         defer {
             outstandingRequests -= 1
+            if outstandingRequests == 0 && connectionState != .connecting { stopAuthURLPoller() }
             #if os(iOS)
             if bgTask != .invalid {
                 UIApplication.shared.endBackgroundTask(bgTask)
@@ -135,6 +139,13 @@ extension NIP46Service {
                 checkPendingAuthURL()
             }
         }
+    }
+
+    /// Polling stops when nothing waits on the signer. It used to run every
+    /// 0.5 s from the first connect for the life of the app.
+    func stopAuthURLPoller() {
+        authPollerTask?.cancel()
+        authPollerTask = nil
     }
 
     func checkPendingAuthURL() {
