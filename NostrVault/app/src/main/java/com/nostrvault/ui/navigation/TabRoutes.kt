@@ -222,6 +222,18 @@ private fun ProfilePage(navController: NavHostController, pubkey: String, isTab:
             navController.navigate(Screen.FollowList.createRoute(pubkey, tab.name, total))
         },
         onCompose = { navController.navigate(Screen.ComposeNote.createRoute()) },
+        // iOS closes this profile, then switches to the Profile tab. As the
+        // bottom bar does, then down to the tab itself: its saved stack may
+        // hold the note this profile was opened from.
+        onOpenMyProfile = {
+            navController.popBackStack()
+            navController.navigate(PROFILE_TAB_ROUTE) {
+                popUpTo(Screen.Feed.route) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            navController.popBackStack(PROFILE_TAB_ROUTE, inclusive = false)
+        },
         onBack = { navController.popBackStack() },
         isTab = isTab,
     )

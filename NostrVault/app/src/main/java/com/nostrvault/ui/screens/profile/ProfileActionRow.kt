@@ -45,6 +45,12 @@ internal fun ProfileActionRow(
     /** Their page on the web (Brainstorm), to check trust off the device. */
     webLink: com.nostrvault.ui.components.NostrWebLinks.WebLink? = null,
     onOpenWebLink: () -> Unit = {},
+    /**
+     * Your own profile opened from a note or a list rather than the Profile
+     * tab: it shows you as others see you, with a way to the tab, where
+     * editing lives (iOS PersonProfileView `isYou`).
+     */
+    onOpenMyProfile: (() -> Unit)? = null,
     /** One per profile zap that went through; each plays the burst on the zap button. */
     zapBursts: kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.emptyFlow(),
 ) {
@@ -59,7 +65,11 @@ internal fun ProfileActionRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            if (isOwnProfile) {
+            if (isOwnProfile && onOpenMyProfile != null) {
+                // Nothing to follow, message or zap; editing is on the tab.
+                ActionChip("Open My Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onOpenMyProfile, modifier = Modifier.weight(1f))
+                ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+            } else if (isOwnProfile) {
                 // Post is the floating button. Pulling the page down opens
                 // Edit Profile too; the button stays for TalkBack and anyone
                 // who has not found the pull.

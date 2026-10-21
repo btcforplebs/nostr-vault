@@ -665,7 +665,8 @@ class ProfileViewModel @Inject constructor(
             moderationTarget = mediaModerationTarget(author),
             // iOS ProfileView.mediaGrid: your own files, and only a Blossom
             // file (named by its hash) can be deleted.
-            canDelete = sha != null && _isOwnProfile.value && isOwnNote(author),
+            // Not on your profile opened from a note (iOS canDeleteMedia).
+            canDelete = sha != null && tabReveal.opensAsTab.value && _isOwnProfile.value && isOwnNote(author),
         )
     }
 

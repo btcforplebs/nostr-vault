@@ -71,6 +71,8 @@ fun ProfileScreen(
     onOpenFollowList: (FollowListTab, Int?) -> Unit = { _, _ -> },
     /** The note composer: the Profile tab's floating Post button. */
     onCompose: () -> Unit = {},
+    /** Leaves this page for the Profile tab: your own profile opened from a note. */
+    onOpenMyProfile: () -> Unit = {},
     onBack: () -> Unit,
     /** The Profile tab, as opposed to a profile pushed from a note or a list.
      *  Only the tab goes without a back button; your own profile pushed from a
@@ -97,6 +99,10 @@ fun ProfileScreen(
     val counts by viewModel.counts.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val isOwnProfile by viewModel.isOwnProfile.collectAsState()
+    // Your own profile is only yours to edit, sell from and delete on the
+    // Profile tab; opened from a note it shows you as others see you (iOS
+    // MyProfileView vs PersonProfileView).
+    val isMyTab = isTab && isOwnProfile
     val visibleSections by viewModel.visibleSections.collectAsState()
     val isOwnerAccount = remember(pubkey) { viewModel.isOwnerAccount(pubkey) }
     val followsMe by viewModel.followsMe.collectAsState()
@@ -238,13 +244,16 @@ fun ProfileScreen(
 
                 Spacer(Modifier.weight(1f))
 
-                GlassPill {
-                    // Messages moved to the Vault tab's right pill.
-                    if (isOwnProfile) {
+                // Messages moved to the Vault tab's right pill. Your own
+                // profile opened from a note has nothing here (iOS isYou).
+                if (isMyTab) {
+                    GlassPill {
                         IconButton(onClick = onNavigateToSettings, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Settings, "Settings", tint = PrimaryText, modifier = Modifier.size(25.dp))
                         }
-                    } else {
+                    }
+                } else if (!isOwnProfile) {
+                    GlassPill {
                         IconButton(onClick = { onNavigateToDMThread(pubkey) }, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Chat, "Message", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
@@ -361,6 +370,7 @@ fun ProfileScreen(
                     },
                     webLink = brainstormLink,
                     onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
+                    onOpenMyProfile = if (isTab) null else onOpenMyProfile,
                     zapBursts = viewModel.zapBursts,
                 )
                 // One rule above the tabs instead of one between every block.
@@ -434,7 +444,7 @@ fun ProfileScreen(
                     }
                 }
             } else if (selectedSection == ProfileSection.SHOP) {
-                if (isOwnProfile) {
+                if (isMyTab) {
                     item {
                         Button(
                             onClick = { sellLaunched = true; onSell() },
@@ -461,7 +471,7 @@ fun ProfileScreen(
                             Text(
                                 text = when {
                                     shopLoading -> "Loading…"
-                                    isOwnProfile -> "You haven't listed anything yet"
+                                    isMyTab -> "You haven't listed anything yet"
                                     else -> "Nothing for sale"
                                 },
                                 color = SecondaryText,
@@ -594,8 +604,8 @@ fun ProfileScreen(
         }
         }
         // Your own profile has nothing that needs pulling fresh, so the pull
-        // opens the editor instead (iOS #456).
-        if (isOwnProfile) {
+        // opens the editor instead (iOS #456). Editing lives on the tab.
+        if (isMyTab) {
             PullToEditBox(labelTop = padding.calculateTopPadding(), onTrigger = openEditor) { list() }
         } else {
             list()
