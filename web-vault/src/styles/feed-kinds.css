@@ -28,3 +28,8 @@
 .link-card { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 10px; border-radius: 8px; background: var(--s2); color: var(--text-2); font: 500 13px var(--font); }
 .link-card-glyph { color: var(--accent-light); flex: none; }
 .link-card-domain { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+/* Translate (NoteTranslateButton): the translation beside an accent bar, then the button. */
+.translate { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.translate-text { margin: 0; padding-left: 10px; border-left: 2px solid rgb(230 115 38 / .6); color: rgb(255 255 255 / .92); font: 17px/1.4 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.translate-button { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 13px var(--font); }
+.translate-button.failed { color: rgb(255 69 58 / .8); }

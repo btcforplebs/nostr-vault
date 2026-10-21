@@ -12,6 +12,7 @@ import { mediaType } from "../net/media.js"
 import { noteMedia } from "../net/note-media.js"
 import { NoteMedia } from "./NoteMedia.jsx"
 import { inlineMarks } from "../net/inline-md.js"
+import { LinkCard } from "./LinkCard.jsx"
 
 const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+)/gi
 const MAX_QUOTE_DEPTH = 1
@@ -24,7 +25,9 @@ const MAX_QUOTE_DEPTH = 1
  *  `tags`: the note's tags, for its NIP-92 imeta media. Outside a DM, with images on, the note's media (text links
  *  and imeta, noteMedia) go under the text as one picture or a carousel (NoteMedia) and their links leave the text,
  *  as iOS FeedNoteRow does. */
-export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = false, images = !dm }) {
+/*  `linkCards`: a feed card's links (not media, not nostr:) become up to three link cards under the text and leave it,
+ *  as iOS LinkCards does. */
+export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false }) {
   let parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -34,6 +37,8 @@ export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = fa
   }
   const media = !dm && images ? noteMedia(parts.filter((_, i) => i % 2), tags) : []
   if (media.length) parts = withoutLinks(parts, new Set(media.map(m => m.url)))
+  const cards = linkCards && !dm ? cardLinks(parts) : []
+  if (cards.length) parts = withoutLinks(parts, new Set(cards))
   return (
     <div class="note-text">
       {parts.map((s, i) => {
@@ -46,8 +51,20 @@ export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = fa
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
       {media.length > 0 && <NoteMedia items={media} />}
+      {cards.map(url => <LinkCard key={url} url={url} />)}
     </div>
   )
+}
+
+/** The web links in [text, link, text, …] that get a card: not media, once each, at most MAX_LINK_CARDS. */
+export const MAX_LINK_CARDS = 3
+export function cardLinks(parts) {
+  const out = []
+  for (let i = 1; i < parts.length; i += 2) {
+    const s = parts[i]
+    if (/^https?:\/\//i.test(s) && !mediaType(s) && !out.includes(s)) out.push(s)
+  }
+  return out.slice(0, MAX_LINK_CARDS)
 }
 
 /** [text, link, text, …] with the `drop` links taken out (their text either side joined) and the whitespace left at
