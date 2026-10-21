@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2 (40) — macOS / iOS / Android] - 2026-10-21
+
+> **The App Store build: cooler, and Android matches the iPhone.** Everything merged since build 39 (#868–#965): the phone stays cool with the app open all day, a fix that keeps iPhone and Mac from linking out to buy a locked article, and a broad Android pass so its screens look and act like the iPhone's. Web vault and website changes merged in the same window ship separately and are not listed here.
+
+### Fixed
+- **Heat and Battery**: The relay stops its engagement firehose while the app is off screen (both apps now tell it when), stops resetting its reconnect backoff on a flapping relay, resumes subscriptions from the last event it saw, backs off signer polls, and skips Web of Trust rebuilds when nothing changed. iOS pauses relay logs and timers in the background, and the WoT globe runs cooler (60 fps storm, pooled sockets, closes when covered). Profile writes are batched (#881–#885).
+- **Locked Articles on iPhone and Mac**: No "Open in Fanfares" link out to buy a locked article on iPhone (App Store 3.1.1); the Mac keeps it. On every platform the Fanfares link is built only from the article's own address, never from a link in its text (#868).
+- **Android Launch Crash**: A new install could crash at launch; the feed's observers started before its state existed (#905).
+- **Blossom Uploads**: The relay accepts base64url upload tokens (BUD-11) (#965).
+
+### Changed
+- **Android Messages and Notifications, as on iPhone**: A NIP-17 notification opens its conversation, a tapped notification switches to the Feed or the Vault's Followers first, times read "5m ago" / "5 minutes ago", the inbox, thread and New Message screens match the iPhone (New Message from a profile has the person filled in), the Notifications settings match and ask for permission, press-and-hold the photo button to Paste Photo, a signer-waiting banner with Retry, the relay's boot step while it starts, and "while you were away" only after two hours away (#892–#899, #910, #912, #914, #919). iPhone: no X on a recipient filled in from a profile (#930).
+- **Android Settings, Tab Bar, Setup and Relay Sheet**: Laid out and worded as on the iPhone (#901–#904).
+- **Android Profile, Search, Follow Lists and WoT Globe**: Match the iPhone: profile header, buttons, tabs, grids, article cards and edit form; search and follow lists; the globe's top bar, trust card, rim and thread bands. Fixes a profile crash and a TalkBack crash on the globe (#922–#924, #956–#958, #960).
+- **Android Feed, Note Detail and Composer**: Rows, the note detail and the composer match the iPhone (#961–#963).
+
 ## [2.7.2 (39) — macOS / iOS / Android] - 2026-10-20
 
 > **The App Store release candidate.** Everything merged since build 38 (#766–#834, #853): an App Store review pass on every platform, safer key and config handling, Fanfares articles you can unlock, "Open in …" links to the rest of Nostr, and a long list of Android parity fixes. Web vault and website changes merged in the same window ship separately and are not listed here.
