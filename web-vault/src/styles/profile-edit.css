@@ -1,0 +1,20 @@
+/* Edit Profile (ProfileEditView): banner preview at 3:1, the name preview, then grouped label + field rows. */
+.edit-profile .screen-head button.save:not(:disabled) { color: var(--accent); }
+.edit-banner { aspect-ratio: 3; background: var(--accent-pale); overflow: hidden; }
+.edit-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.edit-preview { display: flex; gap: 14px; align-items: center; padding: 16px var(--gutter); border-bottom: 1px solid var(--hair); }
+.edit-preview .avatar { flex: none; border-radius: 50%; object-fit: cover; }
+.edit-preview p { margin: 3px 0 0; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.edit-group { padding: 14px var(--gutter) 6px; border-bottom: 1px solid var(--hair); }
+.edit-group h3 { margin: 0 0 6px; font: 800 10px/1 var(--font); letter-spacing: .07em; color: var(--text-2); }
+.edit-field { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: baseline; padding: 10px 0; font: var(--t-foot); color: var(--text-2); }
+.edit-field + .edit-field { border-top: 1px solid var(--hair); }
+.edit-field input, .edit-field textarea { font: var(--t-body); width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--hair); background: var(--s1); color: var(--text); resize: vertical; }
+.edit-field input:focus, .edit-field textarea:focus { outline: none; border-color: var(--accent-line); }
+.edit-uploads { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 0 10px; }
+.edit-uploads label.button { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  background: var(--accent-pale); color: var(--accent); font: var(--t-foot); font-weight: 600; }
+.edit-uploads label.button.disabled { background: var(--s2); color: var(--text-3); pointer-events: none; }
+.edit-uploads .error { flex-basis: 100%; margin: 0; }
+.edit-error { margin: 14px var(--gutter); font: var(--t-foot); }
