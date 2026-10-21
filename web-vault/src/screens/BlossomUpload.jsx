@@ -3,15 +3,20 @@
 // uploadPhoto, one kind 24242 authorisation per file). Copying a file to your other servers stays in its viewer. Not
 // offered when signed in read-only.
 import { useRef, useState } from "preact/hooks"
-import { uploadPhoto } from "../net/upload.js"
+import { megabytes, uploadPhoto } from "../net/upload.js"
 import { mediaType } from "../net/blossom-gallery.js"
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
-/** Uploads `files` one at a time. -> { added: [blob], errors: [string] }. `upload` is for tests. */
+/** The largest file the page will read: a file is read whole into memory to hash it, so a multi-GB video would take
+ *  the tab down (Tron, #938). 100 MB is also about what public Blossom servers take. iOS has no such cap. */
+export const MAX_UPLOAD_BYTES = 100_000_000
+
+/** Uploads `files` one at a time; one over MAX_UPLOAD_BYTES is skipped unread, with its own line. -> { added: [blob], errors: [string] }. `upload` is for tests. */
 export async function uploadFiles(files, { ctx, servers, upload = uploadPhoto, now = () => Math.floor(Date.now() / 1000) }) {
   const added = [], errors = []
   for (const file of files) {
+    if (file.size > MAX_UPLOAD_BYTES) { errors.push(`${file.name || "A file"}: ${megabytes(file.size)} is over the ${megabytes(MAX_UPLOAD_BYTES)} limit for uploads from the browser.`); continue }
     try {
       const r = await upload(file, { ctx, servers })
       added.push({ sha256: r.sha256, url: r.url, type: r.mime, size: r.size, uploaded: now(), kind: mediaType({ type: r.mime, url: r.url }), servers: [r.server] })

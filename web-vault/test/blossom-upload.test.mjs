@@ -35,6 +35,17 @@ test("each file goes through the upload path; successes become gallery files on 
   assert.equal(uploadNote({ added: r.added.slice(0, 1), errors: [] }, [S1]), "Uploaded 1 file to one.example.")
 })
 
+test("a file over the cap is skipped unread with its own line; the rest still upload", async () => {
+  const { MAX_UPLOAD_BYTES } = await import("../src/screens/BlossomUpload.jsx")
+  const seen = []
+  const upload = async file => { seen.push(file.name); return { url: `${S1}/x`, sha256: "a".repeat(64), mime: "image/png", size: 1, server: S1 } }
+  const files = [{ name: "huge.mov", type: "video/quicktime", size: 4_000_000_000 }, { name: "edge.png", type: "image/png", size: MAX_UPLOAD_BYTES }, { name: "small.png", type: "image/png", size: 10 }]
+  const r = await uploadFiles(files, { ctx: {}, servers: [S1], upload })
+  assert.deepEqual(seen, ["edge.png", "small.png"], "the huge one is never handed to the upload (never read)")
+  assert.deepEqual(r.errors, ["huge.mov: 4000 MB is over the 100 MB limit for uploads from the browser."])
+  assert.equal(r.added.length, 2)
+})
+
 test("no Upload when signed in read-only or with no servers", () => {
   assert.equal(BlossomUpload({ ctx: { signer: { readOnly: true } }, servers: [S1], onAdded() {} }), null)
   assert.equal(BlossomUpload({ ctx: { signer: {} }, servers: [], onAdded() {} }), null)
@@ -42,6 +53,6 @@ test("no Upload when signed in read-only or with no servers", () => {
 
 test("the upload is the note-photo path (net/upload.js uploadPhoto), not a second signing path", () => {
   const src = readFileSync(new URL("../src/screens/BlossomUpload.jsx", import.meta.url), "utf8")
-  assert.match(src, /import \{ uploadPhoto \} from "\.\.\/net\/upload\.js"/)
+  assert.match(src, /import \{ megabytes, uploadPhoto \} from "\.\.\/net\/upload\.js"/)
   assert.equal(/signEvent|finalizeEvent/.test(src), false)
 })
