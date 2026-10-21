@@ -285,11 +285,22 @@ final class FipsMeshService: ObservableObject {
     /// libnvfips: the engine was started without the relay link.
     nonisolated private static let errRelayOff: Int32 = -7
 
+    /// Advert and signaling relays, the same list the Mac helper uses. The
+    /// engine's defaults (damus, nos.lol, offchain.pub) carried no offers
+    /// from Logen's network on 2026-10-21: damus answers his IP with 503,
+    /// offchain.pub refuses, and nos.lol never relayed a kind 21059 offer.
+    nonisolated static let signalRelays = [
+        "wss://relay.nostr.net",
+        "wss://nostr.bitcoiner.social",
+        "wss://relay.btcforplebs.com",
+    ]
+
     /// Start options for every engine start. With a browser relay set up, the
     /// engine also joins the public seeds (the page's route) and opens its
     /// datagram API socket, so `relayPush` works whichever start came first.
     nonisolated static func startOptions(_ base: [String: Any] = [:]) -> String {
         var options = base
+        options["relays"] = signalRelays
         if BrowserRelaySender.isOn {
             options["public_seeds"] = true
             options["relay_socket"] = relaySocketPath
