@@ -117,6 +117,9 @@ class DMThreadViewModel @Inject constructor(
     val sendError = _sendError.asStateFlow()
     fun clearSendError() { _sendError.value = null }
 
+    /** Paste Photo found no photo on the clipboard (iOS says the same). */
+    fun noClipboardPhoto() { _sendError.value = "There's no photo on the clipboard." }
+
     /** Called while the thread is on screen, so its notifications stay quiet. */
     fun setVisible(visible: Boolean) {
         if (visible) {
@@ -329,6 +332,7 @@ fun DMThreadScreen(
                         isSending = isSending,
                         attachedImage = attachedImage,
                         onPasteImage = viewModel::attachPastedImage,
+                        onNoClipboardPhoto = viewModel::noClipboardPhoto,
                         onSend = viewModel::sendMessage,
                         onPickImage = {
                             imagePicker.launch(
@@ -591,6 +595,7 @@ private fun MessageInputBar(
     isSending: Boolean,
     attachedImage: Uri?,
     onPasteImage: (Uri) -> Unit,
+    onNoClipboardPhoto: () -> Unit,
     onSend: () -> Unit,
     onPickImage: () -> Unit,
     onClearImage: () -> Unit,
@@ -637,13 +642,12 @@ private fun MessageInputBar(
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                IconButton(onClick = onPickImage, enabled = !isSending) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Media,
-                        contentDescription = "Attach image",
-                        tint = colors.primary,
-                    )
-                }
+                DMPhotoButton(
+                    enabled = !isSending,
+                    onPick = onPickImage,
+                    onPaste = onPasteImage,
+                    onNoPhoto = onNoClipboardPhoto,
+                )
 
                 DMMessageField(
                     state = field,

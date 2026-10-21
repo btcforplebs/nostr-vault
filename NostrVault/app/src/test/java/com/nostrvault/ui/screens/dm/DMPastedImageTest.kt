@@ -39,4 +39,11 @@ class DMPastedImageTest {
             assertEquals(type, DMPastedImage.mimeTypeFor("paste_1.$ext"))
         }
     }
+
+    @Test fun `Paste Photo takes the first photo on the clipboard and skips anything else`() {
+        val types = mapOf("a" to "text/plain", "b" to "application/pdf", "c" to "image/png", "d" to "image/jpeg")
+        assertEquals("c", DMPastedImage.firstPhoto(listOf("a", "b", "c", "d")) { types[it] })
+        assertEquals(null, DMPastedImage.firstPhoto(listOf("a", "b")) { types[it] })
+        assertEquals(null, DMPastedImage.firstPhoto(emptyList<String>()) { types[it] })
+    }
 }

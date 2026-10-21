@@ -44,6 +44,10 @@ internal object DMPastedImage {
         return mimeTypeFor(uri.lastPathSegment.orEmpty())
     }
 
+    /** The first of [items] whose type is a photo we can attach. */
+    fun <T> firstPhoto(items: List<T>, typeOf: (T) -> String?): T? =
+        items.firstOrNull { extensionFor(typeOf(it)) != null }
+
     private fun isPasted(uri: Uri): Boolean =
         uri.scheme == "file" && uri.path?.let { File(it).parentFile?.name } == DIR
 
