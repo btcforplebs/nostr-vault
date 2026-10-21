@@ -8,6 +8,16 @@ import { fraction } from "./wot.js"
 /** TrustMap's shell radii: you at 0, follows, the extended network, further out. */
 export const RADIUS = { me: 0, follow: 1.0, extended: 1.3, further: 1.62 }
 
+/** How brightly each layer of the picker (wot.js LAYERS) draws your follows, the extended network and further out
+ *  (TrustMap.layerWeights). The others go out, so picking a layer visibly empties the globe; the outer shells' faint
+ *  dots are lit brighter when they're all that's left. */
+export const LAYER_WEIGHTS = {
+  everyone: { follow: 1, extended: 1, further: 1 },
+  following: { follow: 1, extended: 0, further: 0 },
+  close: { follow: 0, extended: 1.6, further: 0 },
+  furtherOut: { follow: 0, extended: 0, further: 1.6 },
+}
+
 /** TrustMap.direction: a longitude and an even height from the key, the point on the unit sphere. */
 export function direction(pubkey) {
   const longitude = fraction(pubkey, 0) * 2 * Math.PI

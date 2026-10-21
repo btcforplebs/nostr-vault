@@ -3,8 +3,12 @@
 // published.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPathText, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
-import { direction } from "../src/net/wot-globe.js"
+import { registerHooks } from "node:module"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { transformSync } from "rolldown/utils" // Vite 8's own transformer
+import { followLists, missingLists, buildWeb, filterWeb, shownByKey, trustPath, trustPathText, layerCounts, LAYERS, SHOWN_BRIDGES, fraction, hexPrefix, EXTENDED_MIN, RETRY_MS } from "../src/net/wot.js"
+import { direction, LAYER_WEIGHTS } from "../src/net/wot-globe.js"
 
 const hex = (c, i = 0) => (c.repeat(63) + i.toString(16)).slice(-64)
 const ME = hex("e")
@@ -100,17 +104,83 @@ test("blocking filters the built web to exactly what building it with those bloc
   assert.equal(filterWeb(built, lists, new Set()), built, "nothing blocked: the same web, no work")
 })
 
-test("the trust path, as the iPhone's card says it", () => {
-  const fs = [hex("1", 1), hex("1", 2), hex("1", 3), hex("1", 4)]
-  const lists = new Map([[fs[0], list(fs[0], [hex("6"), hex("7"), ME])], [fs[1], list(fs[1], [hex("6"), hex("7")])], [fs[2], list(fs[2], [hex("7")])], [fs[3], list(fs[3], [hex("7")])]])
+test("the trust path, word for word the iPhone's TrustPathText, bridges sorted by key", () => {
+  const fs = [hex("1", 4), hex("1", 3), hex("1", 2), hex("1", 1), hex("1", 5), hex("1", 6), hex("1", 7)] // not in key order
+  const one = hex("5"), two = hex("6"), three = hex("7"), many = hex("8"), six = hex("9"), stranger = hex("b")
+  const lists = new Map([
+    [fs[0], list(fs[0], [two, three, many, six, fs[1], ME])],
+    [fs[1], list(fs[1], [one, two, three, many, six])],
+    [fs[2], list(fs[2], [three, many, six])],
+    [fs[3], list(fs[3], [many, six])],
+    [fs[4], list(fs[4], [many, six])],
+    [fs[5], list(fs[5], [six])],
+    [fs[6], list(fs[6], [])],
+  ])
   const web = buildWeb(ME, fs, lists, { extendedMin: 99 })
-  const name = pk => ({ [fs[0]]: "Ann", [fs[1]]: "Bob", [fs[2]]: "Cy" })[pk] ?? "Di"
-  assert.equal(trustPathText(web, ME, name), "This is you")
-  assert.equal(trustPathText(web, fs[0], name), "You follow them · they follow you")
-  assert.equal(trustPathText(web, fs[1], name), "You follow them")
-  assert.equal(trustPathText(web, hex("6"), name), "Followed by Ann and Bob, who you follow")
-  assert.equal(trustPathText(web, hex("7"), name), "Followed by Ann, Bob and 2 others you follow")
-  assert.equal(trustPathText(web, hex("9"), name), "Not in your web")
+  const name = pk => ({ [hex("1", 1)]: "Ann", [hex("1", 2)]: "Bob", [hex("1", 3)]: "Cy", [hex("1", 4)]: "Di" })[pk] ?? "Ed"
+  assert.equal(trustPathText(web, ME, name), "This is you.")
+  assert.equal(trustPathText(web, fs[0], name), "You follow them · 1 hop")
+  assert.equal(trustPathText(web, fs[1], name), "You follow them · also followed by Di")
+  assert.equal(trustPathText(web, one, name), "Followed by Cy you follow · 2 hops")
+  assert.equal(trustPathText(web, two, name), "Followed by Cy and Di you follow · 2 hops", "sorted by key: Cy's key is lower")
+  assert.equal(trustPathText(web, three, name), "Followed by Bob, Cy + more you follow · 2 hops")
+  assert.equal(trustPathText(web, stranger, name), "Not in your web · no one you follow follows them")
+  assert.equal(trustPathText(null, stranger, name), "Tracing how they reach you…")
+  // Five bridges are shown; a sixth is "hasMore", and every one is traced on the globe.
+  assert.equal(SHOWN_BRIDGES, 5)
+  const p5 = trustPath(web, many), p6 = trustPath(web, six)
+  assert.deepEqual([p5.bridges.length, p5.hasMore], [5, false])
+  assert.deepEqual([p6.bridges.length, p6.hasMore, p6.all.length], [5, true, 6])
+  assert.deepEqual(p6.all, [...p6.all].sort())
+  assert.equal(p6.reach, "bridged")
+  assert.equal(trustPath(web, fs[1]).reach, "follow")
+})
+
+test("the layer picker: the iPhone's names, counts never counting you, and the globe's weights", () => {
+  assert.deepEqual(LAYERS.map(([id, title]) => [id, title]), [["everyone", "Everyone"], ["following", "Following"], ["close", "Vouched"], ["furtherOut", "Further out"]])
+  const follows = Array.from({ length: 10 }, (_, i) => hex("1", i))
+  const lists = new Map(follows.map((f, i) => [f, list(f, [hex("2"), ME, ...(i === 0 ? [hex("3"), hex("4")] : [])])]))
+  const web = buildWeb(ME, follows, lists)
+  assert.deepEqual(layerCounts(web), { everyone: 13, following: 10, close: 1, furtherOut: 2 })
+  // TrustMap.layerWeights: the picked layer stays, the rest go out; the outer shells' dots light up brighter alone.
+  assert.deepEqual(LAYER_WEIGHTS.everyone, { follow: 1, extended: 1, further: 1 })
+  assert.deepEqual(LAYER_WEIGHTS.following, { follow: 1, extended: 0, further: 0 })
+  assert.deepEqual(LAYER_WEIGHTS.close, { follow: 0, extended: 1.6, further: 0 })
+  assert.deepEqual(LAYER_WEIGHTS.furtherOut, { follow: 0, extended: 0, further: 1.6 })
+  for (const [id, , of] of LAYERS) if (of) assert.ok(LAYER_WEIGHTS[id][of] > 0 && Object.values(LAYER_WEIGHTS[id]).filter(Boolean).length === 1, id)
+})
+
+test("See their web: someone else's lists go in their own cache, and never empty your own", async () => {
+  const me = hex("c", 77), them = hex("d", 77), mine = [hex("1", 71)], theirs = [hex("1", 72), hex("1", 73)]
+  let asks = 0
+  const query = async (r, f) => { asks++; return f.authors.map(a => list(a, [hex("6")])) }
+  await followLists(me, mine, { query })
+  assert.equal((await followLists(them, theirs, { query, slot: "visit" })).size, 2)
+  assert.equal(missingLists(theirs, "visit"), 0)
+  assert.equal(missingLists(mine), 0, "yours are still there")
+  asks = 0
+  await followLists(me, mine, { query: async () => assert.fail("yours were kept") })
+  // A second visit replaces the first; yours stay.
+  await followLists(hex("d", 78), [hex("1", 74)], { query, slot: "visit" })
+  assert.equal(missingLists(theirs, "visit"), 2)
+  assert.equal(missingLists(mine), 0)
+  // Positive control: the same calls on the home slot do replace yours.
+  await followLists(them, theirs, { query })
+  assert.equal(missingLists(mine), 1)
+})
+
+test("the Web of Trust screen and globe load", async () => {
+  registerHooks({
+    load(url, context, next) {
+      if (!url.endsWith(".jsx")) return next(url, context)
+      const path = fileURLToPath(url)
+      const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
+      if (errors.length) throw new Error(errors.map(e => e.message).join("\n"))
+      return { format: "module", source: code, shortCircuit: true }
+    },
+  })
+  assert.equal(typeof (await import("../src/screens/WotScreen.jsx")).WotScreen, "function")
+  assert.equal(typeof (await import("../src/screens/WotGlobe.jsx")).WotGlobe, "function")
 })
 
 test("further out on the map is capped, by key, so the same people show every time", () => {

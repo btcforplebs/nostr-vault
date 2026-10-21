@@ -4,14 +4,16 @@
 // carries on), pinch or the wheel to zoom, double-click to come back to the start; tap a face for its trust card.
 // Faces fade and shrink rolling toward the rim and round the back, and give up their seat to a nearer face instead of
 // piling up. Only what's on screen is drawn, and nothing is drawn while the globe is still. The maths is
-// net/wot-globe.js.
+// net/wot-globe.js. `layer` is the picker's layer (LAYER_WEIGHTS): the rest of the globe goes out. `path` is the open
+// card's bridges: threads run from the middle through each of them to the person whose card is open. `whose` names
+// the person in the middle when it isn't you (See their web).
 import { useEffect, useRef } from "preact/hooks"
 import { getProfile, onProfiles } from "../net/profiles.js"
 import { faceCache, FACE_PX } from "../net/face-cache.js"
 import { FURTHER_CAP } from "../net/wot.js"
 import {
   RADIUS, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, direction, home, step, projector, outline,
-  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, onScreen, hit, OUTER_ALPHA,
+  faceShown, faceRadius, dotLight, seatFade, faceSize, seats, onScreen, hit, OUTER_ALPHA, LAYER_WEIGHTS,
 } from "../net/wot-globe.js"
 
 /** New pictures a frame may start loading: a fast spin brings faces into seats faster than they need decoding at once;
@@ -21,7 +23,7 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
 const DOT_COLOUR = { extended: [51, 204, 153, 0.75], further: [255, 255, 255, 0.28] }
 const EMBER = [230, 115, 38, 0.7]
 
-export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped }) {
+export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped, layer = "everyone", path = [], whose = null }) {
   const box = useRef(null), canvas = useRef(null)
   const cam = useRef(newCamera())
   const size = useRef({ w: 0, h: 0 })
@@ -37,6 +39,10 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
   const gesture = useRef(null)
   const pickedRef = useRef(picked)
   pickedRef.current = picked
+  // What the frames draw, read when each frame is drawn: a frame loop started on an earlier render (faces still
+  // fading in) would otherwise go on drawing that render's people after the web under it has filled in.
+  const lit = useRef(null)
+  lit.current = { web, nodes, weights: LAYER_WEIGHTS[layer] ?? LAYER_WEIGHTS.everyone, path }
 
   const draw = dt => {
     const c = canvas.current
@@ -59,15 +65,17 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
     }
 
     // Project everyone once; dots go into a few brightness bands per layer, so a big web is a handful of fills.
+    // A layer the picker put out isn't drawn, and can't be tapped.
+    const { web, nodes, weights } = lit.current
     const out = [], faces = []
     const bands = { extended: [[], [], [], []], further: [[], [], [], []] }
     for (const node of nodes) {
-      if (node.layer === "me") continue
+      if (node.layer === "me" || !weights[node.layer]) continue
       const p = project(node.p)
       if (!p || !onScreen(p.x, p.y, w, h)) continue
       if (node.face) {
         const lead = node.layer === "follow"
-        faces.push({ pk: node.pk, node, x: p.x, y: p.y, depth: p.depth, r: faceSize(lead ? "follow" : "outer", p, k.zoom), lead, alpha: lead ? 1 : OUTER_ALPHA })
+        faces.push({ pk: node.pk, node, x: p.x, y: p.y, depth: p.depth, r: faceSize(lead ? "follow" : "outer", p, k.zoom), lead, alpha: Math.min(1, (lead ? 1 : OUTER_ALPHA) * weights[node.layer]) })
         continue
       }
       const light = dotLight(p.depth)
@@ -80,7 +88,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
         if (!list.length) return
         g.beginPath()
         for (const p of list) { const s = (layer === "extended" ? 2.6 : 1.7) * p.scale * Math.min(k.zoom, 1.8); g.moveTo(p.x + s, p.y); g.arc(p.x, p.y, s, 0, 2 * Math.PI) }
-        g.fillStyle = `rgb(${r} ${gr} ${b} / ${a * (0.35 + 0.65 * (i + 0.5) / 4)})`; g.fill()
+        g.fillStyle = `rgb(${r} ${gr} ${b} / ${Math.min(1, a * weights[layer]) * (0.35 + 0.65 * (i + 0.5) / 4)})`; g.fill()
       })
     }
 
@@ -108,6 +116,21 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
     g.beginPath()
     for (const f of faces) if (f.lead && f.shown > 0.5 && f.depth > 0) { g.moveTo(me.x, me.y); g.lineTo(f.x, f.y) }
     g.lineWidth = 0.6; g.strokeStyle = "rgb(230 115 38 / .14)"; g.stroke()
+
+    // The open card's trust path: from the middle through each bridge showing to the person, as the iPhone traces it.
+    const target = pickedRef.current && pickedRef.current !== web.me && [...faces, ...out].find(d => d.pk === pickedRef.current || d.node?.pk === pickedRef.current)
+    if (target && lit.current.path.length) {
+      const at = new Map()
+      for (const d of out) at.set(d.node.pk, d)
+      for (const f of faces) at.set(f.pk, f)
+      g.beginPath()
+      for (const pk of lit.current.path) {
+        const b = at.get(pk)
+        if (!b || b.depth < -0.2 || (b.shown ?? 1) < 0.3) continue
+        g.moveTo(me.x, me.y); g.lineTo(b.x, b.y); g.lineTo(target.x, target.y)
+      }
+      g.lineWidth = 1.2; g.strokeStyle = "rgb(250 148 71 / .55)"; g.stroke()
+    }
 
     for (const f of all) {
       // A face losing its seat or rolling round the back fades into a small ember where it sits.
@@ -177,7 +200,7 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
     const off = onProfiles(request) // names and pictures arriving
     return () => { ro.disconnect(); off(); cancelAnimationFrame(frame.current); frame.current = 0 }
   }, [])
-  useEffect(request, [nodes, picked])
+  useEffect(request, [nodes, picked, layer, path])
   useEffect(() => {
     if (!centre) return
     cam.current = centre === web.me ? home(cam.current) : flyTo(cam.current, facing(direction(centre)))
@@ -262,11 +285,11 @@ export function WotGlobe({ web, nodes, picked, onPick, centre, onCentred, capped
   return (
     <div class="wot-globe" ref={box}>
       <canvas ref={canvas} tabIndex={0} role="img"
-        aria-label={`Globe of your web: ${web.follows.length} follows, ${web.extended.length} in your extended network, ${web.further.length} further out. Drag to spin, scroll or pinch to zoom, double-click to come back to the start.`}
+        aria-label={`Globe of ${whose ? `${whose}'s` : "your"} web: ${web.follows.length} follows, ${web.extended.length} vouched, ${web.further.length} further out. Drag to spin, scroll or pinch to zoom, double-click to come back to the start.`}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDblClick={goHome} onKeyDown={key} />
       <div class="wot-legend" aria-hidden="true">
         <span><i class="dot follow" />{web.follows.length} follows</span>
-        <span><i class="dot extended" />{web.extended.length} extended</span>
+        <span><i class="dot extended" />{web.extended.length} vouched</span>
         <span><i class="dot further" />{web.further.length} further out</span>
         {capped && <span>Up to {FURTHER_CAP.toLocaleString()} of each drawn; My Web lists all</span>}
       </div>
