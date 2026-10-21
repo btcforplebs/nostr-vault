@@ -3,6 +3,7 @@ package com.nostrvault.ui.components
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -26,42 +27,39 @@ import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.Surface2
 
 /**
- * What the globe is waiting on, said in words over it: a spinner, the person
- * when there is one, and a line. [small] for the quieter "wider web" note.
+ * What the globe is waiting on, said in words over it: the person when there
+ * is one, a white spinner, and a line. iOS `statusPill`.
  */
 @Composable
 internal fun StatusPill(
     text: String,
-    accent: Color,
     modifier: Modifier = Modifier,
     pubkey: String? = null,
     profile: FeedProfile? = null,
-    small: Boolean = false,
 ) {
+    val shape = RoundedCornerShape(50)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(if (small) 6.dp else 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = modifier
             .padding(horizontal = 24.dp)
-            .shadow(8.dp, RoundedCornerShape(50))
-            .clip(RoundedCornerShape(50))
+            .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = 0.45f), spotColor = Color.Black.copy(alpha = 0.45f))
+            .clip(shape)
+            // The card's fill (iOS material is the theme lane's call), with iOS's 0.14 stroke.
             .background(Surface2.copy(alpha = 0.92f))
-            .padding(horizontal = if (small) 12.dp else 14.dp, vertical = if (small) 6.dp else 8.dp)
+            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+            .padding(start = if (pubkey == null) 14.dp else 6.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
     ) {
-        CircularProgressIndicator(
-            color = accent,
-            strokeWidth = 1.5.dp,
-            modifier = Modifier.size(if (small) 12.dp else 14.dp),
-        )
         if (pubkey != null) {
-            AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 22.dp, displayName = profile?.bestName)
+            AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 28.dp, displayName = profile?.bestName)
         }
+        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
         Text(
             text,
             color = PrimaryText,
-            fontSize = if (small) 12.sp else 14.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

@@ -7,6 +7,11 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PersonRemove
+import androidx.compose.material.icons.outlined.DoNotTouch
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.PanTool
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -142,14 +147,23 @@ internal fun TrustCard(
                         accent = accent, onClick = { NostrWebLinks.open(context, link.url) }, modifier = Modifier.weight(1f))
                 }
             }
-        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        } else Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 4.dp),
+        ) {
             // The profile page's words: Unfollow says what the tap does.
+            // Equal widths and an icon each, as on iOS.
             CardButton(if (following) "Unfollow" else "Follow", filled = !following, accent = accent,
+                icon = if (following) Icons.Filled.PersonRemove else NostrVaultIcons.PersonAdd,
                 onClick = onFollow, modifier = Modifier.weight(1f))
-            if (onProfile != null) CardButton("Profile", filled = false, accent = accent, onClick = onProfile, modifier = Modifier.weight(1f))
+            if (onProfile != null) {
+                CardButton("Profile", icon = NostrVaultIcons.AccountCircle, filled = false, accent = accent,
+                    onClick = onProfile, modifier = Modifier.weight(1f))
+            }
             if (onSeeWeb != null) {
                 CardButton("See their web", short = "Their web", icon = NostrVaultIcons.WebOfTrust, filled = false,
-                    accent = accent, onClick = onSeeWeb, modifier = Modifier.weight(1.3f))
+                    accent = accent, onClick = onSeeWeb, modifier = Modifier.weight(1f))
             }
             Box {
                 IconButton(onClick = { moreOpen = true }, modifier = Modifier.size(40.dp)) {
@@ -160,29 +174,35 @@ internal fun TrustCard(
                         Icon(NostrVaultIcons.More, contentDescription = "More", tint = SecondaryText, modifier = Modifier.size(18.dp))
                     }
                 }
+                // iOS: Message and the web link, one divider, then Block.
                 DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
                     if (onMessage != null) {
                         DropdownMenuItem(
                             text = { Text("Message", color = PrimaryText) },
+                            leadingIcon = { MenuIcon(NostrVaultIcons.Chat, PrimaryText) },
                             onClick = {
                                 moreOpen = false
                                 onMessage()
                             },
                         )
-                        HorizontalDivider()
                     }
                     webLink?.let { link ->
                         DropdownMenuItem(
                             text = { Text(link.label, color = PrimaryText) },
+                            // iOS safari: a compass.
+                            leadingIcon = { MenuIcon(Icons.Outlined.Explore, PrimaryText) },
                             onClick = {
                                 moreOpen = false
                                 NostrWebLinks.open(context, link.url)
                             },
                         )
-                        HorizontalDivider()
                     }
+                    HorizontalDivider()
+                    val blockTint = if (blocked) PrimaryText else ErrorRed
                     DropdownMenuItem(
-                        text = { Text(if (blocked) "Unblock" else "Block", color = if (blocked) PrimaryText else ErrorRed) },
+                        text = { Text(if (blocked) "Unblock" else "Block", color = blockTint) },
+                        // iOS hand.raised / hand.raised.slash.
+                        leadingIcon = { MenuIcon(if (blocked) Icons.Outlined.DoNotTouch else Icons.Outlined.PanTool, blockTint) },
                         onClick = {
                             moreOpen = false
                             onBlock()
@@ -215,12 +235,19 @@ private fun CardButton(
             .clickable(role = Role.Button, onClickLabel = title, onClick = onClick)
             .clearAndSetSemantics { contentDescription = title; role = Role.Button },
     ) {
-        // Roughly 8.5dp a character at 14sp semibold, plus the icon.
-        val room = maxWidth - (if (icon != null) 23.dp else 0.dp) - 12.dp
+        // Roughly 8.5dp a character at 14sp semibold, plus the icon and its gap.
+        val room = maxWidth - (if (icon != null) 18.dp else 0.dp) - 12.dp
         val label = if (short != null && room < (title.length * 8.5f).dp) short else title
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            if (icon != null) Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            // iOS: a 12pt symbol or a 13pt image.
+            if (icon != null) Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(13.dp))
             Text(label, color = tint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
+}
+
+/** A ⋯ menu row's icon, iOS `Label(systemImage:)`. */
+@Composable
+private fun MenuIcon(icon: ImageVector, tint: Color) {
+    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
 }

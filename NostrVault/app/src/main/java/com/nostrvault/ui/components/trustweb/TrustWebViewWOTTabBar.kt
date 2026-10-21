@@ -66,8 +66,7 @@ internal fun TrustWebViewWOTTabBar(
             caption = when {
                 // The Rebuild button's steps, then how it ended (iOS).
                 refreshState != null -> refreshState?.caption
-                liveRebuild -> "Rebuilding your web"
-                mappingWeb -> "Mapping your web"
+                liveRebuild || mappingWeb -> "Mapping your web"
                 else -> null
             },
             outcome = refreshState?.takeIf { it.done }?.let { if (it.failed) WotPillOutcome.Failed else WotPillOutcome.Saved },

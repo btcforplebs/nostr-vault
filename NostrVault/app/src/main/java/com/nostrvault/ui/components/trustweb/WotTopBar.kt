@@ -101,14 +101,18 @@ internal fun WotTopBar(
                     .clickable(onClickLabel = "Pick a layer") { expanded = true }
                     .semantics { contentDescription = "Showing: ${layer.title}, ${counts[layer] ?: 0} people" },
             ) {
-                Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                    Icon(layer.icon, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(18.dp))
+                // iOS: 7 leading and 7 vertical around a 30 box (the pill
+                // gives 6 and 4), a 15 icon, 8 to the name, 3 to a 9pt chevron
+                // and 12 trailing (the pill gives 6).
+                Box(Modifier.padding(start = 1.dp, top = 3.dp, bottom = 3.dp).size(30.dp), contentAlignment = Alignment.Center) {
+                    Icon(layer.icon, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(15.dp))
                 }
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(layer.title, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Spacer(Modifier.width(2.dp))
-                Icon(NostrVaultIcons.ChevronDown, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
+                // The arrow's glyph fills half its 14 box: 3.5 either side
+                // stands in for the 3 gap, and leaves 2.5 of the 6 trailing.
+                Icon(NostrVaultIcons.ChevronDown, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(2.5.dp))
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 layers.forEach { item ->
@@ -157,13 +161,7 @@ internal fun WotTopBar(
                 Icon(NostrVaultIcons.Search, contentDescription = "Find someone",
                     tint = if (searchOpen) accent else SecondaryText, modifier = Modifier.size(22.dp))
             }
-            Box(
-                Modifier
-                    .padding(horizontal = 4.dp)
-                    .width(1.dp)
-                    .height(20.dp)
-                    .background(Color.White.copy(alpha = 0.15f)),
-            )
+            PillDivider()
             TrustMap.Filter.entries.forEach { filter ->
                 IconFilterButton(
                     icon = filter.icon,
@@ -172,7 +170,23 @@ internal fun WotTopBar(
                     onClick = { onFilter(filter) },
                 )
             }
-            if (liveArcs != null) LiveArcsToggle(liveArcs)
+            // iOS: search | filters | antenna.
+            if (liveArcs != null) {
+                PillDivider()
+                LiveArcsToggle(liveArcs)
+            }
         }
     }
+}
+
+/** The thin line between the right pill's groups (iOS `Divider().frame(height: 20)`). */
+@Composable
+private fun PillDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = 4.dp)
+            .width(1.dp)
+            .height(20.dp)
+            .background(Color.White.copy(alpha = 0.15f)),
+    )
 }

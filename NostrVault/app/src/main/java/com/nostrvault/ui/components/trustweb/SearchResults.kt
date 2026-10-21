@@ -4,12 +4,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import kotlin.math.max
 internal fun SearchResults(
     query: String,
     hits: List<TrustMap.PersonHit>,
+    me: String,
     searching: Boolean,
     profiles: Map<String, FeedProfile>,
     name: (String) -> String,
@@ -66,35 +68,47 @@ internal fun SearchResults(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClickLabel = "Move them to the middle of the globe") { onPick(hit.pubkey) }
+                    .clickable(onClickLabel = "Shows how they reach you") { onPick(hit.pubkey) }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
                     .semantics(mergeDescendants = true) { },
             ) {
                 val profile = profiles[hit.pubkey]
                 AvatarImage(url = profile?.pictureURL, pubkey = hit.pubkey, size = 32.dp, displayName = profile?.bestName)
-                Text(name(hit.pubkey), color = PrimaryText, fontSize = 15.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                when (hit.tier) {
-                    TrustMap.Tier.FOLLOW -> Text("You follow", color = accent, fontSize = 12.sp, maxLines = 1)
-                    TrustMap.Tier.WEB -> Text("In your web", color = SecondaryText, fontSize = 12.sp, maxLines = 1)
-                    TrustMap.Tier.OTHER -> {}
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(name(hit.pubkey), color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    profile?.nip05?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                searchTag(hit, me)?.let { tag ->
+                    Text(
+                        tag,
+                        color = if (tag == "In your web") SecondaryText else accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
                 }
             }
         }
         if (searching) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = accent, strokeWidth = 1.5.dp, modifier = Modifier.size(16.dp))
-                }
+                CircularProgressIndicator(color = SecondaryText, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                 Text("Searching relays…", color = SecondaryText, fontSize = 14.sp)
             }
         } else if (hits.isEmpty()) {
             Text(
-                "No one called \u201c$query\u201d yet",
+                "No one called \u201c$query\u201d yet.",
                 color = SecondaryText,
                 fontSize = 14.sp,
                 maxLines = 2,
@@ -103,4 +117,12 @@ internal fun SearchResults(
             )
         }
     }
+}
+
+/** A search row's tag: "You", "You follow" or "In your web" (iOS `searchRow`). */
+internal fun searchTag(hit: TrustMap.PersonHit, me: String): String? = when {
+    hit.pubkey == me -> "You"
+    hit.tier == TrustMap.Tier.FOLLOW -> "You follow"
+    hit.tier == TrustMap.Tier.WEB -> "In your web"
+    else -> null
 }
