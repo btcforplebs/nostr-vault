@@ -35,6 +35,7 @@ import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.AmberResultBridge
 import com.nostrvault.service.DMService
+import com.nostrvault.service.openedMessage
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LocalNotificationService
 import com.nostrvault.service.MediaPostQueue
@@ -112,6 +113,8 @@ class MainActivity : FragmentActivity() {
         handleShareIntent(intent)
 
         // …and taps that came from a widget, a notification or a nostr: link.
+        // A NIP-17 notification opens its conversation once the inbox has opened the wrap.
+        DeepLinkRouter.giftWrapPeer = { dmService.openedMessage(it)?.first }
         handleDeepLinkIntent(intent)
 
         // Keep PiP auto-enter params in sync with whichever video is playing full-screen
