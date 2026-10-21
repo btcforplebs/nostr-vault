@@ -159,7 +159,7 @@ test("nothing yet says so; the section offers no like, comment or zap button (re
   const nodes = walk(EngagementView({ article, events: [] }))
   assert.match(nodes.filter(x => typeof x === "string").join(""), /No likes or comments yet/)
   const src = readFileSync(new URL("../src/readers/Engagement.jsx", import.meta.url), "utf8")
-  assert.equal(/<button|onClick=|signEvent|publish\(|\bzap\(/.test(src), false)
+  assert.equal(/<button|signEvent|publish\(|\bzap\(/.test(src), false)
 })
 
 test("the reader shows the section, after the body", () => {

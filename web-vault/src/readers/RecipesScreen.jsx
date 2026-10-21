@@ -8,6 +8,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { visibleNotes } from "../net/blocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { ArticleReader, Scopes } from "./ArticlesScreen.jsx"
+import { EmptyState } from "./EmptyState.jsx"
 import { displayTitle, longFormLink, longFormMeta } from "./longform.js"
 import { RECIPE_SCOPES, fetchRecipes, inCategory, loadScope, recipeCategories, saveScope } from "./recipes.js"
 
@@ -23,6 +24,7 @@ export function RecipesScreen({ ctx }) {
   const [recipes, setRecipes] = useState(() => held.get(loadScope()) ?? null)
   const [category, setCategory] = useState(null)
   const [status, setStatus] = useState("")
+  const [failed, setFailed] = useState(false)
   const [open, setOpen] = useState(null)
   const { blocked } = useBlocks(ctx)
   const seq = useRef(0)
@@ -32,6 +34,7 @@ export function RecipesScreen({ ctx }) {
     if (!follows.length) return setStatus("")
     if (navigator.onLine === false) return setStatus("Offline: Recipes needs the network")
     setStatus("Loading recipes…")
+    setFailed(false)
     try {
       const got = await fetchRecipes({ scope, me: ctx.session?.pubkey, follows, readRelays: account.relays.read })
       if (n !== seq.current) return
@@ -40,11 +43,11 @@ export function RecipesScreen({ ctx }) {
       setRecipes(list)
       setStatus("")
       if (list.length) fetchProfiles(vault, list.map(r => r.pubkey), account.relays.read, { save: false }).catch(() => {})
-    } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
+    } catch { if (n === seq.current) { setStatus(""); setFailed(true); setRecipes(r => r ?? []) } }
   }
   useEffect(() => { setOpen(null); setCategory(null); setRecipes(held.get(scope) ?? null); if (!held.has(scope)) load() }, [scope, follows.length])
 
-  if (open) return <ArticleReader event={open} onBack={() => setOpen(null)} />
+  if (open) return <ArticleReader event={open} onBack={() => setOpen(null)} ctx={ctx} />
   const pick = s => { saveScope(s); setScope(s) }
   const unblocked = recipes && visibleNotes(recipes, blocked)
   const chips = unblocked ? recipeCategories(unblocked) : []
@@ -62,11 +65,20 @@ export function RecipesScreen({ ctx }) {
       {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see their recipes here."
           : "Global shows recipes from people your web of trust vouches for. Follow a few people first."}</p>
         : recipes === null ? <p class="empty">Loading recipes…</p>
-        : !shown.length ? <p class="empty">{recipes.length && !unblocked.length ? "Every recipe loaded here is from someone you blocked."
-          : scope === "following" ? "Nobody you follow has posted a recipe yet. Try Global." : "No recipes found."}</p>
+        : !shown.length ? (recipes.length && !unblocked.length ? <p class="empty">Every recipe loaded here is from someone you blocked.</p>
+          : recipes.length ? <p class="empty">No recipes in this category.</p>
+          : <RecipesEmpty scope={scope} failed={failed} onGlobal={() => pick("global")} onRetry={load} />)
         : <div class="recipe-grid">{shown.map(r => <RecipeTile key={r.id} event={r} onOpen={() => setOpen(r)} />)}</div>}
     </div>
   )
+}
+
+/** The iPhone's empty Recipes: nothing from your follows (Show Global recipes), no relay answered, or nothing came. */
+export function RecipesEmpty({ scope, failed, onGlobal, onRetry }) {
+  if (scope === "following" && !failed) return <EmptyState title="No recipes from your follows" detail="Nobody you follow has posted a recipe. Switch to Global to see everyone's." action={{ label: "Show Global recipes", onClick: onGlobal }} />
+  return failed
+    ? <EmptyState title="Could not reach any relay" detail="Recipes come from other people's relays, so this one needs a connection." action={{ label: "Try again", onClick: onRetry }} />
+    : <EmptyState title="No recipes found" detail="Nothing tagged zapcooking or nostrcooking came back." action={{ label: "Try again", onClick: onRetry }} />
 }
 
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1)

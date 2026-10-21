@@ -159,3 +159,14 @@
 .reader-comment-text { margin: 6px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .music-actions.row { display: flex; gap: 8px; flex-wrap: wrap; }
 .music-retry { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; color: var(--accent-light); }
+
+/* Article cards and reader, as on iPhone: topic chips, a tappable author, 3-line title and preview, Share / Copy link */
+.reader-card h3 { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.reader-card .reader-preview { -webkit-line-clamp: 3; line-clamp: 3; }
+.reader-topics { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.reader-topic { padding: 3px 8px; border-radius: 999px; background: var(--accent-pale); color: var(--accent-light); font: 600 10px var(--font); }
+.reader-author { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
+.reader-author:hover .author-name { text-decoration: underline; }
+.reader-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.reader-comment { cursor: pointer; }
+.reader-empty button.link { margin-top: 6px; background: none; border: 0; color: var(--accent-light); font: var(--t-sub); font-weight: 600; cursor: pointer; }

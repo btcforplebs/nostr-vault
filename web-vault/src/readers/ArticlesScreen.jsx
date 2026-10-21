@@ -13,6 +13,8 @@ import { ARTICLE_SCOPES, PAGE, fetchArticles, loadScope, saveScope } from "./art
 import { displayDate, displayTitle, longFormLink, longFormMeta, plainText, readingMinutes } from "./longform.js"
 import { Markdown } from "./Markdown.jsx"
 import { ArticleEngagement } from "./Engagement.jsx"
+import { EmptyState } from "./EmptyState.jsx"
+import { copyLink, shareLink, threadLink } from "./share.js"
 import { fanfaresLink, gatedArticle, lockStatus, stripTeaser } from "./gated.js"
 import { useProfile } from "../components/useProfile.js"
 
@@ -55,7 +57,8 @@ export function ArticlesScreen({ ctx }) {
       {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see their articles here."
           : "Global shows articles from people your web of trust vouches for. Follow a few people first."}</p>
         : items === null ? <p class="empty">Loading articles…</p>
-        : !shown.length ? <p class="empty">{items.length ? "Every article loaded here is from someone you blocked." : scope === "following" ? "The people you follow haven't written any articles yet." : "No articles found."}</p>
+        : !shown.length ? (items.length ? <p class="empty">Every article loaded here is from someone you blocked.</p>
+          : <EmptyState title="No articles yet" detail={scope === "following" ? "Long-form posts from people you follow show up here. Nothing to read yet." : "Long-form posts from across Nostr show up here. Nothing to read yet."} />)
         : <>
           {shown.map(a => <ArticleRow key={a.id} event={a} onOpen={() => setOpen(a)} />)}
           {more && <button class="more" onClick={() => load(items.at(-1).created_at - 1)}>Older articles</button>}
@@ -84,14 +87,16 @@ export function ArticleRow({ event, onOpen }) {
   const gated = gatedArticle(event)
   const preview = m.summary || plainText(gated ? stripTeaser(event.content) : event.content, 200)
   const minutes = readingMinutes(event.content)
+  const topics = m.topics.slice(0, 3) // a handful keeps the card one line; authors sometimes attach a dozen
   return (
     <article class="article reader-card" tabindex="0" onClick={onOpen} onKeyDown={e => { if (e.key === "Enter") onOpen() }}>
       {m.image && <img class="article-image" src={m.image} alt="" loading="lazy" referrerpolicy="no-referrer" />}
       <h3>{displayTitle(event)}</h3>
       {preview && <p class="reader-preview">{preview}</p>}
+      {topics.length > 0 && <div class="reader-topics">{topics.map(t => <span key={t} class="reader-topic">{t}</span>)}</div>}
       <div class="reader-byline muted small">
-        <Avatar pubkey={event.pubkey} size={20} />
-        <AuthorName pubkey={event.pubkey} />
+        <a class="reader-author" href={`#/profile/${event.pubkey}`} onClick={e => e.stopPropagation()}><Avatar pubkey={event.pubkey} size={20} />
+        <AuthorName pubkey={event.pubkey} /></a>
         <span>·</span><time datetime={new Date(displayDate(event) * 1000).toISOString()}>{dateText(displayDate(event))}</time>
         {gated ? <><span>·</span><span class="reader-locked">🔒 Locked</span></> : minutes && <><span>·</span><span>{minutes} min read</span></>}
       </div>
@@ -106,6 +111,9 @@ export function ArticleReader({ event, onBack, ctx }) {
   const gated = gatedArticle(event)
   const minutes = gated ? null : readingMinutes(event.content)
   const link = longFormLink(event)
+  const web = threadLink(event)
+  const [said, setSaid] = useState("")
+  const tell = r => { setSaid(r === "copied" ? "Link copied" : r === "failed" ? "Couldn't copy the link" : ""); if (r === "copied") setTimeout(() => setSaid(""), 2000) }
   useEffect(() => { globalThis.scrollTo?.(0, 0) }, [event.id])
   return (
     <article class="reader">
@@ -119,9 +127,15 @@ export function ArticleReader({ event, onBack, ctx }) {
         <Avatar pubkey={event.pubkey} size={24} />
         <AuthorName pubkey={event.pubkey} />
         <span>·</span><span>{dateText(displayDate(event))}</span>
-        {minutes && <><span>·</span><span>{minutes} min read</span></>}
+        {gated ? <><span>·</span><span class="reader-locked">🔒 Locked</span></> : minutes && <><span>·</span><span>{minutes} min read</span></>}
       </a>
       {m.summary && <p class="reader-summary">{m.summary}</p>}
+      {web && (
+        <div class="reader-actions">
+          <button type="button" class="small" onClick={async () => tell(await shareLink(web, displayTitle(event)))}>Share</button>
+          <button type="button" class="small" onClick={async () => tell(await copyLink(web))}>{said || "Copy link"}</button>
+        </div>
+      )}
       {gated ? <LockedBody event={event} gated={gated} summary={m.summary} /> : <Markdown body={event.content} />}
       {ctx && <ArticleEngagement ctx={ctx} article={event} />}
     </article>
