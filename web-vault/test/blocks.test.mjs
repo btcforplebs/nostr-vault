@@ -6,7 +6,7 @@ import * as nip44 from "nostr-tools/nip44"
 import * as nip04 from "nostr-tools/nip04"
 import {
   pTags, isNip04, decrypterFor, privateBlocks, readBlockList, refreshBlockList, loadBlocks, getBlocks, onBlocks,
-  isBlockedNote, visibleNotes, visiblePeople, visibleRows, visibleReplies,
+  isBlockedNote, repostState, visibleNotes, visiblePeople, visibleRows, visibleReplies,
 } from "../src/net/blocks.js"
 import { groupNotifications } from "../src/net/notifications.js"
 
@@ -93,16 +93,36 @@ test("loadBlocks shows Haven's copy, then the newer network one, once per accoun
 })
 
 test("blocked notes and reposts of them are hidden; others stay", () => {
+  const aSk = generateSecretKey(), A = getPublicKey(aSk)
   const blocked = new Set([A])
   const mine = { id: "1", kind: 1, pubkey: C }
   const theirs = { id: "2", kind: 1, pubkey: A }
-  const repost = { id: "3", kind: 6, pubkey: C, content: JSON.stringify({ pubkey: A, kind: 1 }) }
+  const repost = { id: "3", kind: 6, pubkey: C, content: JSON.stringify(finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "hi" }, aSk)) }
   const badRepost = { id: "4", kind: 6, pubkey: C, content: "not json" }
   assert.equal(isBlockedNote(theirs, blocked), true)
   assert.equal(isBlockedNote(repost, blocked), true)
   assert.deepEqual(visibleNotes([mine, theirs, repost, badRepost], blocked).map(e => e.id), ["1", "4"])
   const none = [mine, theirs]
   assert.equal(visibleNotes(none, new Set()), none, "nothing blocked, same array")
+})
+
+test("a forged repost can't clear a blocked person: unchecked inner = unknown, and the card checks what it fetched", () => {
+  const aSk = generateSecretKey(), A = getPublicKey(aSk)
+  const blocked = new Set([A])
+  const real = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "blocked person's note" }, aSk)
+  const repost = (inner, p) => ({ id: "r", kind: 6, pubkey: C, created_at: 2, content: inner ? JSON.stringify(inner) : "", tags: [["e", real.id], ["p", p]] })
+  assert.equal(isBlockedNote(repost(real, C), blocked), true, "a signed inner is the author, whatever the p tag says")
+  // Tron's probe: the inner pubkey forged to an unblocked key, and a p tag naming the blocked person.
+  assert.equal(isBlockedNote(repost({ ...real, pubkey: C }, A), blocked), true, "a forged inner pubkey is not believed")
+  // The p tag can hide a repost but never clear one; what slips through, the card catches.
+  const slips = [repost({ ...real, pubkey: C }, C), repost(null, C)]
+  for (const ev of slips) assert.equal(isBlockedNote(ev, blocked), false)
+  assert.equal(repostState(real, new Set([1]), blocked), "blocked", "the fetched note is the blocked person's: not drawn")
+  assert.equal(repostState({ ...real, pubkey: C }, new Set([1]), blocked), "note")
+  assert.equal(repostState(undefined, new Set([1]), blocked), "loading")
+  assert.equal(repostState(null, new Set([1]), blocked), "missing")
+  assert.equal(repostState({ kind: 7, pubkey: C }, new Set([1]), blocked), "missing")
+  assert.equal(repostState(real, new Set([1]), new Set()), "note", "nothing blocked")
 })
 
 test("search people drop blocked pubkeys", () => {

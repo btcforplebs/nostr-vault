@@ -8,6 +8,7 @@ import { useState } from "preact/hooks"
 import { CondensedNote } from "./CondensedNote.jsx"
 import { NoteCard } from "./NoteCard.jsx"
 import { COLLAPSED_REPLIES, latestReplies, repliesOf } from "../net/feed-layout.js"
+import { repostInner } from "../net/thread.js"
 
 export function FeedThreadCard({ thread, lines = 3, openId, setOpenId, rootUnavailable = false, memoryOnly = false }) {
   const [unfolded, setUnfolded] = useState(false)
@@ -32,11 +33,10 @@ export function FeedThreadCard({ thread, lines = 3, openId, setOpenId, rootUnava
   )
 }
 
-/** The id a line opens under: a repost opens the note it carries, as its line shows. */
-function shownId(note) {
-  if (note.kind !== 6) return note.id
-  try { const inner = JSON.parse(note.content); if (inner?.id) return inner.id } catch {}
-  return note.id
+/** The id a line opens under: a repost opens the note it carries if that note's signature checks, as its line shows;
+ *  otherwise the repost itself, so a forged inner id can't aim Open thread at another note. */
+export function shownId(note) {
+  return (note.kind === 6 && repostInner(note)?.id) || note.id
 }
 
 /** A line opened in place: the full note and its actions, on the line's rail and indent so nothing shifts sideways.
