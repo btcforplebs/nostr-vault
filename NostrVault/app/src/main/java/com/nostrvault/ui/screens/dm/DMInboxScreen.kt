@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dm
 
+import com.nostrvault.util.RelativeTime
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -415,7 +416,7 @@ private fun ConversationRow(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = formatRelativeTime((conversation.lastMessage?.timestamp ?: 0L) * 1000),
+                    text = RelativeTime.abbreviated(conversation.lastMessage?.timestamp ?: 0L, System.currentTimeMillis() / 1000),
                     color = if (hasUnread) colors.primary else SecondaryText,
                     fontSize = 12.sp,
                 )
@@ -447,17 +448,5 @@ private fun ConversationRow(
                 }
             }
         }
-    }
-}
-
-private fun formatRelativeTime(epochMs: Long): String {
-    val now = System.currentTimeMillis()
-    val diffSec = (now - epochMs) / 1000
-    return when {
-        diffSec < 60 -> "now"
-        diffSec < 3600 -> "${diffSec / 60}m"
-        diffSec < 86400 -> "${diffSec / 3600}h"
-        diffSec < 604800 -> "${diffSec / 86400}d"
-        else -> "${diffSec / 604800}w"
     }
 }
