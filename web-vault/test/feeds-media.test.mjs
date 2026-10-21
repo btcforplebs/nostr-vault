@@ -43,3 +43,12 @@ test("tileNote: a kind 6's note counts only if its signature checks, so Compact 
   const r = repost(n)
   assert.equal(tileNote(r), tileNote(r), "checked once per repost object")
 })
+
+test("a .fips link never reaches a plain <img>/<video>: no Media tile, Compact thumb or reply preview", () => {
+  const npub = "npub1" + "q".repeat(58), sha = "c".repeat(64)
+  const fips = [`http://${npub}.fips/${sha}.jpg`, `https://box.fips/v.mp4`, `http://box.fips./p.png`, `http://BOX.FIPS/p.webp`]
+  const n = note("f", `${fips.join(" ")} https://x.example/ok.jpg`, { tags: [["imeta", `url http://${npub}.fips/${sha}.png`]] })
+  assert.deepEqual(mediaUrls(n), ["https://x.example/ok.jpg"], "only the public photo")
+  assert.deepEqual(mediaTiles([note("g", fips[0])]), [], "a note whose only photo is on the mesh gets no tile")
+  assert.deepEqual(mediaUrls(note("h", "https://notfips.example/a.jpg https://x.fips.example/b.jpg")).length, 2, "fips elsewhere in a host is fine")
+})

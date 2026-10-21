@@ -8,6 +8,12 @@ const MESH_SERVER = new RegExp(`^fipsmesh://(${NPUB})/$`) // NIP-F1: the trailin
 
 const hexOf = npub => { try { const d = decode(npub); return d.type === "npub" ? d.data : undefined } catch { return undefined } }
 
+/** Whether a link's host is a FIPS name (`….fips`, trailing dot too). Only the mesh reaches it: a plain <img>, <video>,
+ *  link card or fetch would send the name, and the npub in it, to DNS. */
+export function meshHost(url) {
+  try { return /\.fips\.?$/i.test(new URL(url).hostname) } catch { return false }
+}
+
 /** { vault: x-only hex, sha256 } for a NIP-F1 photo link `http://<npub>.fips/<sha256>[.ext]`, else undefined. */
 export function fipsRef(url) {
   const m = LINK.exec(String(url ?? "").trim().toLowerCase())
