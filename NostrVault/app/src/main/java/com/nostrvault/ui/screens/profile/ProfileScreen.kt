@@ -86,6 +86,9 @@ fun ProfileScreen(
     }
 
     val profile by viewModel.profile.collectAsState()
+    // Held here, not in the header item, so scrolling it away does not restart the wait.
+    val metadataWaitOver = rememberMetadataWaitOver(pubkey)
+    val awaitingMetadata = ProfileMetadataWait.awaiting(profile, metadataWaitOver)
     val filteredNotes by viewModel.filteredNotes.collectAsState()
     val selectedSection by viewModel.selectedSection.collectAsState()
     val counts by viewModel.counts.collectAsState()
@@ -139,7 +142,9 @@ fun ProfileScreen(
     var sellLaunched by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
     val colors = LocalNostrVaultColors.current
-    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat()
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    // iOS lays the grids out from width only on iPad; phones keep their counts.
+    val gridWidthDp = ProfileGrid.layoutWidth(configuration.screenWidthDp.toFloat(), configuration.smallestScreenWidthDp)
     val context = LocalContext.current
     val brainstormLink = remember(pubkey) { NostrWebLinks.forProfile(pubkey) }
     val lane = LocalNotificationManager.current
@@ -286,6 +291,7 @@ fun ProfileScreen(
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     followsMe = followsMe,
+                    awaiting = awaitingMetadata,
                 )
             }
 
@@ -315,7 +321,7 @@ fun ProfileScreen(
                         lightningAddress?.let { clipboard.setText(AnnotatedString(it)) }
                     },
                     onCopyNpub = copyNpub,
-                    awaiting = ProfileMetadataWait.awaiting(profile, rememberMetadataWaitOver(pubkey)),
+                    awaiting = awaitingMetadata,
                 )
             }
 
@@ -341,8 +347,12 @@ fun ProfileScreen(
                     onZap = { viewModel.zap() },
                     onZapLongPress = { zapSheetOpen = true },
                     onTrustWeb = { trustWebAuthor = pubkey },
-                    // iOS copies from ⋯ without a notice.
-                    onCopyNpub = copyNpub,
+                    // iOS copies from ⋯ without a notice; Android 13+ shows its
+                    // own clipboard confirmation, older versions show nothing.
+                    onCopyNpub = {
+                        copyNpub()
+                        if (android.os.Build.VERSION.SDK_INT < 33) lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
+                    },
                     webLink = brainstormLink,
                     onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
                 )
@@ -394,7 +404,7 @@ fun ProfileScreen(
                 }
             } else if (selectedSection == ProfileSection.DIVINES) {
                 // 9:16 posters, as many 110+ wide as fit; a tap plays them in a viewer.
-                val cols = ProfileGrid.divineColumns(screenWidthDp)
+                val cols = ProfileGrid.divineColumns(gridWidthDp)
                 items(reels.withIndex().chunked(cols), key = { row -> "divine-" + row.first().value.id }) { row ->
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -460,7 +470,7 @@ fun ProfileScreen(
                         }
                     }
                 } else {
-                    val cols = ProfileGrid.shopColumns(screenWidthDp)
+                    val cols = ProfileGrid.shopColumns(gridWidthDp)
                     items(shopListings.chunked(cols), key = { row -> "shop-" + row.first().id }) { row ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -499,7 +509,7 @@ fun ProfileScreen(
             } else if (selectedSection == ProfileSection.MEDIA) {
                 // Three across on a phone, more on a tablet (iOS ideal 180),
                 // as chunked rows (nested-scroll-safe).
-                val cols = ProfileGrid.mediaColumns(screenWidthDp)
+                val cols = ProfileGrid.mediaColumns(gridWidthDp)
                 items(mediaItems.chunked(cols)) { row ->
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(ProfileGrid.MEDIA_SPACING_DP.dp),

@@ -73,6 +73,9 @@ internal fun ProfileMediaTile(
             else coil.request.ImageRequest.Builder(context)
                 .data(url)
                 .decoderFactory(coil.decode.BitmapFactoryDecoder.Factory())
+                // Its own cache entry: under the plain URL this still frame
+                // would stand in for the animated GIF in notes and the viewer.
+                .memoryCacheKey("$url#still")
                 .build()
         }
         Box(contentAlignment = Alignment.Center, modifier = tileModifier) {
@@ -123,6 +126,7 @@ internal fun ProfileMediaTile(
                     // iOS: one "Delete" item holding both choices; each asks first.
                     ProfileMediaAction.DELETE_FROM_MIRRORS, ProfileMediaAction.DELETE_EVERYWHERE -> {
                         if (action == deletes.first()) {
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Delete") },
                                 leadingIcon = { Icon(NostrVaultIcons.Delete, contentDescription = null, modifier = Modifier.size(20.dp)) },

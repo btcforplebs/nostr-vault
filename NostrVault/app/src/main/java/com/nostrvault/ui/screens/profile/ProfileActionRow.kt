@@ -2,7 +2,8 @@ package com.nostrvault.ui.screens.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PersonAddAlt1
+import androidx.compose.material.icons.outlined.DoNotTouch
+import androidx.compose.material.icons.outlined.PanTool
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -103,7 +104,8 @@ internal fun ProfileActionRow(
                             text = { Text(if (isBlocked) "Unblock" else "Block", color = if (isBlocked) Color.Unspecified else blockColor) },
                             leadingIcon = {
                                 Icon(
-                                    if (isBlocked) Icons.Filled.PersonAddAlt1 else NostrVaultIcons.Blocked,
+                                    // iOS hand.raised / hand.raised.slash, as the WoT card's menu.
+                                    if (isBlocked) Icons.Outlined.DoNotTouch else Icons.Outlined.PanTool,
                                     contentDescription = null,
                                     tint = if (isBlocked) LocalContentColor.current else blockColor,
                                     modifier = Modifier.size(20.dp),

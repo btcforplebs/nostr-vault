@@ -6,9 +6,19 @@ import org.junit.Test
 /** The profile grids' column counts match iOS on phones and tablets. */
 class ProfileGridTest {
     @Test
-    fun mediaIsThreeOnAPhoneAndMoreOnATablet() {
-        assertEquals(3, ProfileGrid.mediaColumns(360f))
-        assertEquals(3, ProfileGrid.mediaColumns(411f))
+    fun phonesKeepTheirCountsEvenInLandscape() {
+        // A 411 dp phone turned sideways is 890 wide but still a phone.
+        val landscape = ProfileGrid.layoutWidth(890f, smallestScreenWidthDp = 411)
+        assertEquals(0f, landscape, 0f)
+        assertEquals(3, ProfileGrid.mediaColumns(landscape))
+        assertEquals(3, ProfileGrid.divineColumns(landscape))
+        assertEquals(2, ProfileGrid.shopColumns(landscape))
+        assertEquals(800f, ProfileGrid.layoutWidth(800f, smallestScreenWidthDp = 600), 0f)
+    }
+
+    @Test
+    fun mediaIsThreeOnASmallTabletAndMoreOnAWideOne() {
+        assertEquals(3, ProfileGrid.mediaColumns(600f))
         assertEquals(4, ProfileGrid.mediaColumns(800f))
         assertEquals(6, ProfileGrid.mediaColumns(1280f))
         assertEquals(6, ProfileGrid.mediaColumns(2000f))

@@ -26,9 +26,10 @@ internal fun ProfileHeader(
     isOwnProfile: Boolean,
     isFollowing: Boolean,
     followsMe: Boolean,
+    /** Still waiting for the kind 0; held by the screen so scrolling does not restart the wait. */
+    awaiting: Boolean,
 ) {
     val colors = LocalNostrVaultColors.current
-    val awaiting = ProfileMetadataWait.awaiting(profile, rememberMetadataWaitOver(pubkey))
 
     Column {
         Row(
