@@ -93,7 +93,10 @@ export function NotificationsScreen({ ctx }) {
   }, [events, more.until, more.done, more.busy, filter])
 
   const rows = useMemo(() => events && insideRows(groupNotifications(events, session.pubkey), session.pubkey, { trusted }), [events, trusted, session.pubkey])
-  const shown = rows && filterRows(visibleRows(rows, blocked, session.pubkey), filter)
+  // A like, repost or zap on someone else's note that only tags the user isn't about the user's note: the iPhone keeps
+  // no row for it, so it goes once that note has loaded and shows another author.
+  const notMine = r => aboutYourPost(r) && notes.get(r.noteId) && notes.get(r.noteId).pubkey !== session.pubkey
+  const shown = rows && filterRows(visibleRows(rows, blocked, session.pubkey), filter).filter(r => !notMine(r))
   // Anyone can reply, react or zap: only a follow's (or your own) picture host and inline images are fetched.
   const known = pk => pk === session.pubkey || account.follows.includes(pk)
 
