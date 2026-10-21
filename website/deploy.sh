@@ -1,6 +1,7 @@
 #!/bin/sh
 # Deploys nostrvault.app from this checkout: builds the site image (pages + web apps), tagged with the
-# commit, and restarts it on :4024. Keeps the last 3 builds for rollback and prunes the rest.
+# commit, and restarts it on :4024 with the thread service (public post pages) beside it. Keeps the last 3 builds
+# for rollback and prunes the rest.
 #   ./deploy.sh                 build and deploy HEAD
 #   ./deploy.sh <tag>           roll back to a kept build, no rebuild (tags: docker images nostrvault-website)
 set -eu
@@ -20,7 +21,9 @@ docker compose up -d
 docker compose ps
 
 # Keep the 3 newest site builds (the one just deployed among them); drop older ones and old build cache.
-docker images nostrvault-website --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | tail -n +4 | cut -f2 \
-  | xargs -r docker rmi 2>/dev/null || true
+for repo in nostrvault-website nostrvault-thread; do
+  docker images $repo --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | tail -n +4 | cut -f2 \
+    | xargs -r docker rmi 2>/dev/null || true
+done
 docker image prune -f --filter label=app.nostrvault.site=1 >/dev/null
 docker builder prune -f --filter until=168h >/dev/null

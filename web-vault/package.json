@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "npm run build && node server.mjs",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "thread": "node thread-page/server.mjs"
   },
   "type": "module",
   "dependencies": {

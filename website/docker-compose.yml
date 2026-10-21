@@ -1,4 +1,13 @@
 services:
+  # Public post pages at /thread/ (web-vault/thread-page/); nginx proxies to it by service name.
+  thread:
+    build:
+      context: ..
+      dockerfile: website/Dockerfile
+      target: thread
+    image: nostrvault-thread:${SITE_TAG:-latest}
+    restart: unless-stopped
+
   website:
     # The pages and the built web apps are baked into the image (Dockerfile). Deploy and roll back with ./deploy.sh.
     build:
@@ -7,6 +16,8 @@ services:
       args:
         ALLOW_MISSING_WEB_APPS: ${ALLOW_MISSING_WEB_APPS:-0}
     image: nostrvault-website:${SITE_TAG:-latest}
+    depends_on:
+      - thread
     ports:
       - "4024:80"
     restart: unless-stopped
