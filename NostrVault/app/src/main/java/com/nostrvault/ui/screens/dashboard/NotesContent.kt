@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FindInPage
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,7 +14,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.*
-import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.components.VaultNoteCard
 import com.nostrvault.ui.components.VaultNoteLayoutMode
 import com.nostrvault.ui.components.VaultNoteType
@@ -40,6 +41,8 @@ internal fun NotesContent(
     quoteMap: Map<String, List<String>>,
     isRefreshing: Boolean,
     hasLoadedOnce: Boolean,
+    /** The relay's boot line while it starts, else null (see [relayBootText]). */
+    bootText: String?,
     isLoadingMore: Boolean,
     listState: androidx.compose.foundation.lazy.LazyListState,
     allProfiles: Map<String, FeedProfile>,
@@ -56,39 +59,18 @@ internal fun NotesContent(
     val colors = LocalNostrVaultColors.current
     val latestReactionDates by viewModel.latestReactionDates.collectAsState()
 
-    if (notes.isEmpty() && (isRefreshing || !hasLoadedOnce)) {
-        SkeletonFeed(count = 5)
+    if (notes.isEmpty() && (isRefreshing || !hasLoadedOnce || bootText != null)) {
+        VaultLoadingState(bootText ?: "Loading notes...", padding.calculateTopPadding())
     } else if (notes.isEmpty()) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = padding.calculateTopPadding()),
+        VaultEmptyState(
+            icon = Icons.Outlined.FindInPage, // doc.text.magnifyingglass
+            gradient = vaultAccentGradient(),
+            title = emptyNotesTitle(scope, recipesOnly),
+            hint = emptyNotesHint(scope, recipesOnly),
+            topPadding = padding.calculateTopPadding(),
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = NostrVaultIcons.Relay,
-                    contentDescription = null,
-                    tint = TertiaryText,
-                    modifier = Modifier.size(48.dp),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = emptyNotesTitle(scope, recipesOnly),
-                    color = SecondaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = emptyNotesHint(scope, recipesOnly),
-                    color = TertiaryText,
-                    fontSize = 13.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
-                // Nothing loaded yet may still mean something older on the relay.
-                if (loadOlder != null) LoadOlderButton(isLoadingOlder, loadOlder)
-            }
+            // Nothing loaded yet may still mean something older on the relay.
+            if (loadOlder != null) LoadOlderButton(isLoadingOlder, loadOlder)
         }
     } else {
         LazyColumn(
@@ -105,16 +87,19 @@ internal fun NotesContent(
                     viewModel.isWhitelisted(note.pubkey) -> VaultNoteType.WHITELISTED
                     else -> VaultNoteType.TAGGED
                 }
+                // Likes, zaps, reposts and quotes only under your own and
+                // whitelisted notes (iOS notesList `showEngagement`).
+                val showEngagement = noteType != VaultNoteType.TAGGED
                 VaultNoteCard(
                     note = note,
                     quotedNotes = quotedNotes,
                     profile = viewModel.profileFor(note.pubkey),
                     profiles = allProfiles,
-                    reactors = reactionMap[note.id] ?: emptyList(),
-                    latestReactionDate = latestReactionDates[note.id]?.let { java.util.Date(it * 1000) },
-                    reposterPubkeys = repostMap[note.id] ?: emptyList(),
-                    quoterPubkeys = quoteMap[note.id] ?: emptyList(),
-                    zappers = zapMap[note.id] ?: emptyList(),
+                    reactors = reactionMap[note.id].takeIf { showEngagement } ?: emptyList(),
+                    latestReactionDate = latestReactionDates[note.id]?.takeIf { showEngagement }?.let { java.util.Date(it * 1000) },
+                    reposterPubkeys = repostMap[note.id].takeIf { showEngagement } ?: emptyList(),
+                    quoterPubkeys = quoteMap[note.id].takeIf { showEngagement } ?: emptyList(),
+                    zappers = zapMap[note.id].takeIf { showEngagement } ?: emptyList(),
                     noteType = noteType,
                     layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,

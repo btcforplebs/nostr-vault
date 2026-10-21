@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -62,6 +63,7 @@ import com.nostrvault.ui.navigation.VaultSection
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
+import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.ZapOrange
 import com.nostrvault.ui.screens.dashboard.DashboardScreen
@@ -188,6 +190,7 @@ fun VaultTabScreen(
     }
 
     val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })
+    val bootStatus by logStore.bootStatusMessage.collectAsState()
     // The Vault's search (iOS VaultSearchBar): over the Vault list and the
     // relay's lists, not Media. Kept across a note or profile it opens.
     var searchOpen by rememberSaveable { mutableStateOf(false) }
@@ -257,6 +260,7 @@ fun VaultTabScreen(
                 onProfileClick = onProfileClick,
                 feedService = feedService,
                 onOpenDashboard = openDashboard,
+                bootStatus = bootStatus,
                 viewModel = viewModel,
             )
         }
@@ -343,7 +347,7 @@ internal fun VaultModePill(
             Box(Modifier.chromeFold(leadingGap = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(mode.displayName, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Spacer(Modifier.width(2.dp))
+                    Spacer(Modifier.width(3.dp))
                     Icon(NostrVaultIcons.ChevronDown, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                 }
@@ -354,9 +358,11 @@ internal fun VaultModePill(
             VaultMode.menu(zapsOnly).forEach { m ->
                 DropdownMenuItem(
                     text = {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // "New" as the item's grey second line, as the iOS menu
+                        // shows a Label's second Text.
+                        Column {
                             Text(m.displayName, fontWeight = if (m == mode) FontWeight.SemiBold else FontWeight.Normal)
-                            if (m in allNew) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            if (m in allNew) Text("New", color = SecondaryText, fontSize = 12.sp)
                         }
                     },
                     leadingIcon = { Icon(m.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },

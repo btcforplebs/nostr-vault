@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FlashOff
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -52,66 +54,23 @@ internal fun ZapsContent(
     onReportNote: (FeedNote, String, String) -> Unit,
     onBlockAuthor: (String) -> Unit,
 ) {
-    val colors = LocalNostrVaultColors.current
 
     // Settle-driven loading: hasLoadedOnce is set either when zaps arrive or by a
     // bounded ~6s settle (armZapsSettle), so the spinner never hangs forever when
     // there are simply no zaps. Don't gate on isRefreshing here. The wallet's
     // history can outlast that settle, so Given keeps spinning while it is read.
     if (notes.isEmpty() && (!hasLoadedOnce || (zapsFilter == VaultZapsFilter.MY_ZAPS && walletGivenLoading))) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = padding.calculateTopPadding()),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(
-                    color = colors.primary,
-                    modifier = Modifier.size(32.dp),
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "Loading zaps...",
-                    color = PrimaryText,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "This may take a moment",
-                    color = TertiaryText,
-                    fontSize = 12.sp,
-                )
-            }
-        }
+        VaultLoadingState("Loading zaps...", padding.calculateTopPadding())
     } else if (notes.isEmpty()) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = padding.calculateTopPadding()),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = NostrVaultIcons.Zap,
-                    contentDescription = null,
-                    tint = ZapOrange,
-                    modifier = Modifier.size(48.dp),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = if (zapsFilter != VaultZapsFilter.MY_ZAPS) "No zaps yet" else "No zapped posts",
-                    color = SecondaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = if (zapsFilter != VaultZapsFilter.MY_ZAPS) "Zaps on these notes will appear here" else "Posts you've zapped will appear here",
-                    color = TertiaryText,
-                    fontSize = 13.sp,
-                )
-            }
-        }
+        val given = zapsFilter == VaultZapsFilter.MY_ZAPS
+        VaultEmptyState(
+            // bolt.slash / bolt
+            icon = if (!given) Icons.Outlined.FlashOff else NostrVaultIcons.ZapOutline,
+            gradient = listOf(ZapOrange, WarningYellow),
+            title = if (!given) "No zaps yet" else "No zapped posts",
+            hint = if (!given) "Zaps on these notes will appear here" else "Posts you've zapped will appear here",
+            topPadding = padding.calculateTopPadding(),
+        )
     } else {
         LazyColumn(
             state = listState,

@@ -34,9 +34,9 @@ data class VaultMessages(val unread: Int, val open: () -> Unit)
 val LocalVaultMessages = compositionLocalOf<VaultMessages?> { null }
 
 /**
- * The Vault tab's right pill: Messages, a line, then this mode's filters as
- * bare icons. Media has no filters, so just Messages. iOS
- * `trailingToolbarInline` + `VaultMessagesButton`.
+ * The Vault tab's right pill: Messages, a line, this mode's filters as bare
+ * icons, a line, then search at the right end. Media has no filters, so
+ * Messages and search. iOS `trailingToolbarInline` + `VaultMessagesButton`.
  */
 @Composable
 fun VaultRightPill(
@@ -46,27 +46,36 @@ fun VaultRightPill(
     val messages = LocalVaultMessages.current
     val openSearch = com.nostrvault.ui.screens.vault.LocalOpenVaultSearch.current
     GlassPill(modifier = modifier) {
-        // The Vault's search opens out of this glass (iOS `searchToggleButton`).
+        if (messages != null) VaultMessagesButton(messages)
+        if (filters != null) {
+            if (messages != null) PillDivider()
+            filters()
+        }
+        // The Vault's search opens out of this glass (iOS `searchToggleButton`),
+        // the same filter button as the rest; grey, as iOS shows it while the
+        // search is closed.
         if (openSearch != null) {
-            IconButton(onClick = openSearch, modifier = Modifier.size(36.dp)) {
-                Icon(NostrVaultIcons.Search, contentDescription = "Search your Vault", tint = SecondaryText,
-                    modifier = Modifier.size(20.dp))
-            }
+            if (messages != null || filters != null) PillDivider()
+            com.nostrvault.ui.screens.dashboard.IconFilterButton(
+                icon = NostrVaultIcons.Search,
+                contentDescription = "Search your Vault",
+                isSelected = false,
+                onClick = openSearch,
+            )
         }
-        if (messages != null) {
-            VaultMessagesButton(messages)
-            if (filters != null) {
-                Box(
-                    Modifier
-                        .padding(horizontal = 2.dp)
-                        .width(1.dp)
-                        .height(20.dp)
-                        .background(Color.White.copy(alpha = 0.18f)),
-                )
-            }
-        }
-        filters?.invoke(this)
     }
+}
+
+/** The thin line between the pill's groups (iOS `Divider().frame(height: 20)`). */
+@Composable
+private fun PillDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = 2.dp)
+            .width(1.dp)
+            .height(20.dp)
+            .background(Color.White.copy(alpha = 0.18f)),
+    )
 }
 
 /** The envelope: opens the inbox, with a red dot while a message is unread. */
@@ -93,8 +102,16 @@ fun VaultMessagesButton(messages: VaultMessages) {
 }
 
 /**
- * "Mentions · 18", or [empty] rather than a 0. A list that stopped at its
- * page size says so with a "+". iOS `filterNoteText`.
+ * What the filter shows, that it's on, then how many: "Mentions · on · 18",
+ * "none yet" rather than a 0. A list that stopped at its page size says so
+ * with a "+". iOS `filterNoteText`.
  */
-fun countNote(icon: ImageVector, name: String, count: Int, capped: Boolean, empty: String): FilterNote =
-    FilterNote(icon, if (count == 0) empty else "$name · %,d%s".format(count, if (capped) "+" else ""))
+fun countNote(icon: ImageVector, name: String, count: Int, capped: Boolean): FilterNote =
+    FilterNote.setting(icon, name, "on", countTally(count, capped))
+
+/** A pick whose list is still being rebuilt: "Mentions · on", its count to follow. */
+fun pickedNote(icon: ImageVector, name: String): FilterNote = FilterNote.setting(icon, name, "on")
+
+/** "18", "500+", or "none yet". */
+internal fun countTally(count: Int, capped: Boolean): String =
+    if (count == 0) "none yet" else "%,d%s".format(count, if (capped) "+" else "")

@@ -80,6 +80,13 @@ import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Inbox
+import com.nostrvault.ui.screens.dashboard.VaultEmptyState
+import com.nostrvault.ui.screens.dashboard.VaultLoadingState
+import com.nostrvault.ui.screens.dashboard.bootText
+import com.nostrvault.ui.screens.dashboard.vaultAccentGradient
+import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.components.reactionEmojiSummary
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.navigation.FloatingButtonRow
@@ -418,8 +425,8 @@ internal fun VaultActivityScreen(
         val count = minOf(matching, shownAfter)
         val capped = matching > shownAfter
         filterNote.show(
-            if (next == VaultActivityFilter.MENTIONS) countNote(NostrVaultIcons.At, "Mentions", count, capped, "No mentions yet")
-            else countNote(NostrVaultIcons.Layers, "Everything", count, capped, "Nothing new yet"),
+            if (next == VaultActivityFilter.MENTIONS) countNote(NostrVaultIcons.At, "Mentions", count, capped)
+            else countNote(NostrVaultIcons.Layers, "Everything", count, capped),
         )
     }
     val listState = rememberLazyListState()
@@ -517,36 +524,19 @@ internal fun VaultActivityScreen(
         ) {
             val booting = relayStatus != RelayForegroundService.RelayStatus.RUNNING
             when {
-                lines.isEmpty() && (!hasLoadedOnce || isRefreshing || booting) -> Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
-                ) {
-                    CircularProgressIndicator(color = colors.primary, modifier = Modifier.size(32.dp))
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        if (booting) bootStatus.ifBlank { "Starting relay..." } else "Loading your vault...",
-                        color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                    )
-                }
-                lines.isEmpty() -> Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
-                ) {
-                    Icon(NostrVaultIcons.Activity, contentDescription = null, tint = colors.primary, modifier = Modifier.size(48.dp))
-                    Spacer(Modifier.height(16.dp))
-                    Text(if (filter == VaultActivityFilter.MENTIONS) "No mentions yet" else "Nothing new yet", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (filter == VaultActivityFilter.MENTIONS) "Replies, mentions and quotes land here"
-                        else "Replies, likes, zaps and new followers land here",
-                        color = SecondaryText, fontSize = 13.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
+                lines.isEmpty() && (!hasLoadedOnce || isRefreshing || booting) -> VaultLoadingState(
+                    if (booting) bootText(bootStatus) else "Loading your vault...",
+                    padding.calculateTopPadding(),
+                    showHint = false,
+                )
+                lines.isEmpty() -> VaultEmptyState(
+                    icon = Icons.Outlined.Inbox, // tray.full, thin
+                    gradient = vaultAccentGradient(),
+                    title = if (filter == VaultActivityFilter.MENTIONS) "No mentions yet" else "Nothing new yet",
+                    hint = if (filter == VaultActivityFilter.MENTIONS) "Replies, mentions and quotes land here"
+                    else "Replies, likes, zaps and new followers land here",
+                    topPadding = padding.calculateTopPadding(),
+                )
                 else -> LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(
@@ -589,12 +579,15 @@ private fun VaultActivityRow(
     val verb = activityVerb(line)
     val preview = remember(line.preview, profiles) { readablePreview(line.preview, name) }
     val shape = RoundedCornerShape(12.dp)
+    val oled = LocalOledMode.current
     Row(
         verticalAlignment = Alignment.Top,
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.primary.copy(alpha = if (isUnread) 0.10f else 0.03f), shape)
-            .border(0.8.dp, colors.primary.copy(alpha = 0.18f), shape)
+            // The grouped card, tinted: iOS secondary grouped background + purple 6% / 1.5%.
+            .background(SecondaryGroupedBg, shape)
+            .background(colors.primary.copy(alpha = if (isUnread) 0.06f else 0.015f), shape)
+            .border(if (oled) 1.5.dp else 0.8.dp, colors.primary.copy(alpha = if (oled) 0.30f else 0.12f), shape)
             .clickable(onClick = onClick)
             .padding(14.dp)
             .semantics(mergeDescendants = true) {

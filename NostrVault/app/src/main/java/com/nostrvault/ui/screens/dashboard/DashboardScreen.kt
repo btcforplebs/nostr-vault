@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.selected
 import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.components.countNote
+import com.nostrvault.ui.components.pickedNote
 import com.nostrvault.ui.components.VaultRightPill
 import com.nostrvault.ui.components.FilterNote
 import kotlinx.coroutines.launch
@@ -54,9 +55,10 @@ import com.nostrvault.ui.components.RevealNewestEffect
 internal data class RelayFilterChoice(
     val icon: ImageVector,
     val name: String,
-    val empty: String,
     /** Notes, Likes and Zaps rebuild their list after a pick; the note waits for it. */
     val waitsForList: Boolean = true,
+    /** Recipes only turned back off: "Recipes only · off", dimmed. */
+    val turnedOff: Boolean = false,
 )
 
 /**
@@ -90,21 +92,21 @@ private fun RowScope.RelayFilters(
         )
     when (viewMode) {
         VaultViewMode.NOTES -> {
-            filter(RelayFilterChoice(NostrVaultIcons.Layers, "All $things", "No $things yet"), "All", contentFilter == VaultContentFilter.ALL) {
+            filter(RelayFilterChoice(NostrVaultIcons.Layers, "All $things"), "All", contentFilter == VaultContentFilter.ALL) {
                 viewModel.setContentFilter(VaultContentFilter.ALL)
             }
-            filter(RelayFilterChoice(NostrVaultIcons.Profile, "Your $things", "None of your $things yet"), "Mine", contentFilter == VaultContentFilter.MINE) {
+            filter(RelayFilterChoice(NostrVaultIcons.Profile, "Your $things"), "Mine", contentFilter == VaultContentFilter.MINE) {
                 viewModel.setContentFilter(VaultContentFilter.MINE)
             }
-            filter(RelayFilterChoice(NostrVaultIcons.At, "Mentions", "No mentions yet"), "Mentions", contentFilter == VaultContentFilter.TAGGED) {
+            filter(RelayFilterChoice(NostrVaultIcons.At, "Mentions"), "Mentions", contentFilter == VaultContentFilter.TAGGED) {
                 viewModel.setContentFilter(VaultContentFilter.TAGGED)
             }
-            filter(RelayFilterChoice(NostrVaultIcons.OutsideNetwork, "From outside your network", "No replies from outside"), "Replies from outside your network", contentFilter == VaultContentFilter.OUTSIDE) {
+            filter(RelayFilterChoice(NostrVaultIcons.OutsideNetwork, "From outside your network"), "Replies from outside your network", contentFilter == VaultContentFilter.OUTSIDE) {
                 viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
             }
             // Articles only: just the recipes (zapcooking / nostrcooking tags).
             if (noteScope == VaultNoteScope.ARTICLES) {
-                val recipes = RelayFilterChoice(NostrVaultIcons.Recipes, "Recipes", "No recipes yet")
+                val recipes = RelayFilterChoice(NostrVaultIcons.Recipes, "Recipes only")
                 IconFilterButton(
                     icon = recipes.icon,
                     contentDescription = "Recipes only",
@@ -112,32 +114,32 @@ private fun RowScope.RelayFilters(
                     onClick = {
                         viewModel.toggleRecipesOnly()
                         // Turning it off says so; turning it on counts.
-                        onPicked(if (recipesOnly) recipes.copy(waitsForList = false, name = "") else recipes, true)
+                        onPicked(if (recipesOnly) recipes.copy(turnedOff = true) else recipes, true)
                     },
                 )
             }
         }
         VaultViewMode.LIKES -> {
-            filter(RelayFilterChoice(NostrVaultIcons.Received, "Likes received", "No likes yet"), "Received", likesFilter == VaultLikesFilter.ON_MY_NOTES) {
+            filter(RelayFilterChoice(NostrVaultIcons.Received, "Likes received"), "Received", likesFilter == VaultLikesFilter.ON_MY_NOTES) {
                 viewModel.setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
             }
-            filter(RelayFilterChoice(NostrVaultIcons.Given, "Likes given", "No likes given yet"), "Given", likesFilter == VaultLikesFilter.MY_LIKES) {
+            filter(RelayFilterChoice(NostrVaultIcons.Given, "Likes given"), "Given", likesFilter == VaultLikesFilter.MY_LIKES) {
                 viewModel.setLikesFilter(VaultLikesFilter.MY_LIKES)
             }
         }
         VaultViewMode.ZAPS -> {
-            filter(RelayFilterChoice(NostrVaultIcons.Received, "Zaps received", "No zaps yet"), "Received", zapsFilter == VaultZapsFilter.ON_MY_NOTES) {
+            filter(RelayFilterChoice(NostrVaultIcons.Received, "Zaps received"), "Received", zapsFilter == VaultZapsFilter.ON_MY_NOTES) {
                 viewModel.setZapsFilter(VaultZapsFilter.ON_MY_NOTES)
             }
-            filter(RelayFilterChoice(NostrVaultIcons.Given, "Zaps given", "No zaps given yet"), "Given", zapsFilter == VaultZapsFilter.MY_ZAPS) {
+            filter(RelayFilterChoice(NostrVaultIcons.Given, "Zaps given"), "Given", zapsFilter == VaultZapsFilter.MY_ZAPS) {
                 viewModel.setZapsFilter(VaultZapsFilter.MY_ZAPS)
             }
         }
         VaultViewMode.FOLLOWERS -> {
-            filter(RelayFilterChoice(NostrVaultIcons.Discover, "Newest followers", "No followers yet", waitsForList = false), "New", followersFilter == VaultFollowersFilter.NEW) {
+            filter(RelayFilterChoice(NostrVaultIcons.Discover, "Newest followers", waitsForList = false), "New", followersFilter == VaultFollowersFilter.NEW) {
                 viewModel.setFollowersFilter(VaultFollowersFilter.NEW)
             }
-            filter(RelayFilterChoice(NostrVaultIcons.Groups, "All followers", "No followers yet", waitsForList = false), "All", followersFilter == VaultFollowersFilter.ALL) {
+            filter(RelayFilterChoice(NostrVaultIcons.Groups, "All followers", waitsForList = false), "All", followersFilter == VaultFollowersFilter.ALL) {
                 viewModel.setFollowersFilter(VaultFollowersFilter.ALL)
             }
         }
@@ -158,8 +160,11 @@ fun DashboardScreen(
     feedService: com.nostrvault.service.FeedService,
     /** The Vault Dashboard, which the Vault tab presents over either half. */
     onOpenDashboard: () -> Unit,
+    /** The relay's boot line (LogStore), for the Notes spinner while it starts. */
+    bootStatus: String = "",
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
+    val relayStatus by com.nostrvault.relay.RelayForegroundService.relayStatus.collectAsState()
     // Mode & filters
     val viewMode by viewModel.viewMode.collectAsState()
     val noteScope by viewModel.noteScope.collectAsState()
@@ -313,13 +318,12 @@ fun DashboardScreen(
         }
     }
 
-    // The line under the bar after a filter tap. A list rebuilt after the
-    // pick is counted when it lands; "checking…" shows only if that takes a
-    // moment.
+    // The line under the bar after a filter tap: "Mentions · on" straight
+    // away; a list rebuilt after the pick adds its count when it lands, if
+    // the note is still up (iOS noteFilterTap / filterListLanded).
     val filterNote = rememberFilterNoteState()
-    val noteCoroutines = rememberCoroutineScope()
     var pendingFilter by remember { mutableStateOf<RelayFilterChoice?>(null) }
-    fun showCount(choice: RelayFilterChoice) {
+    fun countFor(choice: RelayFilterChoice): FilterNote {
         val (count, capped) = when (viewModel.viewMode.value) {
             VaultViewMode.NOTES -> viewModel.displayNotes.value.size.let { it to (it >= viewModel.pageSize) }
             VaultViewMode.LIKES -> viewModel.displayLikedNotes.value.size.let { it to (it >= viewModel.pageSize) }
@@ -327,24 +331,21 @@ fun DashboardScreen(
             VaultViewMode.FOLLOWERS ->
                 (viewModel.followerSnapshot.value?.entries(viewModel.followersFilter.value)?.size ?: 0) to false
         }
-        filterNote.show(countNote(choice.icon, choice.name, count, capped, choice.empty))
+        return countNote(choice.icon, choice.name, count, capped)
     }
     val displayPass by viewModel.displayPass.collectAsState()
     LaunchedEffect(displayPass) {
-        pendingFilter?.let { pendingFilter = null; showCount(it) }
+        pendingFilter?.let { pendingFilter = null; filterNote.update(countFor(it)) }
     }
     LaunchedEffect(viewMode) { pendingFilter = null }
     val onFilterPicked: (RelayFilterChoice, Boolean) -> Unit = { choice, changed ->
         when {
-            choice.name.isEmpty() -> { pendingFilter = null; filterNote.show(FilterNote.off("Recipes")) }
+            choice.turnedOff -> { pendingFilter = null; filterNote.show(FilterNote.off(choice.name, choice.icon)) }
             changed && choice.waitsForList -> {
                 pendingFilter = choice
-                noteCoroutines.launch {
-                    delay(400)
-                    if (pendingFilter == choice) filterNote.show(FilterNote(choice.icon, "${choice.name} · checking…"))
-                }
+                filterNote.show(pickedNote(choice.icon, choice.name))
             }
-            else -> { pendingFilter = null; showCount(choice) }
+            else -> { pendingFilter = null; filterNote.show(countFor(choice)) }
         }
     }
 
@@ -470,6 +471,7 @@ fun DashboardScreen(
                     quoteMap = quoteMap,
                     isRefreshing = isRefreshing,
                     hasLoadedOnce = notesHasLoadedOnce,
+                    bootText = relayBootText(relayStatus, bootStatus),
                     isLoadingMore = isLoadingMore,
                     listState = listState,
                     allProfiles = allProfiles,

@@ -47,7 +47,10 @@ import com.nostrvault.data.model.VaultSearchLogic.Section
 import com.nostrvault.data.model.VaultSearchLogic.Status
 import com.nostrvault.ui.components.VaultNoteCard
 import com.nostrvault.ui.navigation.LocalOpenHashtag
-import com.nostrvault.ui.screens.SearchProfileRow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.RunningWithErrors
+import androidx.compose.material.icons.filled.WifiTetheringOff
+import androidx.compose.material.icons.outlined.FindInPage
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
@@ -59,11 +62,12 @@ private const val PREVIEW = 5
 /** Rows in one section: the relay walk keeps every match; this keeps a common word from building thousands of rows. */
 private const val SECTION_CAP = 200
 
+/** iOS `VaultSearchLogic.Section.symbol`. */
 private fun Section.icon(): ImageVector = when (this) {
-    Section.PEOPLE -> NostrVaultIcons.People
-    Section.NOTES -> NostrVaultIcons.Articles
-    Section.ARTICLES -> NostrVaultIcons.Articles
-    Section.MEDIA -> NostrVaultIcons.Media
+    Section.PEOPLE -> NostrVaultIcons.PeopleOutline // person.2
+    Section.NOTES -> NostrVaultIcons.Document // doc.text
+    Section.ARTICLES -> NostrVaultIcons.Articles // doc.richtext
+    Section.MEDIA -> NostrVaultIcons.TabMedia // photo.on.rectangle
     Section.HASHTAGS -> NostrVaultIcons.TagIcon
     Section.LINKS -> NostrVaultIcons.LinkIcon
 }
@@ -90,7 +94,7 @@ internal fun VaultSearchResults(
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxWidth()) {
         when {
             status == Status.IDLE -> item {
-                Message("Search your Vault", "Notes, people, hashtags, links, articles and media stored on this device's relay.")
+                Message(NostrVaultIcons.Search, "Search your Vault", "Notes, people, hashtags, links, articles and media stored on this device's relay.")
             }
             status == Status.SEARCHING && results.isEmpty -> item {
                 Row(
@@ -106,7 +110,7 @@ internal fun VaultSearchResults(
             else -> {
                 caveat(status)?.let { item { Caveat(it) } }
                 if (status != Status.SEARCHING && results.isEmpty) {
-                    item { Message("Nothing in your Vault matches", "“$resultsQuery”") }
+                    item { Message(Icons.Outlined.FindInPage, "Nothing in your Vault matches", "“$resultsQuery”") }
                 } else {
                     item {
                         LazyRow(
@@ -114,7 +118,7 @@ internal fun VaultSearchResults(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             modifier = Modifier.padding(vertical = 12.dp),
                         ) {
-                            item { Chip("All", NostrVaultIcons.Search, null, section == null) { section = null } }
+                            item { Chip("All", NostrVaultIcons.Layers, null, section == null) { section = null } }
                             items(visible) { s -> Chip(s.title, s.icon(), results.count(s), section == s) { section = s } }
                         }
                     }
@@ -128,11 +132,14 @@ internal fun VaultSearchResults(
     }
 }
 
-/** Why these results may not be everything, when they may not. */
-private fun caveat(status: Status): String? = when (status) {
-    Status.CUT_SHORT -> "The search didn't finish, so some items may be missing."
+/** Why these results may not be everything, when they may not, with iOS's icon for each. */
+private fun caveat(status: Status): Pair<ImageVector, String>? = when (status) {
+    // clock.badge.exclamationmark
+    Status.CUT_SHORT -> Icons.Filled.RunningWithErrors to "The search didn't finish, so some items may be missing."
     // Not running covers starting, stopped and not set up alike.
-    Status.IN_MEMORY -> "Your Vault's relay isn't running, so this covers only what's loaded. Search again once it is for everything."
+    // antenna.radiowaves.left.and.right.slash
+    Status.IN_MEMORY -> Icons.Filled.WifiTetheringOff to
+        "Your Vault's relay isn't running, so this covers only what's loaded. Search again once it is for everything."
     else -> null
 }
 
@@ -161,7 +168,7 @@ private fun LazyListScope.sectionItems(
     }
     when (s) {
         Section.PEOPLE -> items(results.people.take(limit), key = { "p-${it.pubkey}" }) { profile ->
-            SearchProfileRow(profile = profile, profiles = profiles, onClick = { onProfile(profile.pubkey) })
+            VaultPersonRow(profile = profile, profiles = profiles, onClick = { onProfile(profile.pubkey) })
         }
         Section.NOTES, Section.ARTICLES, Section.MEDIA -> items(results.notes(s).take(limit), key = { "n-${it.id}" }) { note ->
             VaultNoteCard(
@@ -244,22 +251,26 @@ private fun LinkRow(link: VaultSearchLogic.Link) {
 }
 
 @Composable
-private fun Caveat(text: String) {
-    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.Top) {
-        Icon(NostrVaultIcons.Alert, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(14.dp))
+private fun Caveat(caveat: Pair<ImageVector, String>) {
+    val (icon, text) = caveat
+    Row(
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(8.dp))
         Text(text, color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
-private fun Message(title: String, detail: String) {
+private fun Message(icon: ImageVector, title: String, detail: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth().padding(top = 60.dp, start = 32.dp, end = 32.dp),
     ) {
-        Icon(NostrVaultIcons.Search, contentDescription = null, tint = LocalNostrVaultColors.current.primary,
+        Icon(icon, contentDescription = null, tint = LocalNostrVaultColors.current.primary,
             modifier = Modifier.size(40.dp))
         Text(title, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Text(detail, color = SecondaryText, fontSize = 13.sp, textAlign = TextAlign.Center)

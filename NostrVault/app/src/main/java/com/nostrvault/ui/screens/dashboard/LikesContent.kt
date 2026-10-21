@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens.dashboard
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.HeartBroken
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -51,63 +53,21 @@ internal fun LikesContent(
     onReportNote: (FeedNote, String, String) -> Unit,
     onBlockAuthor: (String) -> Unit,
 ) {
-    val colors = LocalNostrVaultColors.current
     val latestReactionDates by viewModel.latestReactionDates.collectAsState()
 
+    val given = likesFilter == VaultLikesFilter.MY_LIKES
     if (notes.isEmpty() && (isRefreshing || !hasLoadedOnce)) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = padding.calculateTopPadding()),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(
-                    color = colors.primary,
-                    modifier = Modifier.size(32.dp),
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "Loading likes...",
-                    color = PrimaryText,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "This may take a moment",
-                    color = TertiaryText,
-                    fontSize = 12.sp,
-                )
-            }
-        }
+        VaultLoadingState("Loading likes...", padding.calculateTopPadding())
     } else if (notes.isEmpty()) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = padding.calculateTopPadding()),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = if (likesFilter != VaultLikesFilter.MY_LIKES) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-                    contentDescription = null,
-                    tint = LikeRed,
-                    modifier = Modifier.size(48.dp),
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = if (likesFilter != VaultLikesFilter.MY_LIKES) "No reactions yet" else "No liked posts",
-                    color = SecondaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = if (likesFilter != VaultLikesFilter.MY_LIKES) "Reactions on these notes will appear here" else "Posts you've liked will appear here",
-                    color = TertiaryText,
-                    fontSize = 13.sp,
-                )
-            }
-        }
+        VaultEmptyState(
+            // heart.slash / heart; Material has no slashed heart, HeartBroken is the nearest.
+            icon = if (!given) Icons.Outlined.HeartBroken else NostrVaultIcons.Heart,
+            // iOS red → pink; no pink token, so red → the error red ([Tara]).
+            gradient = listOf(LikeRed, ErrorRed),
+            title = if (!given) "No reactions yet" else "No liked posts",
+            hint = if (!given) "Reactions on these notes will appear here" else "Posts you've liked will appear here",
+            topPadding = padding.calculateTopPadding(),
+        )
     } else {
         LazyColumn(
             state = listState,
@@ -128,8 +88,10 @@ internal fun LikesContent(
                     quotedNotes = quotedNotes,
                     profile = viewModel.profileFor(note.pubkey),
                     profiles = allProfiles,
-                    reactors = reactionMap[note.id] ?: emptyList(),
-                    latestReactionDate = latestReactionDates[note.id]?.let { java.util.Date(it * 1000) },
+                    // Under Given the posts are yours to like, not your likers'
+                    // (iOS likesList `rowReactors`).
+                    reactors = reactionMap[note.id].takeIf { !given } ?: emptyList(),
+                    latestReactionDate = latestReactionDates[note.id]?.takeIf { !given }?.let { java.util.Date(it * 1000) },
                     noteType = noteType,
                     layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
