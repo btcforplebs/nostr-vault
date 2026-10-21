@@ -55,6 +55,20 @@ internal fun PendingDeepLinkEffect(
             return@LaunchedEffect
         }
         if (focus == null) {
+            // A notification switches tab first, as iOS does: a post opens over
+            // the Feed tab, a follower over the Vault's Followers list.
+            target.overTab?.let { tab ->
+                target.behindFocus?.let {
+                    VaultSection.show(media = false)
+                    RelayFocus.request(it)
+                }
+                navController.navigate(tab) {
+                    popUpTo(Screen.Feed.route) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+                navController.popBackStack(tab, inclusive = false)
+            }
             navController.navigate(target.route) { launchSingleTop = true }
             return@LaunchedEffect
         }
