@@ -3,8 +3,9 @@
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 
-// Notes and reposts, plus the articles, polls and highlights the iPhone shows in Following (FeedServiceTypes.timelineKinds).
-export const FEED_KINDS = [1, 6, 30023, 1068, 9802]
+// Notes and reposts, plus the articles, polls, highlights, comments, pictures and generic reposts the iPhone shows in
+// Following (FeedServiceTypes.timelineKinds). feed-kinds.js timelineShows decides which comments and kind 16s draw.
+export const FEED_KINDS = [1, 6, 30023, 1068, 9802, 1111, 16, 20]
 const now = () => Math.floor(Date.now() / 1000)
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 

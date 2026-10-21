@@ -94,7 +94,7 @@ let deletionsFor = null
 export const isDeleted = id => deleted.has(id)
 /** The ids whose deletion hides a card for `event`: its own, and for a repost the note inside it too. */
 export function gateIds(event) {
-  if (event?.kind !== 6) return [event.id]
+  if (event?.kind !== 6 && event?.kind !== 16) return [event.id]
   let inner
   try { inner = JSON.parse(event.content) } catch {}
   return [...new Set([event.id, typeof inner?.id === "string" ? inner.id : null, repostedId(event)].filter(Boolean))]
