@@ -56,7 +56,7 @@ test("rows: the person's avatar with ⚡ for a zap; one load at a time; Receive'
   assert.match(src, /\{person\s*\? <span class="wallet-tx-icon zap"[^>]*>\s*<Avatar pubkey=\{person\}/)
   assert.match(src, /if \(running\.current\) \{ if \(reset\) pending\.current = true; return \}/)
   assert.match(src, /if \(pending\.current\) \{ pending\.current = false; load\(true\) \}/)
-  assert.match(src, /ownZaps\(txs, me\)\.map/)
+  assert.match(src, /withFound\(ownZaps\(txs, me\), found\.details\)\.map/)
   const recv = readFileSync(new URL("../src/screens/WalletReceive.jsx", import.meta.url), "utf8")
   assert.match(recv, /useProfile\(pubkey\)\?\.lud16/)
   assert.equal(/getProfile\(/.test(recv), false)
