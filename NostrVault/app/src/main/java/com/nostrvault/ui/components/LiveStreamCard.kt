@@ -24,6 +24,12 @@ import com.nostrvault.data.model.LiveStream
 import com.nostrvault.ui.theme.*
 
 /**
+ * A host with no profile yet: "npub…" and the last six of the hex key, as iOS
+ * writes it (LiveStreamCardView, LiveStreamPlayerView.hostName).
+ */
+fun liveHostFallback(hostPubkey: String): String = "npub…" + hostPubkey.takeLast(6)
+
+/**
  * One live tile: thumbnail, a LIVE pill (ENDED when [isLive] is false) and the
  * viewer count when the host publishes one, then title and host. Drawn by the
  * Live grid and by streams embedded in notes; callers add the tap.

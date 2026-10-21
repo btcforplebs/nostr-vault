@@ -41,6 +41,13 @@ class LiveFeedService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "LiveFeedService"
+
+        /**
+         * The grid's order: newest first, the address breaking a tie so the
+         * order holds still between refreshes. iOS LiveFeedService.publish().
+         */
+        internal fun newestFirst(streams: Collection<LiveStream>): List<LiveStream> =
+            streams.sortedWith(compareByDescending<LiveStream> { it.createdAt }.thenByDescending { it.address })
         private const val LIMIT = 300
         /**
          * How long to hold the relay connections open for one refresh.
@@ -265,7 +272,7 @@ class LiveFeedService @Inject constructor(
         val now = System.currentTimeMillis() / 1000
         _streams.value = values
             .filter { it.isPlayableLive && it.isOnAirAt(now) && it.hostPubkey !in removedHosts }
-            .sortedByDescending { it.participants ?: 0 }
+            .let(::newestFirst)
     }
 
     /** @return the stream in this relay message, or null if it is not one. */

@@ -97,7 +97,7 @@ fun LiveStreamEmbed(stream: LiveStream, modifier: Modifier = Modifier) {
     // Read once per composition: an embed scrolled back to after its stream
     // ended must stop offering to play it.
     val isLive = stream.isPlayableLive && stream.isOnAirAt(System.currentTimeMillis() / 1000)
-    val hostName = host?.bestName ?: ("npub…" + stream.hostPubkey.takeLast(6))
+    val hostName = host?.bestName ?: liveHostFallback(stream.hostPubkey)
 
     LiveStreamCard(
         stream = stream,

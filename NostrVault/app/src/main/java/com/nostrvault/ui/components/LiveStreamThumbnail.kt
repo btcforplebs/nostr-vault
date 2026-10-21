@@ -7,17 +7,23 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import coil.imageLoader
 import coil.request.CachePolicy
@@ -29,7 +35,7 @@ import kotlinx.coroutines.isActive
 
 /**
  * A live tile's picture: the stream's live frame, else its cover art, else a
- * plain backdrop. iOS: LiveStreamThumbnail in LiveFeedViews.swift.
+ * radio-waves placeholder. iOS: LiveStreamThumbnail in LiveFeedViews.swift.
  *
  * Not a plain AsyncImage, which keeps every picture on disk by URL for good.
  * Cloudflare Stream and the fly.dev radio hosts serve each new frame at one
@@ -60,7 +66,15 @@ fun LiveStreamThumbnail(urls: List<String>, modifier: Modifier = Modifier) {
         }
     }
 
-    Box(modifier.background(colors.primary.copy(alpha = 0.12f))) {
+    Box(modifier.background(colors.primary.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+        // Many streams publish no picture at all, so this is a common case,
+        // not only a fallback. iOS: dot.radiowaves.left.and.right.
+        Icon(
+            Icons.Filled.Sensors,
+            contentDescription = null,
+            tint = colors.primary.copy(alpha = 0.7f),
+            modifier = Modifier.size(28.dp),
+        )
         Crossfade(targetState = image, label = "liveThumbnail") { shown ->
             if (shown != null) {
                 Image(

@@ -56,6 +56,7 @@ import com.nostrvault.service.music.PlayerTrack
 import com.nostrvault.service.music.rejoinLiveEdge
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.UGCReportDialog
+import com.nostrvault.ui.components.liveHostFallback
 import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.screens.dm.DMAttachment
 import com.nostrvault.ui.theme.*
@@ -87,16 +88,17 @@ fun LiveStreamScreen(
     val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
     val chatProfiles by viewModel.profiles.collectAsState()
-    val status by viewModel.status.collectAsState()
+    val zapFailure by viewModel.zapFailure.collectAsState()
     val sending by viewModel.sending.collectAsState()
     var chatInput by remember { mutableStateOf("") }
     var showZapSheet by remember { mutableStateOf(false) }
-    var showHostMenu by remember { mutableStateOf(false) }
+    var showNoLightningAddress by remember { mutableStateOf(false) }
     var showReportStream by remember { mutableStateOf(false) }
     var showBlockConfirm by remember { mutableStateOf(false) }
     var reportingMessage by remember { mutableStateOf<LiveChatService.ChatEntry?>(null) }
     var showBlossomPicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val displayHost = hostName ?: stream?.let { liveHostFallback(it.hostPubkey) }.orEmpty()
 
     // Chat is joined for exactly as long as this screen is up.
     DisposableEffect(stream?.address) {
@@ -223,7 +225,7 @@ fun LiveStreamScreen(
                             PlayerTrack(
                                 id = "live:${stream.address}",
                                 title = stream.title ?: "Live stream",
-                                artist = hostName ?: ("npub…" + stream.hostPubkey.takeLast(6)),
+                                artist = displayHost,
                                 artworkUrl = stream.imageUrl
                                     ?: stream.previewImageUrls.firstOrNull()
                                     ?: chatProfiles[stream.hostPubkey]?.pictureURL,
@@ -251,73 +253,13 @@ fun LiveStreamScreen(
                     }
                 }
             }
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stream.title ?: "Untitled stream",
-                            color = PrimaryText,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 24.sp,
-                            maxLines = 2,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = buildString {
-                                append(hostName ?: stream.hostPubkey.take(8))
-                                stream.participants?.let { append(" · $it watching") }
-                            },
-                            color = SecondaryText,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    // The report and block affordances any surface showing
-                    // third-party video needs. iOS: LiveStreamPlayerView header.
-                    Box {
-                        IconButton(onClick = { showHostMenu = true }) {
-                            Icon(NostrVaultIcons.More, contentDescription = "Stream options", tint = colors.primary)
-                        }
-                        DropdownMenu(expanded = showHostMenu, onDismissRequest = { showHostMenu = false }) {
-                            com.nostrvault.ui.components.NostrWebLinks.forStream(stream)?.let { link ->
-                                DropdownMenuItem(
-                                    text = { Text(link.label) },
-                                    leadingIcon = { Icon(NostrVaultIcons.OpenExternal, contentDescription = null) },
-                                    onClick = {
-                                        showHostMenu = false
-                                        com.nostrvault.ui.components.NostrWebLinks.open(context, link.url)
-                                    },
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("Report stream") },
-                                leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
-                                onClick = {
-                                    showHostMenu = false
-                                    showReportStream = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Block host", color = ErrorRed) },
-                                leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed) },
-                                onClick = {
-                                    showHostMenu = false
-                                    showBlockConfirm = true
-                                },
-                            )
-                        }
-                    }
-                    // Hidden when ⚡️ is out of Appearance → Post buttons (iOS LiveStreamPlayerView).
-                    if (LocalShowZapButton.current) Button(
-                        onClick = { showZapSheet = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                    ) { Text("Zap", color = PrimaryText, fontWeight = FontWeight.SemiBold) }
-                }
-                status?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = colors.primary, fontSize = 12.sp)
-                }
-            }
+            LiveStreamHeader(
+                stream = stream,
+                hostName = displayHost,
+                hostPictureUrl = chatProfiles[stream.hostPubkey]?.pictureURL,
+                onReport = { showReportStream = true },
+                onBlock = { showBlockConfirm = true },
+            )
 
             HorizontalDivider(color = colors.primary.copy(alpha = 0.12f))
 
@@ -336,52 +278,31 @@ fun LiveStreamScreen(
                     },
             )
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            LiveStreamComposer(
+                text = chatInput,
+                onTextChange = { chatInput = it },
+                sending = sending,
+                showZap = LocalShowZapButton.current,
+                onMedia = {
+                    focusManager.clearFocus()
+                    showBlossomPicker = true
+                },
+                onZap = { showZapSheet = true },
+                onSend = {
+                    val text = chatInput
+                    if (text.isNotBlank()) {
+                        chatInput = ""
+                        // A send no relay took puts the text back. iOS sendMessage().
+                        viewModel.send(stream, text, onFailed = { chatInput = text })
+                    }
+                },
                 modifier = Modifier
-                    .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
                     // LiveStreamHost draws this above the floating tab bar, so
                     // no room is kept for it.
                     .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-            ) {
-                // Media from your relay's Blossom store, sent as its link.
-                IconButton(
-                    onClick = {
-                        focusManager.clearFocus()
-                        showBlossomPicker = true
-                    },
-                ) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Media,
-                        contentDescription = "Add media from your relay",
-                        tint = colors.primary,
-                    )
-                }
-                OutlinedTextField(
-                    value = chatInput,
-                    onValueChange = { chatInput = it },
-                    placeholder = { Text("Say something", color = TertiaryText) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = PrimaryText,
-                        unfocusedTextColor = PrimaryText,
-                        cursorColor = colors.primary,
-                        focusedBorderColor = colors.primary,
-                    ),
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        viewModel.send(stream, chatInput)
-                        chatInput = ""
-                    },
-                    enabled = chatInput.isNotBlank() && !sending,
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                ) { Text("Send", color = PrimaryText) }
-            }
+            )
         }
 
         // Reporting also blocks, as the report dialog does everywhere else in
@@ -446,7 +367,38 @@ fun LiveStreamScreen(
                 onDismiss = { showZapSheet = false },
                 onZap = { sats ->
                     showZapSheet = false
-                    viewModel.zap(stream, sats)
+                    // The typed text is the zap's comment, and goes with it.
+                    // iOS LiveStreamPlayerView.sendZap.
+                    if (!viewModel.hasLightningAddress(stream.hostPubkey)) {
+                        showNoLightningAddress = true
+                    } else {
+                        val comment = chatInput.trim()
+                        chatInput = ""
+                        viewModel.zap(stream, sats, comment)
+                    }
+                },
+            )
+        }
+
+        // iOS: an alert when there is nowhere to pay or the zap fails; a zap
+        // that goes through shows up in the chat, so success says nothing.
+        if (showNoLightningAddress) {
+            AlertDialog(
+                onDismissRequest = { showNoLightningAddress = false },
+                title = { Text("No Lightning address") },
+                text = { Text("$displayHost has not published one, so there is nowhere to send sats.") },
+                confirmButton = {
+                    TextButton(onClick = { showNoLightningAddress = false }) { Text("OK") }
+                },
+            )
+        }
+        zapFailure?.let { message ->
+            AlertDialog(
+                onDismissRequest = viewModel::clearZapFailure,
+                title = { Text("Zap failed") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::clearZapFailure) { Text("OK") }
                 },
             )
         }
