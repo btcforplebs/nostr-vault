@@ -10,6 +10,7 @@ struct FipsMeshSettingsView: View {
     @ObservedObject private var homeVault = HomeVaultSender.shared
     @ObservedObject private var browser = BrowserRelaySender.shared
     @State private var enabled = FipsMeshSettings.enabled
+    @State private var showAddDevice = false
 
     private var devices: [MeshDevice] { FipsMeshDevices.current(configService.config) }
 
@@ -17,7 +18,7 @@ struct FipsMeshSettingsView: View {
         List {
             meshSection
             FipsMeshThisDeviceSection()
-            FipsMeshMyDevicesSection(devices: devices)
+            FipsMeshMyDevicesSection(devices: devices, showAdd: $showAddDevice)
             syncSection
             FipsMeshShareSection()
             advancedSection
@@ -27,6 +28,7 @@ struct FipsMeshSettingsView: View {
         .navigationTitle("FIPS Mesh")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { mesh.refresh() }
+        .sheet(isPresented: $showAddDevice) { FipsMeshAddDeviceSheet().environmentObject(configService) }
     }
 
     // MARK: 1 Mesh
