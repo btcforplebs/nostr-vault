@@ -67,10 +67,15 @@ fn source(pkt: &[u8]) -> Option<Ipv6Addr> {
     Some(Ipv6Addr::from(src))
 }
 
+/// IPv6 next header for ICMPv6.
+const ICMPV6: u8 = 58;
+
 /// Passes own devices' packets to their stack, and everyone else's to the
-/// strangers' stack (dropped without one). FIPS's own ICMP (no route to a
+/// strangers' stack (dropped without one). FIPS's own ICMPv6 (no route to a
 /// peer) carries `me` as its source and goes to both, so a splice to a gone
-/// peer resets instead of hanging. Returns when the mesh or own stack closes.
+/// peer resets instead of hanging; anything else from `me` is dropped, so
+/// that source is no way into the owner's stack. Returns when the mesh or
+/// own stack closes.
 pub fn filter(
     from_mesh: Receiver<Vec<u8>>,
     me: Ipv6Addr,
@@ -81,6 +86,9 @@ pub fn filter(
     for pkt in from_mesh {
         let Some(src) = source(&pkt) else { continue };
         if src == me {
+            if pkt[6] != ICMPV6 {
+                continue;
+            }
             if let Some(s) = &to_strangers {
                 let _ = s.send(pkt.clone());
             }
@@ -104,7 +112,14 @@ mod tests {
     fn v6(src: Ipv6Addr) -> Vec<u8> {
         let mut p = vec![0u8; 60];
         p[0] = 0x60;
+        p[6] = 6; // TCP
         p[8..24].copy_from_slice(&src.octets());
+        p
+    }
+
+    fn icmp6(src: Ipv6Addr) -> Vec<u8> {
+        let mut p = v6(src);
+        p[6] = ICMPV6;
         p
     }
 
@@ -115,13 +130,13 @@ mod tests {
         let me: Ipv6Addr = "fd00::3".parse().unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
         let (stack_tx, stack_rx) = std::sync::mpsc::channel();
-        for p in [v6(own_dev), v6(stranger), v6(me), vec![0x45; 60], vec![0x60; 10]] {
+        for p in [v6(own_dev), v6(stranger), icmp6(me), vec![0x45; 60], vec![0x60; 10]] {
             tx.send(p).unwrap();
         }
         drop(tx);
         filter(rx, me, HashSet::from([own_dev]), stack_tx, None);
         let passed: Vec<_> = stack_rx.try_iter().collect();
-        assert_eq!(passed, vec![v6(own_dev), v6(me)]);
+        assert_eq!(passed, vec![v6(own_dev), icmp6(me)]);
     }
 
     #[test]
@@ -132,13 +147,33 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let (stack_tx, stack_rx) = std::sync::mpsc::channel();
         let (strangers_tx, strangers_rx) = std::sync::mpsc::channel();
-        for p in [v6(own_dev), v6(stranger), v6(me), vec![0x45; 60]] {
+        for p in [v6(own_dev), v6(stranger), icmp6(me), vec![0x45; 60]] {
             tx.send(p).unwrap();
         }
         drop(tx);
         filter(rx, me, HashSet::from([own_dev]), stack_tx, Some(strangers_tx));
-        assert_eq!(stack_rx.try_iter().collect::<Vec<_>>(), vec![v6(own_dev), v6(me)]);
-        assert_eq!(strangers_rx.try_iter().collect::<Vec<_>>(), vec![v6(stranger), v6(me)]);
+        assert_eq!(stack_rx.try_iter().collect::<Vec<_>>(), vec![v6(own_dev), icmp6(me)]);
+        assert_eq!(strangers_rx.try_iter().collect::<Vec<_>>(), vec![v6(stranger), icmp6(me)]);
+    }
+
+    #[test]
+    fn only_icmpv6_from_this_node_passes() {
+        // FIPS writes `me` only on its own ICMPv6; any other protocol with
+        // that source reaches neither stack.
+        let own_dev: Ipv6Addr = "fd00::1".parse().unwrap();
+        let me: Ipv6Addr = "fd00::3".parse().unwrap();
+        let mut udp = v6(me);
+        udp[6] = 17;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (stack_tx, stack_rx) = std::sync::mpsc::channel();
+        let (strangers_tx, strangers_rx) = std::sync::mpsc::channel();
+        for p in [v6(me), udp, icmp6(me)] {
+            tx.send(p).unwrap();
+        }
+        drop(tx);
+        filter(rx, me, HashSet::from([own_dev]), stack_tx, Some(strangers_tx));
+        assert_eq!(stack_rx.try_iter().collect::<Vec<_>>(), vec![icmp6(me)]);
+        assert_eq!(strangers_rx.try_iter().collect::<Vec<_>>(), vec![icmp6(me)]);
     }
 
     #[test]
@@ -184,9 +219,9 @@ mod tests {
         let opts = crate::StartOptions { own_devices: vec!["npub1nope".into()], ..Default::default() };
         assert!(crate::config_yaml(&nsec, &opts).is_err());
         // Strangers are a part of own-devices mode: an open node has no door.
-        let open_strangers = crate::StartOptions { strangers: true, ..Default::default() };
+        let open_strangers = crate::StartOptions { strangers_port: 7778, ..Default::default() };
         assert!(crate::config_yaml(&nsec, &open_strangers).is_err());
-        let with = crate::StartOptions { own_devices: vec![phone.clone()], strangers: true, public_seeds: true, ..Default::default() };
+        let with = crate::StartOptions { own_devices: vec![phone.clone()], strangers_port: 7778, public_seeds: true, ..Default::default() };
         let yaml = crate::config_yaml(&nsec, &with).unwrap();
         assert!(yaml.contains(&format!("offer_allowlist: [\"{phone}\"]")), "offers stay own-devices-only");
     }

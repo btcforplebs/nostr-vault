@@ -279,12 +279,14 @@ enum RelayConfiguration {
         #if os(iOS)
         let enableTLS = "1"
         let relayBindAddress = "127.0.0.1"
-        let meshPlainPort = String(config.meshPlainPort)
         #else
         let enableTLS = "0"
         let relayBindAddress = "0.0.0.0"
-        let meshPlainPort = ""
         #endif
+        // Haven's mesh door: mesh visitors (iPhone kiosk, the Mac's
+        // strangers) go here, never to the relay port. It listens only
+        // while the host has SetMeshServingC(1).
+        let meshPlainPort = String(config.meshPlainPort)
 
         return [
             "OWNER_NPUB": cleanNpub,

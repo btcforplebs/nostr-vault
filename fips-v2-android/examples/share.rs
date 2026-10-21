@@ -8,8 +8,9 @@
 //! With --no-peers, starts with an empty peer list: --read then has to add
 //! the peer at runtime, the way the app reaches a vault it was not told about.
 //! With --own, starts in own-devices mode, as the Mac app does: only those
-//! npubs reach the shared port. Add --strangers to let everyone else in too,
-//! capped, as the Mac app does; they need --seeds (both ends) to find it.
+//! npubs reach the shared port. Add --strangers <port> to let everyone else
+//! reach <port> (Haven's mesh door in the app), capped, as the Mac app does;
+//! they need --seeds (both ends) to find it.
 use std::io::{Read, Write};
 
 fn serve_file(port: u16, path: String) {
@@ -49,7 +50,10 @@ fn main() {
         lan: args.iter().any(|a| a == "--lan"),
         relays: args.windows(2).filter(|w| w[0] == "--relay").map(|w| w[1].clone()).collect(),
         own_devices: args.windows(2).filter(|w| w[0] == "--own").map(|w| w[1].clone()).collect(),
-        strangers: args.iter().any(|a| a == "--strangers"),
+        strangers_port: args
+            .windows(2)
+            .find(|w| w[0] == "--strangers")
+            .map_or(0, |w| w[1].parse().expect("--strangers <port>")),
         public_seeds: args.iter().any(|a| a == "--seeds"),
         ..Default::default()
     };

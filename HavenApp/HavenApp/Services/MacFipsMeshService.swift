@@ -9,9 +9,10 @@ import Security
 /// so it answers their offers alone, dials each one, and gives them this
 /// Mac's relay port uncapped, as the helper's `serve --peer … --forward
 /// 127.0.0.1:<relay port>` did. Everyone else (`strangers`) comes in through
-/// the public seeds to the same port, capped, and Haven decides what they may
-/// read or write, as for an https visitor. With no devices it does not start,
-/// since an empty list would be open to anyone.
+/// the public seeds, capped, to Haven's mesh door (meshPlainPort, open while
+/// SetMeshServingC(1)), as the iPhone kiosk's visitors do: blob reads and
+/// owner-signed writes only, never the relay port. With no devices it does
+/// not start, since an empty list would be open to anyone.
 @MainActor
 final class MacFipsMeshService: ObservableObject {
     static let shared = MacFipsMeshService()
@@ -86,7 +87,8 @@ final class MacFipsMeshService: ObservableObject {
         lastError = nil
         let config = ConfigService.shared.config
         let options = enabled
-            ? MeshDevicesLogic.macEngineOptions(devices: config.meshDevices, ownNpub: ownNpub, relays: [])
+            ? MeshDevicesLogic.macEngineOptions(devices: config.meshDevices, ownNpub: ownNpub, relays: [],
+                                                meshDoorPort: config.meshPlainPort)
             : nil
         guard let options, let port = UInt16(exactly: config.relayPort),
               let data = try? JSONSerialization.data(withJSONObject: options, options: .sortedKeys),
@@ -107,7 +109,7 @@ final class MacFipsMeshService: ObservableObject {
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> String? in
             await previous?.value
-            if restart { NvFipsStop() }
+            if restart { Self.stopAndCloseDoor() }
             return Self.startAndShare(options: json, port: port)
         }
         engineOp = Task { _ = await op.value }
@@ -133,8 +135,14 @@ final class MacFipsMeshService: ObservableObject {
         let previous = engineOp
         engineOp = Task.detached {
             await previous?.value
-            NvFipsStop()
+            Self.stopAndCloseDoor()
         }
+    }
+
+    /// Haven's mesh door closes with the engine, as on the iPhone.
+    nonisolated private static func stopAndCloseDoor() {
+        SetMeshServingC(0)
+        NvFipsStop()
     }
 
     private func startPolling() {
@@ -160,12 +168,14 @@ final class MacFipsMeshService: ObservableObject {
         guard let nsec = meshNsec() else { return "Could not create the mesh key" }
         let rc = NvFipsStart(nsec, options)
         guard rc == 0 else { return "Mesh did not start (\(rc))" }
+        // Strangers' door: Haven's mesh port listens only while sharing.
+        SetMeshServingC(1)
         let shared = NvFipsExport(port)
         guard shared == 0 else {
-            NvFipsStop()
+            stopAndCloseDoor()
             return "Could not share the relay (\(shared))"
         }
-        print("FipsMesh: Mac engine live, own devices and capped strangers, relay port \(port)")
+        print("FipsMesh: Mac engine live, own devices on relay port \(port), capped strangers on the mesh door")
         return nil
     }
 

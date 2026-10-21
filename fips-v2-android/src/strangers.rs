@@ -3,7 +3,8 @@
 //!
 //! Own devices keep their stack and reach the shared relay port uncapped.
 //! Everyone else's packets go to a second stack on the same address, whose
-//! mesh connections are spliced to the stranger door, not to the relay:
+//! mesh connections are spliced to the stranger door, and from there to
+//! Haven's mesh door (`StartOptions::strangers_port`), never to the relay:
 //! - the door holds at most [`STRANGER_SLOTS`] stranger connections at once,
 //!   and turns the next one away, so strangers never take a slot from My
 //!   Devices (theirs are in the other stack);
@@ -12,10 +13,11 @@
 //! - each stranger has the visitor caps an open phone has
 //!   ([`stack::ServeLimits`]).
 //!
-//! Past the door a stranger reaches the relay port the same way an https
-//! visitor through a tunnel does, from 127.0.0.1, and Haven decides what it
-//! may read or write: owner and whitelist by NIP-42 and signatures, never by
-//! the loopback address. Strangers reach this node through the public seeds;
+//! Past the door a stranger reaches only Haven's mesh door (mesh_door.go):
+//! blob reads, owner-signed uploads checked before Haven allocates, and
+//! owner-signed EVENTs, with no queries and its own connection cap. The
+//! relay port's other routes (/feed, blossom DELETE, the loopback rate
+//! limiter bypass) are never in reach. Strangers reach this node through the public seeds;
 //! traversal offers stay own-devices-only, so they never learn its address.
 
 use std::io::{ErrorKind, Read, Write};
@@ -67,8 +69,8 @@ pub struct Strangers {
     pub ctl: Arc<stack::Control>,
     pub counters: Arc<Counters>,
     door: SocketAddr,
-    /// The relay port the door forwards to; 0 while sharing is off.
-    relay_port: Arc<AtomicU16>,
+    /// Haven's mesh door, where the door forwards; 0 while sharing is off.
+    forward_port: Arc<AtomicU16>,
     stop: Arc<AtomicBool>,
     stack_thread: std::thread::JoinHandle<()>,
     door_thread: std::thread::JoinHandle<()>,
@@ -89,10 +91,10 @@ impl Strangers {
     ) -> Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).context("bind stranger door")?;
         let door = listener.local_addr()?;
-        let relay_port = Arc::new(AtomicU16::new(0));
+        let forward_port = Arc::new(AtomicU16::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let counters = Arc::new(Counters::default());
-        let gate = Door { relay_port: relay_port.clone(), stop: stop.clone(), counters: counters.clone(), bucket: Bucket::new(rate), slots };
+        let gate = Door { forward_port: forward_port.clone(), stop: stop.clone(), counters: counters.clone(), bucket: Bucket::new(rate), slots };
         let door_thread = std::thread::Builder::new()
             .name("fips-stranger-door".into())
             .spawn(move || gate.run(listener))?;
@@ -113,12 +115,13 @@ impl Strangers {
                 return Err(e.into());
             }
         };
-        Ok(Self { ctl, counters, door, relay_port, stop, stack_thread, door_thread })
+        Ok(Self { ctl, counters, door, forward_port, stop, stack_thread, door_thread })
     }
 
-    /// Let strangers through to `port`, or (`None`) cut them and turn them away.
+    /// Let strangers through to `port` (Haven's mesh door), or (`None`) cut
+    /// them and turn them away.
     pub fn share(&self, port: Option<u16>) -> bool {
-        self.relay_port.store(port.unwrap_or(0), Ordering::SeqCst);
+        self.forward_port.store(port.unwrap_or(0), Ordering::SeqCst);
         self.ctl.set_serve(port.map(|_| self.door))
     }
 
@@ -133,7 +136,7 @@ impl Strangers {
 }
 
 struct Door {
-    relay_port: Arc<AtomicU16>,
+    forward_port: Arc<AtomicU16>,
     stop: Arc<AtomicBool>,
     counters: Arc<Counters>,
     bucket: Arc<Bucket>,
@@ -148,12 +151,12 @@ impl Door {
             }
             let Ok(stranger) = stream else { continue };
             // Anything else on this Mac that finds the door reaches only
-            // what it could reach on the relay port directly.
-            let port = self.relay_port.load(Ordering::SeqCst);
+            // what it could reach on the mesh door directly.
+            let port = self.forward_port.load(Ordering::SeqCst);
             let c = &self.counters;
             if port == 0 || c.open.load(Ordering::SeqCst) >= self.slots {
                 c.refused.fetch_add(1, Ordering::Relaxed);
-                println!("stranger refused: {}", if port == 0 { "sharing off" } else { "door full" });
+                tracing::debug!("stranger refused: {}", if port == 0 { "sharing off" } else { "door full" });
                 let _ = stranger.shutdown(Shutdown::Both);
                 continue;
             }
@@ -161,7 +164,7 @@ impl Door {
             let relay = match TcpStream::connect_timeout(&relay, RELAY_CONNECT) {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!("stranger door: relay {relay}: {e}");
+                    tracing::warn!("stranger door: mesh door {relay}: {e}");
                     let _ = stranger.shutdown(Shutdown::Both);
                     continue;
                 }
@@ -279,16 +282,16 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let counters = Arc::new(Counters::default());
-        let relay_port = Arc::new(AtomicU16::new(port));
+        let forward_port = Arc::new(AtomicU16::new(port));
         let d = Door {
-            relay_port: relay_port.clone(),
+            forward_port: forward_port.clone(),
             stop: Arc::new(AtomicBool::new(false)),
             counters: counters.clone(),
             bucket: Bucket::new(rate),
             slots,
         };
         std::thread::spawn(move || d.run(listener));
-        (addr, counters, relay_port)
+        (addr, counters, forward_port)
     }
 
     fn wait_for(f: impl Fn() -> bool) {
@@ -339,8 +342,8 @@ mod tests {
     #[test]
     fn sharing_off_turns_strangers_away() {
         let (port, _r) = relay(None);
-        let (addr, c, relay_port) = door(0, 4, port);
-        relay_port.store(0, Ordering::SeqCst);
+        let (addr, c, forward_port) = door(0, 4, port);
+        forward_port.store(0, Ordering::SeqCst);
         let mut s = TcpStream::connect(addr).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut b = [0u8; 1];
@@ -372,15 +375,55 @@ mod tests {
         assert!(took >= Duration::from_millis(1800), "took {took:?}");
     }
 
-    /// Mesh to relay: a stranger's connection is served by the strangers'
-    /// stack through the door, and the owner's stack never sees it.
+    /// A server that answers every connection with `banner` and closes.
+    fn banner(banner: &'static [u8]) -> u16 {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l.incoming() {
+                let Ok(mut s) = s else { return };
+                let _ = s.write_all(banner);
+            }
+        });
+        port
+    }
+
+    /// One end of the mesh: a stack at `addr` wired to `peer`'s packets.
+    fn dial(from: Ipv6Addr, to: Ipv6Addr, mesh_in: std::sync::mpsc::Sender<Vec<u8>>, from_peer: std::sync::mpsc::Receiver<Vec<u8>>) -> (Arc<stack::Control>, u16) {
+        let (out, mut out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+        std::thread::spawn(move || {
+            while let Some(p) = out_rx.blocking_recv() {
+                let _ = mesh_in.send(p);
+            }
+        });
+        let ctl = stack::Control::new();
+        let c = ctl.clone();
+        std::thread::spawn(move || stack::run_with(from, 1280, out, from_peer, &c));
+        let local = TcpListener::bind("127.0.0.1:0").unwrap();
+        let reader = ctl.add_connect(local, to, None).unwrap();
+        (ctl, reader.port)
+    }
+
+    fn read_all(port: u16) -> Vec<u8> {
+        let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        conn.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut got = Vec::new();
+        let _ = conn.read_to_end(&mut got);
+        got
+    }
+
+    /// Mesh end to end, through the split `export` makes: a stranger's
+    /// connection is served by the strangers' stack, through the door, to
+    /// Haven's mesh door; an own device's goes to the relay port. Neither
+    /// stack sees the other's.
     #[test]
-    fn a_stranger_reaches_the_relay_only_through_the_door() {
+    fn strangers_reach_the_mesh_door_and_own_devices_the_relay() {
         use std::collections::HashSet;
         let me: Ipv6Addr = "fd00::a".parse().unwrap();
         let own_dev: Ipv6Addr = "fd00::c".parse().unwrap();
         let stranger: Ipv6Addr = "fd00::b".parse().unwrap();
-        let (port, _r) = relay(None);
+        let relay_port = banner(b"relay");
+        let mesh_door = banner(b"mesh-door");
 
         // This node: the filter, the owner's stack, and the strangers' side.
         let (me_out, mut me_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
@@ -392,46 +435,31 @@ mod tests {
         let own_ctl = stack::Control::new();
         let c = own_ctl.clone();
         std::thread::spawn(move || stack::run_with(me, 1280, me_out, own_rx, &c));
-        assert!(own_ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))));
-        assert!(side.share(Some(port)));
+        assert!(!crate::share_split(&own_ctl, Some(&side), relay_port, relay_port), "strangers never get the relay port");
+        assert!(crate::share_split(&own_ctl, Some(&side), relay_port, mesh_door));
 
-        // The stranger, wired to this node both ways.
-        let (s_out, mut s_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
-        let (s_in_tx, s_in) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            while let Some(p) = s_out_rx.blocking_recv() {
-                let _ = mesh_tx.send(p);
-            }
-        });
+        // This node's packets go to whichever peer they are addressed to.
+        let (to_stranger, from_me_s) = std::sync::mpsc::channel();
+        let (to_own, from_me_o) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             while let Some(p) = me_out_rx.blocking_recv() {
-                let _ = s_in_tx.send(p);
+                let dst = Ipv6Addr::from(<[u8; 16]>::try_from(&p[24..40]).unwrap());
+                let _ = if dst == stranger { to_stranger.send(p) } else { to_own.send(p) };
             }
         });
-        let s_ctl = stack::Control::new();
-        let c = s_ctl.clone();
-        std::thread::spawn(move || stack::run_with(stranger, 1280, s_out, s_in, &c));
-        let local = TcpListener::bind("127.0.0.1:0").unwrap();
-        let reader = s_ctl.add_connect(local, me, None).unwrap();
+        let (s_ctl, s_port) = dial(stranger, me, mesh_tx.clone(), from_me_s);
+        let (o_ctl, o_port) = dial(own_dev, me, mesh_tx, from_me_o);
 
-        let mut conn = TcpStream::connect(("127.0.0.1", reader.port)).unwrap();
-        conn.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        conn.write_all(b"GET / HTTP/1.1\r\n\r\n").unwrap();
-        let mut got = [0u8; 18];
-        conn.read_exact(&mut got).unwrap();
-        assert_eq!(&got, b"GET / HTTP/1.1\r\n\r\n");
-        assert_eq!(side.counters.total.load(Ordering::SeqCst), 1, "served through the door");
-        assert_eq!(own_ctl.counters.served_total.load(Ordering::SeqCst), 0, "never by the owner's stack");
+        assert_eq!(read_all(s_port), b"mesh-door", "a stranger gets Haven's mesh door");
+        assert_eq!(read_all(o_port), b"relay", "an own device gets the relay");
+        assert_eq!(side.counters.total.load(Ordering::SeqCst), 1, "the stranger went through the door");
+        assert_eq!(own_ctl.counters.served_total.load(Ordering::SeqCst), 1, "only the own device used the owner's stack");
 
         // Sharing off: the stranger gets nothing more.
-        drop(conn);
         assert!(side.share(None));
-        let mut again = TcpStream::connect(("127.0.0.1", reader.port)).unwrap();
-        again.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-        let _ = again.write_all(b"GET / HTTP/1.1\r\n\r\n");
-        let mut b = [0u8; 1];
-        assert!(matches!(again.read(&mut b), Ok(0) | Err(_)));
+        assert!(read_all(s_port).is_empty());
         s_ctl.stop();
+        o_ctl.stop();
         own_ctl.stop();
         side.stop();
     }

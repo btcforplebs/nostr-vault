@@ -59,7 +59,7 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("Mesh")
         } footer: {
-            Text("Your devices reach this Mac's vault over the FIPS mesh, with no public IP or domain. Anyone else gets only what your relay gives any visitor, such as your public notes and photos, at up to 1 MB/s.")
+            Text("Your devices reach this Mac's vault over the FIPS mesh, with no public IP or domain. Anyone else can only open photos and files by their link, at up to 1 MB/s. They can't read your notes or change anything.")
         }
     }
 

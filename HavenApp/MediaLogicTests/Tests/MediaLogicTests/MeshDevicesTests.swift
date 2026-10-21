@@ -175,24 +175,30 @@ final class MeshDevicesTests: XCTestCase {
             MeshDevice(npub: page, name: "", role: .browser),
             MeshDevice(npub: mac, name: "", role: .mac),
         ]
-        let opts = try XCTUnwrap(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: ["wss://a"]))
+        let opts = try XCTUnwrap(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: ["wss://a"], meshDoorPort: HavenConfig().meshPlainPort))
         XCTAssertEqual(opts["own_devices"] as? [String], [moto, page], "this Mac is never its own device")
         XCTAssertEqual(opts["relays"] as? [String], ["wss://a"])
         XCTAssertNil(opts["peers"])
         // Strangers come in through the seeds, capped, never through an offer.
         XCTAssertEqual(opts["public_seeds"] as? Bool, true)
-        XCTAssertEqual(opts["strangers"] as? Bool, true)
+        // Strangers get Haven's mesh door, never the relay port own devices get.
+        let config = HavenConfig()
+        XCTAssertEqual(opts["strangers_port"] as? Int, config.meshPlainPort)
+        XCTAssertNotEqual(opts["strangers_port"] as? Int, config.relayPort)
+        XCTAssertNil(opts["strangers"], "the old switch pointed strangers at the relay port")
+        // No valid door port: the engine stays off rather than open strangers anywhere.
+        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: [], meshDoorPort: 0))
     }
 
     func testNoDevicesMeansTheMacEngineStaysOff() {
         // An empty own_devices would open the engine to anyone.
-        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: [], ownNpub: nil, relays: []))
+        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: [], ownNpub: nil, relays: [], meshDoorPort: 3356))
         let onlySelf = [MeshDevice(npub: mac, name: "", role: .mac)]
-        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: onlySelf, ownNpub: mac, relays: []))
+        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: onlySelf, ownNpub: mac, relays: [], meshDoorPort: 3356))
     }
 
     func testTheMacEngineFallsBackToTheDefaultFinderRelays() throws {
-        let opts = try XCTUnwrap(MeshDevicesLogic.macEngineOptions(devices: [MeshDevice(npub: moto, name: "", role: .phone)], ownNpub: nil, relays: []))
+        let opts = try XCTUnwrap(MeshDevicesLogic.macEngineOptions(devices: [MeshDevice(npub: moto, name: "", role: .phone)], ownNpub: nil, relays: [], meshDoorPort: 3356))
         XCTAssertEqual(opts["relays"] as? [String], MeshDevicesLogic.defaultFinderRelays)
     }
 }

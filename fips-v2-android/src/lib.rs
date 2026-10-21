@@ -59,10 +59,12 @@ pub struct StartOptions {
     /// The owner's devices. Set, only they reach this node: see
     /// [`own_devices`]. Empty leaves the node open to anyone, as before.
     pub own_devices: Vec<String>,
-    /// With `own_devices`: everyone else may reach the shared relay too,
-    /// capped, the way an https visitor does ([`strangers`]). They find this
-    /// node through `public_seeds`. Off, they get silence.
-    pub strangers: bool,
+    /// With `own_devices`: everyone else may reach this loopback port while
+    /// sharing, capped ([`strangers`]). It is Haven's mesh door
+    /// (`HAVEN_MESH_PLAIN_PORT`), never the relay port own devices get: the
+    /// door is the policy layer for mesh visitors. They find this node
+    /// through `public_seeds`. 0: they get silence.
+    pub strangers_port: u16,
 }
 
 /// What sharing gives the mesh before it stops, unless the app sets its own.
@@ -172,6 +174,8 @@ struct Running {
     /// Set in own-devices mode: the only npubs `ingress` dials.
     own: Option<own_devices::OwnDevices>,
     strangers: Option<strangers::Strangers>,
+    /// Where strangers go while sharing (`StartOptions::strangers_port`).
+    strangers_port: u16,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -216,7 +220,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
     };
     let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
     // An open node already serves everyone.
-    anyhow::ensure!(!opts.strangers || own.is_some(), "strangers needs own_devices");
+    anyhow::ensure!(opts.strangers_port == 0 || own.is_some(), "strangers_port needs own_devices");
     let allowlist = own.as_ref().map(own_devices::OwnDevices::allowlist_yaml).unwrap_or_default();
     let mut dialed: Vec<String> = Vec::new();
     for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
@@ -306,7 +310,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         None => from_mesh,
         Some(own) => {
             let (to_stack, stack_rx) = std::sync::mpsc::channel();
-            let to_strangers = if opts.strangers {
+            let to_strangers = if opts.strangers_port != 0 {
                 let (tx, rx) = std::sync::mpsc::channel();
                 match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx) {
                     Ok(s) => stranger_side = Some(s),
@@ -363,6 +367,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         relay_socket,
         own,
         strangers: stranger_side,
+        strangers_port: opts.strangers_port,
         stop: stop_tx,
         node_thread,
     });
@@ -371,6 +376,8 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
 
 /// Share a local TCP port (the relay, which also serves Blossom) on mesh :80.
 /// Sharing one port at a time; a different port needs `unexport` first.
+/// In own-devices mode `port` is for own devices only; strangers go to
+/// `strangers_port` at the same time.
 pub fn export(port: u16) -> i32 {
     let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
@@ -382,14 +389,30 @@ pub fn export(port: u16) -> i32 {
             None => {}
         }
     }
-    if !run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
-        return ERR_START;
-    }
-    if run.strangers.as_ref().is_some_and(|s| !s.share(Some(port))) {
+    if !share_split(&run.ctl, run.strangers.as_ref(), port, run.strangers_port) {
         return ERR_START;
     }
     run.exported = Some(port);
     0
+}
+
+/// Own devices' stack to `port`, strangers' to `strangers_port`. Strangers
+/// first, so a failure leaves nothing shared.
+fn share_split(own: &stack::Control, strangers: Option<&strangers::Strangers>, port: u16, strangers_port: u16) -> bool {
+    // The relay port is never the strangers' door.
+    if strangers.is_some() && strangers_port == port {
+        return false;
+    }
+    if strangers.is_some_and(|s| !s.share(Some(strangers_port))) {
+        return false;
+    }
+    if !own.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
+        if let Some(s) = strangers {
+            s.share(None);
+        }
+        return false;
+    }
+    true
 }
 
 /// Stop sharing. Friends' connections in progress are cut; reading continues.
