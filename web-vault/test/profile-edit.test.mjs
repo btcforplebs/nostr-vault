@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { merge, hasChanges, formFields, parseContent, latestProfile, saveProfile, localProfile } from "../src/net/profile-edit.js"
+import { merge, hasChanges, formFields, parseContent, latestProfile, saveProfile, localProfile, profileGuard } from "../src/net/profile-edit.js"
 import { getProfile } from "../src/net/profiles.js"
 import { PROFILE_RELAYS } from "../src/net/pool.js"
 
@@ -57,33 +57,62 @@ test("latestProfile: newest of Haven and relays; a forged or someone else's kind
   const other = kind0({ name: "other" }, T0 + 50, [], generateSecretKey())
   const r = await latestProfile(ctxWith(fakeVault([local])), { ask: async () => ({ events: [net, forged, other], answered: true }) })
   assert.equal(r.event.id, net.id)
-  assert.equal(r.confirmedNone, false)
 })
 
-test("latestProfile: none anywhere is confirmed only when every relay answered", async () => {
-  const all = await latestProfile(ctxWith(fakeVault()), { ask: async () => ({ events: [], answered: true }) })
-  assert.equal(all.confirmedNone, true)
-  let i = 0
-  const some = await latestProfile(ctxWith(fakeVault()), { ask: async () => ({ events: [], answered: i++ > 0 }) })
-  assert.equal(some.confirmedNone, false)
+test("latestProfile: own relays count, the defaults and purplepag.es don't; a future-dated copy is skipped", async () => {
+  const net = kind0({ name: "net" }, T0)
+  const future = kind0({ name: "future" }, Math.floor(Date.now() / 1000) + 3600)
+  const ask = async url => (url === "wss://r.example" ? { events: [net, future], answered: true } : { events: [], answered: false })
+  const r = await latestProfile(ctxWith(fakeVault()), { ask })
+  assert.equal(r.event.id, net.id)
+  assert.deepEqual([r.asked, r.answered, r.netFound, r.fromNet], [2, 1, true, true])
+  const viaIndex = await latestProfile(ctxWith(fakeVault()), { ask: async url => ({ events: url === PROFILE_RELAYS[0] ? [net] : [], answered: true }) })
+  assert.deepEqual([viaIndex.netFound, viaIndex.fromNet, viaIndex.answered], [false, true, 2])
 })
 
-test("save refuses when the newest copy couldn't be found and not every relay said none", async () => {
+test("latestProfile checks Haven's copy too: a forged local copy isn't the base", async () => {
+  const forged = { ...kind0({ name: "x" }, T0), content: JSON.stringify({ name: "evil" }) }
+  const r = await latestProfile(ctxWith(fakeVault([forged])), { ask: async () => ({ events: [], answered: true }) })
+  assert.equal(r.event, undefined)
+})
+
+test("guard (Tron #946): a stale local copy with no relay answering is refused, not published", async () => {
+  const stale = kind0({ name: "sat", about: "old bio", lud06: "lnurl-OLD" }, Math.floor(Date.now() / 1000) - 180 * 86400)
+  let published = false
+  await assert.rejects(saveProfile(ctxWith(fakeVault([stale])), formFields(stale), { ...formFields(stale), display_name: "Satoshi" },
+    { lookup: ctx => latestProfile(ctx, { ask: async () => ({ events: [], answered: false }) }), publish: urls => { published = true; return okPublish(urls) } }),
+  /None of your relays answered/)
+  assert.equal(published, false)
+})
+
+test("guard: a local-only copy needs most relays answering and to be under 7 days old; none anywhere is a first profile", () => {
+  const at = 1_000_000_000
+  const local = { created_at: at - 3600 }, old = { created_at: at - 8 * 86400 }
+  assert.equal(profileGuard({ event: old, asked: 3, answered: 0, netFound: true, fromNet: true }, at), "")
+  assert.match(profileGuard({ event: local, asked: 4, answered: 2, netFound: false, fromNet: false }, at), /Only 2 of your 4/)
+  assert.equal(profileGuard({ event: local, asked: 3, answered: 2, netFound: false, fromNet: false }, at), "")
+  assert.match(profileGuard({ event: old, asked: 3, answered: 3, netFound: false, fromNet: false }, at), /this browser's copy is from/)
+  assert.equal(profileGuard({ event: old, asked: 3, answered: 3, netFound: false, fromNet: true }, at), "", "found on purplepag.es")
+  assert.equal(profileGuard({ event: undefined, asked: 3, answered: 2, netFound: false, fromNet: false }, at), "")
+  assert.match(profileGuard({ event: undefined, asked: 0, answered: 0, netFound: false, fromNet: false }, at), /None of your relays/)
+})
+
+test("save refuses when the guard does, and publishes nothing", async () => {
   let published = false
   await assert.rejects(
-    saveProfile(ctxWith(fakeVault()), formFields(), { ...formFields(), name: "x" }, { lookup: async () => ({ event: undefined, confirmedNone: false }), publish: urls => { published = true; return okPublish(urls) } }),
-    /Couldn't load your current profile/)
+    saveProfile(ctxWith(fakeVault()), formFields(), { ...formFields(), name: "x" }, { lookup: async () => ({ event: undefined, asked: 2, answered: 0, netFound: false, fromNet: false }), publish: urls => { published = true; return okPublish(urls) } }),
+    /None of your relays answered/)
   assert.equal(published, false)
 })
 
 test("save merges onto the newest copy, keeps its tags, dates after it, publishes to write + purplepag.es, shows it", async () => {
-  const future = Math.floor(Date.now() / 1000) + 600
+  const future = Math.floor(Date.now() / 1000) + 600 // a few minutes ahead: still under MAX_SKEW
   const prev = kind0({ name: "sat", lud06: "lnurl1x", about: "hi" }, future, [["i", "github:sat", "proof"]])
   const vault = fakeVault()
   const initial = formFields(kind0({ name: "sat", about: "hi" }, T0))
   let sentTo
   const { event } = await saveProfile(ctxWith(vault), initial, { ...initial, display_name: "Satoshi" },
-    { lookup: async () => ({ event: prev, confirmedNone: false }), publish: (urls, ev) => { sentTo = urls; return okPublish(urls) } })
+    { lookup: async () => ({ event: prev, asked: 1, answered: 1, netFound: true, fromNet: true }), publish: (urls, ev) => { sentTo = urls; return okPublish(urls) } })
   assert.deepEqual(JSON.parse(event.content), { name: "sat", lud06: "lnurl1x", about: "hi", display_name: "Satoshi" })
   assert.deepEqual(event.tags, [["i", "github:sat", "proof"]])
   assert.equal(event.created_at, future + 1)
@@ -94,7 +123,7 @@ test("save merges onto the newest copy, keeps its tags, dates after it, publishe
 
 test("save with no profile anywhere (confirmed) publishes just the typed fields", async () => {
   const { event } = await saveProfile(ctxWith(fakeVault()), formFields(), { ...formFields(), name: "new" },
-    { lookup: async () => ({ event: undefined, confirmedNone: true }), publish: okPublish })
+    { lookup: async () => ({ event: undefined, asked: 1, answered: 1, netFound: false, fromNet: false }), publish: okPublish })
   assert.deepEqual(JSON.parse(event.content), { name: "new" })
   assert.deepEqual(event.tags, [])
 })
@@ -102,12 +131,12 @@ test("save with no profile anywhere (confirmed) publishes just the typed fields"
 test("save throws when no relay took it, and keeps nothing in the outbox", async () => {
   const vault = fakeVault()
   await assert.rejects(saveProfile(ctxWith(vault), formFields(), { ...formFields(), name: "n" },
-    { lookup: async () => ({ event: undefined, confirmedNone: true }), publish: urls => urls.map(() => Promise.reject(new Error("blocked"))) }), /No relay took it/)
+    { lookup: async () => ({ event: undefined, asked: 1, answered: 1, netFound: false, fromNet: false }), publish: urls => urls.map(() => Promise.reject(new Error("blocked"))) }), /No relay took it/)
   assert.equal(vault.outbox.evs.length, 0)
 })
 
 test("save refuses a signer that signs as another account", async () => {
   const other = generateSecretKey()
   await assert.rejects(saveProfile(ctxWith(fakeVault(), { signer: { signEvent: async t => finalizeEvent(t, other) } }), formFields(), { ...formFields(), name: "n" },
-    { lookup: async () => ({ event: undefined, confirmedNone: true }), publish: okPublish }), /different account/)
+    { lookup: async () => ({ event: undefined, asked: 1, answered: 1, netFound: false, fromNet: false }), publish: okPublish }), /different account/)
 })

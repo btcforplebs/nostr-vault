@@ -1,9 +1,9 @@
 // Edit Profile (iPhone ProfileEditView, the Mac's Cancel / Save form): banner and preview over the Identity, Bio,
 // Media and Lightning fields; a picture or banner can be uploaded to the account's media servers, and its link
 // lands in the field below, the same as pasting one. Save publishes a new kind 0 (net/profile-edit.js).
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
-import { formFields, hasChanges, localProfile, saveProfile } from "../net/profile-edit.js"
+import { formFields, hasChanges, latestProfile, localProfile, saveProfile } from "../net/profile-edit.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import "../styles/profile-edit.css"
 
@@ -25,12 +25,22 @@ export function EditProfile({ ctx, onClose }) {
   const [err, setErr] = useState("")
   const [uploadErr, setUploadErr] = useState("")
 
+  const touched = useRef(false)
+
+  // Opens with this browser's copy at once; a newer one from the relays replaces it while nothing has been typed.
   useEffect(() => {
-    localProfile(ctx.vault, me).then(ev => { const f = formFields(ev); setInitial(f); setForm(f) })
-      .catch(() => { const f = formFields(); setInitial(f); setForm(f) })
+    let live = true
+    const show = ev => { const f = formFields(ev); setInitial(f); setForm(f) }
+    localProfile(ctx.vault, me).catch(() => undefined).then(async local => {
+      if (!live) return
+      show(local)
+      const { event } = await latestProfile(ctx).catch(() => ({}))
+      if (live && event && event.created_at > (local?.created_at ?? 0) && !touched.current) show(event)
+    })
+    return () => { live = false }
   }, [])
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const set = (k, v) => { touched.current = true; setForm(f => ({ ...f, [k]: v })) }
   const changed = !!form && hasChanges(initial, form)
   const busy = saving || !!uploading
 
