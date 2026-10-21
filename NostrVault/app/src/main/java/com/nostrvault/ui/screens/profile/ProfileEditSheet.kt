@@ -23,6 +23,7 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.PostingAccount
+import com.nostrvault.service.BroadcastTally
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.notification.NotificationManager
 import kotlin.coroutines.cancellation.CancellationException
@@ -99,6 +100,8 @@ class ProfileEditViewModel @Inject constructor(
     private var unsavedDraft: Map<String, String>? = null
     /** Between [open] and [close], so a second dismiss callback does not save twice. */
     private var isOpen = false
+    /** Counts saves, so a late answer for an older one can't undo a newer one. */
+    private var saveGeneration = 0
 
     /** Fills the form from your profile as shown now, plus anything a failed save left. */
     fun open() {
@@ -211,20 +214,36 @@ class ProfileEditViewModel @Inject constructor(
             return
         }
         val shownBefore = nostrService.profiles.value[pubkey]
+        val generation = ++saveGeneration
         nostrService.showLocalProfile(pubkey, ProfileMetadataMerge.preview(existing, initial, edited))
+        // The page goes back to what it showed, and the next open brings back
+        // what was typed. Not after a newer save: that one owns the page.
+        fun rollBack(message: String) {
+            if (generation != saveGeneration) return
+            nostrService.showLocalProfile(pubkey, shownBefore)
+            // Kept for the next open only while it is still this
+            // account's form; after a switch it would fill the other
+            // account's profile with these fields.
+            if (nostrService.lockPostingAccount() == lock) unsavedDraft = edited
+            notificationManager.showError(message)
+        }
         appScope.launch(Dispatchers.Main) {
-            val published = publish(existing, initial, edited, lock)
+            val published = publish(existing, initial, edited, lock, onRefused = {
+                appScope.launch(Dispatchers.Main) { rollBack(SAVE_REFUSED) }
+            })
             if (published != null) {
                 nostrService.showLocalProfile(pubkey, published)
             } else {
-                nostrService.showLocalProfile(pubkey, shownBefore)
-                // Kept for the next open only while it is still this
-                // account's form; after a switch it would fill the other
-                // account's profile with these fields.
-                if (nostrService.lockPostingAccount() == lock) unsavedDraft = edited
-                notificationManager.showError("Profile not saved. Pull down to try again.")
+                rollBack(SAVE_FAILED)
             }
         }
+    }
+
+    companion object {
+        /** iOS MyProfileView's words for a save that never went out. */
+        const val SAVE_FAILED = "Profile not saved. Tap Edit Profile to try again."
+        /** iOS's words for one that went out and no relay took. */
+        const val SAVE_REFUSED = "Profile not saved: no relay accepted it. Edit Profile still has your changes."
     }
 
     /** Publishes the changed fields as a new kind 0; the profile it describes, or null if nothing was published. */
@@ -233,6 +252,8 @@ class ProfileEditViewModel @Inject constructor(
         initial: Map<String, String>,
         edited: Map<String, String>,
         lock: PostingAccount.Lock,
+        /** Runs later if every relay turns the profile down or never answers. */
+        onRefused: () -> Unit,
     ): FeedProfile? {
         // A kind 0 replaces the whole profile. Start from the newest one on
         // the relays so lud06 and every key this form doesn't show
@@ -255,7 +276,9 @@ class ProfileEditViewModel @Inject constructor(
         } catch (e: Exception) {
             null
         } ?: return null
-        nostrService.postEvent(event)
+        nostrService.postEvent(event) { outcome ->
+            if (outcome == BroadcastTally.Outcome.REFUSED) onRefused()
+        }
         return ProfileMetadataMerge.profile(existing, merged).copy(
             lud06 = (merged["lud06"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             createdAt = event.createdAt,
