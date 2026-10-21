@@ -166,9 +166,10 @@ extension MediaCacheService {
 
     /// True for a `.fips` URL on iOS, where only the mesh engine can reach it:
     /// there is no FIPS daemon, so a plain fetch would only send the vault's
-    /// npub to DNS and take whatever a resolver answers. `fetchData`,
-    /// `RetryableAsyncImage`, `CachedAsyncImage`, `AvatarImageCache` and the
-    /// music artwork check this before going to the network.
+    /// npub to DNS and take whatever a resolver answers. `FipsHostBlocker`
+    /// enforces it for `URLSession.shared` and the media session; loaders
+    /// outside those (`AsyncImage`, AVFoundation, other sessions) check it
+    /// themselves.
     static func isMeshOnly(_ url: URL) -> Bool {
         #if os(iOS)
         return MeshMediaRouter.meshNpub(inHost: url.host) != nil
@@ -208,6 +209,28 @@ extension MediaCacheService {
         saveToCache(url: key, data: data)
         return data
     }
+}
+
+/// Fails every request to a mesh-only `.fips` host before it reaches DNS:
+/// one chokepoint for `URLSession.shared` (registered at launch) and
+/// `MediaSessionService` (in its `protocolClasses`). Sessions built from
+/// their own configuration and AVFoundation do not pass through it.
+final class FipsHostBlocker: URLProtocol {
+    private static let installed: Void = { URLProtocol.registerClass(FipsHostBlocker.self) }()
+
+    static func install() { _ = installed }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url.map(MediaCacheService.isMeshOnly) ?? false
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.cannotFindHost))
+    }
+
+    override func stopLoading() {}
 }
 
 // MARK: - Which note a photo belongs to

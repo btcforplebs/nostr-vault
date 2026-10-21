@@ -231,6 +231,9 @@ final class VideoPlaybackService: @unchecked Sendable {
             out.append(Candidate(assetURL: local, mimeOverride: nil, label: "local file"))
         }
 
+        // A `.fips` vault is reachable only over the mesh: a cached copy or nothing.
+        if MediaCacheService.isMeshOnly(url) { return out }
+
         if url.isFileURL {
             out.append(Candidate(assetURL: url, mimeOverride: nil, label: "file"))
         } else if url.pathExtension.isEmpty {

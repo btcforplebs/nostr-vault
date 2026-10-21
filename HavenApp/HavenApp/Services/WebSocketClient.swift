@@ -102,6 +102,8 @@ class MediaSessionService {
         config.timeoutIntervalForRequest = 60  // 60 seconds for individual requests
         config.timeoutIntervalForResource = 600  // 10 minutes for full resource
         config.waitsForConnectivity = true
+        // Type detection, link previews and cached images: no `.fips` host.
+        config.protocolClasses = [FipsHostBlocker.self] + (config.protocolClasses ?? [])
 
         // Create delegate that trusts self-signed certs for localhost
         self.localhostDelegate = LocalhostTrustDelegate()
