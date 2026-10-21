@@ -41,6 +41,8 @@ const inflight = new Map() // key -> promise
 const listeners = new Set()
 export const getQuote = key => cache.get(key)
 export const hasQuote = key => cache.has(key)
+/** Drop a "not found" so the next fetch asks again: Retry on a reply whose parent never came. */
+export const forgetQuote = key => { if (cache.get(key) == null) cache.delete(key) }
 export function onQuotes(cb) { listeners.add(cb); return () => listeners.delete(cb) }
 function changed() { for (const cb of listeners) cb() }
 

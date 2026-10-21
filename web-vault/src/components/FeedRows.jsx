@@ -10,6 +10,7 @@ import { FeedThreadCard } from "./FeedThreadCard.jsx"
 import { buildThreads } from "../net/feed-layout.js"
 import { tileNote } from "../net/media.js"
 import { fetchNotes } from "../net/notifications.js"
+import { replyRefs } from "../net/thread.js"
 
 export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots }) {
   const [openId, setOpenId] = useState(null)
@@ -20,7 +21,8 @@ export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = fa
       : <CondensedNote key={n.id} event={n} card onOpen={x => setOpenId(x.id)} />
   })}</div>
   if (layout === "threaded") return <Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} />
-  return notes.map(n => <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} />)
+  // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).
+  return notes.map((n, i) => <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} showParent={n.kind === 1 && !!replyRefs(n).parent && notes[i + 1]?.id !== replyRefs(n).parent} />)
 }
 
 function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpenId }) {

@@ -10,7 +10,9 @@ import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
-import { replyToPubkey, repostedId } from "../net/thread.js"
+import { replyRefs, replyToPubkey, repostedId } from "../net/thread.js"
+import { Badges } from "./Badges.jsx"
+import { ParentPreview } from "./ParentPreview.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/note-actions.css")
@@ -24,8 +26,8 @@ export function AuthorName({ pubkey }) {
  *  (VaultNoteRow), with the iPhone's action row under it: reply, repost, quote, like. A repost's actions act on the
  *  note inside it, zap included. `memoryOnly`: a stranger's note (Global, Hashtag), so quotes and @names inside it
  *  aren't written to Haven /feed. */
-export function NoteCard({ event, memoryOnly = false }) {
-  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly)}</Undeleted>
+export function NoteCard({ event, memoryOnly = false, showParent = false }) {
+  return <Undeleted ids={gateIds(event)}>{card(event, memoryOnly, showParent)}</Undeleted>
 }
 
 /** Its children, until this account deletes one of `ids` (a post, or the note a repost carries): then nothing, at
@@ -40,7 +42,7 @@ export function Undeleted({ ids, children }) {
   return gone ? null : children
 }
 
-function card(event, memoryOnly) {
+function card(event, memoryOnly, showParent) {
   if (event.kind === 6) {
     let inner
     try { inner = JSON.parse(event.content) } catch {}
@@ -58,7 +60,7 @@ function card(event, memoryOnly) {
     )
   }
   rememberNote(event)
-  return <article class="note" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} /><NoteActions note={event} /></article>
+  return <article class="note" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} /><NoteActions note={event} /></article>
 }
 
 // Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it. A ⌘/Ctrl-click or a
@@ -82,15 +84,19 @@ function FetchedRepost({ id, memoryOnly }) {
   return <><NoteBody event={ev} memoryOnly={memoryOnly} /><NoteActions note={ev} /></>
 }
 
-function NoteBody({ event, memoryOnly }) {
+function NoteBody({ event, memoryOnly, showParent = false }) {
   const replyTo = replyToPubkey(event)
+  const parent = showParent && event.kind === 1 ? replyRefs(event).parent : null
+  const hint = parent && (event.tags ?? []).find(t => t[0] === "e" && t[1] === parent)?.[2]
   return (
     <>
+      {parent && <ParentPreview id={parent} relay={/^wss?:\/\//.test(hint ?? "") ? hint : null} memoryOnly={memoryOnly} />}
       <div class="note-head">
         <a class="author-link" href={profileHref(event.pubkey)}>
           <Avatar pubkey={event.pubkey} />
           <AuthorName pubkey={event.pubkey} />
         </a>
+        <Badges pubkey={event.pubkey} note={event} />
         <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
       </div>
       {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}

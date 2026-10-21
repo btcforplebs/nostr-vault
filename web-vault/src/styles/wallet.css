@@ -68,3 +68,4 @@ button.danger { color: var(--danger); }
 .wallet-confirm p { margin: 0 0 10px; }
 .wallet-sent { color: #30d158; margin: 8px 0 0; }
 textarea.wallet-uri { width: 100%; resize: vertical; font: 13px var(--mono); }
+.note-actions .note-action.zap-button.no-lightning { opacity: .35; }

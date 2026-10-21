@@ -4,6 +4,7 @@ import { formatSats } from "../net/notifications.js"
 import { ensureWallet, onWallet, walletState } from "../net/wallet.js"
 import { MAX_ZAP_SATS, PRESET_SATS, onZapTotals, wantTotals, zap, zapTotal } from "../net/zaps.js"
 import { ZappersList } from "./ZappersList.jsx"
+import { useProfile } from "./useProfile.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
@@ -34,6 +35,9 @@ export function ZapButton({ note, pubkey }) {
   const [picking, setPicking] = useState(false)
   const [listing, setListing] = useState(false) // who zapped (ZappersListView)
   const hold = useRef(null), held = useRef(false)
+  // No lightning address on a loaded profile: the bolt dims and a tap says why, as on the iPhone, rather than failing.
+  const profile = useProfile(recipient)
+  const noLightning = !!profile && !profile.lud16 && !profile.lud06
 
   useEffect(() => {
     if (!id) return
@@ -78,13 +82,17 @@ export function ZapButton({ note, pubkey }) {
   // A hold opens the picker; the click that ends the hold must not also zap.
   const down = () => { held.current = false; hold.current = setTimeout(() => { held.current = true; setPicking(true) }, HOLD_MS) }
   const up = () => clearTimeout(hold.current)
-  const click = () => { if (held.current) { held.current = false; return } if (!busy) send(wallet.defaultSats) }
+  const click = () => {
+    if (held.current) { held.current = false; return }
+    if (noLightning) return setState({ error: "This profile has no lightning address, so it can't receive zaps" })
+    if (!busy) send(wallet.defaultSats)
+  }
 
   return (
     <span class="zap">
-      <button type="button" class={`note-action zap-button${zapped ? " sent" : ""}${error ? " failed" : ""}${!note ? " wide" : ""}`}
+      <button type="button" class={`note-action zap-button${zapped ? " sent" : ""}${error ? " failed" : ""}${!note ? " wide" : ""}${noLightning && !zapped ? " no-lightning" : ""}`}
         aria-label={name} title={name} aria-busy={busy || undefined} aria-haspopup="dialog" aria-expanded={picking}
-        onPointerDown={down} onPointerUp={up} onPointerLeave={up} onClick={click}
+        onPointerDown={noLightning ? undefined : down} onPointerUp={up} onPointerLeave={up} onClick={click}
         onContextMenu={e => { e.preventDefault(); up(); if (!busy) setPicking(true) }}>
         <Bolt filled={zapped} />
         {!note && verb}

@@ -1,0 +1,23 @@
+/* Verified seal and Nostr Vault badge after a name (Badges.jsx). The badge is the icon's doorway: an arch, lit. */
+.badge-seal { flex: none; display: inline-flex; color: var(--verified); font-size: 11px; line-height: 0; }
+.badge-nv { flex: none; display: inline-block; width: 8px; height: 10px; border: 1.3px solid var(--accent-light); border-bottom: 0;
+  border-radius: 5px 5px 0 0; background: radial-gradient(circle at 50% 72%, rgb(230 115 38 / .55), transparent 70%);
+  box-shadow: 0 0 2px var(--accent), 0 0 5px rgb(230 115 38 / .6); }
+.condensed-head .badge-seal { font-size: 9px; }
+
+/* The note a reply answers, above the reply (ParentPreview.jsx). */
+.parent-preview { display: flex; gap: 12px; margin-bottom: 8px; cursor: pointer; }
+.parent-rail { display: flex; flex-direction: column; align-items: center; flex: none; width: 40px; }
+.parent-rail .sk-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--s2); }
+.parent-line { flex: 1; width: 2px; min-height: 10px; margin-top: 4px; background: rgb(230 115 38 / .3); }
+.parent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-bottom: 4px; }
+.parent-head { display: flex; align-items: center; gap: 6px; min-width: 0; padding-top: 4px; }
+.parent-name { min-width: 0; overflow: hidden; color: #d9d9d9; }
+.parent-name .author-name { font: 600 14px var(--font); }
+.parent-head time { margin-left: auto; flex: none; color: var(--text-3); font: 11px var(--mono); letter-spacing: .2px; }
+.parent-text { margin: 0; color: #b3b3b3; font: 14px/1.35 var(--font); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.parent-media { display: block; width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px; margin-top: 4px; }
+.parent-preview.loading .sk-bar { display: block; height: 12px; border-radius: 4px; background: var(--s2); margin-top: 6px; }
+.parent-preview.loading { cursor: default; opacity: .8; }
+.parent-failed { display: flex; align-items: center; gap: 10px; padding: 6px 0; margin-bottom: 6px; color: var(--text-2); font-size: 13px; }
+.parent-failed button { margin-left: auto; background: none; border: 0; padding: 0; color: var(--accent); font: 600 13px var(--font); }
