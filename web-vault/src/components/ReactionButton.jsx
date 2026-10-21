@@ -25,6 +25,10 @@ export function firstEmoji(text) {
   return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(first) ? first : ""
 }
 
+/** What a pick asks act() for: your own reaction, as the button shows it, takes it back (no emoji = toggle), even when
+ *  its stored content is "+" or "❤" or a shortcode; anything else reacts with that emoji. */
+export const pickFor = (mine, emoji) => (mine && emoji === mine ? undefined : emoji)
+
 export function ReactionButton({ ctx, note, state, off }) {
   const [bar, setBar] = useState(false)
   const [picker, setPicker] = useState(false)
@@ -38,7 +42,7 @@ export function ReactionButton({ ctx, note, state, off }) {
   }, [bar])
   const sent = state === "sent", busy = state === "busy", error = state?.error
   const mine = sent ? displayEmoji(reactionOf(note.id)) : null
-  const react = emoji => { setBar(false); setPicker(false); act(ctx, "like", note, emoji) }
+  const react = emoji => { setBar(false); setPicker(false); act(ctx, "like", note, pickFor(mine, emoji)) }
   const down = () => { held.current = false; hold.current = setTimeout(() => { held.current = true; setBar(true) }, HOLD_MS) }
   const up = () => clearTimeout(hold.current)
   const click = e => {
@@ -76,12 +80,33 @@ const CATEGORIES = [
   ["Animals & Nature", "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🦅 🦉 🐺 🐴 🦄 🐝 🦋 🐢 🐍 🐙 🦀 🐬 🐳 🌸 🌻 🌹 🌲 🌵 🍀 🍁 🌈 ☀️ 🌙 ❄️ 🌊"],
 ]
 
+// Words each emoji answers to in Search, as well as its category's name.
+const KEYWORDS = {
+  "😀": "smile happy grin", "😂": "laugh lol joy tears", "🤣": "laugh rofl lol", "😊": "smile blush happy", "😍": "love heart eyes",
+  "🥰": "love hearts", "😘": "kiss", "😎": "cool sunglasses", "🤔": "think hmm", "🙄": "eyeroll", "😴": "sleep tired",
+  "🤯": "mind blown wow", "🥳": "party celebrate", "😮": "wow surprised oh", "😲": "shocked wow", "😳": "flushed embarrassed",
+  "🥺": "please pleading", "😢": "sad cry tear", "😭": "cry sob sad", "😱": "scream scared", "😡": "angry mad", "🤬": "angry swear",
+  "💀": "dead skull dying", "🤡": "clown", "👻": "ghost", "💩": "poop", "❤️": "heart love red", "🧡": "heart orange bitcoin",
+  "💔": "broken heart", "💯": "hundred perfect", "👍": "thumbs up yes like ok", "👎": "thumbs down no dislike", "👌": "ok perfect",
+  "🤙": "shaka call hang loose", "👋": "wave hello hi bye", "👏": "clap applause", "🙌": "hands raise praise", "🫶": "heart hands love",
+  "🤝": "handshake deal", "🙏": "pray please thanks", "💪": "strong muscle flex", "🫡": "salute", "🎉": "party tada celebrate",
+  "✨": "sparkles magic", "🔥": "fire hot lit", "⚡": "lightning zap bolt", "🌟": "star", "⭐": "star", "🚀": "rocket moon launch",
+  "🏆": "trophy win", "🎯": "target bullseye", "🎵": "music note", "🍕": "pizza", "🍺": "beer", "☕": "coffee", "👀": "eyes look",
+  "🧠": "brain smart", "💡": "idea bulb", "💰": "money bag", "₿": "bitcoin btc", "🐶": "dog puppy", "🐱": "cat kitty",
+  "🦄": "unicorn", "🐝": "bee", "🌈": "rainbow", "☀️": "sun", "🌙": "moon night", "🌊": "wave ocean sea",
+}
+/** Search: an emoji matches its category's name, its keywords, or itself. */
+export function matches(e, category, q) {
+  const s = String(q ?? "").trim().toLowerCase()
+  return !s || e === s || category.toLowerCase().includes(s) || (KEYWORDS[e] ?? "").split(" ").some(w => w.startsWith(s))
+}
+
 function EmojiPicker({ current, onPick, onClose }) {
   const [custom, setCustom] = useState("")
   const [q, setQ] = useState("")
   const first = firstEmoji(custom)
   const okCustom = !!first
-  const groups = CATEGORIES.map(([name, list]) => [name, list.split(" ").filter(e => !q.trim() || name.toLowerCase().includes(q.trim().toLowerCase()) || e === q.trim())]).filter(([, l]) => l.length)
+  const groups = CATEGORIES.map(([name, list]) => [name, list.split(" ").filter(e => matches(e, name, q))]).filter(([, l]) => l.length)
   const cell = e => <button key={e} type="button" class={`picker-cell${e === current ? " on" : ""}`} aria-label={e === current ? `${e}, your reaction` : e} onClick={() => onPick(e)}>{e}</button>
   return (
     <Dialog label="React with Emoji" onClose={onClose}>

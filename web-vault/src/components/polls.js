@@ -2,6 +2,7 @@
 // tags and its relays in `relay` tags; a kind 1018 vote names the poll by `e` and its picks by `response`. Anyone can
 // publish a vote, so the count is kept honest here: one vote per person (their newest), only options the poll has,
 // nothing after it closes, and nothing dated past the clock's drift.
+import { isLoopback } from "../net/pool.js"
 export const POLL_KIND = 1068, VOTE_KIND = 1018
 const MAX_FUTURE_SKEW = 600
 const MAX_RELAYS = 8
@@ -25,13 +26,21 @@ export function parsePoll(ev) {
 
 export const isClosed = (poll, now = Date.now() / 1000) => poll.endsAt != null && poll.endsAt <= now
 
-/** A public wss/ws relay: a stranger's poll must not make this browser dial into a LAN or loopback. */
+const MAX_RELAY_URL = 256
+
+/** A public wss/ws relay: a stranger's poll must not make this browser dial into a LAN or loopback. IPv6 literals are
+ *  checked without their brackets (loopback, IPv4-mapped, unique-local fc00::/7, link-local fe80::/10), and a
+ *  trailing dot doesn't hide a name. */
 export function isPublicRelay(url) {
   let u
-  try { u = new URL(String(url).trim()) } catch { return false }
+  const raw = String(url ?? "").trim()
+  if (raw.length > MAX_RELAY_URL) return false
+  try { u = new URL(raw) } catch { return false }
   if (!/^wss?:$/.test(u.protocol)) return false
-  const h = u.hostname.toLowerCase()
-  if (h === "localhost" || h.endsWith(".local") || h.endsWith(".onion") || h === "0.0.0.0" || h === "[::1]") return false
+  if (isLoopback(raw)) return false
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "")
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".onion") || h === "0.0.0.0" || h === "::" || h === "::1") return false
+  if (h.includes(":") && (/^::ffff:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h))) return false
   const p = h.split(".").map(Number)
   if (p.length === 4 && p.every(n => Number.isInteger(n))) {
     if (p[0] === 10 || p[0] === 127 || (p[0] === 192 && p[1] === 168) || (p[0] === 169 && p[1] === 254) || (p[0] === 172 && p[1] >= 16 && p[1] <= 31)) return false
@@ -78,6 +87,7 @@ export const share = (t, id) => t.voters.size ? (t.byOption.get(id)?.size ?? 0) 
 
 /** NIP-88 vote tags: the poll, its author, then one `response` per pick (the first only, single-choice). */
 export function voteTags(poll, optionIds, relayHint = "") {
+  if (!isPublicRelay(relayHint)) relayHint = "" // signed into the vote: only a short public relay URL
   const known = new Set(poll.options.map(o => o.id))
   const picks = [...new Set(optionIds.filter(id => known.has(id)))]
   return [["e", poll.id, relayHint], ["p", poll.pubkey], ...(poll.multiple ? picks : picks.slice(0, 1)).map(id => ["response", id])]

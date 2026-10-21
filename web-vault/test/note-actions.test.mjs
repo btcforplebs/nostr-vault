@@ -169,6 +169,18 @@ test("a picked emoji reacts with it; another emoji swaps it (old kind 7 deleted 
   assert.equal(sent[3].ev.kind, 5); assert.equal(actionState(n.id).like, undefined); assert.equal(reactionOf(n.id), null)
 })
 
+test("tapping your own reaction stored as \"+\" (Damus, Amethyst) takes it back: one kind 5, no new kind 7", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const n = note(), c = ctxFor()
+  await publishAction(c, reactionTemplate(n, "+"))
+  await loadSent(c, n.id)
+  sent.length = 0
+  const { pickFor, displayEmoji } = await import("./react-pick.mjs")
+  await act(c, "like", n, pickFor(displayEmoji(reactionOf(n.id)), "❤️"))
+  assert.deepEqual(sent.map(s => s.ev.kind), [5])
+  assert.equal(actionState(n.id).like, undefined)
+})
+
 test("after a reload your emoji reads back from the outbox", async t => {
   relaysSay(t, () => Promise.resolve(""))
   const n = note(), c = ctxFor()

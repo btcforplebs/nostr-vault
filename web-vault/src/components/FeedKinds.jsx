@@ -8,7 +8,7 @@ import { QuotedNote } from "./QuotedNote.jsx"
 import { LinkCard } from "./LinkCard.jsx"
 import { displayTitle, longFormMeta, plainText, readingMinutes } from "../readers/longform.js"
 import { gatedArticle, stripTeaser } from "../readers/gated.js"
-import { isClosed, isPublicRelay, parsePoll, pollRelays, share, tally, voteTags, VOTE_KIND } from "./polls.js"
+import { isClosed, parsePoll, pollRelays, share, tally, voteTags, VOTE_KIND } from "./polls.js"
 import { pool } from "../net/pool.js"
 import { getBlocks, onBlocks } from "../net/blocks.js"
 import { actionContext, publishAction } from "../net/actions.js"
@@ -118,7 +118,9 @@ function PollBody({ poll, memoryOnly }) {
     if (sending || !ids.length || closed) return
     setSending(true); setError("")
     try {
-      const pub = poll.relays.filter(isPublicRelay)
+      // The poll's own public relays, deduplicated and at most 8 (the read path's set): a stranger's poll must not
+      // choose how many hosts get your signed vote and your IP.
+      const pub = pollRelays(poll)
       const template = { kind: VOTE_KIND, created_at: Math.floor(Date.now() / 1000), content: "", tags: voteTags(poll, ids, pub[0] ?? "") }
       const { event } = await publishAction(ctx, template)
       if (pub.length) Promise.allSettled(pool.publish(pub, event)).catch(() => {})
