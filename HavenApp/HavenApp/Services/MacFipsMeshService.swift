@@ -60,6 +60,7 @@ final class MacFipsMeshService: ObservableObject {
             guard let npub else { return }
             UserDefaults.standard.set(npub, forKey: Self.ownNpubKey)
             self.storedNpub = npub
+            PhotoNode.ensureListed(owner: NostrService.shared.activeHexPubkey, nostr: .shared)
         }
     }
 
@@ -160,6 +161,9 @@ final class MacFipsMeshService: ObservableObject {
             UserDefaults.standard.set(npub, forKey: Self.ownNpubKey)
             storedNpub = npub
         }
+        // The photo node goes in the owner's 10063 as soon as its npub is known
+        // (a first start learns it only here); a no-op once it is listed.
+        if running { PhotoNode.ensureListed(owner: NostrService.shared.activeHexPubkey, nostr: .shared) }
     }
 
     /// Off the main thread: start can take seconds (relays, UDP bind).

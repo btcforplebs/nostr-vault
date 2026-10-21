@@ -116,11 +116,15 @@ extension NostrService {
                     guard let self = self else { return }
                     // A relay replaying an older list must not undo a newer one:
                     // every phone merges into the list it keeps here.
-                    guard self.acceptServerListStamp(pubkey: pubkey, createdAt: createdAt, id: eventId, signedByAuthor: signed) else { return }
-                    if !servers.isEmpty { self.serverLists[pubkey] = servers }
-                    self.saveProfilesThrottled()
+                    let accepted = self.acceptServerListStamp(pubkey: pubkey, createdAt: createdAt, id: eventId, signedByAuthor: signed)
+                    if accepted {
+                        if !servers.isEmpty { self.serverLists[pubkey] = servers }
+                        self.saveProfilesThrottled()
+                    }
                     #if os(macOS)
-                    PhotoNode.ensureListed(in: servers, owner: pubkey, nostr: self)
+                    // Also for a list already seen: the newest one replays at
+                    // every launch and is never "newer" than itself.
+                    if signed { PhotoNode.ensureListed(owner: pubkey, nostr: self) }
                     #endif
                 }
                 return

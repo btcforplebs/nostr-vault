@@ -329,4 +329,13 @@ final class MacMediaVaultTests: XCTestCase {
             XCTAssertFalse(HomeVaultLogic.isPublicServer(s), s)
         }
     }
+    func testThePhotoNodeIsMissingUntilTheKeptListNamesIt() {
+        // Logen's 2026-10-21 list: only the public server, no Mac entry.
+        let kept = ["https://logen.btcforplebs.com"]
+        XCTAssertTrue(HomeVaultLogic.photoNodeMissing(from: kept, photoNpub: macNpub))
+        XCTAssertTrue(HomeVaultLogic.photoNodeMissing(from: kept + ["fipsmesh://\(kioskNpub)/"], photoNpub: macNpub), "another node is not ours")
+        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: kept + ["fipsmesh://\(macNpub)/"], photoNpub: macNpub))
+        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: kept, photoNpub: nil), "Mesh off")
+        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: nil, photoNpub: macNpub), "no list seen yet")
+    }
 }

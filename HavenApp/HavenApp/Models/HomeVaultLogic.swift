@@ -182,6 +182,13 @@ extension HomeVaultLogic {
         return out
     }
 
+    /// Whether the owner's kept 10063 still lacks the photo node, so the Mac
+    /// should republish. Nil list (none seen yet) or no photo node: no.
+    static func photoNodeMissing(from kept: [String]?, photoNpub: String?) -> Bool {
+        guard let kept, let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }) else { return false }
+        return !kept.contains { meshNpub(fromEntry: $0) == photo }
+    }
+
     /// A server a reader without FIPS can reach: not a `fipsmesh://` entry, and
     /// not an `http(s)://….fips` host either, which only resolves on the mesh
     /// (Tara's NIP-F1 check). isPublicServer builds on it.
