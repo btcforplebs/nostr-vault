@@ -50,6 +50,7 @@ struct MediaItemRenderer: View {
                 AnimatedImage(url: mediaItem.url, contentMode: .fit, shouldAnimate: true)
             } else {
                 RetryableAsyncImage(url: mediaItem.url, contentMode: .fit)
+                    .meshMediaNote(for: mediaItem)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

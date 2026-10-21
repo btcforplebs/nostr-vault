@@ -56,6 +56,7 @@ struct MediaGridItem: View {
                     } else {
                         // Default to image for non-video/audio items
                         RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 250, height: 250))
+                            .meshMediaNote(for: item)
                     }
                 }
             )
