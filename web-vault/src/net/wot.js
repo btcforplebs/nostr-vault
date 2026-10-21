@@ -19,18 +19,23 @@ export const EXTENDED_CAP = 2_500
 // come back (a timeout, a relay that was down) is asked again on a later call, after RETRY_MS, so one bad answer doesn't
 // empty the web and Popular for the session. Requests in flight are shared: Popular and the Web tab loading at once
 // download each list once.
+// Two caches: "home" for the user's own follows (the Web tab and Popular), "visit" for the person whose web "See their
+// web" put in the middle, so walking round other people's webs never empties the user's own. Each is for one person
+// at a time.
 export const RETRY_MS = 60_000
-let listCache = { me: "", lists: new Map(), tried: new Map(), inflight: new Map() }
+const newCache = me => ({ me, lists: new Map(), tried: new Map(), inflight: new Map() })
+const caches = { home: newCache(""), visit: newCache("") }
 
 /**
  * The newest contact list of each follow, from the profile relay (purplepag.es keeps them; asking every read relay
  * multiplied a 20-50 KB-per-list download by the number of relays), in chunks of 250 that go out together. Asked for:
  * follows with no list yet, unless one was asked for less than `retryMs` ago (0 asks again now) or is on its way.
- * `query` and `now` are for tests. -> Map(follow pubkey -> kind 3), only the follows whose list has come back
+ * `slot` is "home" (the user's follows) or "visit" (someone else's, for See their web). `query` and `now` are for tests.
+ * -> Map(follow pubkey -> kind 3), only the follows whose list has come back
  */
-export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now } = {}) {
-  if (listCache.me !== me) listCache = { me, lists: new Map(), tried: new Map(), inflight: new Map() }
-  const { lists, tried, inflight } = listCache
+export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home" } = {}) {
+  if (caches[slot].me !== me) caches[slot] = newCache(me)
+  const { lists, tried, inflight } = caches[slot]
   const t = now()
   const waits = new Set()
   const want = []
@@ -58,7 +63,7 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
 }
 
 /** How many of these follows' lists haven't come back (the Web tab says so, and offers to ask again). */
-export const missingLists = follows => uniq(follows).filter(pk => !listCache.lists.has(pk)).length
+export const missingLists = (follows, slot = "home") => uniq(follows).filter(pk => !caches[slot].lists.has(pk)).length
 
 const followedBy = ev => uniq((ev?.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1]))
 
@@ -147,25 +152,52 @@ export function shownByKey(list, cap = FURTHER_CAP) {
   return list.map(pk => ({ pk, rank: fraction(pk, 16) })).sort((a, b) => a.rank - b.rank || (a.pk < b.pk ? -1 : 1)).slice(0, cap).map(x => x.pk)
 }
 
+/** Bridges a card names and shows; more than this reads "+ more" (TrustPath.shownBridges). */
+export const SHOWN_BRIDGES = 5
+
 /**
- * One line saying how someone is linked to you, as the iPhone's trust card says it (TrustPathText):
- * "You follow them", "Followed by Ann and Bob, who you follow", "Followed by Ann, Bob and 12 others you follow".
- * `name(pk)` gives a display name.
+ * How someone reaches you, as the iPhone's TrustPath: { reach, bridges, hasMore, all }. `reach` is "you", "follow"
+ * (1 hop), "bridged" (someone you follow follows them: 2 hops) or "outside". `all` is every follow of yours who
+ * follows them, sorted by key as the phone sorts them; `bridges` is its first SHOWN_BRIDGES. The phone's "web" (in its
+ * relay's graph with no bridge found) can't happen here: this web is made of bridges. null with no web yet.
+ */
+export function trustPath(web, pk) {
+  if (!web) return null
+  if (pk === web.me) return { reach: "you", bridges: [], hasMore: false, all: [] }
+  const all = [...(web.linkers.get(pk) ?? [])].sort()
+  const bridges = all.slice(0, SHOWN_BRIDGES)
+  const reach = web.layerOf(pk) === "follow" ? "follow" : bridges.length ? "bridged" : "outside"
+  return { reach, bridges, hasMore: all.length > SHOWN_BRIDGES, all }
+}
+
+/**
+ * The trust card's one line, word for word the iPhone's (TrustPathText.label): "You follow them · 1 hop",
+ * "You follow them · also followed by Ann and Bob", "Followed by Ann, Bob + more you follow · 2 hops",
+ * "Not in your web · no one you follow follows them". `name(pk)` gives a display name.
  */
 export function trustPathText(web, pk, name) {
-  const layer = web.layerOf(pk)
-  if (layer === "me") return "This is you"
-  const by = web.linkers.get(pk) ?? []
-  if (layer === "follow") {
-    const back = web.followsMe.has(pk) ? " · they follow you" : ""
-    return `You follow them${back}`
+  const path = trustPath(web, pk)
+  if (!path) return "Tracing how they reach you…"
+  switch (path.reach) {
+    case "you": return "This is you."
+    case "follow": return path.bridges.length ? `You follow them · also followed by ${bridgeNames(path, name)}` : "You follow them · 1 hop"
+    case "bridged": return `Followed by ${bridgeNames(path, name)} you follow · 2 hops`
+    default: return "Not in your web · no one you follow follows them"
   }
-  if (!by.length) return "Not in your web"
-  const names = by.slice(0, 2).map(name)
-  if (by.length === 1) return `Followed by ${names[0]}, who you follow`
-  if (by.length === 2) return `Followed by ${names[0]} and ${names[1]}, who you follow`
-  const rest = by.length - 2
-  return `Followed by ${names[0]}, ${names[1]} and ${rest} other${rest === 1 ? "" : "s"} you follow`
+}
+
+function bridgeNames(path, name) {
+  const names = path.bridges.slice(0, 2).map(name)
+  return path.bridges.length > names.length || path.hasMore ? `${names.join(", ")} + more` : names.join(" and ")
+}
+
+/** The WoT tab's layer picker, the iPhone's names (TrustMap.Layer): [id, title, the web's layer it shows]. */
+export const LAYERS = [["everyone", "Everyone", null], ["following", "Following", "follow"], ["close", "Vouched", "extended"], ["furtherOut", "Further out", "further"]]
+
+/** People in each layer, never counting you (TrustMap.layerCounts): { everyone, following, close, furtherOut }. */
+export function layerCounts(web) {
+  const following = web.follows.length, close = web.extended.length, furtherOut = web.further.length
+  return { everyone: following + close + furtherOut, following, close, furtherOut }
 }
 
 /**
