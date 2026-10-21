@@ -4,9 +4,10 @@
 import { createPortal } from "preact/compat"
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks"
 import { Chevron, InlineVideo } from "./MediaParts.jsx"
+import { MediaImage } from "./MediaImage.jsx"
 import { pageOf, scrollToPage } from "./pager.js"
 
-export function MediaLightbox({ items, start = 0, onClose }) {
+export function MediaLightbox({ items, author, start = 0, onClose }) {
   const track = useRef(), closeRef = useRef(), [at, setAt] = useState(start), n = items.length
   const go = i => scrollToPage(track.current, i, n)
 
@@ -31,7 +32,7 @@ export function MediaLightbox({ items, start = 0, onClose }) {
         {items.map((it, i) => (
           <div key={it.url} class="lightbox-page" aria-label={`${i + 1} of ${n}`}>
             {it.type === "video" ? <InlineVideo src={it.url} />
-              : <img src={it.url} alt="" decoding="async" referrerpolicy="no-referrer" loading={Math.abs(i - start) > 1 ? "lazy" : undefined} />}
+              : <MediaImage item={it} author={author} decoding="async" loading={Math.abs(i - start) > 1 ? "lazy" : undefined} />}
           </div>
         ))}
       </div>

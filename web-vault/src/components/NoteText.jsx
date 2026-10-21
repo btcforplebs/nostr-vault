@@ -24,10 +24,10 @@ const MAX_QUOTE_DEPTH = 1
  *  `memoryOnly`: a stranger's note (Global, Hashtag): quotes and @names it loads aren't written to Haven /feed.
  *  `tags`: the note's tags, for its NIP-92 imeta media. Outside a DM, with images on, the note's media (text links
  *  and imeta, noteMedia) go under the text as one picture or a carousel (NoteMedia) and their links leave the text,
- *  as iOS FeedNoteRow does. */
+ *  as iOS FeedNoteRow does. `author`: the note's pubkey, for a photo on the author's mesh vault (MediaImage). */
 /*  `linkCards`: a feed card's links (not media, not nostr:) become up to three link cards under the text and leave it,
  *  as iOS LinkCards does. */
-export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false }) {
+export function NoteText({ content, tags, author, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false }) {
   let parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -50,7 +50,7 @@ export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = fa
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
-      {media.length > 0 && <NoteMedia items={media} />}
+      {media.length > 0 && <NoteMedia items={media} author={author} />}
       {cards.map(url => <LinkCard key={url} url={url} />)}
     </div>
   )
