@@ -43,7 +43,7 @@ export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false }
         {!urls.length && <p class="settings-note muted small">{empty}</p>}
         {urls.map(u => (
           <div key={u} class="settings-row static relay-edit-row">
-            <span class="settings-title mono" title={u}>{u}</span>
+            <span class="settings-title mono" title={u}>{u.replace(/^wss:\/\//, "")}</span>
             {!readOnly && <span class="settings-tags"><button type="button" class="small relay-remove" disabled={busy} aria-label={`Remove ${u}`} onClick={() => setUrls(removeUrl(urls, u))}>Remove</button></span>}
           </div>
         ))}
