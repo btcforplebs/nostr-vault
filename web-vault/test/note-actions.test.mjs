@@ -254,10 +254,10 @@ test("deletions kept in the outbox hide those posts after a reload", async t => 
   assert.ok(isDeleted(id))
 })
 
-test("Share and Copy link point at a public mynostrspace thread page for the note's nevent", () => {
+test("Share and Copy link point at the public nostrvault.app thread page for the note's nevent", () => {
   const n = note()
   const link = shareLink(n)
-  assert.match(link, /^https:\/\/mynostrspace\.com\/thread\/nevent1/)
+  assert.match(link, /^https:\/\/nostrvault\.app\/thread\/nevent1/)
   assert.equal(decode(link.split("/thread/")[1]).data.id, n.id)
 })
 

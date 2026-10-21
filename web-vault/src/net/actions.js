@@ -207,7 +207,7 @@ export async function deleteNote(ctx, note) {
 }
 
 /** Where Share and Copy link point, as on the iPhone (FeedNoteRow+Menus): a public page anyone can open. */
-export const shareLink = note => `https://mynostrspace.com/thread/${neventEncode({ id: note.id, author: note.pubkey, kind: note.kind })}`
+export const shareLink = note => `https://nostrvault.app/thread/${neventEncode({ id: note.id, author: note.pubkey, kind: note.kind })}`
 
 // Reply and quote hand the note to Compose through here, so Compose needn't fetch what the card already had.
 const handed = new Map()
