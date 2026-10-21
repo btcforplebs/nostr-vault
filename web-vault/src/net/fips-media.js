@@ -1,12 +1,13 @@
-// Note photos that live on a FIPS vault: a NIP-F1 link `http://<npub>.fips/<sha256>`, or an https photo whose server
-// can't serve it while the author's 10063 lists a `fipsmesh://<npub>/` vault and the imeta gives its hash (x). As on
-// iPhone, only notes from people you follow (or your own) use the mesh, an https photo only once its server failed,
-// and Settings › Media Servers can turn it off (on by default). Then the first photo starts web-relay's photo-only
-// reader: a fresh key, never saved, the public seeds only, no relay, nothing published; it stops again once no photo
-// needs it. Each photo is read by hash and checked against it (blob-get.js), then shown from a blob: URL. One read
-// per hash; reads take turns one vault at a time, so no note's vault list can hold the line; a vault may answer the
-// page only while a read is asking it (and its stream is closing).
+// Note photos that live on a FIPS vault: a NIP-F1 link `http://<npub>.fips/<sha256>` whose vault the author's signed
+// 10063 lists, or an https photo whose server can't serve it while that 10063 lists a `fipsmesh://<npub>/` vault and
+// the imeta gives its hash (x). As on iPhone, only notes from people you follow (or your own) use the mesh, an https
+// photo only once its server failed, and Settings › Media Servers can turn it off (on by default). Then the first
+// photo starts web-relay's photo-only reader: a fresh key, never saved, the public seeds only, no relay, nothing
+// published; it stops again once no photo needs it. Each photo is read by hash and checked against it (blob-get.js),
+// then shown from a blob: URL. One read per hash; reads take turns one vault at a time, so no note's vault list can
+// hold the line; a vault may answer the page only while a read is asking it (and its stream is closing).
 import { fipsRef, meshVaults } from "./fips-ref.js"
+import { verifiedCopy } from "./thread.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, BROADCAST_RELAYS, uniq } from "./pool.js"
 
 const SHA256 = /^[0-9a-f]{64}$/
@@ -197,26 +198,27 @@ export function createFipsMedia({
     entry.p.catch(() => {})
   }
 
-  /** The author's mesh vaults from their newest 10063; [] when they list none. One query per author. */
+  /** The author's mesh vaults from their newest signed 10063; [] when they list none. One query per author. */
   function authorVaults(pubkey) {
     if (!SHA256.test(String(pubkey ?? ""))) return Promise.resolve([])
     let p = lists.get(pubkey)
     if (!p) {
       p = query(relays, { kinds: [10063], authors: [pubkey] }, { maxWait: 4000 })
-        .then(evs => meshVaults((evs ?? []).filter(e => e?.kind === 10063 && e.pubkey === pubkey).sort((a, b) => b.created_at - a.created_at)[0]).slice(0, MAX_VAULTS))
+        .then(evs => meshVaults((evs ?? []).filter(e => e?.kind === 10063 && e.pubkey === pubkey && verifiedCopy(e)).sort((a, b) => b.created_at - a.created_at)[0]))
         .catch(() => [])
       lists.set(pubkey, p)
     }
     return p
   }
 
-  /** Where a media item's image is on the mesh: its .fips link, else its imeta hash on the author's mesh vaults.
-   *  Undefined when it has none. Reads a 10063 at most; no FIPS. */
+  /** Where a media item's image is on the mesh: its .fips link, if the author's 10063 lists that vault, else its imeta
+   *  hash on the author's mesh vaults. Undefined when it has none. Reads a 10063 at most; no FIPS. Anyone can write
+   *  any npub into a link, and a dial shows that node this page's address (NIP-F1, as iOS #984 and Android #990). */
   async function source(item, author) {
     const ref = fipsRef(item.url)
-    if (ref) return { vaults: [ref.vault], sha256: ref.sha256 }
+    if (ref) return (await authorVaults(author)).includes(ref.vault) ? { vaults: [ref.vault], sha256: ref.sha256 } : undefined
     if (!item.x) return undefined
-    const vaults = await authorVaults(author)
+    const vaults = (await authorVaults(author)).slice(0, MAX_VAULTS)
     return vaults.length ? { vaults, sha256: item.x } : undefined
   }
 
