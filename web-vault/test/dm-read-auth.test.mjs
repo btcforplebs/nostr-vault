@@ -239,3 +239,75 @@ test("a connection AUTHed as one account is dropped, not reused, when another ac
     assert.ok(closed.length > 0, "A's connection was dropped")
   } finally { net.destroy() }
 })
+
+// Tron's #879 follow-ups: what the screen is told, the live subscription coming back after a drop, and no stall on a
+// relay that never sends a challenge.
+const { getAuthProblems, onAuthProblems } = await import("../src/net/dm-read-auth.js")
+
+test("a declined AUTH is on the screen until Refresh", async () => {
+  const net = new SimplePool({ websocketImplementation: havenInbox(pk(A), [], []) })
+  resetMessages(pk(A))
+  let told = 0
+  const off = onAuthProblems(() => told++)
+  try {
+    await loadMessages({ vault: {}, session, signer: signerOf(A, { decline: true }) }, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, wait: 300 })
+    assert.deepEqual(getAuthProblems().map(p => [p.url.replace(/\/$/, ""), p.kind]), [[RELAY, "declined"]])
+    assert.ok(told >= 1, "the screen was told")
+    forgetDeclinedAuth()
+    assert.deepEqual(getAuthProblems(), [])
+  } finally { off(); net.destroy() }
+})
+
+test("a refused AUTH: the live subscription tries a fresh look once more, then stops and says so", async () => {
+  const log = [], count = { n: 0 }
+  const net = new SimplePool({ websocketImplementation: havenInbox(pk(A), [], log, { refuseAuth: true }) })
+  resetMessages(pk(A))
+  const close = watchMessages({ vault: {}, session, signer: signerOf(A, { count }) }, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, retry: [20] })
+  try {
+    await until(() => getAuthProblems().length > 0)
+    await new Promise(r => setTimeout(r, 300))
+    assert.deepEqual(getAuthProblems().map(p => p.kind), ["refused"])
+    assert.ok(count.n <= 2, `at most two signatures: ${count.n}`)
+    const reqs = log.filter(e => e[0] === "REQ").length
+    await new Promise(r => setTimeout(r, 300))
+    assert.equal(log.filter(e => e[0] === "REQ").length, reqs, "and then it stops asking")
+  } finally { close(); net.destroy(); forgetDeclinedAuth() }
+})
+
+test("when a read drops the inbox's connection, the live subscription comes back on a fresh one", async () => {
+  const wraps = [], log = [], count = { n: 0 }
+  const net = new SimplePool({ websocketImplementation: havenInbox(pk(A), wraps, log) })
+  const ctx = { vault: {}, session, signer: signerOf(A, { count }) }
+  resetMessages(pk(A))
+  const close = watchMessages(ctx, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, retry: [20] })
+  try {
+    await until(() => log.some(e => e[0] === "REQ" && e[1]))
+    wraps.push(await wrapFor(rumorFor(pk(B), pk(A), "after the drop"), { signer: signerOf(B), crypto: cryptoOf(B), me: pk(B) }, pk(A)))
+    net.close([RELAY]) // what a read does when an AUTH fails on that connection
+    await until(() => getMessages().messages.size > 0)
+    assert.deepEqual([...getMessages().messages.values()].map(m => m.content), ["after the drop"])
+    assert.equal(log.filter(e => e[0] === "OPEN").length, 2, "a fresh connection")
+    assert.equal(count.n, 2, "AUTHed again on it")
+  } finally { close(); net.destroy() }
+})
+
+test("a relay that says auth-required but never sends a challenge doesn't stall the load", async () => {
+  class Silent {
+    static OPEN = 1; static CLOSING = 2; static CLOSED = 3
+    constructor() { this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen?.() }) }
+    send(raw) { const [type, a] = JSON.parse(raw); if (type === "REQ") setTimeout(() => this.readyState === 1 && this.onmessage?.({ data: JSON.stringify(["CLOSED", a, "auth-required: no"]) })) }
+    close() { this.readyState = 3; this.onclose?.({}) }
+  }
+  const net = new SimplePool({ websocketImplementation: Silent })
+  const count = { n: 0 }
+  resetMessages(pk(A))
+  try {
+    const t0 = Date.now()
+    await loadMessages({ vault: {}, session, signer: signerOf(A, { count }) }, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, wait: 5000 })
+    assert.ok(Date.now() - t0 < 700, `ended in ${Date.now() - t0} ms`)
+    assert.equal(count.n, 0, "nothing to sign without a challenge")
+    const t1 = Date.now()
+    await loadMessages({ vault: {}, session, signer: signerOf(A, { count }) }, [RELAY], { crypto: cryptoOf(A), chat: fakeChat(), net, wait: 5000 })
+    assert.ok(Date.now() - t1 < 150, `the same connection doesn't wait again: ${Date.now() - t1} ms`)
+  } finally { net.destroy(); forgetDeclinedAuth() }
+})

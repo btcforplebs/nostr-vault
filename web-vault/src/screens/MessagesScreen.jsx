@@ -11,7 +11,7 @@ import { MentionPicker } from "../components/MentionPicker.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
-import { forgetDeclinedAuth } from "../net/dm-read-auth.js"
+import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
 import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
@@ -98,6 +98,28 @@ export function BunkerNote({ ctx }) {
   return <p class="status-line muted small">Your bunker opens and seals your messages for this page, so the bunker app sees their text.</p>
 }
 
+const hostOf = url => { try { return new URL(url).host } catch { return url } }
+
+/** A relay that wanted a sign-in before showing messages and didn't get one (dm-read-auth.js): say which, in our
+ *  words, with Refresh to ask again. */
+export function AuthTrouble({ refresh }) {
+  const [problems, setProblems] = useState(getAuthProblems)
+  useEffect(() => onAuthProblems(() => setProblems(getAuthProblems())), [])
+  if (!problems.length) return null
+  return (
+    <div class="status-line error" role="alert">
+      {problems.map(({ url, kind }) => (
+        <span key={url} class="dm-auth-problem">
+          {kind === "declined"
+            ? `${hostOf(url)} asks you to sign in before it shows your messages, and your signer didn't. `
+            : `${hostOf(url)} turned down your sign-in, so messages kept there can't be read here. `}
+        </span>
+      ))}
+      <button type="button" class="small" onClick={refresh}>Refresh</button>
+    </div>
+  )
+}
+
 /** The signer stopped answering while messages were being opened: say so, and offer to ask again. */
 export function SignerTrouble({ trouble, retry }) {
   if (!trouble) return null
@@ -145,6 +167,7 @@ export function MessagesScreen({ ctx }) {
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}
       <BunkerNote ctx={ctx} />
       <SignerTrouble trouble={trouble} retry={retry} />
+      <AuthTrouble refresh={refresh} />
       <OpenMore ctx={ctx} more={more} />
       <form class="dm-new" onSubmit={open}>
         <input ref={toBox} value={to} onInput={e => { setTo(e.currentTarget.value); setErr(""); setPeople(true) }}
