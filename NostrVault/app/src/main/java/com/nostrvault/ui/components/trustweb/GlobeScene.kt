@@ -542,9 +542,10 @@ internal class GlobeScene(
 
     /** Stars bucketed by kind and brightness: one pass, a few fills. */
     internal val buckets = Array(Slot.entries.size) { Array(LEVELS + 1) { Path() } }
-    internal val glow = Array(4) { Path() }
-    internal val strong = Array(4) { Path() }
-    internal val faint = Array(4) { Path() }
+    /** Threads by brightness band, front to back ([GlobeThreads]); each glows in one blurred layer. */
+    internal val glow = Array(GlobeThreads.BANDS) { Path() }
+    internal val strong = Array(GlobeThreads.BANDS) { Path() }
+    internal val faint = Array(GlobeThreads.BANDS) { Path() }
     internal val dashed = Path()
     internal var spots: List<Spot> = emptyList()
     private val spotByKey = HashMap<String, Spot>()
@@ -585,6 +586,9 @@ internal class GlobeScene(
 
     fun spot(key: String): Spot? = spotByKey[key]
 
+    /** Threads run to someone on this globe, so the glow layer is needed. Compose state: re-read on each load and trace. */
+    val threaded: Boolean get() = version.intValue >= 0 && hasLoaded && (traceTarget ?: author) != center
+
     /**
      * Works out this frame's stars, threads and faces for a [w]×[h] pixel
      * view. Runs once per frame however many times it's asked: placement
@@ -599,7 +603,7 @@ internal class GlobeScene(
         dpPx = density
         for (slot in buckets) for (p in slot) p.reset()
         for (bucket in pointBuckets.values) bucket.count = 0
-        for (band in 0 until 4) { glow[band].reset(); strong[band].reset(); faint[band].reset() }
+        for (band in 0 until GlobeThreads.BANDS) { glow[band].reset(); strong[band].reset(); faint[band].reset() }
         dashed.reset()
         spotByKey.clear()
         spots = emptyList()
@@ -658,24 +662,23 @@ internal class GlobeScene(
             val t = threadProgress
             val leg1 = min(1.0, t * 2)
             val leg2 = max(0.0, t * 2 - 1)
-            fun band(front: Double) = min(3, (front * 4).toInt())
+            val top = GlobeThreads.BANDS - 1
             if (direct) {
-                strong[3].line(core.x, core.y, lerp(core.x, authorP.x, t), lerp(core.y, authorP.y, t))
-                glow[3].line(core.x, core.y, lerp(core.x, authorP.x, t), lerp(core.y, authorP.y, t))
+                strong[top].line(core.x, core.y, lerp(core.x, authorP.x, t), lerp(core.y, authorP.y, t))
+                glow[top].line(core.x, core.y, lerp(core.x, authorP.x, t), lerp(core.y, authorP.y, t))
             }
             for (key in bridges) {
                 val star = index[key] ?: continue
                 if (star.alpha <= 0.05) continue
                 val b = project.of(star) ?: continue
-                val bandIndex = band(b.front)
+                val bandIndex = GlobeThreads.band(b.front)
                 val ix = lerp(core.x, b.x, leg1); val iy = lerp(core.y, b.y, leg1)
                 faint[bandIndex].line(core.x, core.y, ix, iy)
-                val bright = b.front > 0.62
-                if (bright) glow[bandIndex].line(core.x, core.y, ix, iy)
+                glow[bandIndex].line(core.x, core.y, ix, iy)
                 if (leg2 > 0) {
                     val ox = lerp(b.x, authorP.x, leg2); val oy = lerp(b.y, authorP.y, leg2)
                     strong[bandIndex].line(b.x, b.y, ox, oy)
-                    if (bright) glow[bandIndex].line(b.x, b.y, ox, oy)
+                    glow[bandIndex].line(b.x, b.y, ox, oy)
                 }
             }
             if (t >= 1) {
@@ -725,9 +728,8 @@ internal class GlobeScene(
         )
         seated = seats
 
-        // A seat comes and goes over a quarter second, so a face that loses its
-        // room cross-fades with the star it becomes instead of popping. Asleep,
-        // a seat that changed (a resize) wakes the clock to fade it.
+        // A seat comes and goes over a quarter second, so a face that loses its room
+        // cross-fades with its star. Asleep, a seat that changed (a resize) wakes the clock.
         val dt = if (awake) lastDt else 0.0
         seatFades.begin()
         val out = ArrayList<Spot>(drawn.size + 1)
@@ -736,8 +738,7 @@ internal class GlobeScene(
             val a = min(1.0, (index[face.key] ?: coreStar).let { it.alpha * weight(it) })
             val faint = if (traceTarget == null && face.key in layerFaceSet) 1 - (1 - DIM_FACE) * layerDim else 1.0
             val dim = (0.35 + 0.65 * face.p.front) * a * faint
-            // Rolling toward the rim the face fades and shrinks into the ember
-            // it is round the back; losing its seat, into a star (iOS GlobeScene.draw).
+            // Toward the rim a face fades and shrinks onto its ember (iOS GlobeScene.draw).
             val edge = GlobeFaceFade.edge(face.p.depth, face.key == author)
             val shown = edge * fade
             out += Spot(face.key, face.p.x, face.p.y, GlobeEdge.faceRadius(faceR(face), shown),
