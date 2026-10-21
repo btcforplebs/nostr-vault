@@ -17,6 +17,7 @@ import { receiptTrust } from "../net/zaps.js"
 import { visibleRows } from "../net/blocks.js"
 import { followLists } from "../net/wot.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { SkeletonList, Spinner } from "../components/Loading.jsx"
 
 const PAGE = 100
 
@@ -108,10 +109,10 @@ export function NotificationsScreen({ ctx }) {
         <button role="tab" aria-selected={filter === "mentions"} class={filter === "mentions" ? "on" : ""} onClick={() => setFilter("mentions")}>Mentions</button>
       </div>
       {status && <div class="status-line">{status}</div>}
-      {shown === null ? <p class="empty">Loading…</p>
+      {shown === null ? <SkeletonList count={7} rowClass="note notification" avatar={32} label="Loading notifications…" />
         : !shown.length && (more.done || more.until === null) ? <Empty mentions={filter === "mentions"} />
         : shown.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} trusted={known} unread={r.created_at > unreadSince} me={session.pubkey} />)}
-      {shown !== null && !more.done && more.until !== null && <p ref={end} class="empty">{more.busy ? "Loading…" : ""}</p>}
+      {shown !== null && !more.done && more.until !== null && <p ref={end} class="waiting" role="status">{more.busy && <><Spinner />Loading older notifications…</>}</p>}
     </main>
   )
 }

@@ -6,7 +6,8 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
-import { OlderButton } from "../components/FeedExtras.jsx"
+import { OlderButton, SkeletonRows } from "../components/FeedExtras.jsx"
+import { SkeletonGrid } from "../components/Loading.jsx"
 import { AUTO_PAGES, QUIET_PAGES, emptyText, isNoteTab, latestArticles, mergeOlder, splitProfileNotes, taggedNotes, visibleTabs } from "../net/profile-tabs.js"
 
 if (import.meta.env) import("../styles/feeds.css")
@@ -81,10 +82,11 @@ export function ProfileTabs({ notes, tagged, articles, pubkey, blocked }) {
       <div class="segmented profile-tabs" role="tablist" aria-label="Profile" style={BAR}>
         {tabs.map(t => <button key={t.id} role="tab" aria-selected={on === t.id} class={on === t.id ? "on" : ""} style={TAB} onClick={() => setTab(t.id)}>{t.label}</button>)}
       </div>
-      {!list.length ? (
+      {!list.length && loading ? (on === "media" ? <SkeletonGrid count={9} tileClass="media-tile" /> : <SkeletonRows count={3} label={emptyText(on, { loading })} />)
+        : !list.length ? (
         <>
           <p class="empty">{emptyText(on, { loading, olderLeft })}</p>
-          {!loading && olderLeft && <button type="button" class="more" onClick={stream.loadOlder}>Look further back</button>}
+          {olderLeft && <button type="button" class="more" onClick={stream.loadOlder}>Look further back</button>}
         </>
       ) : on === "media" ? <MediaGrid tiles={list} />
         : on === "articles" ? list.map(a => <ArticleCard key={a.id} event={a} />)

@@ -1,5 +1,6 @@
 /* Nostr Vault web look. Values come from the iOS app (tokens.css); spec: PLANS/NV_WEB_DESIGN.md. */
 @import "./tokens.css";
+@import "./loading.css";
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body); -webkit-font-smoothing: antialiased; }

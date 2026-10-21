@@ -8,8 +8,10 @@ import { fetchProfiles } from "../net/profiles.js"
 import { isBlockedNote, visibleReplies } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
+import { SkeletonRows } from "../components/FeedExtras.jsx"
 
 const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain still fits a phone
+const LOADING = "Loading replies…"
 
 /** Where the thread for `id` opens, from Haven /feed alone (so offline too). A stored note opens under its root.
  *  A reposted note is not stored, only the kind 6 carrying it: it opens under its real root when /feed has that
@@ -49,7 +51,7 @@ export function ThreadScreen({ ctx, id }) {
   }
   const sync = async isLive => {
     if (!navigator.onLine) return setStatus("Offline: showing the saved thread")
-    setStatus("Loading replies…")
+    setStatus(LOADING)
     try {
       const synced = await syncThread(vault, id, relays)
       if (!isLive()) return
@@ -86,6 +88,8 @@ export function ThreadScreen({ ctx, id }) {
   // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back.
   const rows = thread ? flattenThread(visibleReplies(thread.replies, blocked)) : []
   const rootBlocked = thread?.root && isBlockedNote(thread.root, blocked)
+  // While the relays are asked, a missing root or an empty reply list may still arrive: placeholders, not "none".
+  const syncing = status === LOADING
   // An article opens as the article, with its likes, comments, zaps and highlights, as the iPhone's does.
   if (thread?.root?.kind === 30023 && !rootBlocked) return <main class="screen"><ArticleReader event={thread.root} ctx={ctx} onBack={() => history.back()} /></main>
   return (
@@ -97,17 +101,18 @@ export function ThreadScreen({ ctx, id }) {
         <button class="small" style={{ visibility: "hidden" }} aria-hidden="true" tabIndex={-1}>Back</button>
       </header>
       <div class="status-line">{status || (thread ? `${rows.length} ${rows.length === 1 ? "reply" : "replies"}` : "")}</div>
-      {thread === null ? <p class="empty">Opening your relay…</p>
+      {thread === null ? <SkeletonRows count={3} label="Opening the thread…" />
         : <>
             {rootBlocked ? <p class="empty">This note is from someone you blocked.</p>
               : thread.root ? <NoteCard event={thread.root} />
+              : syncing ? <SkeletonRows count={1} label="Finding the note this thread starts from…" />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
             {rows.map(({ event, depth }) => (
               <div key={event.id} style={{ paddingLeft: `${Math.min(depth - 1, MAX_INDENT) * 16}px` }}>
                 <Focus on={event.id === id}><NoteCard event={event} /></Focus>
               </div>
             ))}
-            {!rows.length && thread.root && <p class="empty">No replies yet.</p>}
+            {!rows.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
           </>}
     </main>
   )
