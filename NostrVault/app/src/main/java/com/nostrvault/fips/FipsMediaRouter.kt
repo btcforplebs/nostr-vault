@@ -65,7 +65,22 @@ object FipsMediaRouter {
      * The mesh npub [author] lists, or null. A missing list is fetched in
      * the background, so a later read of the same author can use it.
      */
-    fun meshNpubFor(author: String): String? {
+    fun meshNpubFor(author: String): String? = listedMeshNpubs(author)?.firstOrNull()
+
+    /**
+     * The vault to dial for [author]'s blob at [host] (iOS FipsMeshReader.vault(for:serverList:)). A mesh-only URL's
+     * `<npub>.fips` host is dialled only when the author's own signed 10063 lists that npub: anyone can put any npub
+     * in a URL, and dialling it shows that node the reader's address. A host the list does not name dials nothing.
+     * A URL with no mesh host reads from the first vault the author lists.
+     */
+    fun vaultFor(author: String, host: String): String? {
+        val listed = listedMeshNpubs(author) ?: return null
+        val named = meshNpubInHost(host) ?: return listed.firstOrNull()
+        return named.takeIf { it in listed }
+    }
+
+    /** The mesh npubs [author]'s 10063 lists, in order; null (and a background fetch) when it is not known yet. */
+    private fun listedMeshNpubs(author: String): List<String>? {
         val list = serverLists()[author]
         if (list == null) {
             val now = System.currentTimeMillis()
@@ -76,13 +91,12 @@ object FipsMediaRouter {
             }
             return null
         }
-        return list.firstNotNullOfOrNull { meshNpubIn(it) }
+        return list.mapNotNull { meshNpubIn(it) }
     }
 
     /**
-     * The vault a mesh-only URL (`http://<npub>.fips/<sha>`) names, or null.
-     * That host is the one the author picked for this blob, so it wins over
-     * whichever vault comes first in their 10063.
+     * The vault a mesh-only URL (`http://<npub>.fips/<sha>`) names, or null. Only a claim: [vaultFor] dials it only
+     * when the author's 10063 lists it, and then it wins over whichever vault comes first there.
      */
     fun meshNpubInHost(host: String): String? =
         meshHostRegex.matchEntire(host.lowercase())?.groupValues?.get(1)
