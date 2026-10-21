@@ -268,8 +268,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     static func scheduleBackgroundProcessing() {
         let request = BGProcessingTaskRequest(identifier: kBGProcessingTaskID)
         request.requiresNetworkConnectivity = true
-        request.requiresExternalPower = false
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
+        // On power only, and no sooner than 15 minutes out: on battery, a
+        // 45 s relay window every minute or so kept the phone warm in a pocket.
+        request.requiresExternalPower = true
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 900)
         try? BGTaskScheduler.shared.submit(request)
     }
 }

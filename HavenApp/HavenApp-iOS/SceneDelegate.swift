@@ -210,6 +210,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // one-shot `guard isRunning` bail was a silent "feed never
         // refreshes until pull-to-refresh").
         NostrService.shared.resetConnections()
+        RelayProcessManager.shared.enterForeground()
+        NostrService.shared.enterForeground()
+        SetAppForegroundC(1)
         // Mark that we handled foreground reconnection so ViewerView
         // doesn't redundantly call refreshAll() on its next onAppear.
         NostrService.shared.lastForegroundReconnectTime = Date()
@@ -279,6 +282,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Pause feed & reset viewer connections when entering background
         FeedService.shared.pauseFeed()
         NostrService.shared.resetConnections()
+
+        // Stop turning relay output into log rows and UI updates, and stop the
+        // profile-fetch timer, as the Mac does when its window goes
+        // (App/AppDelegate.swift). iOS never called these, so a backgrounded
+        // phone kept parsing every relay line and polling twice a second.
+        RelayProcessManager.shared.enterBackground()
+        NostrService.shared.enterBackground()
+        // The relay stops the Popular tally's reaction/repost/zap firehose
+        // while nobody can see it (haven-go app_foreground_cshared.go). Until
+        // the app says so the relay counts as on screen; the Mac never does.
+        SetAppForegroundC(0)
 
         // Request background execution time from iOS.
         // This gives ~30 seconds for the relay goroutines to finish in-flight work

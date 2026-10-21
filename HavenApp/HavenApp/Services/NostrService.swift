@@ -85,10 +85,14 @@ class NostrService: ObservableObject {
     var profilesInFlight = Set<String>()
     var profileFetchQueue = Set<String>()
     var profileFlushCancellable: AnyCancellable?
+    /// The UI is hidden (`enterBackground`): profiles queue up, and the fetch
+    /// timer waits for `enterForeground` instead of starting on enqueue.
+    var profileFetchPaused = false
 
     /// Pause the profile-fetch timer when the UI is hidden to avoid
     /// unnecessary network requests and CPU usage in the background.
     func enterBackground() {
+        profileFetchPaused = true
         profileFlushCancellable?.cancel()
         profileFlushCancellable = nil
         #if DEBUG
@@ -98,6 +102,7 @@ class NostrService: ObservableObject {
 
     /// Resume the profile-fetch timer when the UI becomes visible.
     func enterForeground() {
+        profileFetchPaused = false
         if !profileFetchQueue.isEmpty && profileFlushCancellable == nil {
             setupMetadataFlusher()
         }

@@ -178,6 +178,7 @@ class NIP46Service: ObservableObject {
         guard let pubkey = signerPubkey, !pubkey.isEmpty else {
             connectionState = .error
             checkPendingAuthURL()
+            if outstandingRequests == 0 { stopAuthURLPoller() }
             #if DEBUG
             print("[NIP46] connect() FAILED — NIP46ConnectC returned nil")
             #endif
@@ -213,6 +214,9 @@ class NIP46Service: ObservableObject {
         connectionState = .connected
         connectedSignerPubkey = pubkey
         lastSignerAnswer = Date()
+        // The connect is answered: stop polling for its auth challenge.
+        // Requests start it again while they wait (signerRequest).
+        if outstandingRequests == 0 { stopAuthURLPoller() }
 
         // Clear the bunker secret after successful pairing — it's one-time-use
         // and must not be re-sent on reconnection attempts. The signer already

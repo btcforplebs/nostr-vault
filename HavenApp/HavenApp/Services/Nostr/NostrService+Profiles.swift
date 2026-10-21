@@ -54,7 +54,14 @@ extension NostrService {
     }
 
     private func flushMetadataRequests() {
-        guard !profileFetchQueue.isEmpty else { return }
+        // Nothing left to fetch: stop ticking. `fetchMissingProfiles` starts
+        // the timer again on the next enqueue. It used to run twice a second
+        // for the life of the app.
+        guard !profileFetchQueue.isEmpty else {
+            profileFlushCancellable?.cancel()
+            profileFlushCancellable = nil
+            return
+        }
         let pubkeys = Array(profileFetchQueue)
         profileFetchQueue.removeAll()
 
@@ -140,7 +147,7 @@ extension NostrService {
             profileFetchQueue.insert(pubkey)
         }
 
-        if profileFlushCancellable == nil {
+        if profileFlushCancellable == nil && !profileFetchPaused {
             setupMetadataFlusher()
         }
     }
