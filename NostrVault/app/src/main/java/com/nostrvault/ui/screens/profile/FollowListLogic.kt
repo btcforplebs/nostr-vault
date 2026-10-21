@@ -133,6 +133,20 @@ object FollowListLogic {
         return if (count == 0) "—" else "$short+"
     }
 
+    /**
+     * Whether another follower page is worth asking for (iOS
+     * `followListPage`): never for your own complete ledger, not once the
+     * relays ran dry, and not once the list holds as many people as the
+     * profile's follower count says there are. The count is a snapshot
+     * taken when the page opened; if the profile had none yet, paging runs
+     * until the relays run dry.
+     */
+    fun followersHaveMore(isOwnLedger: Boolean, exhausted: Boolean, profileTotal: Int?, loaded: Int): Boolean =
+        !isOwnLedger && !exhausted && (profileTotal == null || profileTotal > loaded)
+
+    /** The page title for a profile with no name yet: `abcd1234…wxyz` (iOS `ProfileFormat.shortPubkey`). */
+    fun shortPubkey(hex: String): String = hex.take(8) + "…" + hex.takeLast(4)
+
     /** A bio on two lines: line breaks become spaces so the two lines carry words, not blank space. */
     fun bioLine(about: String?): String? {
         if (about == null) return null

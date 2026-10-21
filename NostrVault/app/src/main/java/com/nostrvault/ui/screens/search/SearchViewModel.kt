@@ -71,6 +71,8 @@ class SearchViewModel @Inject constructor(
         private const val MAX_SUGGESTED = 6
         private const val MAX_RECENT = 8
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
+        /** Same wait as iOS SearchView before a typed query searches. */
+        private const val SEARCH_DEBOUNCE_MS = 300L
     }
 
     sealed class DirectLookupResult {
@@ -189,6 +191,8 @@ class SearchViewModel @Inject constructor(
     val directLookup = _directLookup.asSharedFlow()
 
     private val _pendingNoteId = MutableStateFlow<String?>(null)
+    /** A pasted note1/nevent1 being fetched: the spinner says "Looking up note..." (iOS). */
+    val pendingNoteId = _pendingNoteId.asStateFlow()
 
     private var searchJob: Job? = null
     private var lastDiscoveryRefresh = 0L
@@ -267,6 +271,7 @@ class SearchViewModel @Inject constructor(
             if (eventId != null) {
                 val existing = feedService.findNote(eventId)
                 if (existing != null) {
+                    _pendingNoteId.value = null
                     _directLookup.tryEmit(DirectLookupResult.NavigateToNote(eventId))
                 } else {
                     _pendingNoteId.value = eventId
@@ -286,6 +291,10 @@ class SearchViewModel @Inject constructor(
             }
         }
 
+        // Not a note ID (or one that didn't decode): no note is being looked up,
+        // so "Looking up note..." can't show over an ordinary search.
+        _pendingNoteId.value = null
+
         // Bech32 direct lookup: npub1
         if (lower.startsWith("npub1")) {
             val hexPubkey = HavenBridge.decodeNpub(trimmed)
@@ -300,7 +309,7 @@ class SearchViewModel @Inject constructor(
         // Standard search path
         if (text.length >= 2) {
             searchJob = viewModelScope.launch {
-                delay(400)
+                delay(SEARCH_DEBOUNCE_MS)
                 performSearch(text)
                 saveRecentSearch(text)
             }
@@ -309,6 +318,13 @@ class SearchViewModel @Inject constructor(
             _isSearching.value = false
             refreshDiscovery(force = true)
         }
+    }
+
+    /** The field's clear (x): empties the query and puts the result tab back on All (iOS clearSearch). */
+    fun clearSearch() {
+        _pendingNoteId.value = null
+        setQuery("")
+        _resultFilter.value = SearchResultFilter.ALL
     }
 
     fun setResultFilter(filter: SearchResultFilter) {

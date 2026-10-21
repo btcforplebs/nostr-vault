@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +32,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import com.nostrvault.ui.theme.Motion
+import kotlinx.coroutines.flow.filter
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -82,7 +90,18 @@ fun FollowListScreen(
     var showOutside by rememberSaveable { mutableStateOf(false) }
     var sorts by remember { mutableStateOf(FollowListSortMemory.sorts.toMap()) }
     val sort = sorts[tab] ?: FollowListSort.TRUSTED
-    val haveMore = !isOwnLedger && !exhausted
+    // Stops at the profile's own count: no further pages, and no "N+" (iOS).
+    val haveMore = FollowListLogic.followersHaveMore(isOwnLedger, exhausted, followersTotal, followers.size)
+    val listState = rememberLazyListState()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    // Scrolling the list hides the keyboard (iOS scrollDismissesKeyboard).
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.filter { it }.collect {
+            keyboard?.hide()
+            focusManager.clearFocus()
+        }
+    }
 
     val people = remember(tab, following, followers, profiles) {
         when (tab) {
@@ -94,7 +113,7 @@ fun FollowListScreen(
     val sections = remember(people, followed, webOfTrust, trustRank, dropped, sort, query) {
         FollowListLogic.sections(people, followed, webOfTrust, trustRank, dropped, sort, query)
     }
-    val subjectName = profiles[viewModel.subject]?.bestName ?: shortNpub(viewModel.subject)
+    val subjectName = profiles[viewModel.subject]?.bestName ?: FollowListLogic.shortPubkey(viewModel.subject)
     // The counts count what the lists show, so a blocked person is gone from
     // both the rows and the number.
     val followersShown = FollowListLogic.shownCount(followers.keys, dropped)
@@ -134,22 +153,27 @@ fun FollowListScreen(
                     sorts = FollowListSortMemory.sorts.toMap()
                 }
             }
-            SearchField(query, placeholder = "Search ${tab.title.lowercase()}") { query = it }
-            Spacer(Modifier.height(10.dp))
-            TabSwitch(
-                tab = tab,
-                followingLabel = "Following ${FollowListLogic.countText(FollowListLogic.shownCount(following, dropped), more = false)}",
-                followersLabel = "Followers $followersLabel",
-                onSelect = { tab = it },
-            )
-            Spacer(Modifier.height(10.dp))
+            // Search and the switch stop at 720 on a tablet, like the rows.
+            Column(Modifier.widthIn(max = MAX_WIDTH).align(Alignment.CenterHorizontally)) {
+                SearchField(query, placeholder = "Search ${tab.title.lowercase()}") { query = it }
+                Spacer(Modifier.height(10.dp))
+                TabSwitch(
+                    tab = tab,
+                    followingLabel = "Following ${FollowListLogic.countText(FollowListLogic.shownCount(following, dropped), more = false)}",
+                    followersLabel = "Followers $followersLabel",
+                    onSelect = { tab = it },
+                )
+                Spacer(Modifier.height(10.dp))
+            }
         }
         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
         // Clear of the bottom bar, which a pushed list keeps.
+        // Rows stop at 720 on a tablet, centred (iOS).
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(bottom = FloatingNavBarInset.height.value),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxHeight().widthIn(max = MAX_WIDTH).fillMaxWidth().align(Alignment.CenterHorizontally),
         ) {
             if (sections.isEmpty()) {
                 item(key = "empty") {
@@ -175,6 +199,11 @@ fun FollowListScreen(
                     items(section.people, key = { "${section.group}-${it.pubkey}" }) { p ->
                         val isViewer = p.pubkey == viewModel.viewer
                         LaunchedEffect(p.pubkey) { viewModel.needProfile(p.pubkey) }
+                        // The outside group's rows fade in and out as it opens and closes.
+                        Column(
+                            if (collapsible) Modifier.animateItem(fadeInSpec = Motion.fade(), placementSpec = null, fadeOutSpec = Motion.fade())
+                            else Modifier,
+                        ) {
                         FollowListRow(
                             pubkey = p.pubkey,
                             name = p.name,
@@ -191,6 +220,7 @@ fun FollowListScreen(
                             onToggleFollow = { viewModel.toggle(p.pubkey) },
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp, modifier = Modifier.padding(start = 72.dp))
+                        }
                     }
                 }
             }
@@ -214,6 +244,8 @@ private fun person(key: String, recency: Long, profile: FeedProfile?) = FollowLi
     nip05 = profile?.nip05.orEmpty(),
     recency = recency,
 )
+
+private val MAX_WIDTH = 720.dp
 
 internal fun shortNpub(hex: String): String {
     val npub = runCatching { HavenBridge.encodeNpub(hex) }.getOrNull() ?: hex
