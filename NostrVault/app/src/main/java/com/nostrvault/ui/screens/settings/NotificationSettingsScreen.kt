@@ -1,6 +1,11 @@
 package com.nostrvault.ui.screens.settings
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import androidx.compose.foundation.clickable
@@ -12,9 +17,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.nostrvault.data.local.ConfigStore
@@ -102,10 +109,23 @@ fun NotificationSettingsScreen(
 
     LaunchedEffect(accounts) { viewModel.ensureProfiles(accounts) }
 
+    // As on iOS, turning notifications on asks the system for permission.
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val onToggleEnabled: (Boolean) -> Unit = { on ->
+        viewModel.toggleEnabled(on)
+        if (on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Push Notifications") },
+                title = { Text("Notifications") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -135,7 +155,7 @@ fun NotificationSettingsScreen(
                 }
                 Switch(
                     checked = enabled,
-                    onCheckedChange = viewModel::toggleEnabled,
+                    onCheckedChange = onToggleEnabled,
                     colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
                 )
             }
@@ -170,45 +190,50 @@ fun NotificationSettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             // Per-account notification preferences
-            accounts.forEach { npub ->
+            // Per-account preferences, shown only while notifications are on (iOS).
+            if (enabled) accounts.forEach { npub ->
                 val isOwner = npub == config.ownerNpub
-                val name = viewModel.profileFor(npub)?.bestName ?: if (isOwner) "Owner" else npub.take(12) + "..."
+                val name = viewModel.profileFor(npub)?.bestName ?: (npub.take(12) + "...")
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
-                    AvatarImage(url = viewModel.profileFor(npub)?.pictureURL, pubkey = viewModel.hexFor(npub), size = 28.dp, displayName = name)
+                    AvatarImage(url = viewModel.profileFor(npub)?.pictureURL, pubkey = viewModel.hexFor(npub), size = 20.dp, displayName = name)
                     Spacer(Modifier.width(8.dp))
                     Text(name, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     InfoButton(SettingsHelp.NOTIFY_PER_ACCOUNT)
+                    if (isOwner) {
+                        Spacer(Modifier.width(8.dp))
+                        Text("Owner", color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 val prefs = config.pushPrefsFor(npub)
                 Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
                     Column {
-                        NotificationToggle("Mentions", "When someone mentions you in a note", prefs.mentions, enabled) {
+                        NotificationToggle("Mentions", null, prefs.mentions, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(mentions = it) }
                         }
                         Divider()
-                        NotificationToggle("Replies", "Replies to your notes", prefs.replies, enabled) {
+                        NotificationToggle("Replies", null, prefs.replies, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(replies = it) }
                         }
                         Divider()
-                        NotificationToggle("Direct Messages", "New DMs from contacts", prefs.dms, enabled) {
+                        NotificationToggle("Direct Messages", null, prefs.dms, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(dms = it) }
                         }
                         Divider()
-                        NotificationToggle("Zaps", "When someone zaps your notes", prefs.zaps, enabled) {
+                        NotificationToggle("Zaps", null, prefs.zaps, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(zaps = it) }
                         }
                         if (!config.zapsOnlyMode) {
                             Divider()
-                            NotificationToggle("Reactions", "Likes and reactions to your notes", prefs.reactions, enabled) {
+                            NotificationToggle("Reactions", null, prefs.reactions, enabled) {
                                 viewModel.setPref(npub) { p -> p.copy(reactions = it) }
                             }
                         }
                         Divider()
-                        NotificationToggle("Reposts", "When someone reposts your notes", prefs.reposts, enabled) {
+                        NotificationToggle("Reposts", null, prefs.reposts, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(reposts = it) }
                         }
                         Divider()
-                        NotificationToggle("New Followers", "When someone new follows you", prefs.follows, enabled) {
+                        NotificationToggle("New Followers", null, prefs.follows, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(follows = it) }
                         }
                     }
@@ -216,12 +241,6 @@ fun NotificationSettingsScreen(
                 Spacer(Modifier.height(16.dp))
             }
 
-            Text(
-                text = "Notifications are generated on-device by the relay running in the background — " +
-                    "no push server or external service is involved. Your events never leave your phone.",
-                color = TertiaryText,
-                fontSize = 12.sp,
-            )
             Spacer(Modifier.height(16.dp))
         }
     }
