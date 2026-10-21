@@ -54,10 +54,10 @@ class DMInboxTest {
     }
 
     @Test fun dmRelayListAlsoGoesToTheRelaysItNames() {
-        val tags = listOf(listOf("relay", "wss://inbox.example.com/"), listOf("relay", "wss://nos.lol"), listOf("r", "wss://ignored.example.com"))
+        val tags = listOf(listOf("relay", "wss://inbox.example.com/"), listOf("relay", "wss://relay.damus.io"), listOf("r", "wss://ignored.example.com"))
         assertEquals(
             listOf("wss://inbox.example.com"),
-            DMInbox.extraBroadcastRelays(10050, tags, alreadySending = listOf("wss://NOS.lol/")),
+            DMInbox.extraBroadcastRelays(10050, tags, alreadySending = listOf("wss://RELAY.damus.io/")),
         )
     }
 

@@ -152,7 +152,7 @@ class ProfilePicturePrefetchService {
             }
 
             // Filter to only uncached URLs
-            let uncached = urls.filter { !MediaCacheService.shared.isCached(url: $0) }
+            let uncached = urls.filter { !AvatarImageCache.shared.hasSmallCopy(of: $0) }
 
             #if DEBUG
             print("ProfilePicturePrefetchService: \(urls.count) total URLs, \(uncached.count) uncached")
@@ -176,9 +176,8 @@ class ProfilePicturePrefetchService {
                 await withTaskGroup(of: Void.self) { group in
                     for url in batch {
                         group.addTask {
-                            if let data = await MediaCacheService.shared.fetchData(url: url) {
-                                MediaCacheService.shared.saveToCache(url: url, data: data)
-                            }
+                            // Keeps the small copy only, like an avatar on screen.
+                            _ = await AvatarImageCache.shared.load(url: url)
                         }
                     }
                 }

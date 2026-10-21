@@ -155,4 +155,23 @@ final class LocalRelaySearchPlanTests: XCTestCase {
         let rule: (String) -> Bool = matcher.matchesNote(content:)
         XCTAssertFalse(rule("gm everyone"))
     }
+
+    // MARK: Kind order and deadline
+
+    func testProfilesFirstThenEachNoteKindOnce() {
+        XCTAssertEqual(LocalRelaySearchPlan.kindOrder(noteKinds: [1]), [0, 1])
+        XCTAssertEqual(LocalRelaySearchPlan.kindOrder(noteKinds: [1, 30023, 1, 20, 30023]), [0, 1, 30023, 20])
+    }
+
+    /// A kind 0 among the note kinds must not be walked twice either.
+    func testKindZeroIsNotRepeated() {
+        XCTAssertEqual(LocalRelaySearchPlan.kindOrder(noteKinds: [0, 1, 0]), [0, 1])
+    }
+
+    /// The default walk keeps its 6 s; a longer list gets more time.
+    func testDeadlineGrowsWithTheKindsWalked() {
+        XCTAssertEqual(LocalRelaySearchPlan.timeout(kindCount: 2), 6)
+        XCTAssertEqual(LocalRelaySearchPlan.timeout(kindCount: 11), 33)
+        XCTAssertGreaterThan(LocalRelaySearchPlan.timeout(kindCount: 11), LocalRelaySearchPlan.timeout(kindCount: 2))
+    }
 }

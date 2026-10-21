@@ -277,7 +277,7 @@ extension VaultView {
     func loadMoreItems() {
         let totalCount: Int
         switch viewMode {
-        case .notes, .media, .followers: totalCount = nostrService.events.count
+        case .activity, .notes, .media, .followers: totalCount = nostrService.events.count
         case .likes: totalCount = nostrService.events.count
         case .zaps: totalCount = nostrService.events.count
         }
@@ -318,6 +318,24 @@ extension VaultView {
         }
         for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
         return Array(authorsSet)
+    }
+
+    /// What decides whether Articles or Highlights still need their first page.
+    var firstPageKey: String {
+        "\(noteScope.rawValue).\(sparseNotesScope).\(nostrService.isFetching).\(relayManager.isRunning).\(configService.config.activeAccountNpub)"
+    }
+
+    /// Articles and Highlights open on their newest page. The relay's first
+    /// load is the newest posts of every kind together, so an article older
+    /// than those was in none of it, and the list said "No articles found"
+    /// until you tapped Load older. Waits for that first load, so a refresh
+    /// that empties the events can't drop the page.
+    func loadFirstPageInScope() {
+        guard sparseNotesScope, relayManager.isRunning, !relayManager.isBooting,
+              !nostrService.isFetching, !noOlderPages.contains(noteScope) else { return }
+        let kinds = noteScope.kinds(from: NostrService.relayTabNoteKinds, split: true)
+        guard !nostrService.events.contains(where: { kinds.contains($0.kind) }) else { return }
+        loadOlderInScope()
     }
 
     /// Articles' and Highlights' "Load older": one page of just that kind from

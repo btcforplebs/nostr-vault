@@ -1,0 +1,46 @@
+/* Compose: photo strip, tools row and the @mention strip (ComposeView+Attachments / +Mentions). */
+.compose-area { margin: 0 var(--gutter) 12px; border-radius: var(--radius); }
+.compose-area .compose { width: 100%; margin: 4px 0 0; }
+.compose-area.dragging .compose { border-color: var(--accent); border-style: dashed; background: var(--accent-pale); }
+
+/* One row of people, like the iPhone's suggestion strip, scrolling sideways. */
+.mention-picker { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
+.mention-picker::-webkit-scrollbar { display: none; }
+.mention-option { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; max-width: 220px;
+  padding: 4px 12px 4px 4px; border: 1px solid transparent; border-radius: 999px; background: var(--accent-pale); color: var(--text); }
+.mention-option.on { border-color: var(--accent-line); }
+.mention-option-text { display: grid; min-width: 0; text-align: left; }
+.mention-option-name { font: 600 14px/1.2 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-option-nip05 { font: var(--t-cap); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.compose-photos { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 10px 0 0; padding: 0; }
+.compose-photo { position: relative; width: 84px; height: 84px; border-radius: 10px; overflow: hidden; background: var(--s2); }
+.compose-photo img, .compose-photo video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.compose-photo.uploading :is(img, video), .compose-photo.queued :is(img, video) { opacity: .45; }
+.compose-photo.failed { box-shadow: inset 0 0 0 2px var(--danger); }
+.compose-photo.failed :is(img, video) { opacity: .35; }
+.compose-photo-state { position: absolute; inset: auto 0 0; padding: 4px; text-align: center; font: 600 11px/1.2 var(--font);
+  background: rgb(0 0 0 / .55); color: var(--text); }
+.compose-photo.failed .compose-photo-state { color: var(--danger); }
+.compose-photo .compose-photo-remove { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; min-height: 0; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%; background: rgb(0 0 0 / .65); color: #fff; }
+/* A 44 px target for the small ✕. */
+.compose-photo .compose-photo-remove::before { content: ""; position: absolute; inset: -10px; }
+.compose-photo .compose-photo-retry { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); min-height: 26px; padding: 0 10px;
+  font: 600 12px/1 var(--font); }
+.compose-photo .compose-photo-retry:active:not(:disabled) { transform: translateX(-50%) scale(.96); }
+/* A video tile: a small play mark in the corner, as the iPhone's thumbnails have. */
+.compose-photo-kind { position: absolute; left: 6px; top: 6px; width: 20px; height: 20px; display: grid; place-items: center;
+  border-radius: 50%; background: rgb(0 0 0 / .6); color: #fff; pointer-events: none; }
+/* ALT: hollow while undescribed, filled once described (ComposeView+Chrome altChip). */
+.compose-photo .compose-alt { position: absolute; left: 4px; bottom: 4px; min-height: 0; padding: 3px 6px; border-radius: 999px;
+  font: 700 10px/1 var(--font); letter-spacing: .02em; color: #fff; background: rgb(0 0 0 / .55); border: 1px solid rgb(255 255 255 / .7); }
+.compose-photo .compose-alt::before { content: ""; position: absolute; inset: -10px -6px; }
+.compose-photo .compose-alt.described { background: var(--accent); border-color: transparent; }
+.compose-photo:is(.uploading, .queued) .compose-alt { bottom: 26px; }
+.compose-alt-text { width: 100%; box-sizing: border-box; margin: 4px 0 12px; resize: vertical; font: 400 15px/1.4 var(--font); }
+.compose-photo-error { margin: 6px 0 0; overflow-wrap: anywhere; }
+
+.compose-tools { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.compose-add-photo { display: inline-flex; align-items: center; gap: 6px; }
+.compose-draft { margin-left: auto; }

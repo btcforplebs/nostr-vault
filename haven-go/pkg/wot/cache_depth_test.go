@@ -163,3 +163,62 @@ func TestNamesOnlyOwners(t *testing.T) {
 		t.Error("a graph that was never built is not an empty graph")
 	}
 }
+
+// A depth-3 cache from before the links file existed is still served, but
+// flagged so startup refreshes it in the background; a depth-2 build drops a
+// links file it can't refresh.
+func TestLinksFileFollowsTheDepth(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wot_cache.json")
+	links := filepath.Join(dir, linksFile)
+	wt := NewSimpleInMemory(nil, map[string]struct{}{"owner": {}}, nil, 3, 1, 1, path, 60)
+	wt.pubkeys.Store(&map[string]bool{"owner": true})
+	wt.SaveCache()
+	if ok, _ := wt.LoadFromCache(); !ok {
+		t.Fatal("a depth-3 cache without a links file was thrown away")
+	}
+	if !wt.MissingLinks() {
+		t.Fatal("a depth-3 cache without a links file was not flagged for a refresh")
+	}
+	wt.saveLinks([]string{"a"}, map[string][]int{"b": {0}})
+	if ok, _ := wt.LoadFromCache(); !ok {
+		t.Fatal("a depth-3 cache with its links file was not served")
+	}
+	if wt.MissingLinks() {
+		t.Fatal("a depth-3 cache with its links file was flagged for a refresh")
+	}
+	if _, err := os.Stat(links + ".tmp"); !os.IsNotExist(err) {
+		t.Error("the temporary links file was left behind")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	NewSimpleInMemory(nostr.NewSimplePool(ctx), map[string]struct{}{"owner": {}}, nil, 2, 1, 1, path, 60).Refresh(ctx)
+	if _, err := os.Stat(links); !os.IsNotExist(err) {
+		t.Error("a depth-2 build kept the depth-3 links file")
+	}
+}
+
+// The 2-minute owner-only rebuild runs once, then again only when the owner's
+// follow list changes or the fallback interval passes.
+func TestEmptyRefreshSkipsWhenNothingChanged(t *testing.T) {
+	var d emptyRefreshDue
+	now := time.Unix(1_000_000, 0)
+	if !d.check("", now) {
+		t.Fatal("the first tick was skipped")
+	}
+	d.ran("", now)
+	if d.check("", now.Add(EmptyGraphRefreshInterval)) {
+		t.Fatal("rebuilt with no follow list change")
+	}
+	if !d.check("abc", now.Add(EmptyGraphRefreshInterval)) {
+		t.Fatal("a new follow list did not trigger a rebuild")
+	}
+	d.ran("abc", now.Add(EmptyGraphRefreshInterval))
+	if d.check("abc", now.Add(4*EmptyGraphRefreshInterval)) {
+		t.Fatal("rebuilt the same follow list again")
+	}
+	if !d.check("abc", now.Add(EmptyGraphRefreshInterval+EmptyGraphFallback)) {
+		t.Fatal("the fallback rebuild never came")
+	}
+}

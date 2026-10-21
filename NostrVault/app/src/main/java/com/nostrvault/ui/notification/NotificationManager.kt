@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.nostrvault.ui.components.FilterNote
+import com.nostrvault.ui.theme.NostrVaultIcons
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,7 +31,11 @@ class NotificationManager @Inject constructor() {
     private val _notifications = MutableStateFlow<List<AppNotification>>(emptyList())
     val notifications: StateFlow<List<AppNotification>> = _notifications.asStateFlow()
 
-    private val MAX_VISIBLE = 5
+    /**
+     * How many the manager keeps; the lane ([PillLane]) decides how many draw.
+     * The oldest is dropped past this, so errors left untapped cannot pile up.
+     */
+    private val MAX_HELD = 5
 
     // ── Zap pills ──────────────────────────────────────────────
 
@@ -47,9 +54,25 @@ class NotificationManager @Inject constructor() {
         scheduleDismiss(id, 3_000L)
     }
 
+    /** A failed zap is an error: it stays until tapped (`docs/pills.md`). */
     fun markZapFailed(id: String, message: String) {
+        dismissJobs.remove(id)?.cancel()
         updateNotification<ZapNotification>(id) { it.copy(status = ZapStatus.FAILED(message)) }
-        scheduleDismiss(id, 5_000L)
+    }
+
+    /**
+     * Runs [send] under one zap pill: "Zapping Name · N sats" while it goes
+     * out, then the outcome in the same pill. Every zap in the app reports
+     * this way (`docs/pills.md`), so none needs a toast of its own.
+     */
+    suspend fun <T> zapping(recipientName: String, amountSats: Int, send: suspend () -> Result<T>): Result<T> {
+        val id = addZap(recipientName, amountSats)
+        return send().also { result ->
+            result.fold(
+                onSuccess = { markZapSuccess(id) },
+                onFailure = { markZapFailed(id, it.message ?: "Zap failed") },
+            )
+        }
     }
 
     // ── Follow pills ──────────────────────────────────────────
@@ -112,19 +135,46 @@ class NotificationManager @Inject constructor() {
 
     // ── Error pills ───────────────────────────────────────────
 
-    fun showError(message: String, style: ErrorStyle = ErrorStyle.ERROR) {
+    fun showError(message: String, style: ErrorStyle = ErrorStyle.ERROR, autoDismissMs: Long? = null) {
         val notification = ErrorNotification(message = message, style = style)
+            .let { if (autoDismissMs != null) it.copy(autoDismissMs = autoDismissMs) else it }
+        // An error stays until tapped (addNotification schedules the warning's timer).
         addNotification(notification)
-        scheduleDismiss(notification.id, notification.autoDismissMs)
     }
 
-    // ── Action toasts ─────────────────────────────────────────
+    // ── Results ───────────────────────────────────────────────
 
-    fun showToast(message: String) {
-        val toast = ActionToast(message = message)
-        addNotification(toast)
-        scheduleDismiss(toast.id, toast.autoDismissMs)
+    /** Something you did finished: a regular pill, green by default, 3 s. */
+    fun showToast(message: String, tone: PillTone = PillTone.SUCCESS) {
+        addNotification(ActionToast(message = message, tone = tone))
     }
+
+    // ── Feedback ──────────────────────────────────────────────
+
+    /**
+     * What a button you just tapped did: a small pill for 2 s. A new one
+     * replaces whatever feedback is up; feedback never stacks.
+     */
+    fun showFeedback(message: String, icon: ImageVector? = NostrVaultIcons.Check, tone: PillTone = PillTone.ACCENT) {
+        addNotification(FeedbackNotification(message = message, icon = icon, tone = tone))
+    }
+
+    /** A filter note enters as feedback under [id]; its owner times it. */
+    fun showFilterNote(id: String, note: FilterNote) {
+        if (_notifications.value.any { it.id == id }) {
+            updateNotification<FilterNoteNotification>(id) { it.copy(note = note) }
+        } else {
+            addNotification(FilterNoteNotification(id = id, note = note))
+        }
+    }
+
+    /** Changes a showing filter note's text; nothing once it has gone, so a late count can't bring it back. */
+    fun updateFilterNote(id: String, note: FilterNote) {
+        updateNotification<FilterNoteNotification>(id) { it.copy(note = note) }
+    }
+
+    /** True while [id] is still held (shown or held back by the lane). */
+    fun isShowing(id: String): Boolean = _notifications.value.any { it.id == id }
 
     // ── Upload pills (stub) ───────────────────────────────────
 
@@ -222,8 +272,15 @@ class NotificationManager @Inject constructor() {
 
     private fun addNotification(notification: AppNotification) {
         val current = _notifications.value.toMutableList()
+        if (notification.level == PillLevel.FEEDBACK) {
+            // Feedback never stacks: the newest replaces the rest.
+            current.filter { it.level == PillLevel.FEEDBACK }.forEach { old ->
+                current.remove(old)
+                dismissJobs.remove(old.id)?.cancel()
+            }
+        }
         current.add(0, notification) // newest first
-        if (current.size > MAX_VISIBLE) {
+        if (current.size > MAX_HELD) {
             val removed = current.removeAt(current.lastIndex)
             dismissJobs.remove(removed.id)?.cancel()
         }

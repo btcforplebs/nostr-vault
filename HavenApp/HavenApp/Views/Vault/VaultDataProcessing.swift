@@ -55,6 +55,39 @@ extension VaultView {
         return viewMode
     }
 
+    /// The Vault tab mode on screen, for the tab's red dot. Nil while another
+    /// tab shows, and while a tap in is still on its way to the new list.
+    var modeInSight: VaultMode? {
+        guard vaultTabHostsMedia, vaultSection.isOnScreen, !vaultSection.opensNewActivity else { return nil }
+        return vaultShowsMedia ? .media : vaultMode
+    }
+
+    /// Tapped into the Vault tab while it had a red dot: open the first list,
+    /// in menu order, that the dot is for, unless the one showing has news too.
+    func openNewActivity() {
+        defer { vaultSection.opensNewActivity = false }
+        let news = relayManager.newActivityModes
+        let showing: VaultMode = vaultShowsMedia ? .media : vaultMode
+        // "Vault" lists everything, so whatever lit the dot is already on it.
+        guard showing != .activity, !news.contains(showing),
+              let target = VaultMode.allCases.first(where: news.contains) else { return }
+        withAnimation(Motion.toggle) {
+            switch target {
+            case .activity: viewMode = .activity
+            case .notes, .articles, .highlights:
+                viewMode = .notes
+                noteScope = target == .articles ? .articles : target == .highlights ? .highlights : .notes
+                if target != .articles { recipesOnly = false }
+            case .likes: viewMode = .likes
+            case .zaps: viewMode = .zaps
+            case .followers: viewMode = .followers
+            case .media: break
+            }
+            VaultSection.shared.showsMedia = false
+        }
+        if target == .likes { fetchMissingLikedNotes() }
+    }
+
     /// Check if new events arrived for categories the user isn't currently viewing.
     func checkForNewNotifications() {
         guard hasEstablishedNotificationBaseline else { return }
@@ -66,6 +99,9 @@ extension VaultView {
 
         // Notes: the kinds the Notes list shows (the Vault tab lists articles
         // and highlights apart, and they get no dot).
+        // "Vault" shows every list's news as it arrives.
+        if watchedMode == .activity { return }
+
         let noteKinds = notesListKinds
         let noteCount = noteKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
         let baselineNotes = noteKinds.reduce(0) { $0 + (notificationBaseline[$1] ?? 0) }
@@ -89,6 +125,8 @@ extension VaultView {
     func markTabViewed(_ mode: ViewMode) {
         let events = nostrService.events
         switch mode {
+        case .activity:
+            for listed in [ViewMode.notes, .likes, .zaps, .followers] { markTabViewed(listed) }
         case .notes:
             if hasNewNotes {
                 withAnimation(Motion.fade) { hasNewNotes = false }
@@ -166,36 +204,6 @@ extension VaultView {
         }
     }
 
-    // MARK: - Search Filter
-
-    nonisolated static func applySearchFilter(
-        to events: [NostrEvent],
-        search: String,
-        scope: SearchScope
-    ) -> [NostrEvent] {
-        guard !search.isEmpty else { return events }
-        switch scope {
-        case .notes:
-            return events.filter {
-                $0.content.localizedCaseInsensitiveContains(search)
-            }
-        case .hashtags:
-            let normalizedQuery = search
-                .lowercased()
-                .trimmingCharacters(in: .whitespaces)
-                .replacingOccurrences(of: "#", with: "")
-            return events.filter { event in
-                event.tags.contains { tag in
-                    tag.count >= 2
-                        && tag[0] == "t"
-                        && tag[1].lowercased().contains(normalizedQuery)
-                }
-            }
-        case .profiles:
-            return events
-        }
-    }
-
     // MARK: - Update Display Data
 
     func updateDisplayData() {
@@ -203,8 +211,6 @@ extension VaultView {
         let currentFilter = contentFilter
         let scopeKinds = noteScope.kinds(from: NostrService.relayTabNoteKinds, split: vaultTabHostsMedia)
         let currentRecipesOnly = noteScope == .articles && recipesOnly
-        let currentSearch = committedSearch
-        let currentScope = searchScope
         let currentEvents = nostrService.events
         let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
@@ -215,6 +221,8 @@ extension VaultView {
         print("updateDisplayData: events=\(currentEvents.count) filter=\(currentFilter)")
         #endif
         let currentMode = viewMode
+        let currentActivityFilter = activityFilter
+        let zapsOnly = configService.config.zapsOnlyMode
         let currentLikesFilter = likesFilter
         let currentZapsFilter = zapsFilter
         let walletGiven = walletGivenNotes
@@ -223,9 +231,39 @@ extension VaultView {
         let locallyZapped = FeedService.shared.zappedEventIds
         let currentMaxDisplayed = maxDisplayedItems
         let gen = updateGeneration
+        let follows = currentMode == .activity
+            ? (followerSnapshot?.current.filter(\.isNews).map { (pubkey: $0.pubkey, at: $0.followedAt) } ?? [])
+            : []
 
         Task.detached(priority: .userInitiated) {
-            if currentMode == .likes {
+            if currentMode == .activity {
+                // MARK: - Vault (everything that came in)
+                let lines = VaultActivity.build(
+                    events: currentEvents.map {
+                        VaultActivity.Event(id: $0.id, pubkey: $0.pubkey, kind: $0.kind,
+                                            createdAt: $0.created_at, content: $0.content, tags: $0.tags,
+                                            images: $0.mediaURLs.filter(\.isImage))
+                    },
+                    owner: owner,
+                    noteKinds: Set(NostrService.relayTabNoteKinds),
+                    follows: follows,
+                    isBlocked: { blacklist.contains($0) },
+                    isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
+                )
+                // Filtered before the page cap, so a page of likes doesn't
+                // hide the mentions behind it.
+                let shown = Array(lines.lazy
+                    .filter { currentActivityFilter.includes($0.kind) && !(zapsOnly && $0.kind == .reaction) }
+                    .prefix(currentMaxDisplayed))
+                let missingProfiles = Array(Set(shown.flatMap { $0.actors.prefix(5) }))
+                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                await MainActor.run {
+                    if self.displayActivity != shown { self.displayActivity = shown }
+                    self.activityHasLoadedOnce = true
+                    self.displayPass &+= 1
+                    self.nostrService.fetchMissingProfiles(for: missingProfiles)
+                }
+            } else if currentMode == .likes {
                 // MARK: - Likes Mode
                 let noteKinds = NostrService.relayTabNoteKinds
 
@@ -242,10 +280,9 @@ extension VaultView {
                         }
                     }
                     let myLikedNoteIds = Set(myLikeDates.keys)
-                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
-                    filtered.sort { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
-
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = currentEvents
+                        .filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
+                        .sorted { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
@@ -255,6 +292,7 @@ extension VaultView {
                         }
                         if !self.reactionMap.isEmpty { self.reactionMap = [:] }
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 } else {
                     // Incoming reactions: determine target note set based on filter
@@ -285,16 +323,15 @@ extension VaultView {
                     }
 
                     let likedNoteIds = Set(rxMap.keys)
-                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
                     // Sort by newest reaction first, tiebreaking by note date
-                    filtered.sort {
-                        let d0 = latestReaction[$0.id] ?? Date.distantPast
-                        let d1 = latestReaction[$1.id] ?? Date.distantPast
-                        if d0 == d1 { return $0.createdAtDate > $1.createdAtDate }
-                        return d0 > d1
-                    }
-
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = currentEvents
+                        .filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
+                        .sorted {
+                            let d0 = latestReaction[$0.id] ?? Date.distantPast
+                            let d1 = latestReaction[$1.id] ?? Date.distantPast
+                            if d0 == d1 { return $0.createdAtDate > $1.createdAtDate }
+                            return d0 > d1
+                        }
 
                     let finalRxMap = rxMap
                     let finalReactionDates = latestReaction
@@ -307,6 +344,7 @@ extension VaultView {
                         self.reactionMap = finalRxMap
                         self.latestReactionDates = finalReactionDates
                         if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 }
             } else if currentMode == .zaps {
@@ -383,7 +421,8 @@ extension VaultView {
                     for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
                     for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
 
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    // Immutable copies for the main-actor hop.
+                    let result = filtered
                     let finalGivenMap = givenMap
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
@@ -394,6 +433,7 @@ extension VaultView {
                         }
                         self.zapMap = finalGivenMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 } else {
                     // Incoming zaps: determine target note set based on filter
@@ -406,24 +446,21 @@ extension VaultView {
                     }
 
                     let excludeSelf = (currentZapsFilter == .onMyNotes)
-                    var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
-                    var lastZapAt: [String: Int64] = [:]
-                    for item in parsedReceipts {
-                        guard let targetId = item.parsed.targetNoteId,
-                              targetNoteIds.contains(targetId) else { continue }
-                        if excludeSelf && item.parsed.senderPubkey == owner { continue }
-                        zMap[targetId, default: []].append((pubkey: item.parsed.senderPubkey, amount: item.parsed.amountSats))
-                        lastZapAt[targetId] = max(lastZapAt[targetId] ?? 0, receiptTimes[item.receiptId] ?? 0)
-                    }
+                    let (zMap, lastZapAt) = VaultActivity.zapsOnPosts(
+                        parsedReceipts.map {
+                            VaultActivity.Zap(sender: $0.parsed.senderPubkey, target: $0.parsed.targetNoteId,
+                                              sats: $0.parsed.amountSats, at: receiptTimes[$0.receiptId] ?? 0)
+                        },
+                        targets: targetNoteIds, owner: owner, excludeOwner: excludeSelf,
+                        isBlocked: { blacklist.contains($0) })
 
                     let zappedNoteIds = Set(zMap.keys)
-                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
-                    filtered.sort { a, b in
-                        let ta = lastZapAt[a.id] ?? 0, tb = lastZapAt[b.id] ?? 0
-                        return ta != tb ? ta > tb : a.created_at > b.created_at
-                    }
-
-                    let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let result = currentEvents
+                        .filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
+                        .sorted { a, b in
+                            let ta = lastZapAt[a.id] ?? 0, tb = lastZapAt[b.id] ?? 0
+                            return ta != tb ? ta > tb : a.created_at > b.created_at
+                        }
 
                     let finalZMap = zMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
@@ -434,6 +471,7 @@ extension VaultView {
                         }
                         self.zapMap = finalZMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
+                        self.displayPass &+= 1
                     }
                 }
             } else if currentMode == .notes {
@@ -477,7 +515,7 @@ extension VaultView {
                     return repostTargetsShown.insert(target).inserted
                 }
 
-                let result = Self.applySearchFilter(to: deduped, search: currentSearch, scope: currentScope)
+                let result = deduped
 
                 // Compute engagement data (reactions & zaps) for all displayed notes
                 let displaySlice = Array(result.prefix(currentMaxDisplayed))
@@ -500,7 +538,7 @@ extension VaultView {
                     }
                 }
 
-                var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                var noteZaps: [VaultActivity.Zap] = []
                 if !displayedIds.isEmpty {
                     let zapReceipts = currentEvents.filter { $0.kind == 9735 }
                     for receipt in zapReceipts {
@@ -513,9 +551,15 @@ extension VaultView {
                         // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
                         let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: receipt.tags,
                                                                          requestTags: zapReq["tags"] as? [[String]] ?? []))
-                        zMap[targetId, default: []].append((pubkey: senderPubkey, amount: amountSats))
+                        noteZaps.append(VaultActivity.Zap(sender: senderPubkey, target: targetId,
+                                                          sats: amountSats, at: receipt.created_at))
                     }
                 }
+                // A zap receipt is signed by the wallet server, so the relay's
+                // block list never catches it: the zapper is checked here.
+                let zMap = VaultActivity.zapsOnPosts(noteZaps, targets: displayedIds, owner: owner,
+                                                     excludeOwner: false,
+                                                     isBlocked: { blacklist.contains($0) }).zappers
 
                 // Repost map: noteId -> [reposter pubkeys]
                 var rpMap: [String: [String]] = [:]
@@ -554,38 +598,7 @@ extension VaultView {
                     self.repostMap = finalRpMap
                     self.quoteMap = finalQtMap
                     self.notesHasLoadedOnce = true
-                }
-            }
-
-            // Profile search (independent of view mode)
-            if currentScope == .profiles && !currentSearch.isEmpty {
-                let allProfiles = await MainActor.run { Array(self.nostrService.profiles.values) }
-                let query = currentSearch.lowercased()
-                let matched = allProfiles.filter { profile in
-                    (profile.name?.lowercased().contains(query) ?? false)
-                    || (profile.displayName?.lowercased().contains(query) ?? false)
-                    || (profile.nip05?.lowercased().contains(query) ?? false)
-                    || (profile.about?.lowercased().contains(query) ?? false)
-                }
-                let sorted = matched.sorted { a, b in
-                    let aName = a.bestName.lowercased()
-                    let bName = b.bestName.lowercased()
-                    let aPrefix = aName.hasPrefix(query)
-                    let bPrefix = bName.hasPrefix(query)
-                    if aPrefix != bPrefix { return aPrefix }
-                    return aName < bName
-                }
-                let profileSlice = Array(sorted.prefix(50))
-                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
-                await MainActor.run {
-                    self.displayProfileResults = profileSlice
-                }
-            } else {
-                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
-                await MainActor.run {
-                    if !self.displayProfileResults.isEmpty {
-                        self.displayProfileResults = []
-                    }
+                    self.displayPass &+= 1
                 }
             }
         }
@@ -595,6 +608,7 @@ extension VaultView {
 
     var viewModeTitle: String {
         switch viewMode {
+        case .activity: return "Vault"
         case .notes: return "Notes"
         case .media: return "Media"
         case .likes: return "Likes"

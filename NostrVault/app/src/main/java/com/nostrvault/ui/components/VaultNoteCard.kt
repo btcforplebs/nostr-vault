@@ -224,7 +224,10 @@ private fun CompactLayout(
 ) {
     val context = LocalContext.current
     val firstMedia = note.mediaURLs.firstOrNull { !isAudioUrl(it) }
-    val displayName = profile?.bestName ?: "${note.pubkey.take(8)}...${note.pubkey.takeLast(4)}"
+    // Headed by the reposter, with the original's text below, as on iOS.
+    val headPubkey = note.repostedBy ?: note.pubkey
+    val headProfile = if (note.repostedBy != null) profiles[headPubkey] else profile
+    val displayName = headProfile?.bestName ?: "${headPubkey.take(8)}...${headPubkey.takeLast(4)}"
 
     Row(
         verticalAlignment = Alignment.Top,
@@ -234,11 +237,11 @@ private fun CompactLayout(
     ) {
         // 32dp avatar (iOS line 146)
         AvatarImage(
-            url = profile?.pictureURL,
-            pubkey = note.pubkey,
+            url = headProfile?.pictureURL,
+            pubkey = headPubkey,
             size = 32.dp,
-            displayName = profile?.bestName,
-            modifier = Modifier.clickable { onProfileClick(note.pubkey) },
+            displayName = headProfile?.bestName,
+            modifier = Modifier.clickable { onProfileClick(headPubkey) },
         )
 
         Spacer(Modifier.width(8.dp))
@@ -380,7 +383,13 @@ private fun ExpandedLayout(
     onRepostersClick: (() -> Unit)?,
     onQuotersClick: (() -> Unit)?,
 ) {
-    val displayName = profile?.bestName ?: "${note.pubkey.take(8)}...${note.pubkey.takeLast(4)}"
+    // A repost is headed by whoever reposted it, with the original note in a
+    // card below, as on iOS (NoteRow + RepostedNoteView). [FeedNote] unpacks a
+    // repost to the original author, so the header reads [FeedNote.repostedBy].
+    val reposter = note.repostedBy
+    val headPubkey = reposter ?: note.pubkey
+    val headProfile = if (reposter != null) profiles[reposter] else profile
+    val displayName = headProfile?.bestName ?: "${headPubkey.take(8)}...${headPubkey.takeLast(4)}"
 
     // iOS: VStack(alignment: .leading, spacing: 10).padding(14)
     Column(
@@ -396,11 +405,11 @@ private fun ExpandedLayout(
         ) {
             // 40dp avatar (iOS line 240-244)
             AvatarImage(
-                url = profile?.pictureURL,
-                pubkey = note.pubkey,
+                url = headProfile?.pictureURL,
+                pubkey = headPubkey,
                 size = 40.dp,
-                displayName = profile?.bestName,
-                modifier = Modifier.clickable { onProfileClick(note.pubkey) },
+                displayName = headProfile?.bestName,
+                modifier = Modifier.clickable { onProfileClick(headPubkey) },
             )
 
             // iOS: VStack > HStack(spacing: 6) { name, badges, noteType, Spacer, time }
@@ -426,7 +435,7 @@ private fun ExpandedLayout(
                         modifier = Modifier.weight(1f, fill = false),
                     )
 
-                    if (note.isFromNostrVault) {
+                    if (reposter == null && note.isFromNostrVault) {
                         Spacer(Modifier.width(6.dp))
                         NostrVaultBadge(size = 12.dp)
                     }
@@ -499,46 +508,18 @@ private fun ExpandedLayout(
             }
         }
 
-        // Content text (iOS lines 296-311)
-        if (note.content.isNotBlank()) {
-            NostrContentText(
-                content = note.content,
+        if (reposter != null) {
+            RepostedNoteBlock(
+                note = note,
+                profile = profiles[note.pubkey],
                 profiles = profiles,
-                mediaURLs = note.mediaURLs.toSet(),
-                linkURLs = note.cardLinkURLs.toSet(),
+                quotedNotes = quotedNotes,
+                onArticleClick = onArticleClick,
+                onNoteClick = onNoteClick,
                 onProfileClick = onProfileClick,
-                onPlainTextClick = { onNoteClick(note.id) },
-                lineHeight = 20.sp,
             )
-        }
-
-        // Media previews (iOS lines 314-330)
-        if (note.mediaURLs.isNotEmpty()) {
-            MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
-        }
-
-        // One card per link: the URLs are out of the text above (#170).
-        // Links above quotes, as on iOS VaultNoteRow.
-        for (link in note.cardLinkURLs) {
-            LinkPreviewCard(url = link)
-        }
-
-        // Quoted events. This card already knew a quote existed — it suppressed
-        // a link preview on exactly that condition — and then drew
-        // nothing for it, so on the relay tab a quote was silently dropped.
-        for (qid in note.quotedEventIds) {
-            val quoted = quotedNotes[qid]
-            if (quoted != null) {
-                QuotedNoteCard(
-                    note = quoted,
-                    profile = profiles[quoted.pubkey],
-                    profiles = profiles,
-                    onClick = onNoteClick,
-                    onArticleClick = onArticleClick,
-                )
-            } else {
-                QuotedNotePlaceholder(identifier = qid, onClick = onNoteClick)
-            }
+        } else {
+            NoteBody(note, profiles, quotedNotes, onArticleClick, onNoteClick, onProfileClick)
         }
 
         // Engagement bar (iOS lines 338-345)
@@ -553,6 +534,128 @@ private fun ExpandedLayout(
             onRepostersClick = onRepostersClick,
             onQuotersClick = onQuotersClick,
         )
+    }
+}
+
+/** Text, media, link cards and quoted notes of a note (iOS NoteRow body). */
+@Composable
+private fun NoteBody(
+    note: FeedNote,
+    profiles: Map<String, FeedProfile>,
+    quotedNotes: Map<String, FeedNote>,
+    onArticleClick: ((String) -> Unit)?,
+    onNoteClick: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+) {
+    // Content text (iOS lines 296-311)
+    if (note.content.isNotBlank()) {
+        NostrContentText(
+            content = note.content,
+            profiles = profiles,
+            mediaURLs = note.mediaURLs.toSet(),
+            linkURLs = note.cardLinkURLs.toSet(),
+            onProfileClick = onProfileClick,
+            onPlainTextClick = { onNoteClick(note.id) },
+            lineHeight = 20.sp,
+        )
+    }
+
+    // Media previews (iOS lines 314-330)
+    if (note.mediaURLs.isNotEmpty()) {
+        MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
+    }
+
+    // One card per link: the URLs are out of the text above (#170).
+    // Links above quotes, as on iOS VaultNoteRow.
+    for (link in note.cardLinkURLs) {
+        LinkPreviewCard(url = link)
+    }
+
+    // Quoted events. This card already knew a quote existed — it suppressed
+    // a link preview on exactly that condition — and then drew
+    // nothing for it, so on the relay tab a quote was silently dropped.
+    for (qid in note.quotedEventIds) {
+        val quoted = quotedNotes[qid]
+        if (quoted != null) {
+            QuotedNoteCard(
+                note = quoted,
+                profile = profiles[quoted.pubkey],
+                profiles = profiles,
+                onClick = onNoteClick,
+                onArticleClick = onArticleClick,
+            )
+        } else {
+            QuotedNotePlaceholder(identifier = qid, onClick = onNoteClick)
+        }
+    }
+}
+
+/**
+ * The note a repost points at, in its own card under the reposter's header:
+ * the original author, when they posted it, and its body. iOS RepostedNoteView.
+ * A bare repost whose original isn't loaded says so; tapping opens it.
+ */
+@Composable
+private fun RepostedNoteBlock(
+    note: FeedNote,
+    profile: FeedProfile?,
+    profiles: Map<String, FeedProfile>,
+    quotedNotes: Map<String, FeedNote>,
+    onArticleClick: ((String) -> Unit)?,
+    onNoteClick: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+) {
+    val name = profile?.bestName ?: "${note.pubkey.take(8)}...${note.pubkey.takeLast(4)}"
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(TertiaryGroupedBg)
+            .border(BorderStroke(0.5.dp, Color(0xFF33333F)), shape)
+            .padding(10.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AvatarImage(
+                url = profile?.pictureURL,
+                pubkey = note.pubkey,
+                size = 28.dp,
+                displayName = profile?.bestName,
+                modifier = Modifier.clickable { onProfileClick(note.pubkey) },
+            )
+            Text(
+                text = name,
+                color = PrimaryText,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (note.isFromNostrVault) NostrVaultBadge(size = 10.dp)
+            Spacer(Modifier.weight(1f))
+            note.originalCreatedAtSecs?.let {
+                Text(
+                    text = formatTimestamp(it),
+                    color = SecondaryText,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+        if (note.content.isBlank() && note.mediaURLs.isEmpty()) {
+            Text(
+                text = "Tap to open the reposted note",
+                color = SecondaryText,
+                fontSize = 13.sp,
+            )
+        } else {
+            NoteBody(note, profiles, quotedNotes, onArticleClick, onNoteClick, onProfileClick)
+        }
     }
 }
 

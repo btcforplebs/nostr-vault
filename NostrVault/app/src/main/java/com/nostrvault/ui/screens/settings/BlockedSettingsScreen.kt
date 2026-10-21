@@ -113,7 +113,7 @@ fun BlockedSettingsScreen(
                 .padding(16.dp),
         ) {
             // ── Block Profile ─────────────────────────────────────
-            SectionLabel("Block Profile")
+            SectionLabel("Block Someone", SettingsHelp.ACCOUNT_BLOCKED)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = input,
@@ -174,17 +174,6 @@ fun BlockedSettingsScreen(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
-}
 
 @Composable
 private fun EmptyRow(text: String) {

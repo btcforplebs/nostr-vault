@@ -59,6 +59,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             AppBannerStack()
             ReactionTapbackLayer()
             TutorialStage { BannerHitRegions.frames["tutorial"] = $0 }
+            ReturnPillLayer { BannerHitRegions.frames["returnPill"] = $0 }
         })
         // While the tapback bar waits for a tap, this window takes every
         // touch, so a tap anywhere else closes the bar instead of reaching
@@ -190,6 +191,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
+        // Back from the background (or just launched): what the relay catches
+        // up on now is gathered into one bottom pill (ReturnPillManager).
+        // Not on didBecomeActive: Control Center or an alert going away is
+        // not a return.
+        ReturnPillManager.shared.beginReturn()
+
         // Check the NIP-46 signer session survived the suspension; reconnect
         // only if it no longer answers.
         NIP46Service.shared.resumeAfterForeground()
@@ -203,6 +210,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // one-shot `guard isRunning` bail was a silent "feed never
         // refreshes until pull-to-refresh").
         NostrService.shared.resetConnections()
+        RelayProcessManager.shared.enterForeground()
+        NostrService.shared.enterForeground()
+        SetAppForegroundC(1)
         // Mark that we handled foreground reconnection so ViewerView
         // doesn't redundantly call refreshAll() on its next onAppear.
         NostrService.shared.lastForegroundReconnectTime = Date()
@@ -252,6 +262,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        // The lane is off screen now: file the pills still up. Not on resign
+        // active: Control Center, the app switcher or an alert leaves the
+        // app on screen, and a pill being read there is not lost.
+        RelayActivityNotificationManager.shared.hostLost()
+        ReturnPillManager.shared.endReturn()
+
         // The NIP-46 signer session is deliberately kept: approving a request
         // means switching to the signer app, and disconnecting here killed the
         // request the moment the user left to approve it. Outstanding requests
@@ -266,6 +282,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Pause feed & reset viewer connections when entering background
         FeedService.shared.pauseFeed()
         NostrService.shared.resetConnections()
+
+        // Stop turning relay output into log rows and UI updates, and stop the
+        // profile-fetch timer, as the Mac does when its window goes
+        // (App/AppDelegate.swift). iOS never called these, so a backgrounded
+        // phone kept parsing every relay line and polling twice a second.
+        RelayProcessManager.shared.enterBackground()
+        NostrService.shared.enterBackground()
+        // The relay stops the Popular tally's reaction/repost/zap firehose
+        // while nobody can see it (haven-go app_foreground_cshared.go). Until
+        // the app says so the relay counts as on screen; the Mac never does.
+        SetAppForegroundC(0)
 
         // Request background execution time from iOS.
         // This gives ~30 seconds for the relay goroutines to finish in-flight work
@@ -320,22 +347,62 @@ private extension View {
     }
 }
 
-/// Every in-app banner, top-centred below the navigation bar.
+/// Where the top button row of an open full-screen media viewer ends, in
+/// window coordinates. The lane drops below it so a pill never sits over a
+/// button there (an error pill stays until tapped).
+@MainActor
+final class PillLaneFloor: ObservableObject {
+    static let shared = PillLaneFloor()
+    @Published fileprivate(set) var y: CGFloat?
+}
+
+extension View {
+    /// Keeps the pill lane below this view while it is on screen.
+    func keepsPillLaneBelow() -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+            PillLaneFloor.shared.y = $0
+        }
+        .onDisappear { PillLaneFloor.shared.y = nil }
+    }
+}
+
+/// The pill lane (`docs/pills.md`), top-centred below the navigation bar:
+/// the same list as the Mac's `PillLaneStack`, each banner reporting where
+/// it is so the window takes taps on it and nowhere else.
 struct AppBannerStack: View {
+    @ObservedObject private var floor = PillLaneFloor.shared
+    /// The top of the safe area, in window coordinates.
+    @State private var safeTop: CGFloat = 0
+
+    /// Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over
+    /// its buttons; below a media viewer's button row while one is open.
+    private var laneTop: CGFloat {
+        let navBar: CGFloat = 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44)
+        guard let y = floor.y else { return navBar }
+        return max(navBar, y - safeTop)
+    }
+
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
+            ErrorNotificationBanner().bannerHitRegion("error")
             PostActionNotificationBanner().bannerHitRegion("postAction")
             ZapNotificationBanner().bannerHitRegion("zap")
             FollowNotificationBanner().bannerHitRegion("follow")
             MediaUploadNotificationBanner().bannerHitRegion("upload")
             RelayActivityBanner().bannerHitRegion("relayActivity")
-            ActionToastBanner().bannerHitRegion("toast")
-            ErrorNotificationBanner().bannerHitRegion("error")
+            // Feedback and ambient pills take no taps, so no hit region:
+            // a touch on them reaches the app.
+            ActionToastBanner()
+            FilterNoteBanner()
             ImportRunningPill()
             Spacer(minLength: 0)
         }
-        // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.
-        .padding(.top, 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44))
+        .padding(.top, PillStyle.gap)
+        .padding(.top, laneTop)
+        .animation(Motion.bannerIn, value: laneTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+            safeTop = $0
+        }
     }
 }

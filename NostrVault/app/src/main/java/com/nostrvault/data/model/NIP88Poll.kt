@@ -1,5 +1,7 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.relay.RelayMatrix
+
 /**
  * NIP-88 polls: a kind 1068 poll and the kind 1018 votes on it. The Swift twin
  * is HavenApp/HavenApp/Models/NIP88Poll.swift; keep the rules identical.
@@ -97,22 +99,37 @@ object NIP88Poll {
 
     /**
      * The relays to read votes from and send them to: the poll's own first
-     * (NIP-88 says votes go there), then [fallback], deduplicated.
+     * (NIP-88 says votes go there), then [fallback], then the author's
+     * [outbox], deduplicated. The poll's relays and the outbox are written by
+     * a stranger, so only public ones count: a LAN, loopback or onion address
+     * would make this phone dial into its own network. [fallback] is this
+     * device's own setup and is kept. iOS: `NIP88Poll.relays`.
      */
-    fun relays(poll: Poll, fallback: List<String>): List<String> {
+    fun relays(poll: Poll, fallback: List<String>, outbox: List<String> = emptyList()): List<String> {
         val seen = HashSet<String>()
-        return (poll.relays + fallback)
+        return (poll.relays.filter(::isPublicRelay) + fallback + outbox.filter(::isPublicRelay))
             .map { it.trim() }
             .filter { it.startsWith("wss://") || it.startsWith("ws://") }
             .filter { seen.add(it.lowercase().trim('/')) }
             .take(MAX_RELAYS)
     }
 
+    /** A stranger's relay this phone may dial: public `wss`, not LAN, loopback or Tor. */
+    fun isPublicRelay(url: String): Boolean = RelayMatrix.isPublicRelay(url.trim())
+
     /**
      * Counts the votes on [poll]. The caller checks signatures; this checks
      * that each vote is for this poll, in time, and for options it has.
+     *
+     * [blocked] (hex pubkeys) are left out of the counts and the voter lists;
+     * their vote is kept, so an unblock counts it again.
      */
-    fun tally(responses: List<Response>, poll: Poll, nowSecs: Long = System.currentTimeMillis() / 1000): PollTally {
+    fun tally(
+        responses: List<Response>,
+        poll: Poll,
+        nowSecs: Long = System.currentTimeMillis() / 1000,
+        blocked: Set<String> = emptySet(),
+    ): PollTally {
         val known = poll.options.map { it.id }.toSet()
         val latestAllowed = minOf(nowSecs + MAX_FUTURE_SKEW_SECS, poll.endsAt ?: Long.MAX_VALUE)
         // Each person's newest vote. Ties go to the lower id so every device
@@ -120,6 +137,7 @@ object NIP88Poll {
         val newest = HashMap<String, Response>()
         for (r in responses) {
             if (r.kind != RESPONSE_KIND || r.createdAt > latestAllowed) continue
+            if (r.pubkey in blocked) continue
             if (r.tags.none { it.size >= 2 && it[0] == "e" && it[1] == poll.id }) continue
             val current = newest[r.pubkey]
             if (current != null &&

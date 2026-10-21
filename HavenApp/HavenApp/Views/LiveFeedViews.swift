@@ -318,6 +318,7 @@ struct LiveStreamPlayerView: View {
             }
             #if os(iOS)
             .presentationDetents([.height(380), .medium])
+            .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
             #endif
@@ -369,6 +370,10 @@ struct LiveStreamPlayerView: View {
                 }
                 Spacer(minLength: 0)
                 Menu {
+                    if let link = stream.webLink {
+                        OpenInWebButton(link: link)
+                        Divider()
+                    }
                     Button {
                         showingReportDialog = true
                     } label: {
@@ -744,8 +749,9 @@ struct LiveStreamReferenceView: View {
     @ObservedObject private var feedService = FeedService.shared
 
     var body: some View {
-        if let note = feedService.findNote(id: coordinate), let stream = LiveStream(note: note) {
-            LiveStreamEmbedView(stream: stream)
+        if let note = feedService.findNote(id: coordinate), LiveStream(note: note) != nil {
+            // Drawn as a quote so a blocked streamer's stream stays hidden.
+            QuotedNoteView(note: note)
         } else if feedService.unavailableNoteIds.contains(coordinate) {
             LinkFallbackCard(url: fallbackURL)
         } else {

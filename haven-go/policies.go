@@ -24,6 +24,9 @@ import (
 // storm that pins CPU and janks the UI.
 func bypassLocalhostConnectionLimiter(inner func(r *http.Request) bool) func(r *http.Request) bool {
 	return func(r *http.Request) bool {
+		if ownerConn(r) {
+			return false // the browser build's owner streams, by identity
+		}
 		host := r.RemoteAddr
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
@@ -36,6 +39,18 @@ func bypassLocalhostConnectionLimiter(inner func(r *http.Request) bool) func(r *
 	}
 }
 
+// ownerConn reports whether r arrived on a connection the host marked as the
+// owner's own. Only the browser build sets it (wasm_entry.go): its streams
+// have no loopback address to bypass on, and a synthetic loopback address
+// would hand the bypass to every caller.
+var ownerConn = func(*http.Request) bool { return false }
+
+// ownerStream is ownerConn for the connection an event or filter arrived on.
+func ownerStream(ctx context.Context) bool {
+	ws := khatru.GetConnection(ctx)
+	return ws != nil && ws.Request != nil && ownerConn(ws.Request)
+}
+
 // whitelistBypassEventRateLimiter wraps EventIPRateLimiter so that events from
 // whitelisted pubkeys (the owner and any allowed accounts) are never rate-limited.
 // This prevents the relay's own sync and heavy publishing from being blocked by
@@ -44,6 +59,11 @@ func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Durati
 	inner := policies.EventIPRateLimiter(tokensPerInterval, interval, maxTokens)
 	return func(ctx context.Context, evt *nostr.Event) (bool, string) {
 		if _, ok := config.WhitelistedPubKeys[evt.PubKey]; ok {
+			return false, ""
+		}
+		// The browser build's owner streams: the page itself caching its
+		// follows' notes into /feed, which natively feedsync writes directly.
+		if ownerStream(ctx) {
 			return false, ""
 		}
 		return inner(ctx, evt)
@@ -110,6 +130,11 @@ func MustNotBeBlacklistedToPost(ctx context.Context, event *nostr.Event) (bool, 
 		slog.Debug("🚫 event rejected: event author is blacklisted", "event", event.ID, "pubkey", event.PubKey)
 		return true, "you are blacklisted from this relay"
 	}
+	// The owner's delete requests carry the owner's signature, so there is nothing
+	// left for an AUTH round trip to prove
+	if isOwnerDeleteRequest(event) {
+		return false, ""
+	}
 	// Still need auth due to GiftWrap and other events with random pubkeys
 	authenticatedUser := khatru.GetAuthed(ctx)
 	if authenticatedUser == "" {
@@ -120,6 +145,42 @@ func MustNotBeBlacklistedToPost(ctx context.Context, event *nostr.Event) (bool, 
 		return true, "you are blacklisted from this relay"
 	}
 	return false, ""
+}
+
+// isOwnerDeleteRequest reports whether the event is a NIP-09 delete request from
+// the relay owner. Signatures are verified before any policy runs, so the pubkey
+// on the event is proof enough that the owner sent it.
+func isOwnerDeleteRequest(event *nostr.Event) bool {
+	return event.Kind == nostr.KindDeletion && event.PubKey == config.OwnerPubKey
+}
+
+// OwnerCanDeleteAnyEvent replaces khatru's default NIP-09 outcome, which only
+// lets authors delete their own events, so that the owner can delete anything
+// stored on their relay. Everybody else is still limited to their own events.
+func OwnerCanDeleteAnyEvent(_ context.Context, target *nostr.Event, deletion *nostr.Event) (bool, string) {
+	if target.PubKey == deletion.PubKey {
+		return true, ""
+	}
+
+	if deletion.PubKey == config.OwnerPubKey {
+		slog.Info("🗑️ owner deleted an event", "event", target.ID, "kind", target.Kind, "author", target.PubKey)
+		return true, ""
+	}
+
+	slog.Debug("🚫 deletion rejected: user is not the author of the event", "event", target.ID, "pubkey", deletion.PubKey)
+	return false, "you are not the author of this event"
+}
+
+// MustNotBeDeleted rejects events that have already been deleted from db, so a
+// re-publish can't resurrect what the owner or the author deleted.
+func MustNotBeDeleted(db DBBackend) func(context.Context, *nostr.Event) (bool, string) {
+	return func(ctx context.Context, event *nostr.Event) (bool, string) {
+		if isDeleted(ctx, db, event) {
+			slog.Debug("🚫 event rejected: event has been deleted", "event", event.ID, "pubkey", event.PubKey)
+			return true, "this event has been deleted"
+		}
+		return false, ""
+	}
 }
 
 var allowedChatKinds = map[int]struct{}{
@@ -155,6 +216,11 @@ func EventMustBeChatRelated(_ context.Context, event *nostr.Event) (bool, string
 		return false, ""
 	}
 
+	// the owner's delete requests are stored so the deletion survives a re-publish
+	if isOwnerDeleteRequest(event) {
+		return false, ""
+	}
+
 	return true, "only chat related events are allowed"
 }
 
@@ -166,6 +232,11 @@ func OnlyGiftWrappedDMs(_ context.Context, event *nostr.Event) (bool, string) {
 }
 
 func MustTagWhitelistedPubKey(_ context.Context, event *nostr.Event) (bool, string) {
+	// the owner's delete requests are stored so the deletion survives a re-publish
+	if isOwnerDeleteRequest(event) {
+		return false, ""
+	}
+
 	// User must tag at least one whitelisted pubkey in this relay
 	tags := event.Tags.FindAll("p")
 	for tag := range tags {

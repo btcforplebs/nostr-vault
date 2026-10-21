@@ -22,6 +22,9 @@ class PowPreferences @Inject constructor(
         const val MIN_DIFFICULTY = 8
         const val MAX_DIFFICULTY = 32
 
+        /** Slider stops between the ends, so it moves one bit at a time as the iOS stepper does. */
+        const val SLIDER_STEPS = MAX_DIFFICULTY - MIN_DIFFICULTY - 1
+
         private const val PREFS_NAME = "pow_preferences"
         private const val KEY_NOTE_ENABLED = "pow_note_enabled"
         private const val KEY_NOTE_DIFFICULTY = "pow_note_difficulty"

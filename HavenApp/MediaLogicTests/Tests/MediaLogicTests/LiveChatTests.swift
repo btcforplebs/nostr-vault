@@ -117,9 +117,9 @@ final class LiveChatTests: XCTestCase {
     /// stream on 2026-09-07, carries none of the chat. It stays in the list
     /// because it is the address other clients look for, but it is asked last.
     func testChatRelaysPreferTheStreamsOwnAnswerAndNeverLeadWithZapStream() {
-        let ordered = LiveChat.chatRelays(streamRelays: ["wss://relay.snort.social"],
+        let ordered = LiveChat.chatRelays(streamRelays: ["wss://streamer.example"],
                                           userRelays: ["wss://my.relay"])
-        XCTAssertEqual(ordered.first, "wss://relay.snort.social")
+        XCTAssertEqual(ordered.first, "wss://streamer.example")
         XCTAssertEqual(Array(ordered.dropFirst(1).prefix(3)), LiveChat.defaultChatRelays)
         XCTAssertEqual(ordered.last, "wss://my.relay")
         // Five sockets is the budget, and zap.stream is the first thing cut:
@@ -131,10 +131,10 @@ final class LiveChatTests: XCTestCase {
     /// Hosts advertise both forms. Two sockets to one relay prints every
     /// message twice.
     func testTrailingSlashAndCaseDoNotOpenTheSameRelayTwice() {
-        let ordered = LiveChat.chatRelays(streamRelays: ["wss://nos.lol/", "WSS://NOS.LOL"],
+        let ordered = LiveChat.chatRelays(streamRelays: ["wss://relay.snort.social/", "WSS://RELAY.SNORT.SOCIAL"],
                                           userRelays: [], limit: 10)
-        XCTAssertEqual(ordered.filter { $0.lowercased().contains("nos.lol") }.count, 1)
-        XCTAssertEqual(ordered.first, "wss://nos.lol")
+        XCTAssertEqual(ordered.filter { $0.lowercased().contains("relay.snort.social") }.count, 1)
+        XCTAssertEqual(ordered.first, "wss://relay.snort.social")
     }
 
     func testChatRelaysDropUnusableEntriesAndRespectTheLimit() {
@@ -267,5 +267,70 @@ final class LiveChatTests: XCTestCase {
     func testRequestAmountBeatsReceiptAmount() {
         XCTAssertEqual(LiveChat.zapAmountSats(receiptTags: [["amount", "1000"]],
                                               requestTags: [["amount", "7000"]]), 7)
+    }
+
+    // MARK: - Live feed: Global
+
+    func testGlobalGateOpensOnlyForAnAccountWithNoWebOfTrust() {
+        XCTAssertEqual(LiveChat.globalGate(trust: nil, hasNoWebOfTrustYet: true), .everyone)
+        XCTAssertEqual(LiveChat.globalGate(trust: [], hasNoWebOfTrustYet: true), .newAccount)
+        // Graph not read yet: fail closed, an account with follows must not flash unfiltered.
+        XCTAssertEqual(LiveChat.globalGate(trust: [], hasNoWebOfTrustYet: false), .trusted([]))
+        XCTAssertEqual(LiveChat.globalGate(trust: ["a"], hasNoWebOfTrustYet: false), .trusted(["a"]))
+    }
+
+    /// The real adult stream on the default relays (2026-10-12) had no tag, only a 🔞 in the title.
+    func testAdultStreamsAreRecognised() {
+        XCTAssertTrue(LiveChat.isAdultStream(tags: [["title", "The weekend grind... 🔞"], ["t", "gaming"]]))
+        XCTAssertTrue(LiveChat.isAdultStream(tags: [["title", "Late show"], ["content-warning", ""]]))
+        XCTAssertTrue(LiveChat.isAdultStream(tags: [["title", "Late show"], ["t", "NSFW"]]))
+        XCTAssertTrue(LiveChat.isAdultStream(tags: [["L", "content-warning"], ["l", "nudity", "content-warning"]]))
+        XCTAssertTrue(LiveChat.isAdultStream(tags: [["title", "chill stream (NSFW)"]]))
+        XCTAssertTrue(LiveChat.isAdultStream(tags: [["summary", "#nsfw after midnight"]]))
+    }
+
+    func testOrdinaryStreamsAreNotAdult() {
+        XCTAssertFalse(LiveChat.isAdultStream(tags: [["title", "Noderunners Radio"], ["t", "bitcoin"]]))
+        // A word that merely contains an adult word is not one.
+        XCTAssertFalse(LiveChat.isAdultStream(tags: [["title", "Xxxtentacion tribute"], ["summary", "nudestar telescope night"]]))
+        XCTAssertFalse(LiveChat.isAdultStream(tags: [["title", "Lightning Goats"], ["summary", "pornographic-free goat feeder"]]))
+        XCTAssertFalse(LiveChat.isAdultStream(tags: []))
+    }
+
+    func testEmptyLiveTextNeverBlamesNostr() {
+        let cases: [(Bool, Bool, LiveChat.GlobalGate?)] = [
+            (true, false, nil), (false, true, nil), (false, false, nil),
+            (false, false, .everyone), (false, false, .newAccount),
+            (false, false, .trusted([])), (false, false, .trusted(["a"])),
+        ]
+        for (followSetIsEmpty, loadFailed, gate) in cases {
+            let text = LiveChat.emptyLiveText(followSetIsEmpty: followSetIsEmpty, loadFailed: loadFailed, gate: gate)
+            XCTAssertFalse(text.message.contains("Nostr"), text.message)
+            XCTAssertFalse(text.message.contains("already ended"), text.message)
+        }
+    }
+
+    func testEmptyLiveTextSaysWhoWasAsked() {
+        let following = LiveChat.emptyLiveText(followSetIsEmpty: false, loadFailed: false, gate: nil)
+        XCTAssertEqual(following.title, "Nobody you follow is live")
+        XCTAssertEqual(following.action, .showGlobal)
+
+        let noFollows = LiveChat.emptyLiveText(followSetIsEmpty: true, loadFailed: false, gate: nil)
+        XCTAssertEqual(noFollows.action, .showGlobal)
+
+        XCTAssertEqual(LiveChat.emptyLiveText(followSetIsEmpty: false, loadFailed: false, gate: .newAccount).title,
+                       "Nothing live right now")
+        XCTAssertEqual(LiveChat.emptyLiveText(followSetIsEmpty: false, loadFailed: false, gate: .trusted(["a"])).title,
+                       "Nobody in your network is live")
+        XCTAssertEqual(LiveChat.emptyLiveText(followSetIsEmpty: false, loadFailed: false, gate: .trusted([])).title,
+                       "Building your web of trust")
+    }
+
+    /// Only a load where no relay said anything is a connection problem.
+    func testOnlyANoAnswerLoadSaysNoConnection() {
+        let failed = LiveChat.emptyLiveText(followSetIsEmpty: false, loadFailed: true, gate: .everyone)
+        XCTAssertEqual(failed.title, "Could not reach any relay")
+        XCTAssertTrue(failed.noConnection)
+        XCTAssertFalse(LiveChat.emptyLiveText(followSetIsEmpty: false, loadFailed: false, gate: .everyone).noConnection)
     }
 }

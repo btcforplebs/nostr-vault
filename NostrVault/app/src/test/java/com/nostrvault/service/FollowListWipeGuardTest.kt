@@ -56,4 +56,15 @@ class FollowListWipeGuardTest {
         tally.eose("wss://one", "other")
         assertEquals(0, tally.answeredCount())
     }
+
+    @Test fun selfHealNeverRepublishesAListUnderHalfTheRelayCopy() {
+        // A cached 5 over 500 on relays is a stale or partial list, not a fresh edit.
+        assertFalse(ContactManager.mayRepublish(localSize = 5, relaySize = 500))
+        assertFalse(ContactManager.mayRepublish(localSize = 0, relaySize = 3))
+        // A fresh follow or unfollow the relays haven't caught up on.
+        assertTrue(ContactManager.mayRepublish(localSize = 499, relaySize = 500))
+        assertTrue(ContactManager.mayRepublish(localSize = 501, relaySize = 500))
+        // Small lists: one unfollow may halve them.
+        assertTrue(ContactManager.mayRepublish(localSize = 1, relaySize = 2))
+    }
 }

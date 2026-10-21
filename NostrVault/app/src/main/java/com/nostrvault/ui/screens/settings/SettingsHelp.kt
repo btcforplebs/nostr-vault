@@ -30,8 +30,8 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     ),
     ACCOUNT_PUBLISH_INBOX(
         "account.publishInbox",
-        "Publish Inbox Relay",
-        "Tells other apps to deliver your messages to this relay.",
+        "Publish Relay List",
+        "Tells other apps which relays you read from and write to, so they can find your posts and reach you. Your own relay is always included.",
     ),
     ACCOUNT_BLOCKED(
         "account.blocked",
@@ -73,6 +73,11 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Auto-Load",
         "Adds new posts to your feed as they arrive, instead of waiting for you to tap.",
     ),
+    POST_SEND_DELAY(
+        "post.sendDelay",
+        "Send Delay",
+        "How long posts, replies, reposts and deletes wait before going out, so you can undo or edit them. Off sends right away with no undo.",
+    ),
     FEED_RELAYS(
         "feed.relays",
         "Feed Relays",
@@ -97,6 +102,16 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "display.newPostsPill",
         "New Posts Pill",
         "Shows a pill with the number of new posts waiting above your feed. Turned off, pull down to refresh to load them.",
+    ),
+    DISPLAY_COMPACT_LINES(
+        "display.compactLines",
+        "Compact View Lines",
+        "How many lines of a post's text show in Compact View before it is cut off.",
+    ),
+    DISPLAY_THREADED_LINES(
+        "display.threadedLines",
+        "Threaded View Lines",
+        "How many lines of text show in Threaded View. Replies show one line fewer than the post that starts the thread.",
     ),
     DISPLAY_ZAPS_ONLY(
         "display.zapsOnly",
@@ -123,7 +138,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Prefetch Profile Pictures",
         "Loads profile pictures ahead of time for smoother scrolling.",
     ),
-    MEDIA_CACHE_T_T_L(
+    MEDIA_CACHE_TTL(
         "media.cacheTTL",
         "Cache Lifetime",
         "How long downloaded media is kept before it's cleared.",
@@ -131,7 +146,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     MEDIA_CLEAR_CACHE(
         "media.clearCache",
         "Clear Media Cache",
-        "Deletes locally stored media now to free up space.",
+        "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched.",
     ),
     NOTIFY_ENABLE(
         "notify.enable",
@@ -146,7 +161,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     NOTIFY_PER_ACCOUNT(
         "notify.perAccount",
         "Alerts per Account",
-        "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts) each account gets.",
+        "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts, new followers) each account gets.",
     ),
     SHARE_DM_RELAYS(
         "share.dmRelays",
@@ -241,7 +256,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     ADV_LOG_LEVEL(
         "adv.logLevel",
         "Log Level",
-        "How much detail your relay writes to its logs. Changing it restarts the relay automatically.",
+        "How much detail your relay writes to its logs. Takes effect after restart.",
     ),
     ADV_FACTORY_RESET(
         "adv.factoryReset",

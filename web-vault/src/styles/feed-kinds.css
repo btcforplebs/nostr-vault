@@ -1,0 +1,77 @@
+/* Articles, highlights and polls inside a feed card (ArticleInlineBody, HighlightInlineBody, PollCardView), and the
+   link card (LinkPreviewCard fallback). */
+.kind-meta { display: flex; align-items: center; gap: 6px; color: var(--text-2); font: 600 11px var(--font); }
+.kind-article { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.kind-article-image { width: 100%; height: 140px; object-fit: cover; border-radius: 8px; background: var(--s2); }
+.kind-article-title { margin: 2px 0 0; font: 700 18px/1.25 var(--font); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.kind-article-preview { margin: 0; color: var(--text-2); font: 15px/1.35 var(--font); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.kind-highlight { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.kind-highlight-comment { margin: 0; font: 17px/1.35 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.kind-highlight .kind-meta { color: #ffd60a; }
+.kind-highlight-passage { margin: 0; padding-left: 12px; border-left: 3px solid rgb(255 214 10 / .7); font: 17px/1.4 ui-serif, Georgia, "Times New Roman", serif;
+  white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+.kind-poll { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.kind-poll-question { margin: 0; font: 600 17px/1.3 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.kind-poll-options { display: flex; flex-direction: column; gap: 8px; }
+.kind-poll-option { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; overflow: hidden;
+  background: rgb(255 255 255 / .06); border: 1px solid transparent; font: 15px var(--font); }
+.kind-poll-option.picked { border-color: rgb(230 115 38 / .7); font-weight: 600; }
+.kind-poll-bar { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(230 115 38 / .14); transition: width .25s ease-out; }
+.kind-poll-option.picked .kind-poll-bar { background: rgb(230 115 38 / .28); }
+.kind-poll-mark, .kind-poll-label, .kind-poll-pct { position: relative; }
+.kind-poll-mark { color: var(--text-2); width: 16px; text-align: center; }
+.kind-poll-option.picked .kind-poll-mark, .kind-poll-option.picked .kind-poll-pct { color: var(--accent); }
+.kind-poll-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.kind-poll-pct { color: var(--text-2); font: 600 14px var(--font); font-variant-numeric: tabular-nums; }
+.kind-spinner { width: 10px; height: 10px; border: 2px solid var(--hair); border-top-color: var(--text-2); border-radius: 50%; }
+@media (prefers-reduced-motion: no-preference) { .kind-spinner { animation: spin .8s linear infinite; } }
+.link-card { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 10px; border-radius: 8px; background: var(--s2); color: var(--text-2); font: 500 13px var(--font); }
+.link-card-glyph { color: var(--accent-light); flex: none; }
+.link-card-domain { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+/* The page's own preview (LinkPreviewCard cardContent): a 72pt og:image, then site, title, description, domain. */
+.link-card-rich { align-items: flex-start; gap: 10px; border: 1px solid var(--hair); text-decoration: none; }
+.link-card-image { flex: none; width: 72px; height: 72px; border-radius: 6px; object-fit: cover; background: var(--s3); }
+.link-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.link-card-site, .link-card-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10px var(--font); color: var(--text-3); }
+.link-card-host { font-weight: 400; }
+.link-card-title, .link-card-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.link-card-title { font: 600 13px/1.3 var(--font); color: var(--text); }
+.link-card-desc { font: 400 12px/1.3 var(--font); color: var(--text-2); }
+/* Translate (NoteTranslateButton): the translation beside an accent bar, then the button. */
+.translate { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.translate-text { margin: 0; padding-left: 10px; border-left: 2px solid rgb(230 115 38 / .6); color: rgb(255 255 255 / .92); font: 17px/1.4 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.translate-button { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--accent); font: 500 13px var(--font); }
+.translate-button.failed { color: rgb(255 69 58 / .8); }
+/* Event Info (EventBroadcastSheet). */
+.info-head { display: flex; align-items: center; justify-content: space-between; }
+.info-who { display: flex; flex-direction: column; gap: 4px; }
+.info-sig { font: 600 12px var(--font); }
+.info-sig.ok { color: var(--verified); } .info-sig.bad { color: var(--danger); }
+.info-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.info-tiles button { min-height: 40px; border-radius: 10px; background: var(--s2); border: 0; color: var(--text); font: 600 12px var(--font); }
+.info-section { margin: 4px 0; color: var(--text-2); font: 600 11px var(--font); letter-spacing: .06em; background: none; border: 0; padding: 0; text-align: left; }
+.info-id { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 6px 0; background: none; border: 0; text-align: left; color: var(--text); }
+.info-id code { font: 11px var(--mono); overflow-wrap: anywhere; }
+.info-json { max-height: 240px; overflow: auto; padding: 10px; border-radius: 8px; background: var(--s2); font: 11px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.info-relay { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.info-relay input { accent-color: var(--accent); }
+.info-relay-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 13px var(--mono); }
+.info-relay-state { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-send { width: 100%; margin-top: 8px; }
+/* The profile picture's quick menu (AuthorQuickMenu): a glass column of icons under the picture. */
+.avatar-menu { position: relative; flex: none; line-height: 0; }
+.avatar-menu-photo { display: block; line-height: 0; }
+.quick-menu { position: absolute; left: 50%; top: calc(100% + 4px); z-index: 30; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 4px; border-radius: 14px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair);
+  box-shadow: 0 3px 8px rgb(0 0 0 / .12); line-height: normal; }
+.quick-menu > button, .quick-menu > a { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: none; }
+.quick-menu .follow { color: rgb(51 217 128 / .85); } .quick-menu .unfollow { color: rgb(255 214 10 / .85); }
+.quick-menu .wot { color: rgb(230 115 38 / .85); } .quick-menu .block { color: rgb(255 69 58 / .85); }
+.quick-menu hr { width: 20px; margin: 2px 0; border: 0; border-top: 1px solid var(--hair); }
+.quick-menu-note { position: absolute; left: calc(100% + 6px); top: 4px; width: max-content; max-width: 220px; padding: 6px 8px; border-radius: 8px; background: var(--s2); color: var(--text); font: 12px var(--font); }
+@media (prefers-reduced-motion: no-preference) { .quick-menu > * { animation: qm-pop .18s ease-out both; } .quick-menu > :nth-child(2) { animation-delay: .06s } .quick-menu > :nth-child(4) { animation-delay: .12s } }
+@keyframes qm-pop { from { transform: scale(.01); opacity: 0 } to { transform: none; opacity: 1 } }
+.kind-poll-option { width: 100%; text-align: left; color: var(--text); cursor: pointer; }
+.kind-poll-option:disabled { cursor: default; opacity: 1; }
+.kind-poll-vote { width: 100%; min-height: 36px; border-radius: 10px; }
+.kind-poll-error { margin: 0; color: var(--danger); font: 12px var(--font); }

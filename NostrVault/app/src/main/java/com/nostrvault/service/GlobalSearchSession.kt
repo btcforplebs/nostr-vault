@@ -69,6 +69,12 @@ class GlobalSearchSession(
     /** The rest of the Web of Trust, ranked after follows. */
     private val wot: Set<String> = emptySet(),
     private val cachedProfiles: Collection<FeedProfile> = emptyList(),
+    /**
+     * The note kinds the phone and Mac stores are walked for, after profiles.
+     * The Search tab asks for kind 1; the Vault's search for everything it
+     * holds ([com.nostrvault.data.model.VaultSearchLogic.NOTE_KINDS]).
+     */
+    private val noteKinds: List<Int> = listOf(1),
     private val onFinished: (GlobalSearchResults) -> Unit = {},
 ) {
     /**
@@ -95,6 +101,10 @@ class GlobalSearchSession(
         private const val MAC_NOTE_LIMIT = 300
         private const val MAC_PROFILE_LIMIT = 100
 
+        /** A source that timed out, failed or was CLOSED did not walk to its end. */
+        fun isIncomplete(timedOut: Boolean, error: String?, closedReason: String?): Boolean =
+            timedOut || error != null || closedReason != null
+
         /** haven's publicly readable routes: outbox, follows' notes, notes tagging the owner. */
         val READABLE_ROUTES = listOf("", "/feed", "/inbox")
 
@@ -108,6 +118,8 @@ class GlobalSearchSession(
             if (isLocalHost(url)) WebSocketClient.sharedLocalhostClient else WebSocketClient.sharedClient
     }
 
+    /** Each note kind once, profiles apart: a kind listed twice would be paged twice. */
+    private val walkedNoteKinds = noteKinds.filter { it != 0 }.distinct()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private val accumulator = GlobalSearchAccumulator()
@@ -128,6 +140,18 @@ class GlobalSearchSession(
     private val started = AtomicBoolean(false)
     private val subCounter = AtomicInteger(0)
     @Volatile private var cancelled = false
+
+    /** A source hit [SOURCE_TIMEOUT_MS]: the results are real, but what it had not reached is missing. */
+    @Volatile var timedOut = false
+        private set
+
+    /**
+     * A source did not walk to its end: it timed out, its socket dropped or
+     * failed, or the relay CLOSED a subscription. The results are real, but
+     * whole kinds or pages may be missing.
+     */
+    @Volatile var incomplete = false
+        private set
 
     /** The final results, once the session has finished (null before, or if cancelled first). */
     @Volatile var finishedResults: GlobalSearchResults? = null
@@ -196,6 +220,8 @@ class GlobalSearchSession(
             true
         }
         if (cancelled) return
+        if (finished == null) timedOut = true
+        if (isIncomplete(finished == null, outcome.error, outcome.closedReason)) incomplete = true
         val count = synchronized(lock) { sourceKeys[src.id]?.size ?: 0 }
         val status = finalSourceStatus(
             count = count,
@@ -346,7 +372,7 @@ class GlobalSearchSession(
             }
 
             sendPage(0, 1, null)
-            sendPage(1, 1, null)
+            for (kind in walkedNoteKinds) sendPage(kind, 1, null)
 
             for (msg in socket.incoming) {
                 when (val m = SearchWireMessage.parse(msg)) {
@@ -417,7 +443,7 @@ class GlobalSearchSession(
 
     private fun accept(sourceId: String, ev: SearchWireMessage.Event, verify: Boolean) {
         when (ev.kind) {
-            1 -> {
+            in walkedNoteKinds -> {
                 if (verify && !matcher.matchesNote(ev.content, ev.tags)) return
                 val note = FeedNote.fromEvent(ev.id, ev.pubkey, ev.content, ev.tags, ev.createdAt, ev.kind)
                 synchronized(lock) {

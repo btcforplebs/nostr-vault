@@ -1,4 +1,4 @@
-//go:build !cshared
+//go:build !cshared && !(js && wasm)
 
 package main
 
@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/spf13/afero"
 
 	"github.com/barrydeen/haven/pkg/runsafe"
 	"github.com/barrydeen/haven/pkg/wot"
@@ -36,7 +35,7 @@ func main() {
 	mainCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fs = afero.NewOsFs()
+	fs = newRootFs()
 	if err := fs.MkdirAll(config.BlossomPath, 0755); err != nil {
 		log.Fatal("🚫 error creating blossom path:", err)
 	}
@@ -110,7 +109,7 @@ func main() {
 
 			// See the identical check in cshared.go for why this is needed in
 			// addition to the wot.PeriodicRefresh ticker spawned below.
-			if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval {
+			if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingLinks() {
 				log.Println("  🔄 WoT cache is due for a refresh, updating in the background")
 				runsafe.Go("wot.Refresh.stale", func() { wotModel.Refresh(mainCtx) })
 			}
@@ -125,7 +124,7 @@ func main() {
 		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
-		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval) })
+		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))

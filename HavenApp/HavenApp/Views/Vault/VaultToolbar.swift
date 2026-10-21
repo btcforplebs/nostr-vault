@@ -16,6 +16,7 @@ extension VaultView {
     /// The Vault tab's menu entry for what this view is showing.
     var vaultMode: VaultMode {
         switch viewMode {
+        case .activity: return .activity
         case .likes: return .likes
         case .zaps: return .zaps
         case .followers: return .followers
@@ -28,11 +29,17 @@ extension VaultView {
         }
     }
 
+    /// Your Vault's cards point at this half's pill and Vault button unless
+    /// the Vault tab is showing Media, whose pill and button take them.
+    var showsVaultTutorialAnchors: Bool {
+        !(vaultTabHostsMedia && vaultShowsMedia)
+    }
+
     /// Articles and Highlights are a few rows among many notes. The list's
     /// end is always on screen, so loading older pages on sight would walk
     /// the whole relay; they page by button instead.
     var sparseNotesScope: Bool {
-        vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && searchScope != .profiles
+        vaultTabHostsMedia && viewMode == .notes && noteScope != .notes && !isSearchActive
     }
 
     /// Gone once a page comes back empty: there is nothing older to load.
@@ -114,43 +121,136 @@ extension VaultView {
     // to mean "my notes only" under Notes but "on my notes" under Likes and
     // Zaps. Whitelisted notes already show in All, and the phone has no
     // layout switch (`rowLayoutMode`).
-    /// Words first; when the bar can't fit them, the selected filter drops
-    /// its word, never the icons. (This used to fall back to a filter menu,
-    /// which hid every option behind one button.)
+    /// The right pill: Messages, a line, then this mode's filters as bare
+    /// icons, then search at the right end. A filter tap says what it picked
+    /// in the note under the bar.
+    /// On a narrow phone (an SE in Articles has ✉️ and five filters) the
+    /// buttons narrow before the bar would fold the pill into "•••".
     var trailingToolbarInline: some View {
         ViewThatFits(in: .horizontal) {
-            trailingFilters(labelled: true)
-            trailingFilters(labelled: false)
+            trailingPill(buttonWidth: 36, spacing: 4)
+            trailingPill(buttonWidth: 30, spacing: 0)
+            trailingPill(buttonWidth: 26, spacing: 0)
         }
     }
 
+    private func trailingPill(buttonWidth: CGFloat, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            VaultMessagesButton()
+            if viewMode != .media {
+                Divider().frame(height: 20).padding(.horizontal, 2)
+                trailingFilters(spacing: spacing)
+            }
+            Divider().frame(height: 20).padding(.horizontal, 2)
+            searchToggleButton
+        }
+        .environment(\.filterButtonWidth, buttonWidth)
+    }
+
     @ViewBuilder
-    func trailingFilters(labelled: Bool) -> some View {
-        HStack(spacing: 4) {
-            if viewMode == .notes {
-                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { contentFilter = .all }
-                IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: labelled ? "Mine" : nil) { contentFilter = .mine }
-                IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: labelled ? "Mentions" : nil) { contentFilter = .tagged }
-                IconFilterButton(icon: "person.crop.circle.badge.questionmark", tooltip: "Replies from outside your network", isSelected: contentFilter == .outside, color: .havenPurple, label: labelled ? "Outside" : nil) { contentFilter = .outside }
+    func trailingFilters(spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            switch viewMode {
+            case .activity:
+                filterButton(.activity(.all), "square.stack", "All", activityFilter == .all) { activityFilter = .all }
+                filterButton(.activity(.mentions), "at", "Mentions", activityFilter == .mentions) { activityFilter = .mentions }
+            case .notes:
+                filterButton(.notes(.all), "square.stack", "All", contentFilter == .all) { contentFilter = .all }
+                filterButton(.notes(.mine), "person.fill", "Mine", contentFilter == .mine) { contentFilter = .mine }
+                filterButton(.notes(.tagged), "at", "Mentions", contentFilter == .tagged) { contentFilter = .tagged }
+                filterButton(.notes(.outside), "person.crop.circle.badge.questionmark", "Replies from outside your network", contentFilter == .outside) { contentFilter = .outside }
                 if vaultTabHostsMedia && noteScope == .articles {
-                    IconFilterButton(icon: "fork.knife", tooltip: "Recipes only", isSelected: recipesOnly, color: .havenPurple, label: labelled ? "Recipes" : nil) { recipesOnly.toggle() }
+                    filterButton(.recipes, "fork.knife", "Recipes only", recipesOnly) { recipesOnly.toggle() }
                 }
-            } else if viewMode == .likes {
-                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { likesFilter = .onMyNotes }
-                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: labelled ? "Given" : nil) { likesFilter = .myLikes }
-            } else if viewMode == .zaps {
-                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { zapsFilter = .onMyNotes }
-                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: labelled ? "Given" : nil) { zapsFilter = .myZaps }
-            } else if viewMode == .followers {
-                IconFilterButton(icon: "sparkles", tooltip: "New", isSelected: followersFilter == .new, color: .havenPurple, label: labelled ? "New" : nil) { followersFilter = .new }
-                IconFilterButton(icon: "person.3.fill", tooltip: "All", isSelected: followersFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { followersFilter = .all }
+            case .likes:
+                filterButton(.likes(.onMyNotes), "tray.and.arrow.down.fill", "Received", likesFilter == .onMyNotes) { likesFilter = .onMyNotes }
+                filterButton(.likes(.myLikes), "tray.and.arrow.up.fill", "Given", likesFilter == .myLikes) { likesFilter = .myLikes }
+            case .zaps:
+                filterButton(.zaps(.onMyNotes), "tray.and.arrow.down.fill", "Received", zapsFilter == .onMyNotes) { zapsFilter = .onMyNotes }
+                filterButton(.zaps(.myZaps), "tray.and.arrow.up.fill", "Given", zapsFilter == .myZaps) { zapsFilter = .myZaps }
+            case .followers:
+                filterButton(.followers(.new), "sparkles", "New", followersFilter == .new) { followersFilter = .new }
+                filterButton(.followers(.all), "person.3.fill", "All", followersFilter == .all) { followersFilter = .all }
+            case .media:
+                EmptyView()
             }
         }
+        .animation(Motion.toggle, value: activityFilter)
         .animation(Motion.toggle, value: contentFilter)
         .animation(Motion.toggle, value: recipesOnly)
         .animation(Motion.toggle, value: followersFilter)
         .animation(Motion.toggle, value: likesFilter)
         .animation(Motion.toggle, value: zapsFilter)
+    }
+
+    private func filterButton(_ choice: VaultFilterChoice, _ icon: String, _ tooltip: String,
+                              _ isSelected: Bool, _ pick: @escaping () -> Void) -> some View {
+        IconFilterButton(icon: icon, tooltip: tooltip, isSelected: isSelected, color: .havenPurple) {
+            pick()
+            noteFilterTap(choice, changed: !isSelected || choice == .recipes)
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// The Mac header's labelled filters: the pick, then the same note.
+    func tapFilter(_ choice: VaultFilterChoice, _ isSelected: Bool, _ pick: () -> Void) {
+        pick()
+        noteFilterTap(choice, changed: !isSelected)
+    }
+
+    // MARK: - Filter note
+
+    /// A filter tap's note: what it shows and that it's on, straight away.
+    /// A list rebuilt off the main thread adds its count when it lands, if
+    /// the note is still up.
+    func noteFilterTap(_ choice: VaultFilterChoice, changed: Bool) {
+        if choice == .recipes && !recipesOnly {
+            pendingFilterNote = nil
+            filterNote.show(.off(choice.name(scope: noteScope), icon: choice.icon))
+            return
+        }
+        guard changed, choice.waitsForList else {
+            pendingFilterNote = nil
+            filterNote.show(filterNoteText(choice))
+            return
+        }
+        pendingFilterNote = choice
+        // A rebuild already running for the old pick must not land as this
+        // one's count; onChange schedules the new rebuild.
+        updateGeneration += 1
+        filterNote.show(FilterNote(icon: choice.icon, title: choice.name(scope: noteScope), setting: "on"))
+    }
+
+    /// A rebuilt list landed: the note, if still showing, gets its count.
+    /// One that has faded stays gone.
+    func filterListLanded() {
+        guard let choice = pendingFilterNote else { return }
+        pendingFilterNote = nil
+        filterNote.update(filterNoteText(choice))
+    }
+
+    /// What the filter shows, that it's on, then how many: "Mentions · on ·
+    /// 18", "none yet" rather than a 0. A list that stopped at its page size
+    /// says so with a "+".
+    func filterNoteText(_ choice: VaultFilterChoice) -> FilterNote {
+        let (count, capped) = filterCount(choice)
+        let tally = count == 0 ? "none yet" : "\(count.formatted())\(capped ? "+" : "")"
+        return FilterNote(icon: choice.icon, title: choice.name(scope: noteScope), setting: "on", count: tally)
+    }
+
+    private func filterCount(_ choice: VaultFilterChoice) -> (Int, Bool) {
+        switch choice {
+        case .activity:
+            return (displayActivity.count, displayActivity.count >= maxDisplayedItems)
+        case .notes, .recipes:
+            return (displayNotes.count, displayNotes.count >= maxDisplayedItems)
+        case .likes:
+            return (displayLikedNotes.count, displayLikedNotes.count >= maxDisplayedItems)
+        case .zaps:
+            return (displayZappedNotes.count, displayZappedNotes.count >= maxDisplayedItems)
+        case .followers(let filter):
+            return (followerSnapshot?.entries(for: filter).count ?? 0, false)
+        }
     }
 
     // MARK: - Mode / Filter Helper Views
@@ -217,108 +317,94 @@ extension VaultView {
             withAnimation(Motion.toggle) {
                 noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
             }
+            pendingFilterNote = nil
+            filterNote.show(noteLayoutMode == .compact
+                ? FilterNote(icon: "rectangle.compress.vertical", title: "Condensed view", setting: "on")
+                : .off("Condensed view", icon: "rectangle.compress.vertical"))
         }
     }
 
     // MARK: - Search
 
-    /// The one control that opens the pane's search — `committedSearch` and
-    /// `searchScope` already drove real filtering (`applySearchFilter`,
-    /// `profileSearchResults`) with nothing anywhere in the UI that could set
-    /// them.
+    /// The magnifying glass at the right end of the Vault's toolbar. It opens
+    /// `VaultSearchBar`, which grows out of this spot; on the Mac it sits in
+    /// the header and the bar opens under it. It stays a magnifying glass
+    /// while the bar is open — the bar's own ✕ is the one way to close, so
+    /// the fold back into the icon always plays — and pressed again (or ⌘F)
+    /// it puts the cursor back in the field.
     var searchToggleButton: some View {
         IconFilterButton(
-            icon: isSearchActive ? "xmark" : "magnifyingglass",
-            tooltip: isSearchActive ? "Close Search" : "Search",
+            icon: "magnifyingglass",
+            tooltip: "Search your Vault",
             isSelected: isSearchActive,
             color: .havenPurple
         ) {
-            withAnimation(Motion.toggle) {
-                isSearchActive.toggle()
-                if !isSearchActive {
-                    searchQueryDraft = ""
-                    committedSearch = ""
-                }
-            }
+            if isSearchActive { searchFocusRequest &+= 1 } else { openVaultSearch() }
         }
+        #if os(macOS)
+        // iPad keeps ⌘F for the Search tab (ContentView).
+        .keyboardShortcut("f", modifiers: .command)
+        #endif
+        .accessibilityLabel("Search your Vault")
+    }
+
+    func openVaultSearch() {
+        pendingFilterNote = nil
+        filterNote.hide()
+        // No animation here: the toolbar steps aside at once, and the bar's
+        // own expand out of the icon is the one motion. Animated, the
+        // toolbar slid up while the bar grew under it.
+        isSearchActive = true
+    }
+
+    /// Ends the search: the results give way to the list the Vault was on.
+    /// The bar has already folded itself back into the icon when it calls this.
+    func closeVaultSearch() {
+        vaultSearch.cancel(nostrService: nostrService)
+        searchQueryDraft = ""
+        withAnimation(Motion.toggle) { isSearchActive = false }
+    }
+
+    func runVaultSearch(now: Bool = false) {
+        vaultSearch.search(searchQueryDraft, now: now,
+                           nostrService: nostrService, feedService: feedService,
+                           blocked: configService.activeAccountBlockedHexPubkeys)
     }
 
     @ViewBuilder
     var searchBar: some View {
         if isSearchActive {
-            HStack(spacing: 8) {
-                Menu {
-                    ForEach(SearchScope.allCases, id: \.self) { scope in
-                        Button {
-                            searchScope = scope
-                        } label: {
-                            Label(scope.label, systemImage: scope.icon)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: searchScope.icon)
-                        Image(systemName: "chevron.down")
-                            .font(.appSystem(size: 8, weight: .bold))
-                    }
-                    .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.havenPurple)
-                    .contentShape(Rectangle())
-                }
-                #if os(macOS)
-                // .borderlessButton flattens the label's modifiers on macOS and adds a
-                // second chevron beside the drawn one.
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                #endif
-                .fixedSize()
-                .accessibilityLabel("Search scope: \(searchScope.label)")
-
-                TextField("Search \(searchScope.label.lowercased())", text: $searchQueryDraft)
-                    .textFieldStyle(.plain)
-                    .font(.appSystem(size: 14))
-                    .onSubmit {
-                        committedSearch = searchQueryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-
-                if !searchQueryDraft.isEmpty {
-                    Button {
-                        searchQueryDraft = ""
-                        committedSearch = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(red: 0.15, green: 0.15, blue: 0.2))
-            .cornerRadius(8)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            VaultSearchBar(text: $searchQueryDraft,
+                           focusRequest: searchFocusRequest,
+                           onSubmit: { runVaultSearch(now: true) },
+                           onClose: closeVaultSearch)
+                .onChange(of: searchQueryDraft) { _, _ in runVaultSearch() }
         }
+    }
+
+    var vaultSearchResults: some View {
+        VaultSearchResults(model: vaultSearch,
+                           onProfile: { showingProfilePubkey = $0 },
+                           onNote: { openNote($0) })
+            .environment(\.openURL, nostrLinkAction)
     }
 
     var filterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
-                contentFilter = .all
+                tapFilter(.notes(.all), contentFilter == .all) { contentFilter = .all }
             }
             FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
-                contentFilter = .mine
+                tapFilter(.notes(.mine), contentFilter == .mine) { contentFilter = .mine }
             }
             FilterButton(title: "Tagged", color: Color.havenVerified, isSelected: contentFilter == .tagged) {
-                contentFilter = .tagged
+                tapFilter(.notes(.tagged), contentFilter == .tagged) { contentFilter = .tagged }
             }
             FilterButton(title: "Whitelisted", color: Color.havenVerified.opacity(0.7), isSelected: contentFilter == .whitelist) {
-                contentFilter = .whitelist
+                tapFilter(.notes(.whitelist), contentFilter == .whitelist) { contentFilter = .whitelist }
             }
             FilterButton(title: "Outside Network", color: .orange, isSelected: contentFilter == .outside) {
-                contentFilter = .outside
+                tapFilter(.notes(.outside), contentFilter == .outside) { contentFilter = .outside }
             }
         }
         .padding(4)
@@ -330,10 +416,10 @@ extension VaultView {
     var likesFilterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: likesFilter == .onMyNotes) {
-                likesFilter = .onMyNotes
+                tapFilter(.likes(.onMyNotes), likesFilter == .onMyNotes) { likesFilter = .onMyNotes }
             }
             FilterButton(title: "My Likes", icon: "heart", color: .pink, isSelected: likesFilter == .myLikes) {
-                likesFilter = .myLikes
+                tapFilter(.likes(.myLikes), likesFilter == .myLikes) { likesFilter = .myLikes }
             }
         }
         .padding(4)
@@ -345,10 +431,10 @@ extension VaultView {
     var followersFilterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
-                followersFilter = .new
+                tapFilter(.followers(.new), followersFilter == .new) { followersFilter = .new }
             }
             FilterButton(title: "All", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .all) {
-                followersFilter = .all
+                tapFilter(.followers(.all), followersFilter == .all) { followersFilter = .all }
             }
         }
         .padding(4)
@@ -360,10 +446,10 @@ extension VaultView {
     var zapsFilterView: some View {
         HStack(spacing: 2) {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: zapsFilter == .onMyNotes) {
-                zapsFilter = .onMyNotes
+                tapFilter(.zaps(.onMyNotes), zapsFilter == .onMyNotes) { zapsFilter = .onMyNotes }
             }
             FilterButton(title: "My Zaps", icon: "bolt", color: .yellow, isSelected: zapsFilter == .myZaps) {
-                zapsFilter = .myZaps
+                tapFilter(.zaps(.myZaps), zapsFilter == .myZaps) { zapsFilter = .myZaps }
             }
         }
         .padding(4)

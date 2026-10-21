@@ -81,7 +81,8 @@ class TutorialStageTest {
 
     @Test fun nextPassesOverWalletConnectOnceAWalletIsLinked() {
         TutorialCenter.walletLinked = { false }
-        assertEquals(TutorialID.WALLET_CONNECT, TutorialCenter.nextAfter(TutorialID.VAULT))
+        assertEquals(TutorialID.POCKET_RELAY, TutorialCenter.nextAfter(TutorialID.VAULT))
+        assertEquals(TutorialID.WALLET_CONNECT, TutorialCenter.nextAfter(TutorialID.POCKET_RELAY))
         TutorialCenter.walletLinked = { true }
         assertEquals(TutorialID.POCKET_RELAY, TutorialCenter.nextAfter(TutorialID.VAULT))
         assertEquals(TutorialID.FEEDS, TutorialCenter.nextAfter(TutorialID.FILL_YOUR_VAULT))
@@ -107,9 +108,9 @@ class TutorialStageTest {
         val account = "d".repeat(64)
         TutorialCenter.replay(TutorialID.VAULT)
         TutorialCenter.startNext(account)
-        assertEquals(TutorialID.WALLET_CONNECT, TutorialCenter.active.value)
+        assertEquals(TutorialID.POCKET_RELAY, TutorialCenter.active.value)
         assertEquals(0, TutorialCenter.stepIndex.value)
-        TutorialCenter.skip(TutorialID.WALLET_CONNECT, account)
+        TutorialCenter.skip(TutorialID.POCKET_RELAY, account)
         assertNull(TutorialCenter.active.value)
     }
 }

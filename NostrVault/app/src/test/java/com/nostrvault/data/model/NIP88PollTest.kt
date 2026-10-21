@@ -163,6 +163,21 @@ class NIP88PollTest {
         assertEquals(listOf("wss://poll.relay/", "wss://feed.relay"), r)
     }
 
+    @Test fun relaysDropAStrangersPrivateAddresses() {
+        val lan = listOf(
+            "ws://192.168.1.5:4848", "wss://192.168.1.5", "wss://umbrel.local", "ws://localhost:7777",
+            "wss://127.0.0.1", "wss://10.0.0.2", "wss://172.20.0.3", "wss://abc.onion", "wss://169.254.1.1",
+        )
+        val p = poll(relays = lan + "wss://poll.relay")
+        val r = NIP88Poll.relays(
+            p,
+            fallback = listOf("ws://127.0.0.1:4869"),
+            outbox = listOf("wss://nas.local", "wss://outbox.relay"),
+        )
+        // This device's own relay stays; the stranger's private ones go.
+        assertEquals(listOf("wss://poll.relay", "ws://127.0.0.1:4869", "wss://outbox.relay"), r)
+    }
+
     @Test fun relaysAreCapped() {
         val r = NIP88Poll.relays(poll(), fallback = (1..20).map { "wss://r$it.example" })
         assertEquals(NIP88Poll.MAX_RELAYS, r.size)
@@ -182,5 +197,24 @@ class NIP88PollTest {
 
     @Test fun pollOnANoteNeedsOptions() {
         assertNull(note(1068, "Nothing to pick", emptyList()).poll)
+    }
+
+    @Test fun blockedVotersAreLeftOutOfTheCountAndTheVoterList() {
+        val p = poll()
+        val blocked = "c".repeat(64)
+        val votes = listOf(vote('a', listOf("yes")), vote('c', listOf("yes")), vote('d', listOf("no")))
+        val shown = NIP88Poll.tally(votes, p, now, blocked = setOf(blocked))
+        assertEquals(1, shown.count("yes"))
+        assertEquals(setOf("a".repeat(64), "d".repeat(64)), shown.voters)
+        assertNull(shown.picksByVoter[blocked])
+        assertEquals(setOf("a".repeat(64)), shown.votersByOption["yes"])
+        assertEquals(0.5, shown.share("yes"), 0.0001)
+
+        // The control: unblocked, the same votes all count. A vote is hidden,
+        // never dropped, so an unblock counts it again.
+        val all = NIP88Poll.tally(votes, p, now)
+        assertEquals(2, all.count("yes"))
+        assertEquals(3, all.voters.size)
+        assertEquals(listOf("yes"), all.picksByVoter[blocked])
     }
 }

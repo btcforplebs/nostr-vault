@@ -29,6 +29,16 @@ struct TrustPath: Equatable {
     /// More bridges were found than are shown. Not a count: an exact count
     /// would mean downloading every follow list.
     let hasMore: Bool
+    /// Every bridge known, sorted by key: the globe traces all of them.
+    /// `bridges` is its first `shownBridges`.
+    var all: [String] = []
+    /// `all` is everyone: it came from the relay's saved web, not from the
+    /// few follow lists a relay sent back.
+    var complete = false
+
+    /// Who the globe lights at first: everyone when that's known, else the
+    /// card's few until "Show everyone" asks relays for the rest.
+    var lit: [String] { complete ? all : bridges }
 
     /// Avatars that fit on the card.
     static let shownBridges = 5
@@ -36,6 +46,25 @@ struct TrustPath: Equatable {
     /// can be known without fetching everything. Each list is someone's whole
     /// follow list (~90 KB at 1,000 follows), so this is the cost knob.
     static let listsPerFilter = shownBridges + 1
+
+    /// The answer that needs no relays: you, or someone you follow. A follow
+    /// is one hop whatever the relays say, and asking them takes seconds, so a
+    /// fresh Follow reads "You follow them" at once instead of "Not in your web".
+    /// nil when only relays can tell.
+    static func known(author: String, me: String, follows: Set<String>) -> TrustPath? {
+        if author == me { return TrustPath(reach: .you, bridges: [], hasMore: false) }
+        guard follows.contains(author) else { return nil }
+        return resolve(author: author, follows: follows, trustGraph: [], bridges: [])
+    }
+
+    /// What a card can keep showing while it traces again after your follows
+    /// changed: the answer that needs no relays if there is one, and nil
+    /// (tracing) rather than an old "You follow them" for someone you no
+    /// longer follow, so the line never contradicts the Follow button.
+    static func carried(_ old: TrustPath?, author: String, me: String, follows: Set<String>) -> TrustPath? {
+        if let known = known(author: author, me: me, follows: follows) { return known }
+        return old?.reach == .follow || old?.reach == .you ? nil : old
+    }
 
     /// Builds the path from follow lists relays returned. Lists signed by
     /// anyone you don't follow, or that don't tag the author, are ignored, so
@@ -47,7 +76,13 @@ struct TrustPath: Equatable {
                         trustGraph: Set<String>, contactLists: [[String: Any]]) -> TrustPath {
         if author == me { return TrustPath(reach: .you, bridges: [], hasMore: false) }
 
-        let sorted = allBridges(author: author, me: me, follows: follows, contactLists: contactLists)
+        return resolve(author: author, follows: follows, trustGraph: trustGraph,
+                       bridges: allBridges(author: author, me: me, follows: follows, contactLists: contactLists))
+    }
+
+    /// The path from bridges already known, e.g. from `TrustLinks`, sorted by key.
+    static func resolve(author: String, follows: Set<String>, trustGraph: Set<String>,
+                        bridges sorted: [String], complete: Bool = false) -> TrustPath {
         let shown = Array(sorted.prefix(shownBridges))
         let more = sorted.count > shownBridges
 
@@ -61,7 +96,7 @@ struct TrustPath: Equatable {
         } else {
             reach = trustGraph.contains(author) ? .web : .outside
         }
-        return TrustPath(reach: reach, bridges: shown, hasMore: more)
+        return TrustPath(reach: reach, bridges: shown, hasMore: more, all: sorted, complete: complete)
     }
 
     /// Every bridge in `contactLists`, sorted by key, by the same rules as
@@ -93,5 +128,43 @@ struct TrustPath: Equatable {
             let chunk = Array(authors[start..<min(start + chunkSize, authors.count)])
             return ["kinds": [3], "authors": chunk, "#p": [author], "limit": listsPerFilter]
         }
+    }
+}
+
+/// Who follows whom inside your web, from the relay's `wot_links.json`. The
+/// relay's WoT rebuild downloads every follow's list anyway and saves, for
+/// everyone in the web, which of your follows follow them, as indexes into
+/// its sorted follows: `{"follows":[…],"links":{"<pubkey>":[0,7,…],…}}`.
+/// Reading that answers a bridge with no relay round trip and no cap.
+enum TrustLinks {
+    static let fileName = "wot_links.json"
+
+    /// The people in `current` who follow `author`, sorted by key. nil when
+    /// the file has no entry for them, so the caller can still ask relays.
+    /// Someone unfollowed since the rebuild is left out.
+    ///
+    /// A large web is several MB and only one entry is ever needed, so this
+    /// finds it in the bytes instead of parsing the whole file. Keys are hex
+    /// pubkeys and the relay writes compact JSON, so `"<author>":[` is exact.
+    static func bridges(in data: Data, of author: String, me: String, current: Set<String>) -> [String]? {
+        guard !author.isEmpty, author.allSatisfy(\.isHexDigit),
+              let follows = slice(of: Data(#""follows":["#.utf8), closing: UInt8(ascii: "]"), in: data, after: data.startIndex)
+                .flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String] }),
+              let links = data.range(of: Data(#""links":{"#.utf8)),
+              let entry = slice(of: Data("\"\(author)\":[".utf8), closing: UInt8(ascii: "]"), in: data, after: links.upperBound)
+        else { return nil }
+        let found = String(decoding: entry.dropFirst().dropLast(), as: UTF8.self)
+            .split(separator: ",")
+            .compactMap { Int($0).flatMap { follows.indices.contains($0) ? follows[$0] : nil } }
+            .filter { $0 != author && $0 != me && current.contains($0) }
+        return found.isEmpty ? nil : Array(Set(found)).sorted()
+    }
+
+    /// From the `[` that ends `key` through the next `closing`.
+    private static func slice(of key: Data, closing: UInt8, in data: Data, after start: Data.Index) -> Data? {
+        guard let found = data.range(of: key, in: start..<data.endIndex),
+              let end = data[found.upperBound...].firstIndex(of: closing)
+        else { return nil }
+        return data[(found.upperBound - 1)...end]
     }
 }

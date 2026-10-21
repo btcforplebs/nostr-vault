@@ -24,6 +24,9 @@ final class RecipeFeedService: ObservableObject {
     @Published private(set) var isLoading = false
     /// Set when every relay failed or returned nothing.
     @Published private(set) var loadFailed = false
+    /// Any relay sent anything this load. An empty result after an answer is
+    /// "none found", not "could not reach".
+    private var relayAnswered = false
     /// Selected category chip, or nil for "All".
     @Published var selectedCategory: String?
     /// Following by default. Global is filtered by the Web of Trust shield;
@@ -50,11 +53,23 @@ final class RecipeFeedService: ObservableObject {
     private var lastLoadedEveryone: Bool?
     /// Who Global may show this load; nil = everyone (see globalTrustSet).
     private var trust: Set<String>?
+    private var webWatch: AnyCancellable?
 
     /// Results older than this are refetched when the feed is opened again.
     private static let staleAfter: TimeInterval = 10 * 60
 
     private init() {}
+
+    /// Someone you follow while this Global page is open joins `trust` at
+    /// once, so their posts pass from the next arrival instead of after a
+    /// refresh. Leaves Following and Everyone (`trust == nil`) alone.
+    private func watchWebForTrust() {
+        guard webWatch == nil else { return }
+        webWatch = TrustPathService.webChanged.sink { [weak self] in
+            guard let self, self.trust != nil else { return }
+            self.trust = FeedService.shared.globalTrustSet()
+        }
+    }
 
     /// The most common categories in the current results.
     ///
@@ -124,6 +139,7 @@ final class RecipeFeedService: ObservableObject {
         disconnect()
         collected.removeAll()
         loadFailed = false
+        relayAnswered = false
         followSetIsEmpty = false
         isLoading = true
 
@@ -151,6 +167,7 @@ final class RecipeFeedService: ObservableObject {
             filter["authors"] = follows
         }
         trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
+        watchWebForTrust()
         lastLoadedEveryone = ConfigService.shared.config.globalShowsEveryone
         let filters = FeedService.trustScopedFilters(filter, trust: trust)
         let subId = "recipes-\(UUID().uuidString.prefix(8))"
@@ -198,16 +215,29 @@ final class RecipeFeedService: ObservableObject {
 
     // MARK: - Private
 
-    /// Relays to ask. Recipe authors are strangers, so the owner's own relay
-    /// has nothing to contribute here and is deliberately not queried.
+    /// zap.cooking's own feed relay: curated recipe posts, read-only, no login
+    /// needed (it sends an AUTH challenge that can be ignored). On 2026-10-17 it
+    /// answered this filter with 200 recipes from 65 authors; primal had 51
+    /// from 9. Logen wants the Recipes tab on it (Android ZAP_COOKING_RELAY).
+    static let zapCookingRelay = "wss://feed.zap.cooking"
+
+    /// Relays to ask: zap.cooking's, then the read relays, so the tab still
+    /// loads with no read relays set. Recipe authors are strangers, so the
+    /// owner's own relay has nothing to contribute and is not queried.
     private static var relayURLs: [URL] {
-        ConfigService.shared.config.readRelays.compactMap { URL(string: $0) }
+        relays(readRelays: ConfigService.shared.config.readRelays).compactMap { URL(string: $0) }
+    }
+
+    static func relays(readRelays: [String]) -> [String] {
+        let key = { (url: String) in url.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
+        return [zapCookingRelay] + readRelays.filter { key($0) != key(zapCookingRelay) }
     }
 
     private func handle(message: String, blocked: Set<String>) {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String else { return }
+        relayAnswered = true
 
         if type == "EOSE" {
             publish()
@@ -289,7 +319,7 @@ final class RecipeFeedService: ObservableObject {
 
     private func finishLoading() {
         isLoading = false
-        loadFailed = recipes.isEmpty
+        loadFailed = recipes.isEmpty && !relayAnswered
         if !recipes.isEmpty {
             lastLoadedAt = Date()
             lastLoadedScope = scope

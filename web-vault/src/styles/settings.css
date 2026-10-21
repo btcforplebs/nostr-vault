@@ -1,0 +1,131 @@
+/* Settings (iPhone SettingsView: inset grouped list, coloured icon squares) and the Vault tab's pills, menus and grid. */
+
+/* Settings: grouped rows. */
+.settings-group { margin-bottom: 8px; }
+.settings-rows { margin: 0 var(--gutter); background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); overflow: hidden; }
+.settings-row { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; color: var(--text); font: var(--t-body); }
+.settings-row + .settings-row { border-top: 1px solid var(--hair); }
+a.settings-row:hover { background: var(--s2); }
+.settings-row.static { margin: 0 var(--gutter) 8px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
+.settings-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; color: #fff; flex: none; }
+.settings-icon.big { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-pale); color: var(--accent); }
+.settings-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-title.mono { font: 13px var(--mono); }
+.settings-chevron { color: var(--text-3); flex: none; }
+.settings-tags { display: flex; gap: 6px; flex: none; }
+.tag { padding: 3px 8px; border-radius: 999px; background: var(--s2); color: var(--text-2); font: 600 11px/1 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.settings-note { margin: 0 var(--gutter) 12px; }
+.settings .screen-head .button.small { min-height: 34px; padding: 0 12px; }
+
+/* Relay status card (the phone's RelayStatusCard). */
+.relay-card-head { display: flex; align-items: center; gap: 12px; }
+.relay-card-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.relay-card-title { font: var(--t-headline); }
+.relay-card-text .mono { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relay-card-state { display: inline-flex; align-items: center; gap: 6px; color: var(--online); font: 600 15px var(--font); flex: none; }
+.relay-card-state .dot { width: 8px; height: 8px; }
+
+/* About. */
+.settings-about { text-align: center; display: grid; gap: 4px; justify-items: center; }
+.settings-about hr { width: 100%; border: 0; border-top: 1px solid var(--hair); margin: 8px 0; }
+.settings-app { font: var(--t-headline); }
+.settings-support { font: 600 15px var(--font); }
+.settings-about p { margin: 0; }
+.settings-npub { min-height: 0; padding: 8px; border-radius: 4px; background: var(--s2); font: 10px var(--mono); word-break: break-all; white-space: normal; max-width: 100%; }
+.settings-log { max-height: 60vh; overflow: auto; }
+
+/* Vault tab: the left mode pill, the right envelope + filter pill. */
+.vault-head { gap: 8px; }
+.vault-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.vault-menu { position: relative; min-width: 0; }
+.vault-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px 0 10px; max-width: 100%;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); font: var(--t-sub); font-weight: 600; }
+.vault-pill b { font: var(--t-headline); }
+.vault-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
+.vault-pill.open, .vault-pill:hover { border-color: var(--strong); }
+.vault-menu .vault-pill svg:first-child { color: var(--accent); }
+.vault-pill-btn { flex: none; padding: 0; min-height: 0; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text-2);
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.vault-menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; padding: 6px; display: grid;
+  background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
+.vault-menu.right .vault-menu-list { left: auto; right: 0; }
+.vault-menu-list hr { border: 0; border-top: 1px solid var(--hair); margin: 6px 0; }
+.vault-menu-list [role=menuitem] { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--text); font: var(--t-sub); text-align: left; white-space: nowrap; }
+.vault-menu-list [role=menuitem] svg { color: var(--accent); }
+.vault-menu-list [role=menuitem]:hover { background: var(--s2); }
+.vault-menu-list [role=menuitem].on { color: var(--accent); font-weight: 600; }
+.vault-menu-list [role=menuitem].on::after { content: "✓"; margin-left: auto; }
+
+/* Vault lists. */
+.note.tappable { cursor: pointer; }
+.vault-about { margin: 8px 0 0; align-items: baseline; }
+.vault-about > :last-child { min-width: 0; overflow-wrap: anywhere; }
+.vault-thumbs { display: flex; gap: 6px; margin-top: 10px; }
+.vault-thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--s2); }
+.vault-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 0 var(--gutter); }
+.vault-thumb { display: block; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--s1); }
+.vault-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vault-quote { margin: 10px 0 6px; padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); font: var(--t-body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.highlight .person-sub { margin-top: 6px; }
+.highlight .note-head .author-name { flex: 1; }
+.person-row .author-name { font: var(--t-headline); }
+
+/* Settings › Relays: read/write switches per relay, Add. */
+.relay-edit-row { flex-wrap: wrap; }
+.relay-edit-row .settings-title { min-width: 14em; }
+.relay-edit-row .settings-tags { align-items: center; margin-left: auto; }
+.relay-edit-row .settings-title .tag { margin-left: 8px; }
+.tag.job { min-height: 0; border: 1px solid var(--hair); cursor: pointer; }
+.tag.job.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; }
+.relay-remove { min-height: 28px; padding: 0 10px; }
+.relay-add input { flex: 1; min-width: 0; min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); font: 13px var(--mono); }
+.settings-note.row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Vault search (iPhone VaultSearchBar + VaultSearchResults). */
+.vault-search-bar { display: flex; gap: 8px; align-items: center; margin: 0 var(--gutter) 10px; }
+.vault-search-bar input { flex: 1; min-width: 0; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-body); }
+.vault-search-chips { display: flex; gap: 6px; overflow-x: auto; padding: 0 var(--gutter) 10px; }
+.vault-search-chips .chip { flex: none; }
+.vault-search-chips .chip.on { background: var(--accent-pale); color: var(--accent); border-color: transparent; font-weight: 600; }
+.vault-search-head { display: flex; justify-content: space-between; align-items: baseline; }
+.vault-search-head button.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--accent); font: var(--t-foot); font-weight: 600; }
+.vault-search-row { width: calc(100% - 2 * var(--gutter)); margin: 0 var(--gutter) 6px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); text-align: left; }
+.vault-search-row a.small { flex: none; color: var(--accent); font: var(--t-foot); font-weight: 600; }
+
+/* Vault › Media: the Blossom gallery (iPhone MediaGalleryView) and its file viewer. */
+.blossom-day { margin-top: 10px; }
+.blossom-tile { position: relative; padding: 0; min-height: 0; border: 0; cursor: pointer; }
+.blossom-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.blossom-badge { position: absolute; right: 4px; bottom: 4px; padding: 2px 5px; border-radius: 4px; background: rgb(0 0 0 / .7); color: #fff; font: 600 10px var(--font); }
+.blossom-file { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: var(--text-2); font: 12px var(--mono); }
+.blossom-viewer { width: min(560px, calc(100vw - 32px)); }
+.blossom-view { display: flex; justify-content: center; background: #000; border-radius: 12px; overflow: hidden; }
+.blossom-view img, .blossom-view video { max-width: 100%; max-height: 55dvh; object-fit: contain; display: block; }
+.blossom-view .blossom-file { min-height: 120px; }
+.blossom-url { overflow-wrap: anywhere; }
+.blossom-servers { display: grid; gap: 2px; }
+.blossom-servers .ok { color: var(--online); }
+.blossom-servers .missing { color: var(--text-3); }
+.blossom-viewer .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.relay-list { margin-top: 18px; }
+
+/* Settings › Media Servers: Test (iPhone MediaServersPage). */
+.server-health { display: flex; align-items: center; gap: 6px; margin-top: 3px; font: var(--t-foot); white-space: normal; }
+.server-health .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+.server-health.working .dot { background: var(--online); }
+.server-health.answers .dot, .server-health.lostFile .dot { background: #ff9f0a; }
+.server-health.offline .dot { background: #ff453a; }
+.relay-edit-row .settings-title:has(.server-health) { white-space: normal; }
+
+/* Vault mode menu: New (iPhone VaultModePill newModes). */
+.vault-new { margin-left: auto; padding: 2px 6px; border-radius: 999px; background: var(--accent-pale); color: var(--accent); font: 700 10px/1.2 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.vault-menu-list [role=menuitem].on .vault-new { margin-left: 8px; }
+.vault-new-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.vault-modes button { position: relative; }
+
+/* Settings › Recently Deleted. */
+.deleted-post { display: grid; gap: 8px; }
+.deleted-post .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* Settings › Following Backup. */
+.follow-backup-open { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 0; min-height: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }

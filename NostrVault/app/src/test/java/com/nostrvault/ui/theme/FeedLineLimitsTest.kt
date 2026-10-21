@@ -4,11 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FeedLineLimitsTest {
-    @Test fun defaultsMatchTheOldFixedLimits() {
+    @Test fun defaults() {
         val limits = FeedLineLimits()
         assertEquals(3, limits.compactLines)
-        assertEquals(3, limits.threadedLines(isRoot = true))
-        assertEquals(2, limits.threadedLines(isRoot = false))
+        assertEquals(5, limits.threadedLines(isRoot = true))
+        assertEquals(4, limits.threadedLines(isRoot = false))
     }
 
     @Test fun repliesShowOneFewerButNeverZero() {

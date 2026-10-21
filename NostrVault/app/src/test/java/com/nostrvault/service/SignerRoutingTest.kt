@@ -50,10 +50,26 @@ class SignerRoutingTest {
 
     @Test fun ownerBunkerWithoutSignerKeyFailsClosed() {
         val cfg = config("nip46").let {
-            it.copy(accountBunkerConfigs = it.accountBunkerConfigs + (ownerNpub to AccountBunkerConfig(bunkerURI = "bunker://x?relay=wss://r")))
+            it.copy(accountBunkerConfigs = it.accountBunkerConfigs + (ownerNpub to AccountBunkerConfig(bunkerURI = "bunker://?relay=wss://r")))
         }
         val route = SignerRouting.route(cfg, forceOwner = true, ownerHex = ownerHex, activeHex = otherHex)
         assertTrue(route is SignerRoute.Unavailable)
+    }
+
+    /**
+     * The Go core files a bunker session under the link's host, the remote
+     * signer's key. For bunkers such as Clave that is not the account's own
+     * `signerPubkey`, so the owner's session must be looked up by the host or
+     * the lookup misses and the owner's AUTH dies as "not connected".
+     */
+    @Test fun ownerBunkerSessionIsKeyedByTheBunkerHostNotTheAccountKey() {
+        val remoteSigner = "3".repeat(64)
+        val cfg = config("nip46").let {
+            it.copy(accountBunkerConfigs = it.accountBunkerConfigs +
+                (ownerNpub to AccountBunkerConfig(bunkerURI = "bunker://$remoteSigner?relay=wss://r", signerPubkey = ownerSigner)))
+        }
+        val route = SignerRouting.route(cfg, forceOwner = true, ownerHex = ownerHex, activeHex = otherHex)
+        assertEquals(SignerRoute.BunkerSession(remoteSigner), route)
     }
 
     @Test fun normalEventUsesTheActiveAccountsBunker() {
@@ -61,14 +77,30 @@ class SignerRoutingTest {
         assertEquals(SignerRoute.ActiveBunker, route)
     }
 
+    // Warming the owner's bunker while another account is active
+
+    /** The owner's AUTH needs a live owner session; with another account active nothing else opens one. */
+    @Test fun ownerBunkerIsWarmedWhenAnotherAccountIsActive() {
+        val warm = SignerRouting.ownerBunkerToWarm(config("nip46"), ownerHex = ownerHex, activeHex = otherHex)
+        assertEquals(ownerSigner, warm?.signerPubkey)
+    }
+
+    @Test fun nothingToWarmWhenTheOwnerIsActiveOrSignsWithoutABunker() {
+        assertNull(SignerRouting.ownerBunkerToWarm(config("nip46"), ownerHex = ownerHex, activeHex = ownerHex))
+        assertNull(SignerRouting.ownerBunkerToWarm(config("local"), ownerHex = ownerHex, activeHex = otherHex))
+        assertNull(SignerRouting.ownerBunkerToWarm(config("amber"), ownerHex = ownerHex, activeHex = otherHex))
+    }
+
     // Connect-time key check
 
     private class FakeBridge(val answersAs: String?) : NIP46Service.Bridge {
         val dropped = mutableListOf<String>()
         override fun connect(clientSecretKey: String, bunkerUrl: String) = answersAs
+        override fun connectBackground(clientSecretKey: String, bunkerUrl: String): String? = null
         override fun activate(signerPubkey: String): String? = null
         override fun drop(signerPubkey: String) { dropped += signerPubkey }
         override fun ping() = 0
+        override fun signWith(signerPubkey: String, eventJson: String): String? = null
     }
 
     @After fun resetBridge() { NIP46Service.disconnectForTest() }

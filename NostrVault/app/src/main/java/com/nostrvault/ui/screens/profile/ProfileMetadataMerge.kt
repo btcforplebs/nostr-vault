@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
+import com.nostrvault.data.model.FeedProfile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -45,5 +46,33 @@ object ProfileMetadataMerge {
             if (value.isEmpty()) out.remove(key) else out[key] = JsonPrimitive(value)
         }
         return JsonObject(out)
+    }
+
+    /**
+     * True when a field differs from what the form showed, ignoring the
+     * spaces and newlines a save trims anyway.
+     */
+    fun hasChanges(initial: Map<String, String>, edited: Map<String, String>): Boolean =
+        edited.any { (key, value) -> value.trim() != initial[key].orEmpty().trim() }
+
+    /** [existing] with the changed fields applied, for showing an edit before the relays have it. */
+    fun preview(existing: FeedProfile, initial: Map<String, String>, edited: Map<String, String>): FeedProfile {
+        val shown = JsonObject(initial.filterValues { it.isNotEmpty() }.mapValues { JsonPrimitive(it.value) })
+        return profile(existing, merge(shown, initial, edited))
+    }
+
+    /** [existing] with the form's fields read from kind-0 [content]; a missing key clears its field. */
+    fun profile(existing: FeedProfile, content: JsonObject): FeedProfile {
+        fun string(key: String) = (content[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return existing.copy(
+            name = string(NAME),
+            displayName = string(DISPLAY_NAME),
+            about = string(ABOUT),
+            pictureURL = string(PICTURE),
+            bannerURL = string(BANNER),
+            nip05 = string(NIP05),
+            lud16 = string(LUD16),
+            website = string(WEBSITE),
+        )
     }
 }

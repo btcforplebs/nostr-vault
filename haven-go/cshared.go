@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -64,6 +65,26 @@ func pushNotify(msg string) {
 	notifyQueue = append(notifyQueue, msg)
 }
 
+// Full relay log for the host's console viewer: a bounded FIFO of every
+// line except notify markers, drained in one call by GetLogLinesC. The import
+// log above keeps only the latest line, which suits progress polling but drops
+// most of what a log viewer needs. (iOS reads stdout instead.)
+const logQueueMax = 1000
+
+var (
+	logQueueMu sync.Mutex
+	logQueue   []string
+)
+
+func pushLogLine(msg string) {
+	logQueueMu.Lock()
+	defer logQueueMu.Unlock()
+	if len(logQueue) >= logQueueMax {
+		logQueue = logQueue[1:] // drop oldest to bound memory
+	}
+	logQueue = append(logQueue, msg)
+}
+
 // importLogWriter intercepts log.Println output and stores the latest message
 // so the host app (Android/iOS) can poll for progress updates.
 type importLogWriter struct {
@@ -80,6 +101,7 @@ func (w *importLogWriter) Write(p []byte) (n int, err error) {
 			pushNotify(msg)
 		} else {
 			importLogLatest.Store(msg)
+			pushLogLine(msg)
 		}
 	}
 	return w.original.Write(p)
@@ -112,35 +134,30 @@ func GetNotifyLogC() *C.char {
 	return C.CString(msg)
 }
 
-// NIP-46 remote signer state (independent of relay lifecycle).
+// GetLogLinesC drains every queued log line, oldest first, joined by "\n",
+// or returns NULL when nothing has been logged since the last call.
 //
-// One live session per signer, so switching between accounts that each sign
-// with their own bunker is instant: the session for the account switched to
-// is still connected, and nothing has to log in again. Only one session is
-// active (the one requests go to); the others stay connected in the
-// background. nip46Mu guards the map and the active key only; it is never
-// held across a network round trip, so a slow login cannot block signing
-// on another session or freeze the caller.
-type nip46Session struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	pool   *nostr.SimplePool
-	client *nip46.BunkerClient
-	userPubkey string
-	// What signReplyRecovery needs to read the signer's replies itself.
-	signer   string
-	relays   []string
-	clientSK string
+//export GetLogLinesC
+func GetLogLinesC() *C.char {
+	logQueueMu.Lock()
+	lines := logQueue
+	logQueue = nil
+	logQueueMu.Unlock()
+	if len(lines) == 0 {
+		return nil
+	}
+	return C.CString(strings.Join(lines, "\n"))
 }
 
-var (
-	nip46Sessions = map[string]*nip46Session{} // keyed by signer (bunker) pubkey
-	nip46Active   string
-	// Bumped on every activation, so a login that finishes after the user
-	// moved to another account is kept but does not take over.
-	nip46ActiveGen uint64
-	nip46Mu        sync.RWMutex
+// ActiveConnectionsC returns the number of open websocket connections.
+//
+//export ActiveConnectionsC
+func ActiveConnectionsC() C.int {
+	return C.int(activeConnectionCount())
+}
 
+// NIP-46 remote signer state (independent of relay lifecycle).
+var (
 	nip46PendingAuthURL atomic.Value // stores string
 
 	// nip46LastError records why the most recent NIP-46 call returned nil, so
@@ -252,6 +269,8 @@ func StartRelayC(importMode bool) {
 		if err := initRelays(cycle.ctx); err != nil {
 			return fmt.Errorf("error initializing databases/relays: %w", err)
 		}
+		// Fresh relays each cycle: forget the last cycle's connections.
+		trackConnections(privateRelay, chatRelay, outboxRelay, inboxRelay, feedRelay)
 		log.Println("✅ Databases ready")
 
 		log.Println("⏳ Starting background services [3/3]")
@@ -285,7 +304,7 @@ func StartRelayC(importMode bool) {
 				// while the follow list was briefly clobbered by an unrelated bug
 				// would otherwise keep silently rejecting real replies/reactions
 				// as "not in WoT" until the TTL fully expired.
-				if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval {
+				if time.Duration(cacheAgeMinutes)*time.Minute >= config.WotRefreshInterval || wotModel.MissingLinks() {
 					log.Println("  🔄 WoT cache is due for a refresh, updating in the background")
 					cycle.spawn("wot.Refresh.stale", func() { wotModel.Refresh(cycle.ctx) })
 				}
@@ -300,7 +319,7 @@ func StartRelayC(importMode bool) {
 			cycle.spawn("ingestPopularEngagement", func() { ingestPopularEngagement(cycle.ctx) })
 			cycle.spawn("periodicCloudBackups", func() { startPeriodicCloudBackups(cycle.ctx) })
 			cycle.spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(cycle.ctx, config.WotRefreshInterval) })
-			cycle.spawn("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(cycle.ctx, wot.EmptyGraphRefreshInterval) })
+			cycle.spawn("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(cycle.ctx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
 		})
 
 		// Use a fresh ServeMux each cycle so stop/start never panics on
@@ -470,6 +489,48 @@ func RequestRelaySyncC() {
 	RequestRelaySync()
 }
 
+//export RefreshWotC
+func RefreshWotC() C.int {
+	// Rebuilds the web of trust now (the WOT tab's refresh button) instead of
+	// at the next daily refresh. 1 when a rebuild started or was already
+	// running; 0 when the relay isn't up or trust is off. Poll
+	// WotRefreshProgressC for how far it has got.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RefreshWotC: recovered from panic: %v", r)
+		}
+	}()
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil { // server == nil means import cycle
+		return 0
+	}
+	if wot.RefreshNow(c.ctx, wot.GetInstance(), c.spawn) {
+		return 1
+	}
+	return 0
+}
+
+//export WotRefreshProgressC
+func WotRefreshProgressC() *C.char {
+	// JSON of wot.Progress. The caller frees the string.
+	result, _ := json.Marshal(wot.CurrentProgress())
+	return C.CString(string(result))
+}
+
+//export WotNewcomersC
+func WotNewcomersC(from C.int) *C.char {
+	// JSON {"total": n, "pubkeys": [...]}: people the running (or last)
+	// rebuild found who weren't on the saved web, from index from on. Pass
+	// the total from the last call to get only the people found since.
+	// The caller frees the string.
+	pubkeys, total := wot.Newcomers(int(from))
+	result, _ := json.Marshal(struct {
+		Total   int      `json:"total"`
+		Pubkeys []string `json:"pubkeys"`
+	}{total, pubkeys})
+	return C.CString(string(result))
+}
+
 //export RequestCatchUpC
 func RequestCatchUpC() {
 	// Like RequestRelaySyncC, but for the app returning from absence
@@ -518,7 +579,7 @@ func UpdateBlacklistC(npubsJSON *C.char) {
 	}
 	pubkeys := make(map[string]struct{}, len(npubs))
 	for _, npub := range npubs {
-		if pk := nPubToPubkey(strings.TrimSpace(npub)); pk != "" {
+		if pk := nPubToPubkey("blacklist", strings.TrimSpace(npub)); pk != "" {
 			pubkeys[pk] = struct{}{}
 		}
 	}
@@ -1142,39 +1203,15 @@ func DecryptNIP49C(ncryptsec *C.char, password *C.char) *C.char {
 		return nil
 	}
 
-	// NIP-49 payload: version(1) + logN(1) + salt(16) + nonce(24) + ciphertext(48)
-	if len(payload) < 1+1+16+24+32+16 {
-		slog.Debug("DecryptNIP49C: payload too short (likely legacy format)", "len", len(payload))
-		return nil
-	}
-
-	version := payload[0]
-	if version != 0x02 {
-		slog.Debug("DecryptNIP49C: unsupported version (likely legacy format)", "version", version)
-		return nil
-	}
-
-	logN := payload[1]
-	N := 1 << int(logN)
-	salt := payload[2:18]
-	nonce := payload[18:42]
-	ciphertext := payload[42:]
-
-	derivedKey, err := scrypt.Key(pw, salt, N, 8, 1, 32)
+	plaintext, err := decryptNIP49Payload(payload, pw)
 	if err != nil {
-		slog.Error("DecryptNIP49C: scrypt failed", "err", err)
-		return nil
-	}
-
-	aead, err := chacha20poly1305.NewX(derivedKey)
-	if err != nil {
-		slog.Error("DecryptNIP49C: NewX failed", "err", err)
-		return nil
-	}
-
-	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		slog.Error("DecryptNIP49C: decrypt failed", "err", err)
+		// Too short or wrong version is the legacy Swift format, which the
+		// caller tries next; anything else is a real failure.
+		if errors.Is(err, errNIP49Short) || errors.Is(err, errNIP49Version) {
+			slog.Debug("DecryptNIP49C: not NIP-49 v2 (likely legacy format)", "err", err)
+		} else {
+			slog.Error("DecryptNIP49C: decrypt failed", "err", err)
+		}
 		return nil
 	}
 
@@ -1217,28 +1254,63 @@ func SweepToAddressC(nsecHex *C.char, destAddr *C.char, feeRateSatsPerVB C.int) 
 
 //export NIP46ConnectC
 func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
+	return nip46Login(C.GoString(clientSK), C.GoString(bunkerURL), false)
+}
+
+// NIP46ConnectBackgroundC logs in to the signer in `bunkerURL` and files its
+// session under the link's host exactly like NIP46ConnectC, but never makes
+// it the active signer: the owner's bunker while another account is active,
+// so the owner's relay AUTH (NIP46SignEventWithC) has a session to sign
+// through after a restart. A session for that signer that is already live is
+// left alone and its user pubkey returned. Returns the user pubkey, or nil.
+//
+//export NIP46ConnectBackgroundC
+func NIP46ConnectBackgroundC(clientSK *C.char, bunkerURL *C.char) *C.char {
+	return nip46Login(C.GoString(clientSK), C.GoString(bunkerURL), true)
+}
+
+// nip46Login is the one login path. `background` decides whether the new
+// session becomes the active signer (see nip46ClaimLogin).
+func nip46Login(goSK, goURL string, background bool) *C.char {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("NIP46ConnectC: recovered from panic: %v", r)
 		}
 	}()
 
-	goSK := C.GoString(clientSK)
-	goURL := C.GoString(bunkerURL)
-
-	nip46PendingAuthURL.Store("")
-	nip46LastError.Store("")
+	// A background login has no screen and no caller waiting on an error:
+	// nip46LastError and nip46PendingAuthURL describe the ACTIVE account's
+	// last request, and a 60 s background timeout written there would read
+	// as "the signer did not answer" for a post the active account just made.
+	if !background {
+		nip46PendingAuthURL.Store("")
+		nip46LastError.Store("")
+	}
+	storeError := func(msg string) {
+		if !background {
+			nip46LastError.Store(msg)
+		}
+	}
+	recordError := func(ctx context.Context, err error) {
+		if !background {
+			recordNIP46Error(ctx, err)
+		}
+	}
 
 	onAuth := func(authURL string) {
 		log.Printf("NIP-46: auth challenge: %s", authURL)
-		nip46PendingAuthURL.Store(authURL)
+		// A background login belongs to no screen: its challenge is not
+		// shown over whatever the active account is doing.
+		if !background {
+			nip46PendingAuthURL.Store(authURL)
+		}
 	}
 
 	// Parse the bunker URL to extract relay(s), target pubkey, and secret.
 	parsed, err := url.Parse(goURL)
 	if err != nil {
-		slog.Error("NIP46ConnectC: invalid bunker URL", "error", err)
-		nip46LastError.Store("error:invalid bunker link")
+		slog.Error("NIP46ConnectC: invalid bunker URL", "error", bunkerParseError(err))
+		storeError("error:invalid bunker link")
 		return nil
 	}
 	targetPubkey := parsed.Host
@@ -1247,27 +1319,23 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 
 	if !nostr.IsValidPublicKey(targetPubkey) {
 		slog.Error("NIP46ConnectC: invalid target pubkey", "pubkey", targetPubkey)
-		nip46LastError.Store("error:invalid signer key in bunker link")
+		storeError("error:invalid signer key in bunker link")
 		return nil
 	}
 	if len(relays) == 0 {
 		slog.Error("NIP46ConnectC: no relay in bunker URL")
-		nip46LastError.Store("error:no relay in bunker link")
+		storeError("error:no relay in bunker link")
 		return nil
 	}
 
-	// Claim the active slot for this signer and drop any previous session for
-	// it (this is a fresh login, e.g. after a dead socket). Other signers'
-	// sessions are left alone.
-	nip46Mu.Lock()
-	if old := nip46Sessions[targetPubkey]; old != nil {
-		old.cancel()
-		delete(nip46Sessions, targetPubkey)
+	// Foreground: claim the active slot for this signer and drop any previous
+	// session for it (a fresh login, e.g. after a dead socket). Background: a
+	// live session already is the answer, and the active signer is not touched.
+	// Other signers' sessions are left alone either way.
+	live, myGen := nip46ClaimLogin(targetPubkey, background)
+	if live != nil {
+		return C.CString(live.userPubkey)
 	}
-	nip46Active = targetPubkey
-	nip46ActiveGen++
-	myGen := nip46ActiveGen
-	nip46Mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	pool := nostr.NewSimplePool(ctx)
@@ -1282,14 +1350,14 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 
 	// The connect RPC itself gets a timeout so we don't block forever when
 	// the signer is offline. No lock is held while waiting.
-	log.Printf("NIP46ConnectC: sending connect RPC to %s via %v (secret=%d chars)", targetPubkey[:8], relays, len(secret))
+	log.Printf("NIP46ConnectC: sending connect RPC to %s via %v (secret=%d chars, background=%v)", targetPubkey[:8], relays, len(secret), background)
 	connectCtx, connectCancel := context.WithTimeout(ctx, 60*time.Second)
 	defer connectCancel()
 
 	result, err := bunker.RPC(connectCtx, "connect", []string{targetPubkey, secret, nip46Perms, nip46ClientMetadata})
 	if err != nil {
 		slog.Error("NIP46ConnectC: connect RPC failed", "error", err)
-		recordNIP46Error(connectCtx, err)
+		recordError(connectCtx, err)
 		cancel()
 		return nil
 	}
@@ -1308,24 +1376,18 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	pubkey, err := bunker.GetPublicKey(pkCtx)
 	if err != nil {
 		slog.Error("NIP46ConnectC: GetPublicKey failed", "error", err)
-		recordNIP46Error(pkCtx, err)
+		recordError(pkCtx, err)
 		cancel()
 		return nil
 	}
 
-	nip46Mu.Lock()
-	if old := nip46Sessions[targetPubkey]; old != nil {
-		old.cancel() // a second login for the same signer finished first
-	}
-	nip46Sessions[targetPubkey] = &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey,
-		signer: targetPubkey, relays: relays, clientSK: goSK}
-	stillActive := nip46ActiveGen == myGen
-	nip46Mu.Unlock()
+	stillActive := nip46StoreSession(targetPubkey, &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey,
+		signer: targetPubkey, relays: relays, clientSK: goSK}, myGen, background)
 
 	if stillActive {
 		log.Printf("NIP-46: connected to signer %s", pubkey[:8])
 	} else {
-		log.Printf("NIP-46: connected to signer %s, kept in the background (another account became active)", pubkey[:8])
+		log.Printf("NIP-46: connected to signer %s, kept in the background", pubkey[:8])
 	}
 	return C.CString(pubkey)
 }

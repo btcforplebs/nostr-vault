@@ -20,7 +20,13 @@ struct CondensedEngagement: Equatable {
 /// about how dense "condensed" is. In the thread view only the conversation
 /// around the note goes condensed: the note you are reading stays full size
 /// with its action bar, so a reply is one tap from wherever you landed.
-struct CondensedNoteLine: View {
+///
+/// Equatable, and drawn `.equatable()` by the feed: the feed redraws whenever
+/// any profile arrives, including the authors a profile sheet over it is
+/// fetching, and the closures below can't be compared, so without this every
+/// line under the sheet redrew on each one. Its settings and quick menu still
+/// redraw it through `configService` and its own state.
+struct CondensedNoteLine: View, Equatable {
     enum Style {
         /// Standalone row in the feed: its own bordered card.
         case card
@@ -33,6 +39,9 @@ struct CondensedNoteLine: View {
     /// The author to credit when it isn't `note.pubkey` — a bare kind-6 repost
     /// shows the original author, not the reposter.
     var displayPubkey: String? = nil
+    /// The note a bare repost carries, when the caller has it, so the line can
+    /// mark what kind of post it is showing (an article, a highlight).
+    var original: FeedNote? = nil
 
     /// 0 is a root or standalone note; each step indents under a thread rail.
     var depth: Int = 0
@@ -57,7 +66,24 @@ struct CondensedNoteLine: View {
     var onProfile: ((String) -> Void)? = nil
     var onTap: (() -> Void)? = nil
 
+    /// Everything the line draws. The closures are left out: callers build
+    /// them from the note and the screen's own state, so an equal line's old
+    /// ones act the same. Whether there is a tap still counts, for VoiceOver.
+    static func == (lhs: CondensedNoteLine, rhs: CondensedNoteLine) -> Bool {
+        lhs.note == rhs.note && lhs.profile == rhs.profile && lhs.displayPubkey == rhs.displayPubkey
+            && lhs.original == rhs.original
+            && lhs.depth == rhs.depth && lhs.style == rhs.style && lhs.isFocused == rhs.isFocused
+            && lhs.replyCount == rhs.replyCount && lhs.contentOverride == rhs.contentOverride
+            && lhs.postedAt == rhs.postedAt && lhs.mediaURLs == rhs.mediaURLs
+            && lhs.engagement == rhs.engagement && lhs.showsMediaThumbnail == rhs.showsMediaThumbnail
+            && lhs.showsTranslate == rhs.showsTranslate && (lhs.onTap == nil) == (rhs.onTap == nil)
+    }
+
     @EnvironmentObject private var configService: ConfigService
+    /// The profile picture's quick menu, as on a full post.
+    @State private var showingUserMenu = false
+    @State private var menuExpanded = false
+    @State private var showingTrustWeb = false
 
     private var isOLED: Bool { configService.config.useOLED }
     private var isRoot: Bool { depth == 0 }
@@ -132,10 +158,25 @@ struct CondensedNoteLine: View {
             }
 
             HStack(alignment: .top, spacing: 8) {
-                AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
-                    .contentShape(Circle())
-                    .onTapGesture { onProfile?(authorPubkey) }
-                    .accessibilityLabel(Text("Profile of \(displayName)"))
+                VStack(spacing: 6) {
+                    AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
+                        .contentShape(Circle())
+                        .onTapGesture { toggleUserMenu() }
+                        .accessibilityLabel(Text("Profile of \(displayName)"))
+                    if showingUserMenu {
+                        AuthorQuickMenu(
+                            pubkey: authorPubkey,
+                            displayName: displayName,
+                            isFollowed: FeedService.shared.followedPubkeySet.contains(authorPubkey),
+                            expanded: menuExpanded,
+                            onWebOfTrust: { showingTrustWeb = true },
+                            dismiss: dismissUserMenu
+                        )
+                    }
+                }
+                // The menu is wider than a condensed photo. Pinning the column
+                // to the photo keeps the text from shifting when it opens.
+                .frame(width: avatarSize)
 
                 VStack(alignment: .leading, spacing: 2) {
                     headerRow
@@ -166,6 +207,33 @@ struct CondensedNoteLine: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityAddTraits(onTap == nil ? [] : .isButton)
+        .onDisappear { showingUserMenu = false; menuExpanded = false }
+        .trustWebPresentation(isPresented: $showingTrustWeb, author: authorPubkey)
+    }
+
+    // MARK: - Quick menu
+
+    /// The photo opens the quick menu, as on a full post. Your own photo, and
+    /// any photo while Fill your vault is counting, opens the profile instead.
+    private func toggleUserMenu() {
+        if showingUserMenu {
+            dismissUserMenu()
+        } else if FillYourVaultCoordinator.shared.meterShowing
+                    || authorPubkey == configService.activeAccountHexPubkey {
+            onProfile?(authorPubkey)
+        } else {
+            withAnimation(Motion.panel) {
+                showingUserMenu = true
+                menuExpanded = true
+            }
+        }
+    }
+
+    private func dismissUserMenu() {
+        withAnimation(Motion.panel) {
+            menuExpanded = false
+            showingUserMenu = false
+        }
     }
 
     // MARK: - Pieces
@@ -175,12 +243,29 @@ struct CondensedNoteLine: View {
         CondensedNoteLine.rail(isOLED: isOLED)
     }
 
+    /// The glyph that says a line is not a plain note: an article, a recipe,
+    /// a highlight or a poll. Same symbols as the feed picker and the Vault.
+    static func kindMarker(for note: FeedNote) -> (symbol: String, tint: Color, label: String)? {
+        switch note.kind {
+        case VaultNoteScope.articleKind:
+            return VaultNoteScope.isRecipe(tags: note.tags)
+                ? ("fork.knife", .orange, "Recipe")
+                : ("doc.richtext", .havenPurple, "Article")
+        case FeedNote.highlightKind: return ("highlighter", .yellow, "Highlight")
+        case NIP88Poll.kind: return ("chart.bar.xaxis", .teal, "Poll")
+        default: return nil
+        }
+    }
+
     private var headerRow: some View {
         HStack(spacing: 4) {
             Text(displayName)
                 .font(.appSystem(size: nameSize, weight: .semibold))
                 .foregroundColor(.white.opacity(isRoot ? 1.0 : (isOLED ? 0.92 : 0.95)))
                 .lineLimit(1)
+                // The name opens the profile, as on a full post; the photo
+                // opens the quick menu.
+                .onTapGesture { onProfile?(authorPubkey) }
 
             if let nip05 = profile?.nip05, !nip05.isEmpty {
                 Image(systemName: "checkmark.seal.fill")
@@ -214,6 +299,12 @@ struct CondensedNoteLine: View {
                     .font(.appSystem(size: 10))
                     .foregroundColor(.blue.opacity(0.7))
                     .accessibilityLabel("Quote")
+            }
+            if let marker = CondensedNoteLine.kindMarker(for: original ?? note) {
+                Image(systemName: marker.symbol)
+                    .font(.appSystem(size: 10))
+                    .foregroundColor(marker.tint.opacity(0.7))
+                    .accessibilityLabel(marker.label)
             }
         }
     }

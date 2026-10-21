@@ -10,9 +10,10 @@ val TutorialID.title: String
     get() = when (this) {
         TutorialID.FILL_YOUR_VAULT -> "Fill Your Feed"
         TutorialID.FEEDS -> "Your Feeds"
+        TutorialID.WOT -> "Your Web of Trust"
         TutorialID.VAULT -> "Your Vault"
         TutorialID.WALLET_CONNECT -> "Wallet Connect"
-        TutorialID.POCKET_RELAY -> "Pocket Relay vs Public Relay"
+        TutorialID.POCKET_RELAY -> "Vault in Your Pocket"
         TutorialID.IMPORT_TOUR -> "How Your Vault Works"
     }
 
@@ -20,9 +21,10 @@ val TutorialID.summary: String
     get() = when (this) {
         TutorialID.FILL_YOUR_VAULT -> "Follow your first people and build your web of trust."
         TutorialID.FEEDS -> "What each feed shows and how to pick yours."
+        TutorialID.WOT -> "The people you follow, how anyone reaches you, and keeping it fresh."
         TutorialID.VAULT -> "Everything you've posted, kept on this device."
         TutorialID.WALLET_CONNECT -> "Link a wallet so you can send zaps."
-        TutorialID.POCKET_RELAY -> "Who can reach the relay in your pocket."
+        TutorialID.POCKET_RELAY -> "A personal relay and media server, and how it differs from public relays."
         TutorialID.IMPORT_TOUR -> "Your own copy, your relay, and public relays."
     }
 
@@ -30,6 +32,7 @@ val TutorialID.summary: String
 val TutorialID.steps: List<TutorialStep>
     get() = when (this) {
         TutorialID.FEEDS -> TutorialContent.feeds
+        TutorialID.WOT -> TutorialContent.wot
         TutorialID.VAULT -> TutorialContent.vault
         TutorialID.WALLET_CONNECT -> TutorialContent.walletConnect
         TutorialID.POCKET_RELAY -> TutorialContent.pocketRelay
@@ -58,13 +61,16 @@ object TutorialContent {
     /** The guide is `FillYourFeedOverlay`. */
     const val FILL_YOUR_VAULT_HAS_GUIDE = true
 
-    /** The order the "Next: …" chain walks. The import tour isn't in it. */
+    /** The order the "Next: …" chain walks. The import tour isn't in it.
+     *  Your Vault hands over to Vault in Your Pocket: its last card points
+     *  at the Vault button that opens the dashboard. */
     val ORDER = listOf(
         TutorialID.FILL_YOUR_VAULT,
         TutorialID.FEEDS,
+        TutorialID.WOT,
         TutorialID.VAULT,
-        TutorialID.WALLET_CONNECT,
         TutorialID.POCKET_RELAY,
+        TutorialID.WALLET_CONNECT,
     )
 
     const val FEED_PICKER = "feeds.picker"
@@ -85,28 +91,49 @@ object TutorialContent {
         ),
         TutorialStep(
             FEED_TOOLBAR, "Global and your web of trust",
-            "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone.",
+            "On Global, a shield appears here. It keeps Global to your web of trust (people you follow and the people they follow), so spam stays out. Tap it to see everyone. Tap WoT to see your web.",
         ),
     )
 
-    /** The vault's mode pill (Notes, Likes, Zaps, Followers), its filters,
-     *  and the Relay button over the list. */
+    /** The WoT tab's globe, its magnifier and its layer menu. Tal's
+     *  three stops (#451) in Tod's copy (nostr-vault Tutorial thread
+     *  2026-10-09): "people you follow", never "graph" or "hops". The list
+     *  button is left out on purpose. Search sits behind the magnifier and
+     *  Rebuild lives in the layer menu, so the cards point there. */
+    const val WOT_GLOBE = "wot.globe"
+    const val WOT_SEARCH = "wot.search"
+    const val WOT_LAYERS = "wot.layers"
+
+    val wot = listOf(
+        TutorialStep(
+            WOT_GLOBE, "Your web of trust",
+            "These faces are the people you follow. The ones you interact with most sit in front. Tap a face to see how they reach you, then tap Their web to turn the globe to the people they follow.",
+        ),
+        TutorialStep(
+            WOT_SEARCH, "Find someone",
+            "Tap here and type any name to see how that person reaches you, either through someone you follow or \"Not in your web\". It's a quick way to know whether to trust an account.",
+        ),
+        TutorialStep(
+            WOT_LAYERS, "Layers and rebuild",
+            "Tap here to light up Everyone, Following, Close or Further out. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes.",
+        ),
+    )
+
+    /** The Vault tab's dropdown pill and its floating Vault button. Each
+     *  half carries them. Two cards since the Vault tab (Tod's copy,
+     *  Nostr-Vault Marketing 2026-10-09); the button hands off to Vault in
+     *  Your Pocket on the dashboard. */
     const val VAULT_MODES = "vault.modes"
-    const val VAULT_FILTERS = "vault.filters"
     const val VAULT_RELAY = "vault.relay"
 
     val vault = listOf(
         TutorialStep(
             VAULT_MODES, "Your vault",
-            "Switch between your posts, likes, zaps and followers. All of it is kept on this phone, not on someone else's server.",
-        ),
-        TutorialStep(
-            VAULT_FILTERS, "Narrow it down",
-            "Filters for the tab you're on. On Notes you can show everything, just your posts, posts that mention you, or replies from people outside your network.",
+            "Everything you post, like, zap and save, kept right here on your phone. Tap here to choose what you see.",
         ),
         TutorialStep(
             VAULT_RELAY, "Your relay",
-            "Your vault is a real relay running on this phone. It sends your posts out to public relays. Tap here to see it work.",
+            "Your vault is a real relay, running on this phone. Tap Vault to watch it work.",
         ),
     )
 
@@ -130,24 +157,25 @@ object TutorialContent {
         ),
     )
 
-    /** The relay dashboard's status card, the address in it, and the
-     *  activity card under it. */
+    /** The Vault Dashboard's status card, the address in it, and the
+     *  activity card under it. Tod's "vault in your pocket" copy: a personal
+     *  relay and Blossom server, not a "pocket relay". */
     const val RELAY_STATUS = "relay.status"
     const val RELAY_ADDRESS = "relay.address"
     const val RELAY_ACTIVITY = "relay.activity"
 
     val pocketRelay = listOf(
         TutorialStep(
-            RELAY_STATUS, "Your pocket relay",
-            "This is a real Nostr relay, running on this phone. It keeps a full copy of your notes and media.",
+            RELAY_STATUS, "Your vault, in your pocket",
+            "Your vault is a personal Nostr relay and a Blossom media server, running on this phone. It keeps a full copy of your notes and media.",
         ),
         TutorialStep(
             RELAY_ACTIVITY, "It sends your posts out",
-            "When you post, your relay keeps a copy and passes it on to the public relays you picked. Watch it happen here.",
+            "When you post, your vault keeps a copy and sends it on to the public relays you picked. Watch it happen here.",
         ),
         TutorialStep(
-            RELAY_ADDRESS, "Pocket vs public",
-            "This address only works on this phone, so nobody else can connect to it. For a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional.",
+            RELAY_ADDRESS, "Personal vs public",
+            "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional.",
         ),
     )
 
@@ -161,16 +189,16 @@ object TutorialContent {
             "Your notes sit on relays you don't own, and any of those relays can delete them. Importing saves your own copy on this device.",
         ),
         TutorialStep(
-            null, "A relay in your pocket",
-            "Nostr Vault runs a real relay on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it.",
+            null, "A vault in your pocket",
+            "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it.",
         ),
         TutorialStep(
-            null, "Public relays vs yours",
-            "Public relays are shared servers that everyone posts to. Yours belongs to you alone. You post to it, and it sends your post out to the public relays.",
+            null, "Personal vs public relays",
+            "Public relays are shared servers that everyone posts to. Your vault is personal and belongs to you alone. You post to it, and it sends your posts out to the public relays.",
         ),
         TutorialStep(
             null, "Want a public address?",
-            "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your pocket relay works fine on its own.",
+            "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your vault works fine on its own.",
         ),
         TutorialStep(
             null, "Your feed, your rules",

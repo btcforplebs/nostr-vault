@@ -1,0 +1,16 @@
+/* Someone else's profile: relation badge next to the name and the Follow / Unfollow button (PersonProfileView). */
+.rel-badge { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 4px;
+  font: 800 9px/1 var(--font); letter-spacing: .08em; }
+.rel-badge.mutual { color: var(--verified); background: rgb(51 204 153 / .13); }
+.rel-badge.mutual b { font-size: 13px; font-weight: 900; letter-spacing: 0; line-height: 9px; }
+.rel-badge.following { color: var(--online); background: rgb(51 217 128 / .15); }
+.rel-badge.follows-you { color: var(--text-2); background: rgb(255 255 255 / .12); }
+
+.person-actions { display: flex; gap: 8px; padding: 14px var(--gutter); }
+/* ProfileActions.pill: tinted when you can follow, filled once you do. */
+.follow-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px;
+  border-radius: 8px; border-color: transparent; background: var(--accent-pale); color: var(--accent); font: var(--t-foot); font-weight: 600; }
+.follow-btn.on { background: var(--accent); color: #fff; }
+.follow-btn:disabled { background: var(--s2); color: var(--text-3); }
+.person-error { margin: 10px var(--gutter) 0; font: var(--t-foot); }
+.person-end { padding: 16px var(--gutter) 24px; text-align: center; color: var(--text-3); font: var(--t-foot); }

@@ -16,6 +16,9 @@ final class MarketplaceFeedService: ObservableObject {
     @Published private(set) var isLoading = false
     /// Set when every relay failed or returned nothing.
     @Published private(set) var loadFailed = false
+    /// Any relay sent anything this load. An empty result after an answer is
+    /// "none found", not "could not reach".
+    private var relayAnswered = false
     /// Selected category chip, or nil for "All".
     @Published var selectedCategory: MarketCategory?
     /// Global by default, unlike Recipes: a marketplace is for finding sellers
@@ -35,6 +38,7 @@ final class MarketplaceFeedService: ObservableObject {
     private var lastLoadedEveryone: Bool?
     /// Who Global may show this load; nil = everyone (see globalTrustSet).
     private var trust: Set<String>?
+    private var webWatch: AnyCancellable?
 
     /// Results older than this are refetched when the feed is opened again.
     private static let staleAfter: TimeInterval = 10 * 60
@@ -43,16 +47,32 @@ final class MarketplaceFeedService: ObservableObject {
     /// relay.primal.net: on 2026-10-04 nos.lol and relay.nostr.net timed out
     /// and primal returned a full page, so one slow relay never empties the
     /// grid. The owner's feed relays are not used; they rarely carry listings.
+    /// nos.lol dropped: it times out on connect (2026-10-12).
+    /// relay.conduit.market is Conduit's marketplace relay (2026-10-17): its
+    /// 200-listing page added 170 listings the others lack (439 -> 609).
+    /// Most of its listings are throwaway-key test posts; Global's trust
+    /// filter keeps those out, Everyone shows them.
     static let relayStrings = [
         "wss://relay.damus.io",
-        "wss://nos.lol",
         "wss://relay.snort.social",
         "wss://relay.nostr.net",
         "wss://nostr.wine",
         "wss://relay.primal.net",
+        "wss://relay.conduit.market",
     ]
 
     private init() {}
+
+    /// Someone you follow while this Global page is open joins `trust` at
+    /// once, so their posts pass from the next arrival instead of after a
+    /// refresh. Leaves Following and Everyone (`trust == nil`) alone.
+    private func watchWebForTrust() {
+        guard webWatch == nil else { return }
+        webWatch = TrustPathService.webChanged.sink { [weak self] in
+            guard let self, self.trust != nil else { return }
+            self.trust = FeedService.shared.globalTrustSet()
+        }
+    }
 
     /// Categories that have at least one listing, in `MarketCategory` order
     /// with Other last.
@@ -90,6 +110,7 @@ final class MarketplaceFeedService: ObservableObject {
         disconnect()
         book.removeAll()
         loadFailed = false
+        relayAnswered = false
         followSetIsEmpty = false
         isLoading = true
 
@@ -109,6 +130,7 @@ final class MarketplaceFeedService: ObservableObject {
             filter["authors"] = follows
         }
         trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
+        watchWebForTrust()
         lastLoadedEveryone = ConfigService.shared.config.globalShowsEveryone
         let filters = FeedService.trustScopedFilters(filter, trust: trust)
         let subId = "market-\(UUID().uuidString.prefix(8))"
@@ -159,6 +181,7 @@ final class MarketplaceFeedService: ObservableObject {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String else { return }
+        relayAnswered = true
 
         if type == "EOSE" {
             // One relay reaching EOSE is enough to show results; the others
@@ -201,7 +224,7 @@ final class MarketplaceFeedService: ObservableObject {
 
     private func finishLoading() {
         isLoading = false
-        loadFailed = listings.isEmpty
+        loadFailed = listings.isEmpty && !relayAnswered
         if !listings.isEmpty {
             lastLoadedAt = Date()
             lastLoadedScope = scope

@@ -24,6 +24,22 @@ enum FeedOutboxPlan {
     static let maxExtraRelays = 8
     static let fallbackRelay = "wss://relay.ditto.pub"
 
+    /// What a plan is built from. Equal inputs give the same plan, so a
+    /// caller can keep the last plan instead of rebuilding it.
+    struct Inputs: Equatable {
+        var follows: [String]
+        var writeRelays: [String: [String]]
+        var feedRelays: [String]
+        var unreachableRelays: Set<String>
+    }
+
+    static func plan(_ inputs: Inputs) -> [String: [String]] {
+        plan(follows: inputs.follows,
+             writeRelays: inputs.writeRelays,
+             feedRelays: inputs.feedRelays,
+             unreachableRelays: Array(inputs.unreachableRelays))
+    }
+
     /// - Parameters:
     ///   - follows: the authors the feed shows.
     ///   - writeRelays: each author's NIP-65 write relays, where known.

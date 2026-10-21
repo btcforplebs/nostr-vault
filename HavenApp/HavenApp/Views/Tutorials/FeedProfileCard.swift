@@ -8,7 +8,7 @@ enum FollowActions {
     static func toggle(_ pubkey: String, name: String, isFollowing: Bool) {
         let feed = FeedService.shared
         if isFollowing {
-            switch feed.unfollowUser(pubkey) {
+            switch feed.unfollowUser(pubkey, onPublishFailed: publishFailed(name, follow: false)) {
             case .success:
                 FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
             case .failure(.contactsNotLoaded), .failure(.listUnavailable):
@@ -18,7 +18,7 @@ enum FollowActions {
                 FollowNotificationManager.shared.add(recipientName: name, kind: .failed(unfollowErrorMessage(err)))
             }
         } else {
-            switch feed.followUser(pubkey) {
+            switch feed.followUser(pubkey, onPublishFailed: publishFailed(name, follow: true)) {
             case .success:
                 FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
             case .failure(.contactsNotLoaded), .failure(.listUnavailable):
@@ -29,11 +29,21 @@ enum FollowActions {
         }
     }
 
+    /// The relays refused the new list (or it couldn't be signed) and the
+    /// change was put back: say so, or the button just snaps back.
+    static func publishFailed(_ name: String, follow: Bool) -> () -> Void {
+        {
+            FollowNotificationManager.shared.add(recipientName: name, kind: .failed(
+                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly)))
+        }
+    }
+
     private static func followErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
         case .contactsNotLoaded, .listUnavailable: return "Following once your follow list loads…"
         case .alreadyFollowing:  return "Already following"
         case .cannotUnfollowSelf: return "Follow failed"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: true, readOnly: true)
         }
     }
 
@@ -42,6 +52,7 @@ enum FollowActions {
         case .contactsNotLoaded, .listUnavailable: return "Unfollowing once your follow list loads…"
         case .cannotUnfollowSelf: return "Can't unfollow yourself"
         case .alreadyFollowing:   return "Unfollow failed"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: false, readOnly: true)
         }
     }
 }
@@ -104,6 +115,10 @@ struct FeedProfileCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isFollowing ? "Following \(name). Tap to unfollow." : "Follow \(name)")
 
+                if !pinsFullProfileButton {
+                    fullProfileButton
+                }
+
                 Text("Recent posts")
                     .font(.appCaption.weight(.semibold))
                     .textCase(.uppercase)
@@ -132,19 +147,35 @@ struct FeedProfileCard: View {
             .padding(20)
         }
         // Pinned under the scrolling part, so the half-height card never
-        // cuts it off.
+        // cuts it off. Not on iPad: its form sheet put this inset halfway
+        // up the card, over Follow, so there it sits under Follow instead.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            Button("See full profile") { showingFullProfile = true }
-                .font(.appSubheadline.weight(.semibold))
-                .foregroundColor(.havenPurple)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.bottom, 4)
-                .background(.bar)
+            if pinsFullProfileButton {
+                fullProfileButton
+                    .padding(.bottom, 4)
+                    .background(.bar)
+            }
         }
         .task(id: pubkey) { await load() }
         .sheet(isPresented: $showingFullProfile) {
             ProfileView(pubkey: pubkey, onDismiss: { showingFullProfile = false })
         }
+    }
+
+    private var pinsFullProfileButton: Bool {
+        #if os(iOS)
+        // The idiom, not the size class: a sheet's size class varies.
+        UIDevice.current.userInterfaceIdiom != .pad
+        #else
+        true
+        #endif
+    }
+
+    private var fullProfileButton: some View {
+        Button("See full profile") { showingFullProfile = true }
+            .font(.appSubheadline.weight(.semibold))
+            .foregroundColor(.havenPurple)
+            .frame(maxWidth: .infinity, minHeight: 44)
     }
 
     private func toggleFollow() {

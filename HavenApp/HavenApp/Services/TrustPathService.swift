@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Finds and caches the Trust Path for an author. Runs only when Event Info
 /// opens, never while scrolling: a few follow lists, then the answer is cached
@@ -24,6 +25,15 @@ final class TrustPathService {
     func path(for author: String, from center: String, follows: [String],
               trustGraph: Set<String> = []) async -> TrustPath {
         let me = ConfigService.shared.activeAccountHexPubkey
+        // Seen from you, the relay's WoT rebuild already knows who bridges to
+        // anyone in your web: no relays to ask.
+        if center == me, author != me,
+           let bridges = await linkedBridges(to: author, me: me, follows: Set(follows)) {
+            return TrustPath.resolve(author: author, follows: Set(follows), trustGraph: trustGraph, bridges: bridges,
+                                     complete: true)
+        }
+        // Someone you follow: no relays to ask. Their bridges only come from the links file above.
+        if let known = TrustPath.known(author: author, me: center, follows: Set(follows)) { return known }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         let key = "\(me)|\(center)|\(author)|\(Set(follows).hashValue)|\(trustGraph.isEmpty)"
@@ -66,6 +76,41 @@ final class TrustPathService {
         return result
     }
 
+    // MARK: - Changes
+
+    /// Fires on the main queue after your web changed: a follow, an unfollow,
+    /// the saved web reloaded, an account switch. Never on subscribe. It hops
+    /// to the main queue on purpose: `@Published` fires in willSet, so a
+    /// plain sink would still read the old follows.
+    ///
+    /// One stream, built once, that every screen shares. A chain built per
+    /// call gave each SwiftUI body render its own: a resubscribe could lose a
+    /// change still waiting on the main-queue hop, and the globe's button
+    /// missed a rolled-back unfollow while its card line caught it.
+    static let webChanged: AnyPublisher<Void, Never> = {
+        let feed = FeedService.shared
+        let follows = feed.$followedPubkeys.map { Set($0) }.removeDuplicates().dropFirst().map { _ in () }
+        let saved = feed.$wotPubkeys.removeDuplicates().dropFirst().map { _ in () }
+        let account = ConfigService.shared.$activeAccountHexPubkey.removeDuplicates().dropFirst().map { _ in () }
+        return follows.merge(with: saved, account)
+            .receive(on: DispatchQueue.main)
+            .share()
+            .eraseToAnyPublisher()
+    }()
+
+    // MARK: - Links
+
+    /// Bridges to `author` from the relay's `wot_links.json`, read off the
+    /// main thread. nil when there is no file (depth below 3, no rebuild yet)
+    /// or no entry for them.
+    private func linkedBridges(to author: String, me: String, follows: Set<String>) async -> [String]? {
+        let url = ConfigService.shared.relayDataDir.appendingPathComponent(TrustLinks.fileName)
+        return await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+            return TrustLinks.bridges(in: data, of: author, me: me, current: follows)
+        }.value
+    }
+
     // MARK: - Map
 
     private var followLists: [String: [String]] = [:]
@@ -77,14 +122,49 @@ final class TrustPathService {
         if pubkey == ConfigService.shared.activeAccountHexPubkey { return FeedService.shared.followedPubkeys }
         if let cached = followLists[pubkey] { return cached }
         let filter: [String: Any] = ["kinds": [3], "authors": [pubkey], "limit": 1]
-        for url in Self.publicRelays().prefix(Self.maxRelays) {
-            let found = await ZapHistoryService.query(filters: [filter], relays: [url], timeout: 5)
-            if let follows = TrustMap.follows(of: pubkey, in: found) {
-                followLists[pubkey] = follows
-                return follows
-            }
+        let found = await ZapHistoryService.query(filters: [filter], relays: Self.listRelays(for: pubkey), timeout: 5)
+        guard let follows = TrustMap.follows(of: pubkey, in: found) else { return nil }
+        followLists[pubkey] = follows
+        return follows
+    }
+
+    private var widerWebs: [String: (graph: Set<String>, vouches: [String: Int])] = [:]
+
+    /// Someone else's wider web (`TrustMap.widerWeb`): the follow lists of a
+    /// sample of their follows, from the first feed relay and the follow-list
+    /// index at once. Cached for the session; nil when no list came back.
+    func widerWeb(of center: String, ring: [String]) async -> (graph: Set<String>, vouches: [String: Int])? {
+        if let cached = widerWebs[center] { return cached }
+        let sample = TrustMap.widerSample(ring)
+        guard !sample.isEmpty else { return nil }
+        // Kept short per filter: some relays refuse a long authors list.
+        let filters: [[String: Any]] = stride(from: 0, to: sample.count, by: 40).map {
+            let chunk = Array(sample[$0..<min($0 + 40, sample.count)])
+            return ["kinds": [3], "authors": chunk, "limit": chunk.count]
         }
-        return nil
+        var relays = Array(Self.publicRelays().prefix(1))
+        if let index = URL(string: "wss://purplepag.es"), !relays.contains(index) { relays.append(index) }
+        let lists = await ZapHistoryService.query(filters: filters, relays: relays, timeout: 10)
+        let found = await Task.detached(priority: .userInitiated) {
+            TrustMap.widerWeb(of: center, ring: sample, lists: lists)
+        }.value
+        guard !found.graph.isEmpty else { return nil }
+        widerWebs[center] = found
+        return found
+    }
+
+    /// Where one person's follow list is asked for, all at once: the first
+    /// feed relays, the index relays, and the relays they publish to. The
+    /// feed relays alone missed lists the profile page found: by default
+    /// they were primal, nos.lol and nostr.mom, and the last two were down
+    /// (2026-10-10), while purplepag.es and the person's own relays had it.
+    private static func listRelays(for pubkey: String) -> [URL] {
+        let outbox = NostrService.shared.outboxRelays[pubkey] ?? []
+        var urls = Array(publicRelays().prefix(maxRelays))
+        for relay in NostrService.profileIndexRelays + outbox.prefix(3) {
+            if let url = URL(string: relay), !urls.contains(url) { urls.append(url) }
+        }
+        return urls
     }
 
     /// One "show everyone" batch: more lists from `follows` that tag the

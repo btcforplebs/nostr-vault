@@ -51,11 +51,33 @@ class ActiveAccountHexTest {
 
     /** Logen, 2026-10-08: removing the account in use goes back to the main account. */
     @Test
-    fun `removing the active account falls back to the owner`() {
+    fun `removing the active account falls back to the owner`() = runBlocking {
         val store = store()
         store.update { it.copy(activeAccountNpub = second) }
         store.removeAccount(second)
         assertEquals(hex(owner), store.activeAccountHexPubkey.value)
+        assertEquals(null, store.config.value.activeAccountNpub)
+        assertEquals(emptyList<String>(), store.config.value.accountNpubs)
+    }
+
+    /** It goes through the switch, as on iOS: the switch is what reconnects the owner's signer. */
+    @Test
+    fun `removing the active account runs the account switch`() = runBlocking {
+        val store = store()
+        store.update { it.copy(activeAccountNpub = second) }
+        val seen = mutableListOf<Boolean>()
+        val watcher = launch(kotlinx.coroutines.Dispatchers.Unconfined) { store.isSwitchingAccount.collect { seen += it } }
+        store.removeAccount(second)
+        watcher.cancel()
+        assertEquals(true, true in seen)
+    }
+
+    @Test
+    fun `removing another account leaves the active one alone`() = runBlocking {
+        val store = store()
+        store.removeAccount(second)
+        assertEquals(hex(owner), store.activeAccountHexPubkey.value)
+        assertEquals(emptyList<String>(), store.config.value.accountNpubs)
     }
 
     /** Setup sets the value before the owner is saved; a write meanwhile keeps it. */

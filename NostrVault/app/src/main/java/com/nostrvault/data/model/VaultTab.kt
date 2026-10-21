@@ -56,6 +56,11 @@ enum class VaultNoteScope {
 
 /** The Vault tab's modes, in menu order. */
 enum class VaultMode(val displayName: String) {
+    /**
+     * "Vault": everything that came in, in one list, like a notifications
+     * page. The tab opens on it (iOS #506).
+     */
+    ACTIVITY("Vault"),
     NOTES("Notes"),
     ARTICLES("Articles"),
     HIGHLIGHTS("Highlights"),
@@ -73,17 +78,50 @@ enum class VaultMode(val displayName: String) {
             else -> null
         }
 
-    /** The relay half's list this mode shows; null for Media. */
+    /** The relay half's list this mode shows; null for Media and Vault. */
     val viewMode: VaultViewMode?
         get() = when (this) {
             NOTES, ARTICLES, HIGHLIGHTS -> VaultViewMode.NOTES
             LIKES -> VaultViewMode.LIKES
             ZAPS -> VaultViewMode.ZAPS
             FOLLOWERS -> VaultViewMode.FOLLOWERS
-            MEDIA -> null
+            MEDIA, ACTIVITY -> null
         }
 
     companion object {
+        /**
+         * The kinds the Vault's post lists show (DashboardScreen's
+         * RELAY_TAB_NOTE_KINDS; iOS NostrService.relayTabNoteKinds).
+         */
+        val RELAY_TAB_NOTE_KINDS: Set<Int> = setOf(
+            1, 6, VaultNoteScope.ARTICLE_KIND, NIP10Thread.COMMENT_KIND, VaultNoteScope.HIGHLIGHT_KIND, NIP88Poll.KIND,
+        )
+
+        /**
+         * Where an inbound event of [kind] from someone else shows up. Null for
+         * DMs, which the Profile tab's dot covers, and for kinds no list shows.
+         * Port of iOS VaultMode.listing(inboxKind:) (#476).
+         */
+        fun listing(kind: Int): VaultMode? = when (kind) {
+            7 -> LIKES
+            9735 -> ZAPS
+            VaultNoteScope.ARTICLE_KIND -> ARTICLES
+            VaultNoteScope.HIGHLIGHT_KIND -> HIGHLIGHTS
+            in RELAY_TAB_NOTE_KINDS -> NOTES
+            else -> null
+        }
+
+        /**
+         * Tapped into the Vault tab while it had a red dot ([news]): the list
+         * to open, the first in menu order the dot is for. Null (stay put)
+         * when the list [showing] has news too, is "Vault", or nothing is new.
+         */
+        fun opening(news: Set<VaultMode>, showing: VaultMode): VaultMode? {
+            // "Vault" lists everything, so whatever lit the dot is already on it.
+            if (showing == ACTIVITY || showing in news) return null
+            return entries.firstOrNull { it in news }
+        }
+
         /** The menu's modes. Zaps Only hides Likes, as it hides the Likes list. */
         fun menu(zapsOnly: Boolean): List<VaultMode> = entries.filter { !(zapsOnly && it == LIKES) }
 
@@ -117,6 +155,66 @@ object VaultDots {
 
     /** Something new in a mode other than [current]: the pill's dot, on either half. */
     fun hasNewElsewhere(newModes: Set<VaultMode>, current: VaultMode): Boolean = (newModes - current).isNotEmpty()
+
+    /**
+     * What the pill shows as new: the lit event lists, plus Followers. Likes
+     * never shows in Zaps Only mode, which hides it, even if it lit before
+     * the mode came on.
+     */
+    fun shown(lit: Set<VaultViewMode>, newFollowers: Boolean, zapsOnly: Boolean): Set<VaultMode> =
+        lit.filterNot { zapsOnly && it == VaultViewMode.LIKES }
+            .mapTo(HashSet()) { VaultMode.of(false, it, VaultNoteScope.NOTES) }
+            .apply { if (newFollowers) add(VaultMode.FOLLOWERS) }
+
+    /** The lists whose dot comes from their events. Followers' comes from the relay's ledger. */
+    val eventLists = listOf(VaultViewMode.NOTES, VaultViewMode.LIKES, VaultViewMode.ZAPS)
+
+    /**
+     * The kinds each dotted list holds: Notes' kinds less articles and
+     * highlights (they get no dot), likes, zap receipts.
+     */
+    fun kinds(list: VaultViewMode, noteKinds: Set<Int>): Set<Int> = when (list) {
+        VaultViewMode.NOTES -> VaultNoteScope.NOTES.kinds(noteKinds)
+        VaultViewMode.LIKES -> setOf(7)
+        VaultViewMode.ZAPS -> setOf(9735)
+        VaultViewMode.FOLLOWERS -> emptySet()
+    }
+
+    /**
+     * The newest created_at in each dotted list, out of (kind, created_at)
+     * pairs; 0 for an empty list. Future-dated events are left out, or one
+     * would hold a list's dot dark until its date.
+     *
+     * iOS compares event counts. Android keeps a watermark instead: the store
+     * here is trimmed at a cap, so a new event can leave the count unchanged,
+     * and an older page loading would read as news.
+     */
+    fun newest(events: Iterable<Pair<Int, Long>>, noteKinds: Set<Int>, nowSecs: Long): Map<VaultViewMode, Long> {
+        val listByKind = HashMap<Int, VaultViewMode>()
+        for (list in eventLists) for (kind in kinds(list, noteKinds)) listByKind[kind] = list
+        val newest = eventLists.associateWithTo(HashMap()) { 0L }
+        for ((kind, createdAt) in events) {
+            val list = listByKind[kind] ?: continue
+            if (createdAt > nowSecs + 60) continue
+            if (createdAt > newest.getValue(list)) newest[list] = createdAt
+        }
+        return newest
+    }
+
+    /**
+     * The lists holding something newer than when you last looked. Nothing
+     * lights before the first load has settled ([seenAt] empty), the list in
+     * sight never does, and Likes stays dark in Zaps Only mode, which hides it.
+     */
+    fun lit(
+        newest: Map<VaultViewMode, Long>,
+        seenAt: Map<VaultViewMode, Long>,
+        watched: VaultViewMode?,
+        zapsOnly: Boolean,
+    ): Set<VaultViewMode> = eventLists.filterTo(HashSet()) { list ->
+        val seen = seenAt[list] ?: return@filterTo false
+        list != watched && !(zapsOnly && list == VaultViewMode.LIKES) && (newest[list] ?: 0L) > seen
+    }
 }
 
 /**

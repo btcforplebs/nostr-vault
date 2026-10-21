@@ -17,6 +17,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.relay.BlossomArchive
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.RelayImportService
 import com.nostrvault.ui.theme.*
@@ -35,6 +36,8 @@ class BackupSettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val relayImportService: RelayImportService,
+    /** Exports here count as the Vault Dashboard's backups too (iOS VaultHistory). */
+    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
 ) : ViewModel() {
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
@@ -47,9 +50,13 @@ class BackupSettingsViewModel @Inject constructor(
 
     // Notes export/import touch the databases, which the running relay holds open
     // in-process. They must run with the relay stopped (withRelayStopped), then it
-    // restarts. Media export/import only zip the blossom directory — no relay stop.
+    // restarts. Media export/import only read and write the blossom
+    // directory (BlossomArchive, the iOS file naming) — no relay stop.
 
-    fun exportNotes(dest: Uri) = run("Exporting notes…", "Notes exported", dest = dest, stopRelay = true) { tmp ->
+    fun exportNotes(dest: Uri) = run(
+        "Exporting notes…", "Notes exported", dest = dest, stopRelay = true,
+        onSuccess = { vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_BACKUP) },
+    ) { tmp ->
         HavenBridge.backupDatabase(tmp.absolutePath)
     }
 
@@ -57,12 +64,17 @@ class BackupSettingsViewModel @Inject constructor(
         HavenBridge.restoreDatabase(tmp.absolutePath)
     }
 
-    fun exportMedia(dest: Uri) = run("Exporting media…", "Media exported", dest = dest) { tmp ->
-        HavenBridge.zipDirectory(blossomDir, tmp.absolutePath)
+    fun exportMedia(
+        dest: Uri,
+    ) = run("Exporting media…", "Media exported", dest = dest, onSuccess = { vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_BACKUP) }) { tmp ->
+        BlossomArchive.export(File(blossomDir), tmp)
+        0
     }
 
     fun importMedia(src: Uri) = run("Restoring media…", "Media restored", src = src) { tmp ->
-        HavenBridge.unzipDirectory(tmp.absolutePath, blossomDir)
+        val result = BlossomArchive.import(tmp, File(blossomDir))
+        if (result.imported == 0 && result.skipped > 0) error("No media files in this backup")
+        0
     }
 
     /**
@@ -77,6 +89,7 @@ class BackupSettingsViewModel @Inject constructor(
         dest: Uri? = null,
         src: Uri? = null,
         stopRelay: Boolean = false,
+        onSuccess: () -> Unit = {},
         op: (File) -> Int,
     ) {
         if (_busy.value) return
@@ -112,6 +125,7 @@ class BackupSettingsViewModel @Inject constructor(
                 } finally {
                     withContext(Dispatchers.IO) { tmp.delete() }
                 }
+                onSuccess()
                 _status.value = done
             } catch (e: Exception) {
                 _status.value = "Error: ${e.message}"
@@ -147,7 +161,7 @@ fun BackupSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Backup") },
+                title = { Text("Backup & Restore") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -169,7 +183,7 @@ fun BackupSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            SectionLabel("Notes (JSONL)")
+            SectionLabel("Notes (JSONL)", SettingsHelp.RELAY_BACKUP)
             BackupRow(
                 title = "Export Notes",
                 subtitle = "Save all notes and metadata as a JSONL backup (.zip)",
@@ -243,14 +257,3 @@ private fun BackupRow(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
-}

@@ -11,6 +11,12 @@ final class VaultSection: ObservableObject {
     /// Modes with something new, published by the relay half so the pill
     /// shows the same dots on the Media half.
     @Published var newModes: Set<VaultMode> = []
+    /// Whether the Vault tab is the one on screen. The iOS shell sets it from
+    /// the selected tab; a mode only counts as seen while it's in sight.
+    @Published var isOnScreen = false
+    /// Set when you tap into the Vault tab: it then opens the list its red
+    /// dot is for, instead of whichever one you left it on.
+    @Published var opensNewActivity = false
 }
 
 private struct InVaultTabKey: EnvironmentKey { static let defaultValue = false }
@@ -62,12 +68,16 @@ enum VaultDashboard {
 
 /// The Vault tab's modes, in menu order.
 enum VaultMode: String, CaseIterable {
+    /// "Vault": everything that came in, in one list, like a notifications
+    /// page. The tab opens on it.
+    case activity
     case notes, articles, highlights, media, likes, zaps, followers
 
-    var title: String { rawValue.capitalized }
+    var title: String { self == .activity ? "Vault" : rawValue.capitalized }
 
     var symbol: String {
         switch self {
+        case .activity: return "tray.full.fill"
         case .notes: return "doc.text"
         case .articles: return "doc.richtext"
         case .highlights: return "highlighter"
@@ -78,8 +88,21 @@ enum VaultMode: String, CaseIterable {
         }
     }
 
+    /// Where an inbound event of `kind` from someone else shows up. Nil for
+    /// DMs, which the Messages button's dot covers, and for kinds no list shows.
+    static func listing(inboxKind kind: Int) -> VaultMode? {
+        switch kind {
+        case 7: return .likes
+        case 9735: return .zaps
+        case VaultNoteScope.articleKind: return .articles
+        case VaultNoteScope.highlightKind: return .highlights
+        default: return NostrService.relayTabNoteKinds.contains(kind) ? .notes : nil
+        }
+    }
+
     func select() {
         switch self {
+        case .activity: NotificationCenter.default.post(name: .havenOpenRelayActivity, object: nil)
         case .notes: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.notes)
         case .articles: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.articles)
         case .highlights: NotificationCenter.default.post(name: .havenOpenRelayNotes, object: VaultNoteScope.highlights)
@@ -92,23 +115,18 @@ enum VaultMode: String, CaseIterable {
     }
 }
 
-/// The Vault tab's mode picker, built like the Feed tab's: the mode's icon
-/// with the relay's health dot, its name, and a chevron. The menu lists the
+/// The Vault tab's mode picker, built like the Feed tab's: the mode's icon,
+/// its name, and a chevron. The menu lists the
 /// modes, then the Vault Dashboard, as the feed menu ends with its dashboard.
 struct VaultModePill: View {
     let mode: VaultMode
     var zapsOnly = false
-    @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var section = VaultSection.shared
+    @EnvironmentObject var relayManager: RelayProcessManager
 
-    /// Modes with something new since you last looked.
-    private var newModes: Set<VaultMode> { section.newModes }
-
-    private var dotColor: Color {
-        if relayManager.isBooting { return .yellow }
-        if relayManager.isRunning && relayManager.isWotSyncing { return .orange }
-        return relayManager.isRunning ? .green : .red
-    }
+    /// Modes with something new since you last looked: the relay half's own
+    /// dots, and what others sent that lit the Vault tab's dot.
+    private var newModes: Set<VaultMode> { section.newModes.union(relayManager.newActivityModes) }
 
     private var modes: [VaultMode] {
         VaultMode.allCases.filter { !(zapsOnly && $0 == .likes) }
@@ -143,22 +161,6 @@ struct VaultModePill: View {
                     .font(.appSystem(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 30, height: 30)
-                    .overlay(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(dotColor)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: dotColor.opacity(0.6), radius: 2)
-                            .offset(x: -1, y: -1)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        if hasNewElsewhere {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 8, height: 8)
-                                .offset(x: 1, y: 1)
-                                .transition(.scale.combined(with: .opacity))
-                        }
-                    }
                 HStack(spacing: 3) {
                     Text(mode.title)
                         .font(.appSystem(size: 17, weight: .bold))
@@ -178,6 +180,42 @@ struct VaultModePill: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Vault: \(mode.title)")
         .accessibilityValue(hasNewElsewhere ? "New activity" : "")
-        .accessibilityHint("Switch between notes, articles, highlights, media, likes, zaps and followers, or open the Vault Dashboard")
+        .accessibilityHint("Switch between everything new, notes, articles, highlights, media, likes, zaps and followers, or open the Vault Dashboard")
+    }
+}
+
+/// The envelope at the front of the Vault tab's right pill: opens the
+/// inbox, with a red dot while a message is unread. Private messages never
+/// show in the Vault list itself; this is their door.
+struct VaultMessagesButton: View {
+    @ObservedObject private var dmService = DMService.shared
+    @Environment(\.filterButtonWidth) private var width
+
+    var body: some View {
+        let unread = dmService.totalUnreadCount
+        Button {
+            NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
+        } label: {
+            Image(systemName: "envelope")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: width, height: 36)
+                .overlay(alignment: .topTrailing) {
+                    if unread > 0 {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: -5, y: 6)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Messages")
+        .accessibilityValue(unread > 0 ? "\(unread) unread" : "")
+        #if os(macOS)
+        .help("Messages")
+        #endif
     }
 }

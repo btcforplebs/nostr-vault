@@ -4,12 +4,21 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.ContactList
 import com.nostrvault.data.model.FollowListFilter
 import com.nostrvault.data.model.TrustMap
+import com.nostrvault.data.model.TrustMapWider
+import com.nostrvault.data.model.TrustLinks
 import com.nostrvault.data.model.TrustPath
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -45,12 +54,40 @@ class TrustPathService @Inject constructor(
     /** Your trust graph plus your follows; empty until the graph has loaded. */
     fun myTrustGraph(): Set<String> = feedService.relayTabTrustedPubkeys()
 
+    /** The relay's vouches for people past your follows; null on an old cache. */
+    fun myVouches(): Map<String, Int>? = feedService.wotVouches.value
+
     /**
      * The relay's trust graph as it loads. Android reads it from disk off the
      * main thread, so [myTrustGraph] can be empty on a cold start; key on this
      * to pick it up when it lands. iOS reads it from cache synchronously.
      */
     val trustGraphUpdates: StateFlow<Set<String>> get() = feedService.wotPubkeys
+
+    /**
+     * Fires when your web changed: a follow, an unfollow, the saved web
+     * reloading, an account switch. Once on collect too, so a collector traces
+     * straight away. The new values are already readable when it fires.
+     */
+    val webChanged: Flow<Unit>
+        get() = combine(feedService.followedPubkeys, feedService.wotPubkeys, meUpdates) { follows, web, me ->
+            Triple(follows.toSet(), web, me)
+        }.distinctUntilChanged().map { }
+
+    /** True while your follow list is being fetched. */
+    val isLoadingFollows: StateFlow<Boolean> get() = feedService.isLoadingContacts
+
+    /**
+     * True once a follow-list load has finished, found or not. Until then an
+     * empty follow list means "not in yet", not "follows no one".
+     */
+    val followsAttempted: StateFlow<Boolean> get() = feedService.hasAttemptedContactLoad
+
+    /** The WOT tab's refresh, step 1: fetch your follow list again. */
+    suspend fun refreshFollows() = feedService.refreshContactList()
+
+    /** Step 2: read the relay's trust graph again; [trustGraphUpdates] carries the result. */
+    fun reloadTrustGraph() = feedService.loadWotPubkeys()
 
     suspend fun path(author: String): TrustPath = path(author, me, myFollows(), myTrustGraph())
 
@@ -66,6 +103,15 @@ class TrustPathService @Inject constructor(
         trustGraph: Set<String> = emptySet(),
     ): TrustPath {
         val me = this.me
+        // Seen from you, the relay's WoT rebuild already knows who bridges to
+        // anyone in your web: no relays to ask.
+        if (center == me && author != me) {
+            linkedBridges(author, me, follows.toSet())?.let {
+                return TrustPath.resolve(author, follows.toSet(), trustGraph, it)
+            }
+        }
+        // Someone you follow: no relays to ask. Their bridges only come from the links file above.
+        TrustPath.known(author, center, follows.toSet())?.let { return it }
         // The whole follow set and whether the graph is loaded are in the key,
         // so a follow, an unfollow, or the graph arriving gives a fresh answer.
         val key = "$me|$center|$author|${follows.toSet().hashCode()}|${trustGraph.isEmpty()}"
@@ -98,6 +144,18 @@ class TrustPathService @Inject constructor(
         return result
     }
 
+    /**
+     * Bridges to [author] from the relay's `wot_links.json`. null when there
+     * is no file (depth below 3, no rebuild yet) or no entry for them.
+     */
+    private suspend fun linkedBridges(author: String, me: String, follows: Set<String>): List<String>? =
+        withContext(Dispatchers.IO) {
+            val dir = configStore.config.value.relayDataDir ?: return@withContext null
+            val text = runCatching { File(dir, TrustLinks.FILE_NAME).readText() }.getOrNull()
+                ?: return@withContext null
+            TrustLinks.bridges(text, author, me, follows)
+        }
+
     // ── Map ──────────────────────────────────────────────────────────
 
     /**
@@ -108,12 +166,43 @@ class TrustPathService @Inject constructor(
         if (pubkey == me) return myFollows()
         followLists[pubkey]?.let { return it }
         val filter = FollowListFilter(authors = listOf(pubkey), tagged = null, limit = 1)
-        for (url in publicRelays().take(MAX_RELAYS)) {
-            val follows = TrustMap.follows(pubkey, query(listOf(filter), url, 5_000L)) ?: continue
-            followLists[pubkey] = follows
-            return follows
-        }
-        return null
+        val follows = TrustMap.follows(pubkey, query(listOf(filter), listRelays(pubkey), 5_000L)) ?: return null
+        followLists[pubkey] = follows
+        return follows
+    }
+
+    private val widerWebs = ConcurrentHashMap<String, TrustMapWider.WiderWeb>()
+
+    /**
+     * Someone else's wider web ([TrustMapWider.web]): the follow lists of a
+     * sample of their follows, from the first feed relay and the follow-list
+     * index at once. Cached for the session; null when no list came back.
+     * iOS `TrustPathService.widerWeb`.
+     */
+    suspend fun widerWeb(center: String, ring: List<String>): TrustMapWider.WiderWeb? {
+        widerWebs[center]?.let { return it }
+        val sample = TrustMapWider.sample(ring)
+        if (sample.isEmpty()) return null
+        // Kept short per filter: some relays refuse a long authors list.
+        val filters = sample.chunked(WIDER_CHUNK).map { FollowListFilter(authors = it, tagged = null, limit = it.size) }
+        val relays = (publicRelays().take(1) + WIDER_INDEX_RELAY).distinctBy(::relayKey)
+        val lists = query(filters, relays, WIDER_TIMEOUT_MS)
+        val found = withContext(Dispatchers.Default) { TrustMapWider.web(center, sample, lists) }
+        if (found.graph.isEmpty()) return null
+        widerWebs[center] = found
+        return found
+    }
+
+    /**
+     * Where one person's follow list is asked for, all at once: the first
+     * feed relays, the index relays, and the relays they publish to. The
+     * feed relays alone missed lists the profile page found: by default
+     * they were primal, nos.lol and nostr.mom, and the last two were down
+     * (2026-10-10), while purplepag.es and the person's own relays had it.
+     */
+    private fun listRelays(pubkey: String): List<String> {
+        val outbox = nostrService.outboxRelays.value[pubkey].orEmpty().take(3)
+        return (publicRelays().take(MAX_RELAYS) + NostrService.PROFILE_RELAYS + outbox).distinctBy(::relayKey)
     }
 
     /**
@@ -157,16 +246,58 @@ class TrustPathService @Inject constructor(
         return if (answered.get()) emptyList() else null
     }
 
+    /**
+     * How much you and each person interact ([TrustMap.engagementScores]):
+     * your own events from this device's relay, and the ones aimed at you
+     * from its inbox. The read relays when the device relay isn't up.
+     */
+    suspend fun engagement(): Map<String, Int> {
+        val me = me
+        if (me.isEmpty()) return emptyMap()
+        val config = configStore.config.value
+        val kinds = TrustMap.ENGAGEMENT_KINDS.joinToString(",")
+        val fallback = config.readRelays.ifEmpty { RelayConfiguration.FALLBACK_RELAYS }.take(MAX_RELAYS)
+        val outward = config.nostrURL?.let { listOf(it) } ?: fallback
+        val inward = config.localInboxURL?.let { listOf(it) } ?: fallback
+        val mine = nostrService.queryRawEvents(
+            listOf("""{"authors":["$me"],"kinds":[$kinds],"limit":$ENGAGEMENT_LIMIT}"""), outward)
+        val toMe = nostrService.queryRawEvents(
+            listOf("""{"#p":["$me"],"kinds":[$kinds],"limit":$ENGAGEMENT_LIMIT}"""), inward)
+        return withContext(Dispatchers.Default) {
+            fun interactions(events: List<kotlinx.serialization.json.JsonObject>) = events
+                .filter { HavenBridge.verifyEvent(it.toString()) }
+                .mapNotNull { e ->
+                    val pubkey = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                        ?: return@mapNotNull null
+                    val kind = (e["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.intOrNull
+                        ?: return@mapNotNull null
+                    val tags = (e["tags"] as? kotlinx.serialization.json.JsonArray).orEmpty().map { tag ->
+                        (tag as? kotlinx.serialization.json.JsonArray).orEmpty()
+                            .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull }
+                    }
+                    TrustMap.Interaction(pubkey, kind, tags)
+                }
+            TrustMap.engagementScores(interactions(mine), interactions(toMe), me)
+        }
+    }
+
     /** Signed follow lists from one relay. A list that fails its signature is dropped. */
     private suspend fun query(
         filters: List<FollowListFilter>,
         url: String,
         timeoutMs: Long,
         answered: AtomicBoolean? = null,
+    ): List<ContactList> = query(filters, listOf(url), timeoutMs, answered)
+
+    private suspend fun query(
+        filters: List<FollowListFilter>,
+        urls: List<String>,
+        timeoutMs: Long,
+        answered: AtomicBoolean? = null,
     ): List<ContactList> {
         val events = nostrService.queryRawEvents(
             filters.map { it.toJson() },
-            listOf(url),
+            urls,
             timeoutMs,
             onAnswered = answered?.let { flag -> { flag.set(true) } },
         )
@@ -193,5 +324,12 @@ class TrustPathService @Inject constructor(
     private companion object {
         /** Public relays tried before giving up on finding more bridges. */
         const val MAX_RELAYS = 3
+        /** Under the phone relay's 1,000-event cap (Badger), so it is honoured. */
+        const val ENGAGEMENT_LIMIT = 1000
+        /** Authors per filter when mapping someone's wider web. */
+        const val WIDER_CHUNK = 40
+        const val WIDER_TIMEOUT_MS = 10_000L
+        /** The follow-list index, asked beside the first feed relay. */
+        const val WIDER_INDEX_RELAY = "wss://purplepag.es"
     }
 }

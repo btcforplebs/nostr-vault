@@ -38,11 +38,12 @@ enum LiveChat {
     /// all 19, while nos.lol returned 200 (140 chat, 60 zaps) across 4 of them,
     /// relay.damus.io 200 across 3, and relay.primal.net 200 across 2.
     /// Following the documented relay alone shows an empty room for a stream
-    /// that is busy.
+    /// that is busy. nos.lol led that count but stopped answering
+    /// (2026-10-12); relay.snort.social took its place unmeasured.
     static let defaultChatRelays = [
-        "wss://nos.lol",
         "wss://relay.damus.io",
-        "wss://relay.primal.net"
+        "wss://relay.primal.net",
+        "wss://relay.snort.social"
     ]
 
     /// Who to ask for a stream's chat, best source first.
@@ -213,14 +214,14 @@ enum LiveChat {
 
     // MARK: - Private
 
-    private struct ZapRequest {
+    struct ZapRequest {
         let pubkey: String
         let content: String
         let tags: [[String]]
     }
 
     /// The zap request lives as JSON inside the receipt's `description` tag.
-    private static func zapRequest(from receiptTags: [[String]]) -> ZapRequest? {
+    static func zapRequest(from receiptTags: [[String]]) -> ZapRequest? {
         guard let description = receiptTags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
               !description.isEmpty else { return nil }
 
@@ -240,5 +241,88 @@ enum LiveChat {
         return ZapRequest(pubkey: pubkey,
                           content: json["content"] as? String ?? "",
                           tags: json["tags"] as? [[String]] ?? [])
+    }
+}
+
+// MARK: - The Live feed's Global side
+
+extension LiveChat {
+    /// Who the Live feed's Global side lets in.
+    enum GlobalGate: Equatable {
+        /// The shield is set to Everyone.
+        case everyone
+        /// The Web of Trust. Empty while the graph is still being built, and
+        /// then nobody passes: an account that has a graph coming must not
+        /// flash unfiltered first.
+        case trusted(Set<String>)
+        /// The graph is built and names nobody: the account follows no one
+        /// yet. Fails open, like the topic feed, minus adult streams, so a new
+        /// account has somewhere to find people.
+        case newAccount
+    }
+
+    static func globalGate(trust: Set<String>?, hasNoWebOfTrustYet: Bool) -> GlobalGate {
+        guard let trust else { return .everyone }
+        return trust.isEmpty && hasNoWebOfTrustYet ? .newAccount : .trusted(trust)
+    }
+
+    /// A stream marked adult by its tags (NIP-36 content warning, a NIP-32
+    /// content-warning label, #nsfw and the like) or by its title or summary
+    /// (🔞, "NSFW"). The title matters: of the 5 streams live on the default
+    /// relays on 2026-10-12, the adult one carried no tag at all, only a 🔞.
+    static func isAdultStream(tags: [[String]]) -> Bool {
+        if TopicFeedFilter.isAdult(tags) { return true }
+        if tags.contains(where: { $0.count >= 2 && $0[0] == "L" && $0[1].lowercased() == "content-warning" }) {
+            return true
+        }
+        let text = tags.filter { $0.count >= 2 && ($0[0] == "title" || $0[0] == "summary") }
+            .map { $0[1].lowercased() }
+            .joined(separator: " ")
+        if text.contains("🔞") { return true }
+        let words = text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        return words.contains { TopicFeedFilter.adultHashtags.contains($0) }
+    }
+
+    /// What an empty Live grid says.
+    struct EmptyLiveText: Equatable {
+        enum Action: Equatable { case showGlobal, tryAgain }
+        let title: String
+        let message: String
+        let action: Action
+        let noConnection: Bool
+    }
+
+    /// `gate` is nil on the Following side. Nothing here blames Nostr: an
+    /// empty grid says who was asked about, so it reads as "nobody in that
+    /// group is streaming", not as a broken feed.
+    static func emptyLiveText(followSetIsEmpty: Bool, loadFailed: Bool, gate: GlobalGate?) -> EmptyLiveText {
+        if followSetIsEmpty {
+            return EmptyLiveText(title: "Nobody you follow is live",
+                                 message: "You don't follow anyone yet. Global shows everyone who is streaming.",
+                                 action: .showGlobal, noConnection: false)
+        }
+        if loadFailed {
+            return EmptyLiveText(title: "Could not reach any relay",
+                                 message: "Live streams come from other people's relays, so this one needs a connection.",
+                                 action: .tryAgain, noConnection: true)
+        }
+        switch gate {
+        case nil:
+            return EmptyLiveText(title: "Nobody you follow is live",
+                                 message: "Switch to Global to see who else is streaming.",
+                                 action: .showGlobal, noConnection: false)
+        case .trusted(let trust) where trust.isEmpty:
+            return EmptyLiveText(title: "Building your web of trust",
+                                 message: "Streams from people in your network show here once it's ready.",
+                                 action: .tryAgain, noConnection: false)
+        case .trusted:
+            return EmptyLiveText(title: "Nobody in your network is live",
+                                 message: "Nobody in your web of trust is streaming right now.",
+                                 action: .tryAgain, noConnection: false)
+        case .everyone, .newAccount:
+            return EmptyLiveText(title: "Nothing live right now",
+                                 message: "Nobody is streaming right now. Check back later.",
+                                 action: .tryAgain, noConnection: false)
+        }
     }
 }

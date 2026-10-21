@@ -33,30 +33,32 @@ import javax.inject.Singleton
  */
 @Singleton
 class BlossomService @Inject constructor(
-    private val configStore: ConfigStore,
-    private val nostrService: NostrService,
+    internal val configStore: ConfigStore,
+    internal val nostrService: NostrService,
     private val mediaCacheService: MediaCacheService,
-    private val homeVault: com.nostrvault.fips.HomeVaultSender,
+    /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
+    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
+    internal val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
-        private const val TAG = "BlossomService"
-        private const val AUTH_KIND = 24242
-        private const val MAX_UPLOAD_RETRIES = 3
+        internal const val TAG = "BlossomService"
+        internal const val AUTH_KIND = 24242
+        internal const val MAX_UPLOAD_RETRIES = 3
 
         /** Signer attempts for one Blossom auth event, and the pause between them. */
-        private const val AUTH_SIGN_ATTEMPTS = 3
-        private const val AUTH_SIGN_RETRY_DELAY_MS = 1_000L
+        internal const val AUTH_SIGN_ATTEMPTS = 3
+        internal const val AUTH_SIGN_RETRY_DELAY_MS = 1_000L
         private const val MIRROR_CONCURRENCY = 4
 
         /** Hard ceiling on any single downloaded blob held in memory. */
-        private const val MAX_BLOB_BYTES = 50L * 1024 * 1024 // 50 MB
+        internal const val MAX_BLOB_BYTES = 50L * 1024 * 1024 // 50 MB
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
     private val mirrorSemaphore = Semaphore(MIRROR_CONCURRENCY)
 
-    private val localClient = OkHttpClient.Builder()
+    internal val localClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -88,15 +90,22 @@ class BlossomService @Inject constructor(
         }
         scope.launch {
             val result = try {
-                if (configStore.config.value.activeBlossomMirrors.isEmpty()) {
-                    "No mirrors configured"
-                } else {
-                    val count = mirrorAllFromExternal(
+                var count = 0
+                // 1. From your Blossom servers (their /list of your files).
+                if (configStore.config.value.activeBlossomMirrors.isNotEmpty()) {
+                    count += mirrorAllFromExternal(
                         onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
                         onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
                     )
-                    if (count > 0) "Mirrored $count files" else "All media already mirrored"
                 }
+                // 2. From the media links in your notes, on any server (iOS MirrorService).
+                _mirrorRun.value = _mirrorRun.value.copy(status = "Scanning notes for media...", progress = null)
+                count += mirrorFromNoteMedia(
+                    onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
+                    onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
+                )
+                vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT)
+                if (count > 0) "Mirrored $count files" else "All media already mirrored"
             } catch (e: Exception) {
                 Log.w(TAG, "Mirror run failed: ${e.message}")
                 "Mirror failed: ${e.message}"
@@ -121,7 +130,7 @@ class BlossomService @Inject constructor(
      * names it ([HomeVaultRules.meshOnlyUrl]). Null when there is no home
      * vault or the vault doesn't have it: the post waits.
      */
-    private suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
+    internal suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
         val vault = homeVault.homeVaultNpub ?: return null
         val server = com.nostrvault.fips.HomeVaultRules.publicServerFor(mirrors) {
             com.nostrvault.relay.isPrivateNetworkURL(it)
@@ -137,10 +146,29 @@ class BlossomService @Inject constructor(
         return PostUploadOutcome.Hosted("$server/$sha256")
     }
 
-    private val remoteClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(600, TimeUnit.SECONDS) // 10min for large files
-        .readTimeout(900, TimeUnit.SECONDS) // 15min resource timeout
+    // Idle limits (no bytes moving), not totals: a big video keeps uploading
+    // as long as bytes flow. 10-15 minutes of silence from a dead server used
+    // to hold the post.
+    internal val remoteClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * [remoteClient] for a URL another app chose (the clipboard): every hop,
+     * redirects included, must have connected to a public address, so a link
+     * can't reach this device's relay on 127.0.0.1 or a LAN host. Checked on
+     * the connected socket, so a name that re-resolves to 127.0.0.1 is caught too.
+     */
+    internal val publicOnlyClient = remoteClient.newBuilder()
+        .addNetworkInterceptor { chain ->
+            val addr = chain.connection()?.socket()?.inetAddress
+            if (addr == null || com.nostrvault.util.UrlSafety.isInternalAddress(addr)) {
+                throw IOException("Refused: ${chain.request().url.host} is not a public address")
+            }
+            chain.proceed(chain.request())
+        }
         .build()
 
     // ══════════════════════════════════════════════════════════════════
@@ -231,201 +259,7 @@ class BlossomService @Inject constructor(
             .also { homeVault.drainSoon() }
 
     /** What one upload did, plus the local URL when the local save succeeded. */
-    private data class UploadAttempt(val outcome: PostUploadOutcome, val localUrl: String?)
-
-    private suspend fun upload(
-        source: UploadSource,
-        sha256: String,
-        contentType: String,
-        skipOutsideServers: Boolean,
-        /** False for DM attachments: the vault's mesh door serves any blob to anyone with its hash. */
-        toHomeVault: Boolean = true,
-    ): UploadAttempt = withContext(Dispatchers.IO) {
-        // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
-        // every mirror. The event is server-agnostic (no "u" tag), so one
-        // signature is valid everywhere. This is required for external signers:
-        // Amber serializes signing through a single activity and fails on the
-        // concurrent requests that per-destination signing would produce.
-        val authHeader = createAuthHeader("upload", sha256)
-        if (authHeader.isEmpty()) {
-            Log.e(TAG, "Upload aborted: could not create Blossom auth event (signer unavailable)")
-            return@withContext UploadAttempt(PostUploadOutcome.NotSavedOnDevice, null)
-        }
-
-        val localUrl = localBlossomURL()
-        val localOk = when {
-            localUrl == null -> false
-            source is UploadSource.Data -> saveToLocalRelay(source.data, sha256, contentType, authHeader)
-            else -> saveToLocalRelay((source as UploadSource.FileSource).file, sha256, contentType, authHeader)
-        }
-        if (!localOk) Log.w(TAG, "Local relay upload failed for ${sha256.take(8)} — continuing with mirrors")
-        // The owner's home vault on the mesh gets a copy too; it queues while unreachable.
-        if (toHomeVault) when (source) {
-            is UploadSource.Data -> homeVault.offerBlob(sha256, contentType, source.data)
-            is UploadSource.FileSource -> homeVault.offerBlob(sha256, contentType, source.file)
-        }
-        val savedLocalUrl = if (localOk && localUrl != null) "$localUrl/$sha256" else null
-
-        // What to report when no outside server hosted it: a post may only wait
-        // for one if the blob is actually on this device.
-        fun notHosted(mirrors: List<String>): PostUploadOutcome = when {
-            !localOk -> PostUploadOutcome.NotSavedOnDevice
-            // The home vault is a server to wait for.
-            mirrors.isEmpty() && toHomeVault && homeVault.homeVaultNpub != null ->
-                PostUploadOutcome.SavedOnDevice(listOf("fipsmesh://${homeVault.homeVaultNpub}/"))
-            mirrors.isEmpty() -> PostUploadOutcome.NoOutsideServer
-            else -> PostUploadOutcome.SavedOnDevice(mirrors)
-        }
-
-        val mirrors = configStore.config.value.activeBlossomMirrors
-
-        // An external Blossom server on a public address (Nostr Vault for Mac
-        // on a domain) already hosts it: its URL is the one the post carries.
-        // Mirrors still get a copy, but one pass and no wait. A LAN or
-        // Tailscale address only opens for the owner, so it takes the normal
-        // path below, like the built-in relay.
-        if (savedLocalUrl != null && !com.nostrvault.relay.isPrivateNetworkURL(savedLocalUrl)) {
-            if (mirrors.isNotEmpty() && !skipOutsideServers) {
-                mirrorUploadPass(source, mirrors, sha256, contentType, authHeader)
-            }
-            return@withContext UploadAttempt(PostUploadOutcome.Hosted(savedLocalUrl), savedLocalUrl)
-        }
-
-        if (mirrors.isEmpty()) {
-            if (localOk && toHomeVault && !skipOutsideServers) {
-                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
-            }
-            Log.e(TAG, "No Blossom mirrors configured — refusing to embed a localhost media URL")
-            return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
-        }
-
-        // Only skip when the blob is safe here; if the local save failed, an
-        // outside server is the only place it can go, so try them anyway.
-        if (skipOutsideServers && localOk) {
-            if (toHomeVault) hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
-            Log.i(TAG, "Saved ${sha256.take(8)} on this device only — an earlier attachment found every outside server down")
-            return@withContext UploadAttempt(PostUploadOutcome.SavedOnDevice(mirrors), savedLocalUrl)
-        }
-
-        var external = mirrorUploadPass(source, mirrors, sha256, contentType, authHeader)
-
-        // A sleeping mirror host (e.g. the Mac relay over LAN/Tailscale) is often
-        // woken *by* the first pass's connection attempts (wake-on-network) but
-        // isn't up fast enough to serve it. Wait and retry the whole pass once
-        // before handing the post to the queue.
-        if (external == null) {
-            Log.w(TAG, "All Blossom mirrors failed — retrying once in 10s in case a sleeping host is still waking")
-            delay(10_000)
-            external = mirrorUploadPass(source, mirrors, sha256, contentType, authHeader)
-        }
-
-        if (external == null) {
-            Log.e(TAG, "All Blossom mirror uploads failed for ${sha256.take(8)} (saved on this device: $localOk)")
-            // The public copy is pushed from this phone's relay, so only when it is here.
-            if (localOk && toHomeVault) {
-                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
-            }
-            return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
-        }
-        UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)
-    }
-
-    /**
-     * A waiting post's attachment: the outside servers, else the home vault
-     * (which may be the only host). What `MediaPostQueue` calls on a retry.
-     */
-    suspend fun hostWaitingBlob(sha256: String, contentType: String): String? =
-        hostLocalBlob(sha256, contentType)
-            ?: (hostedViaHomeVault(sha256, contentType, configStore.config.value.activeBlossomMirrors) as? PostUploadOutcome.Hosted)?.url
-
-    /**
-     * Send a blob that is already in this device's relay to the outside
-     * servers, returning the URL of the first that accepts it. What
-     * `MediaPostQueue` calls when it retries a waiting post. One pass only —
-     * the queue itself is the retry.
-     */
-    suspend fun hostLocalBlob(
-        sha256: String,
-        contentType: String,
-        /** Only these servers (the home vault's public copy names one); default all mirrors. */
-        servers: List<String>? = null,
-        /** A caller-signed auth (the owner's, for the home vault); default signed here. */
-        authHeader: String? = null,
-    ): String? = withContext(Dispatchers.IO) {
-        val mirrors = servers ?: configStore.config.value.activeBlossomMirrors
-        if (mirrors.isEmpty()) {
-            Log.w(TAG, "waiting post: no outside Blossom server configured — holding ${sha256.take(8)}")
-            return@withContext null
-        }
-        val localBase = localBlossomURL() ?: return@withContext null
-
-        // Stream through a temp file: a queued video can be far larger than
-        // the in-memory blob cap.
-        val temp = File.createTempFile("queued-${sha256.take(16)}-", ".blob")
-        try {
-            try {
-                val request = Request.Builder().url("$localBase/$sha256").get().build()
-                clientFor(localBase).newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "waiting post: blob ${sha256.take(8)} not readable from this device's relay (HTTP ${response.code})")
-                        return@withContext null
-                    }
-                    val body = response.body ?: return@withContext null
-                    temp.outputStream().use { out -> body.byteStream().use { it.copyTo(out) } }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "waiting post: could not read blob ${sha256.take(8)} from this device's relay: ${e.message}")
-                return@withContext null
-            }
-
-            val auth = authHeader ?: createAuthHeader("upload", sha256)
-            if (auth.isEmpty()) {
-                Log.e(TAG, "waiting post: could not sign Blossom auth for ${sha256.take(8)} — will retry")
-                return@withContext null
-            }
-            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, auth)
-            if (hosted != null) {
-                Log.i(TAG, "waiting post: ${sha256.take(8)} now hosted at $hosted")
-            } else {
-                Log.w(TAG, "waiting post: no outside server accepted ${sha256.take(8)} yet ($mirrors)")
-            }
-            hosted
-        } finally {
-            temp.delete()
-        }
-    }
-
-    /**
-     * One concurrent upload pass over all mirrors; returns the URL from the
-     * first mirror IN CONFIGURED ORDER that accepted the blob — not the first
-     * to answer. The list order is the user's preference; fastest-first made
-     * the posted link whichever server won the race that time. Same as iOS.
-     */
-    private suspend fun mirrorUploadPass(
-        source: UploadSource,
-        mirrors: List<String>,
-        sha256: String,
-        contentType: String,
-        authHeader: String,
-    ): String? = coroutineScope {
-        val jobs = mirrors.map { mirrorUrl ->
-            async {
-                try {
-                    uploadToServer(
-                        source = source,
-                        serverUrl = mirrorUrl,
-                        sha256 = sha256,
-                        contentType = contentType,
-                        authHeader = authHeader,
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "Mirror to $mirrorUrl failed: ${e.message}")
-                    null
-                }
-            }
-        }
-        jobs.awaitAll().firstOrNull { it != null }
-    }
+    internal data class UploadAttempt(val outcome: PostUploadOutcome, val localUrl: String?)
 
     /**
      * Fire a cheap unauthenticated HEAD at every configured mirror so sleeping
@@ -451,142 +285,6 @@ class BlossomService @Inject constructor(
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    // Local relay upload
-    // ══════════════════════════════════════════════════════════════════
-
-    suspend fun saveToLocalRelay(data: ByteArray, sha256: String, contentType: String, authHeader: String? = null): Boolean {
-        val url = localBlossomURL() ?: return false
-        return try {
-            val auth = authHeader ?: createAuthHeader("upload", sha256)
-            val request = Request.Builder()
-                .url("$url/upload")
-                .put(data.toRequestBody(contentType.toMediaType()))
-                .addHeader("Authorization", "Nostr $auth")
-                .addHeader("Content-Type", contentType)
-                .build()
-
-            val client = clientFor(url)
-            client.newCall(request).execute().use { it.isSuccessful }
-        } catch (e: Exception) {
-            Log.w(TAG, "Local upload failed: ${e.message}")
-            false
-        }
-    }
-
-    suspend fun saveToLocalRelay(fileURL: File, sha256: String, contentType: String, authHeader: String? = null): Boolean {
-        val url = localBlossomURL() ?: return false
-        return try {
-            val auth = authHeader ?: createAuthHeader("upload", sha256)
-            val request = Request.Builder()
-                .url("$url/upload")
-                .put(fileURL.asRequestBody(contentType.toMediaType()))
-                .addHeader("Authorization", "Nostr $auth")
-                .addHeader("Content-Type", contentType)
-                .build()
-
-            val client = clientFor(url)
-            client.newCall(request).execute().use { it.isSuccessful }
-        } catch (e: Exception) {
-            Log.w(TAG, "Local file upload failed: ${e.message}")
-            false
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Remote server upload
-    // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Upload to a specific server with retry logic.
-     */
-    suspend fun uploadToServer(
-        source: UploadSource,
-        serverUrl: String,
-        sha256: String,
-        contentType: String,
-        authHeader: String? = null,
-        onProgress: ((Float) -> Unit)? = null,
-    ): String? = withContext(Dispatchers.IO) {
-        val useLocal = isLocalhost(serverUrl)
-        val client = if (useLocal) localClient else remoteClient
-
-        // Sign once (or reuse a caller-provided header). Signing per-retry would
-        // hammer an external signer (Amber) and can fail under concurrency.
-        val auth = authHeader ?: createAuthHeader("upload", sha256)
-
-        var lastError: Exception? = null
-        repeat(MAX_UPLOAD_RETRIES) { attempt ->
-            try {
-                val body = when (source) {
-                    is UploadSource.Data -> source.data.toRequestBody(contentType.toMediaType())
-                    is UploadSource.FileSource -> source.file.asRequestBody(contentType.toMediaType())
-                }
-
-                val request = Request.Builder()
-                    .url("$serverUrl/upload")
-                    .put(body)
-                    .addHeader("Authorization", "Nostr $auth")
-                    .addHeader("Content-Type", contentType)
-                    .build()
-
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    return@withContext "$serverUrl/$sha256"
-                }
-
-                val errorBody = response.body?.string()?.take(500) ?: ""
-                Log.w(TAG, "Mirror $serverUrl returned HTTP ${response.code}: $errorBody")
-                lastError = IOException("HTTP ${response.code}: $errorBody")
-
-                if (attempt < MAX_UPLOAD_RETRIES - 1) {
-                    delay(1000L * (attempt + 1)) // Linear backoff
-                }
-            } catch (e: Exception) {
-                lastError = e
-                if (attempt < MAX_UPLOAD_RETRIES - 1) {
-                    delay(1000L * (attempt + 1))
-                }
-            }
-        }
-
-        Log.w(TAG, "Upload to $serverUrl failed after $MAX_UPLOAD_RETRIES attempts: ${lastError?.message}")
-        null
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Download & mirroring
-    // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Download from URL and save to local relay.
-     */
-    suspend fun downloadFromURL(url: String, mirrorToExternal: Boolean = false): ByteArray? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val request = Request.Builder().url(url).get().build()
-                val response = remoteClient.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext null
-
-                val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext null
-                val sha256 = computeSHA256(data)
-
-                // Save to local relay
-                val contentType = response.header("Content-Type") ?: "application/octet-stream"
-                saveToLocalRelay(data, sha256, contentType)
-
-                if (mirrorToExternal) {
-                    pushLocalToMirrors(sha256)
-                }
-
-                data
-            } catch (e: Exception) {
-                Log.w(TAG, "Download from $url failed: ${e.message}")
-                null
-            }
-        }
-    }
-
     /**
      * Back up a piece of external feed media to the local relay's Blossom store.
      *
@@ -595,12 +293,19 @@ class BlossomService @Inject constructor(
      * this reports whether the local save actually succeeded (it returns the blob's
      * sha256), so the feed viewer can show an accurate "Mirrored / Failed" result.
      *
+     * @param publicOnly when the URL came from another app (the clipboard):
+     *   refuse loopback/LAN addresses on every hop ([publicOnlyClient]).
      * @return the blob's sha256 on success, or null if the download or local save failed.
      */
-    suspend fun mirrorUrlToLocal(url: String): String? = withContext(Dispatchers.IO) {
+    suspend fun mirrorUrlToLocal(
+        url: String,
+        authHeader: String? = null,
+        publicOnly: Boolean = false,
+    ): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).get().build()
-            val response = remoteClient.newCall(request).execute()
+            val client = if (publicOnly) publicOnlyClient else remoteClient
+            val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.w(TAG, "Mirror $url to local: download HTTP ${response.code}")
                 return@withContext null
@@ -610,39 +315,11 @@ class BlossomService @Inject constructor(
             val contentType = response.header("Content-Type") ?: "application/octet-stream"
             val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext null
             val sha256 = computeSHA256(data)
-            if (saveToLocalRelay(data, sha256, contentType)) sha256 else null
+            if (saveToLocalRelay(data, sha256, contentType, authHeader)) sha256 else null
         } catch (e: Exception) {
             Log.w(TAG, "Mirror $url to local failed: ${e.message}")
             null
         }
-    }
-
-    suspend fun downloadFromMirrors(sha256: String): ByteArray? {
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        for (mirror in mirrors) {
-            try {
-                val request = Request.Builder()
-                    .url("$mirror/$sha256")
-                    .get()
-                    .build()
-
-                val response = remoteClient.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val data = readBodyCapped(response, MAX_BLOB_BYTES) ?: continue
-                    // Blossom is content-addressed: the bytes MUST hash to the
-                    // requested digest. A mismatch means a malicious/broken mirror;
-                    // discard rather than poison the local cache.
-                    if (computeSHA256(data) != sha256.lowercase()) {
-                        Log.w(TAG, "Hash mismatch from mirror $mirror for $sha256, discarding")
-                        continue
-                    }
-                    return data
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Download from mirror $mirror failed: ${e.message}")
-            }
-        }
-        return null
     }
 
     /**
@@ -691,6 +368,33 @@ class BlossomService @Inject constructor(
                 else -> AllFailed(attempted)
             }
         }
+    }
+
+    /** How a Save to Vault went, and the line to show for it. */
+    enum class VaultSave(val message: String) {
+        FAILED("Could not save to your vault"),
+        ON_PHONE("Saved to your vault on this phone"),
+        BACKED_UP("Saved to your vault and your Blossom"),
+    }
+
+    /** What Save to Vault did, and the hash the vault stored the downloaded bytes under (null on failure). */
+    data class VaultSaveResult(val outcome: VaultSave, val savedSha: String?)
+
+    /**
+     * Stores a file that is only on outside servers (or a link) in the vault
+     * on this phone. Then, only when the URL itself names the blob (its last
+     * path part is the 64-hex hash), uploads it to any server that lacks it;
+     * otherwise it stays on this phone only. Port of iOS
+     * `MediaBackupActions.saveToVault`, which guards on `blossomHash(in:)`.
+     */
+    suspend fun saveUrlToVault(url: String): VaultSaveResult {
+        val saved = mirrorUrlToLocal(url) ?: return VaultSaveResult(VaultSave.FAILED, null)
+        val hash = blossomHashInUrl(url)
+        if (hash == null || configStore.config.value.activeBlossomMirrors.isEmpty()) {
+            return VaultSaveResult(VaultSave.ON_PHONE, saved)
+        }
+        val backedUp = pushToMissing(hash).let { it == null || it is MirrorPushResult.AllAccepted }
+        return VaultSaveResult(if (backedUp) VaultSave.BACKED_UP else VaultSave.ON_PHONE, saved)
     }
 
     /**
@@ -828,40 +532,121 @@ class BlossomService @Inject constructor(
         saved.get()
     }
 
+    /**
+     * Copies in the media your own notes link to on outside servers: your
+     * notes are read from this device's relay, page by page, and each link
+     * not already here is downloaded and stored, four at a time, under one
+     * signed upload authorisation. iOS `BlossomService.mirrorFromNoteMedia`.
+     * @return how many files were saved.
+     */
+    suspend fun mirrorFromNoteMedia(
+        onProgress: ((Float) -> Unit)? = null,
+        onLogMessage: ((String) -> Unit)? = null,
+    ): Int = withContext(Dispatchers.IO) {
+        val owner = nostrService.ownerHexPubkey
+        val relay = configStore.config.value.nostrURL
+        if (owner.isEmpty() || relay == null) return@withContext 0
+
+        val notes = LinkedHashMap<String, NoteMediaScan.Note>()
+        var until: Long? = null
+        for (page in 0 until NoteMediaScan.MAX_PAGES) {
+            val events = nostrService.queryRawEvents(listOf(NoteMediaScan.pageFilter(owner, until)), listOf(relay), timeoutMs = 8_000L)
+            val fresh = events.mapNotNull(NoteMediaScan::parse).filter { it.pubkey == owner && notes.putIfAbsent(it.id, it) == null }
+            // `until` is inclusive, so a full page that brings nothing new is the end.
+            if (fresh.isEmpty() || events.size < NoteMediaScan.PAGE) break
+            until = fresh.minOf { it.createdAt }
+        }
+        val urls = notes.values.flatMap { note ->
+            nostrService.extractMediaURLs(note.content, note.pubkey, note.tags, note.createdAt).map { it.url }
+        }
+        onLogMessage?.invoke("Found ${urls.size} media link(s) in ${notes.size} note(s)")
+        val toImport = NoteMediaScan.urlsToImport(urls) { mediaCacheService.isInLocalBlossom(it) }
+        if (toImport.isEmpty()) {
+            onLogMessage?.invoke("All note media already exists locally")
+            return@withContext 0
+        }
+        // One signature for every upload: one signer prompt, not one per file.
+        val auth = createAuthHeader(listOf("upload"))
+        if (auth.isEmpty()) {
+            onLogMessage?.invoke("Note media skipped: could not sign the upload (signer unavailable)")
+            return@withContext 0
+        }
+        onLogMessage?.invoke("${toImport.size} media item(s) missing locally — downloading...")
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val saved = java.util.concurrent.atomic.AtomicInteger(0)
+        coroutineScope {
+            for (url in toImport) {
+                mirrorSemaphore.acquire()
+                launch {
+                    try {
+                        if (mirrorUrlToLocal(url, auth) != null) saved.incrementAndGet()
+                    } finally {
+                        mirrorSemaphore.release()
+                        onProgress?.invoke(completed.incrementAndGet().toFloat() / toImport.size)
+                    }
+                }
+            }
+        }
+        onLogMessage?.invoke("Mirror from notes complete: ${saved.get()} new file(s)")
+        saved.get()
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Deletion
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * Delete a blob from all external mirrors.
+     * Which servers a delete reached. A delete is only done when [failed] is
+     * empty: the file is still public on every server listed there.
+     * Port of iOS `BlossomService.MirrorDeleteResult`.
      */
-    suspend fun deleteFromMirrors(sha256: String): Int = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        var successCount = 0
+    data class MirrorDeleteResult(
+        val deleted: List<String> = emptyList(),
+        val failed: List<String> = emptyList(),
+    ) {
+        val allDeleted: Boolean get() = failed.isEmpty() && deleted.isNotEmpty()
 
-        val jobs = mirrors.map { mirror ->
+        /** Hosts still holding the file, for the banner ("blossom.primal.net"). */
+        val failedHosts: List<String> get() = failed.map { serverHost(it) }
+    }
+
+    /**
+     * Delete a blob from every mirror and report each one. A 404 counts as
+     * deleted: the file is not there either way. One mirror succeeding used to
+     * count as success, so a file left on two of three servers read as deleted.
+     */
+    suspend fun deleteFromMirrors(sha256: String): MirrorDeleteResult = withContext(Dispatchers.IO) {
+        val mirrors = configStore.config.value.activeBlossomMirrors
+        if (mirrors.isEmpty()) return@withContext MirrorDeleteResult()
+
+        val outcomes = mirrors.map { mirror ->
             async {
-                try {
+                mirror to try {
                     val authHeader = createAuthHeader("delete", sha256)
                     val request = Request.Builder()
-                        .url("$mirror/$sha256")
+                        .url("${mirror.trimEnd('/')}/$sha256")
                         .delete()
                         .addHeader("Authorization", "Nostr $authHeader")
                         .build()
 
-                    val response = remoteClient.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        synchronized(this@BlossomService) { successCount++ }
+                    remoteClient.newCall(request).execute().use { response ->
+                        val gone = response.isSuccessful || response.code == 404
+                        if (!gone) Log.w(TAG, "Delete from $mirror: HTTP ${response.code}")
+                        gone
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Delete from $mirror failed: ${e.message}")
+                    false
                 }
             }
-        }
-        jobs.awaitAll()
-        successCount
+        }.awaitAll()
+        MirrorDeleteResult(
+            deleted = outcomes.filter { it.second }.map { it.first },
+            failed = outcomes.filterNot { it.second }.map { it.first },
+        )
     }
 
+    /** @return true if the file is gone from this device (deleted, or never stored here). */
     fun deleteFromLocal(sha256: String): Boolean {
         val config = configStore.config.value
         val dir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return false
@@ -875,7 +660,8 @@ class BlossomService @Inject constructor(
         if (!matches.isNullOrEmpty()) {
             return matches.all { it.delete() }
         }
-        return false
+        // Nothing to delete is the outcome asked for, like a mirror's 404.
+        return true
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -887,7 +673,7 @@ class BlossomService @Inject constructor(
      * tiles, the list rows and the viewer all read this one map, so a file
      * cannot show "3/3" on its tile and offer a Mirror button in the viewer.
      */
-    private val _mirrorPresence = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Map<String, BlobPresence>>>(emptyMap())
+    internal val _mirrorPresence = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Map<String, BlobPresence>>>(emptyMap())
     val mirrorPresence: kotlinx.coroutines.flow.StateFlow<Map<String, Map<String, BlobPresence>>> = _mirrorPresence
 
     /** Checks running now, by hash, so a grid of tiles asks each server once per blob. */
@@ -939,11 +725,6 @@ class BlossomService @Inject constructor(
         return job.await()
     }
 
-    /** Drops every cached answer, so the next look asks the servers again (pull to refresh). */
-    fun forgetMirrorPresence() {
-        _mirrorPresence.value = emptyMap()
-    }
-
     /**
      * How many configured servers hold [sha256], or null until every one of
      * them has answered once.
@@ -951,119 +732,12 @@ class BlossomService @Inject constructor(
     fun backupSummary(sha256: String, presence: Map<String, Map<String, BlobPresence>> = _mirrorPresence.value): BlossomBackupSummary? =
         BlossomBackupSummary.of(presence[sha256.lowercase()], configStore.config.value.activeBlossomMirrors)
 
-    /**
-     * A 2xx alone is not enough: some servers answer 200 with an HTML page for
-     * any path, which would read as "has it" for every file.
-     */
-    private fun checkBlobExists(mirror: String, sha256: String): BlobPresence {
-        return try {
-            val request = Request.Builder()
-                .url("${mirror.trimEnd('/')}/$sha256")
-                .head()
-                .build()
-            val client = if (isLocalhost(mirror)) localClient else presenceClient
-            client.newCall(request).execute().use { response ->
-                blobPresence(response.code, response.header("Content-Type"), response.header("Content-Length"))
-            }
-        } catch (e: Exception) {
-            BlobPresence.UNREACHABLE
-        }
-    }
-
     /** Short timeouts: a sleeping server should read as "couldn't reach", not hang the badge. */
-    private val presenceClient by lazy {
+    internal val presenceClient by lazy {
         remoteClient.newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .build()
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // Auth header generation
-    // ══════════════════════════════════════════════════════════════════
-
-    /**
-     * Create a Blossom auth header (kind 24242 signed event as base64).
-     */
-    private suspend fun createAuthHeader(
-        operation: String,
-        sha256: String? = null,
-        uploadUrl: String? = null,
-    ): String = createAuthHeader(listOf(operation), sha256, uploadUrl)
-
-    /**
-     * Create a Blossom auth header that authorizes several operations at once by
-     * carrying one "t" tag per verb (e.g. ["list", "upload"]). The relay matches
-     * the request's verb against any present "t" tag, so a single signed event —
-     * and therefore a single signer round-trip — can cover the whole mirror-in
-     * (remote /list + local /upload). Critical for external signers (Amber/NIP-46
-     * bunker) that prompt per signature.
-     */
-    private suspend fun createAuthHeader(
-        operations: List<String>,
-        sha256: String? = null,
-        uploadUrl: String? = null,
-    ): String {
-        val expiration = (System.currentTimeMillis() / 1000) + 3600 // 1 hour (matches iOS)
-        val tags = mutableListOf<List<String>>()
-        operations.forEach { tags.add(listOf("t", it)) }
-        // The "x" tag scopes auth to a specific blob; list/server-wide ops carry
-        // no hash (matches iOS BUD-02 /list auth).
-        sha256?.let { tags.add(listOf("x", it)) }
-        tags.add(listOf("expiration", expiration.toString()))
-        uploadUrl?.let { tags.add(listOf("u", it)) }
-
-        val label = operations.joinToString("+")
-        // Use signEventAsync so external signers (Amber NIP-55, NIP-46) work.
-        // The synchronous signEvent only handles a locally-stored key and returns
-        // null under Amber (no on-device key) → empty auth header → servers reject
-        // with "missing auth event" / 401. signEventAsync routes to the active
-        // signing mode (amber/nip46/local).
-        //
-        // Retry a failed signature instead of failing the whole upload on the
-        // first miss. Under Amber a signature is another app being launched and
-        // brought to the front, so a single failure is ordinary — Amber not
-        // resumed yet, slow to start, or a prompt dismissed by a stray tap. One
-        // miss used to kill the post; the user would repost and it would work,
-        // which is exactly the symptom iOS had before it grew the same retry
-        // (BlossomService.swift makeUploadAuth, 3 attempts 1s apart).
-        var event: NostrEvent? = null
-        for (attempt in 1..AUTH_SIGN_ATTEMPTS) {
-            event = try {
-                nostrService.signEventAsync(
-                    kind = AUTH_KIND,
-                    content = if (sha256 != null) "Blossom $label ${sha256.take(8)}" else "Blossom $label",
-                    tags = tags,
-                    forceOwner = true,
-                )
-            } catch (e: SignerRejectedException) {
-                // The user was asked and said no. Retrying would just re-prompt.
-                Log.w(TAG, "Blossom auth signing declined by the user ($label)")
-                return ""
-            } catch (e: Exception) {
-                Log.e(TAG, "Blossom auth signing failed ($label): ${e.message}")
-                null
-            }
-            if (event != null) break
-            Log.w(TAG, "Blossom auth signing returned no event ($label) — attempt $attempt/$AUTH_SIGN_ATTEMPTS")
-            if (attempt < AUTH_SIGN_ATTEMPTS) delay(AUTH_SIGN_RETRY_DELAY_MS)
-        }
-        if (event == null) return ""
-
-        val eventJson = buildString {
-            val tagsJson = event.tags.joinToString(",") { tag ->
-                "[${tag.joinToString(",") { "\"$it\"" }}]"
-            }
-            append("{\"id\":\"${event.id}\",")
-            append("\"pubkey\":\"${event.pubkey}\",")
-            append("\"created_at\":${event.createdAt},")
-            append("\"kind\":${event.kind},")
-            append("\"tags\":[$tagsJson],")
-            append("\"content\":\"${event.content}\",")
-            append("\"sig\":\"${event.sig}\"}")
-        }
-
-        return Base64.encodeToString(eventJson.toByteArray(), Base64.NO_WRAP)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1073,21 +747,7 @@ class BlossomService @Inject constructor(
     /** Embedded relay's Blossom, or the external one when that mode is on (null if unset). */
     fun localBlossomURL(): String? = configStore.config.value.localBlossomBaseURL
 
-    /**
-     * The client for this device's Blossom server: the self-signed-trusting
-     * one on loopback and LAN IPs (what its hostname verifier accepts), real
-     * TLS checks for an external server on a domain.
-     */
-    private fun clientFor(url: String): OkHttpClient =
-        if (isLocalhost(url) || com.nostrvault.data.remote.WebSocketClient.isLocalOrLanHost(url)) localClient
-        else remoteClient
-
-    private fun isLocalhost(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("0.0.0.0")
-    }
-
-    private fun computeSHA256(data: ByteArray): String {
+    internal fun computeSHA256(data: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(data).joinToString("") { "%02x".format(it) }
     }
@@ -1105,38 +765,8 @@ class BlossomService @Inject constructor(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    /**
-     * Read a response body into memory with a hard byte ceiling.
-     * Rejects up-front on an oversized Content-Length and aborts mid-stream if a
-     * missing/lying length lets the body exceed [maxBytes]. Prevents a hostile or
-     * broken server from OOM-killing the app with a giant blob.
-     */
-    private fun readBodyCapped(response: Response, maxBytes: Long): ByteArray? {
-        val body = response.body ?: return null
-        return body.use {
-            val declared = it.contentLength()
-            if (declared > maxBytes) {
-                Log.w(TAG, "Rejecting oversized body: Content-Length=$declared > $maxBytes")
-                return null
-            }
-            val source = it.source()
-            val sink = okio.Buffer()
-            var total = 0L
-            while (true) {
-                val n = source.read(sink, 64 * 1024L)
-                if (n == -1L) break
-                total += n
-                if (total > maxBytes) {
-                    Log.w(TAG, "Aborting oversized body mid-stream at $total bytes")
-                    return null
-                }
-            }
-            sink.readByteArray()
-        }
-    }
-
     /** This device's relay and LAN relays: trust follows [LocalTls]. */
-    private fun OkHttpClient.Builder.applyLocalhostTrust(): OkHttpClient.Builder {
+    internal fun OkHttpClient.Builder.applyLocalhostTrust(): OkHttpClient.Builder {
         return with(LocalTls) { localTrust() }
     }
 
@@ -1146,57 +776,6 @@ class BlossomService @Inject constructor(
         }
         data class FileSource(val file: File) : UploadSource() {
             val byteCount: Long get() = file.length()
-        }
-    }
-}
-
-/** Whether one Blossom server holds a blob. */
-enum class BlobPresence {
-    PRESENT,
-    ABSENT,
-    /** The server did not answer (offline, timeout, 5xx), so we do not know. */
-    UNREACHABLE,
-}
-
-/** The decision behind a HEAD check, split out so it can be tested without a server. Matches iOS. */
-fun blobPresence(statusCode: Int, contentType: String?, contentLength: String?): BlobPresence = when (statusCode) {
-    in 200..299 -> when {
-        contentType?.lowercase()?.startsWith("text/html") == true -> BlobPresence.ABSENT
-        contentLength?.toLongOrNull() == 0L -> BlobPresence.ABSENT
-        else -> BlobPresence.PRESENT
-    }
-    in 400..499 -> BlobPresence.ABSENT
-    else -> BlobPresence.UNREACHABLE
-}
-
-/** How many of the user's Blossom servers hold one file. Port of iOS `BlossomBackupSummary`. */
-data class BlossomBackupSummary(
-    val present: Int,
-    val unreachable: Int,
-    val total: Int,
-    /** Servers not known to have the file: those that said no plus those that could not be asked. */
-    val missing: List<String>,
-) {
-    val isComplete: Boolean get() = total > 0 && present == total
-    /** Worth offering an upload: some server lacks it, or could not be asked. */
-    val needsMirror: Boolean get() = total > 0 && present < total
-
-    companion object {
-        /** Null while any configured server has no answer yet, rather than guessing. */
-        fun of(byMirror: Map<String, BlobPresence>?, mirrors: List<String>): BlossomBackupSummary? {
-            if (mirrors.isEmpty()) return BlossomBackupSummary(0, 0, 0, emptyList())
-            if (byMirror == null || !mirrors.all { it in byMirror }) return null
-            var present = 0
-            var unreachable = 0
-            val missing = mutableListOf<String>()
-            for (mirror in mirrors) {
-                when (byMirror[mirror]) {
-                    BlobPresence.PRESENT -> present++
-                    BlobPresence.UNREACHABLE -> { unreachable++; missing += mirror }
-                    else -> missing += mirror
-                }
-            }
-            return BlossomBackupSummary(present, unreachable, mirrors.size, missing)
         }
     }
 }

@@ -215,11 +215,13 @@ extension MediaGalleryView {
 
             // Exclude items from notes that merely tag the owner —
             // these are often spam and not user-uploaded media.
-            filtered = filtered.filter { item in
+            let isOwnersMedia: (MediaItem) -> Bool = { item in
                 if item.pubkey == owner { return true }
                 let tagsOwner = item.tags?.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner } ?? false
                 return !tagsOwner
             }
+            filtered = filtered.filter(isOwnersMedia)
+            let totalCount = allItems.lazy.filter(isOwnersMedia).count
 
             filtered = currentSort.sorted(filtered) {
                 inBlossomLookup[self.normalizedKeyStatic(for: $0.url)] ?? false
@@ -273,6 +275,7 @@ extension MediaGalleryView {
 
             await MainActor.run {
                 self.displayMedia = Array(finalResult.prefix(self.maxDisplayedItems))
+                self.mediaTotalCount = totalCount
                 self.mediaHasLoadedOnce = true
             }
         }

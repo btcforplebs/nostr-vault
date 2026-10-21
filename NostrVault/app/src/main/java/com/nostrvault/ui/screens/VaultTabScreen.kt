@@ -1,16 +1,11 @@
 package com.nostrvault.ui.screens
 
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -20,6 +15,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,13 +43,19 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.nostrvault.data.model.VaultDots
+import com.nostrvault.data.model.VaultActivity
 import com.nostrvault.data.model.VaultMode
+import com.nostrvault.data.model.VaultNoteScope
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
 import com.nostrvault.tutorials.TutorialCenter
+import com.nostrvault.tutorials.TutorialContent
 import com.nostrvault.tutorials.TutorialID
+import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.components.GlassPill
+import com.nostrvault.ui.components.LocalVaultMessages
+import com.nostrvault.ui.components.VaultMessages
 import com.nostrvault.ui.components.chromeFold
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.navigation.VaultSection
@@ -62,6 +64,12 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SuccessGreen
 import com.nostrvault.ui.theme.ZapOrange
+import com.nostrvault.ui.screens.dashboard.DashboardScreen
+import com.nostrvault.ui.screens.dashboard.DashboardViewModel
+import com.nostrvault.ui.screens.dashboard.VaultDashboardSheet
+import com.nostrvault.ui.screens.dashboard.connectionDotColor
+import com.nostrvault.ui.screens.vault.LocalOpenVaultSearch
+import com.nostrvault.ui.screens.vault.VaultSearchScreen
 
 /**
  * The Vault tab: what used to be the Media and Relay tabs, in one (iOS
@@ -83,17 +91,24 @@ fun VaultTabScreen(
     onMediaClick: (Int) -> Unit,
     logStore: LogStore,
     feedService: FeedService,
+    /** Unread messages, for the ✉️ that leads each mode's right pill. */
+    unreadDMs: Int = 0,
     viewModel: DashboardViewModel = hiltViewModel(),
+    activity: VaultActivityViewModel = hiltViewModel(),
 ) {
-    // The half survives Android killing the app (the photo picker opened
-    // from Media is the usual case): restored before anything reads it, so
-    // Media composes first and its picker gets the result. A route that
-    // picked a half in this process wins; see VaultSection.restore.
+    // The part on show survives Android killing the app (the photo picker
+    // opened from Media is the usual case): restored before anything reads
+    // it, so Media composes first and its picker gets the result. A route
+    // that picked one in this process wins; see VaultSection.restore.
     var restored = true
-    val savedHalf = rememberSaveable { restored = false; mutableStateOf(VaultSection.showsMedia.value) }
-    if (restored) remember { VaultSection.restore(media = savedHalf.value) }
+    val savedHalf = rememberSaveable {
+        restored = false
+        mutableStateOf(savedPart(VaultSection.showsMedia.value, VaultSection.showsActivity.value))
+    }
+    if (restored) remember { VaultSection.restore(media = savedHalf.value == MEDIA_PART, activity = savedHalf.value == ACTIVITY_PART) }
     val showsMedia by VaultSection.showsMedia.collectAsState()
-    SideEffect { savedHalf.value = showsMedia }
+    val showsActivity by VaultSection.showsActivity.collectAsState()
+    SideEffect { savedHalf.value = savedPart(showsMedia, showsActivity) }
     val halves = rememberSaveableStateHolder()
     var showDashboard by remember { mutableStateOf(false) }
     val openDashboard: () -> Unit = {
@@ -104,7 +119,10 @@ fun VaultTabScreen(
     // The relay half's connection and follower ledger serve both halves (the
     // pill's dot shows on Media too), so they follow the tab, not the half:
     // flipping halves doesn't re-send subscriptions or restart the poll.
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onResume()
+        activity.refresh()
+    }
     // Save a snapshot when the app goes to background so the next cold launch is instant.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.persistSnapshot() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -113,16 +131,101 @@ fun VaultTabScreen(
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) { viewModel.pollFollowers() }
     }
 
+    // The Vault tab's red dot (iOS #476): tapping in while it shows opens the
+    // list it's for, and a list stops counting as new once it's on screen
+    // with this tab in front. Nothing is marked while a tap in is still on
+    // its way to the new list, so the list it left keeps its dot.
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+    val opensNewActivity by VaultSection.opensNewActivity.collectAsState()
+    val relayNews by RelayForegroundService.newActivityModes.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+    val noteScope by viewModel.noteScope.collectAsState()
+    val showing = if (!showsMedia && showsActivity) VaultMode.ACTIVITY else VaultMode.of(showsMedia, viewMode, noteScope)
+    LaunchedEffect(opensNewActivity) {
+        if (!opensNewActivity) return@LaunchedEffect
+        VaultMode.opening(RelayForegroundService.newActivityModes.value, showing)?.let(viewModel::selectMode)
+        VaultSection.openedNewActivity()
+    }
+    val modeInSight = showing.takeIf { lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && !opensNewActivity }
+    LaunchedEffect(modeInSight, relayNews) {
+        modeInSight?.let(RelayForegroundService::markRelayViewed)
+    }
+
+    // The "Vault" list (iOS #506): new follows from the follower ledger join
+    // it; while it is on screen it clears every list's dot, Followers' too;
+    // arriving and leaving move its since-last-visit mark.
+    val followerSnapshot by viewModel.followerSnapshot.collectAsState()
+    LaunchedEffect(followerSnapshot) { activity.setFollowers(followerSnapshot) }
+    val activityInSight = modeInSight == VaultMode.ACTIVITY
+    val listDots by viewModel.newModes.collectAsState()
+    LaunchedEffect(activityInSight, followerSnapshot, listDots) {
+        if (!activityInSight) return@LaunchedEffect
+        activity.markFollowersSeen()
+        viewModel.markAllListsViewed()
+        viewModel.refreshFollowers()
+    }
+    var activityWasInSight by remember { mutableStateOf(false) }
+    LaunchedEffect(activityInSight) {
+        if (activityInSight) activity.visit(arriving = true) else if (activityWasInSight) activity.visit(arriving = false)
+        activityWasInSight = activityInSight
+    }
+
     // The folded bar's corner button opens the Vault Dashboard (iOS parity).
     LaunchedEffect(Unit) { feedService.relayDashboardRequest.collect { openDashboard() } }
-    // Pocket Relay's cards are on the dashboard: open it for them, on
+    // Your Vault starts the first time the Vault tab shows, on either half
+    // (after Fill your vault; see TutorialProgress), and again when a status
+    // changes quietly. Each half carries its pill and Vault button.
+    val tutorialRevision by TutorialCenter.revision.collectAsState()
+    LaunchedEffect(tutorialRevision) {
+        TutorialCenter.startIfEligible(TutorialID.VAULT, viewModel.nostrService.activeHexPubkey)
+    }
+
+    // Vault in Your Pocket's cards are on the dashboard: open it for them, on
     // whichever half you're on (Your Vault's "Next", or a replay).
     val activeTutorial by TutorialCenter.active.collectAsState()
     LaunchedEffect(activeTutorial) {
         if (activeTutorial == TutorialID.POCKET_RELAY && !showDashboard) openDashboard()
     }
 
-    if (showsMedia) {
+    val messages = VaultMessages(unread = unreadDMs, open = { onNavigate(Screen.DMInbox) })
+    // The Vault's search (iOS VaultSearchBar): over the Vault list and the
+    // relay's lists, not Media. Kept across a note or profile it opens.
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    val openSearch: (() -> Unit)? = if (showsMedia) null else ({ searchOpen = true })
+    CompositionLocalProvider(LocalVaultMessages provides messages, LocalOpenVaultSearch provides openSearch) {
+    if (searchOpen && !showsMedia) {
+        VaultSearchScreen(
+            nostrService = viewModel.nostrService,
+            feedService = feedService,
+            onProfileClick = onProfileClick,
+            onNoteClick = onNoteClick,
+            onArticleClick = onArticleClick,
+            onClose = { searchOpen = false },
+        )
+    } else if (!showsMedia && showsActivity) {
+        halves.SaveableStateProvider("activity") {
+            val connectionColor by viewModel.connectionColor.collectAsState()
+            VaultActivityScreen(
+                activity = activity,
+                zapsOnly = com.nostrvault.ui.theme.LocalZapsOnlyMode.current,
+                // Seeing "Vault" sees every list, so it marks none of them new.
+                newModes = emptySet(),
+                dashboardColor = connectionDotColor(connectionColor),
+                onSelect = viewModel::selectMode,
+                onOpenDashboard = openDashboard,
+                onOpenLine = { line ->
+                    val id = line.openId
+                    when {
+                        id != null && activity.kindOf(id) == VaultNoteScope.ARTICLE_KIND -> onArticleClick(id)
+                        id != null -> onNoteClick(id)
+                        // Several followed you that day: the Followers list.
+                        line.kind == VaultActivity.Kind.FOLLOW && line.actors.size > 1 -> viewModel.selectMode(VaultMode.FOLLOWERS)
+                        else -> line.actors.firstOrNull()?.let(onProfileClick)
+                    }
+                },
+            )
+        }
+    } else if (showsMedia) {
         halves.SaveableStateProvider("media") {
             // The same health colour the relay half shows, from the same connection.
             val connectionColor by viewModel.connectionColor.collectAsState()
@@ -138,9 +241,9 @@ fun VaultTabScreen(
                         mode = VaultMode.MEDIA,
                         zapsOnly = com.nostrvault.ui.theme.LocalZapsOnlyMode.current,
                         newModes = newModes,
-                        statusColor = statusColor,
                         onSelect = viewModel::selectMode,
                         onOpenDashboard = openDashboard,
+                        modifier = Modifier.tutorialAnchor(TutorialContent.VAULT_MODES),
                     )
                 },
                 dashboardColor = statusColor,
@@ -157,6 +260,7 @@ fun VaultTabScreen(
                 viewModel = viewModel,
             )
         }
+    }
     }
 
     if (showDashboard) {
@@ -177,8 +281,20 @@ fun relayStatusColor(status: RelayForegroundService.RelayStatus): Color = when (
     RelayForegroundService.RelayStatus.OFFLINE -> ErrorRed
 }
 
+private const val ACTIVITY_PART = "activity"
+private const val RELAY_PART = "relay"
+private const val MEDIA_PART = "media"
+
+/** The part of the tab on show, as saved across Android killing the app. */
+private fun savedPart(showsMedia: Boolean, showsActivity: Boolean): String = when {
+    showsMedia -> MEDIA_PART
+    showsActivity -> ACTIVITY_PART
+    else -> RELAY_PART
+}
+
 private val VaultMode.icon: ImageVector
     get() = when (this) {
+        VaultMode.ACTIVITY -> NostrVaultIcons.Activity
         VaultMode.NOTES -> NostrVaultIcons.Document
         VaultMode.ARTICLES -> NostrVaultIcons.Articles
         VaultMode.HIGHLIGHTS -> NostrVaultIcons.Highlights
@@ -192,7 +308,8 @@ private val VaultMode.icon: ImageVector
  * The Vault tab's mode picker, built like the Feed tab's `Following ▾`: the
  * mode's icon with the relay's health dot, its name, and a chevron. The menu
  * lists the modes, then the Vault Dashboard, as the feed menu ends with its
- * dashboard. A red dot on the icon means something new in another mode.
+ * dashboard. Lists with something new say "New" in the menu; the bottom
+ * bar's Vault tab carries the dot.
  * Port of iOS VaultModePill.
  */
 @Composable
@@ -200,13 +317,15 @@ internal fun VaultModePill(
     mode: VaultMode,
     zapsOnly: Boolean,
     newModes: Set<VaultMode>,
-    statusColor: Color,
     onSelect: (VaultMode) -> Unit,
     onOpenDashboard: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val newElsewhere = VaultDots.hasNewElsewhere(newModes, mode)
+    // The lists' own dots, and what others sent that lit the Vault tab's dot.
+    val relayNews by RelayForegroundService.newActivityModes.collectAsState()
+    val allNew = newModes + relayNews.filterNot { zapsOnly && it == VaultMode.LIKES }
+    val newElsewhere = VaultDots.hasNewElsewhere(allNew, mode)
     Box(modifier) {
         GlassPill(
             horizontalArrangement = Arrangement.Start,
@@ -220,24 +339,6 @@ internal fun VaultModePill(
         ) {
             Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
                 Icon(mode.icon, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(18.dp))
-                // The relay's health, as on the Feed pill.
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .offset(x = (-1).dp, y = (-1).dp)
-                        .size(8.dp)
-                        .shadow(3.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(statusColor),
-                )
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = newElsewhere,
-                    enter = scaleIn() + fadeIn(),
-                    exit = scaleOut() + fadeOut(),
-                    modifier = Modifier.align(Alignment.TopEnd).offset(x = 1.dp, y = (-1).dp),
-                ) {
-                    Box(Modifier.size(8.dp).background(ErrorRed, CircleShape))
-                }
             }
             Box(Modifier.chromeFold(leadingGap = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -255,7 +356,7 @@ internal fun VaultModePill(
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(m.displayName, fontWeight = if (m == mode) FontWeight.SemiBold else FontWeight.Normal)
-                            if (m in newModes) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            if (m in allNew) Text("New", color = ErrorRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     },
                     leadingIcon = { Icon(m.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
@@ -264,7 +365,9 @@ internal fun VaultModePill(
                     } else null,
                     onClick = {
                         expanded = false
-                        onSelect(m)
+                        // "Vault" is the tab's own list, not one of the relay
+                        // half's; every other pick leaves it.
+                        if (m == VaultMode.ACTIVITY) VaultSection.showActivity() else onSelect(m)
                     },
                 )
             }

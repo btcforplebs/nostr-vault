@@ -15,6 +15,7 @@ import (
 // A seed relay that fails the startup check must not be fetched from again:
 // each 10-day import window would re-dial it and wait out the connect timeout.
 func TestImportRelaysDropsUnreachableSeeds(t *testing.T) {
+	skipWithoutSockets(t)
 	live := newFakeMac(t, false, 0)
 	deadSrv := httptest.NewServer(nil)
 	dead := "ws" + strings.TrimPrefix(deadSrv.URL, "http")

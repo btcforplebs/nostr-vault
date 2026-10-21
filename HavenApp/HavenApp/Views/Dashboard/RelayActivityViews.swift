@@ -122,10 +122,10 @@ struct RelayActivityRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // Never clipped: a cut-off line is the one you needed to read.
                     Text(item.title)
                         .font(compact ? .appSystem(size: 12, weight: .medium) : .appSubheadline.weight(.medium))
                         .foregroundColor(.primary)
-                        .lineLimit(compact ? 1 : 3)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if item.count > 1 {
@@ -148,8 +148,7 @@ struct RelayActivityRow: View {
                     Text(hint)
                         .font(compact ? .appSystem(size: 11) : .appFootnote)
                         .foregroundColor(.secondary)
-                        .lineLimit(compact ? 1 : nil)
-                        .fixedSize(horizontal: false, vertical: !compact)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -354,9 +353,13 @@ private struct RelayActivityList: View {
 
 // MARK: - Dashboard card
 
-/// The compact console on the dashboard: status pill, the latest few items,
-/// and "View All" into the window.
+/// The compact console on the dashboard: status pill, the latest items in
+/// full, and "View All" into the window.
 struct RelayActivityCard: View {
+    /// How many items the card shows. Each is shown whole, so the card grows
+    /// with its text instead of clipping it or scrolling inside the dashboard.
+    static let shownItems = 3
+
     @ObservedObject private var model: RelayActivityModel
     let onViewAll: () -> Void
 
@@ -381,14 +384,17 @@ struct RelayActivityCard: View {
 
             Divider().background(Color.platformCardBorder)
 
-            Group {
-                if items.isEmpty {
-                    RelayActivityEmpty(compact: true)
-                } else {
-                    RelayActivityList(items: Array(items.suffix(30)), compact: true)
+            if items.isEmpty {
+                RelayActivityEmpty(compact: true)
+                    .frame(height: 140)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(items.suffix(Self.shownItems)) { item in
+                        RelayActivityRow(item: item, compact: true)
+                    }
                 }
+                .padding(.vertical, 2)
             }
-            .frame(height: 140)
         }
         .background(Color.platformTertiaryGroupedBackground)
         .cornerRadius(8)

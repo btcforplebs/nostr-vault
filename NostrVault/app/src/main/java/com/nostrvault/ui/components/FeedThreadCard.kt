@@ -9,6 +9,9 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.SubdirectoryArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,6 +64,9 @@ fun FeedThreadCard(
     isExpanded: Boolean = false,
     onExpandedChange: (Boolean) -> Unit = {},
     onProfileClick: (String) -> Unit,
+    /** A line's avatar opens this quick menu, as a full note's does. */
+    avatarMenu: AvatarMenuActions? = null,
+    onTrustWeb: ((String) -> Unit)? = null,
     onOpenThread: (FeedNote) -> Unit,
     onFetchMissingNote: (String) -> Unit = {},
     /** No relay returned the root after every fetch pass. */
@@ -117,6 +123,8 @@ fun FeedThreadCard(
                 shape = RoundedCornerShape(12.dp),
             )
             .padding(vertical = 8.dp, horizontal = 6.dp),
+        // iOS FeedThreadCard: VStack(spacing: 2) between lines.
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         val root = thread.root
         if (root != null) {
@@ -128,6 +136,8 @@ fun FeedThreadCard(
                 focusedNoteId = focusedNoteId,
                 openNoteId = openNoteId,
                 onProfileClick = onProfileClick,
+                avatarMenu = avatarMenu,
+                onTrustWeb = onTrustWeb,
                 onTap = tapAction(root),
                 lineAnchor = lineAnchor,
                 bareRepostDisplay = bareRepostDisplay,
@@ -142,7 +152,8 @@ fun FeedThreadCard(
 
         if (hiddenReplyCount > 0) {
             ThreadFoldButton(
-                icon = NostrVaultIcons.ChevronDown,
+                // iOS arrow.turn.down.right (Icons.kt is the theme lane's file)
+                icon = Icons.Filled.SubdirectoryArrowRight,
                 title = "Show $hiddenReplyCount earlier ${if (hiddenReplyCount == 1) "reply" else "replies"}",
                 themeColor = themeColor,
                 onClick = { onExpandedChange(true) },
@@ -158,6 +169,8 @@ fun FeedThreadCard(
                 focusedNoteId = focusedNoteId,
                 openNoteId = openNoteId,
                 onProfileClick = onProfileClick,
+                avatarMenu = avatarMenu,
+                onTrustWeb = onTrustWeb,
                 onTap = tapAction(entry.note),
                 lineAnchor = lineAnchor,
                 bareRepostDisplay = bareRepostDisplay,
@@ -167,7 +180,7 @@ fun FeedThreadCard(
 
         if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
             ThreadFoldButton(
-                icon = NostrVaultIcons.ChevronDown,
+                icon = Icons.Filled.KeyboardArrowUp, // iOS chevron.up
                 title = "Show fewer replies",
                 themeColor = themeColor,
                 onClick = { onExpandedChange(false) },
@@ -216,6 +229,8 @@ private fun ThreadCardLine(
     focusedNoteId: String?,
     openNoteId: String?,
     onProfileClick: (String) -> Unit,
+    avatarMenu: AvatarMenuActions?,
+    onTrustWeb: ((String) -> Unit)?,
     onTap: () -> Unit,
     lineAnchor: ThreadLineAnchor?,
     bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?>,
@@ -260,6 +275,8 @@ private fun ThreadCardLine(
             contentOverride = placeholder?.text,
             mediaURLs = shown.mediaURLs,
             onProfileClick = onProfileClick,
+            avatarMenu = avatarMenu,
+            onTrustWeb = onTrustWeb,
             onTap = onTap,
             modifier = anchored,
         )

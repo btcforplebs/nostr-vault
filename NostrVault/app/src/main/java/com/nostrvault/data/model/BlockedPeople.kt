@@ -1,0 +1,96 @@
+package com.nostrvault.data.model
+
+import com.nostrvault.relay.HavenConfig
+
+/**
+ * What a block means for direct messages. A gift-wrapped DM is signed by a
+ * throwaway key, so neither the relay nor the notification marker can tell who
+ * sent it; only the opened message names the person. These checks run on that
+ * real sender.
+ *
+ * A block hides, it never deletes: a blocked person's messages stay stored, so
+ * unblocking brings the conversation back. iOS: BlockedPeople.swift.
+ */
+object BlockedPeople {
+    fun isBlocked(hexPubkey: String, blocked: Set<String>): Boolean =
+        hexPubkey.isNotEmpty() && hexPubkey.lowercase() in blocked
+
+    /**
+     * Conversations are keyed by the other person's hex pubkey. One with a
+     * blocked person is left out, including what you sent them.
+     */
+    fun <C> visibleConversations(conversations: List<C>, blocked: Set<String>, counterparty: (C) -> String): List<C> =
+        if (blocked.isEmpty()) conversations
+        else conversations.filterNot { isBlocked(counterparty(it), blocked) }
+
+    /**
+     * Whether an incoming message counts as unread and may notify. Your own
+     * copies never do; a blocked sender never does, so unblocking does not
+     * surface a backlog of unread messages from while they were blocked.
+     */
+    fun mayAlert(sender: String, isFromMe: Boolean, blocked: Set<String>): Boolean =
+        !isFromMe && !isBlocked(sender, blocked)
+
+    /**
+     * Whether a quoted note may be drawn. Someone you follow can quote a
+     * blocked person, and the feed filter only looks at the quoting note, so
+     * the quote card itself checks. A hidden quote shows neither the blocked
+     * person's words nor their picture.
+     *
+     * A live stream (kind 30311) is the streamer's, not its signer's:
+     * zap.stream and shosho.live sign with their own service key and name the
+     * streamer in the `Host` p tag, so both are checked, as the Live tab does.
+     * iOS: BlockedPeople.showsQuote.
+     */
+    fun showsQuote(author: String, kind: Int, tags: List<List<String>>, blocked: Set<String>): Boolean {
+        if (blocked.isEmpty()) return true
+        if (isBlocked(author, blocked)) return false
+        if (kind == LIVE_STREAM_KIND) {
+            val host = LiveStream.from(author, 0, tags)?.hostPubkey ?: return true
+            if (isBlocked(host, blocked)) return false
+        }
+        return true
+    }
+
+    private const val LIVE_STREAM_KIND = 30311
+
+    /**
+     * Notes left once blocked people's are taken out: the notes above a reply,
+     * and the quotes and highlights under a note. iOS: BlockedPeople.visibleNotes.
+     */
+    fun <N> visibleNotes(notes: List<N>, blocked: Set<String>, author: (N) -> String): List<N> =
+        if (blocked.isEmpty()) notes
+        else notes.filterNot { isBlocked(author(it), blocked) }
+
+    /**
+     * What a thread page does with the note it shows full size once its author
+     * is blocked. A reply you tapped into hands focus back to the note you
+     * opened; the note you opened is swapped for a placeholder.
+     */
+    enum class FocusedNote { SHOWN, BACK_TO_OPENED, PLACEHOLDER }
+
+    fun focusedNote(author: String, isOpenedNote: Boolean, blocked: Set<String>): FocusedNote = when {
+        !isBlocked(author, blocked) -> FocusedNote.SHOWN
+        isOpenedNote -> FocusedNote.PLACEHOLDER
+        else -> FocusedNote.BACK_TO_OPENED
+    }
+
+    /**
+     * [npub] unblocked for the active account. The page lists
+     * [HavenConfig.blockedForActiveAccount], which falls back to the legacy flat
+     * list while the account has no list of its own, so the unblock starts from
+     * that same list. For the owner the legacy list is cleared of [npub] too:
+     * the relay's blacklist unions it in, so a leftover entry kept the relay
+     * blocking someone the page no longer shows, and it was saved that way.
+     * iOS: ConfigService.unblockProfile.
+     */
+    fun unblock(config: HavenConfig, npub: String): HavenConfig {
+        val key = config.activeOrOwnerNpub()
+        val rest = config.blockedFor(key).filter { it != npub }
+        val legacy = config.blockedNpubs
+        return config.copy(
+            blockedNpubsPerAccount = config.blockedNpubsPerAccount + (key to rest),
+            blockedNpubs = if (key == config.ownerNpub && legacy != null) legacy.filter { it != npub } else legacy,
+        )
+    }
+}

@@ -23,9 +23,13 @@ enum NVWidgetBridge {
     private static let minimumInterval: TimeInterval = 60
 
     static func publish(force: Bool = false) {
+        // After a factory reset the widgets stay empty until setup is done;
+        // feeds still in memory must not be written back.
+        guard ConfigService.shared.config.hasCompletedSetup else { return }
         guard force || Date().timeIntervalSince(lastPublished) >= minimumInterval else { return }
         lastPublished = Date()
 
+        NVZapsTodayCounter.refresh()
         let snapshot = buildSnapshot()
         guard NVSharedStore.save(snapshot) else { return }
         WidgetCenter.shared.reloadAllTimelines()
@@ -41,6 +45,7 @@ enum NVWidgetBridge {
 
         let me = config.activeAccountHexPubkey
         let recent = Array(feed.notes.prefix(40))
+        let zaps = NVZapsTodayCounter.current(for: me)
 
         return NVWidgetSnapshot(
             generatedAt: Date(),
@@ -61,8 +66,9 @@ enum NVWidgetBridge {
             mentions: recent.filter { mentions(me, $0) }.prefix(10).map { note($0, nostr: nostr) },
             wallet: .init(
                 lightningSats: nil,   // no published NWC balance to read yet
-                zapsReceived24h: 0,   // no published zap tally to read yet
-                btcPriceUSD: nil      // the app does not fetch a price
+                zapsReceived24h: zaps?.count ?? 0,
+                btcPriceUSD: nil,     // the app does not fetch a price
+                zapsDayStart: zaps?.dayStart
             ),
             media: mediaTiles(recent: recent, me: me),
             unreadDMCount: DMService.shared.totalUnreadCount

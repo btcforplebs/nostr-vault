@@ -51,7 +51,7 @@ fun ImportSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Import") },
+                title = { Text("Import Notes") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -73,21 +73,34 @@ fun ImportSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            SectionLabel("Import Configuration")
-            // Commits on Done / focus loss / leaving: the start date is part of
-            // the relay's start config, so saving it restarts the relay.
-            CommitOnEndTextField(
-                value = config.importStartDate,
-                onCommit = viewModel::setStartDate,
-                label = { Text("Start Date (YYYY-MM-DD)") },
+            SectionLabel("Import Configuration", SettingsHelp.RELAY_IMPORT)
+            // A date picker, as on the iPhone. Picking a date saves it, and the
+            // start date is part of the relay's start config, so that restarts the relay.
+            var pickingDate by remember { mutableStateOf(false) }
+            OutlinedButton(
+                onClick = { pickingDate = true },
                 modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = PrimaryText,
-                    unfocusedTextColor = PrimaryText,
-                    cursorColor = colors.primary,
-                    focusedBorderColor = colors.primary,
-                ),
-            )
+            ) {
+                Text("Start Date", color = PrimaryText, modifier = Modifier.weight(1f))
+                Text(config.importStartDate, color = colors.primary)
+            }
+            if (pickingDate) {
+                val pickerState = rememberDatePickerState(
+                    initialSelectedDateMillis = importDateToMillis(config.importStartDate),
+                )
+                DatePickerDialog(
+                    onDismissRequest = { pickingDate = false },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                pickerState.selectedDateMillis?.let { viewModel.setStartDate(importDateFromMillis(it)) }
+                                pickingDate = false
+                            },
+                        ) { Text("Done") }
+                    },
+                    dismissButton = { TextButton(onClick = { pickingDate = false }) { Text("Cancel") } },
+                ) { DatePicker(state = pickerState) }
+            }
             Text(
                 "Notes will be fetched starting from this date.",
                 color = SecondaryText, fontSize = 12.sp,
@@ -140,14 +153,3 @@ fun ImportSettingsScreen(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
-}

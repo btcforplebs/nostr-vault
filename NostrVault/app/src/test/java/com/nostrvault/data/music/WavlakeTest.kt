@@ -95,6 +95,57 @@ class WavlakeTest {
         assertEquals("🎵 21 Million by nostr:npub1xyz\n\nhttps://wavlake.com/track/t1", WavlakeLink.shareText(t))
     }
 
+    // ── Blocked artists ─────────────────────────────────────────
+
+    /** npub → hex, standing in for the app's Bech32 decode. */
+    private val hex: (String) -> String? =
+        { npub -> mapOf("npub1blocked" to "hexblocked", "npub1ok" to "hexok")[npub] }
+
+    private fun track(id: String, artistId: String?, npub: String? = null) = WavlakeTrack(
+        id = id, title = id, artist = "A", artistId = artistId, albumId = "al$id",
+        mediaUrl = "https://x/$id.mp3", artistNpub = npub,
+    )
+
+    @Test fun blockedArtistsMusicIsHiddenByKeyAndByWavlakeId() {
+        val blocked = setOf("hexblocked")
+        val known = listOf(
+            WavlakeArtist(id = "a1", name = "Blocked", npub = "npub1blocked"),
+            WavlakeArtist(id = "a2", name = "Fine", npub = "npub1ok"),
+            WavlakeArtist(id = "a3", name = "No key"),
+        )
+        val ids = WavlakeBlockFilter.blockedArtistIds(known, blocked, hex)
+        assertEquals(setOf("a1"), ids)
+
+        // By key when a song carries one, by artist id when it doesn't.
+        val songs = listOf(
+            track("t1", "a1"), track("t2", "a2"),
+            track("t3", null, npub = "npub1blocked"), track("t4", "a3"),
+        )
+        assertEquals(listOf("t2", "t4"), WavlakeBlockFilter.tracks(songs, blocked, ids, hex).map { it.id })
+        assertEquals(listOf("a2", "a3"), WavlakeBlockFilter.artists(known, blocked, ids, hex).map { it.id })
+
+        val results = listOf(
+            WavlakeSearchResult.Track(track("t1", "a1")),
+            WavlakeSearchResult.Track(track("t2", "a2")),
+            WavlakeSearchResult.Artist("a1", "Blocked", null),
+            WavlakeSearchResult.Artist("a2", "Fine", null),
+            WavlakeSearchResult.Album("al1", "One", null),
+        )
+        assertEquals(
+            listOf("track:t2", "artist:a2", "album:al1"),
+            WavlakeBlockFilter.results(results, blocked, ids, hex).map { it.key },
+        )
+    }
+
+    @Test fun nothingIsHiddenWhenNobodyIsBlocked() {
+        val known = listOf(WavlakeArtist(id = "a1", name = "Blocked", npub = "npub1blocked"))
+        val ids = WavlakeBlockFilter.blockedArtistIds(known, emptySet(), hex)
+        assertTrue(ids.isEmpty())
+        val songs = listOf(track("t1", "a1"), track("t2", "a2", npub = "npub1blocked"))
+        assertEquals(listOf("t1", "t2"), WavlakeBlockFilter.tracks(songs, emptySet(), ids, hex).map { it.id })
+        assertEquals(listOf("a1"), WavlakeBlockFilter.artists(known, emptySet(), ids, hex).map { it.id })
+    }
+
     @Test fun searchUrlEscapes() {
         assertEquals("https://wavlake.com/api/v1/content/search?term=rock%20%26%20roll", WavlakeApi.searchUrl("rock & roll"))
     }

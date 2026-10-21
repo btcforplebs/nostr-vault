@@ -1,0 +1,43 @@
+/* A note's media (NoteMedia, iOS FeedNoteRow+Media.swift): one item full width up to 400 tall, several a 400 tall
+   carousel whose pages fill it. */
+.media-box { margin: 10px 0 2px; white-space: normal; }
+.media-tap { display: block; width: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; cursor: zoom-in; }
+.media-tap:active:not(:disabled) { transform: none; }
+.media-one { display: flex; justify-content: center; overflow: hidden; border-radius: var(--radius); background: var(--s2); }
+.media-one img, .media-one video { display: block; max-width: 100%; max-height: 400px; width: auto; height: auto; margin: 0 auto; }
+.media-one video { width: 100%; background: #000; }
+
+.media-carousel { position: relative; height: 400px; overflow: hidden; border-radius: var(--radius); background: var(--s2); }
+.media-track { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain; scrollbar-width: none; }
+.media-track::-webkit-scrollbar { display: none; }
+.media-slide { flex: 0 0 100%; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; }
+.media-slide .media-tap, .media-slide img, .media-slide video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.media-slide video { background: #000; }
+
+.media-nav { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px;
+  min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgb(0 0 0 / .55); color: #fff; opacity: 0; transition: opacity .15s; }
+.media-nav:active:not(:disabled) { transform: translateY(-50%) scale(.94); }
+.media-nav.prev { left: 8px; } .media-nav.next { right: 8px; }
+@media (hover: hover) { .media-carousel:hover .media-nav, .lightbox .media-nav { opacity: 1; } }
+.media-nav:focus-visible { opacity: 1; }
+.media-count { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 999px; background: rgb(0 0 0 / .55);
+  color: #fff; font: var(--t-foot); font-variant-numeric: tabular-nums; pointer-events: none; }
+.media-dots { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
+.media-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgb(255 255 255 / .45); box-shadow: 0 0 2px rgb(0 0 0 / .5); }
+.media-dots span.on { background: #fff; }
+
+/* Full screen (MediaLightbox, iOS FeedMediaViewer). */
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / .94); }
+.lightbox-track { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  overscroll-behavior: contain; scrollbar-width: none; }
+.lightbox-track::-webkit-scrollbar { display: none; }
+.lightbox-page { flex: 0 0 100%; height: 100%; display: flex; align-items: center; justify-content: center; scroll-snap-align: start;
+  scroll-snap-stop: always; padding: calc(env(safe-area-inset-top) + 8px) 0 calc(env(safe-area-inset-bottom) + 8px); }
+.lightbox-page img, .lightbox-page video { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.lightbox-close { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 12px; display: grid; place-items: center;
+  width: 40px; height: 40px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgb(255 255 255 / .16); color: #fff; }
+.lightbox-count { position: absolute; top: calc(env(safe-area-inset-top) + 20px); left: 50%; transform: translateX(-50%);
+  color: #fff; font: var(--t-foot); font-variant-numeric: tabular-nums; pointer-events: none; }
+.lightbox .media-nav { width: 44px; height: 44px; }
+@media (prefers-reduced-motion: reduce) { .media-nav { transition: none; } }

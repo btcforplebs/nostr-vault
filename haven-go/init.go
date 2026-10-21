@@ -10,15 +10,11 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
 
-	badgerdb "github.com/dgraph-io/badger/v4"
-	badgeropts "github.com/dgraph-io/badger/v4/options"
-	"github.com/fiatjaf/eventstore/badger"
 	"github.com/fiatjaf/khatru"
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/fiatjaf/khatru/policies"
@@ -40,6 +36,41 @@ var (
 	privateRelay *khatru.Relay
 	privateDB    DBBackend
 )
+
+// isOnionHost reports whether the relay URL's host is a Tor .onion address.
+// It matches the host's last label only, so a clearnet domain that merely
+// contains "onion" (onion.example.com) keeps https/wss.
+func isOnionHost(url string) bool {
+	host := url
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".onion")
+}
+
+// getHTTPScheme returns the appropriate HTTP scheme based on the URL.
+// Returns "http://" for .onion domains (Tor), "https://" for regular domains.
+func getHTTPScheme(url string) string {
+	if isOnionHost(url) {
+		return "http://"
+	}
+	return "https://"
+}
+
+// getWSScheme returns the appropriate WebSocket scheme based on the URL.
+// Returns "ws://" for .onion domains (Tor), "wss://" for regular domains.
+func getWSScheme(url string) string {
+	if isOnionHost(url) {
+		return "ws://"
+	}
+	return "wss://"
+}
 
 var (
 	chatRelay *khatru.Relay
@@ -84,108 +115,21 @@ type DBBackend interface {
 // On Android (cshared builds), it remains nil and we fall back to Badger.
 var lmdbFactory func(path string) DBBackend
 
-// quietBadgerLogger wraps Badger's logger to drop the once-a-minute cache-size
-// warnings. The block/index caches are intentionally kept small here (see the
-// BadgerOptionsModifier below) to fit a menu-bar app, so the "might be too
-// small" warning and its companion "Cache life expectancy" histogram — emitted
-// every 60s per DB by (*badger.DB).monitorCache — are expected noise, not
-// actionable. Every other Badger log line (real warnings, errors, info) passes
-// through untouched.
-type quietBadgerLogger struct{ badgerdb.Logger }
-
-func (l quietBadgerLogger) Warningf(format string, args ...interface{}) {
-	if strings.Contains(format, "might be too small") ||
-		strings.Contains(format, "Cache life expectancy") {
-		return
-	}
-	l.Logger.Warningf(format, args...)
-}
-
-func newBadgerBackend(path string) DBBackend {
-	// Bound the negentropy vector size explicitly: the library default is 16M
-	// events, which a NEG-OPEN with a broad filter could try to materialize in
-	// memory — far too much on a phone.
-	maxNeg := 100_000
-	if runtime.GOOS == "android" || runtime.GOOS == "ios" {
-		maxNeg = 50_000
-	}
-	return &badger.BadgerBackend{
-		Path:               path,
-		MaxLimitNegentropy: maxNeg,
-		BadgerOptionsModifier: func(opts badgerdb.Options) badgerdb.Options {
-			// Silence Badger's every-60s cache-size warnings; the small caches
-			// below are deliberate. Wraps whatever logger Badger defaulted to.
-			opts = opts.WithLogger(quietBadgerLogger{opts.Logger})
-			switch runtime.GOOS {
-			case "android", "ios":
-				// Phones share RAM with the JVM (Android) or live under strict
-				// jetsam limits (iOS). With 6 databases running, every MB
-				// counts. These settings target ~20-26 MB per DB (vs ~60-80 MB
-				// server defaults):
-				//   - 16 MiB vlog files (vs 2 GB default)
-				//   - 2 memtables (vs 5): allows 1 flush in background without stalling writes
-				//   - Fewer L0 tables: reduces open file handles and mmap
-				//   - 2 compactor threads (vs 4): fewer goroutines (BadgerDB requires >= 2)
-				//   - No compression: saves CPU cycles
-				//   - Small block/index caches: avoids disk reads for hot data
-				return opts.
-					WithMemTableSize(8 << 20).        // 8 MiB (default 64 MiB)
-					WithValueLogFileSize(1 << 24).    // 16 MiB
-					WithNumMemtables(2).              // default 5; allows 1 background flush
-					WithNumLevelZeroTables(1).        // default 5
-					WithNumLevelZeroTablesStall(2).   // default 15
-					WithNumCompactors(2).             // default 4, minimum 2
-					WithCompression(badgeropts.None). // disable compression (saves CPU)
-					WithBlockCacheSize(4 << 20).      // 4 MiB per DB (20 MiB total across 5 DBs)
-					WithIndexCacheSize(2 << 20).      // 2 MiB per DB (10 MiB total across 5 DBs)
-					WithValueThreshold(1 << 10)       // 1 KB: inline small values
-			default:
-				// macOS / desktop: the server defaults are far too hungry for a
-				// menu-bar app — each memtable arena is a 64 MiB up-front
-				// allocation and the block-cache budget is 256 MiB, per DB,
-				// across 6 DBs. Desktop can afford more than a phone but not
-				// server sizing.
-				return opts.
-					// DO NOT SHRINK on an existing database. Badger sizes the
-					// skiplist arena from MemTableSize and replays each existing
-					// .mem WAL into it at open; a WAL written under a larger
-					// setting overflows the smaller arena and trips
-					// y.AssertTruef("Arena too small") inside Open — the relay
-					// dies mid-DB-load with no recoverable error. Lowering this
-					// 16→8 MiB shipped in b12 and bricked a populated relay on
-					// first launch (boots, opens private/chat/outbox, dies
-					// before inbox). Raising it is safe; lowering needs a
-					// migration that flushes every memtable first.
-					WithMemTableSize(16 << 20).       // 16 MiB (default 64 MiB, allocated up-front per DB)
-					WithValueLogFileSize(1 << 26).    // 64 MiB (default ~1 GiB, mmap'd)
-					WithNumMemtables(2).              // default 5; allows 1 background flush
-					WithNumLevelZeroTables(2).        // default 5
-					WithNumLevelZeroTablesStall(4).   // default 15
-					WithNumCompactors(2).             // default 4, minimum 2
-					WithCompression(badgeropts.None). // disable compression (saves CPU)
-					WithBlockCacheSize(32 << 20).     // 32 MiB per DB (default 256 MiB)
-					WithIndexCacheSize(8 << 20).      // 8 MiB per DB (default unbounded shared with heap)
-					WithValueThreshold(1 << 10)       // 1 KB: inline small values
-			}
-		},
-	}
-}
-
 func newDBBackend(path string) DBBackend {
 	switch config.DBEngine {
 	case "lmdb":
 		if lmdbFactory != nil {
 			return lmdbFactory(path)
 		}
-		slog.Warn("LMDB not available in this build, using Badger")
-		return newBadgerBackend(path)
+		slog.Warn("LMDB not available in this build, using " + fallbackBackendName)
+		return fallbackBackend(path)
 	case "badger":
-		return newBadgerBackend(path)
+		return fallbackBackend(path)
 	default:
 		if lmdbFactory != nil {
 			return lmdbFactory(path)
 		}
-		return newBadgerBackend(path)
+		return fallbackBackend(path)
 	}
 }
 
@@ -264,8 +208,8 @@ func CloseDBs() {
 //     "1" on iOS (App Transport Security requires HTTPS even for localhost),
 //     "0" on macOS/Android (plain HTTP locally, TLS only for a public domain).
 func relayServiceURL(path string) string {
-	scheme := "https"
 	host := config.RelayURL
+	scheme := strings.TrimSuffix(getHTTPScheme(host), "://")
 	if host == "" {
 		host = fmt.Sprintf("127.0.0.1:%d", config.RelayPort)
 		if os.Getenv("HAVEN_ENABLE_TLS") != "1" {
@@ -274,6 +218,9 @@ func relayServiceURL(path string) string {
 	}
 	return scheme + "://" + host + path
 }
+
+// feedReadPolicy is /feed's read policy where no localhost bind protects it.
+var feedReadPolicy []func(ctx context.Context, filter nostr.Filter) (bool, string)
 
 func initRelays(ctx context.Context) error {
 	// Re-create relay instances on each call so their internal HTTP muxes are fresh.
@@ -302,7 +249,7 @@ func initRelays(ctx context.Context) error {
 	initRelayLimits()
 
 	privateRelay.Info.Name = config.PrivateRelayName
-	privateRelay.Info.PubKey = nPubToPubkey(config.PrivateRelayNpub)
+	privateRelay.Info.PubKey = nPubToPubkey("PRIVATE_RELAY_NPUB", config.PrivateRelayNpub)
 	privateRelay.Info.Description = config.PrivateRelayDescription
 	privateRelay.Info.Icon = config.PrivateRelayIcon
 	privateRelay.Info.Version = config.RelayVersion
@@ -316,6 +263,10 @@ func initRelays(ctx context.Context) error {
 		privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.NoComplexFilters)
 	}
 	privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.MustAuth, MustBeWhitelistedToQuery)
+	// COUNT has its own policy list in khatru; without this a stranger could
+	// count private events. Only the read gate, not the filter-shape rules:
+	// the apps count the whole store with an empty filter.
+	privateRelay.RejectCountFilter = append(privateRelay.RejectCountFilter, policies.MustAuth, MustBeWhitelistedToQuery)
 
 	privateRelay.RejectEvent = append(privateRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
@@ -325,6 +276,7 @@ func initRelays(ctx context.Context) error {
 			privateRelayLimits.EventIPLimiterMaxTokens,
 		),
 		MustBeWhitelistedToPost,
+		MustNotBeDeleted(privateDB),
 	)
 
 	privateRelay.RejectConnection = append(privateRelay.RejectConnection,
@@ -344,6 +296,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(privateRelay, privateDB)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
+	privateRelay.OverwriteDeletionOutcome = append(privateRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	privateRelay.ReplaceEvent = append(privateRelay.ReplaceEvent, privateDB.ReplaceEvent)
 
 	mux := privateRelay.Router()
@@ -351,7 +304,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /private", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.PrivateRelayName, config.PrivateRelayDescription, "wss://"+config.RelayURL+"/private")
+			renderFallbackPage(w, config.PrivateRelayName, config.PrivateRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/private")
 			return
 		}
 		data := struct {
@@ -361,9 +314,9 @@ func initRelays(ctx context.Context) error {
 			RelayURL         string
 		}{
 			RelayName:        config.PrivateRelayName,
-			RelayPubkey:      nPubToPubkey(config.PrivateRelayNpub),
+			RelayPubkey:      nPubToPubkey("PRIVATE_RELAY_NPUB", config.PrivateRelayNpub),
 			RelayDescription: config.PrivateRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/private",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/private",
 		}
 		if err := tmpl.Execute(w, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -371,7 +324,7 @@ func initRelays(ctx context.Context) error {
 	})
 
 	chatRelay.Info.Name = config.ChatRelayName
-	chatRelay.Info.PubKey = nPubToPubkey(config.ChatRelayNpub)
+	chatRelay.Info.PubKey = nPubToPubkey("CHAT_RELAY_NPUB", config.ChatRelayNpub)
 	chatRelay.Info.Description = config.ChatRelayDescription
 	chatRelay.Info.Icon = config.ChatRelayIcon
 	chatRelay.Info.Version = config.RelayVersion
@@ -385,6 +338,7 @@ func initRelays(ctx context.Context) error {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoComplexFilters)
 	}
 	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery)
+	chatRelay.RejectCountFilter = append(chatRelay.RejectCountFilter, policies.MustAuth, MustBeInWotToQuery)
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
@@ -396,6 +350,7 @@ func initRelays(ctx context.Context) error {
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		EventMustBeChatRelated,
+		MustNotBeDeleted(chatDB),
 	)
 
 	chatRelay.RejectConnection = append(chatRelay.RejectConnection,
@@ -426,6 +381,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(chatRelay, chatDB)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
+	chatRelay.OverwriteDeletionOutcome = append(chatRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	chatRelay.ReplaceEvent = append(chatRelay.ReplaceEvent, chatDB.ReplaceEvent)
 
 	mux = chatRelay.Router()
@@ -433,7 +389,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.ChatRelayName, config.ChatRelayDescription, "wss://"+config.RelayURL+"/chat")
+			renderFallbackPage(w, config.ChatRelayName, config.ChatRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/chat")
 			return
 		}
 		data := struct {
@@ -443,9 +399,9 @@ func initRelays(ctx context.Context) error {
 			RelayURL         string
 		}{
 			RelayName:        config.ChatRelayName,
-			RelayPubkey:      nPubToPubkey(config.ChatRelayNpub),
+			RelayPubkey:      nPubToPubkey("CHAT_RELAY_NPUB", config.ChatRelayNpub),
 			RelayDescription: config.ChatRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/chat",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/chat",
 		}
 		err = tmpl.Execute(w, data)
 		if err != nil {
@@ -454,7 +410,7 @@ func initRelays(ctx context.Context) error {
 	})
 
 	outboxRelay.Info.Name = config.OutboxRelayName
-	outboxRelay.Info.PubKey = nPubToPubkey(config.OutboxRelayNpub)
+	outboxRelay.Info.PubKey = nPubToPubkey("OUTBOX_RELAY_NPUB", config.OutboxRelayNpub)
 	outboxRelay.Info.Description = config.OutboxRelayDescription
 	outboxRelay.Info.Icon = config.OutboxRelayIcon
 	outboxRelay.Info.Version = config.RelayVersion
@@ -480,6 +436,7 @@ func initRelays(ctx context.Context) error {
 			outboxRelayLimits.EventIPLimiterMaxTokens,
 		),
 		MustBeWhitelistedToPost,
+		MustNotBeDeleted(outboxDB),
 	)
 
 	outboxRelay.RejectConnection = append(outboxRelay.RejectConnection,
@@ -503,6 +460,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
+	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
 
 	mux = outboxRelay.Router()
@@ -512,7 +470,7 @@ func initRelays(ctx context.Context) error {
 
 		tmpl, err := template.ParseFiles("templates/feed.html")
 		if err != nil {
-			renderFallbackPage(w, config.OutboxRelayName, config.OutboxRelayDescription, "wss://"+config.RelayURL)
+			renderFallbackPage(w, config.OutboxRelayName, config.OutboxRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL)
 			return
 		}
 
@@ -520,9 +478,9 @@ func initRelays(ctx context.Context) error {
 
 		data := FeedPageData{
 			RelayName:        config.OutboxRelayName,
-			RelayPubkey:      nPubToPubkey(config.OutboxRelayNpub),
+			RelayPubkey:      nPubToPubkey("OUTBOX_RELAY_NPUB", config.OutboxRelayNpub),
 			RelayDescription: config.OutboxRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL,
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL,
 			Notes:            notes,
 		}
 
@@ -531,7 +489,7 @@ func initRelays(ctx context.Context) error {
 		}
 	})
 
-	blossomServer = blossom.New(outboxRelay, "https://"+config.RelayURL)
+	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
 	blossomServer.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}
 	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 		slog.Debug("storing blob", "sha256", sha256, "ext", ext)
@@ -574,7 +532,7 @@ func initRelays(ctx context.Context) error {
 	migrateBlossomMetadata(ctx, blossomServer)
 
 	inboxRelay.Info.Name = config.InboxRelayName
-	inboxRelay.Info.PubKey = nPubToPubkey(config.InboxRelayNpub)
+	inboxRelay.Info.PubKey = nPubToPubkey("INBOX_RELAY_NPUB", config.InboxRelayNpub)
 	inboxRelay.Info.Description = config.InboxRelayDescription
 	inboxRelay.Info.Icon = config.InboxRelayIcon
 	inboxRelay.Info.Version = config.RelayVersion
@@ -599,6 +557,7 @@ func initRelays(ctx context.Context) error {
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		MustTagWhitelistedPubKey,
+		MustNotBeDeleted(inboxDB),
 	)
 
 	inboxRelay.RejectConnection = append(inboxRelay.RejectConnection,
@@ -641,6 +600,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(inboxRelay, inboxDB)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
+	inboxRelay.OverwriteDeletionOutcome = append(inboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)
 
 	mux = inboxRelay.Router()
@@ -648,7 +608,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /inbox", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.InboxRelayName, config.InboxRelayDescription, "wss://"+config.RelayURL+"/inbox")
+			renderFallbackPage(w, config.InboxRelayName, config.InboxRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/inbox")
 			return
 		}
 		data := struct {
@@ -658,9 +618,9 @@ func initRelays(ctx context.Context) error {
 			RelayURL         string
 		}{
 			RelayName:        config.InboxRelayName,
-			RelayPubkey:      nPubToPubkey(config.InboxRelayNpub),
+			RelayPubkey:      nPubToPubkey("INBOX_RELAY_NPUB", config.InboxRelayNpub),
 			RelayDescription: config.InboxRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/inbox",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/inbox",
 		}
 		if err := tmpl.Execute(w, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -697,6 +657,10 @@ func initRelays(ctx context.Context) error {
 		)),
 	)
 
+	// Natively the bind address is the read policy. Builds without one add
+	// theirs here (the browser build: wasm_entry.go).
+	feedRelay.RejectFilter = append(feedRelay.RejectFilter, feedReadPolicy...)
+
 	feedRelay.StoreEvent = append(feedRelay.StoreEvent, feedDB.SaveEvent)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(feedRelay, feedDB)
@@ -704,7 +668,7 @@ func initRelays(ctx context.Context) error {
 	feedRelay.ReplaceEvent = append(feedRelay.ReplaceEvent, feedDB.ReplaceEvent)
 
 	feedRelay.Router().HandleFunc("GET /feed", func(w http.ResponseWriter, r *http.Request) {
-		renderFallbackPage(w, feedRelay.Info.Name, feedRelay.Info.Description, "wss://"+config.RelayURL+"/feed")
+		renderFallbackPage(w, feedRelay.Info.Name, feedRelay.Info.Description, getWSScheme(config.RelayURL)+config.RelayURL+"/feed")
 	})
 
 	return nil

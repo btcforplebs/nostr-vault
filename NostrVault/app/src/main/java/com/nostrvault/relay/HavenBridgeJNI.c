@@ -58,6 +58,8 @@ extern void StopRelayC(void);
 extern void RequestRelaySyncC(void);
 extern void SetMeshServingC(int on);
 extern void RequestMacSyncCheckC(void);
+extern void SetAppForegroundC(int on);
+extern void UpdateBlacklistC(const char* npubsJSON);
 extern int BackupDatabaseC(const char* outputPath);
 extern int RestoreDatabaseC(const char* inputPath);
 extern int BackupToCloudC(void);
@@ -79,6 +81,7 @@ extern char* DeriveTaprootAddressC(const char* hexPubKey);
 extern char* FetchFeeEstimatesC(void);
 extern char* SweepToAddressC(const char* nsecHex, const char* destAddr, int feeRate);
 extern char* NIP46ConnectC(const char* clientSK, const char* bunkerURL);
+extern char* NIP46ConnectBackgroundC(const char* clientSK, const char* bunkerURL);
 extern void NIP46DisconnectC(void);
 extern char* NIP46SignEventC(const char* eventJSON);
 extern char* NIP46GetPublicKeyC(void);
@@ -94,8 +97,13 @@ extern char* NIP46SignEventWithC(const char* signerPubkey, const char* eventJSON
 extern char* NIP46AwaitNostrConnectC(const char* clientSK, const char* relaysJSON, const char* secret, long long since, int waitSeconds);
 extern char* ComputePopularNotesC(void);
 extern char* GetFollowersC(const char* owner);
+extern int RefreshWotC(void);
+extern char* WotRefreshProgressC(void);
+extern char* WotNewcomersC(int from);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
+extern char* GetLogLinesC(void);
+extern int ActiveConnectionsC(void);
 
 // Helper: Convert Go C.CString result to jstring (and free the C memory)
 static jstring goStringToJstring(JNIEnv *env, char *goStr) {
@@ -144,6 +152,19 @@ Java_com_nostrvault_relay_HavenBridge_setMeshServingNative(JNIEnv *env, jobject 
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_requestMacSyncCheck(JNIEnv *env, jobject thiz) {
     RequestMacSyncCheckC();
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_setAppForeground(JNIEnv *env, jobject thiz, jboolean on) {
+    SetAppForegroundC(on ? 1 : 0);
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_updateBlacklistNative(JNIEnv *env, jobject thiz, jstring npubsJSON) {
+    const char *cJSON = GET_CSTR(env, npubsJSON);
+    if (cJSON == NULL) return;
+    UpdateBlacklistC((char*)cJSON);
+    REL_CSTR(env, npubsJSON, cJSON);
 }
 
 // ---- Database operations ----
@@ -357,6 +378,17 @@ Java_com_nostrvault_relay_HavenBridge_nip46Connect(JNIEnv *env, jobject thiz,
     return goStringToJstring(env, result);
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46ConnectBackground(JNIEnv *env, jobject thiz,
+        jstring clientSecretKey, jstring bunkerUrl) {
+    const char *cSk = GET_CSTR(env, clientSecretKey);
+    const char *cUrl = GET_CSTR(env, bunkerUrl);
+    char *result = NIP46ConnectBackgroundC((char*)cSk, (char*)cUrl);
+    REL_CSTR(env, clientSecretKey, cSk);
+    REL_CSTR(env, bunkerUrl, cUrl);
+    return goStringToJstring(env, result);
+}
+
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_nip46Disconnect(JNIEnv *env, jobject thiz) {
     NIP46DisconnectC();
@@ -479,6 +511,23 @@ Java_com_nostrvault_relay_HavenBridge_computePopularNotes(JNIEnv *env, jobject t
     return goStringToJstring(env, ComputePopularNotesC());
 }
 
+// ---- Web of trust rebuild ----
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_refreshWot(JNIEnv *env, jobject thiz) {
+    return RefreshWotC() == 1 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getWotRefreshProgress(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, WotRefreshProgressC());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getWotNewcomers(JNIEnv *env, jobject thiz, jint from) {
+    return goStringToJstring(env, WotNewcomersC((int)from));
+}
+
 // ---- Follower ledger ----
 
 JNIEXPORT jstring JNICALL
@@ -500,4 +549,14 @@ Java_com_nostrvault_relay_HavenBridge_getImportLog(JNIEnv *env, jobject thiz) {
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getNotifyLog(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, GetNotifyLogC());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getLogLines(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, GetLogLinesC());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_activeConnections(JNIEnv *env, jobject thiz) {
+    return (jint) ActiveConnectionsC();
 }

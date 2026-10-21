@@ -321,8 +321,15 @@ struct FollowingBackupSettingsView: View {
                     if type == "EVENT", json.count >= 3,
                        let eventDict = json[2] as? [String: Any],
                        let kind = eventDict["kind"] as? Int, kind == 3,
+                       // A relay can send anything, and Restore republishes this
+                       // list as yours, so only the owner's own, validly signed
+                       // kind 3 counts — the same gate `fetchContactList` uses.
+                       (eventDict["pubkey"] as? String) == ownerHex,
                        let eventId = eventDict["id"] as? String,
                        !seenIds.contains(eventId),
+                       // After the dedupe: the same list arrives from every relay
+                       // scanned, and this is a schnorr check.
+                       NostrEventVerifier.isValid(eventDict),
                        let tags = eventDict["tags"] as? [[String]],
                        let createdAt = eventDict["created_at"] as? Int {
                         seenIds.insert(eventId)

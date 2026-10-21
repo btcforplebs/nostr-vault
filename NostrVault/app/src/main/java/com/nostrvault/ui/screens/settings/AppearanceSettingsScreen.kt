@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.nostrvault.ui.components.EmojiPickerSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,6 +115,14 @@ class AppearanceViewModel @Inject constructor(
         configStore.update { it.copy(showNewPostsPill = on) }
     }
 
+    val postButtons = configStore.config
+        .map { it.postButtons }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.postButtons)
+
+    fun setPostButtons(value: String) {
+        configStore.update { it.copy(postButtons = value) }
+    }
+
     init {
         val config = configStore.config.value
         _compactLines.value = config.compactLineLimit.coerceIn(FeedLineLimits.RANGE)
@@ -132,7 +141,8 @@ class AppearanceViewModel @Inject constructor(
         }
     }
 
-    fun setDefaultEmoji(emoji: String) {
+    fun setDefaultEmoji(picked: String) {
+        val emoji = defaultReactionFrom(picked) ?: return
         _defaultEmoji.value = emoji
         viewModelScope.launch {
             configStore.update { it.copy(defaultReactionEmoji = emoji) }
@@ -184,6 +194,7 @@ fun AppearanceSettingsScreen(
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
+    val postButtons by viewModel.postButtons.collectAsState()
     val sendDelaySeconds by viewModel.sendDelaySeconds.collectAsState()
 
     Scaffold(
@@ -215,12 +226,7 @@ fun AppearanceSettingsScreen(
             // appearance (OLED black with the orange accent).
 
             // Text size
-            Text(
-                text = "Text Size",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            SettingHeading("Text Size", SettingsHelp.DISPLAY_TEXT_SIZE)
             Spacer(Modifier.height(8.dp))
 
             Row(
@@ -256,20 +262,10 @@ fun AppearanceSettingsScreen(
             // OLED toggle removed — OLED black is the only appearance now.
 
             // Feed text: lines per post in the condensed layouts
-            Text(
-                text = "Feed Text",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "Lines of text each post shows before it is cut off. In Threaded View, replies show one line fewer.",
-                color = SecondaryText,
-                fontSize = 13.sp,
-            )
+            SettingHeading("Feed Text")
             Spacer(Modifier.height(8.dp))
-            LineCountRow("Compact View", compactLines, viewModel::setCompactLines)
-            LineCountRow("Threaded View", threadedLines, viewModel::setThreadedLines)
+            LineCountRow("Compact View", compactLines, SettingsHelp.DISPLAY_COMPACT_LINES, viewModel::setCompactLines)
+            LineCountRow("Threaded View", threadedLines, SettingsHelp.DISPLAY_THREADED_LINES, viewModel::setThreadedLines)
 
             Spacer(Modifier.height(32.dp))
 
@@ -289,19 +285,7 @@ fun AppearanceSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "New Posts Pill",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = SettingsHelp.DISPLAY_NEW_POSTS_PILL.text,
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
+                SettingHeading("New Posts Pill", SettingsHelp.DISPLAY_NEW_POSTS_PILL, Modifier.weight(1f))
                 Switch(
                     checked = showNewPostsPill,
                     onCheckedChange = viewModel::setShowNewPostsPill,
@@ -314,22 +298,12 @@ fun AppearanceSettingsScreen(
 
             Spacer(Modifier.height(32.dp))
 
+            PostButtonsSection(postButtons, viewModel::setPostButtons)
+
+            Spacer(Modifier.height(32.dp))
+
             // Send delay: the undo window before a post goes out
-            Text(
-                text = "Send Delay",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = if (sendDelaySeconds == 0) {
-                    "Posts go out as soon as you tap. There's no undo."
-                } else {
-                    "Posts wait $sendDelaySeconds seconds before going out, so you can undo or edit them."
-                },
-                color = SecondaryText,
-                fontSize = 13.sp,
-            )
+            SettingHeading("Send Delay", SettingsHelp.POST_SEND_DELAY)
             Spacer(Modifier.height(12.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -374,19 +348,7 @@ fun AppearanceSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Keep Tab Bar Full Size",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Keep the bottom tab bar fully expanded at all times. When off, it shrinks and hides as you scroll.",
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
+                SettingHeading("Keep Tab Bar Full Size", SettingsHelp.DISPLAY_TAB_BAR_ANIMATION, Modifier.weight(1f))
                 Switch(
                     checked = disableTabBarAnimation,
                     onCheckedChange = viewModel::toggleTabBarAnimation,
@@ -404,19 +366,7 @@ fun AppearanceSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Zaps Only",
-                        color = PrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Remove likes and reactions entirely. Zaps become the only way to engage and the primary source of relay notifications.",
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
+                SettingHeading("Zaps Only", SettingsHelp.DISPLAY_ZAPS_ONLY, Modifier.weight(1f))
                 Switch(
                     checked = zapsOnly,
                     onCheckedChange = viewModel::toggleZapsOnly,
@@ -431,62 +381,41 @@ fun AppearanceSettingsScreen(
                 Spacer(Modifier.height(32.dp))
 
                 // Default reaction emoji
-                Text(
-                    text = "Default Reaction",
-                    color = PrimaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Used for quick-react on notes",
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                )
+                SettingHeading("Default Reaction", SettingsHelp.DISPLAY_DEFAULT_REACTION)
                 Spacer(Modifier.height(12.dp))
 
-                val emojiOptions = listOf(
-                "+" to "+",
-                "\u2764\uFE0F" to "\u2764\uFE0F",
-                "\uD83D\uDC4D" to "\uD83D\uDC4D",
-                "\uD83D\uDD25" to "\uD83D\uDD25",
-                "\u26A1" to "\u26A1",
-                "\uD83D\uDE02" to "\uD83D\uDE02",
-                "\uD83E\uDD14" to "\uD83E\uDD14",
-                "\uD83D\uDE4F" to "\uD83D\uDE4F",
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                emojiOptions.forEach { (display, value) ->
-                    val isSelected = defaultEmoji == value
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (isSelected) LocalNostrVaultColors.current.primary.copy(alpha = 0.2f)
-                                else TertiaryGroupedBg,
-                            )
-                            .then(
-                                if (isSelected) Modifier.border(
-                                    2.dp,
-                                    LocalNostrVaultColors.current.primary,
-                                    RoundedCornerShape(10.dp),
-                                )
-                                else Modifier
-                            )
-                            .clickable { viewModel.setDefaultEmoji(value) },
-                    ) {
-                        Text(
-                            text = display,
-                            fontSize = 20.sp,
-                        )
-                    }
+                // One row that opens the full picker, as on iPhone
+                // (AppearanceSettingsView): any emoji, not eight presets.
+                var showEmojiPicker by remember { mutableStateOf(false) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(TertiaryGroupedBg)
+                        .clickable(onClickLabel = "Choose the default reaction") { showEmojiPicker = true }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text("Reaction", color = PrimaryText, modifier = Modifier.weight(1f))
+                    Text(defaultEmoji, fontSize = 24.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        NostrVaultIcons.Navigate,
+                        contentDescription = null,
+                        tint = SecondaryText,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
-            }
+                if (showEmojiPicker) {
+                    EmojiPickerSheet(
+                        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                        onDismiss = { showEmojiPicker = false },
+                        onSelectEmoji = { emoji ->
+                            viewModel.setDefaultEmoji(emoji)
+                            showEmojiPicker = false
+                        },
+                    )
+                }
             }
         }
     }
@@ -494,12 +423,15 @@ fun AppearanceSettingsScreen(
 
 /** One feed layout's line count with minus/plus buttons, clamped to [FeedLineLimits.RANGE]. */
 @Composable
-private fun LineCountRow(title: String, lines: Int, onChange: (Int) -> Unit) {
+private fun LineCountRow(title: String, lines: Int, help: SettingsHelp, onChange: (Int) -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
-        Text(title, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Text(title, color = PrimaryText, fontSize = 15.sp)
+            InfoButton(help)
+        }
         LineCountButton("−", "Fewer lines", enabled = lines > FeedLineLimits.RANGE.first) { onChange(lines - 1) }
         Text(
             text = if (lines == 1) "1 line" else "$lines lines",
@@ -610,3 +542,20 @@ private fun TranslationSection(
         }
     }
 }
+
+/** A setting's title with its (i), in place of a grey caption under it. */
+@Composable
+private fun SettingHeading(title: String, help: SettingsHelp? = null, modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        Text(
+            text = title,
+            color = PrimaryText,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (help != null) InfoButton(help)
+    }
+}
+
+/** A picked reaction, trimmed; a blank pick changes nothing. */
+internal fun defaultReactionFrom(picked: String): String? = picked.trim().ifEmpty { null }

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -140,7 +141,7 @@ fun BlossomSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Blossom Servers") },
+                title = { Text("Media Servers") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -242,14 +243,19 @@ fun BlossomSettingsScreen(
             }
 
             // Section header
-            Text(
-                text = "ADDITIONAL BLOSSOM SERVERS",
-                color = SecondaryText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
-            )
+            ) {
+                Text(
+                    text = "ADDITIONAL BLOSSOM SERVERS",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                )
+                InfoButton(SettingsHelp.SHARE_MEDIA_SERVERS)
+            }
 
             // Add mirror input
             Row(
@@ -296,6 +302,7 @@ fun BlossomSettingsScreen(
                     Text("No additional mirrors configured", color = SecondaryText, fontSize = 15.sp)
                 }
                 offlineCopies()
+                FipsSection()
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(mirrors) { mirror ->
@@ -310,7 +317,63 @@ fun BlossomSettingsScreen(
                         )
                     }
                     item { offlineCopies() }
+                    item { FipsSection() }
                 }
+            }
+        }
+    }
+}
+
+/** True when the phone's active network goes through a VPN (iOS checkVPNActive). */
+internal fun isVpnActive(context: android.content.Context): Boolean {
+    val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)
+}
+
+/**
+ * "FIPS": whether a VPN is up, and how to reach media on .fips servers.
+ * Same as the iOS Media Servers screen (the Mac's own FIPS server is Mac only).
+ */
+@Composable
+private fun FipsSection() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var vpnActive by remember { mutableStateOf(false) }
+    // Checked on open and on every return to the screen (iOS: onAppear).
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.currentStateFlow.collect {
+            if (it == androidx.lifecycle.Lifecycle.State.RESUMED) vpnActive = isVpnActive(context)
+        }
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
+            Text(
+                text = "FIPS",
+                color = SecondaryText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            )
+            InfoButton(SettingsHelp.SHARE_FIPS)
+        }
+        Surface(color = SecondaryGroupedBg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .background(if (vpnActive) SuccessGreen else TertiaryText, androidx.compose.foundation.shape.CircleShape),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (vpnActive) "VPN active" else "No VPN detected", color = SecondaryText, fontSize = 13.sp)
+                }
+                Text(
+                    "To access media from .fips servers, enable your FIPS VPN (e.g. nostr-vpn) and add the " +
+                        "server's .fips address as an Additional Server above.",
+                    color = SecondaryText,
+                    fontSize = 13.sp,
+                )
             }
         }
     }

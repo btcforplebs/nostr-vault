@@ -1,0 +1,44 @@
+/* Messages (iPhone DMInboxView / DMThreadView): conversation rows, then a thread of bubbles with a field at the bottom. */
+.dm-head-actions { display: inline-flex; gap: 8px; }
+.dm-new { display: flex; gap: 8px; margin: 0 var(--gutter) 12px; }
+.dm-people { margin: -8px var(--gutter) 12px; }
+.dm-new input, .dm-compose textarea { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
+.dm-new input:focus, .dm-compose textarea:focus { outline: none; border-color: var(--accent-line); }
+.dm-new input::placeholder, .dm-compose textarea::placeholder { color: var(--text-3); }
+
+.dm-row { display: flex; align-items: center; gap: 12px; margin: 0 var(--gutter) 8px; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--s1); border: 1px solid var(--hair); color: inherit; text-decoration: none; }
+.dm-row:hover { border-color: var(--accent-line); }
+.dm-row-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.dm-row-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.dm-row-head .author-name { flex: 1; }
+.dm-row-last { font: var(--t-sub); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Unread (DMInboxView): the name and last line bold, the count in an accent pill. */
+.dm-row.unread .author-name, .dm-row.unread .dm-row-last { font-weight: 700; color: var(--text); }
+.dm-unread { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-grad); color: #fff; font: var(--t-cap); font-weight: 700;
+  line-height: 20px; text-align: center; }
+
+.dm-title { display: inline-flex; align-items: center; gap: 8px; max-width: 60%; }
+.dm-title .author-name { font: inherit; }
+.dm-thread { display: flex; flex-direction: column; gap: 6px; padding: 4px var(--gutter) 12px; }
+.dm-bubble { max-width: 78%; align-self: flex-start; padding: 8px 12px; border-radius: 18px 18px 18px 6px; background: var(--s2); }
+.dm-bubble.mine { align-self: flex-end; background: var(--accent-grad); color: #fff; border-radius: 18px 18px 6px 18px; }
+.dm-bubble .note-text { margin: 0; font: var(--t-body); }
+.dm-bubble.mine .note-text a, .dm-bubble.mine .mention { color: #fff; text-decoration: underline; }
+.dm-meta { display: block; margin-top: 2px; font: var(--t-cap); color: var(--text-3); text-align: right; }
+.dm-bubble.mine .dm-meta { color: rgb(255 255 255 / .7); }
+.dm-compose { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 8px + env(safe-area-inset-bottom)); display: grid; gap: 6px;
+  margin: 0 var(--gutter); padding: 8px 0; background: var(--bg); }
+.dm-compose.dragging { outline: 2px dashed var(--accent-line); outline-offset: 2px; border-radius: var(--radius); }
+.dm-compose-row { display: flex; gap: 8px; align-items: flex-end; }
+/* One line to start, growing to five (the height is set from the text); rounder than a pill once it has lines. */
+.dm-compose textarea { resize: none; overflow-y: auto; padding: 11px 14px; line-height: 20px; border-radius: 22px; box-sizing: border-box; }
+/* The photo waiting to go with the next message (DMThreadView: 64 pt, rounded, an x in the corner). */
+.dm-attachment { position: relative; width: 64px; height: 64px; }
+.dm-attachment img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
+.dm-attachment-remove { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 999px;
+  border: 0; background: rgb(0 0 0 / .6); color: #fff; line-height: 22px; font-size: 16px; }
+
+/* An image link in a stranger's DM waits for a tap (NoteText TapImage). */
+.tap-image { display: flex; margin: 8px 0 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

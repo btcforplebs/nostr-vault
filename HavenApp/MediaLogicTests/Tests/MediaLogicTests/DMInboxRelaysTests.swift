@@ -15,8 +15,8 @@ final class DMInboxRelaysTests: XCTestCase {
     }
 
     func testNoHavenInboxLeavesTheDMRelays() {
-        let merged = HavenConfig.mergedDMInboxRelays(havenInbox: "", dmRelays: ["wss://nos.lol", " "])
-        XCTAssertEqual(merged, ["wss://nos.lol"])
+        let merged = HavenConfig.mergedDMInboxRelays(havenInbox: "", dmRelays: ["wss://relay.damus.io", " "])
+        XCTAssertEqual(merged, ["wss://relay.damus.io"])
     }
 
     /// A Mac with a public address puts its own inbox first; a local-only one
@@ -94,6 +94,48 @@ final class DMInboxRelaysTests: XCTestCase {
         XCTAssertNil(decoded.dmRelaysUpdatedAt)
         var stamped = HavenConfig(); stamped.dmRelaysUpdatedAt = 42
         XCTAssertEqual(try JSONDecoder().decode(HavenConfig.self, from: JSONEncoder().encode(stamped)).dmRelaysUpdatedAt, 42)
+    }
+
+    // MARK: - Dead relays
+
+    /// nos.lol, nostr.mom and offchain.pub stopped answering (2026-10-12).
+    /// An old config drops them once; one the owner edits later keeps them.
+    func testOldConfigDropsDeadRelaysOnce() throws {
+        var old = HavenConfig()
+        old.feedRelays = ["wss://relay.primal.net", "wss://nos.lol/", "WSS://NOSTR.MOM"]
+        old.dmRelays = ["wss://nos.lol"]
+        old.blastrRelays = ["wss://relay.damus.io", "wss://offchain.pub"]
+        old.importSeedRelays = ["wss://nostr.mom:443", "wss://relay.damus.io"]
+        old.blockedRelays = ["wss://nos.lol"]
+        var dict = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        dict.removeValue(forKey: "droppedDeadRelays")
+        var decoded = try JSONDecoder().decode(HavenConfig.self, from: JSONSerialization.data(withJSONObject: dict))
+        XCTAssertFalse(decoded.droppedDeadRelays)
+        decoded.dropDeadRelaysOnce()
+        XCTAssertEqual(decoded.feedRelays, ["wss://relay.primal.net"])
+        XCTAssertEqual(decoded.dmRelays, HavenConfig.default.dmRelays, "emptied list falls back to the defaults")
+        XCTAssertEqual(decoded.blastrRelays, ["wss://relay.damus.io"])
+        XCTAssertEqual(decoded.importSeedRelays, ["wss://relay.damus.io"])
+        XCTAssertEqual(decoded.blockedRelays, ["wss://nos.lol"], "a block is the owner's choice")
+        XCTAssertTrue(decoded.droppedDeadRelays)
+
+        var readded = decoded
+        readded.feedRelays.append("wss://nos.lol")
+        var again = try JSONDecoder().decode(HavenConfig.self, from: JSONEncoder().encode(readded))
+        again.dropDeadRelaysOnce()
+        XCTAssertEqual(again.feedRelays, ["wss://relay.primal.net", "wss://nos.lol"])
+    }
+
+    func testDefaultsCarryNoDeadRelays() {
+        let config = HavenConfig()
+        let lists = [config.feedRelays, config.dmRelays, config.blastrRelays, config.importSeedRelays,
+                     HavenConfig.fallbackRelays, HavenConfig.fallbackWriteRelays, RelayMatrix.wellKnownRelays]
+        for relay in lists.joined() { XCTAssertFalse(HavenConfig.isDeadRelay(relay), relay) }
+        // Positive control: the check does catch them, but not lookalike hosts.
+        XCTAssertTrue(HavenConfig.isDeadRelay(" wss://Nos.lol/ "))
+        XCTAssertTrue(HavenConfig.isDeadRelay("wss://offchain.pub:443/x"))
+        XCTAssertFalse(HavenConfig.isDeadRelay("wss://relay.nos.lol.example"))
+        XCTAssertFalse(HavenConfig.isDeadRelay("wss://search.nos.today"))
     }
 
     // MARK: - Private addresses never get published

@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import android.content.Context
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.MacSync
 import com.nostrvault.relay.MacSyncStatus
 import com.nostrvault.relay.RelayForegroundService
@@ -39,7 +40,7 @@ class HavenRelaySettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
-    // ── Sync with Mac (iOS MacRelaySyncStatusView) ──────────────
+    // ── Sync with Vault on Mac (iOS MacRelaySyncStatusView) ─────
 
     private val _macSync = MutableStateFlow<MacSyncStatus?>(null)
     val macSync = _macSync.asStateFlow()
@@ -104,14 +105,7 @@ class HavenRelaySettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val before = configStore.config.value
             val oldInbox = before.ownHavenDMInboxURL
-            configStore.update { cfg ->
-                val updated = cfg.copy(macRelayURL = _urlInput.value.trim())
-                // An adopted DM list may carry the old Haven inbox; drop it so
-                // senders and every device move to the new address.
-                if (oldInbox.isNotEmpty() && oldInbox != updated.ownHavenDMInboxURL) {
-                    updated.copy(dmRelays = updated.dmRelays.filter { !it.trim().trimEnd('/').equals(oldInbox, ignoreCase = true) })
-                } else updated
-            }
+            configStore.update { cfg -> withMacRelayURL(cfg, _urlInput.value.trim()) }
             // The DM inbox list leads with the Haven inbox: publish when it moved.
             if (configStore.config.value.ownHavenDMInboxURL != oldInbox) {
                 nostrService.publishOwnerDMInboxList()
@@ -119,6 +113,35 @@ class HavenRelaySettingsViewModel @Inject constructor(
             _saved.value = true
         }
     }
+}
+
+/**
+ * [cfg] with a new Mac relay address. Entries derived from the old address
+ * (feed, import and blastr relays, Blossom mirrors) follow it, so a changed
+ * tunnel does not leave the lists pointing at a dead host. iOS
+ * `MacRelaySettingsView.migrateRelayURLs`.
+ */
+internal fun withMacRelayURL(cfg: HavenConfig, url: String): HavenConfig {
+    val updated = cfg.copy(macRelayURL = url)
+    val oldWss = cfg.macRelayWssURL
+    val newWss = updated.macRelayWssURL
+    val oldHttps = cfg.macRelayHttpsURL
+    val newHttps = updated.macRelayHttpsURL
+    fun List<String>.moved(from: String, to: String) =
+        if (from.isEmpty() || from == to) this else map { if (it == from) to else it }.filter { it.isNotEmpty() }
+    var out = updated.copy(
+        feedRelays = updated.feedRelays?.moved(oldWss, newWss),
+        importSeedRelays = updated.importSeedRelays.moved(oldWss, newWss),
+        blastrRelays = updated.blastrRelays.moved(oldWss, newWss),
+        blossomMirrors = updated.blossomMirrors.moved(oldHttps, newHttps),
+    )
+    // An adopted DM list may carry the old Haven inbox; drop it so
+    // senders and every device move to the new address.
+    val oldInbox = cfg.ownHavenDMInboxURL
+    if (oldInbox.isNotEmpty() && oldInbox != out.ownHavenDMInboxURL) {
+        out = out.copy(dmRelays = out.dmRelays.filter { !it.trim().trimEnd('/').equals(oldInbox, ignoreCase = true) })
+    }
+    return out
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,7 +162,7 @@ fun HavenRelaySettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Haven Relay") },
+                title = { Text("Sync with Vault on Mac") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -164,14 +187,16 @@ fun HavenRelaySettingsScreen(
         ) {
             Spacer(Modifier.height(16.dp))
 
-            Text(
-                text = "SYNC RELAY",
-                color = SecondaryText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                Text(
+                    text = "YOUR MAC'S ADDRESS",
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                )
+                InfoButton(SettingsHelp.RELAY_SYNC)
+            }
 
             OutlinedTextField(
                 value = urlInput,
@@ -347,7 +372,7 @@ private fun MacSyncSection(
         ) {
             Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Check sync with Mac", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Check sync with Vault on Mac", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

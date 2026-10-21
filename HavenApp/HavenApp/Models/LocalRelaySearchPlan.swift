@@ -31,7 +31,26 @@ enum LocalRelaySearchPlan {
     /// Bounds one search: 40 pages x 1000 = 40,000 events per route and kind.
     static let maxPages = 40
 
-    /// What to do once a page has been received in full (EOSE).
+    /// The kinds one search walks, in order: profiles first (a note matches
+    /// on its author's profile), then each note kind once. A kind listed
+    /// twice would send the walk back to its first copy when the second
+    /// finished, and page the same kinds forever.
+    static func kindOrder(noteKinds: [Int]) -> [Int] {
+        var seen: Set<Int> = [0]
+        return [0] + noteKinds.filter { seen.insert($0).inserted }
+    }
+
+    /// Seconds per kind the walk gets before it is cut short. Kinds are
+    /// walked one after another, so the budget grows with them: profiles
+    /// plus kind 1 keep the 6 s they always had.
+    static let secondsPerKind: TimeInterval = 3
+
+    /// The fallback deadline for a walk over `kindCount` kinds. An on-box
+    /// relay answers in milliseconds; this only ends a walk that stalled.
+    static func timeout(kindCount: Int) -> TimeInterval {
+        secondsPerKind * TimeInterval(max(kindCount, 2))
+    }
+
     enum Step: Equatable {
         case done
         case next(until: Int64)

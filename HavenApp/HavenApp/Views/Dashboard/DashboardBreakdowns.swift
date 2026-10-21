@@ -7,6 +7,10 @@ struct EventKindBreakdownView: View {
 
     @State private var counts: [Int: Int] = [:]
     @State private var isLoading = true
+    /// The last count did not get an answer from every relay.
+    @State private var countFailed = false
+    /// The owner has no key, so /private and /chat were left out.
+    @State private var publicOnly = false
 
     private static let kindNames: [Int: String] = [
         0: "Profile Metadata",
@@ -74,6 +78,12 @@ struct EventKindBreakdownView: View {
                             .font(.appSystem(size: 13))
                             .foregroundColor(.secondary)
                     }
+                } else if countFailed {
+                    Text("Couldn't count. Tap \(Image(systemName: "arrow.clockwise")) to try again.")
+                        .font(.appSystem(size: 13))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding()
                 } else {
                     ScrollView {
                         VStack(spacing: 8) {
@@ -85,6 +95,11 @@ struct EventKindBreakdownView: View {
                                     Text("Total Events")
                                         .font(.appSystem(size: 12))
                                         .foregroundColor(.secondary)
+                                    if publicOnly {
+                                        Text(RelayCountSession.publicOnlyNote)
+                                            .font(.appSystem(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                                 Spacer()
                             }
@@ -143,7 +158,10 @@ struct EventKindBreakdownView: View {
 
     private func reload() async {
         isLoading = true
-        counts = await statsService.fetchCountsByKind()
+        publicOnly = !RelayCounter.ownerCanAuth()
+        let fresh = await statsService.fetchCountsByKind()
+        counts = fresh ?? [:]
+        countFailed = fresh == nil
         isLoading = false
     }
 }
@@ -456,7 +474,7 @@ struct MediaCacheBreakdownView: View {
                     let result = MediaCacheService.shared.clearCache()
                     let freed = ByteCountFormatter.string(fromByteCount: result.bytesFreed, countStyle: .file)
                     if result.filesFailed == 0 {
-                        ActionToastManager.shared.show(icon: "trash.fill", message: "Cleared \(freed) of temporary copies", color: Color.havenVerified)
+                        ActionToastManager.shared.show(icon: "trash.fill", message: "Cleared \(freed) of temporary copies", tone: .success)
                     } else {
                         ErrorNotificationManager.shared.show("Cleared \(freed), but \(result.filesFailed) files could not be removed", icon: "exclamationmark.triangle.fill", style: .warning)
                     }

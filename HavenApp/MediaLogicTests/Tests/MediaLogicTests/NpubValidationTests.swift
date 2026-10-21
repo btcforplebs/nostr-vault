@@ -75,4 +75,37 @@ final class NpubValidationTests: XCTestCase {
         ]
         XCTAssertEqual(NpubValidation.validNpubs(input), [goodNpub, second])
     }
+
+    // MARK: - nsec (key import)
+
+    /// The NIP-19 example key.
+    private let goodNsec = "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5"
+    private let goodSecretHex = "67dea2ed018072d675f5415ecfaed7d2597555e202d85b3d65ea4e58d2d92ffa"
+
+    func testAcceptsAWellFormedNsec() {
+        XCTAssertEqual(NpubValidation.hexSecretKey(fromNsec: " \(goodNsec)\n"), goodSecretHex)
+    }
+
+    /// One mistyped character still decodes to 32 bytes under the lenient
+    /// decoder; importing it would replace the stored key with a stranger's.
+    func testRejectsANsecWithOneMistypedCharacter() {
+        var typo = Array(goodNsec)
+        typo[10] = "q"
+        XCTAssertNotEqual(String(typo), goodNsec)
+        XCTAssertNil(NpubValidation.hexSecretKey(fromNsec: String(typo)))
+    }
+
+    /// Correct checksum, 31-byte payload.
+    func testRejectsANsecThatIsNotThirtyTwoBytes() {
+        XCTAssertNil(NpubValidation.hexSecretKey(fromNsec: "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9u7jpluy"))
+    }
+
+    /// Same bytes, other prefix: a pasted npub is not a secret key, and an
+    /// nsec is not a pubkey.
+    func testRejectsTheWrongPrefixEitherWay() {
+        let npubOfSameBytes = "npub1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqu95glp"
+        XCTAssertNil(NpubValidation.hexSecretKey(fromNsec: npubOfSameBytes))
+        XCTAssertNil(NpubValidation.hexPubkey(fromNpub: goodNsec))
+        XCTAssertEqual(NpubValidation.hexPubkey(fromNpub: npubOfSameBytes), goodSecretHex)
+    }
 }

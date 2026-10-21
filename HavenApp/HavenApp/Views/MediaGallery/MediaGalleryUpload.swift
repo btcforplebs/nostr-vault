@@ -17,14 +17,12 @@ extension MediaGalleryView {
 
     #if os(iOS)
     func saveMediaToPhotos(item: MediaItem) {
-        saveToPhotosMessage = nil
-
         Task {
             // Request photo library permission
             let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
             guard status == .authorized || status == .limited else {
                 await MainActor.run {
-                    saveToPhotosMessage = "Photo library access denied"
+                    ErrorNotificationManager.shared.show("Photo library access denied")
                 }
                 return
             }
@@ -51,15 +49,11 @@ extension MediaGalleryView {
                 }
 
                 await MainActor.run {
-                    withAnimation { saveToPhotosMessage = "Saved to Photos" }
-                    Task {
-                        try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        await MainActor.run { withAnimation { saveToPhotosMessage = nil } }
-                    }
+                    ActionToastManager.shared.show(icon: "photo.on.rectangle", message: "Saved to Photos", tone: .success)
                 }
             } catch {
                 await MainActor.run {
-                    saveToPhotosMessage = "Failed to save"
+                    ErrorNotificationManager.shared.show("Failed to save")
                 }
                 print("Save to Photos error: \(error.localizedDescription)")
             }
@@ -447,15 +441,7 @@ extension MediaGalleryView {
         let sha256 = extractViewerSHA256(from: item.url)
         guard !sha256.isEmpty else { return }
         Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let success = await service.deleteFromMirrors(sha256: sha256)
-            await MainActor.run {
-                if success {
-                    ActionToastManager.shared.show(icon: "trash", message: "Deleted from mirrors", color: Color(red: 0.2, green: 0.8, blue: 0.6))
-                } else {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Failed to delete from mirrors", color: .red.opacity(0.85))
-                }
-            }
+            await MediaBackupActions.deleteFromMirrors(hash: sha256, configService: configService, nostrService: nostrService)
         }
     }
 
@@ -463,37 +449,21 @@ extension MediaGalleryView {
         let sha256 = extractViewerSHA256(from: item.url)
         guard !sha256.isEmpty else { return }
         Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            async let local = service.deleteFromLocal(sha256: sha256)
-            async let mirrors = service.deleteFromMirrors(sha256: sha256)
-            let (localOk, mirrorsOk) = await (local, mirrors)
-            await MainActor.run {
-                let succeeded = localOk || mirrorsOk
-                if succeeded {
-                    // Instantly clean up local state
-                    self.blossomCache.items.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
-                    self.displayMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
+            let localOk = await MediaBackupActions.deleteEverywhere(hash: sha256, configService: configService, nostrService: nostrService)
+            // Only drop the tile once the device copy is really gone.
+            guard localOk else { return }
+            // Instantly clean up local state
+            self.blossomCache.items.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
+            self.displayMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
 
-                    if selectedMedia?.url == item.url {
-                        withAnimation(Motion.fade) {
-                            selectedMedia = nil
-                            dragOffset = .zero
-                        }
-                    }
-
-                    scheduleUpdateDisplayData()
-                }
-
-                if localOk && mirrorsOk {
-                    ActionToastManager.shared.show(icon: "trash", message: "Deleted", color: Color(red: 0.2, green: 0.8, blue: 0.6))
-                } else if localOk {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Deleted locally (Mirrors failed)", color: .orange.opacity(0.85))
-                } else if mirrorsOk {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Deleted from mirrors, local failed", color: .orange.opacity(0.85))
-                } else {
-                    ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill", message: "Failed to delete", color: .red.opacity(0.85))
+            if selectedMedia?.url == item.url {
+                withAnimation(Motion.fade) {
+                    selectedMedia = nil
+                    dragOffset = .zero
                 }
             }
+
+            scheduleUpdateDisplayData()
         }
     }
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -15,8 +16,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Singleton that polls Go relay logs via HavenBridge.getImportLog()
- * and stores parsed LogEntry items for the dashboard console viewer.
+ * Singleton that polls every Go relay log line via HavenBridge.getLogLines()
+ * and stores parsed LogEntry items for the dashboard console viewer. It also
+ * applies what the lines say (boot status, inbox activity, lock and port
+ * errors) and the relay's open connection count. iOS:
+ * RelayProcessManager.captureOutput / applyBatchedUpdate.
  */
 @Singleton
 class LogStore @Inject constructor() {
@@ -29,6 +33,14 @@ class LogStore @Inject constructor() {
 
     private val _logs = MutableStateFlow<List<RelayLogParser.LogEntry>>(emptyList())
     val logs: StateFlow<List<RelayLogParser.LogEntry>> = _logs.asStateFlow()
+
+    /**
+     * What the relay is doing while it boots ("Building trust network…"), for
+     * the feed's Relay Starting screen; empty once it is listening. iOS
+     * RelayProcessManager.bootStatusMessage.
+     */
+    private val _bootStatusMessage = MutableStateFlow("")
+    val bootStatusMessage: StateFlow<String> = _bootStatusMessage.asStateFlow()
 
     private var pollingJob: Job? = null
 
@@ -51,37 +63,37 @@ class LogStore @Inject constructor() {
         }
     }
 
+    private fun addEntries(entries: List<RelayLogParser.LogEntry>) {
+        if (entries.isEmpty()) return
+        _logs.update { (it + entries).takeLast(MAX_LOGS) }
+    }
+
     fun clear() {
         _logs.value = emptyList()
     }
 
     /**
-     * Start polling HavenBridge.getImportLog() for new log messages.
+     * Start polling the relay's log and connection count.
      * Should be called when the relay transitions to BOOTING or RUNNING.
      */
     fun startPolling(scope: CoroutineScope) {
         if (pollingJob?.isActive == true) return
         pollingJob = scope.launch {
             Log.d(TAG, "Log polling started")
+            // Lines queued before this poller started belong to an earlier run
+            // or to an import, whose own poller already showed them.
+            withContext(Dispatchers.IO) { readLogLines() }
             while (isActive) {
                 try {
-                    val message = withContext(Dispatchers.IO) {
-                        if (HavenBridge.isLoaded) HavenBridge.getImportLog() else null
-                    }
-                    if (!message.isNullOrBlank()) {
-                        // Light the red dot only for inbound events from OTHERS. The
-                        // relay logs these phrases exclusively in its inbox/chat import
-                        // handler; your own posts/blasts never produce them.
-                        if (message.contains("in your inbox") || message.contains("in your chat relay")) {
-                            RelayForegroundService.markInboxActivity()
-                        }
-                        val entry = RelayLogParser.LogEntry.parse(message)
-                        addEntry(entry)
+                    val lines = withContext(Dispatchers.IO) { readLogLines() }
+                    if (lines.isNotEmpty()) applyLines(lines)
+                    if (HavenBridge.isLoaded) {
+                        withContext(Dispatchers.IO) { readConnections() }
+                            ?.let { RelayForegroundService.updateConnections(it) }
                     }
 
                     // Drain the dedicated, non-lossy notification queue and forward
-                    // every marker to the local notifier. Unlike the import log above
-                    // (latest-message-only), this delivers every inbound event.
+                    // every marker to the local notifier.
                     val sink = notifySink
                     if (sink != null && HavenBridge.isLoaded) {
                         while (isActive) {
@@ -104,11 +116,78 @@ class LogStore @Inject constructor() {
         }
     }
 
+    /** Parse a batch of log lines, store them and apply the state they carry. */
+    internal fun applyLines(lines: List<String>) {
+        val batch = RelayLogParser.BatchedStateUpdate()
+        val entries = ArrayList<RelayLogParser.LogEntry>(lines.size)
+        for (line in lines) {
+            // Light the red dot only for inbound events from OTHERS. The
+            // relay logs these phrases exclusively in its inbox/chat import
+            // handler; your own posts/blasts never produce them. The kind
+            // on the line says which Vault list the dot is for.
+            if (line.contains("in your inbox") || line.contains("in your chat relay")) {
+                RelayForegroundService.markInboxActivity(RelayLogParser.inboxActivityKind(line))
+            }
+            entries.add(RelayLogParser.LogEntry.parse(line))
+            RelayLogParser.collectStateChanges(line, batch)
+        }
+        addEntries(entries)
+        when {
+            batch.stopBooting -> _bootStatusMessage.value = ""
+            batch.bootStatusMessage != null -> _bootStatusMessage.value = batch.bootStatusMessage!!
+        }
+        if (batch.isLocked || batch.isPortConflict) {
+            RelayForegroundService.updateErrorStates(
+                locked = batch.isLocked || RelayForegroundService.isLocked.value,
+                portConflict = batch.isPortConflict || RelayForegroundService.isPortConflict.value,
+            )
+        }
+    }
+
+    /**
+     * Every line since the last read. Falls back to the latest-line-only
+     * import log when libhaven.so predates getLogLines.
+     */
+    private fun readLogLines(): List<String> {
+        if (!HavenBridge.isLoaded) return emptyList()
+        val joined = if (hasFullLog) {
+            try {
+                HavenBridge.getLogLines().also {
+                    // Keep emptying the latest-line log as before, so an import
+                    // poller started later doesn't open on a stale line.
+                    HavenBridge.getImportLog()
+                }
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "libhaven.so has no getLogLines; showing the latest line only")
+                hasFullLog = false
+                HavenBridge.getImportLog()
+            }
+        } else {
+            HavenBridge.getImportLog()
+        }
+        if (joined.isNullOrBlank()) return emptyList()
+        return joined.split('\n').filter { it.isNotBlank() }
+    }
+
+    private fun readConnections(): Int? {
+        if (!hasConnectionCount) return null
+        return try {
+            HavenBridge.activeConnections()
+        } catch (e: UnsatisfiedLinkError) {
+            hasConnectionCount = false
+            null
+        }
+    }
+
+    @Volatile private var hasFullLog = true
+    @Volatile private var hasConnectionCount = true
+
     /**
      * Stop polling. Should be called when the relay goes OFFLINE.
      */
     fun stopPolling() {
         pollingJob?.cancel()
         pollingJob = null
+        RelayForegroundService.updateConnections(0)
     }
 }

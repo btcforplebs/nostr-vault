@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -111,6 +112,16 @@ class TrustMapTest {
         assertTrue(camera.spin.isZero)
     }
 
+    @Test fun `a slow let go does not spin`() {
+        val camera = GlobeCamera().apply { flick(200.0, -150.0, 0.0, reduceMotion = false) }
+        assertTrue(camera.spin.isZero)
+    }
+
+    @Test fun `a hard flick is capped`() {
+        val camera = GlobeCamera().apply { flick(6000.0, 0.0, 0.0, reduceMotion = false) }
+        assertEquals(GlobeCamera.MAX_SPIN, camera.spin.length, 1e-9)
+    }
+
     @Test fun `fly to arrives and lets the clock sleep`() {
         val camera = GlobeCamera().apply { zoom = 2.0; zoomTarget = 2.0 }
         val target = GlobeCamera.facing(TrustMap.direction(randomKey(7)))
@@ -143,6 +154,19 @@ class TrustMapTest {
         val before = camera.orientation
         camera.step(1 / 120.0, now + 1 / 120.0, reduceMotion = false)
         assertEquals(before, camera.orientation)
+    }
+
+    /** The WOT tab's globe keeps turning, and keeps its clock, past the idle timer. */
+    @Test fun `a globe that keeps drifting never sleeps`() {
+        val camera = GlobeCamera().apply { keepsDrifting = true }
+        var now = 0.0
+        while (now < GlobeCamera.SLEEP_AFTER * 2) { now += 1 / 120.0; camera.step(1 / 120.0, now, reduceMotion = false) }
+        val before = camera.orientation
+        camera.step(1 / 120.0, now + 1 / 120.0, reduceMotion = false)
+        assertNotEquals(before, camera.orientation)
+        assertTrue(camera.wantsFrames(now, reduceMotion = false))
+        // Reduce Motion still stops it.
+        assertFalse(camera.wantsFrames(now, reduceMotion = true))
     }
 
     @Test fun `reduce motion cuts instead of gliding`() {
@@ -239,5 +263,320 @@ class TrustMapTest {
             TrustMap.chains(me, follows, viaList, links),
         )
         assertTrue(TrustMap.deeperLinkFilters(listOf(bridge), emptyList()).isEmpty())
+    }
+
+    // ── Ring faces ───────────────────────────────────────────────────
+
+    @Test fun `face candidates are the ring sorted and spread`() {
+        val ring = (0 until 200).map { randomKey(it) }
+        val picked = TrustMap.faceCandidates(ring)
+        assertEquals(TrustMap.FACE_CANDIDATES, picked.size)
+        assertEquals(TrustMap.spread(ring.sorted(), TrustMap.FACE_CANDIDATES), picked)
+        // Order in doesn't matter: the same people every time.
+        assertEquals(picked, TrustMap.faceCandidates(ring.reversed()))
+        val few = listOf("c", "a", "b")
+        assertEquals(listOf("a", "b", "c"), TrustMap.faceCandidates(few))
+    }
+
+    @Test fun `face candidates put the most engaged first`() {
+        val ring = (0 until 200).map { key(it) }
+        val engagement = mapOf(key(150) to 9, key(7) to 4, key(42) to 4, key(999) to 50)
+        val picked = TrustMap.faceCandidates(ring, engagement, count = 10)
+        // Busiest first, ties by key; someone you don't follow never appears.
+        assertEquals(listOf(key(150), key(7), key(42)), picked.take(3))
+        assertEquals(10, picked.toSet().size)
+        assertTrue(key(999) !in picked)
+    }
+
+    @Test fun `pick faces shows only rendered pictures in candidate order`() {
+        val candidates = listOf("a", "b", "c", "d", "e")
+        val rendered = setOf("b", "d", "e")
+        assertEquals(listOf("b", "d"), TrustMap.pickFaces(candidates, { it in rendered }, count = 2))
+        assertEquals(listOf("b", "d", "e"), TrustMap.pickFaces(candidates, { it in rendered }))
+        assertTrue(TrustMap.pickFaces(candidates, { false }).isEmpty())
+        assertTrue(TrustMap.pickFaces(candidates, { true }, count = 0).isEmpty())
+        assertEquals(TrustMap.RING_FACES, TrustMap.pickFaces((0 until 100).map { "k$it" }, { true }).size)
+    }
+
+    @Test fun `engagement scores count both directions`() {
+        val me = key(1); val alice = key(2); val bob = key(3); val carol = key(4)
+        fun ev(pubkey: String, kind: Int, vararg tags: List<String>) = TrustMap.Interaction(pubkey, kind, tags.toList())
+        val mine = listOf(
+            ev(me, 7, listOf("e", "x"), listOf("p", alice)),          // a like: alice +2
+            ev(me, 1, listOf("p", bob), listOf("p", alice)),          // reply to alice in bob's thread: alice +2
+            ev(me, 6, listOf("p", me)),                               // reposting yourself counts for no one
+            ev(bob, 7, listOf("p", carol)),                           // not yours: ignored
+        )
+        val toMe = listOf(
+            ev(bob, 7, listOf("p", me)),                              // bob liked you: +1
+            ev("zapper", 9735, listOf("p", me), listOf("P", carol)), // carol zapped you: +3
+            ev(carol, 1, listOf("p", alice)),                         // not aimed at you: ignored
+        )
+        assertEquals(mapOf(alice to 4, bob to 1, carol to 3), TrustMap.engagementScores(mine, toMe, me))
+    }
+
+    // ── Search ───────────────────────────────────────────────────────
+
+    private fun person(key: String, display: String? = null, name: String? = null, nip05: String? = null) =
+        FeedProfile(pubkey = key, name = name, displayName = display, nip05 = nip05)
+
+    @Test fun `search matches display name, name and nip05 ignoring case`() {
+        val people = listOf(
+            person("1", display = "Alice Smith"),
+            person("2", name = "bob"),
+            person("3", nip05 = "carol@ALICE.com"),
+            person("4", display = "Dave"),
+        )
+        val hits = TrustMap.searchPeople("ALICE", people, emptySet(), emptySet()).map { it.pubkey }
+        assertEquals(setOf("1", "3"), hits.toSet())
+        assertEquals(listOf("2"), TrustMap.searchPeople("Bo", people, emptySet(), emptySet()).map { it.pubkey })
+        assertTrue(TrustMap.searchPeople("   ", people, emptySet(), emptySet()).isEmpty())
+        assertTrue(TrustMap.searchPeople("zed", people, emptySet(), emptySet()).isEmpty())
+    }
+
+    @Test fun `search ranks follows, then web, then prefix, then shorter name`() {
+        val people = listOf(
+            person("other", display = "Ann"),
+            person("web", display = "Ann Web"),
+            person("follow", display = "Joanne"),
+            person("followPrefixLong", display = "Annabelle"),
+            person("followPrefixShort", display = "Anna"),
+        )
+        val follows = setOf("follow", "followPrefixLong", "followPrefixShort")
+        val hits = TrustMap.searchPeople("ann", people, follows, setOf("web"))
+        assertEquals(listOf("followPrefixShort", "followPrefixLong", "follow", "web", "other"), hits.map { it.pubkey })
+        assertEquals(
+            listOf(TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.FOLLOW, TrustMap.Tier.WEB, TrustMap.Tier.OTHER),
+            hits.map { it.tier },
+        )
+        // A follow is also in the web: it's still tagged as a follow.
+        assertEquals(TrustMap.Tier.FOLLOW, TrustMap.searchPeople("joanne", people, follows, follows).single().tier)
+    }
+
+    @Test fun `search stops at the limit`() {
+        val people = (0 until 20).map { person("k$it", display = "Sam $it") }
+        assertEquals(8, TrustMap.searchPeople("sam", people, emptySet(), emptySet()).size)
+        assertEquals(3, TrustMap.searchPeople("sam", people, emptySet(), emptySet(), limit = 3).size)
+    }
+
+    @Test fun `a pasted hex key or npub names one person`() {
+        val hex = "AB".repeat(32)
+        assertEquals(hex.lowercase(), TrustMap.pastedKey("  $hex ") { null })
+        assertEquals(author, TrustMap.pastedKey("npub1xyz") { if (it == "npub1xyz") author else null })
+        assertEquals(author, TrustMap.pastedKey("nostr:npub1xyz") { author })
+        assertNull(TrustMap.pastedKey("npub1bad") { null })
+        assertNull(TrustMap.pastedKey("npub1short") { "abc" })
+        assertNull(TrustMap.pastedKey("npub1throws") { error("bad checksum") })
+        assertNull(TrustMap.pastedKey("alice") { author })
+        assertNull(TrustMap.pastedKey("ab".repeat(31)) { null })
+    }
+
+    @Test
+    fun seatFacesNeverLetsOneFaceCoverAnother() {
+        fun spot(k: String, x: Double) = TrustMap.FaceSpot(k, x, 0.0, 10.0)
+        // Front-most first: b sits on a, c is clear, d sits on the core.
+        val spots = listOf(spot("a", 0.0), spot("b", 5.0), spot("c", 40.0), spot("d", 100.0))
+        val core = listOf(TrustMap.FaceSpot("core", 100.0, 0.0, 20.0))
+        assertEquals(setOf("a", "c"), TrustMap.seatFaces(spots, blocked = core))
+        // A face seated last frame keeps its seat over a newcomer in front.
+        assertEquals(setOf("b", "c"), TrustMap.seatFaces(spots, kept = setOf("b"), blocked = core))
+        // The author always gets a picture.
+        assertEquals(setOf("a", "c", "d"), TrustMap.seatFaces(spots, always = setOf("d"), blocked = core))
+        // A little overlap is fine; covering is not.
+        assertEquals(setOf("a", "b"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 18.0))))
+        assertEquals(setOf("a"), TrustMap.seatFaces(listOf(spot("a", 0.0), spot("b", 16.0))))
+    }
+
+    @Test
+    fun layerCountsSplitFollowsFromTheRestAndSkipYou() {
+        val follows = setOf(me, key(1), key(2))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5))
+        val counts = TrustMap.layerCounts(me, follows, web)
+        assertEquals(2, counts[TrustMap.Layer.FOLLOWING])
+        assertEquals(3, counts[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(5, counts[TrustMap.Layer.EVERYONE])
+        // A follow the relay hasn't mapped yet still counts as a follow.
+        assertEquals(1, TrustMap.layerCounts(me, setOf(key(9)), emptySet())[TrustMap.Layer.EVERYONE])
+    }
+
+    @Test
+    fun pickingALayerHidesTheOthers() {
+        assertEquals(TrustMap.Weights(1.0, 1.0, 1.0), TrustMap.layerWeights(TrustMap.Layer.EVERYONE))
+        assertEquals(TrustMap.Weights(1.0, 0.0, 0.0), TrustMap.layerWeights(TrustMap.Layer.FOLLOWING))
+        val close = TrustMap.layerWeights(TrustMap.Layer.CLOSE)
+        assertEquals(0.0, close.follows, 0.0)
+        assertTrue(close.close > 1)
+        assertEquals(0.0, close.further, 0.0)
+        val further = TrustMap.layerWeights(TrustMap.Layer.FURTHER_OUT)
+        assertEquals(0.0, further.follows, 0.0)
+        assertEquals(0.0, further.close, 0.0)
+        assertTrue(further.further > 1)
+    }
+
+    @Test
+    fun layerFacesAreTheMostVouchedOfThatLayer() {
+        val follows = setOf(key(1))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5), key(6))
+        val vouches = mapOf(key(2) to 30, key(3) to 12, key(4) to 2, key(5) to 10, key(6) to 7)
+        fun faces(layer: TrustMap.Layer, count: Int = 160) =
+            TrustMap.layerFaceCandidates(layer, me, follows, web, vouches, count)
+        assertEquals(listOf(key(2), key(3), key(5)), faces(TrustMap.Layer.CLOSE))
+        assertEquals(listOf(key(2), key(3)), faces(TrustMap.Layer.CLOSE, count = 2))
+        assertEquals(listOf(key(6), key(4)), faces(TrustMap.Layer.FURTHER_OUT))
+        // Everyone draws from everyone past your follows, Close and further out
+        // in turn so both outer shells get faces; Following keeps your follows' faces only.
+        assertEquals(listOf(key(2), key(6), key(3), key(4), key(5)), faces(TrustMap.Layer.EVERYONE))
+        assertEquals(listOf(key(2), key(6), key(3)), faces(TrustMap.Layer.EVERYONE, count = 3))
+        assertEquals(emptyList<String>(), faces(TrustMap.Layer.FOLLOWING))
+    }
+
+    @Test
+    fun everyoneShowsAFewFacesAndFollowingNone() {
+        assertEquals(36, TrustMap.faceCount(TrustMap.Layer.EVERYONE))
+        assertEquals(0, TrustMap.faceCount(TrustMap.Layer.FOLLOWING))
+        assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.CLOSE))
+        assertEquals(TrustMap.LAYER_FACES, TrustMap.faceCount(TrustMap.Layer.FURTHER_OUT))
+        assertTrue(TrustMap.faceCandidateCount(TrustMap.Layer.EVERYONE) > TrustMap.EVERYONE_FACES)
+        assertEquals(TrustMap.LAYER_FACE_CANDIDATES, TrustMap.faceCandidateCount(TrustMap.Layer.CLOSE))
+    }
+
+    /** Without vouches there is no Close: most vouched first, as before. */
+    @Test
+    fun everyoneWithoutVouchesKeepsKeyOrder() {
+        val web = setOf(me, key(2), key(3))
+        assertEquals(2, TrustMap.layerFaceCandidates(TrustMap.Layer.EVERYONE, me, emptySet(), web, null, 5).size)
+    }
+
+    /** When one shell runs out, the other fills the rest. */
+    @Test
+    fun everyoneFillsFromTheLongerShell() {
+        val web = setOf(me, key(2), key(3), key(4), key(5))
+        val vouches = mapOf(key(2) to 20, key(3) to 3, key(4) to 2, key(5) to 1)
+        assertEquals(listOf(key(2), key(3), key(4), key(5)),
+            TrustMap.layerFaceCandidates(TrustMap.Layer.EVERYONE, me, emptySet(), web, vouches, 10))
+    }
+
+    /** A face outside the haze sample still sits on the Close shell when its vouches say so. */
+    @Test
+    fun closeIsJudgedByVouchesNotByTheSample() {
+        val vouches = mapOf(key(2) to 10, key(3) to 9, key(4) to 40)
+        val haze = listOf(key(2), key(3))
+        val faces = listOf(key(4))
+        assertEquals(setOf(key(2), key(4)), TrustMap.closeByVouches(haze + faces, vouches))
+        assertEquals(emptySet<String>(), TrustMap.closeByVouches(haze + faces, null))
+    }
+
+    @Test
+    fun vouchedHasItsOwnShellBetweenFollowsAndTheRest() {
+        assertEquals("Vouched", TrustMap.Layer.CLOSE.title)
+        assertTrue(TrustMap.RING_RADIUS < TrustMap.CLOSE_RADIUS && TrustMap.CLOSE_RADIUS < TrustMap.OUTER_RADIUS)
+        // The author sits inside the Vouched shell, so their face never lands among its stars.
+        assertTrue(TrustMap.RING_RADIUS < TrustMap.AUTHOR_RADIUS && TrustMap.AUTHOR_RADIUS < TrustMap.CLOSE_RADIUS)
+    }
+
+    @Test
+    fun closeSplitsTheWebAtTenVouches() {
+        val follows = setOf(key(1))
+        val web = setOf(me, key(1), key(2), key(3), key(4))
+        val vouches = mapOf(key(2) to 10, key(3) to 9, key(4) to 3)
+        val counts = TrustMap.layerCounts(me, follows, web, vouches)
+        assertEquals(1, counts[TrustMap.Layer.CLOSE])
+        assertEquals(2, counts[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(4, counts[TrustMap.Layer.EVERYONE])
+        // An old cache has no vouches: no Close, and Further out is everyone past your follows.
+        val old = TrustMap.layerCounts(me, follows, web)
+        assertNull(old[TrustMap.Layer.CLOSE])
+        assertEquals(3, old[TrustMap.Layer.FURTHER_OUT])
+        assertEquals(listOf(TrustMap.Layer.EVERYONE, TrustMap.Layer.FOLLOWING, TrustMap.Layer.FURTHER_OUT), TrustMap.layers(false))
+        assertEquals(TrustMap.Layer.entries, TrustMap.layers(true))
+    }
+
+    @Test
+    fun layerFacesSpreadAroundTheGlobe() {
+        // Real keys: random hex, so the leading digits (longitude) cover the whole circle.
+        val random = java.util.Random(42)
+        val web = (0 until 4000).map { (0 until 4).joinToString("") { "%016x".format(random.nextLong()) } }.toSet()
+        // Most people further out are vouched for by the same one or two follows.
+        val vouches = web.associateWith { 1 }
+        val faces = TrustMap.layerFaceCandidates(TrustMap.Layer.FURTHER_OUT, me, emptySet(), web, vouches, TrustMap.LAYER_FACES)
+        assertEquals(TrustMap.LAYER_FACES, faces.size)
+        val octants = faces.map {
+            val d = TrustMap.direction(it)
+            ((kotlin.math.atan2(d.y, d.x) + Math.PI) / (2 * Math.PI) * 8).toInt() % 8
+        }.toSet()
+        assertEquals("faces bunched into ${octants.size} of 8 slices of the globe", 8, octants.size)
+    }
+
+    @Test
+    fun layerPeopleListWhatTheCountsCount() {
+        val follows = setOf(me, key(1), key(2))
+        val web = setOf(me, key(1), key(2), key(3), key(4), key(5))
+        val vouches = mapOf(key(1) to 4, key(2) to 30, key(3) to 12, key(4) to 2, key(5) to 10)
+        val everyone = TrustMap.layerPeople(TrustMap.Layer.EVERYONE, me, follows, web, vouches)
+        // Most vouched first; you are never listed.
+        assertEquals(listOf(key(2), key(1)), everyone.following)
+        assertEquals(listOf(key(3), key(5), key(4)), everyone.web)
+        val following = TrustMap.layerPeople(TrustMap.Layer.FOLLOWING, me, follows, web, vouches)
+        assertEquals(listOf(key(2), key(1)), following.following)
+        assertEquals(emptyList<String>(), following.web)
+        val close = TrustMap.layerPeople(TrustMap.Layer.CLOSE, me, follows, web, vouches)
+        assertEquals(emptyList<String>(), close.following)
+        assertEquals(listOf(key(3), key(5)), close.web)
+        assertEquals(listOf(key(4)), TrustMap.layerPeople(TrustMap.Layer.FURTHER_OUT, me, follows, web, vouches).web)
+        // Same people as the counts, layer by layer.
+        val counts = TrustMap.layerCounts(me, follows, web, vouches)
+        for (layer in TrustMap.Layer.entries) {
+            val people = TrustMap.layerPeople(layer, me, follows, web, vouches)
+            assertEquals("$layer", counts[layer], people.following.size + people.web.size)
+        }
+        // An old cache has no vouches: Further out is everyone past your follows, by key.
+        assertEquals(listOf(key(3), key(4), key(5)), TrustMap.layerPeople(TrustMap.Layer.FURTHER_OUT, me, follows, web).web)
+    }
+
+    @Test
+    fun vouchesComeFromTheCacheAndAreNullOnAnOldOne() {
+        assertEquals(mapOf("a" to 12, "c" to 3),
+            TrustMap.vouches("""{"pubkeys":{"a":true},"follows":["b"],"vouches":{"a":12,"c":3}}"""))
+        assertNull(TrustMap.vouches("""{"pubkeys":{"a":true},"timestamp":1}"""))
+        assertNull(TrustMap.vouches("not json"))
+    }
+
+    // ── Globe framing (iOS TrustMapTests' framing cases) ──
+
+    /** Width on screen of a shell's outline, at zoom 1. */
+    private fun outline(r: Double, unit: Double): Double {
+        val d = GlobeCamera.DISTANCE
+        return 2 * unit * r / kotlin.math.sqrt(d * d - r * r)
+    }
+
+    @Test
+    fun `on an upright phone the inner globe spans the width`() {
+        for ((w, h) in listOf(1080.0 to 2400.0, 720.0 to 1600.0)) {
+            val span = outline(TrustMap.RING_RADIUS, GlobeCamera.unit(w, h, phone = true)) / w
+            assertTrue("$w px: inner globe spans $span of the width", span in 0.94..0.98)
+        }
+    }
+
+    @Test
+    fun `the phone scale keeps the shells in proportion`() {
+        val old = GlobeCamera.unit(1080.0, 2400.0, phone = false)
+        val new = GlobeCamera.unit(1080.0, 2400.0, phone = true)
+        assertTrue(new > old)
+        val ratio = { u: Double -> outline(TrustMap.OUTER_RADIUS, u) / outline(TrustMap.RING_RADIUS, u) }
+        assertEquals(ratio(old), ratio(new), 1e-9)
+    }
+
+    @Test
+    fun `tablets and a sideways phone keep their framing`() {
+        assertEquals(1600 * 0.40 * 4.2 * 0.92, GlobeCamera.unit(1600.0, 2560.0, phone = false), 1e-9)
+        assertEquals(1080 * 0.40 * 4.2 * 0.92, GlobeCamera.unit(2400.0, 1080.0, phone = true), 1e-9)
+    }
+
+    @Test fun `web counts a follow the moment it is made`() {
+        assertEquals(setOf("w1", "w2", "new"), TrustMap.web(saved = setOf("w1", "w2"), follows = setOf("new", "w1")))
+    }
+
+    @Test fun `web makes no claims while no web is saved`() {
+        assertTrue(TrustMap.web(saved = emptySet(), follows = setOf("new")).isEmpty())
     }
 }

@@ -41,6 +41,8 @@ class RelayImportService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val logStore: LogStore,
+    /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
+    private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
 ) {
     companion object {
         private const val TAG = "RelayImportService"
@@ -137,6 +139,7 @@ class RelayImportService @Inject constructor(
                 _importProgress.value = 1f
                 _importStatusMessage.value = "Import completed"
                 _importCompleted.value = true
+                vaultHistory.record(com.nostrvault.data.local.VaultHistory.Entry.NOTES_IMPORT)
                 Log.i(TAG, "Note import completed successfully")
 
             } catch (e: CancellationException) {

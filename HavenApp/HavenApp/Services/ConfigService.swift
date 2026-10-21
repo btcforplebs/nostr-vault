@@ -18,6 +18,13 @@ class ConfigService: ObservableObject {
         }
     }
     @Published var isSwitchingAccount: Bool = false
+    /// config.json existed but would not load. Until a copy of it is kept,
+    /// save() writes nothing, so the key inside it is never overwritten.
+    @Published private(set) var loadFailed = false
+    /// Whether the config.json this session read or last wrote held a key.
+    /// False after a failed load or a load from the backup, so a recovery
+    /// save never deletes config.json.bak.
+    private var savedHasKey = false
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -61,38 +68,43 @@ class ConfigService: ObservableObject {
         
         var loadedSuccessfully = false
         
-        // Load existing config or create default
-        if let data = try? Data(contentsOf: configURL) {
-            do {
-                let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
-                config = loaded
-                loadedSuccessfully = true
-                #if DEBUG
-                print("ConfigService: Successfully loaded configuration from disk")
-                #endif
-
-                // Ensure defaults are applied for empty arrays
-                if config.importSeedRelays.isEmpty {
-                    config.importSeedRelays = HavenConfig.default.importSeedRelays
-                }
-                if config.blastrRelays.isEmpty {
-                    config.blastrRelays = HavenConfig.default.blastrRelays
-                }
-                if config.blossomMirrors.isEmpty {
-                    config.blossomMirrors = HavenConfig.default.blossomMirrors
-                    #if DEBUG
-                    print("ConfigService: Applied default Blossom mirrors: \(config.blossomMirrors)")
-                    #endif
-                } else {
-                    #if DEBUG
-                    print("ConfigService: Loaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
-                    #endif
-                }
-            } catch {
-                RelayProcessManager.shared.addLog("Error decoding configuration: \(error.localizedDescription)", level: "ERROR")
-                config = HavenConfig.default
+        // Load existing config or create default. A config.json that would
+        // not load is never written over until a copy of it is kept (save()).
+        switch ConfigFileStore(url: configURL).load(HavenConfig.self, hasKey: \.hasKeyMaterial) {
+        case .loaded(let loaded, let fromBackup):
+            config = loaded
+            loadedSuccessfully = true
+            loadFailed = fromBackup && FileManager.default.fileExists(atPath: configURL.path)
+            savedHasKey = !fromBackup && loaded.hasKeyMaterial
+            if fromBackup {
+                RelayProcessManager.shared.addLog("config.json would not load; restored from config.json.bak", level: "ERROR")
             }
-        } else {
+            #if DEBUG
+            print("ConfigService: Successfully loaded configuration from disk")
+            #endif
+
+            // Ensure defaults are applied for empty arrays
+            if config.importSeedRelays.isEmpty {
+                config.importSeedRelays = HavenConfig.default.importSeedRelays
+            }
+            if config.blastrRelays.isEmpty {
+                config.blastrRelays = HavenConfig.default.blastrRelays
+            }
+            if config.blossomMirrors.isEmpty {
+                config.blossomMirrors = HavenConfig.default.blossomMirrors
+                #if DEBUG
+                print("ConfigService: Applied default Blossom mirrors: \(config.blossomMirrors)")
+                #endif
+            } else {
+                #if DEBUG
+                print("ConfigService: Loaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
+                #endif
+            }
+        case .unreadable(let error):
+            RelayProcessManager.shared.addLog("Error decoding configuration: \(error.localizedDescription)", level: "ERROR")
+            config = HavenConfig.default
+            loadFailed = true
+        case .missing:
             #if DEBUG
             print("ConfigService: No config.json found at \(configURL.path), using defaults")
             #endif
@@ -111,6 +123,7 @@ class ConfigService: ObservableObject {
         }
         
         loadRelayLists()
+        config.dropDeadRelaysOnce()
         removeStarterPackPicksFromAccounts()
         
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
@@ -137,6 +150,7 @@ class ConfigService: ObservableObject {
             do {
                 let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
                 self.config = loaded
+                savedHasKey = loaded.hasKeyMaterial
                 #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
                 #endif
@@ -161,6 +175,7 @@ class ConfigService: ObservableObject {
 
                 // Reload lists
                 loadRelayLists()
+                config.dropDeadRelaysOnce()
 
                 // Sync relay info
                 MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
@@ -215,9 +230,27 @@ class ConfigService: ObservableObject {
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
 
+        let store = ConfigFileStore(url: configURL)
+        if loadFailed {
+            // Defaults (or a half-done setup) must not replace the unreadable
+            // file. Once there is a real config to keep, copy the old file
+            // aside first; if even that fails, keep refusing.
+            guard config.hasCompletedSetup else { return }
+            do {
+                try store.preserveUnreadable()
+                loadFailed = false
+            } catch {
+                RelayProcessManager.shared.addLog("Not saving config: could not keep a copy of the unreadable config.json (\(error.localizedDescription))", level: "ERROR")
+                return
+            }
+        }
+
         do {
             let data = try JSONEncoder().encode(config)
-            try data.write(to: configURL)
+            try store.write(data)
+            store.forgetBackupIfKeyRemoved(hadKey: savedHasKey, hasKey: config.hasKeyMaterial,
+                                           setupDone: config.hasCompletedSetup)
+            savedHasKey = config.hasKeyMaterial
 
             #if DEBUG
             print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
@@ -256,7 +289,7 @@ class ConfigService: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         if let data = try? encoder.encode(config) {
-            try? data.write(to: configURL) // Save main config again just in case
+            try? ConfigFileStore(url: configURL).write(data) // Save main config again just in case
         }
         
         RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
@@ -281,12 +314,12 @@ class ConfigService: ObservableObject {
             try? data.write(to: npubsURL)
         }
         
-        // Save blacklisted npubs
-        if !config.blacklistedNpubs.isEmpty {
-            let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
-            if let data = try? encoder.encode(config.blacklistedNpubs) {
-                try? data.write(to: blacklistedURL)
-            }
+        // Save blacklisted npubs. Written even when empty, for the same reason
+        // as the whitelist: unblocking the last legacy entry must not come back
+        // on the next launch and keep that person blocked on the relay.
+        let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
+        if let data = try? encoder.encode(config.blacklistedNpubs) {
+            try? data.write(to: blacklistedURL)
         }
     }
     
@@ -316,12 +349,15 @@ class ConfigService: ObservableObject {
             try? fileManager.removeItem(at: relayDataDir)
         }
         
-        // 2. Delete config.json in Application Support
-        if fileManager.fileExists(atPath: configURL.path) {
-            try? fileManager.removeItem(at: configURL)
-        }
-        
-        // 3. Reset in-memory config
+        // 2. Delete config.json and its backup in Application Support
+        ConfigFileStore(url: configURL).removeAll()
+        loadFailed = false
+        savedHasKey = false
+
+        // 3. Keychain passwords, notifications and widget data
+        ResetLeftovers.clear()
+
+        // 4. Reset in-memory config
         config = HavenConfig.default
         // The account went with it; services listening for a switch drop its state.
         refreshActiveAccountHex()
@@ -329,21 +365,16 @@ class ConfigService: ObservableObject {
         LocalTLSTrust.forgetAll()
     }
     
-    /// Programmatically quit the application
+    #if canImport(AppKit)
+    /// Quits the Mac app after a factory reset. iOS has no counterpart: an
+    /// app may not quit itself there, and with the config cleared the root
+    /// view already shows the setup wizard.
     static func quitApp() {
-        #if canImport(AppKit)
         DispatchQueue.main.async {
             NSApp.terminate(nil)
         }
-        #else
-        DispatchQueue.main.async {
-            // Suspend to home screen instead of exit(0) — Apple rejects apps that
-            // programmatically terminate. The config is already cleared by resetApp(),
-            // so the next launch will start fresh.
-            UIControl().sendAction(#selector(URLSessionTask.suspend), to: UIApplication.shared, for: nil)
-        }
-        #endif
     }
+    #endif
     
     /// Reconstructs critical configuration from the existing .env file
     private func recoverFromEnv() {
@@ -473,8 +504,14 @@ class ConfigService: ObservableObject {
         } else {
             config.signingMode = mode
         }
+        // The owner's relay AUTH signs through the owner's own bunker session.
+        NIP46Service.shared.connectOwnerInBackgroundIfNeeded()
 
         save()
+
+        // Each account has its own block list. Tell the screens now, so they
+        // drop the old account's blocks without waiting for a feed `.id` reset.
+        NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
 
         // Services process synchronously via Combine before the next run-loop cycle.
         // Clear the flag once SwiftUI has had one cycle to recreate views with .id().
@@ -660,9 +697,13 @@ class ConfigService: ObservableObject {
     /// Falls back to owner if active browsing account is empty.
     var activeAccountBlockedHexPubkeys: Set<String> {
         let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetNpub = active.isEmpty ? config.ownerNpub : active
+        return blockedHexPubkeys(forAccount: active.isEmpty ? config.ownerNpub : active)
+    }
+
+    /// The hex pubkeys one account has blocked.
+    func blockedHexPubkeys(forAccount targetNpub: String) -> Set<String> {
         let blockedNpubs = config.blockedNpubsPerAccount[targetNpub] ?? (targetNpub == config.ownerNpub ? config.blacklistedNpubs : [])
-        
+
         var hexKeys = Set<String>()
         for npub in blockedNpubs {
             let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -702,7 +743,11 @@ class ConfigService: ObservableObject {
         let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetNpub = active.isEmpty ? config.ownerNpub : active
 
-        var current = config.blockedNpubsPerAccount[targetNpub] ?? []
+        // Same fallback as blockedHexPubkeys(forAccount:): an owner whose
+        // blocks only live in the legacy blacklist must still be able to
+        // unblock them, or the dashboard counts people the page can't remove.
+        var current = config.blockedNpubsPerAccount[targetNpub]
+            ?? (targetNpub == config.ownerNpub ? config.blacklistedNpubs : [])
         if let index = current.firstIndex(of: npub) {
             current.remove(at: index)
             config.blockedNpubsPerAccount[targetNpub] = current

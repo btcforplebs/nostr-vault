@@ -48,6 +48,7 @@ struct RecipeCardView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(Rectangle())
+        .openInWebContextMenu(note.webLink)
     }
 }
 

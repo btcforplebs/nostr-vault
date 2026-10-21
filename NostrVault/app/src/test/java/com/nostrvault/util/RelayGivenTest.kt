@@ -80,6 +80,19 @@ class RelayGivenTest {
     }
 
     @Test
+    fun extraRelaysGoFirstAndTheCapNeverCutsThem() {
+        val relays = RelayGiven.zapReceiptRelays(
+            ownRelay = "wss://vault.example.com",
+            feedRelays = (1..12).map { "wss://feed$it" },
+            myInbox = emptyList(),
+            recipientInbox = emptyList(),
+            extra = listOf("wss://fanfares.nostr1.com", "ws://127.0.0.1:3355"),
+        )
+        assertEquals(listOf("wss://fanfares.nostr1.com", "wss://vault.example.com"), relays.take(2))
+        assertEquals(10, relays.size)
+    }
+
+    @Test
     fun privateAndLocalHostsAreNotPublic() {
         for (url in listOf(
             "ws://127.0.0.1:3355", "ws://localhost:3355", "ws://10.0.0.5", "ws://192.168.1.2:4869",

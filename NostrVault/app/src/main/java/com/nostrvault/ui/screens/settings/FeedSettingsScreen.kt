@@ -94,11 +94,11 @@ fun FeedSettingsScreen(
             GroupHeader("What You See")
             Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    FeedToggle("Show Reposts", SettingsHelp.FEED_REPOSTS.text, showReposts, viewModel::setShowReposts)
+                    FeedToggle("Show Reposts", SettingsHelp.FEED_REPOSTS, showReposts, viewModel::setShowReposts)
                     GroupDivider()
-                    FeedToggle("Show Replies", SettingsHelp.FEED_REPLIES.text, showReplies, viewModel::setShowReplies)
+                    FeedToggle("Show Replies", SettingsHelp.FEED_REPLIES, showReplies, viewModel::setShowReplies)
                     GroupDivider()
-                    FeedToggle("Auto-Load New Posts", SettingsHelp.FEED_AUTO_LOAD.text, autoLoadNewPosts, viewModel::setAutoLoadNewPosts)
+                    FeedToggle("Auto-Load New Posts", SettingsHelp.FEED_AUTO_LOAD, autoLoadNewPosts, viewModel::setAutoLoadNewPosts)
                 }
             }
 
@@ -170,7 +170,7 @@ private fun GroupDivider() = HorizontalDivider(color = TertiaryGroupedBg, thickn
 @Composable
 private fun FeedToggle(
     title: String,
-    subtitle: String,
+    help: SettingsHelp,
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
@@ -178,12 +178,11 @@ private fun FeedToggle(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = PrimaryText, fontSize = 15.sp)
-            Text(subtitle, color = SecondaryText, fontSize = 12.sp)
-        }
+        Text(title, color = PrimaryText, fontSize = 15.sp)
+        InfoButton(help)
+        Spacer(Modifier.weight(1f))
         Switch(
             checked = checked,
             onCheckedChange = onToggle,

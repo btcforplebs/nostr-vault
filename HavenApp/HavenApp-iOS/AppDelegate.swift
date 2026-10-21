@@ -270,8 +270,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     static func scheduleBackgroundProcessing() {
         let request = BGProcessingTaskRequest(identifier: kBGProcessingTaskID)
         request.requiresNetworkConnectivity = true
-        request.requiresExternalPower = false
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
+        // On power only, and no sooner than 15 minutes out: on battery, a
+        // 45 s relay window every minute or so kept the phone warm in a pocket.
+        request.requiresExternalPower = true
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 900)
         try? BGTaskScheduler.shared.submit(request)
     }
 }
@@ -279,14 +281,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 // MARK: - UNUserNotificationCenterDelegate
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
-    /// Handle notification when app is in foreground
+    /// A notification arriving while the app is open never banners
+    /// (`docs/pills.md`): it is listed in Notification Center, and the lane
+    /// shows the relay's pill for it. See `LocalNotificationService.presentation(of:)`.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        // Show banner, play sound, and update badge even when app is open
-        completionHandler([.banner, .sound, .badge])
+        let content = notification.request.content
+        Task { @MainActor in
+            completionHandler(LocalNotificationService.shared.presentation(of: content))
+        }
     }
 
     /// Handle notification tap

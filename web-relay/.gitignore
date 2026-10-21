@@ -1,0 +1,6 @@
+node_modules/
+beacons.jsonl
+*.log
+# Built by tools/build-haven-wasm.sh
+public/haven.wasm
+src/haven/wasm_exec.js

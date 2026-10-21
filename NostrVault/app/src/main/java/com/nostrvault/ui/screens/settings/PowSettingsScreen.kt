@@ -16,6 +16,7 @@ import com.nostrvault.data.local.PowPreferences
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 /**
  * Proof of Work (NIP-13) settings screen.
@@ -77,6 +78,7 @@ fun PowSettingsScreen(
             PowSection(
                 title = "Notes",
                 subtitle = "Kind 1 text notes and reposts",
+                help = SettingsHelp.ADV_POW,
                 enabled = noteEnabled,
                 difficulty = noteDifficulty,
                 onToggle = prefs::setNoteEnabled,
@@ -116,18 +118,22 @@ private fun PowSection(
     difficulty: Int,
     onToggle: (Boolean) -> Unit,
     onDifficultyChange: (Int) -> Unit,
+    help: SettingsHelp? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    color = PrimaryText,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (help != null) InfoButton(help)
+            }
             Text(
                 text = subtitle,
                 color = SecondaryText,
@@ -153,9 +159,9 @@ private fun PowSection(
             Text("Easy", color = TertiaryText, fontSize = 12.sp)
             Slider(
                 value = difficulty.toFloat(),
-                onValueChange = { onDifficultyChange(it.toInt()) },
+                onValueChange = { onDifficultyChange(it.roundToInt()) },
                 valueRange = PowPreferences.MIN_DIFFICULTY.toFloat()..PowPreferences.MAX_DIFFICULTY.toFloat(),
-                steps = (PowPreferences.MAX_DIFFICULTY - PowPreferences.MIN_DIFFICULTY) / 2 - 1,
+                steps = PowPreferences.SLIDER_STEPS,
                 colors = SliderDefaults.colors(
                     thumbColor = LocalNostrVaultColors.current.primary,
                     activeTrackColor = LocalNostrVaultColors.current.primary,

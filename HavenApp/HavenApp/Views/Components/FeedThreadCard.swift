@@ -153,6 +153,7 @@ struct FeedThreadCard: View {
             note: note,
             profile: profileFor(shown.pubkey),
             displayPubkey: original?.pubkey,
+            original: original,
             depth: entry.depth,
             style: .plain,
             isFocused: note.id == focusedNoteId,
@@ -163,6 +164,8 @@ struct FeedThreadCard: View {
             onProfile: onProfile,
             onTap: tapAction(for: note)
         )
+        // Skipped when only the feed around it redrew; see `CondensedNoteLine`.
+        .equatable()
     }
 
     private func contentOverride(for note: FeedNote, original: FeedNote?) -> String? {

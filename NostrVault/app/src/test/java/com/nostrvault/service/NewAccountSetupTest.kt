@@ -48,12 +48,12 @@ class NewAccountSetupTest {
             "wss://relay.primal.net",
             "ws://127.0.0.1:4869",
             "wss://localhost:4869",
-            "wss://nos.lol",
+            "wss://relay.damus.io",
             "wss://relay.primal.net",
             "https://not-a-relay.example",
-            " wss://nostr.mom ",
+            " wss://relay.snort.social ",
         ))
-        assertEquals(listOf(listOf("r", "wss://relay.primal.net"), listOf("r", "wss://nos.lol"), listOf("r", "wss://nostr.mom")), tags)
+        assertEquals(listOf(listOf("r", "wss://relay.primal.net"), listOf("r", "wss://relay.damus.io"), listOf("r", "wss://relay.snort.social")), tags)
     }
 
     @Test fun newAccountsHostPhotosOnNostrBuildFirst() {

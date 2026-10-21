@@ -119,14 +119,52 @@ internal fun PollComposeScreen(onDone: () -> Unit, viewModel: ModeComposeViewMod
         }.show()
     }
 
+    // Saved poll drafts: autosave, the row at the top, and Cancel's prompt.
+    val drafts = viewModel.drafts
+    var showingDrafts by remember { mutableStateOf(false) }
+    var confirmingCancel by remember { mutableStateOf(false) }
+    val currentDraft = ComposerDraft(
+        kind = ComposerDraft.Kind.POLL,
+        question = question,
+        options = options,
+        multipleChoice = multiple,
+        closing = closing.name,
+        customEnd = customEnd.takeIf { closing == PollClosing.CUSTOM },
+    )
+    if (drafts != null) AutosaveComposerDraft(drafts, currentDraft, null)
+
+    fun openDraft(saved: ComposerDraft) {
+        val keeper = drafts ?: return
+        keeper.saveNow(currentDraft, null)
+        keeper.open(saved)
+        question = saved.question
+        options = saved.options.take(PollDraft.MAX_OPTIONS).let { list ->
+            list + List((PollDraft.MIN_OPTIONS - list.size).coerceAtLeast(0)) { "" }
+        }
+        multiple = saved.multipleChoice
+        closing = PollClosing.entries.firstOrNull { it.name == saved.closing } ?: PollClosing.ONE_DAY
+        customEnd = saved.customEnd ?: (System.currentTimeMillis() / 1000 + 24 * 3600)
+    }
+
+    fun cancelTapped() {
+        val keeper = drafts ?: return onDone()
+        if (currentDraft.hasContent) {
+            confirmingCancel = true
+        } else {
+            keeper.finish()
+            onDone()
+        }
+    }
+
     BackHandler(enabled = busy) {}
+    BackHandler(enabled = !busy) { cancelTapped() }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("New poll") },
                 navigationIcon = {
-                    IconButton(onClick = onDone, enabled = !busy) {
+                    IconButton(onClick = { cancelTapped() }, enabled = !busy) {
                         Icon(NostrVaultIcons.Dismiss, contentDescription = "Cancel")
                     }
                 },
@@ -166,6 +204,7 @@ internal fun PollComposeScreen(onDone: () -> Unit, viewModel: ModeComposeViewMod
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            drafts?.let { ComposerDraftsRow(it) { showingDrafts = true } }
             OutlinedTextField(
                 value = question,
                 onValueChange = { question = it },
@@ -243,5 +282,25 @@ internal fun PollComposeScreen(onDone: () -> Unit, viewModel: ModeComposeViewMod
                 Text(it, color = if (error != null) Color(0xFFFF453A) else SecondaryText, fontSize = 13.sp)
             }
         }
+    }
+    if (drafts != null && showingDrafts) {
+        ComposerDraftsSheet(drafts, viewModel.draftStore, onSelect = ::openDraft, onDismiss = { showingDrafts = false })
+    }
+    if (drafts != null && confirmingCancel) {
+        SaveComposerDraftPrompt(
+            noun = "poll",
+            editsSavedDraft = drafts.editsSavedDraft,
+            onSave = {
+                confirmingCancel = false
+                drafts.saveNow(currentDraft, null)
+                onDone()
+            },
+            onDiscard = {
+                confirmingCancel = false
+                drafts.discard()
+                onDone()
+            },
+            onKeepEditing = { confirmingCancel = false },
+        )
     }
 }

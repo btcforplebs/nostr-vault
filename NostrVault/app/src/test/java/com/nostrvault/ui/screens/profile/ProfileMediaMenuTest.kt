@@ -40,6 +40,14 @@ class ProfileMediaMenuTest {
     }
 
     @Test
+    fun yourOwnBlossomFileCanBeDeletedBefore404() {
+        assertEquals(
+            listOf(COPY_LINK, SAVE_TO_PHOTOS, MIRROR_TO_BLOSSOM, DELETE_FROM_MIRRORS, DELETE_EVERYWHERE, MARK_404),
+            profileMediaMenu(image, inVault = true, needsMirror = true, is404 = false, moderationTarget = null, canDelete = true),
+        )
+    }
+
+    @Test
     fun audioCannotGoToPhotos() {
         assertEquals(
             listOf(COPY_LINK, SAVE_TO_VAULT, MARK_404),

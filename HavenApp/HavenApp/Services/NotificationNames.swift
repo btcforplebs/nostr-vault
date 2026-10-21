@@ -3,6 +3,9 @@ import Foundation
 extension Notification.Name {
     /// Posted after the media cache is cleared, so open views re-read where each file lives.
     static let havenMediaCacheCleared = Notification.Name("com.haven.mediaCacheCleared")
+    /// Posted after a delete request for your own posts; `object` is the
+    /// set of event ids, so views holding their own copy of a post drop it.
+    static let havenOwnEventsDeleted = Notification.Name("com.haven.ownEventsDeleted")
     /// Posted when the user taps a push notification about a relay event — navigates to Viewer tab.
     static let havenOpenViewer = Notification.Name("com.haven.openViewer")
     /// Posted when the user taps a push notification about a following feed note — navigates to Feed tab.
@@ -15,11 +18,20 @@ extension Notification.Name {
     static let havenOpenRelayZaps = Notification.Name("com.haven.openRelayZaps")
     /// Posted to navigate to wallet.
     static let havenOpenWallet = Notification.Name("OpenWallet")
+    /// The Profile tab was tapped while showing: back to the top, fetched fresh.
+    static let havenProfileScrollToTop = Notification.Name("ProfileScrollToTop")
+    /// Switch to the Profile tab (your own profile, opened from elsewhere).
+    static let havenShowMyProfileTab = Notification.Name("com.haven.showMyProfileTab")
     /// Posted when the user taps a reaction notification — opens relay page likes section.
     static let havenOpenRelayLikes = Notification.Name("com.haven.openRelayLikes")
     /// Posted when the user taps a new-follower notification — switches the
     /// relay page to its Followers list (the profile opens via havenOpenProfile).
     static let havenOpenRelayFollowers = Notification.Name("com.haven.openRelayFollowers")
+    /// Opens the Vault (the iOS Vault tab, the Mac's Notes) on its "Vault"
+    /// list: the return pill was tapped.
+    static let havenOpenVault = Notification.Name("com.haven.openVault")
+    /// Switches the Vault tab to its first list, "Vault": everything new.
+    static let havenOpenRelayActivity = Notification.Name("com.haven.openRelayActivity")
     /// Posted when the user taps a repost notification — opens relay page notes section.
     static let havenOpenRelayNotes = Notification.Name("com.haven.openRelayNotes")
     /// Posted after a relay-tab route when a notification names one event — the
@@ -44,9 +56,18 @@ extension Notification.Name {
     /// Widget deep links. Search and Media had no existing route because
     /// nothing else needed to open them programmatically.
     static let havenOpenSearch = Notification.Name("com.haven.openSearch")
+    /// ⌘F on an iPad keyboard: the Search tab's field takes the keystrokes.
+    /// Posted with a `SearchFocusRequest` made, for a Search tab already showing.
+    static let havenFocusSearch = Notification.Name("com.haven.focusSearch")
+    /// ⌘R on an iPad keyboard: refresh what the tab is showing. `object` is
+    /// the tab's index (Int), so only the showing tab's view acts on it.
+    static let havenRefreshTab = Notification.Name("com.haven.refreshTab")
     static let havenOpenMedia = Notification.Name("com.haven.openMedia")
     /// The WOT tab was tapped while showing: its globe goes back to you.
     static let wotTabReselected = Notification.Name("com.haven.wotTabReselected")
+    /// "Open in WoT" from a profile's or a post's globe: the WOT tab, on the
+    /// person in `WOTOpenRequest` (iOS; the Mac has no WOT tab).
+    static let havenOpenWOT = Notification.Name("com.haven.openWOT")
     /// Run the Media tab's Magic Paste. Posted after `havenOpenMedia` when the
     /// Mosaic widget's wand is tapped, so one tap gets the same result as
     /// Media tab -> + -> Magic Paste.
@@ -59,4 +80,22 @@ extension Notification.Name {
     /// (`havenOpenProfile`), or the hex event id / `naddr1…` (`havenOpenNote`).
     static let havenOpenProfile = Notification.Name("com.haven.openProfile")
     static let havenOpenNote = Notification.Name("com.haven.openNote")
+}
+
+/// ⌘F asked for the search field. A Search tab that isn't on screen when
+/// the notification goes out reads this when it appears; whichever side runs
+/// first clears it. A request left behind by a switch that never showed
+/// Search goes stale rather than popping the keyboard on a later visit.
+enum SearchFocusRequest {
+    /// Monotonic, so a wall-clock step can't age a request early or late.
+    @MainActor private static var requestedAt: ContinuousClock.Instant?
+
+    @MainActor static func request() { requestedAt = .now }
+
+    /// True once per request, and only while it is fresh.
+    @MainActor static func take() -> Bool {
+        defer { requestedAt = nil }
+        guard let requestedAt else { return false }
+        return requestedAt.duration(to: .now) < .seconds(3)
+    }
 }

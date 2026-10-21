@@ -131,4 +131,34 @@ class QuoteRefTest {
         val content = "nostr:note1aaa and again nostr:note1aaa"
         assertEquals(listOf(eventHex), QuoteRef.resolvedIdentifiers(content, decoder))
     }
+
+    // ── nevent pointer: the author the miss lookup asks ──
+
+    private fun hex(h: String) = ByteArray(h.length / 2) { h.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+    private fun tlv(type: Int, value: ByteArray) = byteArrayOf(type.toByte(), value.size.toByte()) + value
+
+    /** Plural's quote in Logen's thread: author first, then the id, no relay. */
+    @Test
+    fun `nevent pointer keeps the author of a real quote`() {
+        val author = "f42a02152031590dcc3a0a67db51316b7365e4aef34abbec9619c12e88f006b5"
+        val id = "a2f86e95d19056411861904c95a5bd19543f1769b354866567c4c014cef59e64"
+        assertEquals(
+            QuoteRef.EventPointer(id, author),
+            QuoteRef.eventPointerFromNeventTlv(tlv(2, hex(author)) + tlv(0, hex(id))),
+        )
+    }
+
+    /** The sender must not choose the host the app dials: the relay hint is dropped. */
+    @Test
+    fun `nevent pointer drops the relay hint`() {
+        val payload = tlv(0, hex(eventHex)) + tlv(1, "wss://sender-chosen.example".toByteArray())
+        assertEquals(QuoteRef.EventPointer(eventHex, null), QuoteRef.eventPointerFromNeventTlv(payload))
+    }
+
+    @Test
+    fun `nevent pointer needs a 32-byte id and ignores a short author`() {
+        assertNull(QuoteRef.eventPointerFromNeventTlv(tlv(2, hex(authorHex))))
+        val shortAuthor = tlv(0, hex(eventHex)) + tlv(2, ByteArray(20))
+        assertNull(QuoteRef.eventPointerFromNeventTlv(shortAuthor)?.author)
+    }
 }

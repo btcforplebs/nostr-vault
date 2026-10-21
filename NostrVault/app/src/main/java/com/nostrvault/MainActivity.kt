@@ -8,12 +8,15 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Parcelable
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
@@ -33,6 +36,7 @@ import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.AmberResultBridge
 import com.nostrvault.service.DMService
+import com.nostrvault.service.openedMessage
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LocalNotificationService
 import com.nostrvault.service.MediaPostQueue
@@ -41,9 +45,9 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.service.NoteTranslationPolicy
 import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
+import com.nostrvault.service.sharedStreamUris
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
-import com.nostrvault.ui.components.InAppBannerHost
 import com.nostrvault.ui.components.LocalNoteTranslation
 import com.nostrvault.ui.components.NoteTranslationContext
 import com.nostrvault.ui.components.deviceLanguageTags
@@ -53,7 +57,9 @@ import com.nostrvault.ui.navigation.DeepLinkRouter
 import com.nostrvault.ui.navigation.NostrVaultNavHost
 import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.PendingDeepLink
+import com.nostrvault.ui.notification.LocalNotificationManager
 import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.notification.NotificationOverlay
 import com.nostrvault.ui.theme.AppTheme
 import com.nostrvault.ui.theme.FeedLineLimits
 import com.nostrvault.ui.theme.NostrVaultTheme
@@ -93,12 +99,12 @@ class MainActivity : FragmentActivity() {
 
         enableEdgeToEdge()
 
+        // Load persisted config so hasCompletedSetup reflects saved state
+        configStore.reload()
+
         // Ask for notification permission (Android 13+) so local notifications for
         // inbound mentions/DMs/zaps can be shown. No-op on older versions.
         requestNotificationPermissionIfNeeded()
-
-        // Load persisted config so hasCompletedSetup reflects saved state
-        configStore.reload()
 
         // Posts waiting for an outside media server: watch the network and
         // retry every minute while any wait. Started right after the config
@@ -113,6 +119,8 @@ class MainActivity : FragmentActivity() {
         handleShareIntent(intent)
 
         // …and taps that came from a widget, a notification or a nostr: link.
+        // A NIP-17 notification opens its conversation once the inbox has opened the wrap.
+        DeepLinkRouter.giftWrapPeer = { dmService.openedMessage(it)?.first }
         handleDeepLinkIntent(intent)
 
         // Keep PiP auto-enter params in sync with whichever video is playing full-screen
@@ -191,38 +199,49 @@ class MainActivity : FragmentActivity() {
                 CompositionLocalProvider(
                     LocalNoteTranslation provides noteTranslation,
                     com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
+                    LocalNotificationManager provides notificationManager,
+                    com.nostrvault.ui.components.LocalShowZapButton provides com.nostrvault.relay.HavenConfig.postButtonsShowZap(config.postButtons),
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = Surface0,
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            NostrVaultNavHost(
-                                isSetupComplete = config.hasCompletedSetup,
-                                configStore = configStore,
-                                feedService = feedService,
-                                nostrService = nostrService,
-                                logStore = logStore,
-                                dmUnreadCount = dmService.totalUnreadCountFlow,
-                                hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                                notificationManager = notificationManager,
-                                pendingPostManager = pendingPostManager,
-                            )
+                            // Edge-to-edge: the window no longer resizes for the keyboard
+                            // (adjustResize is a no-op here), so lift every screen above it
+                            // once, here. Screens that add their own imePadding see the
+                            // inset already consumed, so nothing is padded twice.
+                            Box(modifier = Modifier.fillMaxSize().imePadding()) {
+                                NostrVaultNavHost(
+                                    isSetupComplete = config.hasCompletedSetup,
+                                    configStore = configStore,
+                                    feedService = feedService,
+                                    nostrService = nostrService,
+                                    logStore = logStore,
+                                    dmUnreadCount = dmService.totalUnreadCountFlow,
+                                    hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
+                                    pendingPostManager = pendingPostManager,
+                                )
+                            }
                             // Full-screen media viewer overlay — lives in the activity window
                             // (not a Dialog) so Picture-in-Picture can capture the video.
                             FullScreenMediaHost()
-                            // DMs that arrive while the app is open.
-                            InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
-                            // An import still running after setup, or started in Settings.
-                            com.nostrvault.setup.ImportRunningPill(
-                                isImporting = relayImportService.isImporting,
-                                statusMessage = relayImportService.importStatusMessage,
-                                hasCompletedSetup = config.hasCompletedSetup,
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .statusBarsPadding()
-                                    .padding(top = 60.dp),
-                            )
+                            // The lane: every pill, over the media viewer too
+                            // (docs/pills.md). Activity that arrives while the
+                            // app is open shows here, and the import still
+                            // running after setup rides along as ambient.
+                            NotificationOverlay(
+                                notificationManager = notificationManager,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                            ) {
+                                com.nostrvault.setup.ImportRunningPill(
+                                    isImporting = relayImportService.isImporting,
+                                    statusMessage = relayImportService.importStatusMessage,
+                                    hasCompletedSetup = config.hasCompletedSetup,
+                                )
+                            }
+                            // What came in while the app was away: one pill at the bottom, toward the Vault.
+                            com.nostrvault.ui.notification.ReturnPill(Modifier.align(Alignment.BottomEnd))
                             // Tutorial cards, over every screen; only the card takes touches.
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                         }
@@ -275,14 +294,22 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** Request POST_NOTIFICATIONS on Android 13+ if not already granted. */
+    /**
+     * Request POST_NOTIFICATIONS on Android 13+ if not already granted. A new
+     * install is asked by setup's "Stay in the Loop" step, not over the first
+     * screen (iOS asks the same way). Setup paths without that step, and
+     * installs from before it, are asked once at the next launch.
+     */
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val config = configStore.config.value
+        if (!config.hasCompletedSetup || config.notificationPermissionAsked) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         ) {
             return
         }
+        configStore.update { it.copy(notificationPermissionAsked = true) }
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
@@ -308,22 +335,22 @@ class MainActivity : FragmentActivity() {
             return
         }
 
-        val uris: List<Uri> = when (action) {
-            Intent.ACTION_SEND -> listOfNotNull(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                }
-            )
-            Intent.ACTION_SEND_MULTIPLE -> (
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                }
-            ) ?: emptyList()
-            else -> emptyList()
+        // IntentCompat, and a filter rather than a cast: a sender can put
+        // anything under EXTRA_STREAM (a list of path strings), and the old
+        // untyped read cast it to Uri and crashed on API 32 and below.
+        val stream: Any? = runCatching {
+            when (action) {
+                Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                else -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Parcelable::class.java)
+            }
+        }.getOrNull()
+        val shared = sharedStreamUris(stream)
+        // Only another app's content: a file:// URI or one of our own providers
+        // would have us upload our private files (MediaUploadManager.acceptsShare).
+        val uris = shared.filter(mediaUploadManager::acceptsShare)
+        if (shared.isNotEmpty() && uris.isEmpty()) {
+            notificationManager.showError(MediaUploadManager.REFUSED_MESSAGE)
+            return
         }
 
         if (uris.isEmpty()) return
@@ -387,6 +414,8 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         localNotificationService.appInForeground = false
+        // Nothing more is gathered into a return pill nobody can see.
+        com.nostrvault.service.ReturnPillManager.endReturn()
         // The absence starts now; the feed on screen counts as seen.
         feedActivityNotifier.onBackground()
         MusicPlayer.setAppInForeground(false)
@@ -400,6 +429,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Back from the background (or just launched): what the relay catches
+        // up on now is gathered into one bottom pill (ReturnPillManager).
+        com.nostrvault.service.ReturnPillManager.beginReturn()
         localNotificationService.appInForeground = true
         feedActivityNotifier.onForeground()
         // A live stream another app's sound paused while we were away carries on.

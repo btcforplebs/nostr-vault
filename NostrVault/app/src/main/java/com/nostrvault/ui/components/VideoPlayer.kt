@@ -42,6 +42,33 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 import kotlinx.coroutines.delay
 
 /**
+ * A media viewer's hold on a video page's control rail, passed to
+ * [VideoPlayer] as its `controls`: one tap shows or hides the rail, and
+ * zooming in hides it, as iOS `FeedMediaViewer` does. The viewer's
+ * [ZoomableBox] reads the taps, so a double tap or a long press never also
+ * counts as one.
+ */
+@Stable
+class VideoControls {
+    val shown = mutableStateOf(true)
+
+    /** A single tap on the page. */
+    fun tap() {
+        shown.value = !shown.value
+    }
+
+    /** The page's zoom changed: past 1x the rail goes, and stays gone until a tap. */
+    fun zoomed(scale: Float) {
+        if (scale > ZOOMED) shown.value = false
+    }
+
+    private companion object {
+        /** The viewers' own "zoomed" line (pager paging locks past it too). */
+        const val ZOOMED = 1.05f
+    }
+}
+
+/**
  * Full-screen video player composable wrapping Media3 ExoPlayer.
  *
  * Features:
@@ -61,6 +88,13 @@ fun VideoPlayer(
     uri: String,
     modifier: Modifier = Modifier,
     autoplay: Boolean = true,
+    /**
+     * Whether the control rail shows, owned by the caller. The media viewers
+     * pass one and take taps themselves (one tap toggles it, a double tap
+     * zooms and hides it, a long press leaves it alone); without it the
+     * player toggles the rail on every tap of its own.
+     */
+    controls: MutableState<Boolean>? = null,
 ) {
     val context = LocalContext.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
@@ -74,7 +108,8 @@ fun VideoPlayer(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isSeeking by remember { mutableStateOf(false) }
-    var showControls by remember { mutableStateOf(true) }
+    val ownControls = remember { mutableStateOf(true) }
+    var showControls by (controls ?: ownControls)
     // Bumped on every control interaction to restart the auto-hide countdown
     var interactionEpoch by remember { mutableIntStateOf(0) }
 
@@ -126,12 +161,18 @@ fun VideoPlayer(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-            ) {
-                if (!isInPiP) showControls = !showControls
-            },
+            .then(
+                if (controls != null) {
+                    Modifier
+                } else {
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) {
+                        if (!isInPiP) showControls = !showControls
+                    }
+                },
+            ),
     ) {
         // Video surface
         VideoSurface(player = exoPlayer, modifier = Modifier.fillMaxSize())

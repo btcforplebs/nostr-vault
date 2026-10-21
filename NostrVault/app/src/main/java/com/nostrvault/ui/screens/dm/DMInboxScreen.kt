@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dm
 
+import com.nostrvault.util.RelativeTime
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,14 +15,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.service.DMConversation
 import com.nostrvault.service.DMService
@@ -44,6 +55,8 @@ import javax.inject.Inject
 class DMInboxViewModel @Inject constructor(
     private val dmService: DMService,
     private val nostrService: NostrService,
+    private val configStore: ConfigStore,
+    savedState: SavedStateHandle,
 ) : ViewModel() {
 
     val conversations: StateFlow<List<DMConversation>> = dmService.conversations
@@ -56,11 +69,18 @@ class DMInboxViewModel @Inject constructor(
      *  background/auto signing for this app. */
     val decryptBlocked: StateFlow<Boolean> = dmService.decryptBlocked
 
+    /** Why this account can't use DMs, or null when it can. See DMService.dmUnavailable. */
+    val dmUnavailable: StateFlow<String?> = dmService.dmUnavailable
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val paneSelection = DMPaneSelection(savedState) { configStore.activeAccountHexPubkey.value }
+    val paneSelectionChanges: StateFlow<String?> = paneSelection.changes
+    val activeAccount: StateFlow<String> = configStore.activeAccountHexPubkey
 
     init {
         viewModelScope.launch {
@@ -71,6 +91,10 @@ class DMInboxViewModel @Inject constructor(
             val pubkeys = conversations.value.map { it.id }.distinct()
             nostrService.fetchMissingProfiles(pubkeys)
         }
+        // Switching back to an account doesn't reopen what it had open.
+        viewModelScope.launch {
+            configStore.accountSwitches.collect { paneSelection.clear() }
+        }
         // While the inbox is open, drain queued (Amber) decrypts as they arrive —
         // this is the only place background DMs get decrypted in Amber mode, so it
         // never hammers the signer when you're elsewhere in the app.
@@ -80,9 +104,27 @@ class DMInboxViewModel @Inject constructor(
         }
     }
 
+    fun selectConversation(pubkey: String) = paneSelection.select(pubkey)
+
+    /** Read live, so a pane picked under the previous account never opens under this one. */
+    fun selectedConversation(): String? = paneSelection.current()
+
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
 
     fun markAllAsRead() = dmService.markAllAsRead()
+
+    private val _retrying = MutableStateFlow(false)
+    /** True while a Retry runs, so the banner holds instead of blinking off (iOS keeps its count). */
+    val retrying: StateFlow<Boolean> = _retrying.asStateFlow()
+
+    /** The banner's Retry: one more pass over what the signer couldn't open. */
+    fun retryWaitingForSigner() {
+        if (_retrying.value) return
+        viewModelScope.launch {
+            _retrying.value = true
+            try { dmService.retryWaitingForSigner() } finally { _retrying.value = false }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
@@ -96,21 +138,65 @@ class DMInboxViewModel @Inject constructor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Phones push the picked conversation full-screen through [onConversationClick];
+ * wide screens open it beside the list (iOS DMInboxView), where its header
+ * leads to the profile through [onProfileClick].
+ */
 @Composable
 fun DMInboxScreen(
     onConversationClick: (String) -> Unit,
     onNewMessage: () -> Unit = {},
+    onProfileClick: (String) -> Unit = {},
     viewModel: DMInboxViewModel = hiltViewModel(),
 ) {
+    // Both collected so a pick or an account switch recomposes; the value is read live.
+    viewModel.paneSelectionChanges.collectAsState().value
+    viewModel.activeAccount.collectAsState().value
+    val selected = viewModel.selectedConversation()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (dmUsesTwoPane(maxWidth)) {
+            DMTwoPane(selected = selected, onProfileClick = onProfileClick) { listModifier ->
+                DMInboxList(
+                    onConversationClick = viewModel::selectConversation,
+                    onNewMessage = onNewMessage,
+                    viewModel = viewModel,
+                    selected = selected,
+                    modifier = listModifier,
+                )
+            }
+        } else {
+            DMInboxList(
+                onConversationClick = onConversationClick,
+                onNewMessage = onNewMessage,
+                viewModel = viewModel,
+                showChevrons = true,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DMInboxList(
+    onConversationClick: (String) -> Unit,
+    onNewMessage: () -> Unit,
+    viewModel: DMInboxViewModel,
+    selected: String? = null,
+    /** iOS list rows push a thread and show a chevron; the two-pane sidebar doesn't. */
+    showChevrons: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
     val conversations by viewModel.conversations.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val pendingDecrypt by viewModel.pendingDecryptCount.collectAsState()
     val decryptBlocked by viewModel.decryptBlocked.collectAsState()
+    val retrying by viewModel.retrying.collectAsState()
+    val dmUnavailable by viewModel.dmUnavailable.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     GlassScaffold(
+        modifier = modifier,
         toolbar = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -130,36 +216,6 @@ fun DMInboxScreen(
                     )
                 }
 
-                if (pendingDecrypt > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    GlassPill {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp),
-                        ) {
-                            if (decryptBlocked) {
-                                Text(
-                                    text = "$pendingDecrypt locked — enable Amber auto-sign",
-                                    color = colors.primary,
-                                    fontSize = 12.sp,
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    color = colors.primary,
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Decrypting $pendingDecrypt…",
-                                    color = PrimaryText,
-                                    fontSize = 12.sp,
-                                )
-                            }
-                        }
-                    }
-                }
-
                 Spacer(Modifier.weight(1f))
 
                 // Trailing pill: compose new message
@@ -174,46 +230,27 @@ fun DMInboxScreen(
             }
         },
     ) { padding ->
-        if (isLoading) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                CircularProgressIndicator(color = colors.primary)
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // iOS: messages the signer hasn't opened yet, in a banner above the list.
+            // A normal drain shows nothing, as on iOS (the old "Decrypting N" pill is gone on purpose).
+            if ((decryptBlocked || retrying) && pendingDecrypt > 0) {
+                DMSignerWaitingBanner(count = pendingDecrypt, onRetry = viewModel::retryWaitingForSigner)
             }
-        } else {
+            // iOS has no loading state: the list, or its empty state, straight away.
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = viewModel::refresh,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier = Modifier.fillMaxSize(),
             ) {
-                if (conversations.isEmpty()) {
-                    // Scrollable empty state so the pull-to-refresh gesture works.
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        Spacer(Modifier.height(120.dp))
-                        Icon(
-                            imageVector = NostrVaultIcons.DMs,
-                            contentDescription = null,
-                            tint = TertiaryText,
-                            modifier = Modifier.size(48.dp),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = "No messages yet",
-                            color = SecondaryText,
-                            fontSize = 16.sp,
-                        )
-                    }
+                val blocked = dmUnavailable
+                if (blocked != null && conversations.isEmpty()) {
+                    // A watch-only account has no key here, so the inbox can
+                    // only ever be empty: say that instead of "no messages yet".
+                    DMUnavailableNotice(blocked)
+                } else if (conversations.isEmpty()) {
+                    DMInboxEmptyState()
                 } else {
+                    // iOS: one grouped surface, no separators between rows.
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -224,12 +261,9 @@ fun DMInboxScreen(
                             ConversationRow(
                                 conversation = conversation,
                                 profile = viewModel.profileFor(conversation.id),
+                                isSelected = conversation.id == selected,
+                                showChevron = showChevrons,
                                 onClick = { onConversationClick(conversation.id) },
-                            )
-                            HorizontalDivider(
-                                color = SeparatorColor,
-                                thickness = 0.5.dp,
-                                modifier = Modifier.padding(start = 72.dp),
                             )
                         }
                     }
@@ -239,23 +273,94 @@ fun DMInboxScreen(
     }
 }
 
+/**
+ * iOS DMInboxView's empty state: the two-bubble glyph on soft rings, centred,
+ * and where to start one. Scrollable so pull-to-refresh still works.
+ */
+@Composable
+private fun DMInboxEmptyState() {
+    val colors = LocalNostrVaultColors.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .padding(horizontal = 24.dp)
+                .semantics(mergeDescendants = true) {},
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(130.dp)) {
+                Box(Modifier.size(130.dp).background(colors.primary.copy(alpha = 0.05f), CircleShape))
+                Box(Modifier.size(100.dp).background(colors.primary.copy(alpha = 0.08f), CircleShape))
+                Icon(
+                    imageVector = NostrVaultIcons.DMs,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                Brush.linearGradient(listOf(colors.primary, colors.primaryLight)),
+                                blendMode = BlendMode.SrcIn,
+                            )
+                        },
+                )
+            }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "No Messages Yet",
+                    color = PrimaryText,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Start an encrypted conversation\nwith the compose button above",
+                    color = SecondaryText,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+/** The row's last-message line: iOS cuts it at 60 characters and names an empty one. */
+internal fun dmPreviewText(content: String?): String {
+    val message = content.orEmpty()
+    if (message.isEmpty()) return "No message content"
+    return message.take(60).trim() + if (message.length > 60) "\u2026" else ""
+}
+
 @Composable
 private fun ConversationRow(
     conversation: DMConversation,
     profile: FeedProfile?,
     onClick: () -> Unit,
+    /** The conversation open beside the list on a wide screen. */
+    isSelected: Boolean = false,
+    showChevron: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val hasUnread = conversation.unreadCount > 0
+    // iOS DMInboxView row: on the grouped surface, 52pt avatar with the unread
+    // dot punched into its top-right corner, the count capsule beside the
+    // preview only past one unread.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .background(SecondaryGroupedBg)
+            .background(if (isSelected) colors.primary.copy(alpha = 0.14f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
     ) {
-        // iOS DMInboxView row: 52pt avatar with the unread dot punched into
-        // its top-right corner; count capsule only past one unread.
         Box {
             AvatarImage(
                 url = profile?.pictureURL,
@@ -267,15 +372,16 @@ private fun ConversationRow(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-1).dp)
                         .size(14.dp)
-                        .background(WindowBackground, CircleShape)
+                        .background(SecondaryGroupedBg, CircleShape)
                         .padding(2.dp)
                         .background(colors.primary, CircleShape),
                 )
             }
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Row(
@@ -283,7 +389,7 @@ private fun ConversationRow(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = profile?.bestName ?: conversation.id.take(8) + "...",
+                    text = profile?.bestName ?: (conversation.id.take(8) + "\u2026"),
                     color = PrimaryText,
                     fontSize = 15.sp,
                     fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.SemiBold,
@@ -291,49 +397,49 @@ private fun ConversationRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                Spacer(Modifier.width(6.dp))
                 Text(
-                    text = formatRelativeTime((conversation.lastMessage?.timestamp ?: 0L) * 1000),
-                    color = if (hasUnread) colors.primary else TertiaryText,
+                    text = RelativeTime.abbreviated(conversation.lastMessage?.timestamp ?: 0L, System.currentTimeMillis() / 1000),
+                    color = if (hasUnread) colors.primary else SecondaryText,
                     fontSize = 12.sp,
                 )
             }
 
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(5.dp))
 
-            Text(
-                text = conversation.lastMessage?.content ?: "",
-                color = SecondaryText,
-                fontSize = 13.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // Unread count capsule (only when more than one unread, like iOS)
-        if (conversation.unreadCount > 1) {
-            Spacer(Modifier.width(8.dp))
-            Badge(
-                containerColor = colors.primary,
-                contentColor = PrimaryText,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (conversation.unreadCount > 99) "99+"
-                    else conversation.unreadCount.toString(),
-                    fontSize = 11.sp,
+                    text = dmPreviewText(conversation.lastMessage?.content),
+                    color = if (hasUnread) PrimaryText.copy(alpha = 0.8f) else SecondaryText,
+                    fontSize = 13.sp,
+                    fontWeight = if (hasUnread) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
+                if (conversation.unreadCount > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        // iOS shows the full count.
+                        text = conversation.unreadCount.toString(),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .background(colors.primary, CircleShape)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
         }
-    }
-}
-
-private fun formatRelativeTime(epochMs: Long): String {
-    val now = System.currentTimeMillis()
-    val diffSec = (now - epochMs) / 1000
-    return when {
-        diffSec < 60 -> "now"
-        diffSec < 3600 -> "${diffSec / 60}m"
-        diffSec < 86400 -> "${diffSec / 3600}h"
-        diffSec < 604800 -> "${diffSec / 86400}d"
-        else -> "${diffSec / 604800}w"
+        if (showChevron) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                NostrVaultIcons.Navigate,
+                contentDescription = null,
+                tint = TertiaryText,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }

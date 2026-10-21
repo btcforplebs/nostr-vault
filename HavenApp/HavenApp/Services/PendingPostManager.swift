@@ -41,17 +41,6 @@ class PendingPostManager: ObservableObject {
             }
         }
 
-        @MainActor
-        var themedColor: Color {
-            switch self {
-            case .reply:   return Color(red: 0.22, green: 0.52, blue: 0.95)
-            case .quote:   return Color(red: 0.12, green: 0.70, blue: 0.60)
-            case .newPost: return Color.havenPurple
-            case .repost:  return Color.havenPurple
-            case .delete:  return .red
-            }
-        }
-
         /// The choices offered in Settings. 0 = Off: no pill, no undo.
         static let countdownChoices: [Double] = [0, 5, 10]
         static let countdownDefault: Double = 5
@@ -178,6 +167,7 @@ class PendingPostManager: ObservableObject {
         // one was swapped to the inner author.
         let originalPubkey = FeedService.shared.originalNote(for: sourceNote).pubkey
         let originalKind = sourceNote.repostedEventId != nil ? 1 : sourceNote.kind
+        let queuedAccount = ConfigService.shared.activeAccountHexPubkey
 
         beginCountdown(duration: duration) {
             let confirmationId = self.beginConfirmation(.repost)
@@ -205,14 +195,16 @@ class PendingPostManager: ObservableObject {
                 kind: repostKind, content: embedded,
                 tags: tags,
                 difficulty: powDiff
-            ) {
+            ), signed.pubkey.lowercased() == queuedAccount {
+                // Mining can take seconds; one signed as an account switched
+                // to meanwhile is dropped, not sent, and not marked reposted.
                 nostrService.postEvent(signed) { outcome in
                     self.finishConfirmation(confirmationId, outcome: outcome)
                 }
+                FeedService.shared.repostedEventIds.insert(originalId)
             } else {
                 self.finishConfirmation(confirmationId, outcome: nil)
             }
-            FeedService.shared.repostedEventIds.insert(originalId)
         }
     }
 
@@ -336,6 +328,11 @@ class PendingPostManager: ObservableObject {
         // make this window last several seconds.
         beginBackgroundTask()
         let endTime = Date().addingTimeInterval(duration)
+        // The account the action was queued under. The switch listener in
+        // init hops the main queue after the switch itself, so a countdown
+        // that ends in that gap would still sign as the new account; checking
+        // the active account here, at the moment it goes out, closes the gap.
+        let queuedAccount = ConfigService.shared.activeAccountHexPubkey
         countdown = Task { @MainActor in
             while Date() < endTime {
                 try? await Task.sleep(nanoseconds: 100_000_000)
@@ -347,6 +344,10 @@ class PendingPostManager: ObservableObject {
             }
             if Task.isCancelled {
                 self.endBackgroundTaskIfNeeded()
+                return
+            }
+            guard ConfigService.shared.activeAccountHexPubkey == queuedAccount else {
+                self.cancel()
                 return
             }
             withAnimation(Motion.bannerOut) {

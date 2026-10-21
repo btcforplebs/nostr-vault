@@ -112,9 +112,12 @@ fun AvatarImage(
 
 private fun avatarRequest(context: Context, url: String): ImageRequest =
     ImageRequest.Builder(context)
-        .data(url)
+        // Download the 256 px copy, but cache it under the original URL so
+        // pictures already on disk keep loading without a refetch.
+        .data(AvatarThumbnail.url(url))
         .size(128)
         .memoryCacheKey(url)
+        .diskCacheKey(url)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .diskCachePolicy(CachePolicy.ENABLED)
         .allowHardware(true)
@@ -131,6 +134,13 @@ private fun avatarRequest(context: Context, url: String): ImageRequest =
 internal suspend fun prefetchAvatar(context: Context, url: String, httpClient: okhttp3.OkHttpClient) {
     prefetchAvatarLoader(context, httpClient).execute(avatarRequest(context, url))
 }
+
+/**
+ * Loads [url] as [AvatarImage] will and says whether it decoded, so a caller
+ * can show only pictures that render. A cached picture answers at once.
+ */
+internal suspend fun avatarRenders(context: Context, url: String): Boolean =
+    avatarImageLoader(context).execute(avatarRequest(context, url)) is coil.request.SuccessResult
 
 @Volatile private var prefetchAvatarLoaderInstance: ImageLoader? = null
 

@@ -90,6 +90,18 @@ enum CredentialStore {
         return nil
     }
 
+    /// Every password this store holds, owner and per-account. Factory reset
+    /// calls it: the keys they unlock are gone, so the passwords must go too.
+    @discardableResult
+    static func deleteAll() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
     private static func delete(account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

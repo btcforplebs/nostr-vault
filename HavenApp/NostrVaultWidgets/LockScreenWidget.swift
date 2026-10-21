@@ -48,8 +48,11 @@ struct LockScreenProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: LockScreenIntent, in context: Context) async -> Timeline<LockScreenEntry> {
-        let entry = LockScreenEntry(date: Date(), snapshot: NVSharedStore.load() ?? .empty, config: configuration)
-        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(15 * 60)))
+        let now = Date()
+        let entry = LockScreenEntry(date: now, snapshot: NVSharedStore.load() ?? .empty, config: configuration)
+        // Reload at midnight too, so Zaps today drops to 0 on time.
+        let midnight = Calendar.current.date(byAdding: .day, value: 1, to: NVZapsToday.startOfDay(now)) ?? now
+        return Timeline(entries: [entry], policy: .after(min(now.addingTimeInterval(15 * 60), midnight)))
     }
 }
 
@@ -74,7 +77,7 @@ struct LockScreenView: View {
         case .mentions: return "\(snapshot.mentions.count)"
         case .dms: return "\(snapshot.unreadDMCount)"
         case .events: return NV.compactCount(snapshot.relay.eventCount)
-        case .zaps: return "\(snapshot.wallet.zapsReceived24h)"
+        case .zaps: return "\(snapshot.wallet.zapsToday(at: entry.date))"
         case .relay: return snapshot.relay.isRunning ? "Live" : "Off"
         }
     }
@@ -105,7 +108,7 @@ struct LockScreenView: View {
         switch entry.config.metric {
         case .mentions: return min(Double(snapshot.mentions.count) / 10, 1)
         case .dms: return min(Double(snapshot.unreadDMCount) / 10, 1)
-        case .zaps: return min(Double(snapshot.wallet.zapsReceived24h) / 50, 1)
+        case .zaps: return min(Double(snapshot.wallet.zapsToday(at: entry.date)) / 50, 1)
         case .events: return min(Double(snapshot.relay.eventCount) / 100_000, 1)
         case .relay: return snapshot.relay.isRunning ? 1 : 0
         }

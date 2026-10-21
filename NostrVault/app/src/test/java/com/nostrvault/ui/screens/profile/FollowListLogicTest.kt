@@ -1,6 +1,8 @@
 package com.nostrvault.ui.screens.profile
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -81,9 +83,54 @@ class FollowListLogicTest {
     }
 
     @Test
+    fun blockedPeopleAreDroppedFromBothListsAndTheirCounts() {
+        val spam = setOf("bot")
+        val dropped = FollowListLogic.dropped(spam, setOf("blocked"))
+        val people = listOf(p("friend", "Friend"), p("blocked", "Blocked"), p("bot", "Bot"))
+        val shown = FollowListLogic.sections(
+            people = people, follows = emptySet(), webOfTrust = emptySet(), trustRank = emptyMap(),
+            hidden = dropped, sort = FollowListSort.NAME,
+        )
+        assertEquals(listOf("friend"), shown.flatMap { s -> s.people.map { it.pubkey } })
+        assertEquals(1, FollowListLogic.shownCount(listOf("friend", "blocked", "bot"), dropped))
+
+        // The control: with nobody blocked, spam alone is hidden and the
+        // count still includes everyone else.
+        val spamOnly = FollowListLogic.dropped(spam, emptySet())
+        val withBlocked = FollowListLogic.sections(
+            people = people, follows = emptySet(), webOfTrust = emptySet(), trustRank = emptyMap(),
+            hidden = spamOnly, sort = FollowListSort.NAME,
+        )
+        assertEquals(listOf("blocked", "friend"), withBlocked.flatMap { s -> s.people.map { it.pubkey } })
+        assertEquals(2, FollowListLogic.shownCount(listOf("friend", "blocked", "bot"), spamOnly))
+        assertEquals(2, FollowListLogic.shownCount(listOf("friend", "blocked"), emptySet()))
+    }
+
+    @Test
     fun bioLineFlattensLineBreaks() {
         assertEquals("Builder. Bitcoin nostr", FollowListLogic.bioLine("Builder.\n\n  Bitcoin  \nnostr"))
         assertNull(FollowListLogic.bioLine(" \n "))
         assertNull(FollowListLogic.bioLine(null))
+    }
+
+    @Test
+    fun followerPagingStopsOnceTheProfileCountIsLoaded() {
+        assertTrue(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 100))
+        // As many loaded as the profile says: no more pages, no "N+".
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 250))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = 250, loaded = 260))
+        // No count from the profile yet: keep paging until the relays run dry.
+        assertTrue(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = null, loaded = 0))
+        assertTrue(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = false, profileTotal = null, loaded = 500))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = true, profileTotal = null, loaded = 500))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = true, exhausted = false, profileTotal = null, loaded = 500))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = false, exhausted = true, profileTotal = 250, loaded = 100))
+        assertFalse(FollowListLogic.followersHaveMore(isOwnLedger = true, exhausted = false, profileTotal = 250, loaded = 100))
+    }
+
+    @Test
+    fun shortPubkeyKeepsTheFirstEightAndLastFour() {
+        val hex = "abcd1234" + "0".repeat(52) + "wxyz"
+        assertEquals("abcd1234…wxyz", FollowListLogic.shortPubkey(hex))
     }
 }

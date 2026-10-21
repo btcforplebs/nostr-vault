@@ -21,6 +21,18 @@ final class TrustMapTests: XCTestCase {
         }.joined()
     }
 
+    func testWebFoldsInFollowsTheMomentTheyAreMade() {
+        let saved: Set = [key(1), key(2)]
+        let outsider = key(9)
+        XCTAssertFalse(TrustMap.web(saved: saved, follows: [key(1)]).contains(outsider))
+        // Following someone outside the saved web puts them in it at once.
+        XCTAssertEqual(TrustMap.web(saved: saved, follows: [key(1), outsider]), [key(1), key(2), outsider])
+        // Unfollowing only takes back what the follow added: the saved web stays.
+        XCTAssertEqual(TrustMap.web(saved: saved, follows: []), saved)
+        // No saved web: no graph, so nothing is claimed in or out.
+        XCTAssertEqual(TrustMap.web(saved: [], follows: [outsider]), [])
+    }
+
     func testDirectionComesFromTheKeyAndStaysPut() {
         // Longitude is the leading digits; height is the next eight.
         let front = TrustMap.direction(of: "00000000" + "80000000" + String(repeating: "f", count: 48))
@@ -93,6 +105,31 @@ final class TrustMapTests: XCTestCase {
         XCTAssertEqual(camera.spin, .zero)
     }
 
+    func testASlowLetGoDoesNotSpin() {
+        var camera = GlobeCamera()
+        camera.flick(vx: 200, vy: -150, at: 0, reduceMotion: false)
+        XCTAssertEqual(camera.spin, .zero)
+    }
+
+    func testAHardFlickIsCapped() {
+        var camera = GlobeCamera()
+        camera.flick(vx: 6000, vy: 0, at: 0, reduceMotion: false)
+        XCTAssertEqual(simd_length(camera.spin), GlobeCamera.maxSpin, accuracy: 1e-9)
+    }
+
+    func testALayerChangeFadesLeaversInPlace() {
+        // Picking a layer or filter keeps the middle: nobody flies outward.
+        for r in [TrustMap.ringRadius, TrustMap.closeRadius, TrustMap.outerRadius] {
+            XCTAssertEqual(TrustMap.leavingRadius(from: r, newCenter: false), r)
+        }
+    }
+
+    func testANewCenterSendsLeaversOutPastTheShells() {
+        let r = TrustMap.leavingRadius(from: TrustMap.closeRadius, newCenter: true)
+        XCTAssertGreaterThan(r, TrustMap.outerRadius)
+        XCTAssertEqual(r, TrustMap.driftOutRadius)
+    }
+
     func testFlyToArrivesAndLetsTheClockSleep() {
         var camera = GlobeCamera()
         camera.zoom = 2
@@ -107,6 +144,40 @@ final class TrustMapTests: XCTestCase {
         // Still awake for the idle drift, asleep once idle long enough.
         XCTAssertTrue(camera.wantsFrames(now: 2.5, reduceMotion: false))
         XCTAssertFalse(camera.wantsFrames(now: GlobeCamera.sleepAfter + 1, reduceMotion: false))
+    }
+
+    func testTheWOTGlobeDriftsWithNoTimer() {
+        // Long past any sleep timer it still turns and still wants frames:
+        // only leaving the tab, the app or a sheet stops it.
+        var camera = GlobeCamera()
+        camera.keepsDrifting = true
+        var now = 0.0
+        while now < GlobeCamera.sleepAfter * 5 { now += 1 / 30; camera.step(dt: 1 / 30, now: now, reduceMotion: false) }
+        XCTAssertTrue(camera.wantsFrames(now: now, reduceMotion: false))
+        let before = camera.orientation
+        camera.step(dt: 1 / 30, now: now + 1 / 30, reduceMotion: false)
+        XCTAssertNotEqual(camera.orientation.vector, before.vector)
+        // Reduce Motion still holds it still, and lets the clock sleep.
+        XCTAssertFalse(camera.wantsFrames(now: now, reduceMotion: true))
+    }
+
+    func testStarLightMatchesTheKeysItWasBuiltFrom() {
+        let keys = (0..<50).map(key)
+        let pinned: Set = [key(3), key(17)]
+        let from: Set = Set((0..<50).filter { $0 % 2 == 0 }.map(key))
+        let to: Set = Set((0..<50).filter { $0 % 3 == 0 }.map(key))
+        let light = TrustMap.StarLight(keys: keys, pinned: pinned, from: from, to: to)
+        let out = TrustMap.StarLight.filteredOut
+        for (i, k) in keys.enumerated() {
+            XCTAssertEqual(light.pinned[i], pinned.contains(k))
+            let a = from.contains(k) ? 1 : out, b = to.contains(k) ? 1 : out
+            XCTAssertEqual(light.filter(i, mix: 1), b)
+            XCTAssertEqual(light.filter(i, mix: 0), a)
+            XCTAssertEqual(light.filter(i, mix: 0.25), a + (b - a) * 0.25, accuracy: 1e-12)
+        }
+        // No filter lights everyone; no light pins no one.
+        let open = TrustMap.StarLight(keys: keys, pinned: [], from: nil, to: nil)
+        XCTAssertTrue(keys.indices.allSatisfy { open.filter($0, mix: 0.5) == 1 && !open.pinned[$0] })
     }
 
     func testIdleDriftStopsBeforeTheClockSleeps() {
@@ -203,5 +274,272 @@ final class TrustMapTests: XCTestCase {
                                 TrustMap.Chain(bridge: bridge, via: via),
                                 TrustMap.Chain(bridge: other, via: via)].sorted { ($0.via, $0.bridge) < ($1.via, $1.bridge) })
         XCTAssertTrue(TrustMap.deeperLinkFilters(follows: [bridge], via: []).isEmpty)
+    }
+
+    func testPickFacesShowsOnlyRenderedPicturesInOrder() {
+        let candidates = (1...6).map(key)
+        let rendered: Set<String> = [key(2), key(5), key(6)]
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: rendered.contains, count: 2), [key(2), key(5)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: rendered.contains, count: 10), [key(2), key(5), key(6)])
+        XCTAssertEqual(TrustMap.pickFaces(candidates, renders: { _ in false }), [])
+    }
+
+    func testFaceCandidatesAreStableAndSpread() {
+        let ring = (1...200).map(key)
+        let a = TrustMap.faceCandidates(ring.shuffled(), count: 10)
+        XCTAssertEqual(a, TrustMap.faceCandidates(ring, count: 10))
+        XCTAssertEqual(Set(a).count, 10)
+        XCTAssertEqual(TrustMap.faceCandidates([key(3), key(1)]), [key(1), key(3)].sorted())
+    }
+
+    func testFaceCandidatesPutTheMostEngagedFirst() {
+        let ring = (1...200).map(key)
+        let engagement = [key(150): 9, key(7): 4, key(42): 4, key(999): 50]
+        let picked = TrustMap.faceCandidates(ring, engagement: engagement, count: 10)
+        // Busiest first, ties by key; someone you don't follow never appears.
+        XCTAssertEqual(Array(picked.prefix(3)), [key(150), key(7), key(42)])
+        XCTAssertEqual(picked.count, 10)
+        XCTAssertEqual(Set(picked).count, 10)
+        XCTAssertFalse(picked.contains(key(999)))
+    }
+
+    func testEngagementScoresCountBothDirections() {
+        let me = key(1), alice = key(2), bob = key(3), carol = key(4)
+        func ev(_ pubkey: String, _ kind: Int, _ tags: [[String]]) -> [String: Any] {
+            ["pubkey": pubkey, "kind": kind, "tags": tags]
+        }
+        let mine = [
+            ev(me, 7, [["e", "x"], ["p", alice]]),               // a like: alice +2
+            ev(me, 1, [["p", bob], ["p", alice]]),               // reply in bob's thread to alice: alice +2
+            ev(me, 6, [["p", me]]),                              // reposting myself counts for no one
+            ev(bob, 7, [["p", carol]]),                          // not mine: ignored
+        ]
+        let toMe = [
+            ev(bob, 7, [["p", me]]),                             // bob liked me: +1
+            ev("zapper", 9735, [["p", me], ["P", carol]]),       // carol zapped me: +3
+            ev(carol, 1, [["p", alice]]),                        // not aimed at me: ignored
+        ]
+        let scores = TrustMap.engagementScores(mine: mine, toMe: toMe, me: me)
+        XCTAssertEqual(scores, [alice: 4, bob: 1, carol: 3])
+    }
+
+    func testSearchPeopleRanksFollowsThenWebThenPrefix() {
+        let people = [
+            TrustMap.Person(pubkey: key(1), names: ["Alice Stranger"]),
+            TrustMap.Person(pubkey: key(2), names: ["Mal Alice"]),
+            TrustMap.Person(pubkey: key(3), names: ["alice", "alice@example.com"]),
+            TrustMap.Person(pubkey: key(4), names: ["Alicewebber"]),
+            TrustMap.Person(pubkey: key(5), names: ["Bob"]),
+        ]
+        let found = TrustMap.searchPeople(" ALI ", in: people, follows: [key(2), key(3)], web: [key(4)])
+        XCTAssertEqual(found, [key(3), key(2), key(4), key(1)])
+        XCTAssertTrue(TrustMap.searchPeople("  ", in: people, follows: [], web: []).isEmpty)
+        XCTAssertEqual(TrustMap.searchPeople("a", in: people, follows: [], web: [], limit: 2).count, 2)
+    }
+
+    func testSeatFacesNeverLetsOneFaceCoverAnother() {
+        let spot = { (k: String, x: Double) in TrustMap.FaceSpot(key: k, x: x, y: 0, r: 10) }
+        // Front-most first: b sits on a, c is clear, d sits on the core.
+        let spots = [spot("a", 0), spot("b", 5), spot("c", 40), spot("d", 100)]
+        let core = TrustMap.FaceSpot(key: "core", x: 100, y: 0, r: 20)
+        XCTAssertEqual(TrustMap.seatFaces(spots, blocked: [core]), ["a", "c"])
+        // A face seated last frame keeps its seat over a newcomer in front.
+        XCTAssertEqual(TrustMap.seatFaces(spots, kept: ["b"], blocked: [core]), ["b", "c"])
+        // The author always gets a picture.
+        XCTAssertEqual(TrustMap.seatFaces(spots, always: ["d"], blocked: [core]), ["a", "c", "d"])
+        // A little overlap is fine; covering is not.
+        XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 18)]), ["a", "b"])
+        XCTAssertEqual(TrustMap.seatFaces([spot("a", 0), spot("b", 16)]), ["a"])
+    }
+
+    func testLayerCountsSplitFollowsFromTheRestAndSkipYou() {
+        let follows: Set<String> = [me, key(1), key(2)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5)]
+        let counts = TrustMap.layerCounts(me: me, follows: follows, web: web)
+        XCTAssertEqual(counts[.following], 2)
+        XCTAssertEqual(counts[.furtherOut], 3)
+        XCTAssertEqual(counts[.everyone], 5)
+        // A follow the relay hasn't mapped yet still counts as a follow.
+        XCTAssertEqual(TrustMap.layerCounts(me: me, follows: [key(9)], web: [])[.everyone], 1)
+    }
+
+    func testPickingALayerHidesTheOthers() {
+        XCTAssertEqual(TrustMap.layerWeights(.everyone), SIMD3(1, 1, 1))
+        XCTAssertEqual(TrustMap.layerWeights(.following), SIMD3(1, 0, 0))
+        XCTAssertEqual(TrustMap.layerWeights(.close).x, 0)
+        XCTAssertGreaterThan(TrustMap.layerWeights(.close).y, 1)
+        XCTAssertEqual(TrustMap.layerWeights(.close).z, 0)
+        XCTAssertEqual(TrustMap.layerWeights(.furtherOut).x, 0)
+        XCTAssertEqual(TrustMap.layerWeights(.furtherOut).y, 0)
+        XCTAssertGreaterThan(TrustMap.layerWeights(.furtherOut).z, 1)
+    }
+
+    func testLayerFacesAreTheMostVouchedOfThatLayer() {
+        let follows: Set<String> = [key(1)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5), key(6)]
+        let vouches = [key(2): 30, key(3): 12, key(4): 2, key(5): 10, key(6): 7]
+        func faces(_ layer: TrustMap.Layer, count: Int = 160) -> [String] {
+            TrustMap.layerFaceCandidates(layer, me: me, follows: follows, web: web, vouches: vouches, count: count)
+        }
+        XCTAssertEqual(faces(.close), [key(2), key(3), key(5)])
+        XCTAssertEqual(faces(.close, count: 2), [key(2), key(3)])
+        XCTAssertEqual(faces(.furtherOut), [key(6), key(4)])
+        // Everyone draws from both outer shells in turn, most vouched first in
+        // each, so a short list still puts faces on the Close (Discover) ring
+        // and further out; Following keeps your follows' faces.
+        XCTAssertEqual(faces(.everyone), [key(2), key(6), key(3), key(4), key(5)])
+        XCTAssertEqual(faces(.everyone, count: 2), [key(2), key(6)])
+        XCTAssertEqual(faces(.following), [])
+    }
+
+    func testEveryoneShowsAFewFacesAndFollowingNone() {
+        XCTAssertEqual(TrustMap.faceCount(for: .everyone), TrustMap.everyoneFaceCount)
+        XCTAssertLessThan(TrustMap.faceCount(for: .everyone), TrustMap.faceCount(for: .close))
+        XCTAssertEqual(TrustMap.faceCount(for: .close), TrustMap.layerFaceCount)
+        XCTAssertEqual(TrustMap.faceCount(for: .furtherOut), TrustMap.layerFaceCount)
+        XCTAssertEqual(TrustMap.faceCount(for: .following), 0)
+        XCTAssertGreaterThan(TrustMap.faceCandidateCount(for: .everyone), TrustMap.everyoneFaceCount)
+    }
+
+    func testCloseLayerReadsVouched() {
+        // 10+ of your follows vouch for them; they're outside your follows, so not "Close".
+        XCTAssertEqual(TrustMap.Layer.close.title, "Vouched")
+    }
+
+    func testCloseHasItsOwnShellBetweenYourFollowsAndFurtherOut() {
+        XCTAssertGreaterThan(TrustMap.closeRadius, TrustMap.ringRadius)
+        XCTAssertLessThan(TrustMap.closeRadius, TrustMap.outerRadius)
+        // The author's face stays clear of the Close shell's stars.
+        XCTAssertGreaterThan(TrustMap.authorRadius, TrustMap.ringRadius)
+        XCTAssertGreaterThan(abs(TrustMap.authorRadius - TrustMap.closeRadius), 0.1)
+    }
+
+    func testLayerFacesSpreadAroundTheGlobe() {
+        // Real keys: random hex, so the leading digits (longitude) cover the whole circle.
+        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func randomKey() -> String {
+            (0..<4).map { _ in
+                seed = seed &+ 0x9E37_79B9_7F4A_7C15
+                var z = seed
+                z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+                z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+                return String(format: "%016llx", z ^ (z >> 31))
+            }.joined()
+        }
+        let web = Set((0..<4000).map { _ in randomKey() })
+        // Most people further out are vouched for by the same one or two follows.
+        let vouches = Dictionary(uniqueKeysWithValues: web.map { ($0, 1) })
+        let faces = TrustMap.layerFaceCandidates(.furtherOut, me: me, follows: [], web: web, vouches: vouches,
+                                                 count: TrustMap.layerFaceCount)
+        XCTAssertEqual(faces.count, TrustMap.layerFaceCount)
+        let octants = Set(faces.map { key -> Int in
+            let d = TrustMap.direction(of: key)
+            return Int((atan2(d.y, d.x) + .pi) / (2 * .pi) * 8) % 8
+        })
+        XCTAssertEqual(octants.count, 8, "faces bunched into \(octants.count) of 8 slices of the globe")
+    }
+
+    func testCloseSplitsTheWebAtTenVouches() {
+        let follows: Set<String> = [key(1)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4)]
+        let vouches = [key(2): 10, key(3): 9, key(4): 3]
+        let counts = TrustMap.layerCounts(me: me, follows: follows, web: web, vouches: vouches)
+        XCTAssertEqual(counts[.close], 1)
+        XCTAssertEqual(counts[.furtherOut], 2)
+        XCTAssertEqual(counts[.everyone], 4)
+        // An old cache has no vouches: no Close, and Further out is everyone past your follows.
+        let old = TrustMap.layerCounts(me: me, follows: follows, web: web)
+        XCTAssertNil(old[.close])
+        XCTAssertEqual(old[.furtherOut], 3)
+        XCTAssertEqual(TrustMap.layers(hasVouches: false), [.everyone, .following, .furtherOut])
+        XCTAssertEqual(TrustMap.layers(hasVouches: true), [.everyone, .following, .close, .furtherOut])
+    }
+
+    func testLayerPeopleListWhatTheCountsCount() {
+        let follows: Set<String> = [me, key(1), key(2)]
+        let web: Set<String> = [me, key(1), key(2), key(3), key(4), key(5)]
+        let vouches = [key(1): 4, key(2): 30, key(3): 12, key(4): 2, key(5): 10]
+        let everyone = TrustMap.layerPeople(.everyone, me: me, follows: follows, web: web, vouches: vouches)
+        // Most vouched first; you are never listed.
+        XCTAssertEqual(everyone.following, [key(2), key(1)])
+        XCTAssertEqual(everyone.web, [key(3), key(5), key(4)])
+        let following = TrustMap.layerPeople(.following, me: me, follows: follows, web: web, vouches: vouches)
+        XCTAssertEqual(following.following, [key(2), key(1)])
+        XCTAssertEqual(following.web, [])
+        let close = TrustMap.layerPeople(.close, me: me, follows: follows, web: web, vouches: vouches)
+        XCTAssertEqual(close.following, [])
+        XCTAssertEqual(close.web, [key(3), key(5)])
+        XCTAssertEqual(TrustMap.layerPeople(.furtherOut, me: me, follows: follows, web: web, vouches: vouches).web, [key(4)])
+        // Same people as the counts, layer by layer.
+        let counts = TrustMap.layerCounts(me: me, follows: follows, web: web, vouches: vouches)
+        for layer in TrustMap.Layer.allCases {
+            let people = TrustMap.layerPeople(layer, me: me, follows: follows, web: web, vouches: vouches)
+            XCTAssertEqual(people.following.count + people.web.count, counts[layer], "\(layer)")
+        }
+        // An old cache has no vouches: Further out is everyone past your follows, by key.
+        XCTAssertEqual(TrustMap.layerPeople(.furtherOut, me: me, follows: follows, web: web).web, [key(3), key(4), key(5)])
+    }
+
+    func testVouchesComeFromTheCacheAndAreNilOnAnOldOne() throws {
+        let new = Data(#"{"pubkeys":{"a":true},"follows":["b"],"vouches":{"a":12,"c":3}}"#.utf8)
+        XCTAssertEqual(TrustMap.vouches(fromCache: new), ["a": 12, "c": 3])
+        let old = Data(#"{"pubkeys":{"a":true},"timestamp":1}"#.utf8)
+        XCTAssertNil(TrustMap.vouches(fromCache: old))
+        XCTAssertNil(TrustMap.vouches(fromCache: Data("not json".utf8)))
+    }
+
+    // MARK: Globe framing
+
+    /// Width on screen of a shell's outline, at zoom 1.
+    private func outline(_ r: Double, unit: Double) -> Double {
+        let d = GlobeCamera.distance
+        return 2 * unit * r / (d * d - r * r).squareRoot()
+    }
+
+    func testOnAnUprightPhoneTheInnerGlobeSpansTheWidth() {
+        for size in [CGSize(width: 393, height: 852), CGSize(width: 440, height: 956)] {
+            let unit = GlobeCamera.unit(for: size, phone: true)
+            let span = outline(TrustMap.ringRadius, unit: unit) / Double(size.width)
+            XCTAssert((0.94...0.98).contains(span), "\(size.width) pt: inner globe spans \(span) of the width")
+        }
+    }
+
+    func testThePhoneScaleKeepsTheShellsInProportion() {
+        let size = CGSize(width: 393, height: 852)
+        let old = GlobeCamera.unit(for: size, phone: false)
+        let new = GlobeCamera.unit(for: size, phone: true)
+        XCTAssertGreaterThan(new, old)
+        let ratio = { (u: Double) in self.outline(TrustMap.outerRadius, unit: u) / self.outline(TrustMap.ringRadius, unit: u) }
+        XCTAssertEqual(ratio(new), ratio(old), accuracy: 1e-9)
+    }
+
+    func testIPadMacAndASidewaysPhoneKeepTheirFraming() {
+        let iPad = CGSize(width: 820, height: 1180)
+        XCTAssertEqual(GlobeCamera.unit(for: iPad, phone: false), 820 * 0.40 * 4.2 * 0.92, accuracy: 1e-9)
+        let sideways = CGSize(width: 852, height: 393)
+        XCTAssertEqual(GlobeCamera.unit(for: sideways, phone: true), 393 * 0.40 * 4.2 * 0.92, accuracy: 1e-9)
+    }
+
+    // MARK: Filters
+
+    func testNoFilterOnLightsEveryone() {
+        XCTAssertNil(TrustMap.lit(by: [], matches: [.talk: ["a"]]))
+    }
+
+    func testTwoFiltersNarrowToWhoMatchesBoth() {
+        let matches: [TrustMap.Filter: Set<String>] = [.talk: ["a", "b", "c"], .followsBack: ["b", "c", "d"]]
+        XCTAssertEqual(TrustMap.lit(by: [.talk], matches: matches), ["a", "b", "c"])
+        XCTAssertEqual(TrustMap.lit(by: [.talk, .followsBack], matches: matches), ["b", "c"])
+        XCTAssertEqual(TrustMap.lit(by: [.followsBack], matches: [:]), [])
+    }
+
+    func testFilterCountsReadAsSentences() {
+        XCTAssertEqual(TrustMap.Filter.talk.count(214), "214 talk with you")
+        XCTAssertEqual(TrustMap.Filter.followsBack.count(1), "1 follows you back")
+    }
+
+    func testNoTwoIconsInTheBarOrTheLayerMenuMatch() {
+        let icons = TrustMap.Filter.allCases.map(\.symbolName) + TrustMap.Layer.allCases.map(\.symbolName)
+        XCTAssertEqual(Set(icons).count, icons.count)
     }
 }

@@ -90,6 +90,27 @@ struct GatedArticle: Equatable {
         return shares.compactMap(\.relay).filter { seen.insert($0.lowercased()).inserted }
     }
 
+    /// True for an article sold on Fanfares: its key lives on Fanfares'
+    /// servers. Only these are unlocked from the app; any other gated article
+    /// stays locked unless a key is already stored.
+    var isFanfares: Bool {
+        guard let host = keyURL.host?.lowercased() else { return false }
+        return ["fanfares.live", "fanfares.io"].contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// Where Fanfares sells and shows the article, by its naddr.
+    static func fanfaresURL(naddr: String) -> URL? {
+        URL(string: "https://fanfares.io/naddr/" + naddr)
+    }
+
+    /// The lock card's Fanfares link: built only from the article's own naddr,
+    /// never from a URL in its content, which the author controls. No naddr
+    /// (no `d` tag) means no link.
+    func fanfaresURL(naddr: String?) -> URL? {
+        guard isFanfares, let naddr else { return nil }
+        return Self.fanfaresURL(naddr: naddr)
+    }
+
     /// The URL to send the key request to.
     ///
     /// Fanfares' tag names its backend, which wants a private API key; its web
@@ -151,18 +172,6 @@ struct GatedArticle: Equatable {
 /// Teaser text a gated article ships in `content`, minus the "zap to unlock …
 /// <link>" call to action that the lock panel replaces.
 enum GatedArticleTeaser {
-    /// The author's own link to the article: the first URL on or after the
-    /// call-to-action line, never an image earlier in the teaser.
-    static func unlockURL(_ content: String) -> URL? {
-        let lines = content.components(separatedBy: .newlines)
-        guard let cta = lines.lastIndex(where: { $0.range(of: "to unlock", options: .caseInsensitive) != nil }) else {
-            return nil
-        }
-        let tail = lines[cta...].joined(separator: "\n")
-        guard let range = tail.range(of: #"https://[^\s)\]]+"#, options: .regularExpression) else { return nil }
-        return URL(string: String(tail[range]))
-    }
-
     static func strip(_ content: String) -> String {
         let lines = content.components(separatedBy: .newlines)
         guard let cta = lines.lastIndex(where: { $0.range(of: "to unlock", options: .caseInsensitive) != nil }) else {

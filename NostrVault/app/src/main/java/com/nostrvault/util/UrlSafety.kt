@@ -40,13 +40,14 @@ object UrlSafety {
         return try {
             // Resolve ALL addresses; reject if ANY is internal (defends against a
             // hostname that resolves to a private IP).
-            InetAddress.getAllByName(h).any { it.isInternal() }
+            InetAddress.getAllByName(h).any { isInternalAddress(it) }
         } catch (_: Exception) {
             true // fail closed on resolution failure
         }
     }
 
-    private fun InetAddress.isInternal(): Boolean {
+    /** True if [addr] is loopback / link-local / private / ULA / multicast / any-local. */
+    fun isInternalAddress(addr: InetAddress): Boolean = with(addr) {
         if (isLoopbackAddress || isAnyLocalAddress || isLinkLocalAddress ||
             isSiteLocalAddress || isMulticastAddress
         ) {

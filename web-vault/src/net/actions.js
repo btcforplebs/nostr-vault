@@ -1,0 +1,235 @@
+// Note actions, as on the iPhone's note row: like (kind 7), repost (kind 6), and the tags a reply (NIP-10) or a
+// quote (NIP-18 q tag + nevent) carries. Signed by the user's signer, stored in Haven's outbox, sent to the relays
+// publishRelays picks. A like or repost reads as sent only once it is signed and a relay took it.
+import { neventEncode } from "nostr-tools/nip19"
+import { pool, publishRelays } from "./pool.js"
+import { checkSigned } from "./sync.js"
+import { repostedId, verifiedCopy } from "./thread.js"
+import { keepDeletedCopy } from "./recently-deleted.js"
+
+const HEX64 = /^[0-9a-f]{64}$/
+const now = () => Math.floor(Date.now() / 1000)
+
+// The app's ctx ({ vault, session, signer, account }), set once the vault is up. A card has only its event.
+let actx = null
+export const setActionContext = ctx => {
+  actx = ctx
+  if (ctx?.session?.pubkey && deletionsFor !== ctx.session.pubkey) { deletionsFor = ctx.session.pubkey; loadDeletions(ctx) }
+}
+export const actionContext = () => actx
+
+/** The iPhone app's quick reaction (HavenConfig.defaultReactionEmoji). */
+export const REACTION = "❤️"
+
+/** NIP-25 reaction to `note`, tagged as the iPhone tags it (FeedActions.react). */
+export const reactionTemplate = (note, content = REACTION) =>
+  ({ kind: 7, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey], ["k", String(note.kind)]], content })
+
+/** NIP-18 repost: the note itself as the content. */
+export const repostTemplate = note =>
+  ({ kind: 6, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey]], content: JSON.stringify(note) })
+
+/**
+ * NIP-10 tags for a reply to `parent`, as the iPhone's compose builds them (ComposeView+Posting): a parent that is
+ * a root gets one "root" e tag; a parent that is a reply gets the thread's root plus a "reply" e tag for itself.
+ * Then the parent's author and everyone it tagged, once each.
+ */
+export function replyTags(parent) {
+  const es = (parent.tags ?? []).filter(t => t[0] === "e" && HEX64.test(t[1] ?? "") && t[3] !== "mention")
+  const tags = []
+  if (!es.length) tags.push(["e", parent.id, "", "root", parent.pubkey])
+  else {
+    const root = es.find(t => t[3] === "root") ?? es[0]
+    tags.push(HEX64.test(root[4] ?? "") ? ["e", root[1], "", "root", root[4]] : ["e", root[1], "", "root"])
+    tags.push(["e", parent.id, "", "reply", parent.pubkey])
+  }
+  const seen = new Set()
+  for (const pk of [parent.pubkey, ...(parent.tags ?? []).filter(t => t[0] === "p").map(t => t[1])])
+    if (HEX64.test(pk ?? "") && !seen.has(pk)) { seen.add(pk); tags.push(["p", pk]) }
+  return tags
+}
+
+/** A quote: the nevent line appended to the text, a q tag, and the quoted author tagged. -> { content, tags } */
+export function quoteOf(quoted, text) {
+  return {
+    content: `${text}\nnostr:${neventEncode({ id: quoted.id, author: quoted.pubkey, kind: quoted.kind })}`,
+    tags: [["q", quoted.id, "", quoted.pubkey], ["p", quoted.pubkey]],
+  }
+}
+
+/** The note a card's actions act on: a kind 1, or the note inside a kind 6, signature checked. -> event or null */
+export function actionTarget(event) {
+  if (event?.kind === 1) return event
+  if (event?.kind !== 6) return null
+  let inner
+  try { inner = JSON.parse(event.content) } catch { return null }
+  return inner?.kind === 1 ? verifiedCopy(inner) : null
+}
+
+/**
+ * Sign `template`, send it to the relays publishRelays picks, and once one took it, keep it in Haven's outbox.
+ * -> { event, relays: [{ url, ok, message }] }; throws when signing fails or no relay took it.
+ */
+export async function publishAction(ctx, template) {
+  const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
+  const { network, local } = publishRelays(ctx.account.relays.write)
+  const urls = [...network, ...local]
+  const results = await Promise.allSettled(pool.publish(urls, event))
+  const relays = results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) }))
+  if (!relays.some((r, i) => r.ok && i < network.length)) throw new Error(`No relay took it (0 of ${network.length})`)
+  // Kept in Haven only once it went out: this copy is what shows it as sent after a reload.
+  await ctx.vault.outbox.event(event).catch(() => {})
+  return { event, relays }
+}
+
+/** NIP-09 deletion request for one of the account's events. A reaction carries ["k", "7"], as the iPhone's retract;
+ *  a post carries only its e tag (NoteDeletion.requestTags). */
+export const deletionTemplate = (id, kind) =>
+  ({ kind: 5, created_at: now(), tags: kind === 7 ? [["e", id], ["k", "7"]] : [["e", id]], content: "" })
+
+// Ids this account asked to delete: its posts (hidden wherever a card would draw them) and its retracted likes
+// (no longer read as sent). Read once per account from the kind 5s kept in Haven's outbox, then kept up to date here.
+const deleted = new Set()
+let deletionsFor = null
+export const isDeleted = id => deleted.has(id)
+/** The ids whose deletion hides a card for `event`: its own, and for a repost the note inside it too. */
+export function gateIds(event) {
+  if (event?.kind !== 6 && event?.kind !== 16) return [event.id]
+  let inner
+  try { inner = JSON.parse(event.content) } catch {}
+  return [...new Set([event.id, typeof inner?.id === "string" ? inner.id : null, repostedId(event)].filter(Boolean))]
+}
+function markDeleted(ids) {
+  for (const id of ids) deleted.add(id)
+  for (const id of ids) for (const f of listeners) f(id)
+}
+export async function loadDeletions(ctx) {
+  const mine = await ctx.vault.outbox.query({ kinds: [5], authors: [ctx.session.pubkey], limit: 1000 }).catch(() => [])
+  markDeleted(mine.flatMap(ev => (ev.tags ?? []).filter(t => t[0] === "e" && HEX64.test(t[1] ?? "")).map(t => t[1])))
+}
+
+// What this account has done to each note: { like, repost } as "busy" | "sent" | { error }. One store, so the same
+// note shown twice (feed and thread) reads the same.
+const state = new Map()
+const listeners = new Set()
+export const actionState = id => state.get(id) ?? {}
+export function onActionState(f) { listeners.add(f); return () => listeners.delete(f) }
+function put(id, kind, value) {
+  state.set(id, { ...actionState(id), [kind]: value })
+  for (const f of listeners) f(id)
+}
+
+// The emoji this account reacted to each note with, so the button shows it (FeedNoteRow+Reactions).
+const emojiOf = new Map()
+/** This account's reaction to a note, or null. */
+export const reactionOf = id => emojiOf.get(id) ?? null
+
+// The ids of this account's likes on each note, so Unlike knows what to delete.
+const likeIds = new Map()
+const addLikes = (id, ids) => likeIds.set(id, [...new Set([...(likeIds.get(id) ?? []), ...ids])])
+
+/** Reactions and reposts this account already made, from Haven's outbox: still shown as sent after a reload. A like
+ *  it has since taken back (a kind 5 for it) doesn't count. */
+export async function loadSent(ctx, id) {
+  if (actionState(id).like && actionState(id).repost) return
+  const mine = await ctx.vault.outbox.query({ kinds: [6, 7], authors: [ctx.session.pubkey], "#e": [id], limit: 20 }).catch(() => [])
+  const likes = mine.filter(ev => ev.kind === 7).map(ev => ev.id)
+  const gone = likes.length
+    ? new Set((await ctx.vault.outbox.query({ kinds: [5], authors: [ctx.session.pubkey], "#e": likes, limit: 50 }).catch(() => []))
+      .flatMap(ev => ev.tags.filter(t => t[0] === "e").map(t => t[1])))
+    : new Set()
+  for (const ev of mine) {
+    if (ev.kind === 7 && (gone.has(ev.id) || deleted.has(ev.id))) continue
+    const kind = ev.kind === 7 ? "like" : "repost"
+    if (kind === "like") { addLikes(id, [ev.id]); if (!emojiOf.has(id)) emojiOf.set(id, ev.content || REACTION) }
+    if (actionState(id)[kind] === undefined) put(id, kind, "sent")
+  }
+}
+
+/** Like or repost `note` once. A second tap on a sent repost does nothing; on a sent like it is Unlike. `emoji`
+ *  (the tapback or the picker) reacts with that emoji: the same one again takes the reaction back, another one
+ *  swaps it, the old kind 7 deleted before the new one is signed (FeedActions.react). */
+export async function act(ctx, kind, note, emoji) {
+  const cur = actionState(note.id)[kind]
+  if (cur === "busy") return
+  // A failed Unlike says so on the heart ({ error, unlike }); a tap on it tries the rest again.
+  if (kind === "like" && (cur === "sent" || cur?.unlike)) {
+    if (!emoji || cur?.unlike || emoji === emojiOf.get(note.id)) return unlike(ctx, note).catch(() => {})
+    try { await unlike(ctx, note) } catch { return }
+  } else if (cur === "sent") return
+  put(note.id, kind, "busy")
+  try {
+    const { event } = await publishAction(ctx, kind === "like" ? reactionTemplate(note, emoji ?? REACTION) : repostTemplate(note))
+    if (kind === "like") { addLikes(note.id, [event.id]); emojiOf.set(note.id, emoji ?? REACTION) }
+    put(note.id, kind, "sent")
+  } catch (e) {
+    put(note.id, kind, { error: String(e?.message ?? e) })
+  }
+}
+
+/**
+ * Take a like back (FeedActions.removeReaction): a kind 5 for each of this account's reactions to the note. A like
+ * this browser didn't see made (an older app, another device) is looked up on the account's relays first, as the
+ * iPhone's retractUnknown does. Each deletion counts as it goes out, so a retry after a failure sends only the rest.
+ * A failure reads as { error, unlike } on the heart, not as liked again.
+ */
+export async function unlike(ctx, note) {
+  put(note.id, "like", "busy")
+  try {
+    let ids = likeIds.get(note.id) ?? []
+    if (!ids.length) {
+      const relays = [...new Set([...ctx.account.relays.read, ...ctx.account.relays.write])]
+      const found = await pool.querySync(relays, { kinds: [7], authors: [ctx.session.pubkey], "#e": [note.id] }, { maxWait: 6000 })
+      ids = found.filter(ev => ev.pubkey === ctx.session.pubkey && !deleted.has(ev.id)).map(ev => ev.id)
+      if (ids.length) addLikes(note.id, ids)
+    }
+    if (!ids.length) throw new Error("Your like wasn't found on your relays")
+    for (const id of ids) {
+      await publishAction(ctx, deletionTemplate(id, 7))
+      likeIds.set(note.id, (likeIds.get(note.id) ?? []).filter(x => x !== id))
+      markDeleted([id])
+    }
+    likeIds.delete(note.id)
+    emojiOf.delete(note.id)
+    put(note.id, "like", undefined)
+  } catch (e) {
+    put(note.id, "like", { error: String(e?.message ?? e), unlike: true })
+    throw e
+  }
+}
+
+/** Ask relays to delete one of this account's own posts (NostrService.deleteNote). Hidden here at once. */
+export async function deleteNote(ctx, note) {
+  if (note.pubkey !== ctx.session.pubkey) throw new Error("Only your own posts can be deleted")
+  await publishAction(ctx, deletionTemplate(note.id, note.kind))
+  await keepDeletedCopy(ctx, note).catch(() => {}) // Recently Deleted: Haven drops the post once the kind 5 lands
+  markDeleted([note.id])
+}
+
+/** Where Share and Copy link point, as on the iPhone (FeedNoteRow+Menus): a public page anyone can open. */
+export const shareLink = note => `https://mynostrspace.com/thread/${neventEncode({ id: note.id, author: note.pubkey, kind: note.kind })}`
+
+// Reply and quote hand the note to Compose through here, so Compose needn't fetch what the card already had.
+const handed = new Map()
+export function compose(mode, note) {
+  handed.set(note.id, note)
+  location.hash = `#/compose?${mode}=${note.id}`
+}
+
+/** "#/compose?reply=<id>" -> { mode: "reply", id }; anything else -> null */
+export function composeTarget(hash = location.hash) {
+  const m = /^#\/?compose\?(reply|quote)=([0-9a-f]{64})$/.exec(hash)
+  return m ? { mode: m[1], id: m[2] } : null
+}
+
+/** The note Compose replies to or quotes: as the card handed it, else from Haven, else the network. */
+export async function findNote(ctx, id) {
+  if (handed.has(id)) return handed.get(id)
+  for (const store of [ctx.vault.feed, ctx.vault.outbox]) {
+    const [ev] = await store.query({ ids: [id] }).catch(() => [])
+    if (ev) return verifiedCopy(ev)
+  }
+  const relays = [...ctx.account.relays.read, ...ctx.account.relays.write]
+  const [ev] = await pool.querySync([...new Set(relays)], { ids: [id] }, { maxWait: 6000 })
+  return ev ? verifiedCopy(ev) : null
+}

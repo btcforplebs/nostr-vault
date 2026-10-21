@@ -127,9 +127,9 @@ class BlossomPickerMedia @Inject constructor(
                 }
             }
 
-            // The composer attaches photos and videos only.
+            // Photos, videos and audio, as iOS relayBlossomMedia lists them.
             items.values
-                .filter { it.isImage || it.isVideo }
+                .filter { it.isImage || it.isVideo || it.isAudio }
                 .sortedByDescending { it.sortTime }
         } catch (e: Exception) {
             Log.e("BlossomPickerMedia", "Failed to load blossom media items", e)
@@ -149,7 +149,11 @@ internal fun blossomShareLink(item: BlossomMediaItem): String {
     val path = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
     if ('.' in path) return url
     val mime = blobMimeType(item.mimeType, item.localFile?.name)
-        ?: if (item.isVideo) "video/mp4" else "image/jpeg"
+        ?: when {
+            item.isVideo -> "video/mp4"
+            item.isAudio -> "audio/mpeg"
+            else -> "image/jpeg"
+        }
     val ext = com.nostrvault.service.MediaSaveService.extensionForMimeType(mime)
     val cut = url.indexOfFirst { it == '?' || it == '#' }.let { if (it < 0) url.length else it }
     return url.substring(0, cut) + "." + ext + url.substring(cut)

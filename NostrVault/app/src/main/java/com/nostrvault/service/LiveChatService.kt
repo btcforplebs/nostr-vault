@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,9 +55,9 @@ class LiveChatService @Inject constructor(
          * for this, including mynostrspace.com — served zero kind-1311 events
          * of any kind. It stays in the list because other clients publish
          * there and it may come back, but it is not the one to rely on.
+         * nos.lol itself stopped answering and was dropped on 2026-10-12.
          */
         val STREAMING_RELAYS = listOf(
-            "wss://nos.lol",
             "wss://relay.damus.io",
             "wss://relay.primal.net",
             "wss://relay.zap.stream",
@@ -83,7 +84,8 @@ class LiveChatService @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatEntry>>(emptyList())
     val messages: StateFlow<List<ChatEntry>> = _messages.asStateFlow()
 
-    private val clients = mutableListOf<WebSocketClient>()
+    // Written on IO by join(), read and cleared on Main by send()/leave().
+    private val clients = java.util.concurrent.CopyOnWriteArrayList<WebSocketClient>()
     private var job: Job? = null
     private var address: String? = null
 
@@ -119,9 +121,14 @@ class LiveChatService @Inject constructor(
         val seen = mutableMapOf<String, ChatEntry>()
         val seenLock = Mutex()
 
-        job = scope.launch {
+        // This join's own clients: leave() can run while the loop below is
+        // still opening them, so the job closes whatever it opened when it ends.
+        val opened = java.util.concurrent.CopyOnWriteArrayList<WebSocketClient>()
+        val joinJob = scope.launch {
             for (url in relays(stream)) {
+                if (!isActive) break
                 val client = WebSocketClient(url, scope)
+                opened.add(client)
                 clients.add(client)
                 launch {
                     client.messages.collect { raw ->
@@ -149,6 +156,11 @@ class LiveChatService @Inject constructor(
                 client.connect()
             }
         }
+        joinJob.invokeOnCompletion {
+            opened.forEach { it.disconnect() }
+            clients.removeAll(opened.toSet())
+        }
+        job = joinJob
     }
 
     fun leave() {

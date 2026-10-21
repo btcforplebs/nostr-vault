@@ -138,10 +138,14 @@ class MediaPostQueue @Inject constructor(
         scope.launch {
             try {
                 log("retrying ${_posts.value.size} waiting post(s) — $reason")
-                for (id in _posts.value.sortedBy { it.createdAt }.map { it.id }) {
+                val activeNpub = configStore.config.value.activeOrOwnerNpub()
+                for (post in _posts.value.sortedBy { it.createdAt }) {
+                    // Another account's post waits for that account; it must not
+                    // hold up the active account's posts behind it.
+                    if (post.accountNpub != activeNpub) continue
                     // The servers are the same for every post; if one could not
                     // be sent, the rest won't be either this round.
-                    if (!attempt(id)) break
+                    if (!attempt(post.id)) break
                 }
             } catch (e: Exception) {
                 log("retry round failed: ${e.message}", Log.ERROR)

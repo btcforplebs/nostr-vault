@@ -1,5 +1,8 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.ui.components.CustomZapSheet
+import com.nostrvault.ui.components.LocalShowZapButton
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -276,6 +279,16 @@ fun LiveStreamScreen(
                             Icon(NostrVaultIcons.More, contentDescription = "Stream options", tint = colors.primary)
                         }
                         DropdownMenu(expanded = showHostMenu, onDismissRequest = { showHostMenu = false }) {
+                            com.nostrvault.ui.components.NostrWebLinks.forStream(stream)?.let { link ->
+                                DropdownMenuItem(
+                                    text = { Text(link.label) },
+                                    leadingIcon = { Icon(NostrVaultIcons.OpenExternal, contentDescription = null) },
+                                    onClick = {
+                                        showHostMenu = false
+                                        com.nostrvault.ui.components.NostrWebLinks.open(context, link.url)
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Report stream") },
                                 leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
@@ -294,7 +307,8 @@ fun LiveStreamScreen(
                             )
                         }
                     }
-                    Button(
+                    // Hidden when ⚡️ is out of Appearance → Post buttons (iOS LiveStreamPlayerView).
+                    if (LocalShowZapButton.current) Button(
                         onClick = { showZapSheet = true },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                     ) { Text("Zap", color = PrimaryText, fontWeight = FontWeight.SemiBold) }
@@ -424,12 +438,16 @@ fun LiveStreamScreen(
         }
 
         if (showZapSheet) {
-            ZapAmountSheet(
-                onPick = { sats ->
+            // The shared zap sheet, starting on the Wallet default (iOS
+            // LiveFeedViews CustomZapSheet(defaultAmount:)).
+            CustomZapSheet(
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                defaultAmount = viewModel.defaultZapAmount(),
+                onDismiss = { showZapSheet = false },
+                onZap = { sats ->
                     showZapSheet = false
                     viewModel.zap(stream, sats)
                 },
-                onDismiss = { showZapSheet = false },
             )
         }
     }
@@ -578,32 +596,6 @@ private fun LiveChat(
 private fun chatTime(createdAtSecs: Long): String =
     java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(createdAtSecs * 1000))
 
-/** Fixed amounts, because typing a number mid-stream is not what anyone wants. */
-@Composable
-private fun ZapAmountSheet(onPick: (Int) -> Unit, onDismiss: () -> Unit) {
-    val colors = LocalNostrVaultColors.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = WindowBackground,
-        title = { Text("Zap the host", color = PrimaryText) },
-        text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(21, 100, 500, 2100).forEach { sats ->
-                    Button(
-                        onClick = { onPick(sats) },
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                    ) { Text("$sats", color = PrimaryText, fontSize = 13.sp) }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = SecondaryText) }
-        },
-    )
-}
-
-
 /**
  * Chat and zaps for the stream on screen.
  *
@@ -619,7 +611,11 @@ class LiveStreamViewModel @Inject constructor(
     private val feedService: FeedService,
     private val blossomPickerMedia: BlossomPickerMedia,
     private val liveFeedService: LiveFeedService,
+    private val configStore: ConfigStore,
 ) : ViewModel() {
+
+    /** Wallet settings' default zap, in sats: where the zap sheet starts. */
+    fun defaultZapAmount(): Int = configStore.config.value.defaultZapAmount
 
     val messages: StateFlow<List<LiveChatService.ChatEntry>> = liveChatService.messages
 

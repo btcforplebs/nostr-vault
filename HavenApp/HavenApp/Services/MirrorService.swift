@@ -133,6 +133,7 @@ class MirrorService: ObservableObject {
             progress = nil
             statusText = ""
             lastMirrorDate = Date()
+            VaultHistory.lastMediaImport = lastMirrorDate
             lastResult = totalCount > 0 ? "Mirrored \(totalCount) files" : "All media already mirrored"
             log(totalCount > 0 ? "Done — mirrored \(totalCount) file(s) to local storage" : "Done — all media already mirrored")
 

@@ -71,10 +71,11 @@ object RelayLogParser {
         var stopBooting: Boolean = false,
         var stopWotSyncing: Boolean = false,
         var eventsStoredDelta: Int = 0,
-        // Inbound events from OTHERS that tag you (replies, reactions, zaps,
-        // reposts, DMs / gift-wraps). Drives the "new relay activity" red dot --
+        // Kinds of the inbound events from OTHERS that tag you (replies,
+        // reactions, zaps, reposts, DMs / gift-wraps). Drives the "new relay
+        // activity" red dot, which needs the kind to say where to look --
         // deliberately excludes your own posts/blasts and private/outbox writes.
-        var inboxActivityDelta: Int = 0,
+        val inboxActivityKinds: MutableSet<Int> = HashSet(),
         var connectionsDelta: Int = 0,
         var isLocked: Boolean = false,
         var isPortConflict: Boolean = false,
@@ -85,6 +86,27 @@ object RelayLogParser {
     private val ANALYSED_REGEX = Regex("""(?:analysed|count=)(\d+)""", RegexOption.IGNORE_CASE)
     private val TRUST_GRAPH_REGEX = Regex("""(?:kept=|followers: )(\d+)""", RegexOption.IGNORE_CASE)
     private val PUBKEYS_REGEX = Regex("""pubkeys=(\d+)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * The kind of the event an inbox/chat import line (`logInboxImport` in
+     * haven-go/import.go) reports, or null for any other line. A "new note"
+     * line covers comments too; both live in the Notes list, so 1 stands for
+     * either. Reactions go first: their line leads with the reaction's own
+     * content, which could say anything. Port of iOS inboxActivityKind (#476).
+     */
+    fun inboxActivityKind(line: String): Int? {
+        if (line.contains("new reaction in your inbox")) return 7
+        if (line.contains("new note in your inbox")) return 1
+        if (line.contains("new zap in your inbox")) return 9735
+        if (line.contains("new encrypted message in your inbox")) return 4
+        if (line.contains("new gift-wrapped message in your chat relay")) return 1059
+        if (line.contains("new repost in your inbox")) return 6
+        if (line.contains("event in your inbox")) {
+            val at = line.indexOf("new event kind ")
+            if (at >= 0) return line.substring(at + "new event kind ".length).takeWhile { it.isDigit() }.toIntOrNull()
+        }
+        return null
+    }
 
     /**
      * Extract state changes from a single log line.
@@ -193,9 +215,7 @@ object RelayLogParser {
         // exclusively for events authored by other people that tag you. Your own
         // posts ("event stored"/"blasted event") never hit this path, so this is
         // the precise signal for the "new relay activity" red dot.
-        if (line.contains("in your inbox") || line.contains("in your chat relay")) {
-            batch.inboxActivityDelta += 1
-        }
+        inboxActivityKind(line)?.let { batch.inboxActivityKinds.add(it) }
 
         // ---- Booting status ----
         val lower = line.lowercase()

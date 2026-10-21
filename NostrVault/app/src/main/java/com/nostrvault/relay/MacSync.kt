@@ -108,7 +108,7 @@ object MacSync {
     }
 
     /**
-     * Whether the relay took a "Check sync with Mac" request: the copy is
+     * Whether the relay took a "Check sync with Vault on Mac" request: the copy is
      * running, or started after the status seen when the button was tapped.
      */
     fun pickedUp(latest: MacSyncStatus?, before: MacSyncStatus?): Boolean =

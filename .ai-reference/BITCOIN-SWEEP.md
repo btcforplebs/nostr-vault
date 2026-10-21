@@ -34,7 +34,7 @@ Computes `q = (p + tapTweakHash(P)) mod n`, handling BIP-340 y-parity negation.
 The secp256k1 and btcec libs already have all the scalar ops needed.
 
 ### 3. Go: `fetchUTXOs` in `bitcoin.go`
-`GET mempool.btcforplebs.com/api/address/{addr}/utxo`  
+`GET mempool.space/api/address/{addr}/utxo`  
 Returns JSON array: `[{ txid, vout, value, status: { confirmed } }]`
 
 ### 4. Go: `buildAndSignTx` in `bitcoin.go`
@@ -44,7 +44,7 @@ Returns JSON array: `[{ txid, vout, value, status: { confirmed } }]`
 - Serialize to hex
 
 ### 5. Go: `broadcastTx` in `bitcoin.go`
-`POST mempool.btcforplebs.com/api/tx` with raw hex body.  
+`POST mempool.space/api/tx` with raw hex body.  
 Returns txid on success.
 
 ### 6. Go: `SweepToAddressC` exported function in `cshared.go`
@@ -77,6 +77,6 @@ func SweepToAddressC(nsecHex *C.char, destAddr *C.char, feeRateSatsPerVB C.int) 
 ## Risk / Notes
 
 - The taproot spending key derivation requires careful BIP-340 y-parity handling. The `btcec/v2` `PrivKeyFromBytes` function returns a normalized key (handles this). Use `btcec` for key work, not the raw decred secp256k1 scalars.
-- Fee estimation: call `mempool.btcforplebs.com/api/v1/fees/recommended` → `{ fastestFee, halfHourFee, hourFee, economyFee }`.
+- Fee estimation: call `mempool.space/api/v1/fees/recommended` → `{ fastestFee, halfHourFee, hourFee, economyFee }`.
 - Dust threshold for P2TR outputs is 330 sats — don't create a change output below that, just absorb it into the fee.
 - This only covers **own-profile sweep**. Other profiles' addresses are receive-only (no key access).

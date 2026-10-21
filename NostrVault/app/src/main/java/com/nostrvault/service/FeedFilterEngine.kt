@@ -133,12 +133,17 @@ object FeedFilterEngine {
                     // firehose to exactly the people who never chose it.
                     // "Everyone" (opted into behind a warning) skips the graph.
                     if (globalRequiresTrust && note.pubkey !in wotPubkeys) return@filter false
+                    // Global is top-level posts only, whatever the Replies
+                    // switch says (iOS filterFeedNotes).
+                    if (note.isReply) return@filter false
                     // Narrowed to chosen languages: notes whose language can't
                     // be told (short, links only) stay. See FeedLanguageDetector.
                     if (globalLanguages.isEmpty()) return@filter true
                     FeedLanguageDetector.admits(languageOf(note), globalLanguages)
                 }
                 FeedMode.POPULAR -> {
+                    // Ranked posts, never replies (iOS filterFeedNotes).
+                    if (note.isReply) return@filter false
                     when (popularFilter) {
                         PopularFilter.ALL -> true
                         PopularFilter.FOLLOWS -> authorForMembership in followedPubkeys
@@ -173,6 +178,18 @@ object FeedFilterEngine {
         }
 
         return filtered
+    }
+
+    /**
+     * Each scored post's place in the Popular feed as shown, from #1. [ids] is
+     * the shown order, already sorted by score, so the rank is the position
+     * among scored posts: replies threaded under a post take no number, and a
+     * narrower audience renumbers from #1. iOS: PopularRanking.ranks.
+     */
+    fun popularRanks(ids: List<String>, scores: Map<String, Double>): Map<String, Int> {
+        val ranks = LinkedHashMap<String, Int>()
+        for (id in ids) if (id in scores && id !in ranks) ranks[id] = ranks.size + 1
+        return ranks
     }
 
     /**

@@ -27,6 +27,21 @@ class NWCService @Inject constructor(
     private val configStore: ConfigStore,
 ) {
     companion object {
+        /**
+         * The preimage proving a pay_invoice reply paid. A preimage wins over
+         * an error in the same reply (proof of payment). Otherwise a wallet
+         * error throws [NWCWalletException], and a reply with neither throws
+         * [NWCNoPreimageException]: nothing proves it paid, so it is never
+         * counted as paid.
+         */
+        internal fun paidPreimage(response: NWCResponse): String {
+            val preimage = (response.result?.get("preimage") as? JsonPrimitive)
+                ?.takeIf { it.isString }?.content?.trim()
+            if (!preimage.isNullOrEmpty()) return preimage
+            response.error?.let { throw NWCWalletException(it.code, it.message.ifBlank { it.code }) }
+            throw NWCNoPreimageException()
+        }
+
         private const val TAG = "NWCService"
         private const val REQUEST_KIND = 23194
         private const val RESPONSE_KIND = 23195
@@ -75,21 +90,14 @@ class NWCService @Inject constructor(
 
     /**
      * Pay a Lightning invoice via NWC.
-     * @return Preimage or "Success"
+     * @return the preimage; throws when the wallet did not prove the payment ([paidPreimage])
      */
     suspend fun payInvoice(bolt11: String): String = withContext(Dispatchers.IO) {
         val request = NWCRequest(
             method = "pay_invoice",
             params = NWCParams(invoice = bolt11),
         )
-        val response = sendNWCRequest(request)
-
-        val preimage = response.result?.get("preimage")
-        if (preimage != null) {
-            return@withContext extractStringValue(preimage)
-        }
-        response.error?.let { throw NWCException(it.message) }
-        "Success"
+        paidPreimage(sendNWCRequest(request))
     }
 
     /**
@@ -169,17 +177,17 @@ class NWCService @Inject constructor(
     /** Sends one already-encoded NIP-47 request payload and awaits its reply. */
     private suspend fun sendNWCRequest(payloadJson: String): NWCResponse {
         val connectionUri = configStore.config.value.nwcURI
-            ?: throw NWCException("No NWC connection configured")
+            ?: throw NWCNotSentException("No NWC connection configured")
         val connection = parseURI(connectionUri)
-            ?: throw NWCException("Invalid NWC URI")
+            ?: throw NWCNotSentException("Invalid NWC URI")
 
         // Derive pubkey from secret
         val localPubkey = HavenBridge.getPublicKey(connection.secret)
-            ?: throw NWCException("Failed to derive public key")
+            ?: throw NWCNotSentException("Failed to derive public key")
 
         // Encrypt request payload
         val encrypted = NIP04Service.encrypt(payloadJson, connection.pubkey, connection.secret)
-            ?: throw NWCException("Encryption failed")
+            ?: throw NWCNotSentException("Encryption failed")
 
         // Build kind 23194 event
         val tags = listOf(listOf("p", connection.pubkey))
@@ -190,21 +198,21 @@ class NWCService @Inject constructor(
             pubkey = localPubkey,
         )
         val signedJson = EventPublisher.signWithGoBackend(eventJson, connection.secret)
-            ?: throw NWCException("Signing failed")
+            ?: throw NWCNotSentException("Signing failed")
 
         val signedEvent = json.parseToJsonElement(signedJson).jsonObject
-        val eventId = signedEvent["id"]?.jsonPrimitive?.contentOrNull ?: throw NWCException("No event ID")
+        val eventId = signedEvent["id"]?.jsonPrimitive?.contentOrNull ?: throw NWCNotSentException("No event ID")
 
         // Send via WebSocket and await response
         return suspendCancellableCoroutine { cont ->
-            var isCompleted = false
+            val completed = java.util.concurrent.atomic.AtomicBoolean(false)
 
             val nwcScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
             val client = WebSocketClient(url = connection.relayURL, scope = nwcScope)
             val subId = "nwc-${eventId.take(8)}"
             nwcScope.launch {
                 client.messages.collect { msg ->
-                    if (isCompleted) return@collect
+                    if (completed.get()) return@collect
                     try {
                         val parsed = json.parseToJsonElement(msg).jsonArray
                         val type = parsed[0].jsonPrimitive.contentOrNull
@@ -224,8 +232,7 @@ class NWCService @Inject constructor(
                                 ) ?: return@collect
 
                                 val response = json.decodeFromString<NWCResponse>(decrypted)
-                                if (!isCompleted) {
-                                    isCompleted = true
+                                if (completed.compareAndSet(false, true)) {
                                     client.disconnect()
                                     cont.resume(response)
                                 }
@@ -247,15 +254,14 @@ class NWCService @Inject constructor(
             // Timeout
             nwcScope.launch {
                 delay(TIMEOUT_MS)
-                if (!isCompleted) {
-                    isCompleted = true
+                if (completed.compareAndSet(false, true)) {
                     client.disconnect()
                     cont.resumeWithException(NWCTimeoutException())
                 }
             }
 
             cont.invokeOnCancellation {
-                isCompleted = true
+                completed.set(true)
                 client.disconnect()
                 nwcScope.cancel()
             }
@@ -316,6 +322,18 @@ data class NIP47Error(
 open class NWCException(message: String) : Exception(message)
 
 /**
+ * Failed before the request was published: the wallet never saw it, so
+ * nothing was paid.
+ */
+class NWCNotSentException(message: String) : NWCException(message)
+
+/**
+ * The wallet answered pay_invoice with neither a preimage nor an error. It
+ * may or may not have paid; it is never counted as paid.
+ */
+class NWCNoPreimageException : NWCException("The wallet didn't confirm the payment")
+
+/**
  * No reply within the timeout. The request was already published, so the
  * wallet may have acted on it — for pay_invoice, the payment may still settle.
  */
@@ -328,4 +346,15 @@ class NWCTimeoutException : NWCException("Request timed out")
 class NWCWalletException(val code: String, message: String) : NWCException(message) {
     /** The wallet (or this connection's permissions) does not offer the method. */
     val isUnsupported: Boolean get() = code in setOf("NOT_IMPLEMENTED", "RESTRICTED", "UNAUTHORIZED")
+
+    /**
+     * The wallet refused before trying to pay (NIP-47 codes), so no money
+     * moved. PAYMENT_FAILED, INTERNAL and OTHER are not here: a payment the
+     * wallet tried may still settle.
+     */
+    val refusedBeforePaying: Boolean
+        get() = code in setOf(
+            "INSUFFICIENT_BALANCE", "QUOTA_EXCEEDED", "RATE_LIMITED",
+            "RESTRICTED", "UNAUTHORIZED", "NOT_IMPLEMENTED",
+        )
 }

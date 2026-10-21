@@ -58,13 +58,13 @@ class VaultTabTest {
 
     // ── Modes ─────────────────────────────────────────────────────
 
-    @Test fun `the menu lists the modes in order and zaps only hides likes`() {
+    @Test fun `the menu lists the modes in order, Vault first, and zaps only hides likes`() {
         assertEquals(
-            listOf("Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Followers"),
+            listOf("Vault", "Notes", "Articles", "Highlights", "Media", "Likes", "Zaps", "Followers"),
             VaultMode.menu(zapsOnly = false).map { it.displayName },
         )
         assertFalse(VaultMode.LIKES in VaultMode.menu(zapsOnly = true))
-        assertEquals(6, VaultMode.menu(zapsOnly = true).size)
+        assertEquals(7, VaultMode.menu(zapsOnly = true).size)
     }
 
     @Test fun `the pill names what the tab shows`() {
@@ -78,13 +78,46 @@ class VaultTabTest {
 
     @Test fun `each mode maps back to its list and scope`() {
         for (mode in VaultMode.entries) {
-            if (mode == VaultMode.MEDIA) {
+            if (mode == VaultMode.MEDIA || mode == VaultMode.ACTIVITY) {
                 assertNull(mode.viewMode)
                 continue
             }
             val back = VaultMode.of(false, mode.viewMode!!, mode.noteScope ?: VaultNoteScope.NOTES)
             assertEquals(mode, back)
         }
+    }
+
+    // ── The Vault tab's red dot (iOS #476) ────────────────────────
+
+    @Test fun `an inbound kind lights the list it shows up in`() {
+        assertEquals(VaultMode.LIKES, VaultMode.listing(7))
+        assertEquals(VaultMode.ZAPS, VaultMode.listing(9735))
+        assertEquals(VaultMode.ARTICLES, VaultMode.listing(30023))
+        assertEquals(VaultMode.HIGHLIGHTS, VaultMode.listing(9802))
+        for (kind in listOf(1, 6, 1111, 1068)) assertEquals(VaultMode.NOTES, VaultMode.listing(kind))
+        // DMs are the Profile tab's; unknown kinds have no list.
+        assertNull(VaultMode.listing(4))
+        assertNull(VaultMode.listing(1059))
+        assertNull(VaultMode.listing(30402))
+    }
+
+    @Test fun `the relay tab kinds match the lists'`() {
+        assertEquals(all, VaultMode.RELAY_TAB_NOTE_KINDS)
+    }
+
+    @Test fun `tapping in opens the first list in menu order with news`() {
+        val news = setOf(VaultMode.ZAPS, VaultMode.ARTICLES)
+        assertEquals(VaultMode.ARTICLES, VaultMode.opening(news, VaultMode.FOLLOWERS))
+        assertEquals(VaultMode.ARTICLES, VaultMode.opening(news, VaultMode.MEDIA))
+    }
+
+    @Test fun `tapping in stays on Vault, which lists everything`() {
+        assertNull(VaultMode.opening(setOf(VaultMode.ZAPS), VaultMode.ACTIVITY))
+    }
+
+    @Test fun `tapping in stays on a list that has news too`() {
+        assertNull(VaultMode.opening(setOf(VaultMode.NOTES, VaultMode.ZAPS), VaultMode.ZAPS))
+        assertNull(VaultMode.opening(emptySet(), VaultMode.NOTES))
     }
 
     // ── New-activity dots ─────────────────────────────────────────
@@ -148,5 +181,45 @@ class VaultTabTest {
         assertEquals(VaultMode.FOLLOWERS, NotificationTarget.vaultModeFor(NotificationTarget.FOLLOWERS, null, zapsOnly = false))
         // Zaps Only hides Likes: a like falls back to Notes.
         assertEquals(VaultMode.NOTES, NotificationTarget.vaultModeFor("reaction", 7, zapsOnly = true))
+    }
+
+    // ── New-activity dots (Notes, Likes, Zaps) ─────────────────────
+
+    private val now = 1_000_000L
+
+    @Test fun `newest sorts kinds into their list and skips articles, highlights and the future`() {
+        val events = listOf(1 to 100L, 6 to 300L, 30023 to 900L, 9802 to 900L, 7 to 50L, 9735 to 70L, 9735 to now + 3600)
+        val newest = VaultDots.newest(events, all, now)
+        assertEquals(300L, newest[VaultViewMode.NOTES])
+        assertEquals(50L, newest[VaultViewMode.LIKES])
+        assertEquals(70L, newest[VaultViewMode.ZAPS])
+        assertEquals(0L, VaultDots.newest(emptyList(), all, now)[VaultViewMode.NOTES])
+    }
+
+    private val seen = mapOf(VaultViewMode.NOTES to 100L, VaultViewMode.LIKES to 100L, VaultViewMode.ZAPS to 100L)
+
+    @Test fun `a list lights only when it holds something newer than when you looked`() {
+        val newest = mapOf(VaultViewMode.NOTES to 101L, VaultViewMode.LIKES to 100L, VaultViewMode.ZAPS to 99L)
+        assertEquals(setOf(VaultViewMode.NOTES), VaultDots.lit(newest, seen, watched = null, zapsOnly = false))
+    }
+
+    @Test fun `nothing lights before the first load settles`() {
+        val newest = mapOf(VaultViewMode.NOTES to 500L, VaultViewMode.LIKES to 500L, VaultViewMode.ZAPS to 500L)
+        assertTrue(VaultDots.lit(newest, emptyMap(), watched = null, zapsOnly = false).isEmpty())
+    }
+
+    @Test fun `the pill never shows Likes in Zaps Only, even lit before`() {
+        val lit = setOf(VaultViewMode.LIKES, VaultViewMode.ZAPS)
+        assertEquals(setOf(VaultMode.ZAPS, VaultMode.FOLLOWERS), VaultDots.shown(lit, newFollowers = true, zapsOnly = true))
+        assertEquals(setOf(VaultMode.LIKES, VaultMode.ZAPS), VaultDots.shown(lit, newFollowers = false, zapsOnly = false))
+    }
+
+    @Test fun `the list in sight never lights, and Likes stays dark in Zaps Only`() {
+        val newest = mapOf(VaultViewMode.NOTES to 500L, VaultViewMode.LIKES to 500L, VaultViewMode.ZAPS to 500L)
+        assertEquals(
+            setOf(VaultViewMode.LIKES, VaultViewMode.ZAPS),
+            VaultDots.lit(newest, seen, watched = VaultViewMode.NOTES, zapsOnly = false),
+        )
+        assertEquals(setOf(VaultViewMode.NOTES), VaultDots.lit(newest, seen, watched = VaultViewMode.ZAPS, zapsOnly = true))
     }
 }

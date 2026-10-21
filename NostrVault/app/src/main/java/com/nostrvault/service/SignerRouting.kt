@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenConfig
 
 /**
@@ -27,6 +28,20 @@ sealed class SignerRoute {
 }
 
 object SignerRouting {
+    /**
+     * The owner's bunker to log in in the background: set when another
+     * account is active and the owner signs with a bunker, so the owner's
+     * relay AUTH ([SignerRoute.BunkerSession]) has a live session after a
+     * restart instead of "not connected". Null when the owner is active (its
+     * session is the active one), signs locally or with Amber, or has no
+     * bunker.
+     */
+    fun ownerBunkerToWarm(config: HavenConfig, ownerHex: String, activeHex: String): AccountBunkerConfig? {
+        if (ownerHex.isEmpty() || ownerHex == activeHex) return null
+        if (config.effectiveSigningMode(config.ownerNpub) != "nip46") return null
+        return config.bunkerConfig(config.ownerNpub)
+    }
+
     fun route(config: HavenConfig, forceOwner: Boolean, ownerHex: String, activeHex: String): SignerRoute {
         val ownerIsActive = !forceOwner || ownerHex == activeHex
         if (ownerIsActive) {
@@ -39,7 +54,10 @@ object SignerRouting {
         val ownerNpub = config.ownerNpub
         return when (config.effectiveSigningMode(ownerNpub)) {
             "nip46" -> {
-                val signer = config.bunkerConfig(ownerNpub)?.signerPubkey.orEmpty()
+                // Looked up by the key the Go core files the session under: the
+                // bunker link's host (the remote signer), not the account's own
+                // signerPubkey, which differs for bunkers such as Clave.
+                val signer = config.bunkerConfig(ownerNpub)?.let(NIP46Service::signerKey).orEmpty()
                 if (signer.isEmpty()) SignerRoute.Unavailable("The owner's bunker has no signer key")
                 else SignerRoute.BunkerSession(signer)
             }

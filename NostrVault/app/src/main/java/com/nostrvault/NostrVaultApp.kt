@@ -39,9 +39,14 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var configStore: com.nostrvault.data.local.ConfigStore
 
+    @Inject
+    lateinit var deletedPostsStore: com.nostrvault.service.deleted.DeletedPostsStore
+
     override fun onCreate() {
         super.onCreate()
         ProfileRepository.init(this)
+        com.nostrvault.data.local.DeletedNotesStore.init(this)
+        com.nostrvault.service.deleted.DeletedPostsStore.shared = deletedPostsStore
         com.nostrvault.service.music.MusicPlayer.init(this)
         com.nostrvault.ui.screens.music.MusicFeedState.init(this)
         com.nostrvault.data.model.FeedMenuSettings.init(this)
@@ -50,11 +55,21 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         com.nostrvault.vaultguide.FillYourVaultCoordinator.init(this)
         Motion.install(this)
         createNotificationChannels()
+        // The relay pauses its screen-only work while no activity is visible.
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+            com.nostrvault.relay.AppForegroundReporter { on ->
+                if (com.nostrvault.relay.HavenBridge.isLoaded) {
+                    runCatching { com.nostrvault.relay.HavenBridge.setAppForeground(on) }
+                }
+            },
+        )
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
         applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             com.nostrvault.data.gif.GifCache.sweep(cacheDir)
         }
         profilePicturePrefetcher.start(applicationScope)
+        // Widgets hear the relay start and stop, not only its 30 s tick.
+        com.nostrvault.widget.WidgetPublisher.watchRelay(this, applicationScope)
         applicationScope.launch {
             configStore.config.collect {
                 com.nostrvault.service.LocalBlossomCache.enabled = it.useLocalBlossomCache

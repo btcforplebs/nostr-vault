@@ -17,8 +17,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"log/slog"
+	"maps"
 	"runtime/debug"
 	"slices"
 	"sync/atomic"
@@ -34,16 +36,48 @@ import (
 // KindComment (NIP-22) carries replies from clients that have moved off kind 1
 // replies; the apps only show the ones on kind 1 notes. KindPoll is a NIP-88
 // poll, which the apps draw in the feed; its votes are fetched per poll.
-const KindPoll = 1068
+// KindPicture is a NIP-68 picture post.
+const (
+	KindPoll    = 1068
+	KindPicture = 20
+)
 
-var feedKinds = []int{nostr.KindTextNote, nostr.KindRepost, nostr.KindArticle, nostr.KindComment, KindPoll}
+// commonFeedKinds are the kinds a follow set posts all day long.
+var commonFeedKinds = []int{nostr.KindTextNote, nostr.KindRepost, nostr.KindComment}
 
-// OnlyFeedKinds restricts writes on the /feed route to feed note kinds.
+// rareFeedKinds are posted a few times a day across a whole follow set:
+// articles, polls, generic reposts (an article, picture or poll someone
+// boosted), pictures and highlights. They are fetched in a REQ of their own.
+// Relays cap every REQ (primal: 500 events), and in one REQ shared with the
+// common kinds, notes fill that cap: for 1,031 follows 500 events was 3.6
+// hours, so the cache went four days with no article in it while the people
+// followed published eight (2026-10-13).
+var rareFeedKinds = []int{nostr.KindArticle, KindPoll, nostr.KindGenericRepost, KindPicture, nostr.KindHighlights}
+
+var feedKinds = slices.Concat(commonFeedKinds, rareFeedKinds)
+
+// OnlyFeedKinds restricts writes on the /feed route to feed note kinds. The
+// browser build's owner streams may also cache kind 0, the names and pictures
+// of the people in the feed, which natively the apps keep themselves.
 func OnlyFeedKinds(ctx context.Context, event *nostr.Event) (bool, string) {
 	if slices.Contains(feedKinds, event.Kind) {
 		return false, ""
 	}
-	return true, "restricted: this relay only accepts feed notes (kinds 1, 6, 30023, 1111, 1068)"
+	if event.Kind == nostr.KindProfileMetadata && ownerStream(ctx) {
+		return false, ""
+	}
+	return true, fmt.Sprintf("restricted: this relay only accepts feed notes (kinds %v)", feedKinds)
+}
+
+// feedCommonFilter and feedRareFilter are the plain-REQ catch-up, each kind
+// set since its own watermark, so neither can push the other out of a
+// relay's per-REQ cap.
+func feedCommonFilter(authors []string, since nostr.Timestamp) nostr.Filter {
+	return nostr.Filter{Authors: authors, Kinds: commonFeedKinds, Since: &since}
+}
+
+func feedRareFilter(authors []string, since nostr.Timestamp) nostr.Filter {
+	return nostr.Filter{Authors: authors, Kinds: rareFeedKinds, Since: &since}
 }
 
 // feedSyncCh triggers an immediate feed sync round (pull-to-refresh).
@@ -112,6 +146,27 @@ func ownerFollowSet(ctx context.Context) map[string]struct{} {
 	return follows
 }
 
+// ownerFollowListStamp is the id of the newest kind-3 any owner on this relay
+// has in the outbox DB, or "" when there is none. A new follow list is the
+// newest by construction, so the owner-only WoT rebuild runs when this moves.
+func ownerFollowListStamp() string {
+	owners := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+	if len(owners) == 0 || outboxDB == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	evs, err := eventstore.RelayWrapper{Store: outboxDB}.QuerySync(ctx, nostr.Filter{
+		Authors: owners,
+		Kinds:   []int{nostr.KindFollowList},
+		Limit:   1,
+	})
+	if err != nil || len(evs) == 0 {
+		return ""
+	}
+	return evs[0].ID
+}
+
 // feedSyncRelays picks the external relay set to reconcile the feed against:
 // FEED_SYNC_RELAYS_FILE when configured, otherwise blastr ∪ import seed
 // relays (the same relays the clients read their feeds from).
@@ -159,6 +214,13 @@ func syncFeed(ctx context.Context) {
 		return nostr.Timestamp(time.Now().Add(-time.Duration(config.FeedSyncWindowDays) * 24 * time.Hour).Unix())
 	}
 
+	// The rare kinds' watermark starts at the window's edge: a fresh cache
+	// gets the whole window of articles and polls in its first round, which
+	// is a few dozen events, not the hours of notes the common pull starts
+	// with.
+	var lastSeenRare atomic.Int64
+	lastSeenRare.Store(int64(windowSince()))
+
 	runFeedSync := func() {
 		// Captured before any fetching so events arriving mid-round aren't
 		// skipped: the fallback query below re-queries from lastSeenFeed-60.
@@ -177,6 +239,36 @@ func syncFeed(ctx context.Context) {
 
 		since := windowSince()
 		filter := nostr.Filter{Authors: authors, Kinds: feedKinds, Since: &since}
+
+		rareDone := false
+		rsince := nostr.Timestamp(lastSeenRare.Load() - 60)
+		if rsince < since {
+			rsince = since
+		}
+		rareFilter := feedRareFilter(authors, rsince)
+		// The rare kinds go first, on their own clock: the common pull can
+		// run for minutes (one round on a phone, 1,031 follows: over four)
+		// and nothing behind it may wait on that. Every relay, not only the
+		// fallback ones: a negentropy round against a relay that trims what
+		// it lists would still miss them. A few dozen events a round.
+		if ctx.Err() == nil {
+			rctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+			received := 0
+			for ev := range pool.FetchMany(rctx, relays, rareFilter) {
+				received++
+				store.Publish(ctx, *ev.Event)
+			}
+			timedOut := rctx.Err() != nil
+			cancel()
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("📚 feed rare-kinds pull since %s on %d relays: %d events", time.Unix(int64(rsince), 0).Format(time.RFC3339), len(relays), received)
+			// Only a pass that finished moves the rare watermark.
+			if !timedOut {
+				rareDone = true
+			}
+		}
 
 		var fallback []string
 		if config.NegentropySyncEnabled {
@@ -222,14 +314,14 @@ func syncFeed(ctx context.Context) {
 			fallback = relays
 		}
 
+		fsince := nostr.Timestamp(lastSeenFeed.Load() - 60)
+		if fsince < since {
+			fsince = since
+		}
+		commonFilter := feedCommonFilter(authors, fsince)
 		if len(fallback) > 0 && ctx.Err() == nil {
-			fsince := nostr.Timestamp(lastSeenFeed.Load() - 60)
-			if fsince < since {
-				fsince = since
-			}
-			ffilter := nostr.Filter{Authors: authors, Kinds: feedKinds, Since: &fsince}
 			log.Println("📚 feed catch-up pull since", time.Unix(int64(fsince), 0).Format(time.RFC3339), "on", len(fallback), "relays")
-			for ev := range pool.FetchMany(ctx, fallback, ffilter) {
+			for ev := range pool.FetchMany(ctx, fallback, commonFilter) {
 				if ctx.Err() != nil {
 					return
 				}
@@ -244,6 +336,9 @@ func syncFeed(ctx context.Context) {
 		// an ever-widening window (expanding downloads, 100% CPU). Monotonic.
 		if ctx.Err() == nil {
 			advance(roundStart)
+			if rareDone {
+				lastSeenRare.Store(int64(roundStart))
+			}
 		}
 		// Same rationale as runCatchup: the vector build materializes the whole
 		// windowed feed cache per relay; return the spike to the OS promptly.

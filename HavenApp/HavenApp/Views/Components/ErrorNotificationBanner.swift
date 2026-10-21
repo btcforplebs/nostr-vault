@@ -30,11 +30,17 @@ class ErrorNotificationManager: ObservableObject {
                 notifications = Array(notifications.prefix(3))
             }
         }
+        // An error stays until it is tapped away; a warning goes after 5 s.
+        guard style == .warning else { return }
         let id = notification.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
-            withAnimation(Motion.bannerOut) {
-                self?.notifications.removeAll { $0.id == id }
-            }
+            self?.dismiss(id)
+        }
+    }
+
+    func dismiss(_ id: UUID) {
+        withAnimation(Motion.bannerOut) {
+            notifications.removeAll { $0.id == id }
         }
     }
 }
@@ -45,14 +51,14 @@ struct ErrorNotificationBanner: View {
     @ObservedObject private var manager = ErrorNotificationManager.shared
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             ForEach(manager.notifications) { notification in
-                ErrorPill(notification: notification)
-                    .transition(Motion.pillTransition)
+                PillSlot("error-\(notification.id)", level: .error) {
+                    ErrorPill(notification: notification)
+                        .onTapGesture { manager.dismiss(notification.id) }
+                }
             }
         }
-        .padding(.top, manager.notifications.isEmpty ? 0 : 12)
-        .animation(Motion.bannerIn, value: manager.notifications.map(\.id))
     }
 }
 
@@ -64,20 +70,14 @@ struct ErrorPill: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: notification.icon)
-                .font(.appSystem(size: 12, weight: .bold))
+                .font(PillSize.regular.iconFont)
             Text(notification.message)
-                .font(.appSystem(size: 13, weight: .bold))
                 .lineLimit(2)
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 20)
-        .background(
-            Capsule()
-                .fill(notification.style == .error ? Color.red.opacity(0.85) : Color.orange.opacity(0.85))
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-        )
-        .foregroundColor(.white)
+        .pillCapsule(notification.style == .error ? .error : .warning)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(notification.message)
+        .accessibilityHint(notification.style == .error ? "Tap to dismiss" : "")
+        .accessibilityAddTraits(notification.style == .error ? .isButton : [])
     }
 }

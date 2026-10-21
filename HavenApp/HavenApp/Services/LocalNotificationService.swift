@@ -1,5 +1,8 @@
 import AVFoundation
 import Combine
+#if os(macOS)
+import AppKit
+#endif
 import Foundation
 import SwiftUI
 import UserNotifications
@@ -16,13 +19,26 @@ final class LocalNotificationService {
     static let shared = LocalNotificationService()
     private init() {}
 
+    #if os(macOS)
+    /// True while the main window is up and the app is frontmost: the only
+    /// time the lane (PillLaneStack over MenuBarView) is on screen. A menu bar
+    /// app is often active with no window, and then a system alert is the
+    /// only way anything shows.
+    /// A window in the Dock or fully covered does not count: a pill would
+    /// draw where nobody sees it and pass as read.
+    var appInForeground: Bool { NSApp.isActive && MacWindow.isMainWindowOnScreen }
+    #else
     /// True while the app is foregrounded. Set by SceneDelegate.
     var appInForeground: Bool = false
+    #endif
 
     private var soundPlayer: AVAudioPlayer?
     private var seen = Set<String>()
     private let maxSeen = 500
     private let seenLock = NSLock()
+    /// Events whose pill was read or tapped (`dedupKey`), so an APNs push for
+    /// one that lands after its pill adds no second entry.
+    private var readEvents = Set<String>()
 
     /// Whether a catch-up summary may fire right now: never over an open app,
     /// and only once per genuine absence (NotificationPolicy.minimumAbsence).
@@ -72,7 +88,7 @@ final class LocalNotificationService {
         guard type == "summary" || !rawId.isEmpty else { return }
         let id = rawId.isEmpty ? "summary-\(Int(Date().timeIntervalSince1970))" : rawId
 
-        guard markSeen(id) else { return }
+        guard markSeen(NotificationPolicy.dedupKey(eventId: id)) else { return }
 
         // The inbox is shared across every whitelisted account on this device, so the
         // marker's `recipient` (the whitelisted hex pubkey it was actually tagged for —
@@ -283,7 +299,10 @@ final class LocalNotificationService {
             let extra: [String: Any] = [Self.foldedFollowersKey: folded.members,
                                         Self.foldedFollowerCountKey: folded.count]
             if appInForeground {
-                showInAppBanner(id: id, type: "followers", title: title, body: body, npub: npub)
+                // An alert already waiting in Notification Center is updated
+                // there below, so the pill only needs filing if there is none.
+                showInAppBanner(id: id, type: "followers", title: title, body: body, npub: npub,
+                                fileIfMissed: showing.isShowing ? nil : extra)
                 // The alert waiting in Notification Center still counts too,
                 // or its number would go backwards after the next stranger.
                 if showing.isShowing {
@@ -330,6 +349,10 @@ final class LocalNotificationService {
         // A NIP-04 DM names its author in the clear.
         if !author.isEmpty, author.lowercased() == recipientHex.lowercased() { return }
         if DMService.shared.isOwnSentWrap(id) { return }
+        // A blocked person never notifies. NIP-04 names them up front; a gift
+        // wrap only once it is opened, below.
+        let blocked = ConfigService.shared.blockedHexPubkeys(forAccount: npub)
+        if BlockedPeople.isBlocked(author, in: blocked) { return }
 
         Task { @MainActor in
             let inThread = appInForeground && DMService.shared.visibleConversation != nil
@@ -339,6 +362,7 @@ final class LocalNotificationService {
             )
             if let opened {
                 if opened.message.isFromMe { return }
+                if BlockedPeople.isBlocked(opened.message.senderPubkey, in: blocked) { return }
                 // The conversation is already on screen.
                 if appInForeground, DMService.shared.visibleConversation == opened.conversationId { return }
             }
@@ -396,7 +420,7 @@ final class LocalNotificationService {
                     preview.isEmpty ? "Tap to view the quote" : preview)
         case "dm", "giftwrap":
             return (name != nil ? "Message from \(who)" : "New message",
-                    preview.isEmpty ? "You have a new encrypted message" : preview)
+                    preview.isEmpty ? NotificationPolicy.dmFiledBody : preview)
         case "zap":
             return ("⚡ New zap",
                     name != nil ? "\(who) zapped you" : "You received a zap")
@@ -420,16 +444,111 @@ final class LocalNotificationService {
     private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String,
                                  carried: [String: String]) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
-        showInAppBanner(id: id, type: type, title: title, body: body, npub: npub, carried: carried)
+        showInAppBanner(id: id, type: type, title: title, body: body, npub: npub, carried: carried,
+                        fileIfMissed: carried)
     }
 
+    /// - Parameter fileIfMissed: when the pill is not read (see
+    ///   `NotificationPolicy.filesPill`), the alert is filed quietly in
+    ///   Notification Center with these userInfo extras; a DM with its
+    ///   generic line only. Nil when the alert is already there.
     private func showInAppBanner(id: String, type: String, title: String, body: String, npub: String,
-                                 carried: [String: String] = [:]) {
-        let (icon, color) = iconAndColor(for: type)
-        RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color) {
-            Self.navigate(type: type, id: id, npub: npub, carried: carried)
+                                 carried: [AnyHashable: Any] = [:], fileIfMissed: [String: Any]?) {
+        let key = NotificationPolicy.dedupKey(eventId: id)
+        // Just back from the background: one bottom pill and one sound for
+        // everything, not a top pill and a sound each (ReturnPillManager).
+        let createdAt = (carried[NotificationNote.eventKey] as? String)
+            .flatMap(NotificationNote.decode)
+            .map { Date(timeIntervalSince1970: TimeInterval($0.createdAt)) }
+        switch ReturnPillManager.shared.gather(type: type, key: key, createdAt: createdAt) {
+        case .first: playSound(); return
+        case .added: return
+        case .no: break
         }
+        let (icon, color) = iconAndColor(for: type)
+        let onMissed: (() -> Void)? = fileIfMissed.map { extra in
+            { [weak self] in
+                self?.fileMissed(key: key, id: id, type: type, title: title, body: body, npub: npub, extra: extra)
+            }
+        }
+        RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color, onTap: {
+            Self.navigate(type: type, id: id, npub: npub, carried: carried)
+        }, onRead: { [weak self] in
+            self?.markRead(key)
+        }, onMissed: onMissed)
         playSound()
+    }
+
+    // MARK: - One event, one entry
+
+    /// The pill was read or tapped: the APNs push for the same event, if
+    /// Notification Center has it, goes, and the badge with it.
+    private func markRead(_ key: String) {
+        readEvents.insert(key)
+        if readEvents.count > maxSeen { readEvents = Set(readEvents.dropFirst(maxSeen / 2)) }
+        Task {
+            let ids = await Self.delivered(key: key)
+            guard !ids.isEmpty else { return }
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+            PushNotificationService.shared.clearBadge()
+        }
+    }
+
+    /// Files a pill that was not read, quietly, unless the push for the same
+    /// event is already in Notification Center.
+    private func fileMissed(key: String, id: String, type: String, title: String, body: String,
+                            npub: String, extra: [String: Any]) {
+        Task {
+            guard await Self.delivered(key: key).isEmpty else { return }
+            await post(id: id, type: type,
+                       title: NotificationPolicy.filedPillTitle(type: type, title: title),
+                       body: NotificationPolicy.filedPillBody(type: type, body: body),
+                       npub: npub, extra: extra, quiet: true)
+        }
+    }
+
+    /// Identifiers of the delivered alerts about event `key`, push or marker.
+    private static func delivered(key: String) async -> [String] {
+        await UNUserNotificationCenter.current().deliveredNotifications()
+            .filter { NotificationPolicy.eventKey(of: $0.request.content.userInfo) == key }
+            .map(\.request.identifier)
+    }
+
+    // MARK: - System alerts reaching an open app
+
+    /// What a system alert may do on screen (the delegates' `willPresent`).
+    /// While the app is in front the lane is the only on-screen surface
+    /// (`docs/pills.md`): the alert goes to Notification Center only. A relay
+    /// marker's alert, which passed every gate in `handle()`, also becomes
+    /// its pill. An APNs push draws none: the marker for the same event
+    /// comes through `handle()` and draws it, gated; with no marker it is
+    /// list-only. A push for an event whose pill was already read is not
+    /// shown at all. Otherwise never `[]`: a marker alert is filed as the app goes to the
+    /// background and may be presented after it is back (`post()` waits
+    /// 0.1 s, a DM up to 15 s to decrypt), and with no banner and no list it
+    /// would be lost from both surfaces. A quiet alert only updates the one
+    /// already listed.
+    func presentation(of content: UNNotificationContent) -> UNNotificationPresentationOptions {
+        let info = content.userInfo
+        if info[Self.quietKey] as? Bool == true { return Self.listed }
+        guard appInForeground else { return Self.listed.union([.banner, .sound]) }
+        if info["notif_id"] == nil, let key = NotificationPolicy.eventKey(of: info),
+           readEvents.contains(key) { return [] }
+        if let type = info["notif_type"] as? String, let id = info["notif_id"] as? String {
+            // It is listed by the return below, so a missed pill loses nothing.
+            showInAppBanner(id: id, type: type, title: content.title, body: content.body,
+                            npub: info["notif_npub"] as? String ?? "", carried: info, fileIfMissed: nil)
+        }
+        return Self.listed
+    }
+
+    /// Notification Center only. iOS keeps the icon badge in step too.
+    private static var listed: UNNotificationPresentationOptions {
+        #if os(iOS)
+        [.list, .badge]
+        #else
+        [.list]
+        #endif
     }
 
     private func playSound() {
@@ -448,11 +567,11 @@ final class LocalNotificationService {
         switch type {
         case "mention":        return ("at", Color.havenPurple)
         case "reply":          return ("arrowshape.turn.up.left.fill", Color.havenPurple)
-        case "quote":          return ("quote.bubble.fill", Color.havenPurple)
+        case "quote":          return ("quote.bubble.fill", Color.blue)
         case "dm", "giftwrap": return ("envelope.fill", Color.blue)
         case "zap":            return ("bolt.fill", Color.orange)
-        case "reaction":       return ("heart.fill", Color.pink)
-        case "repost":         return ("arrow.2.squarepath", Color(red: 0.2, green: 0.8, blue: 0.6))
+        case "reaction":       return ("heart.fill", Color.red)
+        case "repost":         return ("arrow.2.squarepath", Color.green)
         case "follow", "followers": return ("person.badge.plus", Color.havenPurple)
         case "summary":        return ("clock.arrow.circlepath", Color.gray)
         default:               return ("bell.fill", Color.gray)

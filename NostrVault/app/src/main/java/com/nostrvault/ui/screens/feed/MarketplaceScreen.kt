@@ -86,6 +86,8 @@ internal fun MarketplaceGrid(
     onNeedProfiles: (List<String>) -> Unit,
     onAppear: () -> Unit,
     followSetIsEmpty: Boolean = false,
+    /** No relay answered the last load. */
+    loadFailed: Boolean = false,
     scopeFollowing: Boolean = false,
     onShowGlobal: () -> Unit = {},
 ) {
@@ -104,6 +106,7 @@ internal fun MarketplaceGrid(
                     onRefresh = onRefresh,
                     onShowGlobal = onShowGlobal,
                     subtitleOverride = if (followSetIsEmpty) "You don't follow anyone yet. Switch to Global to see every listing." else null,
+                    loadFailed = loadFailed,
                 )
             }
         }
@@ -125,7 +128,8 @@ internal fun MarketplaceGrid(
 
     PullToRefreshBox(isRefreshing = isLoading, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            // As many 160dp cards as fit (iOS adaptive(minimum: 160)): two on a phone, more on a tablet.
+            columns = GridCells.Adaptive(minSize = 160.dp),
             contentPadding = PaddingValues(
                 start = 12.dp,
                 end = 12.dp,
@@ -351,7 +355,7 @@ internal fun MarketListingSheet(
 
             Spacer(Modifier.height(18.dp))
             Button(
-                onClick = { uriHandler.openUri(listing.plebeianUrl) },
+                onClick = { runCatching { uriHandler.openUri(listing.plebeianUrl) } },
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.Black),
                 modifier = Modifier.fillMaxWidth(),
             ) {

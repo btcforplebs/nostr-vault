@@ -55,6 +55,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Nostr Vault uses Face ID to confirm it is you before showing your private key.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Nostr Vault uses the camera to scan QR codes containing Nostr public keys and to record diVines.</string>
 	<key>NSMicrophoneUsageDescription</key>

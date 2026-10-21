@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<!-- No page address goes to image, video or link hosts (a profile picture or a pasted link is anyone's server). -->
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<title>Nostr Vault</title>
+</head>
+<body>
+<div id="app"></div>
+<!-- The splash before any code loads: the same picture the app's Splash draws (src/components/Loading.jsx), hidden the
+     moment the app draws anything, so a slow first load is never a black screen. Styled here: app.css isn't loaded yet. -->
+<main class="splash boot-splash" aria-busy="true"><span class="splash-mark"><img src="./icon.svg" alt="" /></span><p role="status">Opening Nostr Vault…</p></main>
+<style>
+  html, body { margin: 0; background: #000; }
+  .boot-splash { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 24px;
+    max-width: 420px; margin: 0 auto; box-sizing: border-box; text-align: center; color: rgb(255 255 255 / .6);
+    font: 400 17px/1.35 -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif; }
+  .boot-splash p { margin: 0; }
+  .boot-splash .splash-mark { position: relative; display: block; width: 72px; height: 72px; margin: 0 auto 4px; }
+  .boot-splash img { display: block; width: 72px; height: 72px; border-radius: 16px; }
+  .boot-splash .splash-mark::after { content: ""; position: absolute; inset: -8px; border-radius: 22px; border: 1.5px solid rgb(230 115 38 / .3); opacity: 0; }
+  @media (prefers-reduced-motion: no-preference) { .boot-splash .splash-mark::after { animation: nv-boot 2.4s ease-out infinite; } }
+  @keyframes nv-boot { 0% { transform: scale(.9); opacity: 0 } 35% { opacity: 1 } 100% { transform: scale(1.18); opacity: 0 } }
+  #app:not(:empty) ~ .boot-splash { display: none; }
+</style>
+<script type="module" src="./main.jsx"></script>
+</body>
+</html>

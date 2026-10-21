@@ -43,4 +43,6 @@
     <string name="widget_feed_description">Recent notes from your feed or your mentions.</string>
     <string name="widget_mosaic_label">Mosaic</string>
     <string name="widget_mosaic_description">Your Blossom media as a living grid.</string>
+    <string name="widget_glance_label">Vault glance</string>
+    <string name="widget_glance_description">One cell: whether your vault is live, or your mentions, messages, events or zaps today.</string>
 </resources>

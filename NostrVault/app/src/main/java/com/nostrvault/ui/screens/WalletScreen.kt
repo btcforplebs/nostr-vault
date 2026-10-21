@@ -10,9 +10,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -23,7 +20,6 @@ import androidx.lifecycle.viewModelScope
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.data.local.ConfigStore
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.LNURLPayResponse
 import com.nostrvault.service.LNURLService
@@ -32,12 +28,16 @@ import com.nostrvault.service.NWCService
 import com.nostrvault.service.NWCTimeoutException
 import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.NwcBackupService
+import com.nostrvault.data.model.NwcBackup
 import com.nostrvault.service.ZapHistoryService
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.util.ZapDetail
 import kotlinx.coroutines.CancellationException
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
+import com.nostrvault.ui.screens.settings.InfoButton
+import com.nostrvault.ui.screens.settings.SettingsHelp
 import com.nostrvault.ui.theme.*
 import com.nostrvault.util.Bolt11
 import com.nostrvault.util.WalletTransaction
@@ -46,6 +46,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -58,15 +60,13 @@ class WalletViewModel @Inject constructor(
     private val nwcService: NWCService,
     private val nostrService: NostrService,
     private val zapHistoryService: ZapHistoryService,
+    private val nwcBackupService: NwcBackupService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     /** Whose tutorials the wallet's cards count against. */
     val activeHexPubkey: String get() = nostrService.activeHexPubkey
     private val _lightningBalance = MutableStateFlow<Long?>(null)
     val lightningBalance = _lightningBalance.asStateFlow()
-
-    private val _taprootAddress = MutableStateFlow<String?>(null)
-    val taprootAddress = _taprootAddress.asStateFlow()
 
     // Shared operation state
     private val _busy = MutableStateFlow(false)
@@ -114,30 +114,100 @@ class WalletViewModel @Inject constructor(
     /** A refresh asked for while a page was loading; it runs once that page lands. */
     private var historyRefreshPending = false
 
+    // Wallet slot on this Nostr account (NIP-78, Wisp's format), and whose
+    // account it was read for: an action on another account's state would
+    // publish into the wrong slot.
+    private val _backupStatus = MutableStateFlow<NwcBackup.Status>(NwcBackup.Status.Unknown)
+    val backupStatus = _backupStatus.asStateFlow()
+    private var backupStatusAccount = ""
+
+    private val _backupChecked = MutableStateFlow(false)
+    val backupChecked = _backupChecked.asStateFlow()
+
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy = _backupBusy.asStateFlow()
+
+    private val _backupError = MutableStateFlow<String?>(null)
+    val backupError = _backupError.asStateFlow()
+
     init {
         refreshBalance()
-        if (config.value.showBitcoinWallet) deriveAddress()
+        // Re-read on every account switch, as iOS keys on the active pubkey.
+        viewModelScope.launch {
+            configStore.config.map { it.activeOrOwnerNpub() }.distinctUntilChanged().collect {
+                refreshBackupStatus(askSigner = false)
+            }
+        }
+    }
+
+    /** Reads the slot again; [askSigner] lets the signer decrypt (the user tapped). */
+    fun refreshBackupStatus(askSigner: Boolean) {
+        val account = nostrService.activeHexPubkey
+        if (account != backupStatusAccount) {
+            _backupStatus.value = NwcBackup.Status.Unknown
+            _backupChecked.value = false
+        }
+        backupStatusAccount = account
+        viewModelScope.launch {
+            if (askSigner) _backupBusy.value = true
+            val status = nwcBackupService.status(account, askSigner)
+            // A switch while the lookup ran: that answer belongs to someone else.
+            if (nostrService.activeHexPubkey == account) {
+                _backupStatus.value = status
+                _backupChecked.value = true
+            }
+            if (askSigner) _backupBusy.value = false
+        }
+    }
+
+    /** Puts the wallet saved on this account into use. */
+    fun useSavedWallet() {
+        val saved = _backupStatus.value as? NwcBackup.Status.Saved ?: return
+        setNwcUri(saved.uri)
+    }
+
+    /**
+     * The "Save wallet to my Nostr account" switch (on saves the wallet in use)
+     * and "Remove from my account" (off). Locked to the account the screen
+     * shows, all the way to publishing.
+     */
+    fun setSaveToAccount(on: Boolean) {
+        if (_backupBusy.value) return
+        val lock = nostrService.lockPostingAccount()
+        if (lock.hex != backupStatusAccount) {
+            _backupError.value = "The account changed. Nothing was published; check again."
+            refreshBackupStatus(askSigner = false)
+            return
+        }
+        val uri = config.value.nwcURI.orEmpty()
+        viewModelScope.launch {
+            _backupBusy.value = true
+            _backupError.value = null
+            val problem = if (on) nwcBackupService.save(uri, lock) else nwcBackupService.clear(lock)
+            if (problem != null) {
+                _backupError.value = problem
+            } else if (nostrService.activeHexPubkey == lock.hex) {
+                // Only the account it was done for gets the new state.
+                _backupStatus.value = if (on) {
+                    NwcBackup.plaintextForSaving(uri)?.let { NwcBackup.Status.Saved(it, System.currentTimeMillis() / 1000) }
+                        ?: _backupStatus.value
+                } else {
+                    NwcBackup.Status.Empty
+                }
+            }
+            _backupBusy.value = false
+        }
     }
 
     // ── Config setters (Settings tab) ─────────────────────────────
     fun setNwcUri(uri: String) = configStore.update { it.copy(nwcURI = uri.ifBlank { null }) }
     fun setDefaultZap(sats: Int) = configStore.update { it.copy(defaultZapAmount = sats.coerceAtLeast(1)) }
 
-    fun toggleBitcoin(on: Boolean) {
-        configStore.update { it.copy(showBitcoinWallet = on) }
-        if (on) deriveAddress() else _taprootAddress.value = null
-    }
-
     fun refreshBalance() {
         viewModelScope.launch {
             // NWC get_balance returns millisats (NIP-47); display as sats like iOS.
             _lightningBalance.value = try { nwcService.getBalance() / 1000 } catch (_: Exception) { null }
         }
-    }
-
-    private fun deriveAddress() {
-        val hex = nostrService.ownerHexPubkey
-        if (hex.isNotEmpty()) _taprootAddress.value = HavenBridge.deriveTaprootAddress(hex)
     }
 
     fun clearMessages() { _error.value = null; _message.value = null }
@@ -322,20 +392,22 @@ private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), SETTIN
 @Composable
 fun WalletScreen(
     onBack: () -> Unit,
-    onSweep: () -> Unit = {},
     onNoteClick: (String) -> Unit = {},
+    // Settings > Wallet opens only the settings, as iOS WalletSettingsView;
+    // sending stays behind Profile.
+    settingsOnly: Boolean = false,
     viewModel: WalletViewModel = hiltViewModel(),
 ) {
     var selectedTab by remember { mutableStateOf(WalletTab.LIGHTNING) }
     val error by viewModel.error.collectAsState()
     val message by viewModel.message.collectAsState()
-    val snackbarHost = remember { SnackbarHostState() }
-
+    // Payments report in the lane, not a Snackbar (docs/pills.md).
+    val lane = com.nostrvault.ui.notification.LocalNotificationManager.current
     LaunchedEffect(error, message) {
-        (error ?: message)?.let {
-            snackbarHost.showSnackbar(it)
-            viewModel.clearMessages()
-        }
+        if (error == null && message == null) return@LaunchedEffect
+        error?.let { lane.showError(it) }
+        message?.let { lane.showToast(it) }
+        viewModel.clearMessages()
     }
 
     Scaffold(
@@ -354,9 +426,12 @@ fun WalletScreen(
                 ),
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHost) },
         containerColor = WindowBackground,
     ) { padding ->
+        if (settingsOnly) {
+            Column(modifier = Modifier.fillMaxSize().padding(padding)) { WalletSettingsTab(viewModel) }
+            return@Scaffold
+        }
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             TabRow(
                 selectedTabIndex = selectedTab.ordinal,
@@ -378,18 +453,94 @@ fun WalletScreen(
                     onNoteClick,
                     onConnectWallet = { selectedTab = WalletTab.SETTINGS },
                 )
-                WalletTab.SETTINGS -> WalletSettingsTab(viewModel, onSweep)
+                WalletTab.SETTINGS -> WalletSettingsTab(viewModel)
             }
         }
     }
 }
 
+/** The wallet saved on the Nostr account: offer, switch, signer load, remove. iOS accountBackupSection. */
 @Composable
-private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
-    val config by viewModel.config.collectAsState()
-    val taproot by viewModel.taprootAddress.collectAsState()
+private fun AccountBackupSection(viewModel: WalletViewModel, current: String) {
+    val status by viewModel.backupStatus.collectAsState()
+    val busy by viewModel.backupBusy.collectAsState()
+    val error by viewModel.backupError.collectAsState()
     val colors = LocalNostrVaultColors.current
-    val clipboard = LocalClipboardManager.current
+    val day = status.savedAt?.let {
+        java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it * 1000))
+    }.orEmpty()
+
+    @Composable
+    fun SaveSwitch(on: Boolean) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Save wallet to my Nostr account", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Switch(
+                checked = on,
+                onCheckedChange = viewModel::setSaveToAccount,
+                enabled = !busy,
+                colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
+            )
+        }
+    }
+
+    /** Saving needs no read: a slot this device can't read can still be replaced by the wallet in use. */
+    @Composable
+    fun ReplaceButton() {
+        if (current.isNotEmpty()) {
+            OutlinedButton(onClick = { viewModel.setSaveToAccount(true) }, enabled = !busy) { Text("Save this wallet instead") }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        WalletSectionLabel("Your Nostr account")
+        if (busy) {
+            Spacer(Modifier.width(8.dp))
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        }
+    }
+    when (val s = status) {
+        NwcBackup.Status.Unknown -> {
+            WalletCaption("Couldn't check your Nostr account for a saved wallet.")
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = false) }) { Text("Check again") }
+        }
+        NwcBackup.Status.Empty -> {
+            if (current.isNotEmpty()) SaveSwitch(on = false) else WalletCaption("No wallet saved on your Nostr account.")
+            // One relay's answer decides "empty"; a slower one may still hold a wallet.
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = false) }, enabled = !busy) { Text("Check again") }
+        }
+        is NwcBackup.Status.Saved -> if (current.isEmpty()) {
+            WalletCaption("Saved $day. It may have come from Nostr Vault on another device or from Wisp.")
+            OutlinedButton(onClick = viewModel::useSavedWallet) { Text("Use saved wallet") }
+        } else {
+            SaveSwitch(on = s.uri == current)
+            if (s.uri != current) WalletCaption("Your account holds a different wallet, saved $day. Turning this on replaces it.")
+        }
+        is NwcBackup.Status.NeedsSigner -> {
+            WalletCaption("A wallet is saved on your Nostr account ($day). Your signer has to open it.")
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = true) }, enabled = !busy) { Text("Load with signer") }
+            ReplaceButton()
+        }
+        is NwcBackup.Status.Unreadable -> {
+            WalletCaption("A wallet is saved on your Nostr account ($day), but this device can't read it.")
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus(askSigner = true) }, enabled = !busy) { Text("Try again") }
+            ReplaceButton()
+        }
+    }
+    // Offered whenever a wallet may be on the account: removing needs no proof it is there.
+    if (status.offersRemove(current)) {
+        TextButton(onClick = { viewModel.setSaveToAccount(false) }, enabled = !busy) {
+            Text("Remove from my account", color = MaterialTheme.colorScheme.error)
+        }
+    }
+    WalletCaption("Stored encrypted to your key (NIP-44) on your relays, so Nostr Vault on your other devices, or Wisp, can use it. Anyone who has your key can read it and spend from this wallet.")
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+}
+
+@Composable
+private fun WalletSettingsTab(viewModel: WalletViewModel) {
+    val config by viewModel.config.collectAsState()
+    val colors = LocalNostrVaultColors.current
 
     Column(
         modifier = Modifier
@@ -397,7 +548,7 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        WalletSectionLabel("Nostr Wallet Connect (NWC)")
+        WalletSectionLabel("Nostr Wallet Connect (NWC)", SettingsHelp.WALLET_NWC)
         OutlinedTextField(
             value = config.nwcURI ?: "",
             onValueChange = viewModel::setNwcUri,
@@ -408,6 +559,9 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
         )
         WalletCaption("Connect a Lightning wallet to send zaps and use the Lightning tab.")
 
+        val backupChecked by viewModel.backupChecked.collectAsState()
+        if (backupChecked) AccountBackupSection(viewModel, config.nwcURI?.trim().orEmpty())
+
         if (!config.nwcURI.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))
             var zapText by remember(config.defaultZapAmount) { mutableStateOf(config.defaultZapAmount.toString()) }
@@ -415,44 +569,12 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
                 value = zapText,
                 onValueChange = { t -> zapText = t.filter { it.isDigit() }; zapText.toIntOrNull()?.let(viewModel::setDefaultZap) },
                 label = { Text("Default Zap Amount (sats)") },
+                trailingIcon = { InfoButton(SettingsHelp.WALLET_DEFAULT_ZAP) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
                 colors = walletFieldColors(colors.primary),
             )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        WalletSectionLabel("Bitcoin")
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Bitcoin Address", color = PrimaryText, fontSize = 15.sp)
-                Text("Derive a taproot address from your Nostr key (BIP-341)", color = SecondaryText, fontSize = 12.sp)
-            }
-            Switch(
-                checked = config.showBitcoinWallet,
-                onCheckedChange = viewModel::toggleBitcoin,
-                colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
-            )
-        }
-
-        if (config.showBitcoinWallet && taproot != null) {
-            Spacer(Modifier.height(12.dp))
-            WalletQr(taproot!!)
-            Spacer(Modifier.height(8.dp))
-            Text(taproot!!, color = PrimaryText, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-            Spacer(Modifier.height(8.dp))
-            Row {
-                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(taproot!!)) }) {
-                    Text("Copy Address")
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = onSweep,
-                    colors = ButtonDefaults.buttonColors(containerColor = ZapOrange),
-                ) { Text("Sweep Wallet") }
-            }
         }
 
         Spacer(Modifier.height(32.dp))
@@ -478,15 +600,17 @@ internal fun WalletQr(content: String) {
 }
 
 @Composable
-internal fun WalletSectionLabel(text: String) {
-    Text(
-        text = text.uppercase(),
-        color = SecondaryText,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(bottom = 8.dp),
-    )
+internal fun WalletSectionLabel(text: String, help: SettingsHelp? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+        Text(
+            text = text.uppercase(),
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+        )
+        if (help != null) InfoButton(help)
+    }
 }
 
 @Composable

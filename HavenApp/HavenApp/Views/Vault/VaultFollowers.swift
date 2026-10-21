@@ -95,7 +95,8 @@ extension VaultView {
             await MainActor.run {
                 guard owner == followersOwnerHex, let snapshot else { return }
                 followerSnapshot = snapshot
-                if viewMode == .followers {
+                if viewMode == .activity { scheduleUpdateDisplayData() }
+                if watchedMode == .followers || watchedMode == .activity {
                     markFollowersSeen()
                 } else {
                     let seen = Int64(UserDefaults.standard.double(forKey: followersSeenKey))

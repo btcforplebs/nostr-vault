@@ -130,7 +130,7 @@ class TutorialProgressTest {
         )
     }
 
-    /** Pocket Relay points at the relay card, its activity, then its address. */
+    /** Vault in Your Pocket points at the relay card, its activity, then its address. */
     @Test fun pocketRelayCardsPointAtTheDashboard() {
         assertEquals(
             listOf(TutorialContent.RELAY_STATUS, TutorialContent.RELAY_ACTIVITY, TutorialContent.RELAY_ADDRESS),
@@ -138,38 +138,51 @@ class TutorialProgressTest {
         )
     }
 
-    /** The screens put these on with `Modifier.tutorialAnchor`, and iOS uses
-     *  the same names. A typo here leaves a card with no pointer. */
-    @Test fun anchorNamesMatchIos() {
-        assertEquals("feeds.picker", TutorialContent.FEED_PICKER)
-        assertEquals("feeds.toolbar", TutorialContent.FEED_TOOLBAR)
-        assertEquals("vault.modes", TutorialContent.VAULT_MODES)
-        assertEquals("vault.filters", TutorialContent.VAULT_FILTERS)
-        assertEquals("vault.relay", TutorialContent.VAULT_RELAY)
-        assertEquals("wallet.empty", TutorialContent.WALLET_EMPTY)
-        assertEquals("wallet.connect", TutorialContent.WALLET_CONNECT_BUTTON)
-        assertEquals("relay.status", TutorialContent.RELAY_STATUS)
-        assertEquals("relay.address", TutorialContent.RELAY_ADDRESS)
-        assertEquals("relay.activity", TutorialContent.RELAY_ACTIVITY)
+    /** The WoT tutorial points at the globe, the magnifier, then the layer menu. */
+    @Test fun wotCardsPointAtTheWotTab() {
+        assertEquals(
+            listOf(TutorialContent.WOT_GLOBE, TutorialContent.WOT_SEARCH, TutorialContent.WOT_LAYERS),
+            TutorialContent.wot.map { it.anchor },
+        )
+    }
+
+    /** Your vault points at the dropdown pill, then the Vault button. */
+    @Test fun vaultCardsPointAtThePillThenTheButton() {
+        assertEquals(
+            listOf(TutorialContent.VAULT_MODES, TutorialContent.VAULT_RELAY),
+            TutorialContent.vault.map { it.anchor },
+        )
     }
 
     /** Every tutorial has cards on Android now (iOS: the iPhone/iPad build). */
     @Test fun everyTutorialIsAvailable() {
         TutorialID.entries.forEach { assertTrue(it.name, it.isAvailable) }
-        listOf(TutorialID.FEEDS, TutorialID.VAULT, TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY).forEach {
+        listOf(TutorialID.FEEDS, TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY).forEach {
             assertEquals(it.name, 3, it.steps.size)
         }
+        assertEquals(2, TutorialID.VAULT.steps.size) // the pill and the Vault button
         assertTrue(TutorialID.FILL_YOUR_VAULT.steps.isEmpty()) // its guide is FillYourFeedOverlay
     }
 
     /** The "Next: …" chain, in the iOS order. */
     @Test fun nextFollowsTheIosOrder() {
         assertEquals(TutorialID.FEEDS, TutorialID.FILL_YOUR_VAULT.next)
-        assertEquals(TutorialID.VAULT, TutorialID.FEEDS.next)
-        assertEquals(TutorialID.WALLET_CONNECT, TutorialID.VAULT.next)
-        assertEquals(TutorialID.POCKET_RELAY, TutorialID.WALLET_CONNECT.next)
-        assertNull(TutorialID.POCKET_RELAY.next)
+        assertEquals(TutorialID.WOT, TutorialID.FEEDS.next)
+        assertEquals(TutorialID.VAULT, TutorialID.WOT.next)
+        assertEquals(TutorialID.POCKET_RELAY, TutorialID.VAULT.next)
+        assertEquals(TutorialID.WALLET_CONNECT, TutorialID.POCKET_RELAY.next)
+        assertNull(TutorialID.WALLET_CONNECT.next)
         assertNull(TutorialID.IMPORT_TOUR.next)
+    }
+
+    /** The vault is a personal relay and media server, not a "pocket relay"
+     *  (nostr-vault Tutorial thread 2026-10-09). */
+    @Test fun noCopySaysPocketRelay() {
+        TutorialID.entries.forEach { id ->
+            val text = (listOf(id.title, id.summary) + id.steps.flatMap { listOf(it.title, it.body) })
+                .joinToString(" ").lowercase()
+            assertFalse(id.name, text.contains("pocket relay"))
+        }
     }
 
     @Test fun importTourCoversVaultAndPocketRelay() {

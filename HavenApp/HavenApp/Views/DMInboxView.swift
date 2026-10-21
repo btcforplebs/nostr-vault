@@ -11,13 +11,51 @@ struct DMInboxView: View {
 
     @State private var openedConversation: String?
     @State private var didOpenConversation = false
+    /// The conversation open in the right pane of the iPad's two-pane inbox.
     @State private var selectedConversation: String?
     @State private var showingDMThread = false
     @State private var showingCompose = false
+    /// The inbox's own width: a two-pane layout needs room for both, which a
+    /// regular size class alone doesn't promise (Split View, Slide Over).
+    @State private var paneWidth: CGFloat = 0
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    /// The list and the open conversation side by side, as Messages does on
+    /// iPad, instead of the conversation pushing over the list.
+    private var usesTwoPane: Bool {
+        #if os(iOS)
+        return horizontalSizeClass == .regular && paneWidth >= DMInboxMetrics.minTwoPaneWidth
+        #else
+        return false
+        #endif
+    }
+
+    /// Opens a conversation: selected into the right pane, or pushed.
+    private func open(_ pubkey: String) {
+        if usesTwoPane {
+            selectedConversation = pubkey
+        } else {
+            openedConversation = pubkey
+        }
+    }
 
     var body: some View {
         NavigationStack {
             dmContentView
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
+            // Rotating, or resizing in Split View, moves the open conversation
+            // between the right pane and the pushed stack instead of losing it.
+            .onChange(of: usesTwoPane) { _, twoPane in
+                if twoPane, let pushed = openedConversation {
+                    openedConversation = nil
+                    selectedConversation = pushed
+                } else if !twoPane, let selected = selectedConversation {
+                    selectedConversation = nil
+                    openedConversation = selected
+                }
+            }
             .navigationDestination(item: $openedConversation) { pubkey in
                 DMThreadView(counterpartyPubkey: pubkey)
                     .environmentObject(nostrService)
@@ -27,11 +65,11 @@ struct DMInboxView: View {
                 // Once: the root reappears every time the thread is popped.
                 guard !didOpenConversation else { return }
                 didOpenConversation = true
-                if let openConversation { openedConversation = openConversation }
+                if let openConversation { open(openConversation) }
             }
             // A notification tapped while the inbox is already open.
             .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
-                if let peer = note.object as? String { openedConversation = peer }
+                if let peer = note.object as? String { open(peer) }
             }
             .navigationTitle(String(localized: "dm.inbox.title"))
             #if os(iOS)
@@ -113,9 +151,43 @@ struct DMInboxView: View {
 
     // MARK: - DM Content
 
+    /// Messages the signer has not opened yet. Without this they were simply
+    /// missing: the notification arrived, the inbox showed nothing.
+    @ViewBuilder
+    private var signerWaitingBanner: some View {
+        let count = dmService.waitingForSignerCount
+        if count > 0 {
+            HStack(spacing: 10) {
+                Image(systemName: "key.horizontal")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.orange)
+                Text(count == 1
+                     ? "1 message is waiting for your signer to open it."
+                     : "\(count) messages are waiting for your signer to open them.")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button("Retry") { dmService.retryWaitingForSigner() }
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.orange.opacity(0.12))
+        }
+    }
+
     @ViewBuilder
     private var dmContentView: some View {
-        if dmService.conversations.isEmpty {
+        dmContentList
+            .safeAreaInset(edge: .top, spacing: 0) { signerWaitingBanner }
+    }
+
+    @ViewBuilder
+    private var dmContentList: some View {
+        if dmService.visibleConversations.isEmpty {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 20) {
@@ -159,9 +231,11 @@ struct DMInboxView: View {
                 }
             }
             .background(Color.platformWindowBackground.ignoresSafeArea())
+        } else if usesTwoPane {
+            twoPaneView
         } else {
             List {
-                ForEach(dmService.conversations) { conversation in
+                ForEach(dmService.visibleConversations) { conversation in
                     NavigationLink(destination: DMThreadView(counterpartyPubkey: conversation.id)
                         .environmentObject(nostrService)
                         .environmentObject(configService)) {
@@ -179,6 +253,74 @@ struct DMInboxView: View {
                 dmService.refresh()
             }
         }
+    }
+}
+
+// MARK: - Two-pane (iPad)
+
+enum DMInboxMetrics {
+    /// Below this the conversation column would be narrower than an iPhone's.
+    static let minTwoPaneWidth: CGFloat = 700
+    static let listWidth: CGFloat = 340
+}
+
+extension DMInboxView {
+    /// Nothing is opened for the reader: opening a conversation marks it read,
+    /// so picking one on their behalf would clear an unread they haven't seen.
+    var twoPaneView: some View {
+        HStack(spacing: 0) {
+            List(selection: $selectedConversation) {
+                ForEach(dmService.visibleConversations) { conversation in
+                    ConversationRow(conversation: conversation, nostrService: nostrService)
+                        .tag(conversation.id)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowSeparator(.hidden)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .refreshable {
+                dmService.refresh()
+            }
+            .frame(width: DMInboxMetrics.listWidth)
+
+            Divider()
+
+            Group {
+                if let pubkey = selectedConversation {
+                    DMThreadView(counterpartyPubkey: pubkey)
+                        .environmentObject(nostrService)
+                        .environmentObject(configService)
+                        .id(pubkey)
+                } else {
+                    ContentUnavailableView(
+                        "No Conversation Selected",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("Pick a conversation to read it here.")
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.platformWindowBackground.ignoresSafeArea())
+    }
+}
+
+extension View {
+    /// The DM inbox sheet. On iPad the default form sheet is too narrow for the
+    /// two-pane inbox; a page-sized sheet gives it the room. iPhone sheets are
+    /// full width either way, so this changes nothing there.
+    @ViewBuilder
+    func dmInboxSheetSizing() -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            self.presentationSizing(.page)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
 

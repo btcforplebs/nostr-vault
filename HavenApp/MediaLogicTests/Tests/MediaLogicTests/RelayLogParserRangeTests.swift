@@ -41,3 +41,44 @@ final class RelayLogParserRangeTests: XCTestCase {
         XCTAssertEqual(batch.progressDateStr, "2023-08-19")
     }
 }
+
+/// The Vault tab's red dot needs the kind of what came in, to say where to look.
+final class RelayLogParserInboxActivityTests: XCTestCase {
+    private func kinds(_ lines: [String]) -> Set<Int> {
+        var batch = RelayLogParser.BatchedStateUpdate()
+        for line in lines { RelayLogParser.collectStateChanges(from: line, into: &batch) }
+        return batch.inboxActivityKinds
+    }
+
+    /// Each phrase `logInboxImport` (haven-go/import.go) prints.
+    func testEachImportLineReportsItsKind() {
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 📰 new note in your inbox"]), [1])
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 🤙 new reaction in your inbox"]), [7])
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 ⚡️ new zap in your inbox"]), [9735])
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 🔒✉️ new encrypted message in your inbox"]), [4])
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 🎁🔒️✉️ new gift-wrapped message in your chat relay"]), [1059])
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 🔁 new repost in your inbox"]), [6])
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 📦 new event kind 9802 event in your inbox"]), [9802])
+    }
+
+    /// A reaction's content leads its line; a "new note" in it is not a note.
+    func testReactionContentDoesNotReadAsANote() {
+        XCTAssertEqual(kinds(["2026/10/09 14:51:39 new note in your inbox new reaction in your inbox"]), [7])
+    }
+
+    func testOwnWritesAndOtherLinesReportNothing() {
+        XCTAssertEqual(kinds([
+            "2026/10/09 14:51:39 event stored",
+            "2026/10/09 14:51:39 blasted event to 12 relays",
+            "2026/10/09 14:51:39 new note saved to outbox",
+        ]), [])
+    }
+
+    func testABatchCollectsEveryKind() {
+        XCTAssertEqual(kinds([
+            "📰 new note in your inbox",
+            "⚡️ new zap in your inbox",
+            "📰 new note in your inbox",
+        ]), [1, 9735])
+    }
+}

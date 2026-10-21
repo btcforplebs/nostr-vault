@@ -32,8 +32,8 @@ func TestLiveEngagementIngest(t *testing.T) {
 	config.PopularTallyEnabled = true
 	config.ImportSeedRelays = []string{
 		"wss://relay.primal.net",
-		"wss://nos.lol",
-		"wss://nostr.mom",
+		"wss://relay.damus.io",
+		"wss://relay.snort.social",
 		"wss://nostr-pub.wellorder.net",
 	}
 	config.PopularTallyCachePath = filepath.Join(t.TempDir(), "popular_tally.json")
@@ -107,8 +107,8 @@ func TestLiveTrustGateLeavesAUsableFeed(t *testing.T) {
 	config.PopularTallyEnabled = true
 	config.ImportSeedRelays = []string{
 		"wss://relay.primal.net",
-		"wss://nos.lol",
-		"wss://nostr.mom",
+		"wss://relay.damus.io",
+		"wss://relay.snort.social",
 		"wss://nostr-pub.wellorder.net",
 	}
 	config.PopularTallyCachePath = filepath.Join(t.TempDir(), "popular_tally.json")

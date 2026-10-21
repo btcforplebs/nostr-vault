@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -29,6 +30,8 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.NIP88Poll
+import com.nostrvault.data.model.VaultNoteScope
 import com.nostrvault.data.model.condensedTitle
 import com.nostrvault.ui.theme.*
 
@@ -58,6 +61,49 @@ enum class CondensedLineStyle {
     /** A line inside a thread card, which owns the chrome instead. */
     PLAIN,
 }
+
+/**
+ * The glyph that says a condensed line is not a plain note. The same symbols
+ * as the feed picker and the Vault. iOS: `CondensedNoteLine.kindMarker`.
+ */
+enum class CondensedKindMarker(val label: String) {
+    ARTICLE("Article"),
+    RECIPE("Recipe"),
+    HIGHLIGHT("Highlight"),
+    POLL("Poll");
+
+    val icon: ImageVector
+        get() = when (this) {
+            ARTICLE -> NostrVaultIcons.Articles
+            RECIPE -> NostrVaultIcons.Recipes
+            HIGHLIGHT -> NostrVaultIcons.Highlights
+            POLL -> NostrVaultIcons.Polls
+        }
+
+    fun tint(themeColor: Color): Color = when (this) {
+        ARTICLE -> themeColor
+        RECIPE -> ZapOrange
+        HIGHLIGHT -> WarningYellow
+        POLL -> PollTeal
+    }
+
+    companion object {
+        /**
+         * Reads only the note the line shows. A resolved repost carries its
+         * original's kind and tags, so a reposted article is marked; a quote
+         * of one is a kind 1 and is not.
+         */
+        fun of(note: FeedNote): CondensedKindMarker? = when (note.displayKind) {
+            VaultNoteScope.ARTICLE_KIND -> if (VaultNoteScope.isRecipe(note.tags)) RECIPE else ARTICLE
+            VaultNoteScope.HIGHLIGHT_KIND -> HIGHLIGHT
+            NIP88Poll.KIND -> POLL
+            else -> null
+        }
+    }
+}
+
+/** iOS `.teal` in dark mode. */
+private val PollTeal = Color(0xFF40C8E0)
 
 /** One source for the indent so a line and the row that replaces it when tapped share a left edge. */
 fun condensedIndentWidth(depth: Int): Dp =
@@ -114,6 +160,10 @@ fun CondensedNoteLine(
     /** A Translate button under the text for posts in another language. */
     showsTranslate: Boolean = false,
     onProfileClick: (String) -> Unit = {},
+    /** The avatar opens this quick menu, as a full note's does; without it, the profile. */
+    avatarMenu: AvatarMenuActions? = null,
+    /** The menu's Web of Trust item, where the screen offers it. */
+    onTrustWeb: ((String) -> Unit)? = null,
     onTap: (() -> Unit)? = null,
     themeColor: Color = LocalNostrVaultColors.current.primary,
     modifier: Modifier = Modifier,
@@ -171,18 +221,26 @@ fun CondensedNoteLine(
                     vertical = if (style == CondensedLineStyle.CARD) 8.dp else 6.dp,
                 ),
         ) {
-            AvatarImage(
-                url = profile?.pictureURL,
+            AvatarWithMenu(
                 pubkey = authorPubkey,
-                size = avatarSize,
-                displayName = profile?.bestName,
-                modifier = Modifier.clickable { onProfileClick(authorPubkey) },
-            )
+                displayName = displayName,
+                menu = avatarMenu,
+                onProfileClick = onProfileClick,
+                onTrustWeb = onTrustWeb,
+            ) { avatarModifier ->
+                AvatarImage(
+                    url = profile?.pictureURL,
+                    pubkey = authorPubkey,
+                    size = avatarSize,
+                    displayName = profile?.bestName,
+                    modifier = avatarModifier,
+                )
+            }
 
             Spacer(Modifier.width(8.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                // Header: name · time · reply count / reply-or-repost marker
+                // Header: name · time · reply / repost / quote / kind markers
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = displayName,
@@ -191,7 +249,11 @@ fun CondensedNoteLine(
                         fontSize = nameSize,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
+                        // The name opens the profile, as on a full post; the
+                        // photo opens the quick menu (iOS CondensedNoteLine).
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clickable { onProfileClick(authorPubkey) },
                     )
                     if (!profile?.nip05.isNullOrBlank()) {
                         Spacer(Modifier.width(3.dp))
@@ -241,6 +303,15 @@ fun CondensedNoteLine(
                             modifier = Modifier.size(10.dp),
                         )
                     }
+                    CondensedKindMarker.of(note)?.let { marker ->
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = marker.icon,
+                            contentDescription = marker.label,
+                            tint = marker.tint(themeColor).copy(alpha = 0.7f),
+                            modifier = Modifier.size(10.dp),
+                        )
+                    }
                 }
 
                 // Every URL comes out of the line (#170 parity); links come
@@ -251,15 +322,17 @@ fun CondensedNoteLine(
                 }
                 val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
                     NostrMentions.collapseGaps(
-                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet()).replace("\n", " ")
+                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet())
                     ).trim()
                 }
                 if (plainText.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     val line = @Composable {
+                        // iOS: full white on the root line, 85% (80% OLED) on
+                        // replies; newlines stay inside the line limit.
                         Text(
                             text = plainText,
-                            color = SecondaryText,
+                            color = PrimaryText.copy(alpha = if (isRoot) 1f else if (isOled) 0.8f else 0.85f),
                             fontSize = bodySize,
                             maxLines = bodyLineLimit,
                             overflow = TextOverflow.Ellipsis,
@@ -390,7 +463,8 @@ private fun CondensedMediaThumbnail(mediaURLs: List<String>, isRoot: Boolean) {
     }
 }
 
-private fun shortKey(key: String): String =
+/** iOS FeedNoteRow.shortKey: "npub…" and the key's last six characters. */
+internal fun shortKey(key: String): String =
     if (key.length < 12) key else "npub…" + key.takeLast(6)
 
 /** Sent from Nostr Vault on any platform: the `client` tag every Nostr Vault note carries. */

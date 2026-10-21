@@ -10,6 +10,16 @@ struct BitcoinSweepView: View {
     @State private var selectedTier: FeeTier = .normal
     @State private var sweepState: SweepState = .idle
     @State private var loadingFees = true
+    /// Set when Sweep is tapped; the confirm step sends exactly this address
+    /// at exactly this rate, even if fee estimates land while it is open.
+    @State private var pending: PendingSweep? = nil
+
+    struct PendingSweep {
+        let address: String
+        let feeRate: Int
+        let amount: Int
+        let fee: Int
+    }
 
     enum FeeTier: CaseIterable, Identifiable {
         case economy, normal, fast
@@ -63,8 +73,10 @@ struct BitcoinSweepView: View {
 
     private var sendAmount: Int { max(0, balanceSats - estimatedFee) }
 
+    private var validAddress: String? { BitcoinAddress.normalizedMainnet(destAddress) }
+
     private var canSweep: Bool {
-        !destAddress.trimmingCharacters(in: .whitespaces).isEmpty
+        validAddress != nil
             && sendAmount > 546
             && sweepState.isIdle
     }
@@ -98,6 +110,18 @@ struct BitcoinSweepView: View {
             }
         }
         .onAppear { loadFeeEstimates() }
+        .alert("Send entire balance?", isPresented: Binding(
+            get: { pending != nil },
+            set: { if !$0 { pending = nil } }
+        ), presenting: pending) { sweep in
+            Button("Cancel", role: .cancel) { pending = nil }
+            Button("Send", role: .destructive) {
+                pending = nil
+                executeSweep(sweep)
+            }
+        } message: { sweep in
+            Text("About \(formatSats(sweep.amount)) to:\n\n\(sweep.address)\n\nFee about \(formatSats(sweep.fee)) at \(sweep.feeRate) sat/vB. This cannot be undone.")
+        }
     }
 
     // MARK: - Form
@@ -139,6 +163,11 @@ struct BitcoinSweepView: View {
                     .padding(10)
                     .background(Color.secondary.opacity(0.08))
                     .cornerRadius(8)
+                if !destAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && validAddress == nil {
+                    Text("Not a valid Bitcoin mainnet address")
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.red)
+                }
             }
 
             // Fee tier
@@ -182,7 +211,7 @@ struct BitcoinSweepView: View {
             }
 
             // Sweep button
-            Button(action: executeSweep) {
+            Button(action: requestSweep) {
                 HStack(spacing: 8) {
                     if case .sweeping = sweepState {
                         ProgressView()
@@ -243,7 +272,7 @@ struct BitcoinSweepView: View {
                     .lineLimit(2)
             }
 
-            if let url = URL(string: "https://mempool.btcforplebs.com/tx/\(txid)") {
+            if let url = URL(string: "https://mempool.space/tx/\(txid)") {
                 Link(destination: url) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.right.square")
@@ -303,6 +332,7 @@ struct BitcoinSweepView: View {
         Task {
             guard let cStr = FetchFeeEstimatesC() else { return }
             let json = String(cString: cStr)
+            free(cStr)
             guard let data = json.data(using: .utf8),
                   let estimates = try? JSONDecoder().decode(FeeEstimates.self, from: data) else { return }
             await MainActor.run {
@@ -312,8 +342,17 @@ struct BitcoinSweepView: View {
         }
     }
 
-    private func executeSweep() {
-        guard canSweep else { return }
+    /// Sweep sends everything, so the button only opens a confirm step that
+    /// shows the amount and the full address.
+    private func requestSweep() {
+        guard canSweep, let address = validAddress else { return }
+        pending = PendingSweep(address: address, feeRate: currentFeeRate,
+                               amount: sendAmount, fee: estimatedFee)
+    }
+
+    private func executeSweep(_ sweep: PendingSweep) {
+        guard sweepState.isIdle, BitcoinAddress.normalizedMainnet(sweep.address) == sweep.address else { return }
+        let dest = sweep.address
 
         let config = ConfigService.shared.config
         var hexKey: String?
@@ -329,20 +368,16 @@ struct BitcoinSweepView: View {
             return
         }
 
-        let dest = destAddress.trimmingCharacters(in: .whitespaces)
-        let rate = Int32(currentFeeRate)
+        let rate = Int32(sweep.feeRate)
 
         sweepState = .sweeping
         Task.detached {
-            guard let cStr = SweepToAddressC(
-                UnsafeMutablePointer(mutating: (nsecHex as NSString).utf8String),
-                UnsafeMutablePointer(mutating: (dest as NSString).utf8String),
-                rate
-            ) else {
+            guard let cStr = withCStrings([nsecHex, dest], { p in SweepToAddressC(p[0], p[1], rate) }) else {
                 await MainActor.run { sweepState = .failure("Sweep failed (no response).") }
                 return
             }
             let json = String(cString: cStr)
+            free(cStr)
             guard let data = json.data(using: .utf8),
                   let result = try? JSONDecoder().decode(SweepResult.self, from: data) else {
                 await MainActor.run { sweepState = .failure("Could not parse sweep response.") }

@@ -155,16 +155,48 @@ final class TutorialCenter: ObservableObject {
         guard anchors[name] != frame else { return }
         anchors[name] = frame
     }
+
+    /// Pages whose anchors a sheet is hiding. The stage draws over sheets,
+    /// so a page whose card points under one says so here, and the card
+    /// waits until the sheet goes.
+    @Published private(set) var covered: Set<String> = []
+
+    func setCovered(_ page: String, _ isCovered: Bool) {
+        guard covered.contains(page) != isCovered else { return }
+        if isCovered { covered.insert(page) } else { covered.remove(page) }
+    }
 }
 
 extension View {
     /// Marks this view as something a tutorial card can point at.
-    func tutorialAnchor(_ name: String) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-            TutorialCenter.shared.setAnchor(name, frame: frame)
-        }
-        .onDisappear {
-            TutorialCenter.shared.setAnchor(name, frame: nil)
-        }
+    /// `isActive` false leaves the name to another view that carries it:
+    /// the Vault tab's two halves both stay alive, and only the one showing
+    /// should be pointed at.
+    func tutorialAnchor(_ name: String, isActive: Bool = true) -> some View {
+        modifier(TutorialAnchorModifier(name: name, isActive: isActive))
+    }
+}
+
+/// Reports the view's frame under `name`, and takes it back when the view
+/// goes. A tab that stays alive comes back with the same frame, so
+/// `onGeometryChange` has nothing new to say then; the frame kept here is
+/// put back on appear, or the card for that tab waits forever.
+private struct TutorialAnchorModifier: ViewModifier {
+    let name: String
+    let isActive: Bool
+    @State private var frame: CGRect?
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect?.self) { isActive ? $0.frame(in: .global) : nil } action: { new in
+                frame = new
+                if let new { TutorialCenter.shared.setAnchor(name, frame: new) }
+            }
+            .onAppear {
+                if let frame { TutorialCenter.shared.setAnchor(name, frame: frame) }
+            }
+            .onDisappear {
+                if isActive { TutorialCenter.shared.setAnchor(name, frame: nil) }
+            }
     }
 }

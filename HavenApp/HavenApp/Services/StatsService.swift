@@ -77,24 +77,27 @@ class StatsService: ObservableObject {
         }
     }
     
-    /// Fetches event counts per kind from the local relay. Uses one WebSocket per relay
-    /// endpoint and pipelines all COUNT requests through it to avoid hitting the connection
-    /// rate limiter. Returns a dictionary mapping kind number to count, plus the total under key -1.
-    func fetchCountsByKind() async -> [Int: Int] {
+    /// Event counts per kind across the vault's relays, plus the total under
+    /// key -1. One socket per relay pipelines every COUNT (`RelayCounter`,
+    /// which AUTHs as the owner on /private and /chat). Nil unless every
+    /// relay answered every COUNT: a partial sum would undercount. Without
+    /// the owner's key the total covers the public routes only.
+    func fetchCountsByKind() async -> [Int: Int]? {
         let config = ConfigService.shared.config
         #if os(macOS)
         let baseURLString = "ws://127.0.0.1:\(config.relayPort)"
         #else
         let baseURLString = "wss://127.0.0.1:\(config.relayPort)"
         #endif
-        guard let baseURL = URL(string: baseURLString) else { return [:] }
+        guard let baseURL = URL(string: baseURLString) else { return nil }
 
-        let relayURLs = [
+        // Watch-only: /private and /chat can't be AUTHed, so count the rest.
+        let relayURLs = RelayCountSession.countable([
             baseURL,
             baseURL.appendingPathComponent("inbox"),
             baseURL.appendingPathComponent("private"),
             baseURL.appendingPathComponent("chat")
-        ]
+        ], canSignAsOwner: RelayCounter.ownerCanAuth())
 
         // Common Nostr kinds to query — covers profile, social, media, lists, long-form, zaps, DMs
         let kindsToQuery = [
@@ -104,147 +107,31 @@ class StatsService: ObservableObject {
             10000, 10001, 10002, 10003, 10005, 10006, 10015, 10030,
             30000, 30001, 30002, 30008, 30009, 30023, 30024, 30030, 30078
         ]
+        var filters: [String: [String: Any]] = ["-1": [:]]
+        for kind in kindsToQuery {
+            filters["\(kind)"] = ["kinds": [kind]]
+        }
 
         var results: [Int: Int] = [:]
         var allEndpointsResponded = true
-
-        // One connection per URL, pipeline all COUNT requests through it
-        await withTaskGroup(of: [Int: Int]?.self) { group in
+        await withTaskGroup(of: [String: Int]?.self) { group in
             for url in relayURLs {
-                group.addTask {
-                    return await Self.fetchKindCounts(url: url, kinds: kindsToQuery)
-                }
+                group.addTask { await RelayCounter.count(filters, at: url) }
             }
             for await partial in group {
-                if let partial = partial {
-                    for (kind, count) in partial {
-                        results[kind, default: 0] += count
-                    }
-                } else {
-                    allEndpointsResponded = false
+                guard let partial else { allEndpointsResponded = false; continue }
+                for (key, count) in partial {
+                    if let kind = Int(key) { results[kind, default: 0] += count }
                 }
             }
         }
 
-        // Discard partial results to avoid showing fluctuating breakdown counts
-        if !allEndpointsResponded {
+        guard allEndpointsResponded else {
             #if DEBUG
-            print("StatsService: Not all endpoints responded for kind breakdown — returning empty")
+            print("StatsService: Not all endpoints answered the kind breakdown — couldn't count")
             #endif
-            return [:]
-        }
-
-        return results
-    }
-
-    /// Opens a single WebSocket to the relay URL and sends one COUNT per kind plus a total.
-    /// Returns kind -> count, with the grand total under key -1. Returns nil on connection failure.
-    private static func fetchKindCounts(url: URL, kinds: [Int]) async -> [Int: Int]? {
-        let client = await MainActor.run { () -> WebSocketClient in
-            let c = WebSocketClient()
-            c.isTemporary = true
-            return c
-        }
-        await MainActor.run { client.connect(url: url) }
-
-        // Wait for connection (5s timeout)
-        var connectCancellable: AnyCancellable?
-        let didConnect = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            var resumed = false
-            connectCancellable = client.$connectionState
-                .first(where: { $0 == .connected || $0 == .error })
-                .timeout(.seconds(5), scheduler: DispatchQueue.main)
-                .sink { completion in
-                    guard !resumed else { return }
-                    resumed = true
-                    // Timeout or upstream completion without value = failure
-                    cont.resume(returning: false)
-                } receiveValue: { state in
-                    guard !resumed else { return }
-                    resumed = true
-                    cont.resume(returning: state == .connected)
-                }
-        }
-        connectCancellable?.cancel()
-        guard didConnect else {
-            await MainActor.run { client.disconnect() }
             return nil
         }
-
-        // Assign a unique sub ID per kind (and -1 for total)
-        var subIdToKind: [String: Int] = [:]
-        var pending: Set<String> = []
-        let totalSubId = "count-total-\(UUID().uuidString.prefix(6))"
-        subIdToKind[totalSubId] = -1
-        pending.insert(totalSubId)
-        for kind in kinds {
-            let subId = "count-k\(kind)-\(UUID().uuidString.prefix(6))"
-            subIdToKind[subId] = kind
-            pending.insert(subId)
-        }
-
-        var results: [Int: Int] = [:]
-
-        var messageCancellable: AnyCancellable?
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            var resumed = false
-            messageCancellable = client.messageSubject
-                .receive(on: DispatchQueue.main)
-                .timeout(.seconds(20), scheduler: DispatchQueue.main)
-                .sink { _ in
-                    // Timeout or upstream completion
-                    guard !resumed else { return }
-                    resumed = true
-                    cont.resume()
-                } receiveValue: { msg in
-                    guard let data = msg.data(using: .utf8),
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                          json.count >= 3,
-                          let type = json[0] as? String,
-                          let subId = json[1] as? String,
-                          type == "COUNT",
-                          let kind = subIdToKind[subId],
-                          let payload = json[2] as? [String: Any],
-                          let rawCount = payload["count"] else { return }
-
-                    let extracted: Int
-                    if let i = rawCount as? Int { extracted = i }
-                    else if let d = rawCount as? Double { extracted = Int(d) }
-                    else if let n = rawCount as? NSNumber { extracted = n.intValue }
-                    else if let s = rawCount as? String, let i = Int(s) { extracted = i }
-                    else { extracted = 0 }
-
-                    results[kind] = extracted
-                    pending.remove(subId)
-
-                    // Only resume once all responses received
-                    if pending.isEmpty {
-                        guard !resumed else { return }
-                        resumed = true
-                        cont.resume()
-                    }
-                }
-
-            // Fire all COUNT requests
-            DispatchQueue.main.async {
-                let totalReq: [Any] = ["COUNT", totalSubId, [:] as [String: Any]]
-                if let d = try? JSONSerialization.data(withJSONObject: totalReq),
-                   let s = String(data: d, encoding: .utf8) {
-                    client.send(text: s)
-                }
-                for kind in kinds {
-                    let subId = subIdToKind.first(where: { $0.value == kind })?.key ?? ""
-                    let req: [Any] = ["COUNT", subId, ["kinds": [kind]] as [String: Any]]
-                    if let d = try? JSONSerialization.data(withJSONObject: req),
-                       let s = String(data: d, encoding: .utf8) {
-                        client.send(text: s)
-                    }
-                }
-            }
-        }
-        messageCancellable?.cancel()
-
-        await MainActor.run { client.disconnect() }
         return results
     }
 

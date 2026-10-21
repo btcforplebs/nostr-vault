@@ -11,6 +11,7 @@ import com.nostrvault.data.model.NoteStats
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.fetchRelayList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -31,13 +32,13 @@ enum class ProfileSection(val displayName: String) {
     REPLIES("Replies"),
     /** This person's kind-6 reposts, kept out of Notes. */
     REPOSTS("Reposts"),
+    TAGGED("Tagged"),
     /** Long-form posts (kind 30023). Shown only when there are some. */
     ARTICLES("Articles"),
     /** Short videos (kind 34236). Shown only when there are some. */
     DIVINES("diVines"),
     /** Wavlake songs. Shown only when the artist is found. */
     MUSIC("Music"),
-    TAGGED("Tagged"),
     /** Marketplace listings. Shown only when there are some, or on your own profile. */
     SHOP("Shop"),
     ;
@@ -61,13 +62,20 @@ class ProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val nostrService: NostrService,
     private val feedService: FeedService,
+    private val pendingPostManager: com.nostrvault.service.PendingPostManager,
     private val zapSendService: ZapSendService,
     private val configStore: ConfigStore,
     private val engagementStore: com.nostrvault.service.ProfileEngagementStore,
     private val blossomService: com.nostrvault.service.BlossomService,
     private val mediaCacheService: com.nostrvault.service.MediaCacheService,
     private val mediaSaveService: com.nostrvault.service.MediaSaveService,
+    private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
+    dmService: com.nostrvault.service.DMService,
 ) : ViewModel() {
+
+    /** Unread messages across your DMs, for the dot on your profile's Messages button. */
+    val unreadDMCount: StateFlow<Int> = dmService.totalUnreadCountFlow
+
 
     /**
      * Likes, reposts, replies, quotes and zap sats under each post, by post
@@ -112,16 +120,27 @@ class ProfileViewModel @Inject constructor(
         /** Posts arriving within this long of each other share one count query. */
         private const val ENGAGEMENT_DEBOUNCE_MS = 300L
         private val COUNT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
+        /** How long a profile waits for its relay list before giving up on the outbox. */
+        private const val OUTBOX_WAIT_MS = 30_000L
     }
 
     /** The Shop tab: this person's marketplace listings. */
-    private val shop = com.nostrvault.service.SellerListingsLoader(viewModelScope, nostrService)
+    private val shop = com.nostrvault.service.SellerListingsLoader(
+        viewModelScope, nostrService, isBlocked = { feedService.isBlocked(it) },
+    )
     val shopListings = shop.listings
     val shopLoading = shop.isLoading
-    fun reloadShop() = shop.load(_pubkey.value, force = true)
+    fun reloadShop() {
+        if (_pubkey.value.isNotEmpty()) shop.load(_pubkey.value, force = true)
+    }
+
+    /** Which section tabs show; the late ones come in together. */
+    private val tabReveal = ProfileTabReveal(viewModelScope)
+    val visibleSections = tabReveal.visible
+    fun setOpensAsTab(value: Boolean) { tabReveal.opensAsTab.value = value }
 
     /** This person's articles, diVines and music, each a tab when they have any. */
-    private val extras = ProfileExtrasLoader(viewModelScope, nostrService)
+    private val extras = ProfileExtrasLoader(tabReveal.extrasScope, nostrService)
     val articles = extras.articles
     val reels = extras.reels
     val tracks = extras.tracks
@@ -135,8 +154,14 @@ class ProfileViewModel @Inject constructor(
             feedRelays = config.activeFeedRelays,
             outbox = nostrService.outboxRelays.value[pubkey].orEmpty(),
         )
+        tabReveal.extrasLoadStarting()
         extras.load(pubkey, relays, force)
+        tabReveal.extrasLoadStarted()
     }
+
+    private val _zapBursts = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** One per profile zap that went through: the zap button's burst (iOS ZapBurstView). */
+    val zapBursts: SharedFlow<Unit> = _zapBursts.asSharedFlow()
 
     fun npubToHex(npub: String): String? = nostrService.npubToHex(npub)
 
@@ -179,10 +204,6 @@ class ProfileViewModel @Inject constructor(
     private val _isBlocked = MutableStateFlow(false)
     val isBlocked: StateFlow<Boolean> = _isBlocked.asStateFlow()
 
-    /** Pull-to-refresh on your own profile. */
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
-
     /** null until known → UI shows "∞" for other users (mirrors iOS). */
     private val _followersCount = MutableStateFlow<Int?>(null)
     val followersCount: StateFlow<Int?> = _followersCount.asStateFlow()
@@ -203,8 +224,6 @@ class ProfileViewModel @Inject constructor(
     val hasMoreTagged: StateFlow<Boolean> = _hasMoreTagged.asStateFlow()
 
     /** Transient user-facing message (zap / block result). */
-    private val _toast = MutableStateFlow<String?>(null)
-    val toast: StateFlow<String?> = _toast.asStateFlow()
 
     /** The default zap amount from Wallet settings, in sats (iOS `defaultZapSats`). */
     val defaultZapSats: Int get() = configStore.config.value.defaultZapAmount.coerceAtLeast(1)
@@ -213,7 +232,11 @@ class ProfileViewModel @Inject constructor(
         _profileNotes,
         _taggedNotes,
         _selectedSection,
-    ) { notes, tagged, section ->
+    ) { notes, tagged, section -> sectionNotes(section, notes, tagged) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The notes [section] lists, out of the profile's own notes and the tagged ones. */
+    private fun sectionNotes(section: ProfileSection, notes: List<FeedNote>, tagged: List<FeedNote>): List<FeedNote> =
         when (section) {
             // Matches iOS ProfileView sections: reposts have their own tab,
             // Media is this person's own media whether posted or replied with.
@@ -227,7 +250,6 @@ class ProfileViewModel @Inject constructor(
             // Not notes either; these tabs read [extras].
             ProfileSection.ARTICLES, ProfileSection.DIVINES, ProfileSection.MUSIC -> emptyList()
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val counts: StateFlow<ProfileCounts> = combine(
         _profileNotes,
@@ -248,7 +270,13 @@ class ProfileViewModel @Inject constructor(
     private val followerPubkeys = mutableSetOf<String>()
     private var stream: NostrService.ProfileStream? = null
 
+    /** A stream is open to page on (see [canPageOlder]). */
+    private val _streamOpen = MutableStateFlow(false)
+    // Declared before init: loadProfile() can reach startStream() before its
+    // first suspension, while the constructor is still running.
+
     init {
+        tabReveal.bind(_selectedSection, articles, reels, tracks, shop.isLoading, shop.listings)
         if (_pubkey.value.isNotEmpty()) {
             loadProfile()
             shop.load(_pubkey.value)
@@ -260,6 +288,21 @@ class ProfileViewModel @Inject constructor(
             combine(_pubkey, feedService.followedPubkeys) { pk, followed -> pk.isNotEmpty() && pk in followed }
                 .collect { _isFollowing.value = it }
         }
+        // Block reads the active account's block list too, so a block from
+        // anywhere (the avatar menu on one of their posts, a Media tile)
+        // shows in the header at once.
+        viewModelScope.launch {
+            combine(_pubkey, configStore.config) { pk, _ -> pk.isNotEmpty() && feedService.isBlocked(pk) }
+                .distinctUntilChanged()
+                .collect { _isBlocked.value = it }
+        }
+        // Blocking shuts their shop as you block, and unblocking fetches it
+        // again, rather than on the next visit.
+        viewModelScope.launch {
+            _isBlocked.drop(1).distinctUntilChanged().collect {
+                if (_pubkey.value.isNotEmpty()) reloadShop()
+            }
+        }
     }
 
     fun setPubkey(pubkey: String) {
@@ -270,12 +313,13 @@ class ProfileViewModel @Inject constructor(
             loadProfile()
             shop.load(pubkey)
             loadExtras(pubkey)
+            tabReveal.reset()
         }
     }
 
     /** Drops the stream and everything it loaded, for a fresh load. */
     private fun resetLoadedState() {
-        stream?.close(); stream = null
+        stream?.close(); stream = null; _streamOpen.value = false
         pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
         relayFollowerCount = null
@@ -289,21 +333,26 @@ class ProfileViewModel @Inject constructor(
         _hasMoreNotes.value = true
         _hasMoreTagged.value = true
         _isLoadingOlder.value = false
+        emptyTabPaging.reset()
+        olderPage = null
     }
 
+    /** A refresh is running; a second tap waits for it. */
+    private var refreshing = false
+
     /**
-     * Pull-to-refresh, in place: a new stream adds what is new while the
-     * notes, counts and tabs on screen stay until something replaces them,
-     * so the page never blanks and refills. Metadata is fetched again.
-     * iOS: ProfileView.refreshProfile().
+     * Fetched fresh, in place: a new stream adds what is new while the
+     * notes, counts and tabs on screen stay, so the page never blanks and
+     * refills. Re-tapping the Profile tab runs it, the iPhone's way to
+     * refresh your own profile (pulling down opens Edit Profile). iOS
+     * ProfileFeedLoader.refresh(shop:extras:).
      */
     fun refresh() {
         val pk = _pubkey.value
-        if (pk.isEmpty() || _isRefreshing.value) return
-        _isRefreshing.value = true
-        _isLoading.value = true
+        if (pk.isEmpty() || refreshing) return
+        refreshing = true
         // A page of older notes in flight dies with the old stream.
-        stream?.close(); stream = null
+        stream?.close(); stream = null; _streamOpen.value = false
         pageToken++
         _isLoadingOlder.value = false
         nostrService.fetchMissingProfiles(listOf(pk), force = true)
@@ -312,10 +361,9 @@ class ProfileViewModel @Inject constructor(
         shop.load(pk, force = true)
         loadExtras(pk, force = true)
         viewModelScope.launch {
-            // Done once the first page is in (the spinner the load drives
-            // drops on EOSE), or after a few seconds regardless.
+            // Done once the first page is in, or after a few seconds regardless.
             withTimeoutOrNull(8_000) { _isLoading.first { !it } }
-            _isRefreshing.value = false
+            refreshing = false
         }
     }
 
@@ -334,20 +382,23 @@ class ProfileViewModel @Inject constructor(
             val own = pk == configStore.activeAccountHexPubkey.value
             _isOwnProfile.value = own
             _isFollowing.value = feedService.isFollowing(pk)
-            _isBlocked.value = feedService.isBlocked(pk)
 
             // Own following count is known instantly from our contact list.
             if (own) {
                 _followingCount.value = feedService.followedPubkeys.value.count { it != pk }
                 // Your followers come from the relay's ledger, which is complete
-                // (spam left out); relay samples would cap at a page.
+                // (spam left out); relay samples would cap at a page. It beats
+                // Vertex here so the header matches the list it opens and the
+                // Vault's Followers tab.
                 launch {
                     val ledger = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         com.nostrvault.data.model.FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(pk))
                     }
-                    if (ledger != null && _pubkey.value == pk) {
-                        ownLedgerLoaded = true
-                        if (vertexFollowerCount == null) _followersCount.value = ledger.current.size
+                    synchronized(this@ProfileViewModel) {
+                        if (ledger != null && _pubkey.value == pk) {
+                            ownLedgerLoaded = true
+                            _followersCount.value = ledger.current.size
+                        }
                     }
                 }
             }
@@ -386,8 +437,9 @@ class ProfileViewModel @Inject constructor(
 
     /**
      * Vertex counts follow lists from across Nostr, once per follower, so
-     * its answer replaces the ledger, relay COUNTs and streamed sample, on
-     * your profile too. Port of iOS ProfileView.displayedFollowersCount.
+     * its answer replaces the relay COUNTs and streamed sample. On your own
+     * profile the ledger wins instead. Port of iOS
+     * ProfileView.displayedFollowersCount.
      */
     private fun fetchVertexFollowerCount(pk: String) {
         viewModelScope.launch {
@@ -395,7 +447,7 @@ class ProfileViewModel @Inject constructor(
             synchronized(this@ProfileViewModel) {
                 if (_pubkey.value != pk) return@launch
                 vertexFollowerCount = count
-                _followersCount.value = count
+                if (!ownLedgerLoaded) _followersCount.value = count
             }
         }
     }
@@ -441,12 +493,31 @@ class ProfileViewModel @Inject constructor(
             }
         }
         s.onEose = { subId ->
-            // Initial combined REQ finished → drop the spinner. Pagination uses
-            // its own timed checks (see loadOlder).
+            // Initial combined REQ finished → drop the spinner. An older
+            // page's EOSE ends that page (see loadOlder).
             if (subId.startsWith("profile-")) _isLoading.value = false
+            olderPage?.onEose(subId)
         }
         stream = s
+        _streamOpen.value = true
         s.start()
+        askOutboxWhenKnown(pk, s)
+    }
+
+    /**
+     * Someone far out in the web of trust has no relay list cached, so the
+     * stream never asked their own relays. Fetch their kind 10002 and, when
+     * the outbox arrives, open the same REQ there too.
+     */
+    private fun askOutboxWhenKnown(pk: String, s: NostrService.ProfileStream) {
+        if (!nostrService.outboxRelays.value[pk].isNullOrEmpty()) return
+        nostrService.fetchRelayList(pk)
+        viewModelScope.launch {
+            val outbox = withTimeoutOrNull(OUTBOX_WAIT_MS) {
+                nostrService.outboxRelays.mapNotNull { it[pk]?.takeIf(List<String>::isNotEmpty) }.first()
+            } ?: return@launch
+            if (stream === s) s.addRelays(outbox.take(3))
+        }
     }
 
     @Synchronized
@@ -462,6 +533,7 @@ class ProfileViewModel @Inject constructor(
         }
         _profileNotes.value = (_profileNotes.value + note).sortedByDescending { it.createdAt }
         feedService.cacheNote(note)
+        olderPage?.onArrival()
     }
 
     @Synchronized
@@ -479,41 +551,71 @@ class ProfileViewModel @Inject constructor(
         }
         _taggedNotes.value = (_taggedNotes.value + note).sortedByDescending { it.createdAt }
         feedService.cacheNote(note)
+        olderPage?.onArrival()
     }
 
     /** Bumped when a stream is replaced so an older page's check can't end paging. */
     private var pageToken = 0
 
-    /** Infinite-scroll: page older notes (or tagged) on the open stream sockets. */
-    fun loadOlder() {
+    /** Automatic pages already spent on each empty tab (see [autoPageEmptyTab]). */
+    private val emptyTabPaging = ProfileEmptyTabPaging()
+
+
+    /** [canPageOlder] for the note tabs and for Tagged, for the screen to follow. */
+    val canPageOlderNotes: StateFlow<Boolean> = combine(_streamOpen, _hasMoreNotes, _profileNotes) { open, more, notes -> open && more && notes.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val canPageOlderTagged: StateFlow<Boolean> = combine(_streamOpen, _hasMoreTagged, _taggedNotes) { open, more, notes -> open && more && notes.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /**
+     * More may be older AND there is a note to page back from. A profile
+     * with nothing at all has no anchor, so it has nothing to look back for.
+     */
+    fun canPageOlder(section: ProfileSection): Boolean = stream != null && when {
+        section == ProfileSection.TAGGED -> _hasMoreTagged.value && _taggedNotes.value.isNotEmpty()
+        section.isNoteList -> _hasMoreNotes.value && _profileNotes.value.isNotEmpty()
+        else -> false
+    }
+
+    /**
+     * An empty tab is on screen with nothing in flight: page back for it, up
+     * to [ProfileEmptyTabPaging.AUTO_PAGE_CAP] pages (iOS autoPageEmptyTab).
+     */
+    fun autoPageEmptyTab(section: ProfileSection) {
+        val empty = sectionNotes(section, _profileNotes.value, _taggedNotes.value).isEmpty()
+        if (emptyTabPaging.claim(section, empty, canPageOlder(section), _isLoadingOlder.value)) loadOlder(section)
+    }
+
+    /** The older page in flight, fed the stream's EOSEs and notes. */
+    @Volatile private var olderPage: ProfileOlderPage? = null
+
+    /**
+     * Infinite-scroll: page older notes (or tagged) on the open stream
+     * sockets. The page ends when the relays answer ([ProfileOlderPage]), and
+     * only an answer with nothing new ends paging for good.
+     */
+    fun loadOlder(section: ProfileSection = _selectedSection.value) {
         val s = stream ?: return
         if (_isLoadingOlder.value) return
-        if (_selectedSection.value == ProfileSection.TAGGED) {
-            if (!_hasMoreTagged.value) return
-            val oldest = _taggedNotes.value.lastOrNull() ?: return
-            _isLoadingOlder.value = true
-            val before = _taggedNotes.value.size
-            s.loadOlderTagged(oldest.createdAt.time / 1000)
-            val token = pageToken
-            viewModelScope.launch {
-                delay(5000)
-                if (token != pageToken) return@launch
-                if (_taggedNotes.value.size == before) _hasMoreTagged.value = false
-                _isLoadingOlder.value = false
-            }
-        } else {
-            if (!_hasMoreNotes.value) return
-            val oldest = _profileNotes.value.lastOrNull() ?: return
-            _isLoadingOlder.value = true
-            val before = _profileNotes.value.size
-            s.loadOlder(oldest.createdAt.time / 1000)
-            val token = pageToken
-            viewModelScope.launch {
-                delay(5000)
-                if (token != pageToken) return@launch
-                if (_profileNotes.value.size == before) _hasMoreNotes.value = false
-                _isLoadingOlder.value = false
-            }
+        val tagged = section == ProfileSection.TAGGED
+        if (!section.isNoteList) return
+        val list = if (tagged) _taggedNotes else _profileNotes
+        val hasMore = if (tagged) _hasMoreTagged else _hasMoreNotes
+        if (!hasMore.value) return
+        val oldest = list.value.lastOrNull() ?: return
+        _isLoadingOlder.value = true
+        val before = list.value.size
+        // Listening before the REQ goes out, so a fast EOSE can't be missed.
+        val page = ProfileOlderPage().also { olderPage = it }
+        val until = oldest.createdAt.time / 1000
+        val req = if (tagged) s.loadOlderTagged(until) else s.loadOlder(until)
+        val token = pageToken
+        viewModelScope.launch {
+            val outcome = page.await(req.subId, req.relays, before, size = { list.value.size })
+            if (olderPage === page) olderPage = null
+            if (token != pageToken) return@launch
+            if (outcome == ProfileOlderPage.Outcome.EMPTY) hasMore.value = false
+            _isLoadingOlder.value = false
         }
     }
 
@@ -533,7 +635,6 @@ class ProfileViewModel @Inject constructor(
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         if (_isBlocked.value) feedService.unblockUser(pk) else feedService.blockUser(pk)
-        _isBlocked.value = !_isBlocked.value
     }
 
     /**
@@ -562,6 +663,10 @@ class ProfileViewModel @Inject constructor(
             needsMirror = inVault && sha != null && blossomService.backupSummary(sha, presence)?.needsMirror == true,
             is404 = mediaCacheService.isKnown404(url),
             moderationTarget = mediaModerationTarget(author),
+            // iOS ProfileView.mediaGrid: your own files, and only a Blossom
+            // file (named by its hash) can be deleted.
+            // Not on your profile opened from a note (iOS canDeleteMedia).
+            canDelete = sha != null && tabReveal.opensAsTab.value && _isOwnProfile.value && isOwnNote(author),
         )
     }
 
@@ -578,7 +683,7 @@ class ProfileViewModel @Inject constructor(
     fun saveMediaToPhotos(url: String) {
         viewModelScope.launch {
             val result = mediaSaveService.saveToGallery(url, com.nostrvault.service.MediaSaveService.mimeTypeForExtension(url))
-            _toast.value = if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery"
+            if (result.isSuccess) notificationManager.showToast("Saved to gallery") else notificationManager.showError("Couldn't save to gallery")
         }
     }
 
@@ -593,12 +698,12 @@ class ProfileViewModel @Inject constructor(
             try {
                 val saved = blossomService.mirrorUrlToLocal(url)
                 if (saved == null) {
-                    _toast.value = "Could not save to your vault"
+                    notificationManager.showError("Could not save to your vault")
                     return@launch
                 }
                 val backedUp = configStore.config.value.activeBlossomMirrors.isNotEmpty() &&
                     pushMissing(saved).let { it == null || it is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted }
-                _toast.value = if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone"
+                notificationManager.showToast(if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone")
             } finally {
                 _mediaBusyUrl.value = null
             }
@@ -612,9 +717,13 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _mediaBusyUrl.value = url
             try {
-                _toast.value = when (val result = pushMissing(sha)) {
-                    null -> "Already on all your Blossom servers"
-                    else -> result.message
+                // The same lines and tones as the gallery (MediaGalleryViewModel.mirrorMissing).
+                when (val result = pushMissing(sha)) {
+                    null -> notificationManager.showToast("Already on all your Blossom servers")
+                    is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
+                    is com.nostrvault.service.BlossomService.MirrorPushResult.Partial ->
+                        notificationManager.showError(result.message, com.nostrvault.ui.notification.ErrorStyle.WARNING)
+                    else -> notificationManager.showError(result.message)
                 }
             } finally {
                 _mediaBusyUrl.value = null
@@ -636,10 +745,9 @@ class ProfileViewModel @Inject constructor(
         nostrService.reportUser(pubkey, reason, description.ifBlank { null })
     }
 
-    /** Blocks [pubkey]; the header's Blocked state follows when it is this profile. */
+    /** Blocks [pubkey]; the header's Blocked state follows the block list. */
     fun blockAuthor(pubkey: String) {
         feedService.blockUser(pubkey)
-        if (pubkey == _pubkey.value) _isBlocked.value = true
     }
 
     /** True when a NWC wallet is configured and the profile has a lightning address. */
@@ -658,47 +766,48 @@ class ProfileViewModel @Inject constructor(
 
     /** npub (bech32) for the copy row; null if encoding fails. */
     val npub: String? get() = nostrService.hexToNpub(_pubkey.value)
+    fun npubOf(hex: String): String? = nostrService.hexToNpub(hex)
 
     /** Zap this profile: [amount] sats, the default unless chosen in the custom sheet. */
     fun zap(amount: Int = defaultZapSats) {
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         viewModelScope.launch {
-            val result = zapSendService.zapNote(pk, pk, amount)
-            _toast.value = result.fold(
-                onSuccess = { "Zapped $amount sats" },
-                onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
-            )
+            // A profile zap has no note: an empty id leaves out the `e` tag,
+            // so the request carries only `p` (NIP-57) instead of naming the
+            // pubkey as an event id.
+            // The zap pill reports the result (docs/pills.md).
+            notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, pk), amount) {
+                zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
+            }.onSuccess { _zapBursts.tryEmit(Unit) }
         }
     }
 
-    fun clearToast() { _toast.value = null }
-
-    /** Zap a post (default amount) — feedback via [toast]. */
+    /** Zap a post (default amount); the zap pill reports the result. */
     fun zapNote(noteId: String, notePubkey: String) {
         val amount = defaultZapSats
         viewModelScope.launch {
-            val result = zapSendService.zapNote(noteId, notePubkey, amount)
-            _toast.value = result.fold(
-                onSuccess = {
-                    ZapFlight.launch(noteId)
-                    "Zapped $amount sats"
-                },
-                onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
-            )
+            notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, notePubkey), amount) {
+                zapSendService.zapNote(noteId, notePubkey, amount)
+            }.onSuccess { ZapFlight.launch(noteId) }
         }
     }
 
     /** Your own notes have no trust path, so they get no Web of Trust button. */
     fun isOwnNote(pubkey: String): Boolean = pubkey == nostrService.activeHexPubkey
 
+    /** The wallet belongs to the Vault's owner account; another account's profile has no ⚡ button (iOS). */
+    fun isOwnerAccount(pubkey: String): Boolean = pubkey == nostrService.ownerHexPubkey
+
+    /** The avatar quick menu: Follow/Unfollow and Block (iOS FeedView avatar toolbar). */
+    val avatarMenu = com.nostrvault.ui.components.avatarMenuActions(feedService, ::isOwnNote)
+
     fun likeNote(noteId: String) {
         viewModelScope.launch { feedService.likeNote(noteId) }
     }
 
-    fun repostNote(noteId: String) {
-        viewModelScope.launch { feedService.repostNote(noteId) }
-    }
+    /** After the send-delay countdown, so the banner can undo it. */
+    fun repostNote(noteId: String) = pendingPostManager.startRepost(noteId, feedService)
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
     fun statsFor(noteId: String): NoteStats? = noteStats.value[noteId]

@@ -153,6 +153,11 @@ func importOwnerNotes(ctx context.Context) {
 						slog.Debug("🚫 skipping event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
 						continue
 					}
+					if isDeleted(ctx, outboxDB, ev.Event) {
+						slog.Debug("🚫 skipping deleted event", "id", ev.ID)
+						continue
+					}
+					applyImportedDeletion(ctx, outboxDB, ev.Event)
 					if err := wdb.Publish(ctx, *ev.Event); err != nil {
 						log.Println("🚫  error importing note", ev.ID, ":", err)
 						nFailedImportNotes++
@@ -226,6 +231,10 @@ func importTaggedNotes(ctx context.Context) {
 					if c.chat {
 						dbToWrite = wdbChat
 					}
+					if isDeleted(ctx, dbToWrite.Store, ev.Event) {
+						slog.Debug("🚫 skipping deleted tagged event", "id", ev.ID)
+						continue
+					}
 					if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
 						log.Println("🚫 error importing tagged note", ev.ID, ":", err)
 					}
@@ -258,6 +267,10 @@ func subscribeInboxAndChat(ctx context.Context) {
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
 	wdbOutbox := eventstore.RelayWrapper{Store: outboxDB}
+
+	// Delete requests imported before applyImportedDeletion existed left
+	// their targets in place; apply them once, before any sync round.
+	sweepDeleteRequests(ctx, outboxDB)
 
 	// Build deduplicated relay set: ImportSeedRelays + DmRelays
 	relaySet := make(map[string]struct{})
@@ -632,10 +645,13 @@ func subscribeInboxAndChat(ctx context.Context) {
 	// lastSeen) with capped exponential backoff until the context is cancelled.
 	// Receipts for zaps you send, live (see givenZapSender).
 	runsafe.Go("subscribeInboxAndChat.givenZaps", func() {
+		var seen atomic.Int64 // newest receipt seen; reconnects resume here
+		seen.Store(time.Now().Add(-time.Hour).Unix())
 		for ctx.Err() == nil {
-			since := nostr.Timestamp(time.Now().Add(-time.Hour).Unix())
+			since := nostr.Timestamp(seen.Load())
 			for ev := range pool.SubscribeMany(ctx, relays, givenZapsFilter(pTags, &since)) {
 				processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
+				advance(&seen, ev.CreatedAt)
 			}
 			select {
 			case <-ctx.Done():
@@ -646,33 +662,30 @@ func subscribeInboxAndChat(ctx context.Context) {
 	})
 
 	log.Println("📢 subscribing to inbox on", len(relays), "relays (import + DM)")
-	backoff := time.Second
+	var backoff time.Duration
 	for ctx.Err() == nil {
-		since := nostr.Timestamp(lastSeen.Load())
+		// +1: lastSeen's own second is already stored; replaying it on every
+		// reconnect is what made a flapping relay look healthy.
+		since := nostr.Timestamp(lastSeen.Load() + 1)
 		filter := nostr.Filter{
 			Tags:  nostr.TagMap{"p": pTags},
 			Since: &since,
 		}
-		sawEvent := false
+		opened := time.Now()
 		for ev := range pool.SubscribeMany(ctx, relays, filter) {
-			sawEvent = true
 			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
 		}
 		if ctx.Err() != nil {
 			return
 		}
-		if sawEvent {
-			backoff = time.Second // healthy connection delivered events; reset
-		}
-		log.Println("📢 inbox subscription closed, reconnecting in", backoff)
+		var wait time.Duration
+		wait, backoff = nextResubscribeBackoff(backoff, time.Since(opened))
+		log.Println("📢 inbox subscription closed, reconnecting in", wait)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
-		}
-		if backoff < 60*time.Second {
-			backoff *= 2
+		case <-time.After(wait):
 		}
 	}
 }
@@ -850,6 +863,10 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 		slog.Debug("ℹ️ skipping duplicate event", "id", ev.ID)
 		return
 	}
+	if isDeleted(ctx, dbToPublish.Store, ev.Event) {
+		slog.Debug("🚫 skipping deleted event", "id", ev.ID)
+		return
+	}
 
 	if err := dbToPublish.Publish(ctx, *ev.Event); err != nil {
 		log.Println("🚫 error importing tagged note", ev.ID, ":", "from relay", relayURL, ":", err)
@@ -1012,6 +1029,14 @@ func processOwnerEvent(ctx context.Context, ev nostr.RelayEvent, wdbOutbox event
 	if isDuplicate(ctx, wdbOutbox, ev.Event) {
 		return
 	}
+	if isDeleted(ctx, wdbOutbox.Store, ev.Event) {
+		return
+	}
+	// A delete request from another of the owner's devices: remove its
+	// targets here, since khatru only does that for a kind 5 it received over
+	// a websocket. Before the store, like khatru, so a failed save still
+	// leaves the targets gone.
+	applyImportedDeletion(ctx, wdbOutbox.Store, ev.Event)
 	if err := wdbOutbox.Publish(ctx, *ev.Event); err != nil {
 		log.Println("🚫 error importing owner event", ev.ID, ":", err)
 		return

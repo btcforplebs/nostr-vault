@@ -20,7 +20,11 @@ struct DMThreadView: View {
     /// The photo picked for the next message, already prepared for upload.
     @State private var pickedPhotoItem: PhotosPickerItem?
     @State private var attachment: PickedAttachment?
+    /// A photo is being dragged over the conversation.
+    @State private var isDropTargeted = false
     @State private var showingMediaUrl: IdentifiableURL?
+    /// The other person's profile, opened from the header.
+    @State private var showingProfile: IdentifiableString?
     @Namespace private var mediaZoom
     @Environment(\.dismiss) private var dismiss
 
@@ -105,6 +109,13 @@ struct DMThreadView: View {
                         }
                     }
                 }
+                .overlay {
+                    if messages.isEmpty {
+                        Text("Start a conversation")
+                            .font(.appSystem(size: 15))
+                            .foregroundColor(.secondary)
+                    }
+                }
 
                 // Input Area
                 VStack(spacing: 0) {
@@ -176,6 +187,18 @@ struct DMThreadView: View {
                         .buttonStyle(.plain)
                         .disabled(isSending)
                         .accessibilityLabel("Attach photo")
+                        #if os(iOS)
+                        // A photo copied in another app, without a keyboard for ⌘V:
+                        // press and hold (or right-click) the photo button.
+                        .contextMenu {
+                            Button {
+                                pasteClipboardImage()
+                            } label: {
+                                Label("Paste Photo", systemImage: "doc.on.clipboard")
+                            }
+                            .disabled(isSending)
+                        }
+                        #endif
 
                         TextField("Message...", text: $messageInput, axis: .vertical)
                             .textFieldStyle(.plain)
@@ -224,7 +247,39 @@ struct DMThreadView: View {
                 #endif
             }
             .background(Color.platformWindowBackground.ignoresSafeArea())
+            // A photo dragged in from Photos, Files or Safari goes out with the
+            // next message, the same as one picked with the photo button.
+            .onDrop(of: [.image], isTargeted: $isDropTargeted) { providers in
+                guard !isSending, let provider = providers.first else { return false }
+                Task { await attachDropped(provider) }
+                return true
+            }
+            .dropTargetHighlight(isDropTargeted, cornerRadius: 0)
+            #if os(iOS)
+            .modifier(PastesClipboardImage(action: pasteClipboardImage))
+            #endif
             .navigationTitle(counterpartyProfile?.bestName ?? "DM")
+            .toolbar {
+                // Who this is, and a way to their profile (Android DMThreadScreen).
+                ToolbarItem(placement: .principal) {
+                    Button { showingProfile = IdentifiableString(id: counterpartyPubkey) } label: {
+                        HStack(spacing: 8) {
+                            AvatarView(url: counterpartyProfile?.pictureURL, pubkey: counterpartyPubkey, size: 28)
+                            Text(counterpartyProfile?.bestName ?? String(counterpartyPubkey.prefix(8)) + "…")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens their profile")
+                }
+            }
+            .sheet(item: $showingProfile) { p in
+                ProfileView(pubkey: p.id, onDismiss: { showingProfile = nil })
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #else
@@ -278,8 +333,33 @@ struct DMThreadView: View {
             sendError = "Couldn't read that photo."
             return
         }
+        prepareAttachment(data, isGIF: item.supportedContentTypes.contains(where: { $0.conforms(to: .gif) }))
+    }
+
+    @MainActor
+    private func attachDropped(_ provider: NSItemProvider) async {
+        guard case .image(let data, let type)? = await DroppedMedia.load(provider, acceptingVideo: false) else {
+            sendError = "Couldn't read that photo."
+            return
+        }
+        prepareAttachment(data, isGIF: type.conforms(to: .gif))
+    }
+
+    private func pasteClipboardImage() {
+        guard !isSending else { return }
+        guard let data = PlatformClipboard.getImageData() else {
+            sendError = "There's no photo on the clipboard."
+            return
+        }
+        // getImageData hands a GIF back in its own bytes; its header says so.
+        let isGIF = data.prefix(3) == Data("GIF".utf8)
+        prepareAttachment(data, isGIF: isGIF)
+    }
+
+    @MainActor
+    private func prepareAttachment(_ data: Data, isGIF: Bool) {
         let prepared: PickedAttachment?
-        if item.supportedContentTypes.contains(where: { $0.conforms(to: .gif) }) {
+        if isGIF {
             prepared = PickedAttachment(data: data, mimeType: "image/gif", preview: Self.image(from: data))
         } else if let jpeg = LongFormComposeView.coverJPEG(from: data) {
             prepared = PickedAttachment(data: jpeg, mimeType: "image/jpeg", preview: Self.image(from: jpeg))

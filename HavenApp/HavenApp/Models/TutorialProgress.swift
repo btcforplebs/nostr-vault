@@ -5,6 +5,7 @@ import Foundation
 enum TutorialID: String, CaseIterable, Codable {
     case fillYourVault = "fill-your-vault"
     case feeds
+    case wot
     case vault
     case walletConnect = "wallet-connect"
     case pocketRelay = "pocket-relay"

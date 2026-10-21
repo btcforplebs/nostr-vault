@@ -25,6 +25,14 @@ data class DeepLinkTarget(
      * opens the relay half, where a notification's list is.
      */
     val vaultMedia: Boolean = false,
+    /**
+     * A tab to switch to before pushing [route], as iOS does for a tapped
+     * notification: a post opens over the Feed tab, a follower's profile over
+     * the Vault tab.
+     */
+    val overTab: String? = null,
+    /** With [overTab] on the Vault tab: the list it shows behind [route]. */
+    val behindFocus: RelayFocusRequest? = null,
 )
 
 /**
@@ -37,6 +45,8 @@ interface NostrEntityDecoder {
     fun neventToHex(nevent1: String): String?
     fun npubToHex(npub: String): String?
     fun nprofileToHex(nprofile: String): String?
+    /** An naddr's kind, author and `d` tag; null for anything malformed. */
+    fun naddrToCoordinate(naddr1: String): com.nostrvault.data.model.QuoteRef.Coordinate?
 }
 
 /**
@@ -50,6 +60,14 @@ interface NostrEntityDecoder {
  * point cannot invent its own half of the mapping.
  */
 object DeepLinkRouter {
+
+    /**
+     * The counterparty of a gift wrap the inbox has already opened, by the
+     * wrap's event id; null when it hasn't. Set once by MainActivity from
+     * DMService, so a NIP-17 notification can open its conversation.
+     */
+    @Volatile
+    var giftWrapPeer: (String) -> String? = { null }
 
     /**
      * @return the destination, or null if the link is not one we serve — the
@@ -98,11 +116,7 @@ object DeepLinkRouter {
         return when {
             e.startsWith("note1") || e.startsWith("nevent1") -> noteRoute(e, decoder)
             e.startsWith("npub1") || e.startsWith("nprofile1") -> profileRoute(e, decoder)
-            // naddr names an addressable event by kind/author/"d" tag, not by
-            // id, and every route here takes an id. Resolving one means asking
-            // a relay for it first, which a pure router cannot do — so it
-            // returns null rather than dumping the user on the feed. Quoted
-            // naddr references inside a note DO resolve; see QuoteRef.
+            e.startsWith("naddr1", ignoreCase = true) -> addressRoute(e, decoder)
             else -> null
         }
     }
@@ -116,6 +130,25 @@ object DeepLinkRouter {
         } ?: return null
         return DeepLinkTarget(Screen.NoteDetail.createRoute(hex))
     }
+
+    /**
+     * naddr names an addressable event by kind, author and `d` tag, not by id,
+     * so it opens a screen that asks the user's own relays for it first (iOS
+     * NVWidgetBridge `.address` → the note sheet). Every byte of the link is
+     * the sender's: it must decode in full, name an addressable kind, and
+     * only the bech32 string itself goes in the route — its alphabet has no
+     * `/`, `?`, `#` or `%`, so the free-text `d` tag never touches the route.
+     */
+    private fun addressRoute(naddr: String, decoder: NostrEntityDecoder): DeepLinkTarget? {
+        val lower = naddr.lowercase()
+        if (!BECH32_NADDR.matches(lower)) return null
+        val coordinate = decoder.naddrToCoordinate(lower) ?: return null
+        if (!com.nostrvault.data.model.QuoteRef.isLinkableKind(coordinate.kind)) return null
+        return DeepLinkTarget(Screen.AddressLink.createRoute(lower))
+    }
+
+    /** naddr1 followed only by the bech32 data alphabet. */
+    private val BECH32_NADDR = Regex("^naddr1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$")
 
     private fun profileRoute(id: String, decoder: NostrEntityDecoder): DeepLinkTarget? {
         val hex = when {
@@ -141,6 +174,7 @@ object DeepLinkRouter {
         npub: String?,
         event: String? = null,
         target: String? = null,
+        peerOf: (String) -> String? = giftWrapPeer,
     ): DeepLinkTarget? {
         val account = npub?.takeIf { it.isNotBlank() }
         if (type == null) return null
@@ -149,9 +183,12 @@ object DeepLinkRouter {
             "dm" -> author?.takeIf { isHex64(it) }
                 ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
             // A gift wrap's author is the one-time wrapping key, not the sender
-            // (that is only known after decrypting), so it opens the inbox —
-            // as iOS does. Opening a thread with the wrap key showed a stranger.
-            "giftwrap" -> DeepLinkTarget(Screen.DMInbox.route, account)
+            // (that is only known after decrypting). Opening a thread with the
+            // wrap key showed a stranger. As on iOS: the conversation when the
+            // inbox has opened the wrap, else the inbox.
+            "giftwrap" -> eventId?.takeIf { isHex64(it) }?.let(peerOf)?.takeIf { isHex64(it) }
+                ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
+                ?: DeepLinkTarget(Screen.DMInbox.route, account)
             // A post-related notification opens the post at once, from the
             // copy it carried, as on iOS. Without a copy a mention or reply
             // still opens by id. The Relay tab route is left for what has no
@@ -160,8 +197,15 @@ object DeepLinkRouter {
             in NotificationTarget.RELAY_TYPES -> eventId?.takeIf { isHex64(it) }
                 ?.let { postTarget(type, it, account, event, target) }
             // A new follower opens their profile; the author is the follower.
+            // As on iOS, the Vault tab's Followers list waits behind it.
             "follow" -> author?.takeIf { isHex64(it) }
-                ?.let { DeepLinkTarget(Screen.Profile.createRoute(it), account) }
+                ?.let {
+                    DeepLinkTarget(
+                        Screen.Profile.createRoute(it), account,
+                        overTab = Screen.Dashboard.route,
+                        behindFocus = RelayFocusRequest(type = NotificationTarget.FOLLOWERS, eventId = ""),
+                    )
+                }
             // The folded strangers' alert names nobody: their Followers list.
             NotificationTarget.FOLLOWERS -> DeepLinkTarget(
                 route = Screen.Dashboard.route,
@@ -184,13 +228,13 @@ object DeepLinkRouter {
         val carried = NotificationNote.decode(event)
         val about = type == "reaction" || type == "repost" || type == "zap"
         if (!about) {
-            return DeepLinkTarget(Screen.NoteDetail.createRoute(carried?.id ?: eventId), account, seedNote = carried)
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(carried?.id ?: eventId), account, seedNote = carried, overTab = Screen.Feed.route)
         }
         NotificationNote.decode(target)?.let {
-            return DeepLinkTarget(Screen.NoteDetail.createRoute(it.id), account, seedNote = it)
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(it.id), account, seedNote = it, overTab = Screen.Feed.route)
         }
         carried?.let { NotificationTarget.targetNoteId(type, it.id, it.tags) }?.let {
-            return DeepLinkTarget(Screen.NoteDetail.createRoute(it), account)
+            return DeepLinkTarget(Screen.NoteDetail.createRoute(it), account, overTab = Screen.Feed.route)
         }
         return DeepLinkTarget(
             route = Screen.Dashboard.route,

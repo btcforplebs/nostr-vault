@@ -6,23 +6,38 @@ struct VaultView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
-    @StateObject private var feedService = FeedService.shared
+    @ObservedObject var vaultSection = VaultSection.shared
+    @StateObject var feedService = FeedService.shared
     /// The openURL around this tab, for #hashtag links (see nostrLinkAction).
     @Environment(\.openURL) var inheritedOpenURL
 
     @State var navigationPath = NavigationPath()
-    @State var committedSearch = ""
-    @State var searchScope: SearchScope = .notes
-    /// Whether the search field is showing. `committedSearch` had no control
-    /// anywhere that ever set it — the entire search feature was unreachable.
+    /// Whether the search bar is open. While it is, the Vault shows what
+    /// the search found in place of its list.
     @State var isSearchActive = false
     @State var searchQueryDraft = ""
-    @State var displayProfileResults: [FeedProfile] = []
+    /// Bumped to put the cursor back in the open search bar.
+    @State var searchFocusRequest = 0
+    @StateObject var vaultSearch = VaultSearchModel()
+    /// The phone and iPad open the Vault tab on "Vault", everything new in
+    /// one list. The Mac's relay page has no such list.
+    #if os(iOS)
+    @State var viewMode: ViewMode = .activity
+    #else
     @State var viewMode: ViewMode = .notes
+    #endif
 
     @State var initialLoad = false
     @State var isLoadingMore = false
     @State var contentFilter: ContentFilter = .all
+    @State var activityFilter: ActivityFilter = .all
+    /// The line under the toolbar after a filter tap.
+    @StateObject var filterNote = FilterNoteModel()
+    /// A filter tap whose list is still being rebuilt; its note waits for
+    /// the count.
+    @State var pendingFilterNote: VaultFilterChoice?
+    /// Bumped each time a rebuilt list lands, so a waiting note can count it.
+    @State var displayPass = 0
     /// Notes, Articles or Highlights. Only the Vault tab's mode menu changes it.
     @State var noteScope: VaultNoteScope = .notes
     /// Articles only: just the recipes.
@@ -39,6 +54,14 @@ struct VaultView: View {
 
     // Cached display data (computed in background)
     @State var displayNotes: [NostrEvent] = []
+    /// The "Vault" list's lines, newest first.
+    @State var displayActivity: [VaultActivity] = []
+    /// The picture a Vault-list thumbnail opened in the media viewer.
+    @State var showingMediaUrl: IdentifiableURL?
+    @Namespace var mediaZoom
+    @State var activityHasLoadedOnce = false
+    /// Lines newer than this (unix seconds) are new since your last visit.
+    @State var activityUnreadSince: Int64 = .max
     @State var displayLikedNotes: [NostrEvent] = []
     /// Maps note ID -> list of (reactor pubkey, reaction emoji) tuples
     @State var reactionMap: [String: [(pubkey: String, emoji: String)]] = [:]
@@ -95,9 +118,6 @@ struct VaultView: View {
     }
     @State var showingProfilePubkey: String?
     @State var maxDisplayedItems: Int = 100
-    #if os(iOS)
-    @State var saveToPhotosMessage: String?
-    #endif
     @State var isCopied = false
     @State var requestedMissingIds = Set<String>()
     @State var requestedMissingZapNoteIds = Set<String>()
@@ -162,6 +182,8 @@ struct VaultView: View {
 
     var currentPageTitle: String {
         switch viewMode {
+        case .activity:
+            return ""
         case .notes:
             switch contentFilter {
             case .all: return ""
@@ -194,6 +216,21 @@ struct VaultView: View {
 
     var body: some View {
         #if os(iOS)
+        iOSBody
+            // ⌘R on an iPad keyboard, while the Vault tab shows the relay half.
+            // Here rather than on iOSContent, whose chain is at the type
+            // checker's limit.
+            .modifier(RefreshesOnTabCommand(tab: 4, isActive: { !VaultSection.shared.showsMedia }) {
+                refreshAll(.incremental)
+            })
+        #else
+        viewContent
+        #endif
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var iOSBody: some View {
         if noteDetailSelection != nil {
             // iPad two-pane layout: the enclosing NoteSplitPane owns the detail
             // column, so the vault list must not wrap itself in a stack.
@@ -212,29 +249,49 @@ struct VaultView: View {
                     }
             }
         }
-        #else
-        viewContent
-        #endif
     }
+    #endif
 
     // MARK: - iOS Root Content
     /// Flat content view matching FeedView's rootContent pattern:
     /// toolbar + handlers first, navigation modifiers applied in body.
     private var iOSContent: some View {
         viewContentPlatform
+        // Search takes the bar's place: the toolbar steps aside and the
+        // search bar opens where its magnifying glass was.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if isSearchActive {
+                searchBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 leadingToolbarInline
-                    .tutorialAnchor(TutorialContent.vaultModes)
+                    .tutorialAnchor(TutorialContent.vaultModes, isActive: showsVaultTutorialAnchors)
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
                 trailingToolbarInline
                     .animation(Motion.toggle, value: viewMode)
-                    .tutorialAnchor(TutorialContent.vaultFilters)
             }
             #endif
         }
+        #if os(iOS)
+        .toolbar(isSearchActive ? .hidden : .automatic, for: .navigationBar)
+        #endif
+        // The Mac hosts it under its own header (VaultView+Layout).
+        #if os(iOS)
+        .filterNoteHost(filterNote)
+        #endif
+        .onChange(of: displayPass) { _, _ in filterListLanded() }
+        .onChange(of: activityFilter) { _, _ in
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData()
+        }
+        .onChange(of: viewMode) { _, _ in pendingFilterNote = nil }
         // -- handlers from viewContentBase --
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {
@@ -283,6 +340,19 @@ struct VaultView: View {
             if vaultTabHostsMedia { VaultSection.shared.newModes = modes }
         }
         .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
+        .task(id: firstPageKey) { loadFirstPageInScope() }
+        // The Vault tab's red dot: tapping in opens the list it's for, and a
+        // list stops counting as new once it's on screen.
+        .onChange(of: vaultSection.opensNewActivity, initial: true) { _, opens in
+            if opens { openNewActivity() }
+        }
+        .onChange(of: modeInSight, initial: true) { old, mode in
+            if let mode { relayManager.markRelayViewed(mode) }
+            if mode == .activity { activityVisit(arriving: true) } else if old == .activity { activityVisit(arriving: false) }
+        }
+        .onChange(of: relayManager.newActivityModes) { _, _ in
+            if let modeInSight { relayManager.markRelayViewed(modeInSight) }
+        }
         // A list is marked seen when you leave it as well as when you arrive,
         // so what came in while you watched doesn't light its dot later.
         .onChange(of: watchedMode) { old, new in
@@ -293,8 +363,6 @@ struct VaultView: View {
             viewMode: viewMode,
             likesFilter: likesFilter,
             zapsFilter: zapsFilter,
-            committedSearch: committedSearch,
-            searchScope: searchScope,
             contentFilter: contentFilter,
             noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
             eventsCount: nostrService.events.count,
@@ -311,6 +379,10 @@ struct VaultView: View {
             onViewModeChange: { newMode in
                 updateDisplayData()
                 markTabViewed(newMode)
+                if newMode == .activity {
+                    fetchMoreZapReceipts()
+                    refreshFollowers()
+                }
                 if newMode == .likes {
                     fetchMissingLikedNotes()
                     updateLikesSettleState()
@@ -354,6 +426,7 @@ struct VaultView: View {
         }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
+            activityHasLoadedOnce = false
             noOlderPages = []
             likesHasLoadedOnce = false
             likesInitialSettled = false
@@ -397,6 +470,9 @@ struct VaultView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
             withAnimation(Motion.toggle) { viewMode = .followers }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayActivity)) { _ in
+            withAnimation(Motion.toggle) { viewMode = .activity }
+        }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
             set: { showingProfilePubkey = $0?.id }
@@ -413,7 +489,7 @@ struct VaultView: View {
         }
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
-                DashboardView(includesBlossom: vaultTabHostsMedia)
+                relayDashboardContent
                     .environmentObject(relayManager)
                     .environmentObject(configService)
                     .environmentObject(nostrService)
@@ -439,519 +515,14 @@ struct VaultView: View {
         }
     }
 
-    // MARK: - Platform Layout
-
+    /// The Vault tab's dashboard is the Vault Dashboard; the relay-only
+    /// layout (macOS keeps notes and media apart) is the relay dashboard.
     @ViewBuilder
-    var viewContentPlatform: some View {
-        #if os(iOS)
-        // Vault tab: full-bleed layout so content scrolls behind
-        // the transparent navigation bar, matching the glass toolbar effect.
-        ZStack {
-            Color.platformWindowBackground.ignoresSafeArea()
-
-            ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 0).id(Self.topAnchor)
-                    listContent
-
-                    if sparseNotesScope {
-                        loadOlderButton
-                    } else if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
-                        Color.clear
-                            .frame(height: 1)
-                            .padding(.bottom, 20)
-                            .onAppear {
-                                if !nostrService.isFetching && !displayNotes.isEmpty {
-                                    loadMore()
-                                }
-                            }
-                            .id(nostrService.events.count)
-                    }
-                }
-                .tabBarBottomPadding()
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                refreshAll(.incremental)
-            }
-            .scrollDirectionTracking(feedService: feedService)
-            // Tapping the Relay tab again: back to the list from a note, or
-            // up to the top, as the Feed tab does.
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RelayScrollToTop"))) { _ in
-                if !navigationPath.isEmpty {
-                    navigationPath = NavigationPath()
-                } else {
-                    withAnimation(Motion.scrollJump) { proxy.scrollTo(Self.topAnchor, anchor: .top) }
-                }
-            }
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            ChromeFold(anchor: .bottomTrailing) {
-                Button(action: { showingRelayDashboard = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: vaultTabHostsMedia ? VaultDashboard.symbol : "antenna.radiowaves.left.and.right")
-                            .font(.appSystem(size: 15, weight: .bold))
-                        Text(vaultTabHostsMedia ? "Vault" : "Relay")
-                            .font(.appSystem(size: 14, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.white)
-                    .frame(height: 48)
-                    .padding(.horizontal, 18)
-                    .background(
-                        Capsule()
-                            .fill(statusColor)
-                            .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
-                    )
-                }
-                .tutorialAnchor(TutorialContent.vaultRelay)
-                // Shares the row above the tab bar with the music mini player.
-                .modifier(FloatingButtonSlot())
-                .hoverEffect(.lift)
-            }
-        }
-        #else
-        GeometryReader { geometry in
-            ZStack {
-                Color.platformWindowBackground.ignoresSafeArea()
-
-                // The dashboard shows at any width. The menu bar's signal button opens
-                // it, and the popped-out window is often wider than 680, where it was
-                // never drawn: the click only switched tabs.
-                if showingRelayDashboard {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text("Relay Dashboard")
-                                .font(.appSystem(size: 16, weight: .bold))
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Button("Done") {
-                                showingRelayDashboard = false
-                            }
-                            .keyboardShortcut(.defaultAction)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
-                        .background(Color.platformConsoleHeaderBackground)
-
-                        Divider()
-
-                        DashboardView()
-                            .environmentObject(relayManager)
-                            .environmentObject(configService)
-                            .environmentObject(nostrService)
-                            .environmentObject(StatsService.shared)
-                    }
-                } else if geometry.size.width > 680 {
-                    VStack(spacing: 0) {
-                        desktopHeaderView
-
-                        Divider()
-
-                        ScrollView {
-                            listContent
-
-                            if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
-                                Color.clear
-                                    .frame(height: 1)
-                                    .padding(.bottom, 20)
-                                    .onAppear {
-                                        if !nostrService.isFetching && !displayNotes.isEmpty {
-                                            loadMore()
-                                        }
-                                    }
-                                    .id(nostrService.events.count)
-                            }
-                        }
-                        .refreshable {
-                            refreshAll(.incremental)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    .clipped()
-                } else {
-                    compactViewContent(isNarrow: geometry.size.width < 500)
-                }
-            }
-        }
-        #endif
-    }
-
-    // MARK: - Compact View (narrow macOS / fallback)
-
-    @ViewBuilder
-    func compactViewContent(isNarrow: Bool) -> some View {
-        VStack(spacing: 0) {
-            headerView(isNarrow: isNarrow)
-
-            Divider()
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    listContent
-
-                    if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
-                        Color.clear
-                            .frame(height: 1)
-                            .padding(.bottom, 20)
-                            .onAppear {
-                                if !nostrService.isFetching && !displayNotes.isEmpty {
-                                    loadMore()
-                                }
-                            }
-                            .id(nostrService.events.count)
-                    }
-                }
-                .tabBarBottomPadding()
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                refreshAll(.incremental)
-            }
-            .scrollDirectionTracking(feedService: feedService)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        #if os(iOS)
-        .overlay(alignment: .bottomTrailing) {
-            ChromeFold(anchor: .bottomTrailing) {
-                Button(action: { showingRelayDashboard = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: vaultTabHostsMedia ? VaultDashboard.symbol : "antenna.radiowaves.left.and.right")
-                            .font(.appSystem(size: 15, weight: .bold))
-                        Text(vaultTabHostsMedia ? "Vault" : "Relay")
-                            .font(.appSystem(size: 14, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.white)
-                    .frame(height: 48)
-                    .padding(.horizontal, 18)
-                    .background(
-                        Capsule()
-                            .fill(statusColor)
-                            .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
-                    )
-                }
-                .tutorialAnchor(TutorialContent.vaultRelay)
-                // Shares the row above the tab bar with the music mini player.
-                .modifier(FloatingButtonSlot())
-                .hoverEffect(.lift)
-            }
-        }
-        #endif
-    }
-
-    // MARK: - macOS Desktop Header
-
-    @ViewBuilder
-    var desktopHeaderView: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 16) {
-                modeView
-
-                Spacer()
-
-                refreshButton
-
-                if viewMode == .notes {
-                    filterView
-                } else if viewMode == .likes {
-                    likesFilterView
-                } else if viewMode == .zaps {
-                    zapsFilterView
-                } else if viewMode == .followers {
-                    followersFilterView
-                }
-
-                searchToggleButton
-                compactToggleButton
-            }
-
-            searchBar
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal)
-        .padding(.vertical, 12)
-        .background(Color.platformSecondaryGroupedBackground)
-    }
-
-    // MARK: - Refresh
-
-    /// `.refreshable` is the vault's only refresh path and macOS has no pull-to-refresh,
-    /// so without this the list could only be refreshed by switching accounts or
-    /// restarting the relay.
-    @ViewBuilder
-    var refreshButton: some View {
-        IconFilterButton(
-            icon: "arrow.clockwise",
-            tooltip: "Refresh Vault",
-            isSelected: true,
-            color: .havenPurple,
-            action: { refreshAll(.incremental) }
-        )
-        .keyboardShortcut("r", modifiers: .command)
-    }
-
-    // MARK: - Header View
-
-    @ViewBuilder
-    func headerView(isNarrow: Bool) -> some View {
-        VStack(spacing: 12) {
-            #if os(macOS)
-            if isNarrow {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        modeView
-                        Spacer()
-                        refreshButton
-                        searchToggleButton
-                    }
-                    if viewMode == .notes {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            filterView
-                        }
-                    } else if viewMode == .likes {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            likesFilterView
-                        }
-                    } else if viewMode == .zaps {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            zapsFilterView
-                        }
-                    } else if viewMode == .followers {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            followersFilterView
-                        }
-                    }
-                    searchBar
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        modeView
-                        Spacer()
-                        if viewMode == .notes {
-                            filterView
-                        } else if viewMode == .likes {
-                            likesFilterView
-                        } else if viewMode == .zaps {
-                            zapsFilterView
-                        } else if viewMode == .followers {
-                            followersFilterView
-                        }
-                        refreshButton
-                        searchToggleButton
-                        compactToggleButton
-                    }
-                    searchBar
-                }
-            }
-            #endif
-        }
-        .frame(maxWidth: .infinity)
-        #if os(macOS)
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Color.platformSecondaryGroupedBackground)
-        #endif
-    }
-
-    // MARK: - macOS viewContent (used for non-iOS body path)
-
-    var viewContent: some View {
-        viewContentBase
-        .modifier(VaultChangeHandlers(
-            viewMode: viewMode,
-            likesFilter: likesFilter,
-            zapsFilter: zapsFilter,
-            committedSearch: committedSearch,
-            searchScope: searchScope,
-            contentFilter: contentFilter,
-            noteScopeKey: "\(noteScope.rawValue).\(recipesOnly)",
-            eventsCount: nostrService.events.count,
-            blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
-            activeAccountNpub: configService.config.activeAccountNpub,
-            wotCount: feedService.wotPubkeys.count,
-            followCount: feedService.followedPubkeys.count,
-            onResetAndUpdate: {
-                maxDisplayedItems = 50
-                notesHasLoadedOnce = false
-                scheduleUpdateDisplayData()
-            },
-            onUpdate: { scheduleUpdateDisplayData() },
-            onViewModeChange: { newMode in
-                updateDisplayData()
-                markTabViewed(newMode)
-                if newMode == .likes {
-                    fetchMissingLikedNotes()
-                    updateLikesSettleState()
-                }
-                if newMode == .zaps {
-                    fetchMoreZapReceipts()
-                    fetchMissingZappedNotes()
-                    updateZapsSettleState()
-                }
-            },
-            onEventsChange: {
-                scheduleUpdateDisplayData()
-                checkForNewNotifications()
-                if viewMode == .likes && likesFilter == .myLikes {
-                    fetchMissingLikedNotes()
-                }
-                if viewMode == .zaps {
-                    fetchMoreZapReceipts()
-                    fetchMissingZappedNotes()
-                }
-            }
-        ))
-        .onChange(of: likesFilter) { _, _ in
-            likesHasLoadedOnce = false
-            likesInitialSettled = false
-            updateLikesSettleState()
-        }
-        .onChange(of: zapsFilter) { _, _ in
-            zapsHasLoadedOnce = false
-            zapsInitialSettled = false
-            updateZapsSettleState()
-        }
-        .onChange(of: configService.config.zapsOnlyMode) { _, newValue in
-            if newValue && viewMode == .likes {
-                withAnimation(Motion.toggle) { viewMode = .notes }
-            }
-        }
-        .onChange(of: configService.config.activeAccountNpub) { _, _ in
-            notesHasLoadedOnce = false
-            likesHasLoadedOnce = false
-            likesInitialSettled = false
-            zapsHasLoadedOnce = false
-            zapsInitialSettled = false
-            zapReceiptsFetchGeneration = nil
-            likedNotesFetchGeneration = nil
-            zapReceiptCache = [:]
-            refreshAll()
-        }
-        .onChange(of: nostrService.isFetching) { _, _ in
-            if viewMode == .likes { updateLikesSettleState() }
-            if viewMode == .zaps { updateZapsSettleState() }
-        }
-        .onChange(of: relayManager.isBooting) { _, _ in
-            if viewMode == .likes { updateLikesSettleState() }
-            if viewMode == .zaps { updateZapsSettleState() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .feedInjectionComplete)) { _ in
-            refreshAll(.incremental)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .mediaNotFoundChanged)) { _ in
-            scheduleUpdateDisplayData()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openRelayDashboard)) { _ in
-            showingRelayDashboard = true
-        }
-        // Not iOS-only: this is the macOS body, and gating these meant a notification
-        // tap that reached the Notes tab still showed whatever mode was last open.
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
-            // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
-            let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
-            withAnimation(Motion.toggle) { viewMode = target }
-            if target == .notes { noteScope = .notes; recipesOnly = false }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { note in
-            openNotes(note)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
-            withAnimation(Motion.toggle) { viewMode = .zaps }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayFollowers)) { _ in
-            withAnimation(Motion.toggle) { viewMode = .followers }
-        }
-        .sheet(item: Binding<IdentifiableString?>(
-            get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
-            set: { showingProfilePubkey = $0?.id }
-        )) { p in
-            ProfileView(pubkey: p.id, onDismiss: { showingProfilePubkey = nil })
-        }
-        .sheet(item: Binding<IdentifiableString?>(
-            get: { showingNoteId.map { IdentifiableString(id: $0) } },
-            set: { showingNoteId = $0?.id }
-        )) { noteId in
-            NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { showingNoteId = nil })
-                .environmentObject(nostrService)
-                .environmentObject(configService)
-        }
-        #if os(iOS)
-        .sheet(isPresented: $showingRelayDashboard) {
-            NavigationView {
-                DashboardView(includesBlossom: vaultTabHostsMedia)
-                    .environmentObject(relayManager)
-                    .environmentObject(configService)
-                    .environmentObject(nostrService)
-                    .environmentObject(StatsService.shared)
-                    .navigationTitle("")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showingRelayDashboard = false }
-                        }
-                        if vaultTabHostsMedia {
-                            ToolbarItem(placement: .principal) {
-                                Label(VaultDashboard.title, systemImage: VaultDashboard.symbol)
-                                    .labelStyle(.titleAndIcon)
-                                    .font(.appSystem(size: 17, weight: .bold, design: .rounded))
-                            }
-                        }
-                    }
-            }
-        }
-        #endif
-    }
-
-    private var viewContentBase: some View {
-        viewContentPlatform
-        .onAppear {
-            if relayManager.isRunning && !relayManager.isBooting {
-                if feedService.followedPubkeys.isEmpty {
-                    feedService.refresh()
-                }
-                // Only refresh if SceneDelegate didn't already handle reconnection
-                // within the last 3 seconds (prevents double-reset race condition)
-                let recentlyReconnected: Bool
-                if let lastReconnect = nostrService.lastForegroundReconnectTime {
-                    recentlyReconnected = Date().timeIntervalSince(lastReconnect) < 3.0
-                } else {
-                    recentlyReconnected = false
-                }
-                if nostrService.connectionStatus == "Disconnected" && !recentlyReconnected {
-                    refreshAll()
-                } else {
-                    // Sockets are live: keep them, just ask the embedded relay
-                    // to catch up and top up the live subscriptions.
-                    refreshAll(.incremental)
-                }
-                initialLoad = true
-                // Eagerly compute display data so tabs don't flash an empty state
-                updateDisplayData()
-            }
-            if !hasEstablishedNotificationBaseline {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                    establishNotificationBaseline()
-                }
-            }
-        }
-        .onChange(of: relayManager.isBooting) { _, isBooting in
-            if !isBooting && relayManager.isRunning {
-                refreshAll()
-                initialLoad = true
-                // Re-establish baseline after boot settles so initial events don't trigger highlights
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                    establishNotificationBaseline()
-                }
-            }
-        }
-        .onChange(of: relayManager.isRunning) { _, isRunning in
-            if isRunning && !relayManager.isBooting {
-                refreshAll()
-                initialLoad = true
-            }
+    var relayDashboardContent: some View {
+        if vaultTabHostsMedia {
+            VaultDashboardView()
+        } else {
+            DashboardView()
         }
     }
 }

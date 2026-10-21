@@ -86,25 +86,8 @@ struct NostrEvent: Codable, Identifiable {
 
     // MARK: - URL Extraction
 
-    private static let mediaRegex: NSRegularExpression? = SupportedMediaFormats.mediaExtensionRegex
-
-    private static let blossomRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
-    }()
-
     var mediaURLs: [URL] {
-        let ns = content as NSString
-        let range = NSRange(location: 0, length: ns.length)
-        var urls: [URL] = []
-
-        if let regex = Self.mediaRegex {
-            urls += regex.matches(in: content, range: range)
-                .compactMap { URL(string: ns.substring(with: $0.range)) }
-        }
-        if let regex = Self.blossomRegex {
-            urls += regex.matches(in: content, range: range)
-                .compactMap { URL(string: ns.substring(with: $0.range)) }
-        }
+        let urls = SupportedMediaFormats.mediaURLs(in: content)
 
         // NIP-92 imeta tags
         let imetaURLs: [URL] = tags.compactMap { tag in
@@ -112,7 +95,7 @@ struct NostrEvent: Codable, Identifiable {
             for field in tag.dropFirst() {
                 if field.hasPrefix("url ") {
                     let urlStr = String(field.dropFirst(4)).trimmingCharacters(in: .whitespaces)
-                    return URL(string: urlStr)
+                    return URL(string: urlStr).flatMap { SupportedMediaFormats.isImetaMediaURL($0) ? $0 : nil }
                 }
             }
             return nil

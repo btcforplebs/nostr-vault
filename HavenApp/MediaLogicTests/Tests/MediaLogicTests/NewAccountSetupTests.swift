@@ -70,12 +70,12 @@ final class NewAccountSetupTests: XCTestCase {
             "wss://relay.primal.net",
             "ws://127.0.0.1:4869",
             "wss://localhost:4869",
-            "wss://nos.lol",
+            "wss://relay.damus.io",
             "wss://relay.primal.net",
             "https://not-a-relay.example",
-            " wss://nostr.mom ",
+            " wss://relay.snort.social ",
         ])
-        XCTAssertEqual(tags, [["r", "wss://relay.primal.net"], ["r", "wss://nos.lol"], ["r", "wss://nostr.mom"]])
+        XCTAssertEqual(tags, [["r", "wss://relay.primal.net"], ["r", "wss://relay.damus.io"], ["r", "wss://relay.snort.social"]])
     }
 
     // MARK: The shipped starter packs

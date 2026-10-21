@@ -188,11 +188,7 @@ enum SwiftNIP46Handshake {
         }
 
         // Encrypt with NIP-44
-        guard let encCStr = EncryptNIP44C(
-            UnsafeMutablePointer(mutating: (rpcString as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (signerPubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (clientSK as NSString).utf8String)
-        ) else {
+        guard let encCStr = withCStrings([rpcString, signerPubkey, clientSK], { p in EncryptNIP44C(p[0], p[1], p[2]) }) else {
             throw HandshakeError.encryptionFailed
         }
         let encryptedContent = String(cString: encCStr)
@@ -213,10 +209,7 @@ enum SwiftNIP46Handshake {
         }
 
         // Sign with Go bridge
-        guard let signedCStr = SignEventC(
-            UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (clientSK as NSString).utf8String)
-        ) else {
+        guard let signedCStr = withCStrings([eventJSON, clientSK], { p in SignEventC(p[0], p[1]) }) else {
             throw HandshakeError.signingFailed
         }
         let signedJSON = String(cString: signedCStr)
@@ -258,11 +251,7 @@ enum SwiftNIP46Handshake {
                        let evtContent = evtDict["content"] as? String {
 
                         // Decrypt the response
-                        guard let decCStr = DecryptNIP44C(
-                            UnsafeMutablePointer(mutating: (evtContent as NSString).utf8String),
-                            UnsafeMutablePointer(mutating: (signerPubkey as NSString).utf8String),
-                            UnsafeMutablePointer(mutating: (clientSK as NSString).utf8String)
-                        ) else { return }
+                        guard let decCStr = withCStrings([evtContent, signerPubkey, clientSK], { p in DecryptNIP44C(p[0], p[1], p[2]) }) else { return }
                         let decrypted = String(cString: decCStr)
                         free(decCStr)
 

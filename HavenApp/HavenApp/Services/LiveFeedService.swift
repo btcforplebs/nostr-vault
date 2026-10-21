@@ -20,16 +20,35 @@ final class LiveFeedService: ObservableObject {
     /// Following by default. Global is filtered by the Web of Trust shield;
     /// Everyone (unfiltered) is behind the sensitive-content warning.
     @Published private(set) var scope: RecipeScope = .following
+    /// Who Global let in on the last load; nil on Following.
+    @Published private(set) var globalGate: LiveChat.GlobalGate?
+    /// The owner picked a side. Until then, someone who follows nobody is
+    /// opened on Global, since Following can only ever be empty for them.
+    private var scopeChosen = false
+    /// A relay said anything at all during this load, so an empty grid means
+    /// nothing live, not no connection.
+    private var relayAnswered = false
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
     private var collected: [String: LiveStream] = [:]
     private var loadTimeout: Timer?
 
-    private init() {}
+    /// Kept apart from `cancellables`, which every load clears.
+    private var webChange: AnyCancellable?
+
+    private init() {
+        // Global's gate is your web, follows included, read once per load.
+        // After a follow or unfollow the next visit loads again instead of
+        // reusing a grid drawn from the old web.
+        webChange = TrustPathService.webChanged.sink { [weak self] in
+            self?.lastLoadedAt = nil
+        }
+    }
 
     func setScope(_ newScope: RecipeScope) {
         guard newScope != scope else { return }
+        scopeChosen = true
         scope = newScope
         streams = []
         collected.removeAll()
@@ -57,7 +76,14 @@ final class LiveFeedService: ObservableObject {
         collected.removeAll()
         loadFailed = false
         followSetIsEmpty = false
+        relayAnswered = false
+        globalGate = nil
         isLoading = true
+
+        let feed = FeedService.shared
+        if scope == .following, !scopeChosen, feed.followListIsKnown, feed.followedPubkeys.isEmpty {
+            scope = .global
+        }
 
         var filters: [[String: Any]] = [["kinds": [30311], "limit": 300]]
         var follows: Set<String>?
@@ -77,12 +103,17 @@ final class LiveFeedService: ObservableObject {
                 ["kinds": [30311], "#p": followed, "limit": 300],
             ]
             follows = Set(followed)
-        } else if let trust = FeedService.shared.globalTrustSet() {
+        } else {
             // Global on the Web of Trust: same host check as Following, against
             // the trust graph. Streams are rare enough that the open REQ above
-            // already covers them; no author-restricted second filter.
-            follows = trust
+            // already covers them; no author-restricted second filter. With no
+            // graph at all (follows nobody), everyone but adult streams.
+            let gate = LiveChat.globalGate(trust: feed.globalTrustSet(),
+                                           hasNoWebOfTrustYet: feed.hasNoWebOfTrustYet)
+            globalGate = gate
+            if case .trusted(let trust) = gate { follows = trust }
         }
+        let hidesAdult = globalGate == .newAccount
 
         let relayURLs = Self.relayURLs
         guard !relayURLs.isEmpty else {
@@ -102,7 +133,7 @@ final class LiveFeedService: ObservableObject {
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] message in
-                    self?.handle(message: message, blocked: blocked, follows: follows)
+                    self?.handle(message: message, blocked: blocked, follows: follows, hidesAdult: hidesAdult)
                 }
                 .store(in: &cancellables)
 
@@ -149,10 +180,11 @@ final class LiveFeedService: ObservableObject {
 
     // MARK: - Private
 
-    private func handle(message: String, blocked: Set<String>, follows: Set<String>?) {
+    private func handle(message: String, blocked: Set<String>, follows: Set<String>?, hidesAdult: Bool) {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String else { return }
+        relayAnswered = true
 
         if type == "EOSE" { publish(); return }
 
@@ -168,6 +200,7 @@ final class LiveFeedService: ObservableObject {
         else { return }
 
         if let follows, !LiveChat.isFollowed(authorPubkey: pubkey, tags: tags, follows: follows) { return }
+        if hidesAdult, LiveChat.isAdultStream(tags: tags) { return }
         guard let stream = LiveStream(id: id, pubkey: pubkey, createdAt: createdAt, tags: tags),
               // A block on the streamer has to reach their service-published streams too.
               !blocked.contains(stream.hostPubkey)
@@ -198,7 +231,7 @@ final class LiveFeedService: ObservableObject {
         isLoading = false
         lastLoadedAt = Date()
         lastLoadedAccount = FeedService.shared.currentSnapshotKey()
-        loadFailed = streams.isEmpty && !followSetIsEmpty
+        loadFailed = streams.isEmpty && !followSetIsEmpty && !relayAnswered
         disconnect()
     }
 }

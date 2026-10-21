@@ -22,11 +22,7 @@ enum NIP04Service {
     ///   - localPrivkey: The 32-byte hex private key of the sender
     /// - Returns: Base64-encoded encrypted payload string (including IV)
     static func encrypt(plaintext: String, remotePubkey: String, localPrivkey: String) throws -> String {
-        guard let encryptedCStr = EncryptNIP04C(
-            UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (remotePubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (localPrivkey as NSString).utf8String)
-        ) else {
+        guard let encryptedCStr = withCStrings([plaintext, remotePubkey, localPrivkey], { p in EncryptNIP04C(p[0], p[1], p[2]) }) else {
             throw NIP04Error.encryptionFailed
         }
         
@@ -62,11 +58,7 @@ enum NIP04Service {
     ///   - localPrivkey: The 32-byte hex private key of the receiver
     /// - Returns: Decrypted plaintext string
     static func decrypt(ciphertext: String, remotePubkey: String, localPrivkey: String) throws -> String {
-        guard let decryptedCStr = DecryptNIP04C(
-            UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (remotePubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (localPrivkey as NSString).utf8String)
-        ) else {
+        guard let decryptedCStr = withCStrings([ciphertext, remotePubkey, localPrivkey], { p in DecryptNIP04C(p[0], p[1], p[2]) }) else {
             throw NIP04Error.decryptionFailed
         }
         

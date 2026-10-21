@@ -174,7 +174,13 @@ class MediaCacheService @Inject constructor(
 
     /** Delete oldest cached files until the media cache dir is under [maxBytes]. */
     private fun trimDiskCacheToSize(maxBytes: Long) {
-        val files = cacheDirectory.listFiles()?.sortedBy { it.lastModified() } ?: return
+        // Read each timestamp once: sorting on live lastModified() throws
+        // when a file changes mid-sort (evictExpiredFiles runs alongside).
+        val files = cacheDirectory.listFiles()
+            ?.map { it to it.lastModified() }
+            ?.sortedBy { it.second }
+            ?.map { it.first }
+            ?: return
         var total = files.sumOf { it.length() }
         for (file in files) {
             if (total <= maxBytes) break
@@ -253,8 +259,12 @@ class MediaCacheService @Inject constructor(
     }
 
     fun loadFromCache(url: String): ByteArray? {
-        val file = cachePath(url)
-        return if (file.exists()) file.readBytes() else null
+        // Eviction can delete the file between a check and the read.
+        return try {
+            cachePath(url).readBytes()
+        } catch (_: java.io.IOException) {
+            null
+        }
     }
 
     /**
@@ -535,9 +545,27 @@ class MediaCacheService @Inject constructor(
     // Cleanup
     // ══════════════════════════════════════════════════════════════════
 
-    fun clearCache() {
-        cacheDirectory.listFiles()?.forEach { it.delete() }
-        imageCache.evictAll()
+    /** What [clearCache] removed, and how many entries it could not. */
+    data class ClearCacheResult(val bytesFreed: Long, val filesFailed: Int)
+
+    /** Bytes in the media cache and its thumbnails (iOS cacheSizeBytes). Blocking. */
+    fun cacheSizeBytes(): Long = listOf(cacheDirectory, thumbnailDirectory).sumOf { dir ->
+        dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /**
+     * Clears the media cache, its thumbnails and the decoded images held in
+     * memory; the local Blossom store is a different directory and is not
+     * touched. Keeps going past an entry it cannot remove. Blocking.
+     */
+    fun clearCache(): ClearCacheResult {
+        val sizeBefore = cacheSizeBytes()
+        var failed = 0
+        for (dir in listOf(cacheDirectory, thumbnailDirectory)) {
+            dir.listFiles()?.forEach { if (!it.deleteRecursively()) failed++ }
+        }
+        evictMemoryCaches()
+        return ClearCacheResult((sizeBefore - cacheSizeBytes()).coerceAtLeast(0), failed)
     }
 
     fun evictExpiredFiles(ttlDays: Int = configStore.config.value.cacheTTLDays) {

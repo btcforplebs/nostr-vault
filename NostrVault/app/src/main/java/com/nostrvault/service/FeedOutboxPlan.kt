@@ -36,6 +36,24 @@ object FeedOutboxPlan {
      * @return extra relay URL → the follows to ask it for (sorted). Each follow
      *   appears under one relay only: the first pick that reached them.
      */
+    /**
+     * What a plan is built from. Equal inputs give the same plan, so a caller
+     * can keep the last plan instead of rebuilding it. iOS `FeedOutboxPlan.Inputs`.
+     */
+    data class Inputs(
+        val follows: List<String>,
+        val writeRelays: Map<String, List<String>>,
+        val feedRelays: List<String>,
+        val unreachableRelays: Set<String>,
+    )
+
+    fun plan(inputs: Inputs): Map<String, List<String>> = plan(
+        follows = inputs.follows,
+        writeRelays = inputs.writeRelays,
+        feedRelays = inputs.feedRelays,
+        unreachableRelays = inputs.unreachableRelays,
+    )
+
     fun plan(
         follows: Collection<String>,
         writeRelays: Map<String, List<String>>,

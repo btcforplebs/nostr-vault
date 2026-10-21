@@ -181,32 +181,71 @@ struct PlatformClipboard {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL] ?? []
-        return urls.first { url in
+        if let file = urls.first(where: { url in
             UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+        }) {
+            return file
         }
-        #elseif canImport(UIKit)
-        for provider in UIPasteboard.general.itemProviders {
-            guard let typeID = provider.registeredTypeIdentifiers.first(where: {
-                UTType($0)?.conforms(to: .movie) == true
-            }) else { continue }
-            let ext = UTType(typeID)?.preferredFilenameExtension ?? "mov"
-            return await withCheckedContinuation { continuation in
-                provider.loadFileRepresentation(forTypeIdentifier: typeID) { url, _ in
-                    // The provided file is deleted when this handler returns.
-                    guard let url else { continuation.resume(returning: nil); return }
-                    let dest = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("pasted-video-\(UUID().uuidString.prefix(8))")
-                        .appendingPathExtension(ext)
-                    do {
-                        try FileManager.default.copyItem(at: url, to: dest)
-                        continuation.resume(returning: dest)
-                    } catch {
-                        continuation.resume(returning: nil)
-                    }
-                }
+        // A clip copied on an iPhone or iPad arrives over Universal Clipboard
+        // as the movie's bytes, not a file URL. There is no file-backed read
+        // for those, so this one does come through memory.
+        for item in NSPasteboard.general.pasteboardItems ?? [] {
+            for type in item.types {
+                guard let utType = UTType(type.rawValue), utType.conforms(to: .movie),
+                      let data = item.data(forType: type) else { continue }
+                let dest = temporaryVideoURL(extension: utType.preferredFilenameExtension ?? "mov")
+                if (try? data.write(to: dest)) != nil { return dest }
             }
         }
         return nil
+        #elseif canImport(UIKit)
+        for provider in UIPasteboard.general.itemProviders {
+            // Every movie type, in the order offered: a clip from another
+            // device over Universal Clipboard can offer one that fails to
+            // load and another that works.
+            let movieTypes = provider.registeredTypeIdentifiers.filter {
+                UTType($0)?.conforms(to: .movie) == true
+            }
+            for typeID in movieTypes {
+                if let file = await loadVideoFile(from: provider, typeID: typeID) { return file }
+            }
+        }
+        return nil
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private static func loadVideoFile(from provider: NSItemProvider, typeID: String) async -> URL? {
+        let ext = UTType(typeID)?.preferredFilenameExtension ?? "mov"
+        return await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeID) { url, _ in
+                // The provided file is deleted when this handler returns.
+                guard let url else { continuation.resume(returning: nil); return }
+                let dest = temporaryVideoURL(extension: ext)
+                do {
+                    try FileManager.default.copyItem(at: url, to: dest)
+                    continuation.resume(returning: dest)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+    #endif
+
+    private static func temporaryVideoURL(extension ext: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("pasted-video-\(UUID().uuidString.prefix(8))")
+            .appendingPathExtension(ext)
+    }
+
+    /// Whether the clipboard holds a video. Reads the types only, so it
+    /// raises no paste prompt.
+    static func hasVideo() -> Bool {
+        #if canImport(AppKit)
+        return (NSPasteboard.general.types ?? []).contains { UTType($0.rawValue)?.conforms(to: .movie) == true }
+        #elseif canImport(UIKit)
+        return UIPasteboard.general.types.contains { UTType($0)?.conforms(to: .movie) == true }
         #endif
     }
 
@@ -429,3 +468,235 @@ extension View {
         modifier(FloatingActionBottomPadding())
     }
 }
+
+// MARK: - Width-driven layout
+
+/// How a screen lays itself out from the room it actually has, rather than from
+/// which device it is on. A phone-width column inside the iPad split is
+/// phone-width, and a sheet is narrower than the window it opens over, so the
+/// pane's own width is the only thing worth asking.
+enum AdaptiveLayout {
+    /// A line of text stops being readable much past this measure. A wide pane
+    /// centres its content inside it instead of running a note across 13in.
+    static let readableWidth: CGFloat = 700
+
+    /// Width a wide pane gives a docked side panel: the trust card beside the
+    /// Web of Trust globe.
+    static let sidePanelWidth: CGFloat = 360
+
+    /// `AdaptiveGridLayout.columnCount` as a `LazyVGrid`'s columns, for the
+    /// width this platform lays out from. `width` is the grid's own width with
+    /// its insets already taken off.
+    static func columns(width: CGFloat, ideal: CGFloat, spacing: CGFloat,
+                        minimum: Int, maximum: Int) -> [GridItem] {
+        let count = AdaptiveGridLayout.columnCount(forWidth: Double(layoutWidth(width)),
+                                                   ideal: Double(ideal), spacing: Double(spacing),
+                                                   minimum: minimum, maximum: maximum)
+        return Array(repeating: GridItem(.flexible(), spacing: spacing), count: count)
+    }
+
+    /// Only the iPad lays itself out from its width here. A large iPhone in
+    /// landscape is wide too, and b21's parity work is not allowed to move the
+    /// phone; the Mac already has its own counts and its own two-pane layouts.
+    static var usesWidth: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        false
+        #endif
+    }
+
+    /// The width a screen should lay out from: its own on iPad, and 0 — "no
+    /// measurement, keep the phone's layout" — everywhere else.
+    static func layoutWidth(_ width: CGFloat) -> CGFloat {
+        usesWidth ? width : 0
+    }
+}
+
+private struct ReadableWidthCap: ViewModifier {
+    let maxWidth: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if AdaptiveLayout.usesWidth {
+            content
+                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Holds content to a readable measure and centres it in whatever room is
+    /// left over. A no-op wherever there is no room to spare, which is every
+    /// phone width.
+    func readableWidthCap(_ maxWidth: CGFloat = AdaptiveLayout.readableWidth) -> some View {
+        modifier(ReadableWidthCap(maxWidth: maxWidth))
+    }
+
+    /// A small sheet stays small on iPad. `presentationDetents` is a phone-only
+    /// API: the iPad ignores it and opens the standard form sheet, so a 380pt
+    /// zap keypad arrived as a half-empty page. Sizing to the content is the
+    /// same intent the detents express on the phone.
+    @ViewBuilder
+    func smallSheetSizing() -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *), AdaptiveLayout.usesWidth {
+            self.presentationSizing(.fitted)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// The view's own width, reported whenever it changes.
+    func measureWidth(_ action: @escaping (CGFloat) -> Void) -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.size.width } action: { action($0) }
+    }
+}
+
+// MARK: - ⌘R
+
+/// Answers ⌘R (`havenRefreshTab`) for one tab, while `isActive` says this view
+/// is the one showing. A modifier rather than an inline receiver keeps the big
+/// views' modifier chains inside the type checker's budget.
+struct RefreshesOnTabCommand: ViewModifier {
+    let tab: Int
+    var isActive: () -> Bool = { true }
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .havenRefreshTab)) { note in
+            guard (note.object as? Int) == tab, isActive() else { return }
+            action()
+        }
+    }
+}
+
+// MARK: - Dropped Media
+
+/// A photo or video dragged in from another app (Photos, Files, Safari) or
+/// from elsewhere in this one, read off its item provider.
+enum DroppedMedia {
+    /// The image's own bytes, so a GIF still moves; the caller re-encodes.
+    case image(Data, UTType)
+    /// A copy in the temporary directory, which the caller then owns: the
+    /// provider deletes its own file as soon as the load returns.
+    case video(URL, UTType)
+
+    /// What a drop target accepts. Videos first, so a Live Photo's still
+    /// doesn't win over a clip that also offers a poster image.
+    static let acceptedTypes: [UTType] = [.movie, .image]
+
+    /// `acceptingVideo: false` reads a Live Photo or a clip with a poster as
+    /// its still, so a caller that only takes images never receives a video
+    /// copy it would have to clean up.
+    static func load(_ provider: NSItemProvider, acceptingVideo: Bool) async -> DroppedMedia? {
+        let types = provider.registeredContentTypes
+        if acceptingVideo, let movieType = types.first(where: { $0.conforms(to: .movie) }) {
+            return await withCheckedContinuation { continuation in
+                _ = provider.loadFileRepresentation(for: movieType, openInPlace: false) { url, _, _ in
+                    guard let url else { return continuation.resume(returning: nil) }
+                    let ext = url.pathExtension.isEmpty ? (movieType.preferredFilenameExtension ?? "mov") : url.pathExtension
+                    let dest = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("haven-upload-\(UUID().uuidString)")
+                        .appendingPathExtension(ext)
+                    do {
+                        try FileManager.default.copyItem(at: url, to: dest)
+                        continuation.resume(returning: .video(dest, UTType(filenameExtension: ext) ?? movieType))
+                    } catch {
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
+        if let imageType = types.first(where: { $0.conforms(to: .image) }) {
+            return await withCheckedContinuation { continuation in
+                _ = provider.loadDataRepresentation(for: imageType) { data, _ in
+                    continuation.resume(returning: data.map { .image($0, imageType) })
+                }
+            }
+        }
+        return nil
+    }
+}
+
+extension View {
+    /// The outline a drop target draws while something is dragged over it.
+    func dropTargetHighlight(_ isTargeted: Bool, cornerRadius: CGFloat = 12) -> some View {
+        overlay {
+            if isTargeted {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.havenPurple, style: StrokeStyle(lineWidth: 3, dash: [8, 6]))
+                    .background(Color.havenPurple.opacity(0.06), in: RoundedRectangle(cornerRadius: cornerRadius))
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+#if os(iOS)
+/// ⌘V on an iPad keyboard attaches the image on the clipboard. The focused
+/// text field owns ⌘V for text, so the key is bound only while the clipboard
+/// holds an image and no text or link: pasting words into the field is never
+/// taken away from it.
+struct PastesClipboardImage: ViewModifier {
+    let action: () -> Void
+    @State private var clipboardHoldsOnlyImage = false
+    /// From the app notifications, not `scenePhase`: under this app's UIKit
+    /// scene delegate `scenePhase` never reads `.active`.
+    @State private var appIsActive = true
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if clipboardHoldsOnlyImage {
+                    Button("Paste Photo", action: action)
+                        .keyboardShortcut("v", modifiers: .command)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                }
+            }
+            .onAppear(perform: refresh)
+            .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in refresh() }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                appIsActive = true
+                refresh()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+                appIsActive = false
+            }
+            // A copy made in another app arrives with no notification: in Split
+            // View this app stays active, so neither one above fires. The change
+            // count is a plain integer read and raises no paste prompt. iPad
+            // only (the iPhone has no Split View) and only while active.
+            .task(id: appIsActive) {
+                guard appIsActive, UIDevice.current.userInterfaceIdiom == .pad else { return }
+                var seen = UIPasteboard.general.changeCount
+                while !Task.isCancelled {
+                    // A cancelled sleep ends the loop: no read or state write
+                    // for a view that is going away.
+                    do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                    let count = UIPasteboard.general.changeCount
+                    if count != seen {
+                        seen = count
+                        refresh()
+                    }
+                }
+            }
+    }
+
+    /// The `has` checks read the clipboard's types, not its contents, so they
+    /// don't raise the paste-permission prompt.
+    private func refresh() {
+        let board = UIPasteboard.general
+        clipboardHoldsOnlyImage = (board.hasImages || PlatformClipboard.hasVideo())
+            && !board.hasStrings && !board.hasURLs
+    }
+}
+#endif

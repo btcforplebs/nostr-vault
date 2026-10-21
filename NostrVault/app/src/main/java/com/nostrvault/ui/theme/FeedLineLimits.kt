@@ -19,7 +19,7 @@ data class FeedLineLimits(
 
     companion object {
         const val DEFAULT_COMPACT = 3
-        const val DEFAULT_THREADED = 3
+        const val DEFAULT_THREADED = 5
         val RANGE = 1..12
     }
 }

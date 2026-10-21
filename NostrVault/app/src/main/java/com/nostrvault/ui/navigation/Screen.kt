@@ -25,6 +25,10 @@ sealed class Screen(val route: String) {
     data object ArticleReader : Screen("article/{noteId}") {
         fun createRoute(noteId: String) = "article/$noteId"
     }
+    /** A `nostr:naddr1…` link: resolves the address, then opens the article or post. */
+    data object AddressLink : Screen("naddr/{naddr}") {
+        fun createRoute(naddr: String) = "naddr/$naddr"
+    }
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
@@ -61,12 +65,13 @@ sealed class Screen(val route: String) {
     data object ModeCompose : Screen("compose_mode/{kind}") {
         fun createRoute(kind: String) = "compose_mode/$kind"
     }
-    data object ProfileEdit : Screen("profile_edit")
     data object Drafts : Screen("drafts")
 
     // Wallet
     data object Wallet : Screen("wallet")
+    data object WalletSettings : Screen("settings/wallet")
     data object BitcoinSweep : Screen("bitcoin_sweep")
+    data object BitcoinWallet : Screen("settings/bitcoin")
 
     // Settings
     data object Settings : Screen("settings")
@@ -75,10 +80,13 @@ sealed class Screen(val route: String) {
     data object TutorialsSettings : Screen("settings/tutorials")
     data object AccountSettings : Screen("settings/accounts")
     data object BlockedSettings : Screen("settings/blocked")
+    data object RecentlyDeletedSettings : Screen("settings/recently-deleted")
     data object Relays : Screen("settings/relays")
     data object BlossomSettings : Screen("settings/blossom")
     data object PowSettings : Screen("settings/pow")
     data object AdvancedSettings : Screen("settings/advanced")
+    data object MediaSettings : Screen("settings/media")
+    data object RelayAccessSettings : Screen("settings/relay_access")
     data object ImportSettings : Screen("settings/import")
     data object BackupSettings : Screen("settings/backup")
     data object FollowingBackup : Screen("settings/following_backup")

@@ -1,0 +1,25 @@
+/* Accounts screen and the saved accounts on sign-in. */
+.accounts .account-row { margin-bottom: 0; text-align: left; }
+.accounts .account { margin-bottom: 8px; }
+.accounts .account.open .account-row { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.account-row .you-badge { margin-left: auto; }
+.account-actions { margin: 0 var(--gutter); padding: 12px 14px; background: var(--s1); border: 1px solid var(--hair); border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius); }
+.account-actions p { margin: 0 0 10px; }
+.account-actions .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-npub { margin-bottom: 10px; color: var(--text-2); word-break: break-all; user-select: all; }
+button.danger { color: var(--danger); }
+.add-account-button { display: block; width: calc(100% - 2 * var(--gutter)); margin: 4px var(--gutter) 16px; }
+.add-account { display: grid; gap: 12px; }
+.add-account h3, .add-account p { margin: 0; }
+/* The file picker's label, drawn like app.css's buttons. */
+.backup label.button { display: inline-flex; align-items: center; font: var(--t-sub); font-weight: 600; min-height: 44px; padding: 0 18px;
+  border-radius: 999px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); cursor: pointer; }
+.backup label.button.disabled { background: var(--s3); border-color: transparent; color: var(--text-3); pointer-events: none; }
+.saved-accounts { display: grid; gap: 8px; text-align: left; }
+.saved-accounts .person-row { width: 100%; margin: 0; }
+.saved-accounts p { margin: 4px 0 0; text-align: center; }
+.readonly-signin { display: contents; }
+.readonly-signin .person-row { width: 100%; margin: 0; }
+.account-npub-line { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+.account-npub-line .account-npub { flex: 1; min-width: 0; margin-bottom: 0; }

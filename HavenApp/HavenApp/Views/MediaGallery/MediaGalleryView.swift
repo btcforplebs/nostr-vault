@@ -22,15 +22,22 @@ struct MediaGalleryView: View {
     // MARK: - State
 
     @State var navigationPath = NavigationPath()
+    /// The line under the toolbar after a type, sort or layout tap.
+    @StateObject var filterNote = FilterNoteModel()
     /// Scroll target for tapping the Media tab again.
     static let topAnchor = "mediaTop"
     @State var selectedMedia: MediaItem? = nil
     /// The viewer's Delete menu choice, waiting on its confirmation.
     @State var pendingViewerDelete: MediaDeleteScope?
     @State var initialLoad = false
+    /// The Vault tab is showing this half, so Your Vault's cards point here.
+    @State var vaultShowsMedia = false
     @State var mediaSourceFilter: MediaSourceFilter = .all
     @State var mediaLocationFilter: MediaLocationFilter = .all
     @State var contentFilter: ContentFilter = .all
+    /// Width of the media grid itself, which sets how many tiles fit across.
+    /// Zero until it is measured; the grid reads that as the phone count.
+    @State var gridWidth: CGFloat = 0
 
     // Type filter, layout and sort survive leaving the tab and relaunching.
     // Stored as raw strings because AppStorage cannot hold a Set or a bare enum.
@@ -69,6 +76,10 @@ struct MediaGalleryView: View {
     // before the display data has been computed at least once.
     @State var mediaHasLoadedOnce: Bool = false
 
+    /// Media before the type and location filters, so an empty grid can say
+    /// whether a filter hid everything or there is nothing yet.
+    @State var mediaTotalCount: Int = 0
+
     #if os(macOS)
     @State var keyMonitor: Any? = nil
     #endif
@@ -88,7 +99,6 @@ struct MediaGalleryView: View {
     @State var activeUploadTasks: [Task<Void, Never>] = []
 
     #if os(iOS)
-    @State var saveToPhotosMessage: String?
     #endif
     @State var isCopied = false
 
@@ -163,6 +173,10 @@ struct MediaGalleryView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
+        // ⌘R on an iPad keyboard, while the Vault tab shows its Media half.
+        .modifier(RefreshesOnTabCommand(tab: 4, isActive: { inVaultTab && VaultSection.shared.showsMedia }) {
+            refreshAll()
+        })
         #else
         viewContent
         #endif
@@ -176,19 +190,31 @@ struct MediaGalleryView: View {
             ToolbarItem(placement: .cancellationAction) {
                 if inVaultTab {
                     VaultModePill(mode: .media, zapsOnly: configService.config.zapsOnlyMode)
+                        .tutorialAnchor(TutorialContent.vaultModes, isActive: vaultShowsMedia)
                 } else {
                     leadingToolbarInline
                 }
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    trailingToolbarInline
-                    trailingToolbarMenu
+                HStack(spacing: 4) {
+                    // Messages leads the Vault tab's right pill in every mode.
+                    if inVaultTab {
+                        VaultMessagesButton()
+                        Divider().frame(height: 20).padding(.horizontal, 2)
+                    }
+                    ViewThatFits {
+                        trailingToolbarInline
+                        trailingToolbarMenu
+                    }
                 }
             }
             #endif
         }
+        // The Mac hosts it under its own header (compactViewContent).
+        #if os(iOS)
+        .filterNoteHost(filterNote)
+        #endif
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {
                 let recentlyReconnected: Bool
@@ -225,6 +251,7 @@ struct MediaGalleryView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
             openDashboard()
         }
+        .onReceive(VaultSection.shared.$showsMedia) { vaultShowsMedia = $0 }
         .modifier(mediaSheetsAndPickers)
     }
 
@@ -289,6 +316,7 @@ struct MediaGalleryView: View {
                             .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
+                .tutorialAnchor(TutorialContent.vaultRelay, isActive: inVaultTab && vaultShowsMedia)
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
@@ -387,6 +415,8 @@ struct MediaGalleryView: View {
             }
             .scrollDirectionTracking(feedService: feedService)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Feeds the filter-note bubble in the banner stack.
+            .filterNoteHost(filterNote)
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
@@ -407,6 +437,7 @@ struct MediaGalleryView: View {
                             .shadow(color: dashboardButtonColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
+                .tutorialAnchor(TutorialContent.vaultRelay, isActive: inVaultTab && vaultShowsMedia)
                 // Shares the row above the tab bar with the music mini player.
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)

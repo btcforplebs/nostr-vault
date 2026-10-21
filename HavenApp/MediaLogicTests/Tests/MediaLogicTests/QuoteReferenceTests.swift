@@ -90,6 +90,134 @@ final class QuoteReferenceTests: XCTestCase {
         XCTAssertEqual(QuoteReference.parseCoordinate(coordinate ?? "")?.dTag, "")
     }
 
+    /// A type-0 entry that is present but carries no bytes is a real empty `d`
+    /// tag, not a missing one, so it must still resolve. The distinction matters
+    /// because the bad-UTF-8 case below is rejected, and Foundation decodes empty
+    /// data to "" rather than nil — the two must not be conflated.
+    func testZeroLengthDTagEntryStillResolves() {
+        var payload = Data([0, 0])                                       // d-tag, no bytes
+        payload += Data([2, 32]) + Data(repeating: 0x22, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let parts = QuoteReference.naddrParts(fromTLV: payload)
+        XCTAssertEqual(parts?.dTag, "")
+        XCTAssertEqual(parts?.kind, 30023)
+    }
+
+    /// The whole reference fails on a `d` tag that is not valid UTF-8.
+    ///
+    /// Decoding it to nil and falling back to "" named a different, legal
+    /// coordinate: the same author's empty-`d` event of the same kind. A `nostr:`
+    /// link or a quoted naddr comes from outside the app, so whoever wrote it
+    /// chose those bytes — this is how one event got opened under another's name.
+    func testBadUTF8DTagIsRejected() {
+        var payload = Data([0, 2]) + Data([0xff, 0xfe])                  // d-tag, invalid UTF-8
+        payload += Data([2, 32]) + Data(repeating: 0x22, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        XCTAssertNil(QuoteReference.naddrParts(fromTLV: payload))
+        XCTAssertNil(QuoteReference.coordinate(fromNaddrTLV: payload))
+    }
+
+    /// The regression stated as the attack: the crafted payload must not come out
+    /// as the coordinate it was being mistaken for.
+    func testBadUTF8DTagDoesNotBecomeTheEmptyDTagCoordinate() {
+        let pubkey = Data(repeating: 0x22, count: 32)
+        let kind = Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let crafted = Data([0, 2]) + Data([0xff, 0xfe]) + Data([2, 32]) + pubkey + kind
+        let emptyDTag = Data([0, 0]) + Data([2, 32]) + pubkey + kind
+        XCTAssertNotNil(QuoteReference.coordinate(fromNaddrTLV: emptyDTag))
+        XCTAssertNotEqual(
+            QuoteReference.coordinate(fromNaddrTLV: crafted),
+            QuoteReference.coordinate(fromNaddrTLV: emptyDTag)
+        )
+    }
+
+    /// Lone continuation bytes, a truncated sequence and an overlong encoding are
+    /// all rejected. Swift's UTF-8 decoding is strict about each of them; the test
+    /// pins that, because a lossy decode would turn them into U+FFFD and quietly
+    /// name an event nobody wrote.
+    func testEachKindOfInvalidUTF8IsRejected() {
+        let tail = Data([2, 32]) + Data(repeating: 0x33, count: 32)
+            + Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        for bytes in [Data([0x80]), Data([0xC3]), Data([0xC0, 0x80]), Data([0xED, 0xA0, 0x80])] {
+            let payload = Data([0, UInt8(bytes.count)]) + bytes + tail
+            XCTAssertNil(
+                QuoteReference.naddrParts(fromTLV: payload),
+                "expected \(bytes.map { String(format: "%02x", $0) }.joined()) to be refused"
+            )
+        }
+    }
+
+    /// A `d` tag that begins with a byte-order mark keeps it.
+    ///
+    /// This is the bad-UTF-8 bug in valid-UTF-8 clothing, and it is why the check
+    /// is a byte round trip rather than a decode: `String(data:encoding: .utf8)`
+    /// silently drops a leading U+FEFF, so `EF BB BF 78` arrived as `"x"` and a
+    /// crafted naddr named the author's real `d = "x"` event. Found by Tim
+    /// reviewing #479.
+    func testLeadingByteOrderMarkIsKeptInTheDTag() {
+        let bytes = Data([0xEF, 0xBB, 0xBF]) + Data("x".utf8)
+        var payload = Data([0, UInt8(bytes.count)]) + bytes
+        payload += Data([2, 32]) + Data(repeating: 0x66, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: payload)?.dTag, "\u{FEFF}x")
+    }
+
+    /// Stated as the attack: the BOM payload must not come out as the coordinate
+    /// of the plain `d = "x"` event it was being mistaken for.
+    func testBOMDTagDoesNotBecomeThePlainDTagCoordinate() {
+        let pubkey = Data(repeating: 0x66, count: 32)
+        let kind = Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        func payload(_ dTag: Data) -> Data {
+            Data([0, UInt8(dTag.count)]) + dTag + Data([2, 32]) + pubkey + kind
+        }
+        let crafted = payload(Data([0xEF, 0xBB, 0xBF]) + Data("x".utf8))
+        let plain = payload(Data("x".utf8))
+        XCTAssertNotNil(QuoteReference.coordinate(fromNaddrTLV: plain))
+        XCTAssertNotEqual(
+            QuoteReference.coordinate(fromNaddrTLV: crafted),
+            QuoteReference.coordinate(fromNaddrTLV: plain)
+        )
+    }
+
+    /// A BOM on its own is a one-scalar `d` tag, not the empty one. Both of the
+    /// ways a `d` tag can collapse to "" are covered, so neither can come back.
+    func testBOMOnlyDTagIsNotTheEmptyDTag() {
+        let pubkey = Data(repeating: 0x66, count: 32)
+        let kind = Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let bom = Data([0, 3]) + Data([0xEF, 0xBB, 0xBF]) + Data([2, 32]) + pubkey + kind
+        let empty = Data([0, 0]) + Data([2, 32]) + pubkey + kind
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: bom)?.dTag, "\u{FEFF}")
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: empty)?.dTag, "")
+        XCTAssertNotEqual(
+            QuoteReference.coordinate(fromNaddrTLV: bom),
+            QuoteReference.coordinate(fromNaddrTLV: empty)
+        )
+    }
+
+    /// Valid multi-byte UTF-8 is not collateral damage of the check above.
+    func testMultiByteDTagSurvives() {
+        let dTag = "träume-🐝"
+        let bytes = Data(dTag.utf8)
+        var payload = Data([0, UInt8(bytes.count)]) + bytes
+        payload += Data([2, 32]) + Data(repeating: 0x44, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        XCTAssertEqual(QuoteReference.naddrParts(fromTLV: payload)?.dTag, dTag)
+    }
+
+    /// The relay hint is read by nobody on purpose: honouring it would let the
+    /// author of a link choose a host for the app to connect to. A payload that
+    /// carries one still parses, and the hint never becomes the `d` tag.
+    func testRelayHintIsIgnored() {
+        let hint = Data("wss://evil.example/x".utf8)
+        var payload = Data([1, UInt8(hint.count)]) + hint                // relay hint
+        payload += Data([0, 5]) + Data("intro".utf8)
+        payload += Data([2, 32]) + Data(repeating: 0x55, count: 32)
+        payload += Data([3, 4]) + Data([0, 0, 0x75, 0x47])
+        let parts = QuoteReference.naddrParts(fromTLV: payload)
+        XCTAssertEqual(parts?.dTag, "intro")
+        XCTAssertEqual(parts?.kind, 30023)
+    }
+
     // MARK: - Coordinate round trip
 
     func testCoordinateRoundTrip() {
@@ -134,6 +262,30 @@ extension QuoteReferenceTests {
         XCTAssertFalse(QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", "other-post"]], matches: coordinate))
     }
 
+    /// `d` tags match byte for byte, not by Unicode equivalence.
+    ///
+    /// Swift's `==` on String is canonical equivalence, so a reference naming
+    /// the NFD form used to match an event whose `d` tag is the NFC form. They
+    /// are different events: a relay filters tags on exact bytes and would
+    /// never have answered the NFD reference with the NFC event. This only
+    /// showed up on the local match against events already loaded.
+    func testDTagMatchesOnBytesNotUnicodeEquivalence() {
+        let nfc = "\u{00E9}sa"        // precomposed é
+        let nfd = "e\u{0301}sa"       // e + combining acute
+        XCTAssertEqual(nfc, nfd, "precondition: Swift == treats these as equal")
+        XCTAssertFalse(Array(nfc.utf8) == Array(nfd.utf8), "precondition: their bytes differ")
+
+        let reference = QuoteReference.coordinate(kind: 30023, pubkey: "pk", dTag: nfd)
+        XCTAssertFalse(
+            QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", nfc]], matches: reference),
+            "an NFD reference must not match the NFC event"
+        )
+        // The same form still matches.
+        XCTAssertTrue(
+            QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", nfd]], matches: reference)
+        )
+    }
+
     /// An event id is never matched by a coordinate and vice versa — the id
     /// field of an addressable event is not what a coordinate names.
     func testCoordinateDoesNotMatchOnIdAlone() {
@@ -145,5 +297,45 @@ extension QuoteReferenceTests {
         let coordinate = QuoteReference.coordinate(kind: 30023, pubkey: "pk", dTag: "")
         XCTAssertTrue(QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [["d", ""]], matches: coordinate))
         XCTAssertFalse(QuoteReference.event(id: "evt", kind: 30023, pubkey: "pk", tags: [], matches: coordinate))
+    }
+
+    // MARK: - nevent pointer (where the lookup asks)
+
+    private func hexData(_ hex: String) -> Data {
+        var bytes = [UInt8]()
+        var i = hex.startIndex
+        while i < hex.endIndex {
+            let j = hex.index(i, offsetBy: 2)
+            bytes.append(UInt8(hex[i..<j], radix: 16)!)
+            i = j
+        }
+        return Data(bytes)
+    }
+
+    private func tlv(_ type: UInt8, _ value: Data) -> Data { Data([type, UInt8(value.count)]) + value }
+
+    /// Plural's quote in Logen's thread: author first, then the id, no relay.
+    /// The author is what lets the lookup ask Plural's own relays.
+    func testPointerFromRealNeventKeepsAuthor() {
+        let author = "f42a02152031590dcc3a0a67db51316b7365e4aef34abbec9619c12e88f006b5"
+        let id = "a2f86e95d19056411861904c95a5bd19543f1769b354866567c4c014cef59e64"
+        let payload = tlv(2, hexData(author)) + tlv(0, hexData(id))
+        XCTAssertEqual(QuoteReference.eventPointer(fromNeventTLV: payload),
+                       QuoteReference.EventPointer(id: id, author: author))
+    }
+
+    /// A relay hint in the link is never kept: the sender must not choose
+    /// which host the app dials.
+    func testPointerDropsRelayHint() {
+        let id = Data(repeating: 7, count: 32)
+        let payload = tlv(0, id) + tlv(1, Data("wss://sender-chosen.example".utf8))
+        XCTAssertEqual(QuoteReference.eventPointer(fromNeventTLV: payload),
+                       QuoteReference.EventPointer(id: String(repeating: "07", count: 32), author: nil))
+    }
+
+    func testPointerIgnoresShortAuthorAndNeedsAnID() {
+        let payload = tlv(0, Data(repeating: 1, count: 32)) + tlv(2, Data(repeating: 2, count: 20))
+        XCTAssertNil(QuoteReference.eventPointer(fromNeventTLV: payload)?.author)
+        XCTAssertNil(QuoteReference.eventPointer(fromNeventTLV: tlv(2, Data(repeating: 2, count: 32))))
     }
 }

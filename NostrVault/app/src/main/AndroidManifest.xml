@@ -53,9 +53,15 @@
          is still opt-in at targetSdk 35 and default-on only from 36, so without
          it the app gets no back animation at all — the closest Android has to
          the interactive edge-swipe-back iOS gives every push for free. -->
+    <!-- Backups stay on (settings and drafts survive a new phone) but the
+         rules files are allow-lists: keys, passwords, the NWC/bunker/S3
+         secrets in the config JSON and the relay DB never leave the phone,
+         to Google or by device-to-device transfer. See res/xml/backup_rules.xml. -->
     <application
         android:name=".NostrVaultApp"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
@@ -165,6 +171,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Shares the notes and media backup zips (cache/exports/) with the
+             share sheet. Not exported; readers get a one-off URI grant. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Home-screen widgets (Glance). Each receiver names the provider XML
              that gives its size; the widget itself draws from the snapshot file
              the app publishes. -->
@@ -226,6 +244,20 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_mosaic_info" />
+        </receiver>
+
+        <!-- The one-cell widget: the stand-in for the iPhone Lock Screen
+             widget, one number from the vault. -->
+        <receiver
+            android:name=".widget.VaultGlanceReceiver"
+            android:exported="true"
+            android:label="@string/widget_glance_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_glance_info" />
         </receiver>
     </application>
 

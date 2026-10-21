@@ -1,0 +1,71 @@
+/* Wallet screen (WalletSettingsView) and the zap button (FeedNoteRow+NoteBody): a 32 pt capsule like the other note
+   actions, widening to hold its sats; zapped turns it orange on orange at 20%, as on the iPhone. */
+.wallet-card { display: flex; flex-direction: column; gap: 10px; }
+.wallet-card h3 { margin: 0; }
+.wallet-card p { margin: 0; }
+.wallet-uri, .wallet-sats, .wallet-card input[type="text"] { background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; font: 13px var(--mono); }
+.wallet-uri { width: 100%; }
+.wallet-uri:focus, .wallet-sats:focus, .wallet-card input[type="text"]:focus { outline: none; border-color: var(--strong); }
+.wallet-sats { width: 110px; text-align: right; }
+.wallet-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.wallet-row > span:first-child { flex: 1; }
+.wallet-balance { font: 600 15px var(--mono); }
+button.danger { color: var(--danger); }
+
+.zap { position: relative; display: inline-flex; }
+.note-actions .note-action.zap-button, .note-actions .note-action.zap-total, .person-actions .zap-button {
+  display: inline-flex; align-items: center; gap: 4px; width: auto; font: 600 13px/1 var(--font-round);
+}
+.note-actions .note-action.zap-button.wide, .note-actions .note-action.zap-total { padding: 0 10px; }
+.note-actions .note-action.zap-total { color: rgb(255 159 10 / .85); cursor: default; }
+.note-actions .note-action.zap-button.sent, .person-actions .zap-button.sent { color: #ff9f0a; background: rgb(255 159 10 / .20); }
+/* The profile pill sits with Follow: the same height, the accent orange as on the iPhone. */
+.person-actions .zap-button { min-height: 34px; padding: 0 14px; border: 1px solid var(--hair); background: var(--s2); color: var(--text); }
+.person-actions .zap-button.failed { color: var(--danger); }
+.zap-button { touch-action: manipulation; -webkit-touch-callout: none; user-select: none; }
+
+.zap-error { position: absolute; z-index: 6; top: calc(100% + 6px); right: 0; width: max-content; max-width: min(280px, 70vw);
+  padding: 8px 10px; border-radius: 10px; background: var(--s3); color: var(--text); font: var(--t-foot); }
+
+.zap-picker { position: absolute; z-index: 7; bottom: calc(100% + 8px); right: 0; width: 264px; padding: 14px;
+  display: flex; flex-direction: column; gap: 12px; border-radius: 16px; background: var(--s1); border: 1px solid var(--strong);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .6); cursor: default; }
+.zap-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.zap-presets button { min-height: 36px; padding: 0; }
+.zap-presets button.on { border-color: var(--accent); color: var(--accent-light); }
+.zap-custom { display: flex; align-items: center; gap: 8px; color: var(--text-2); font: var(--t-foot); }
+.zap-custom input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; font: 14px var(--mono); }
+.zap-picker-row { display: flex; gap: 8px; justify-content: flex-end; }
+.zap-picker-row button { min-height: 38px; padding: 0 14px; }
+/* On a profile the pill is near the top of the screen: the picker opens downward. */
+.person-actions .zap-picker { bottom: auto; top: calc(100% + 8px); }
+.wallet-invoice { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 14px; }
+.wallet-invoice-text { word-break: break-all; max-width: 100%; margin: 0; }
+.wallet-history { list-style: none; margin: 8px 0; padding: 0; }
+.wallet-tx { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+.wallet-tx:last-child { border-bottom: 0; }
+.wallet-tx-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; }
+.wallet-tx-icon.in { color: #30d158; background: rgb(48 209 88 / 0.12); }
+.wallet-tx-icon.out, .wallet-tx-icon.zap { color: #ff9f0a; background: rgb(255 159 10 / 0.12); }
+.wallet-tx-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wallet-tx-title, .wallet-tx-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wallet-tx-amount { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wallet-tx-amount.in { color: #30d158; }
+/* Who zapped (ZappersListView), from a note's zap total. */
+.note-actions .note-action.zap-count { padding: 0 10px; margin-left: 4px; color: rgb(255 159 10 / .85); }
+.zappers { width: 300px; max-height: 360px; overflow-y: auto; }
+.zappers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.zapper { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; border: 0; background: none; padding: 6px 4px; min-height: 0; }
+.zapper-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.zapper-head { display: flex; gap: 8px; align-items: baseline; }
+.zapper-head .author-name { flex: 1; min-width: 0; }
+.zapper-sats { flex: none; color: #ff9f0a; font: 600 13px var(--mono); }
+.zapper-comment { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* Send (WalletLightningTab+Send): the amount is shown in orange before anything is paid. */
+.wallet-paying { color: #ff9f0a; font-weight: 600; margin: 8px 0; }
+.wallet-to { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
+.wallet-confirm { margin-top: 10px; padding: 12px; border: 1px solid #ff9f0a; border-radius: 10px; background: rgb(255 159 10 / .08); }
+.wallet-confirm p { margin: 0 0 10px; }
+.wallet-sent { color: #30d158; margin: 8px 0 0; }
+textarea.wallet-uri { width: 100%; resize: vertical; font: 13px var(--mono); }
+.note-actions .note-action.zap-button.no-lightning { opacity: .35; }

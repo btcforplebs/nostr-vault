@@ -70,6 +70,10 @@ enum FeedFilterEngine {
         languageOf: (FeedNote) -> String? = { _ in nil },
         authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
+        // A follow list runs to a thousand keys; checked per note as an
+        // Array it was most of a rebuild's cost.
+        let followedPubkeys = Set(followedPubkeys)
+
         // Articles: long-form only, one event per
         // `pubkey:d` address. 30023 is a parameterized-replaceable kind, so an
         // edited article arrives as a second event with the same address and

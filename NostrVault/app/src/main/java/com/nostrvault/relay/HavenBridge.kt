@@ -102,6 +102,14 @@ object HavenBridge {
      */
     external fun requestMacSyncCheck()
 
+    /**
+     * Tell the relay whether the app is on screen. Work that only serves the
+     * screen (the Popular tally's engagement firehose) pauses while it isn't.
+     * Until this is first called the relay treats the app as on screen.
+     * Maps to Go: SetAppForegroundC(on)
+     */
+    external fun setAppForeground(on: Boolean)
+
     // -----------------------------------------------------------------------
     // Database operations
     // -----------------------------------------------------------------------
@@ -214,6 +222,15 @@ object HavenBridge {
     /** Connect to a NIP-46 bunker. Returns the signer's public key hex, or null on failure. */
     external fun nip46Connect(clientSecretKey: String, bunkerUrl: String): String?
 
+    /**
+     * Logs in to a bunker and keeps its session in the background, without
+     * making it the active signer: the owner's bunker while another account
+     * is active, so the owner's relay AUTH ([nip46SignEventWith]) has a
+     * session to sign through. A live session for that signer is a no-op.
+     * Returns its user pubkey, or null on failure.
+     */
+    external fun nip46ConnectBackground(clientSecretKey: String, bunkerUrl: String): String?
+
     /** Disconnect from the NIP-46 bunker. */
     external fun nip46Disconnect()
 
@@ -279,6 +296,55 @@ object HavenBridge {
     external fun computePopularNotes(): String?
 
     // -----------------------------------------------------------------------
+    // Web of trust rebuild
+    // -----------------------------------------------------------------------
+
+    /**
+     * Rebuild the web of trust now (the WOT tab's refresh) instead of at the
+     * next daily refresh. True when a rebuild started or was already running;
+     * false when the relay isn't up or trust is off. Throws
+     * UnsatisfiedLinkError on a library that predates it.
+     * Maps to Go: RefreshWotC()
+     */
+    external fun refreshWot(): Boolean
+
+    /**
+     * How far the latest rebuild has got, as JSON (wot.Progress): running,
+     * phase, batches, batchesDone, lists, found, new, size. See [com.nostrvault.data.model.WotRefreshProgress].
+     * Maps to Go: WotRefreshProgressC()
+     */
+    external fun getWotRefreshProgress(): String?
+
+    /**
+     * The running (or last) rebuild's newcomers from index [from] on, as JSON
+     * {"total": n, "pubkeys": [...]}. Pass the last total back in to get only
+     * the people found since. See [com.nostrvault.data.model.WotNewcomers].
+     * Maps to Go: WotNewcomersC(from)
+     */
+    external fun getWotNewcomers(from: Int): String?
+
+    // -----------------------------------------------------------------------
+    // Blocked people
+    // -----------------------------------------------------------------------
+
+    private external fun updateBlacklistNative(npubsJson: String)
+
+    /**
+     * Replaces the relay's live blacklist with [npubs] (every account's blocks
+     * combined), so a block stops the relay storing, counting and notifying
+     * about that person at once rather than at the next launch. Maps to Go:
+     * UpdateBlacklistC. iOS: ConfigService.syncBlacklistToRelay.
+     */
+    fun updateBlacklist(npubs: List<String>) {
+        if (!isLoaded) return
+        try {
+            updateBlacklistNative(RelayConfiguration.npubListJson(npubs))
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "updateBlacklist unavailable: ${e.message}")
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Follower ledger
     // -----------------------------------------------------------------------
 
@@ -311,6 +377,17 @@ object HavenBridge {
      * when the queue is empty. Drained by [LogStore] to raise local notifications.
      */
     external fun getNotifyLog(): String?
+
+    /**
+     * Drain every relay log line queued since the last call, oldest first,
+     * joined by newlines; null when there are none. Unlike [getImportLog] this
+     * drops nothing (up to the Go side's 1000-line cap), so [LogStore] uses it
+     * for the console log.
+     */
+    external fun getLogLines(): String?
+
+    /** Open websocket connections across all the relays. */
+    external fun activeConnections(): Int
 
     // -----------------------------------------------------------------------
     // Bech32 encoding/decoding (pure Kotlin — no JNI needed)
@@ -449,6 +526,25 @@ object HavenBridge {
         return bech32Encode("nsec", bytes)
     }
 
+    /**
+     * Encode a hex public key, plus relay hints, to an nprofile bech32 string
+     * (NIP-19 TLV: type 0 pubkey, type 1 per relay). Hints too long for one
+     * TLV are dropped rather than failing the whole link.
+     */
+    fun encodeNprofile(hexPubkey: String, relays: List<String> = emptyList()): String? {
+        val pubBytes = hexToByteArray(hexPubkey) ?: return null
+        if (pubBytes.size != 32) return null
+        val tlv = mutableListOf<Byte>()
+        fun appendTLV(type: Int, value: ByteArray) {
+            tlv.add(type.toByte())
+            tlv.add(value.size.toByte())
+            value.forEach { tlv.add(it) }
+        }
+        appendTLV(0, pubBytes)
+        relays.map { it.toByteArray(Charsets.UTF_8) }.filter { it.size in 1..255 }.forEach { appendTLV(1, it) }
+        return bech32Encode("nprofile", tlv.toByteArray())
+    }
+
     /** Decode an nprofile bech32 string. Returns JSON: {"pubkey":"...","relays":[...]} */
     fun decodeNprofile(nprofile: String): String? {
         val (pubkey, relays) = nprofileParts(nprofile) ?: return null
@@ -526,6 +622,9 @@ object HavenBridge {
         return bech32Encode("nevent", tlv.toByteArray())
     }
 
+    /** An `naddr1…` from its already-built TLV payload (see [com.nostrvault.data.model.GatedArticle.naddrTlv]). */
+    fun encodeNaddrTlv(tlv: ByteArray): String = bech32Encode("naddr", tlv)
+
     /**
      * Encode an addressable event to an naddr1 bech32 string (NIP-19 TLV):
      * type 0 (d tag, UTF-8), type 2 (author pubkey), type 3 (kind). Mirrors
@@ -571,40 +670,22 @@ object HavenBridge {
         return null
     }
 
+    /** Decode an nevent1 bech32 string to its id and author ([QuoteRef.eventPointerFromNeventTlv]). */
+    fun decodeNeventPointer(nevent1: String): QuoteRef.EventPointer? {
+        val (hrp, payload) = bech32Decode(nevent1) ?: return null
+        if (hrp != "nevent") return null
+        return QuoteRef.eventPointerFromNeventTlv(payload)
+    }
+
     /**
      * Decode an naddr1 bech32 string to the address it names (NIP-19 TLV).
-     *
-     * TLV: type 0 = the "d" tag (UTF-8), 1 = relay hint, 2 = author pubkey
-     * (32 bytes), 3 = kind (4 bytes, big-endian). Kind and author are both
-     * required — without them the reference names no event, so it is rejected
-     * rather than half-read. An empty "d" is legal and means the empty
-     * identifier, so it is not treated as missing.
+     * The TLV rules, and why each malformed case names nothing, are on
+     * [QuoteRef.coordinateFromNaddrTlv].
      */
     fun decodeNaddr(naddr1: String): QuoteRef.Coordinate? {
         val (hrp, payload) = bech32Decode(naddr1) ?: return null
         if (hrp != "naddr") return null
-        var dTag: String? = null
-        var pubkey: String? = null
-        var kind: Int? = null
-        var i = 0
-        while (i + 2 <= payload.size) {
-            val type = payload[i].toInt() and 0xFF
-            val length = payload[i + 1].toInt() and 0xFF
-            i += 2
-            // A truncated entry ends the walk rather than being read past: a
-            // malformed reference should yield nothing, not garbage.
-            if (i + length > payload.size) break
-            val value = payload.copyOfRange(i, i + length)
-            when {
-                type == 0 -> dTag = String(value, Charsets.UTF_8)
-                type == 2 && length == 32 -> pubkey = value.toHex()
-                type == 3 && length == 4 -> kind = value.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xFF) }
-            }
-            i += length
-        }
-        val resolvedKind = kind ?: return null
-        val resolvedPubkey = pubkey ?: return null
-        return QuoteRef.Coordinate(resolvedKind, resolvedPubkey, dTag ?: "")
+        return QuoteRef.coordinateFromNaddrTlv(payload)
     }
 
     // -----------------------------------------------------------------------

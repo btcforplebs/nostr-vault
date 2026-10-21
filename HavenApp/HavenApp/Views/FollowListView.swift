@@ -71,6 +71,13 @@ struct FollowListView: View {
 
     private var sort: FollowListSort { sortByTab[tab] ?? .trusted }
 
+    /// Spam, plus everyone the active account blocks: both are dropped from
+    /// both lists and from the counts beside the switch. The lists
+    /// themselves are untouched, so an unblock brings them back.
+    private var dropped: Set<String> {
+        FollowListLogic.dropped(spam: hidden, blocked: configService.activeAccountBlockedHexPubkeys)
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             list
@@ -99,7 +106,10 @@ struct FollowListView: View {
                 }
                 .background(Color.platformWindowBackground.ignoresSafeArea())
         }
-        .overlay(alignment: .top) { FollowNotificationBanner() }
+        #if os(macOS)
+        // On iPhone and iPad the lane is drawn above every sheet already.
+        .overlay(alignment: .top) { PillLaneStack() }
+        #endif
         .onAppear(perform: loadTrust)
     }
 
@@ -160,7 +170,7 @@ struct FollowListView: View {
             follows: Set(follows.followed),
             webOfTrust: webOfTrust,
             trustRank: trustRank,
-            hidden: hidden,
+            hidden: dropped,
             sort: sort,
             query: query
         )
@@ -189,7 +199,7 @@ struct FollowListView: View {
 
     private var tabPicker: some View {
         Picker("List", selection: $tab) {
-            Text("Following \(FollowListLogic.countText(following.count, more: false))")
+            Text("Following \(FollowListLogic.countText(followingShown, more: false))")
                 .tag(FollowListTab.following)
             Text("Followers \(followersLabel)")
                 .tag(FollowListTab.followers)
@@ -198,13 +208,23 @@ struct FollowListView: View {
         .labelsHidden()
     }
 
+    /// The counts beside the switch count what the lists show, so a blocked
+    /// person is gone from both the rows and the number.
+    private var followingShown: Int {
+        FollowListLogic.shownCount(following, dropped: dropped)
+    }
+
+    private var followersShown: Int {
+        FollowListLogic.shownCount(Array(followers.keys), dropped: dropped)
+    }
+
     /// Matches the count on the profile: the full total when relays gave one,
     /// otherwise what is loaded, with + while more can load.
     private var followersLabel: String {
-        if let followersTotal, followersTotal > followers.count {
+        if let followersTotal, followersTotal > followersShown {
             return FollowListLogic.countText(followersTotal, more: false)
         }
-        return FollowListLogic.countText(followers.count, more: followersHaveMore)
+        return FollowListLogic.countText(followersShown, more: followersHaveMore)
     }
 
     private var sortMenu: some View {
@@ -519,7 +539,8 @@ final class FollowListFollowWatch: ObservableObject {
         // The list changes now; if the new list cannot be published the feed
         // puts it back and the button follows.
         let failed: () -> Void = {
-            banner.add(recipientName: name, kind: .failed(follow ? "Couldn't publish the follow" : "Couldn't publish the unfollow"))
+            banner.add(recipientName: name, kind: .failed(
+                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly)))
         }
         let result = follow
             ? feed.followUser(pubkey, onPublishFailed: failed)
@@ -556,6 +577,7 @@ final class FollowListFollowWatch: ObservableObject {
         switch err {
         case .alreadyFollowing: return follow ? "Already following" : "Unfollow failed"
         case .cannotUnfollowSelf: return follow ? "Follow failed" : "Can't unfollow yourself"
+        case .readOnly: return ContactManager.publishFailedMessage(follow: follow, readOnly: true)
         case .contactsNotLoaded, .listUnavailable:
             return follow ? "Following once your follow list loads…" : "Unfollowing once your follow list loads…"
         }

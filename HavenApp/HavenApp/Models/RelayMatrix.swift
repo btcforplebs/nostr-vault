@@ -241,12 +241,9 @@ enum RelayMatrix {
     static let wellKnownRelays = [
         "wss://relay.damus.io",
         "wss://relay.primal.net",
-        "wss://nos.lol",
         "wss://relay.snort.social",
         "wss://relay.btcforplebs.com",
-        "wss://nostr.mom",
         "wss://nostr-pub.wellorder.net",
-        "wss://offchain.pub",
         "wss://relay.nostr.bg",
         "wss://nostr.oxtr.dev",
         "wss://relay.nostr.net",
