@@ -105,6 +105,47 @@ enum RelayConfiguration {
         return url
     }
 
+    /// The status file is for this Mac address (haven-go trims trailing slashes).
+    static func macSyncStatus(_ status: MacSyncStatus?, isFor macURL: String) -> Bool {
+        guard let recorded = status?.macURL, !macURL.isEmpty else { return false }
+        return macRelayBaseForStatus(recorded) == macRelayBaseForStatus(macURL)
+    }
+
+    /// What the Mac sync card says once a copy has ended: "Done" with what was
+    /// copied, or the reason it stopped. `checked` is the formatted finish time.
+    static func macSyncSummary(_ status: MacSyncStatus, checked: String?) -> (headline: String, detail: String) {
+        let posts = status.posts ?? 0, mentions = status.mentions ?? 0
+        let missing = status.missing ?? 0
+        let reason = (status.error ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = []
+        parts.append(posts + mentions == 0
+            ? "Nothing new to copy: this phone already had it."
+            : "Copied \(posts.formatted()) posts and \(mentions.formatted()) mentions.")
+        let headline: String
+        switch status.state {
+        case "done":
+            headline = missing < 0 ? "Done (this Mac can't be checked)" : "Done · nothing missing"
+        case "incomplete" where reason.isEmpty && missing > 0:
+            // Finished cleanly, but a few events the phone won't store remain.
+            headline = "Done · \(missing.formatted()) couldn't be copied"
+            parts.append("It tries those again once a day.")
+        case "incomplete":
+            headline = missing > 0 ? "Stopped · \(missing.formatted()) still missing" : "Copy didn't finish"
+            if !reason.isEmpty { parts.append("Reason: \(reason).") }
+            parts.append("It tries again next time the app starts.")
+        case "failed":
+            headline = "Couldn't copy from your Mac"
+            parts = ["Reason: \(reason.isEmpty ? "none was recorded" : reason).", "It tries again next time the app starts."]
+        default:
+            headline = status.state ?? "Unknown"
+        }
+        if missing < 0 {
+            parts.append("Your Mac's relay is too old to compare lists, so it was copied page by page.")
+        }
+        if let checked { parts.append("Checked \(checked).") }
+        return (headline, parts.joined(separator: " "))
+    }
+
     /// Result of the relay's one-time full-history copy from the Mac relay and
     /// its missing-events check, as written by haven-go (macsync.go) to
     /// mac_sync_status.json. Every field is optional so a file from an older or
