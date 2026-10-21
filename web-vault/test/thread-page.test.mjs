@@ -54,6 +54,20 @@ test("the page escapes everything the post and its people say", () => {
   assert.match(html, /<title>&lt;b&gt;Al&quot;ice&lt;\/b&gt; on Nostr<\/title>/)
 })
 
+test("the way in: a note's Reply, Repost, Like and Zap all open it in the web app; an article opens the web app", () => {
+  const post = sign(alice, 1, "hello")
+  const html = renderPost({ post, replies: [], profiles: new Map(), code: neventEncode({ id: post.id }) })
+  for (const label of ["Reply", "Repost", "Like", "Zap"])
+    assert.match(html, new RegExp(`<a class="act" href="/vault/#/thread/${post.id}" aria-label="${label} in the web app">`))
+  assert.match(html, new RegExp(`class="btn primary" href="/vault/#/thread/${post.id}">Reply on the web<`))
+  assert.match(html, /class="btn" href="nostr:nevent1[a-z0-9]+">Open in the app</)
+  assert.doesNotMatch(html, /<script|<form/)
+  const article = sign(alice, 30023, "# hi", [["d", "a"], ["title", "Hi"]])
+  const ahtml = renderPost({ post: article, replies: [], profiles: new Map(), code: naddrEncode({ kind: 30023, pubkey: A, identifier: "a" }) })
+  assert.doesNotMatch(ahtml, /class="act"/)
+  assert.match(ahtml, /class="btn primary" href="\/vault\/">Open the web app</)
+})
+
 test("the preview card: author and text, the post's first photo as a large image, else the author's picture", () => {
   const profiles = new Map([[A, { name: "Alice", picture: "https://x.com/alice.jpg", nip05: null }], [B, { name: "Bob", picture: null, nip05: null }]])
   const photo = sign(alice, 1, `sunset with nostr:${npubEncode(B)} https://x.com/sun.webp`)

@@ -214,9 +214,13 @@ export function renderPost({ post, replies, profiles, code }) {
   ${byline(post, profiles, 48)}
   ${post.kind === LONG_FORM_KIND ? articleHtml(post) : noteHtml(post, profiles)}
 </article>
-<div class="open">
-  <a class="btn primary" href="nostr:${esc(code)}">Open in Nostr Vault</a>
-  ${hex ? `<a class="btn" href="/vault/#/thread/${hex}">Read in the web Vault</a>` : ""}
+${hex ? actionRow(hex) : ""}
+<div class="join">
+  <p><strong>Join the conversation.</strong> Reply, like or zap from your browser: sign in with an extension or a bunker, or just look around with any name. Nothing to install.</p>
+  <div class="open">
+    <a class="btn primary" href="${hex ? `/vault/#/thread/${hex}` : "/vault/"}">${hex ? "Reply on the web" : "Open the web app"}</a>
+    <a class="btn" href="nostr:${esc(code)}">Open in the app</a>
+  </div>
 </div>
 <section class="replies" aria-label="Replies">
   <h2>${replies.length ? `${replies.length} ${replies.length === 1 ? "reply" : "replies"}` : "No replies yet"}</h2>
@@ -227,6 +231,19 @@ export function renderPost({ post, replies, profiles, code }) {
   </div>`).join("")}
 </section>`
   return page({ meta, body })
+}
+
+// The post's buttons, as in the app. Every one opens this post in the web Vault, where the reader signs in and acts:
+// this page has no script and no signer, so it never writes anything itself.
+const ICONS = {
+  Reply: `<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20l1.1-4.4A8.4 8.4 0 1 1 21 11.5Z"/>`,
+  Repost: `<path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>`,
+  Like: `<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21.2l8.8-8.8a5.5 5.5 0 0 0 0-7.8Z"/>`,
+  Zap: `<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/>`,
+}
+function actionRow(hex) {
+  return `<nav class="acts" aria-label="Act on this post in the web app">${Object.entries(ICONS).map(([label, d]) =>
+    `<a class="act" href="/vault/#/thread/${hex}" aria-label="${label} in the web app"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${d}</svg>${label}</a>`).join("")}</nav>`
 }
 
 /** The page for an address that is not a post, or a post no relay had. */
@@ -266,9 +283,9 @@ ${noindex ? `<meta name="robots" content="noindex">` : ""}
 <style>${CSS}</style>
 </head>
 <body>
-<header><a class="logo" href="/"><img src="/assets/haven_icon.png" alt="" width="28" height="28">Nostr Vault</a><a class="get" href="/">Get the app</a></header>
+<header><a class="logo" href="/"><img src="/assets/haven_icon.png" alt="" width="28" height="28">Nostr Vault</a><nav class="top"><a class="get" href="/">Get the app</a><a class="pill" href="/vault/">Open web app</a></nav></header>
 <main>${body}</main>
-<footer>Shared from <a href="/">Nostr Vault</a> · your own Nostr relay, on your devices.</footer>
+<footer>Shared from <a href="/">Nostr Vault</a> · your own Nostr relay, on your devices and <a href="/vault/">in your browser</a>.</footer>
 </body>
 </html>
 `
@@ -281,7 +298,8 @@ body{background:var(--bg);color:var(--text);font:16px/1.55 -apple-system,BlinkMa
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 header{display:flex;align-items:center;justify-content:space-between;max-width:680px;margin:0 auto;padding:16px 20px}
 .logo{display:flex;align-items:center;gap:10px;color:var(--text);font-weight:700;letter-spacing:-.01em}.logo img{border-radius:7px}
-.get{font-size:14px;color:var(--dim)}
+.top{display:flex;align-items:center;gap:14px}.get{font-size:14px;color:var(--dim)}
+.pill{font-size:14px;font-weight:600;padding:7px 14px;border-radius:999px;border:1px solid var(--accent)}.pill:hover{text-decoration:none;background:rgba(255,140,0,.1)}
 main{max-width:680px;margin:0 auto;padding:0 16px 40px}
 .post{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px}
 .up{display:inline-block;font-size:14px;color:var(--dim);margin-bottom:12px}
@@ -298,6 +316,11 @@ time{color:var(--dim);font-size:13px}
 .article img{max-width:100%;border-radius:12px;margin:6px 0 14px}.article hr{border:0;border-top:1px solid var(--line);margin:20px 0}
 .article blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--dim)}
 pre{overflow-x:auto;background:#111;border-radius:10px;padding:12px}code{font-family:ui-monospace,Menlo,monospace;font-size:.9em}
+.acts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 0}
+.act{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 8px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--dim);font-size:14px;font-weight:600}
+.act svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.act:hover{color:var(--accent);border-color:rgba(255,140,0,.5);text-decoration:none}
+.join{margin:16px 0 28px;padding:18px 20px;border-radius:20px;border:1px solid rgba(255,140,0,.3);background:linear-gradient(135deg,rgba(255,46,0,.08),rgba(255,140,0,.05))}
+.join p{color:var(--dim);font-size:15px}.join strong{color:var(--text)}.join .open{margin:14px 0 0}
 .open{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 28px}
 .btn{display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);color:var(--text);font-weight:600;font-size:15px}
 .btn.primary{background:var(--grad);border:0;color:#000}.btn:hover{text-decoration:none;filter:brightness(1.08)}

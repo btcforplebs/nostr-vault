@@ -160,6 +160,8 @@ button.person-row:hover { border-color: var(--accent-line); }
 .signin h1 { margin: 0; font: var(--t-title); }
 .signin > p { margin: 0 0 8px; font: var(--t-sub); }
 .signin button { width: 100%; }
+.signin > p.signin-for-post { padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--accent-line); color: var(--text); font: var(--t-foot); }
+.signin > p.signin-home { margin: 6px 0 0; font: var(--t-foot); }
 .field { display: grid; gap: 6px; text-align: left; font: var(--t-foot); color: var(--text-2); }
 .field input { font: var(--t-body); min-height: 48px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
 .field input:focus { outline: none; border-color: var(--accent-line); }

@@ -42,7 +42,7 @@
           "image": "https://nostrvault.app/assets/og-image.jpg",
           "description": "A native Nostr client with a personal relay built in, for iPhone, iPad, Mac and Android. NIP-49 encrypted keys, NIP-46 remote signing, Lightning zaps via Nostr Wallet Connect, Blossom media hosting, Web of Trust filtering and on-chain Taproot Bitcoin derived from your Nostr key.",
           "applicationCategory": "SocialNetworkingApplication",
-          "operatingSystem": "iOS, iPadOS, macOS, Android",
+          "operatingSystem": "iOS, iPadOS, macOS, Android, Web",
           "softwareVersion": "2.7.2",
           "isAccessibleForFree": true,
           "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -125,18 +125,20 @@
             <a href="#stories">Watch</a>
             <a href="#trust">Trust</a>
             <a href="#features">Features</a>
+            <a href="#web">Web</a>
             <a href="#platforms">Download</a>
             <a href="#relay">Relay</a>
             <a href="blog-what-is-nostr-vault.html">Blog</a>
         </div>
         <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app</a>
             <a href="https://testflight.apple.com/join/kN3zE1H1" class="pill pill-testflight">TestFlight</a>
             <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
         </div>
     </nav>
 
     <header class="hero">
-        <p class="eyebrow fade-in-up">Version 2.7 &middot; iPhone &middot; iPad &middot; Mac &middot; Android</p>
+        <p class="eyebrow fade-in-up">Version 2.7 &middot; iPhone &middot; iPad &middot; Mac &middot; Android &middot; Web</p>
         <h1 class="fade-in-up">Your Nostr home.<br>In your pocket.</h1>
         <p class="lede fade-in-up delay-100">Nostr Vault is a native Nostr client with your own relay built in. Your notes,
             media and follows live on hardware you hold, with encrypted keys, Lightning zaps and on-chain Bitcoin
@@ -146,7 +148,7 @@
             <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
             <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
         </div>
-        <p class="hero-note fade-in-up delay-300">Also on <a href="https://zapstore.dev/apps/com.nostrvault.app">Zapstore</a> for Android.</p>
+        <p class="hero-note fade-in-up delay-300">Also on <a href="https://zapstore.dev/apps/com.nostrvault.app">Zapstore</a> for Android. Or skip the download and <a href="/vault/">open it in your browser</a>.</p>
 
         <div class="hero-phones fade-in-up delay-300" aria-label="Nostr Vault on iPhone">
             <figure class="phone tilt-left">
@@ -220,7 +222,42 @@
                 <span class="platform-sub">APK on GitHub or Zapstore &middot; Android 8+</span>
                 <span class="platform-cta">Get the APK &rarr;</span>
             </a>
+            <a class="platform web fade-in-up delay-300" href="/vault/">
+                <span class="platform-name">Web</span>
+                <span class="platform-sub">Any browser, nothing to install &middot; relay runs in the page</span>
+                <span class="platform-cta">Open it now &rarr;</span>
+            </a>
         </div>
+    </section>
+
+    <section class="web" id="web">
+        <p class="eyebrow center fade-in-up">In your browser</p>
+        <h2 class="center fade-in-up">Nothing to install.<br>Same vault, one tab away.</h2>
+        <p class="center lede-sm fade-in-up delay-100">The web app runs the Nostr Vault relay inside the page, so your notes
+            are kept in your browser, not on our server. Sign in with an extension or a bunker and your key stays with
+            your signer. Or just look around with any name or npub.</p>
+        <div class="hero-buttons fade-in-up delay-200">
+            <a href="/vault/" class="btn btn-primary">Open Nostr Vault on the web</a>
+        </div>
+        <figure class="browser fade-in-up delay-200">
+            <div class="browser-bar" aria-hidden="true"><span></span><span></span><span></span><p>nostrvault.app/vault</p></div>
+            <img src="assets/screens/web-thread.webp" alt="Nostr Vault in a desktop browser, signed in read-only as jb55: the sidebar, the Following feed, and a thread with its replies open beside it" width="2000" height="1250" loading="lazy">
+        </figure>
+        <div class="web-row">
+            <figure class="shot fade-in-up">
+                <img src="assets/screens/web-wot.webp" alt="The Web of Trust globe in the Nostr Vault web app, with followed accounts on the inner ring and the wider web around them" width="1440" height="903" loading="lazy">
+                <figcaption>Web &middot; Your Web of Trust, drawn as a globe</figcaption>
+            </figure>
+            <figure class="shot phone-shot fade-in-up delay-100">
+                <img src="assets/screens/web-phone-thread.webp" alt="A thread open in the Nostr Vault web app on a phone-sized browser, with the tab bar at the bottom" width="780" height="1688" loading="lazy">
+                <figcaption>Phone browser &middot; Threads</figcaption>
+            </figure>
+        </div>
+        <ul class="web-points fade-in-up delay-100">
+            <li><strong>Your key stays put</strong>NIP-07 extension or NIP-46 bunker. The page never sees your nsec.</li>
+            <li><strong>A real relay in the tab</strong>The same Go relay as the apps, compiled to WebAssembly.</li>
+            <li><strong>Shared posts open here</strong>A nostrvault.app link shows the post to anyone, and one tap takes you in to reply.</li>
+        </ul>
     </section>
 
     <section class="film" id="film">
@@ -474,12 +511,13 @@
 
     <section class="cta-section">
         <h2 class="fade-in-up">Own your relay. Own your keys.<br>On every screen you own.</h2>
-        <p class="fade-in-up delay-100">Native on iPhone, iPad, Mac and Android. Bitcoin-aware. Encrypted by default.
+        <p class="fade-in-up delay-100">Native on iPhone, iPad, Mac and Android, and in any browser. Bitcoin-aware. Encrypted by default.
             Verifiable from source.</p>
         <div class="hero-buttons fade-in-up delay-200">
             <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
             <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
             <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
+            <a href="/vault/" class="btn btn-outline">Open on the web</a>
             <a href="https://github.com/btcforplebs/nostr-vault" class="btn btn-outline">View on GitHub</a>
         </div>
     </section>
