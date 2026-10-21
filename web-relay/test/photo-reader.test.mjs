@@ -1,4 +1,4 @@
-// The photo-only reader: a stranger with no owner and no Haven reads by hash from photo addresses, and nothing else.
+// The photo-only reader: with no owner and no Haven it reads by hash from the vaults it is allowed, and nothing else.
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { randomBytes, createHash } from "node:crypto"
@@ -31,7 +31,7 @@ async function setup() {
     stop: async () => { clearInterval(timer); await reader.stop(); await blob.stop(); await main.stop() } }
 }
 
-test("reads a photo from a photo address, with no owner, Haven or storage", async () => {
+test("reads a photo from an allowed vault, with no owner, Haven or storage", async () => {
   const t = await setup()
   try {
     const got = await t.reader.getBlob(t.blobKey, t.h, { timeoutMs: 20_000 })
@@ -42,7 +42,7 @@ test("reads a photo from a photo address, with no owner, Haven or storage", asyn
   } finally { await t.stop() }
 })
 
-test("never asks a vault that isn't a photo address (a main npub), even with the hash", async () => {
+test("never asks a vault it is not allowed, even with the hash", async () => {
   const t = await setup()
   try {
     await assert.rejects(t.reader.getBlob(t.mainKey, t.h, { timeoutMs: 2_000 }), /not one of this relay's vaults/)
