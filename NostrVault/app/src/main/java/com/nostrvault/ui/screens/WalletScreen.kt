@@ -393,6 +393,9 @@ private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), SETTIN
 fun WalletScreen(
     onBack: () -> Unit,
     onNoteClick: (String) -> Unit = {},
+    // Settings > Wallet opens only the settings, as iOS WalletSettingsView;
+    // sending stays behind Profile.
+    settingsOnly: Boolean = false,
     viewModel: WalletViewModel = hiltViewModel(),
 ) {
     var selectedTab by remember { mutableStateOf(WalletTab.LIGHTNING) }
@@ -425,6 +428,10 @@ fun WalletScreen(
         },
         containerColor = WindowBackground,
     ) { padding ->
+        if (settingsOnly) {
+            Column(modifier = Modifier.fillMaxSize().padding(padding)) { WalletSettingsTab(viewModel) }
+            return@Scaffold
+        }
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             TabRow(
                 selectedTabIndex = selectedTab.ordinal,

@@ -5,6 +5,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.filled.DesktopMac
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.ManageHistory
+import androidx.compose.material.icons.filled.Newspaper
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.SdStorage
+import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Article
@@ -166,6 +174,19 @@ object NostrVaultIcons {
     val Logs: ImageVector = Icons.Filled.Terminal           // list.bullet.rectangle
     val Profile: ImageVector = Icons.Filled.Person          // person.circle
     val Groups: ImageVector = Icons.Filled.Groups           // person.3
+
+    // Settings rows: the nearest Material glyph to each iOS SettingsTab.icon,
+    // kept apart so the shared icons above don't move under other screens.
+    val SettingsFollowingBackup: ImageVector = Icons.Filled.ManageHistory    // person.crop.circle.badge.clock
+    val SettingsFeed: ImageVector = Icons.Filled.Newspaper                   // newspaper
+    val SettingsMedia: ImageVector = Icons.Filled.PhotoLibrary               // photo.on.rectangle
+    val SettingsRelays: ImageVector = Icons.Filled.Hub                       // point.3.connected.trianglepath.dotted
+    val SettingsMediaServers: ImageVector = Icons.Filled.Dns                 // server.rack
+    val SettingsMacRelay: ImageVector = Icons.Filled.DesktopMac              // desktopcomputer
+    val SettingsRelayAccess: ImageVector = Icons.Filled.ManageAccounts       // person.2.badge.gearshape
+    val SettingsBackup: ImageVector = Icons.Filled.SdStorage                 // externaldrive.fill
+    val SettingsDatabase: ImageVector = Icons.Filled.SettingsSuggest         // gearshape.2
+    val SettingsLogs: ImageVector = Icons.AutoMirrored.Filled.ListAlt        // list.bullet.rectangle
 
     // Actions
     val Zap: ImageVector = Icons.Filled.ElectricBolt       // bolt.fill

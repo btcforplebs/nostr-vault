@@ -22,6 +22,10 @@ internal fun NavGraphBuilder.walletRoutes(
         )
     }
 
+    composable(Screen.WalletSettings.route) {
+        WalletScreen(onBack = { navController.popBackStack() }, settingsOnly = true)
+    }
+
     composable(Screen.BitcoinWallet.route) {
         BitcoinWalletScreen(
             onBack = { navController.popBackStack() },

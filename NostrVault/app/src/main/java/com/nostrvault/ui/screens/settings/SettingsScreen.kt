@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -21,7 +20,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -30,6 +31,7 @@ import com.nostrvault.ui.theme.*
 
 /** App version string shown in the About section (mirrors iOS appVersion). */
 private val APP_VERSION = BuildConfig.VERSION_NAME
+private val APP_BUILD = BuildConfig.VERSION_CODE
 
 /** Developer / abuse-reporting npub (matches iOS SettingsView). */
 private const val DEVELOPER_NPUB =
@@ -52,17 +54,17 @@ fun SettingsScreen(
     val config by viewModel.config.collectAsState()
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
+            // iPhone opens Settings as a sheet: inline title, "Close" on the left.
+            CenterAlignedTopAppBar(
+                title = { Text("Settings", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(NostrVaultIcons.Back, contentDescription = "Back")
+                    TextButton(onClick = onBack) {
+                        Text("Close", color = LocalNostrVaultColors.current.primary, fontSize = 17.sp)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = WindowBackground,
                     titleContentColor = PrimaryText,
-                    navigationIconContentColor = PrimaryText,
                 ),
             )
         },
@@ -85,26 +87,31 @@ fun SettingsScreen(
 
             SETTINGS_GROUPS.forEach { group ->
                 item { SettingsSectionHeader(group.title) }
-                items(group.rows, key = { it.title }) { row ->
-                    SettingsItem(
-                        icon = row.icon,
-                        title = row.title,
-                        tileColor = row.color,
-                        onClick = { onNavigate(row.screen) },
-                    )
-                }
-                if (group.title == "Your Vault Relay") {
-                    // One switch, so it lives here rather than behind a page
-                    // of its own, as on iPhone.
-                    item {
-                        SettingsToggleItem(
-                            icon = Icons.Default.PowerSettingsNew,
-                            title = "Start Relay Automatically",
-                            tileColor = SettingsTile.Green,
-                            help = SettingsHelp.RELAY_AUTO_START,
-                            checked = config.autoStartRelay,
-                            onChange = viewModel::setAutoStartRelay,
-                        )
+                // One rounded card per group, as the iPhone's inset-grouped list.
+                item(key = group.title) {
+                    SettingsCard {
+                        group.rows.forEachIndexed { index, row ->
+                            if (index > 0) SettingsRowDivider()
+                            SettingsItem(
+                                icon = row.icon,
+                                title = row.title,
+                                tileColor = row.color,
+                                onClick = { onNavigate(row.screen) },
+                            )
+                        }
+                        if (group.title == "Your Vault Relay") {
+                            // One switch, so it lives here rather than behind a page
+                            // of its own, as on iPhone.
+                            SettingsRowDivider()
+                            SettingsToggleItem(
+                                icon = Icons.Default.PowerSettingsNew,
+                                title = "Start Relay Automatically",
+                                tileColor = SettingsTile.Green,
+                                help = SettingsHelp.RELAY_AUTO_START,
+                                checked = config.autoStartRelay,
+                                onChange = viewModel::setAutoStartRelay,
+                            )
+                        }
                     }
                 }
             }
@@ -113,7 +120,8 @@ fun SettingsScreen(
             item { SettingsSectionHeader("About") }
             item { AboutSection() }
 
-            item { Spacer(Modifier.height(32.dp)) }
+            // Room to scroll the last section above the tab bar (iOS 60pt).
+            item { Spacer(Modifier.height(60.dp)) }
         }
     }
 }
@@ -148,35 +156,35 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
         SettingsRow("Accounts & Keys", NostrVaultIcons.Accounts, SettingsTile.Blue, Screen.AccountSettings),
         SettingsRow("Blocked", NostrVaultIcons.Blocked, SettingsTile.Red, Screen.BlockedSettings),
         SettingsRow("Recently Deleted", NostrVaultIcons.Delete, SettingsTile.Gray, Screen.RecentlyDeletedSettings),
-        SettingsRow("Following Backup", NostrVaultIcons.History, SettingsTile.Teal, Screen.FollowingBackup),
-        SettingsRow("Wallet", NostrVaultIcons.Wallet, SettingsTile.Orange, Screen.Wallet),
+        SettingsRow("Following Backup", NostrVaultIcons.SettingsFollowingBackup, SettingsTile.Teal, Screen.FollowingBackup),
+        SettingsRow("Wallet", NostrVaultIcons.Wallet, SettingsTile.Orange, Screen.WalletSettings),
     )),
     SettingsGroup("Feed & Display", listOf(
-        SettingsRow("Feed", NostrVaultIcons.Feed, SettingsTile.Pink, Screen.FeedSettings),
+        SettingsRow("Feed", NostrVaultIcons.SettingsFeed, SettingsTile.Pink, Screen.FeedSettings),
         SettingsRow("Appearance", NostrVaultIcons.Appearance, SettingsTile.Purple, Screen.AppearanceSettings),
-        SettingsRow("Media & Cache", NostrVaultIcons.Media, SettingsTile.Indigo, Screen.MediaSettings),
+        SettingsRow("Media & Cache", NostrVaultIcons.SettingsMedia, SettingsTile.Indigo, Screen.MediaSettings),
     )),
     SettingsGroup("Notifications", listOf(
         SettingsRow("Notifications", NostrVaultIcons.Notifications, SettingsTile.Red, Screen.NotificationSettings),
     )),
     SettingsGroup("Relays", listOf(
-        SettingsRow("Relays", NostrVaultIcons.Relay, SettingsTile.Haven, Screen.Relays),
-        SettingsRow("Media Servers", NostrVaultIcons.Storage, SettingsTile.Green, Screen.BlossomSettings),
+        SettingsRow("Relays", NostrVaultIcons.SettingsRelays, SettingsTile.Haven, Screen.Relays),
+        SettingsRow("Media Servers", NostrVaultIcons.SettingsMediaServers, SettingsTile.Green, Screen.BlossomSettings),
     )),
     SettingsGroup("Your Vault Relay", listOf(
-        SettingsRow("Sync with Vault on Mac", NostrVaultIcons.Domain, SettingsTile.Teal, Screen.HavenRelaySettings),
-        SettingsRow("Who Can Reach You", NostrVaultIcons.People, SettingsTile.Blue, Screen.RelayAccessSettings),
+        SettingsRow("Sync with Vault on Mac", NostrVaultIcons.SettingsMacRelay, SettingsTile.Teal, Screen.HavenRelaySettings),
+        SettingsRow("Who Can Reach You", NostrVaultIcons.SettingsRelayAccess, SettingsTile.Blue, Screen.RelayAccessSettings),
         SettingsRow("Import Notes", NostrVaultIcons.Import, SettingsTile.Orange, Screen.ImportSettings),
-        SettingsRow("Backup & Restore", NostrVaultIcons.Backup, SettingsTile.Indigo, Screen.BackupSettings),
+        SettingsRow("Backup & Restore", NostrVaultIcons.SettingsBackup, SettingsTile.Indigo, Screen.BackupSettings),
     )),
     SettingsGroup("Help", listOf(
         SettingsRow("Tutorials", NostrVaultIcons.Tutorials, SettingsTile.Purple, Screen.TutorialsSettings),
     )),
     SettingsGroup("Advanced", listOf(
         SettingsRow("Proof of Work", NostrVaultIcons.PoW, SettingsTile.Purple, Screen.PowSettings),
-        SettingsRow("Database & Reset", NostrVaultIcons.Settings, SettingsTile.Gray, Screen.AdvancedSettings),
+        SettingsRow("Database & Reset", NostrVaultIcons.SettingsDatabase, SettingsTile.Gray, Screen.AdvancedSettings),
         SettingsRow("Bitcoin On-Chain", NostrVaultIcons.Wallet, SettingsTile.Orange, Screen.BitcoinWallet),
-        SettingsRow("Logs", NostrVaultIcons.Logs, SettingsTile.Gray, Screen.LogViewer),
+        SettingsRow("Logs", NostrVaultIcons.SettingsLogs, SettingsTile.Gray, Screen.LogViewer),
     )),
 )
 
@@ -184,44 +192,87 @@ val SETTINGS_GROUPS: List<SettingsGroup> = listOf(
 private fun AboutSection() {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    // Centred, with a divider before the support block and before the
+    // privacy link, as iOS SettingsView's About section.
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
         Text(
-            text = "Nostr Vault v$APP_VERSION",
+            text = "Nostr Vault",
             color = PrimaryText,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "Support & Abuse Reporting",
-            color = SecondaryText,
-            fontSize = 13.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(4.dp))
         Text(
+            text = "Version $APP_VERSION ($APP_BUILD)",
+            color = SecondaryText,
+            fontSize = 12.sp,
+        )
+        HorizontalDivider(color = SeparatorColor, modifier = Modifier.padding(vertical = 8.dp))
+        Text(
+            text = "Support & Abuse Reporting",
+            color = PrimaryText,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "To report objectionable content or abusive users, contact the developer via Nostr",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
             text = DEVELOPER_NPUB,
             color = PrimaryText,
-            fontSize = 12.sp,
-            modifier = Modifier.clickable {
-                clipboard.setText(AnnotatedString(DEVELOPER_NPUB))
-            },
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(TertiaryGroupedBg)
+                .clickable { clipboard.setText(AnnotatedString(DEVELOPER_NPUB)) }
+                .padding(8.dp),
         )
+        Spacer(Modifier.height(8.dp))
         Text(
             text = "(Tap to copy)",
-            color = TertiaryText,
-            fontSize = 11.sp,
+            color = SecondaryText,
+            fontSize = 8.sp,
         )
-        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(color = SeparatorColor, modifier = Modifier.padding(vertical = 8.dp))
         Text(
             text = "Privacy Policy",
             color = LocalNostrVaultColors.current.primary,
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             modifier = Modifier.clickable {
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))) }
             },
         )
     }
+}
+
+/** The rounded card a group's rows sit in (iOS `.insetGrouped`). */
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(SecondaryGroupedBg),
+        content = content,
+    )
+}
+
+/** Hairline between rows, inset to the text like the iPhone list. */
+@Composable
+private fun SettingsRowDivider() {
+    HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp, modifier = Modifier.padding(start = 58.dp))
 }
 
 @Composable
