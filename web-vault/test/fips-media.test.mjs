@@ -3,7 +3,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode } from "nostr-tools/nip19"
 import { fipsRef, meshVaults } from "../src/net/fips-ref.js"
-import { createFipsMedia, MAX_READS } from "../src/net/fips-media.js"
+import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, MAX_READS, MAX_VAULTS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
 import { noteMedia } from "../src/net/note-media.js"
 
 const A = "a1".repeat(32), B = "b2".repeat(32), SHA = "487dc1578912f424773b0befc4eff491f026f0f24652f1d4ff66a85639455217"
@@ -53,7 +53,7 @@ function fakeReader({ have = new Map(), fail = new Set() } = {}) {
 
 test("one reader for the page, started on first need; one read per hash", async () => {
   const { startReader, log } = fakeReader({ have: new Map([[A, new Set([SHA])]]) })
-  const fm = createFipsMedia({ startReader, query: async () => assert.fail("a .fips link needs no 10063") })
+  const fm = createFipsMedia({ allow: () => true, startReader, query: async () => assert.fail("a .fips link needs no 10063") })
   assert.equal(log.starts, 0, "nothing starts until a photo needs it")
   const [u1, u2] = await Promise.all([fm.fallback({ url: link(A) }), fm.fallback({ url: link(A, ".jpg") })])
   assert.match(u1, /^blob:/)
@@ -74,7 +74,7 @@ test("an https photo with a hash falls back to the author's mesh vaults from the
       { kind: 10063, pubkey: B, created_at: 9, tags: [["server", "fipsmesh://whatever/"]] },
     ]
   }
-  const fm = createFipsMedia({ startReader, query })
+  const fm = createFipsMedia({ allow: () => true, startReader, query })
   const u = await fm.fallback({ url: `https://blossom.example/${SHA}.jpg`, x: SHA }, A)
   assert.match(u, /^blob:/)
   assert.deepEqual(log.gets, [A, B], "the newest list, tried in its order")
@@ -84,7 +84,7 @@ test("an https photo with a hash falls back to the author's mesh vaults from the
 
 test("no mesh source: no reader, and the photo shows its fallback", async () => {
   const { startReader, log } = fakeReader()
-  const fm = createFipsMedia({ startReader, query: async () => [] })
+  const fm = createFipsMedia({ allow: () => true, startReader, query: async () => [] })
   await assert.rejects(fm.fallback({ url: "https://x/p.jpg" }, A), /no hash/)
   await assert.rejects(fm.fallback({ url: "https://x/p.jpg", x: SHA }, A), /no mesh vault/)
   await assert.rejects(fm.fallback({ url: "https://x/p.jpg", x: SHA }, "not-a-key"), /no mesh vault/)
@@ -94,7 +94,7 @@ test("no mesh source: no reader, and the photo shows its fallback", async () => 
 test("a failed read is forgotten, so a later scroll tries again; reads are capped", async () => {
   const fail = new Set([A])
   const { startReader, log } = fakeReader({ have: new Map([[A, new Set([SHA])]]), fail })
-  const fm = createFipsMedia({ startReader })
+  const fm = createFipsMedia({ allow: () => true, startReader })
   await assert.rejects(fm.fallback({ url: link(A) }))
   fail.clear()
   assert.match(await fm.fallback({ url: link(A) }), /^blob:/)
@@ -105,18 +105,129 @@ test("a failed read is forgotten, so a later scroll tries again; reads are cappe
 
 test("a reader that fails to start is retried on the next photo", async () => {
   let n = 0
-  const fm = createFipsMedia({ startReader: async () => { if (n++ === 0) throw new Error("no seed"); return { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) } } })
+  const fm = createFipsMedia({ allow: () => true, startReader: async () => { if (n++ === 0) throw new Error("no seed"); return { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) } } })
   await assert.rejects(fm.fallback({ url: link(A) }), /no seed/)
   assert.match(await fm.fallback({ url: link(A) }), /^blob:/)
 })
 
 test("two notes, one hash: a read from a dead vault doesn't sink the note whose vault has it", async () => {
   const { startReader, log } = fakeReader({ have: new Map([[B, new Set([SHA])]]) })
-  const fm = createFipsMedia({ startReader })
+  const fm = createFipsMedia({ allow: () => true, startReader })
   const dead = fm.fallback({ url: link(A) })
   const live = fm.fallback({ url: link(B) })
   await assert.rejects(dead)
   assert.match(await live, /^blob:/)
   assert.deepEqual(log.gets, [A, B])
   assert.equal(await fm.fallback({ url: link(A) }), await live, "the bytes are the hash's: a later note gets them from cache")
+})
+
+// Review fixes (PR 989): no note's vault list can hold the line, a vault may answer only while asked, a photo on
+// screen keeps its URL, a photo that leaves stops its read, and the reader stops when idle.
+const key = i => i.toString(16).padStart(64, "0")
+
+test("hostile vault lists can't starve an honest photo: few vaults per photo, one turn per vault", async () => {
+  const dead = Array.from({ length: 30 }, (_, i) => key(i + 1))
+  const dead2 = Array.from({ length: 30 }, (_, i) => key(i + 100))
+  const { startReader, log } = fakeReader({ have: new Map([[B, new Set([SHA])]]) })
+  const fm = createFipsMedia({ allow: () => true, startReader })
+  const h1 = fm.photo(dead, key(900)).catch(() => {}), h2 = fm.photo(dead2, key(901)).catch(() => {})
+  const honest = fm.fallback({ url: link(B) })
+  assert.match(await honest, /^blob:/)
+  const before = log.gets.indexOf(B)
+  assert.ok(before <= 2, `the honest vault was asked after ${before} dead reads`)
+  await Promise.all([h1, h2])
+  assert.equal(log.gets.length, 2 * MAX_VAULTS + 1, `each hostile photo asks only ${MAX_VAULTS} vaults`)
+  assert.ok(log.maxOpen <= MAX_READS)
+})
+
+test("a photo stops trying new vaults past its own deadline", async () => {
+  let now = 0
+  const fm = createFipsMedia({ allow: () => true, clock: () => now, startReader: async () => ({ getBlob: async (_v, _s, { timeoutMs }) => { now += timeoutMs; throw new Error("timed out") } }) })
+  const seen = []
+  const fm2 = createFipsMedia({ allow: () => true, clock: () => now, startReader: async () => ({ getBlob: async (v, _s, { timeoutMs }) => { seen.push(timeoutMs); now += timeoutMs; throw new Error("timed out") } }) })
+  await assert.rejects(fm.photo([A, B], SHA), /timed out/)
+  await assert.rejects(fm2.photo([A, B, key(7)], SHA), /timed out/)
+  assert.deepEqual(seen, [READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS - READ_TIMEOUT_MS], "the third vault is never asked")
+})
+
+test("a vault may answer the page only while a read asks it", async () => {
+  const during = []
+  const fm = createFipsMedia({ allow: () => true, startReader: async ({ getPhotoVaults }) => ({ getBlob: async v => { during.push([...getPhotoVaults()]); await tick(); if (v === A) throw new Error("404"); return { bytes: new Uint8Array(1), type: "image/png" } } }) })
+  assert.match(await fm.photo([A, B], SHA), /^blob:/)
+  assert.deepEqual(during, [[A], [B]], "one vault at a time, and only the one asked")
+  await assert.rejects(fm.photo([A], key(5)))
+  assert.equal(fm.allowed.size, 0, "nothing stays allowed after its read")
+})
+
+test("eviction never revokes a URL a photo on screen holds; a photo that leaves lets it go", async () => {
+  const revoked = new Set(), real = URL.revokeObjectURL
+  URL.revokeObjectURL = u => revoked.add(u)
+  try {
+    const fm = createFipsMedia({ allow: () => true, startReader: async () => ({ getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) }) })
+    const ctls = Array.from({ length: 70 }, () => new AbortController())
+    const urls = await Promise.all(ctls.map((c, i) => fm.photo([A], key(i), { signal: c.signal })))
+    assert.equal(revoked.size, 0, "all 70 are on screen")
+    for (const c of ctls.slice(0, 10)) c.abort()
+    assert.deepEqual([...revoked].sort(), urls.slice(0, 10).sort(), "the ten that left, and only those")
+    assert.equal(await fm.photo([A], key(20)), urls[20], "a kept photo is served from cache")
+  } finally {
+    URL.revokeObjectURL = real
+  }
+})
+
+test("a photo that leaves before its turn is never read", async () => {
+  const { startReader, log } = fakeReader({ have: new Map([[A, new Set([key(1), key(2), key(3)])]]) })
+  const fm = createFipsMedia({ allow: () => true, startReader })
+  const c = new AbortController()
+  const busy = [fm.photo([A], key(1)), fm.photo([A], key(2))]
+  const gone = fm.photo([B], key(3), { signal: c.signal })
+  c.abort()
+  await assert.rejects(gone, e => e.name === "AbortError")
+  await Promise.all(busy)
+  await tick(); await tick()
+  assert.ok(!log.gets.includes(B), "the vault of the photo that left was never asked")
+})
+
+test("the reader stops once no photo needs it, and starts again for the next", async () => {
+  const timers = [], stops = []
+  let starts = 0
+  const fm = createFipsMedia({ allow: () => true,
+    setTimer: fn => (timers.push(fn), timers.length), clearTimer: () => {},
+    startReader: async () => { const n = ++starts; return { stop: async () => stops.push(n), getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) } },
+  })
+  await fm.photo([A], key(1))
+  assert.equal(timers.length, 1, "idle: a stop is due")
+  timers[0](); await tick()
+  assert.deepEqual(stops, [1])
+  await fm.photo([A], key(2))
+  assert.equal(starts, 2, "a new reader (and a new throwaway key) for the next photo")
+})
+
+test("the Settings switch: FIPS photos are on until the person turns them off", () => {
+  const m = new Map(), st = { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: k => m.delete(k) }
+  assert.equal(meshPhotosOn(st), true, "on by default")
+  setMeshPhotosOn(false, st)
+  assert.equal(meshPhotosOn(st), false)
+  setMeshPhotosOn(true, st)
+  assert.equal(meshPhotosOn(st), true)
+})
+
+test("only notes from you or people you follow use the mesh, and none with the switch off", async () => {
+  const me = key(500), friend = key(501), stranger = key(502)
+  setMeshPeople(me, [friend])
+  assert.equal(meshAllowed(me, true), true, "your own")
+  assert.equal(meshAllowed(friend, true), true, "a follow")
+  assert.equal(meshAllowed(stranger, true), false, "a stranger")
+  assert.equal(meshAllowed(undefined, true), false, "no author")
+  assert.equal(meshAllowed(friend, false), false, "switch off")
+  setMeshPeople(me, [friend, stranger])
+  assert.equal(meshAllowed(stranger, true), true, "a new follow counts at once")
+
+  let started = 0, queried = 0
+  const fm = createFipsMedia({ allow: a => a === friend, query: async () => (queried++, []), startReader: async () => (started++, { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) }) })
+  await assert.rejects(fm.fallback({ url: link(A) }, stranger), /not from someone you follow/)
+  await assert.rejects(fm.fallback({ url: `https://x/${SHA}.jpg`, x: SHA }, stranger), /not from someone you follow/)
+  assert.equal(started + queried, 0, "a stranger's note starts no reader and reads no 10063")
+  assert.match(await fm.fallback({ url: link(A) }, friend), /^blob:/)
+  setMeshPeople(undefined, [])
 })

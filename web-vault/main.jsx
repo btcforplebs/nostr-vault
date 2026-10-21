@@ -11,6 +11,7 @@ import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
+import { setMeshPeople } from "./src/net/fips-media.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
@@ -160,6 +161,7 @@ function App() {
   const reloadAccount = async () => setAccount({ ...(await readAccount(vault, session.pubkey)), loaded: true })
   const ctx = { vault, session, signer, account, signOut, reloadAccount }
   setActionContext(ctx)
+  setMeshPeople(session.pubkey, account.follows) // whose note photos may load over FIPS (MediaImage)
   const other = route === "profile" && arg && arg !== session.pubkey // someone else's profile, reached from Search
   const desk = mode !== "phone"
   // The relay screen stays mounted (its FIPS panel finds its elements once, by id), in the same place in both layouts.

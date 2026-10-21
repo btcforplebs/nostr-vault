@@ -6,6 +6,7 @@ import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
 import { latestList, publishList, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
+import { MeshPhotosSwitch } from "../components/MeshPhotosSwitch.jsx"
 
 const loopback = url => { try { return /^(localhost|127\.|\[::1\])/.test(new URL(url).hostname) } catch { return false } }
 
@@ -84,6 +85,7 @@ export function MediaServersPage({ ctx }) {
       )}
       {status && <p class="settings-note muted small">{status}</p>}
       {err && <p class="settings-note small error">{err}</p>}
+      <MeshPhotosSwitch />
     </>
   )
 }
