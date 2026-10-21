@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -19,7 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -66,6 +70,15 @@ fun ComposeNoteScreen(
     val error by viewModel.error.collectAsState()
     val replyingToName by viewModel.replyingToName.collectAsState()
     val quotedNote by viewModel.quotedNote.collectAsState()
+    val replyParent by viewModel.replyParent.collectAsState()
+    val replyParentPicture by viewModel.replyParentPicture.collectAsState()
+    val replyParentPreview by viewModel.replyParentPreview.collectAsState()
+    // iOS focuses the editor 0.3s after the composer opens.
+    val editorFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(300)
+        runCatching { editorFocus.requestFocus() }
+    }
     val quotedProfile by viewModel.quotedProfile.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
     val showBlossomPicker by viewModel.showBlossomPicker.collectAsState()
@@ -248,96 +261,83 @@ fun ComposeNoteScreen(
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp),
         ) {
-            // Posting-as account avatar + quick switch (mirrors iOS ComposeView:
-            // long-press the avatar to switch the posting account)
+            // Reply header (iOS ComposeView.replyHeader): the parent's avatar
+            // on a thread line, "Replying to X...", then its text in 3 lines.
+            replyParent?.let { parent ->
+                ComposeReplyHeader(
+                    parent = parent,
+                    name = replyingToName ?: parent.pubkey.take(8),
+                    pictureUrl = replyParentPicture,
+                    preview = replyParentPreview,
+                    modifier = Modifier.padding(bottom = 16.dp),
+                )
+            }
+
+            // Posting-as avatar beside the editor (iOS: 36pt, long-press
+            // switches the posting account).
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 modifier = Modifier
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = { showAccountSwitcher = true },
-                    )
-                    .padding(bottom = 12.dp),
+                    .fillMaxWidth()
+                    .weight(1f),
             ) {
                 AvatarImage(
                     url = activeAccount?.avatarUrl,
                     pubkey = activeAccount?.hexPubkey ?: "",
-                    size = 32.dp,
+                    size = 36.dp,
                     displayName = activeAccount?.displayName,
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("Posting as", color = SecondaryText, fontSize = 11.sp)
-                    Text(
-                        text = activeAccount?.displayName ?: "Owner",
-                        color = PrimaryText,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                if (accounts.size > 1) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Filled.UnfoldMore,
-                        contentDescription = "Switch account",
-                        tint = SecondaryText,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-
-            // Reply context indicator
-            replyingToName?.let { name ->
-                Text(
-                    text = "Replying to $name",
-                    color = SecondaryText,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // Quoted note preview
-            // Capped so a long quote can't squeeze the editor shut.
-            quotedNote?.let { qNote ->
-                QuotedNoteCard(
-                    note = qNote,
-                    profile = quotedProfile,
-                    onClick = { /* non-interactive in compose */ },
                     modifier = Modifier
-                        .padding(bottom = 12.dp)
-                        .heightIn(max = 140.dp)
-                        .clip(RoundedCornerShape(12.dp)),
-                )
-            }
-
-            // Text input
-            OutlinedTextField(
-                value = textFieldValue,
-                onValueChange = { newValue ->
-                    textFieldValue = newValue
-                    viewModel.onContentChanged(newValue.text, newValue.selection.start)
-                },
-                placeholder = {
-                    Text(
-                        when {
-                            viewModel.isReply -> "Write your reply..."
-                            viewModel.isQuote -> "Add your thoughts..."
-                            else -> "What's happening?"
+                        .padding(top = 8.dp)
+                        .combinedClickable(
+                            onClickLabel = null,
+                            onLongClickLabel = "Switch account",
+                            onClick = {},
+                            onLongClick = { showAccountSwitcher = true },
+                        )
+                        .semantics {
+                            contentDescription = "Posting as ${activeAccount?.displayName ?: "Owner"}"
                         },
-                        color = PlaceholderText,
+                )
+                Spacer(Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    // Text input
+                    OutlinedTextField(
+                        value = textFieldValue,
+                        onValueChange = { newValue ->
+                            textFieldValue = newValue
+                            viewModel.onContentChanged(newValue.text, newValue.selection.start)
+                        },
+                        // iOS shows the same prompt for a note, reply or quote.
+                        placeholder = { Text("What's happening?", color = PlaceholderText) },
+                        // Fills the space left and scrolls itself, which keeps the
+                        // caret in view while typing.
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            cursorColor = colors.primary,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .focusRequester(editorFocus),
                     )
-                },
-                // Fills the space left and scrolls itself, which keeps the
-                // caret in view while typing.
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    cursorColor = colors.primary,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            )
+
+                    // Quoted note under the text, as on iOS. Capped so a long
+                    // quote can't squeeze the editor shut.
+                    quotedNote?.let { qNote ->
+                        QuotedNoteCard(
+                            note = qNote,
+                            profile = quotedProfile,
+                            onClick = { /* non-interactive in compose */ },
+                            modifier = Modifier
+                                .padding(top = 12.dp, bottom = 8.dp)
+                                .heightIn(max = 280.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                        )
+                    }
+                }
+            }
         }
 
         // Docked above the keyboard.
@@ -437,24 +437,6 @@ fun ComposeNoteScreen(
                     )
                 }
 
-                // GIF picker (nostr.build). Hidden when this build has no API
-                // key: a picker that finds nothing must not ship.
-                if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
-                    IconButton(
-                        onClick = { showGifPicker = true },
-                        enabled = !fetchingGif,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    ) {
-                        if (fetchingGif) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.primary)
-                        } else {
-                            Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                        }
-                    }
-                }
-
                 // Video picker button
                 IconButton(
                     onClick = {
@@ -489,6 +471,25 @@ fun ComposeNoteScreen(
                         tint = colors.primary,
                         modifier = Modifier.size(20.dp)
                     )
+                }
+
+                // GIF picker (nostr.build), after paste as on iOS (photo,
+                // video, paste, GIF). Hidden when this build has no API
+                // key: a picker that finds nothing must not ship.
+                if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
+                    IconButton(
+                        onClick = { showGifPicker = true },
+                        enabled = !fetchingGif && !attachmentLimitReached,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(colors.primary.copy(alpha = 0.1f), CircleShape),
+                    ) {
+                        if (fetchingGif) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.primary)
+                        } else {
+                            Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
                 }
 
                 Spacer(Modifier.weight(1f))
@@ -543,5 +544,57 @@ fun ComposeNoteScreen(
             },
             onDismiss = { showAccountSwitcher = false },
         )
+    }
+}
+
+/** iOS ComposeView.replyHeader: who you are answering and what they said. */
+@Composable
+private fun ComposeReplyHeader(
+    parent: com.nostrvault.data.model.FeedNote,
+    name: String,
+    pictureUrl: String?,
+    preview: String,
+    modifier: Modifier = Modifier,
+) {
+    val accent = LocalNostrVaultColors.current.primary
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clip(RoundedCornerShape(12.dp))
+            .background(accent.copy(alpha = 0.05f))
+            .border(1.dp, accent.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AvatarImage(url = pictureUrl, pubkey = parent.pubkey, size = 32.dp, displayName = name)
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .weight(1f)
+                    .background(accent.copy(alpha = 0.3f)),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "Replying to $name...",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            // A note that is nothing but a quote strips to empty; the line
+            // above already carries the context.
+            if (preview.isNotEmpty()) {
+                Text(
+                    text = preview,
+                    color = SecondaryText.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+        }
     }
 }

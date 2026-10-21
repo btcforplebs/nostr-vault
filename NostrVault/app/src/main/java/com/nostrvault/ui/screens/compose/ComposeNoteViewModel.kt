@@ -96,6 +96,15 @@ class ComposeNoteViewModel @Inject constructor(
     private val _replyingToName = MutableStateFlow<String?>(null)
     val replyingToName = _replyingToName.asStateFlow()
 
+    /** The note being answered, for the reply header (iOS ComposeView.replyHeader). */
+    private val _replyParent = MutableStateFlow<FeedNote?>(null)
+    val replyParent = _replyParent.asStateFlow()
+    private val _replyParentPicture = MutableStateFlow<String?>(null)
+    val replyParentPicture = _replyParentPicture.asStateFlow()
+    /** The parent's text as shown everywhere else: mentions named, media and quote refs out. */
+    private val _replyParentPreview = MutableStateFlow("")
+    val replyParentPreview = _replyParentPreview.asStateFlow()
+
     /** The quoted note and its author profile (for preview card). */
     private val _quotedNote = MutableStateFlow<FeedNote?>(null)
     val quotedNote = _quotedNote.asStateFlow()
@@ -193,8 +202,14 @@ class ComposeNoteViewModel @Inject constructor(
             // Replying to a repost answers the note it carries, and its author.
             val parentNote = feedService.quoteTarget(replyToNoteId)
             if (parentNote != null) {
-                val profile = nostrService.profiles.value[parentNote.pubkey]
-                _replyingToName.value = profile?.bestName ?: parentNote.pubkey.take(8) + "..."
+                val profiles = nostrService.profiles.value
+                val profile = profiles[parentNote.pubkey]
+                _replyingToName.value = profile?.bestName ?: parentNote.pubkey.take(8)
+                _replyParent.value = parentNote
+                _replyParentPicture.value = profile?.pictureURL
+                _replyParentPreview.value = com.nostrvault.ui.components.NostrMentions
+                    .toPlainText(parentNote.content, profiles, parentNote.mediaURLs.toSet())
+                    .trim()
             }
         }
         if (quoteToNoteId != null) {
