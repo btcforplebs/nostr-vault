@@ -84,7 +84,7 @@ export function statusGate(seq, set) {
 
 /** Everyone a page of notes shows: authors, and the author inside each repost. */
 export function noteAuthors(notes) {
-  return notes.flatMap(n => { if (n.kind !== 6) return [n.pubkey]; try { return [n.pubkey, JSON.parse(n.content).pubkey] } catch { return [n.pubkey] } }).filter(Boolean)
+  return notes.flatMap(n => { if (n.kind !== 6 && n.kind !== 16) return [n.pubkey]; try { return [n.pubkey, JSON.parse(n.content).pubkey] } catch { return [n.pubkey] } }).filter(Boolean)
 }
 
 // Stranger feeds already loaded this session, by feed, so switching back shows them at once. Memory only.

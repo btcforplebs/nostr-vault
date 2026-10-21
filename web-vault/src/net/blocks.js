@@ -122,9 +122,13 @@ function repostedAuthor(ev) {
 export function isBlockedNote(ev, blocked, authorOf = () => null) {
   if (!ev || !blocked.size) return false
   if (blocked.has(String(ev.pubkey).toLowerCase())) return true
-  if (ev.kind === 6) {
+  if (ev.kind === 6 || ev.kind === 16) {
     const original = repostedAuthor(ev) ?? (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
     return blocked.has(original)
+  }
+  if (ev.kind === 1111) {
+    const answered = (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
+    if (answered && blocked.has(answered)) return true
   }
   const parent = ev.kind === 1 ? replyRefs(ev).parent : null
   const parentAuthor = parent && authorOf(parent)

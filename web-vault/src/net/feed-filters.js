@@ -2,6 +2,7 @@
 // new notes a background sync holds back behind the "N New Posts" pill (FeedView+Toolbar newPostsButton). Kept in
 // this browser; the iPhone's defaults: replies and reposts on, auto-load off.
 import { replyRefs } from "./thread.js"
+import { commentParent, isRepost, timelineShows } from "./feed-kinds.js"
 
 const KEY = "nv:feed-filters"
 export const FILTER_DEFAULTS = { replies: true, reposts: true, autoLoad: false }
@@ -17,12 +18,13 @@ export function saveFilters(filters, storage = globalThis.localStorage) {
   try { storage?.setItem(KEY, JSON.stringify(filters)) } catch {}
 }
 
-/** A kind 1 that answers another note (NIP-10). */
-export const isReply = ev => ev?.kind === 1 && !!replyRefs(ev).parent
+/** A kind 1 that answers another note (NIP-10), or a comment that answers one (NIP-22). */
+export const isReply = ev => (ev?.kind === 1 && !!replyRefs(ev).parent) || !!commentParent(ev)
 
-/** The notes the switches let through. Threaded keeps replies whatever the switch says: they are what it groups. */
+/** The notes the switches let through, of the ones a timeline draws at all (timelineShows). Threaded keeps replies
+ *  whatever the switch says: they are what it groups. */
 export function applyFilters(notes, { replies, reposts }, { threaded = false } = {}) {
-  return notes.filter(n => (reposts || n.kind !== 6) && (replies || threaded || !isReply(n)))
+  return notes.filter(n => timelineShows(n) && (reposts || !isRepost(n)) && (replies || threaded || !isReply(n)))
 }
 
 /** Notes in `fresh` newer than everything shown and not shown yet, newest first: what the pill holds. */

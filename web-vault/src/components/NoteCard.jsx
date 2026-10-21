@@ -13,6 +13,7 @@ import { replyRefs, replyToPubkey, repostedId } from "../net/thread.js"
 import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
+import { GENERIC_REPOST_KIND, SHOWN_REPOST_KINDS, commentParentAuthor, genericRepostInner, repostRef } from "../net/feed-kinds.js"
 import { TranslateButton } from "./TranslateButton.jsx"
 import { EventInfoButton } from "./EventInfo.jsx"
 import { AvatarMenu } from "./AuthorQuickMenu.jsx"
@@ -47,6 +48,7 @@ export function Undeleted({ ids, children }) {
 }
 
 function card(event, memoryOnly, showParent) {
+  if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly)
   if (event.kind === 6) {
     let inner
     try { inner = JSON.parse(event.content) } catch {}
@@ -55,9 +57,9 @@ function card(event, memoryOnly, showParent) {
     const open = inner?.id ?? repostedId(event)
     return (
       <article class="note" data-note-id={target?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
-        <div class="repost-line"><RepostIcon /><a class="author-link" href={profileHref(event.pubkey)}><AuthorName pubkey={event.pubkey} /></a> reposted</div>
+        {repostLine(event)}
         {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} />
-          : repostedId(event) ? <FetchedRepost id={repostedId(event)} memoryOnly={memoryOnly} />
+          : repostedId(event) ? <FetchedRepost q={{ type: "note", id: repostedId(event), relays: [] }} memoryOnly={memoryOnly} />
           : <div class="note-text muted">Repost of a note not included</div>}
         {target && <NoteActions note={target} />}
       </article>
@@ -78,18 +80,42 @@ const openThread = id => e => {
 
 const profileHref = pubkey => `#/profile/${pubkey}`
 
+const repostLine = event =>
+  <div class="repost-line"><RepostIcon /><a class="author-link" href={profileHref(event.pubkey)}><AuthorName pubkey={event.pubkey} /></a> reposted</div>
+
+/** A NIP-18 generic repost (kind 16): a repost of anything but a text note, drawn as its own kind, as iOS holds it as
+ *  a 6 and draws the original. The embedded copy is used only when its signature checks out (an article, poll or
+ *  picture is not a note's text, so an unchecked copy could put words in someone's mouth); else it is fetched by its
+ *  e tag or a coordinate. */
+function genericRepost(event, memoryOnly) {
+  const inner = genericRepostInner(event)
+  const ref = repostRef(event)
+  if (inner) rememberNote(inner)
+  const open = inner?.id ?? (ref?.type === "note" ? ref.id : null)
+  return (
+    <article class="note" data-note-id={inner?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
+      {repostLine(event)}
+      {inner ? <><NoteBody event={inner} memoryOnly={memoryOnly} /><NoteActions note={inner} /></>
+        : ref ? <FetchedRepost q={ref} memoryOnly={memoryOnly} kinds={SHOWN_REPOST_KINDS} />
+        : <div class="note-text muted">Repost of a post not included</div>}
+    </article>
+  )
+}
+
 /** A repost that carried only the e tag (FeedNoteRow+NoteBody fetches the original the same way): the note it points
- *  at, from Haven /feed or the relays, with its own actions. */
-function FetchedRepost({ id, memoryOnly }) {
-  const ev = useQuote({ type: "note", id, relays: [] }, memoryOnly)
+ *  at, from Haven /feed or the relays, with its own actions. `kinds`: what it may be (a kind 6: a note; a kind 16:
+ *  any kind a timeline draws). */
+const NOTE_ONLY = new Set([1])
+function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY }) {
+  const ev = useQuote(q, memoryOnly)
   if (ev === undefined) return <div class="note-text muted">Loading the reposted note…</div>
-  if (ev?.kind !== 1) return <div class="note-text muted">The reposted note couldn't be found</div>
+  if (!kinds.has(ev?.kind)) return <div class="note-text muted">The reposted note couldn't be found</div>
   rememberNote(ev)
   return <><NoteBody event={ev} memoryOnly={memoryOnly} /><NoteActions note={ev} /></>
 }
 
 function NoteBody({ event, memoryOnly, showParent = false }) {
-  const replyTo = replyToPubkey(event)
+  const replyTo = replyToPubkey(event) ?? commentParentAuthor(event)
   const parent = showParent && event.kind === 1 ? replyRefs(event).parent : null
   const hint = parent && (event.tags ?? []).find(t => t[0] === "e" && t[1] === parent)?.[2]
   return (
