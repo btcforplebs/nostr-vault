@@ -105,13 +105,23 @@
 .music-hero button.link { background: none; border: 0; padding: 0; color: var(--accent-light); font: var(--t-sub); cursor: pointer; }
 .music-actions { padding: 4px var(--gutter) 0; }
 .music-credit { display: block; text-align: center; margin: 16px 0 8px; text-decoration: none; }
-.music-player { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap)); z-index: 6; display: flex; align-items: center; gap: 8px;
+.music-player { position: sticky; bottom: calc(var(--tabbar-h) + var(--tabbar-gap)); z-index: 6; display: flex; flex-direction: column; gap: 4px;
   margin: 8px var(--gutter); padding: 8px 10px; border-radius: var(--radius); background: var(--glass); border: 1px solid var(--hair);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+.music-player-row { display: flex; align-items: center; gap: 8px; }
 .music-player img { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex: none; }
-.music-player button.icon { min-height: 36px; min-width: 36px; padding: 0; border-radius: 50%; background: none; border: 0; color: var(--text); font-size: 18px; cursor: pointer; }
+.music-player button.icon { min-height: 36px; min-width: 36px; padding: 0; border-radius: 50%; background: none; border: 0; color: var(--text); font-size: 18px; cursor: pointer; opacity: .85; }
+.music-player button.icon.on { opacity: 1; background: var(--accent-pale); color: var(--accent-light); }
+.music-player button.icon.play { font-size: 22px; }
 .music-player button.icon:disabled { opacity: .35; cursor: default; }
+.music-player button.link { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.music-player button.link:hover { text-decoration: underline; }
 .music-player a { color: var(--accent-light); text-decoration: none; padding: 0 6px; }
+.music-seek { display: flex; align-items: center; gap: 8px; }
+.music-seek input { flex: 1; accent-color: var(--accent); }
+.music-seek span { min-width: 34px; font-variant-numeric: tabular-nums; }
+.music-seek span:last-child { text-align: right; }
+.music-controls { display: flex; justify-content: center; gap: 14px; }
 @media (min-width: 760px) { .music-player { bottom: 12px; } }
 
 /* Marketplace: square photo tiles with price (MarketplaceCardView), and the listing view. */
@@ -147,3 +157,5 @@
 .reader-highlight blockquote { margin: 0 0 4px; padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--accent-pale); }
 .reader-comment { padding: 10px 0; border-bottom: 1px solid var(--hair); }
 .reader-comment-text { margin: 6px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.music-actions.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.music-retry { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; color: var(--accent-light); }

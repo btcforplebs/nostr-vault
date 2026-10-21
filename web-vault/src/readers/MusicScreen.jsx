@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { useBlocks } from "../components/useBlocks.js"
 import { formatSats } from "../net/notifications.js"
 import * as wl from "./wavlake.js"
-import { current, onPlayer, playList, playerState } from "./player.js"
+import { current, onPlayer, playList, playShuffled, playerState } from "./player.js"
+import { decode } from "nostr-tools/nip19"
 import { PlayerBar } from "./PlayerBar.jsx"
 
 if (import.meta.env) import("./readers.css")
@@ -25,8 +26,8 @@ export function MusicScreen({ ctx }) {
     const n = ++seq.current
     setError("")
     if (days === "following") return
-    try { const t = await wl.trending(days); if (n === seq.current) setTracks(t) }
-    catch (e) { if (n === seq.current) { setTracks([]); setError(`Couldn't reach Wavlake (${e?.message ?? e})`) } }
+    try { const t = await wl.trending(days); if (n === seq.current) { setTracks(t); if (!t.length) setError("Nothing trending right now.") } }
+    catch { if (n === seq.current) { setTracks([]); setError(OFFLINE) } }
   }
   useEffect(() => { setTracks(null); loadTrending() }, [days])
 
@@ -45,15 +46,15 @@ export function MusicScreen({ ctx }) {
   const open = p => { if (p.type === "artist") wl.rememberRecent(p.artist); setPage(p); globalThis.scrollTo?.(0, 0) }
   const body = page?.type === "artist" ? <ArtistPage id={page.artist.id} seed={page.artist} blocked={blocked} onOpen={open} onBack={() => setPage(null)} />
     : page?.type === "album" ? <AlbumPage id={page.album.id} seed={page.album} blocked={blocked} onOpen={open} onBack={() => setPage(null)} />
-    : results ? <SearchResults results={wl.visibleResults(results, blocked)} blocked={blocked} onOpen={open} />
+    : results ? <SearchResults results={wl.visibleResults(results, blocked)} term={query.trim()} blocked={blocked} onOpen={open} />
     : days === "following" ? <Following follows={ctx.account.follows} loaded={ctx.account.loaded} blocked={blocked} onOpen={open} />
     : <Trending tracks={tracks} days={days} blocked={blocked} onOpen={open} />
   return (
     <div class="reader-feed music">
       {!page && (
         <div class="music-top">
-          <input type="search" class="music-search" value={query} onInput={e => setQuery(e.currentTarget.value)} placeholder="Search Wavlake"
-            aria-label="Search Wavlake" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck={false} />
+          <input type="search" class="music-search" value={query} onInput={e => setQuery(e.currentTarget.value)} placeholder="Search songs, albums, artists"
+            aria-label="Search songs, albums, artists" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck={false} />
           {!query.trim() && (
             <div class="reader-scope-row" role="tablist" aria-label="Trending">
               {[...wl.WINDOWS, { days: "following", label: "Following" }].map(w => <button key={w.days} type="button" role="tab" aria-selected={days === w.days} class={days === w.days ? "on" : ""} onClick={() => setDays(w.days)}>{w.label}</button>)}
@@ -61,10 +62,10 @@ export function MusicScreen({ ctx }) {
           )}
         </div>
       )}
-      {error && <div class="status-line">{error}</div>}
+      {error && (error === OFFLINE ? <button type="button" class="status-line link music-retry" onClick={() => { setTracks(null); loadTrending() }}>{error}</button> : <div class="status-line">{error}</div>)}
       {body}
       <a class="music-credit muted small" href="https://wavlake.com" target="_blank" rel="noopener noreferrer">Music from Wavlake</a>
-      <PlayerBar />
+      <PlayerBar onOpen={open} />
     </div>
   )
 }
@@ -72,7 +73,7 @@ export function MusicScreen({ ctx }) {
 function Trending({ tracks, days, blocked, onOpen }) {
   if (tracks === null) return <p class="empty">Loading trending songs…</p>
   const shown = wl.visibleTracks(tracks, blocked)
-  if (!shown.length) return <p class="empty">{tracks.length ? "Every song here is by someone you blocked." : "No songs found."}</p>
+  if (!shown.length) return tracks.length ? <p class="empty">Every song here is by someone you blocked.</p> : null
   const span = days === 7 ? "this week" : "this month"
   const artists = wl.topArtists(shown), albums = wl.topAlbums(shown)
   return <>
@@ -121,10 +122,10 @@ export function FollowingList({ follows, loaded, found, blocked, onOpen }) {
   </>
 }
 
-function SearchResults({ results, onOpen }) {
+function SearchResults({ results, term, onOpen }) {
   const songs = results.filter(r => r.type === "track").map(r => r.track)
   const more = results.filter(r => r.type !== "track")
-  if (!results.length) return <p class="empty">Nothing on Wavlake matches that.</p>
+  if (!results.length) return <p class="empty">No music found for "{term}".</p>
   return <>
     {more.length > 0 && <><h3 class="music-head">Albums and artists</h3><Row items={more.map(r => r.type === "artist"
       ? { key: `ar:${r.artist.id}`, title: r.artist.name, sub: "Artist", art: r.artist.art, round: true, open: () => onOpen({ type: "artist", artist: r.artist }) }
@@ -155,7 +156,7 @@ function ArtistPage({ id, seed, blocked, onOpen, onBack }) {
       <PageBar onBack={onBack} href={wl.artistPage(id)} />
       <div class="music-hero">{a.art ? <img class="round" src={a.art} alt="" referrerpolicy="no-referrer" /> : <div class="music-art round" />}<div><h2>{a.name}</h2>{data && <p class="muted small">{data.albums.length === 1 ? "1 album" : `${data.albums.length} albums`} · {wl.songs(data.tracks.length)}</p>}</div></div>
       {error ? <p class="empty">{error}</p> : !data ? <p class="empty">Loading…</p> : hidden ? <p class="empty">You blocked this artist.</p> : <>
-        {data.tracks.length > 0 && <div class="music-actions"><button type="button" class="small" onClick={() => playList(wl.visibleTracks(data.tracks, blocked))}>▶ Play all</button></div>}
+        <PlayButtons tracks={wl.visibleTracks(data.tracks, blocked)} play="▶ Play all" extra={nostrHex(a.npub) && <a class="button small" href={`#/profile/${nostrHex(a.npub)}`}>On Nostr</a>} />
         {data.albums.length > 0 && <><h3 class="music-head">Albums</h3><Row items={data.albums.map(al => ({ key: al.id, title: al.title, sub: al.year ? String(al.year) : "Album", art: al.art, open: () => onOpen({ type: "album", album: al }) }))} /></>}
         <h3 class="music-head">Songs</h3>
         <Tracks tracks={wl.visibleTracks(data.tracks, blocked)} />
@@ -177,12 +178,29 @@ function AlbumPage({ id, seed, blocked, onOpen, onBack }) {
         {data && <p class="muted small">{[al.year, wl.songs(tracks.length)].filter(Boolean).join(" · ")}</p>}
       </div></div>
       {error ? <p class="empty">{error}</p> : !data ? <p class="empty">Loading…</p> : <>
-        {tracks.length > 0 && <div class="music-actions"><button type="button" class="small" onClick={() => playList(tracks)}>▶ Play</button></div>}
+        <PlayButtons tracks={tracks} play="▶ Play" />
         {tracks.length ? <Tracks tracks={tracks} numbered /> : <p class="empty">{data.tracks.length ? "Every song here is by someone you blocked." : "No songs on this album."}</p>}
       </>}
     </div>
   )
 }
+
+/** Play and Shuffle (the iPhone's MusicPlayButtons), and an extra pill such as On Nostr. */
+export function PlayButtons({ tracks, play, extra = null }) {
+  if (!tracks.length && !extra) return null
+  return (
+    <div class="music-actions row">
+      {tracks.length > 0 && <><button type="button" class="small" onClick={() => playList(tracks)}>{play}</button>
+        <button type="button" class="small" onClick={() => playShuffled(tracks)}>Shuffle</button></>}
+      {extra}
+    </div>
+  )
+}
+
+/** The artist's Nostr key as hex, for "On Nostr", or null. */
+export const nostrHex = npub => { try { const d = decode(npub ?? ""); return d.type === "npub" ? d.data : null } catch { return null } }
+
+const OFFLINE = "Couldn't reach Wavlake. Tap to try again."
 
 function PageBar({ onBack, href }) {
   return <div class="reader-bar"><button type="button" class="small" onClick={onBack}>‹ Back</button><a class="reader-web small" href={href} target="_blank" rel="noopener noreferrer">Open on Wavlake</a></div>
