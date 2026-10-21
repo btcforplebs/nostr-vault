@@ -45,6 +45,7 @@ final class AvatarThumbnailTests: XCTestCase {
             "https://100.100.1.1/a.png",
             "http://vault.local/a.png",
             "http://abcdefghijklmnop.onion/a.png",
+            "http://npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq.fips/a.png",
             "http://[::1]:3355/a.png",
             "https://wsrv.nl/?url=https%3A%2F%2Fexample.com%2Fa.png",
         ]

@@ -280,7 +280,7 @@ struct MusicArtwork: View {
 
     var body: some View {
         Group {
-            if let url {
+            if let url = MediaCacheService.offMeshURL(url) {
                 AsyncImage(url: url) { phase in
                     if let image = phase.image {
                         image.resizable().aspectRatio(contentMode: .fill)
