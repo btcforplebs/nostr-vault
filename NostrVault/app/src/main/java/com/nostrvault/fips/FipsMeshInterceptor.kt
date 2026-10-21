@@ -29,10 +29,9 @@ class FipsMeshInterceptor : Interceptor {
         val author = request.tag(MeshAuthor::class.java)?.pubkey ?: return chain.proceed(request)
         if (!FipsMediaRouter.mayDial(author)) return chain.proceed(request)
         val sha = FipsMediaRouter.sha256In(request.url.toString()) ?: return chain.proceed(request)
-        val npub = FipsMediaRouter.meshNpubInHost(request.url.host)
-            ?: FipsMediaRouter.meshNpubFor(author)
-            ?: return chain.proceed(request)
-        val base = FipsMediaRouter.ingressBase(npub) ?: return chain.proceed(request)
+        // A .fips host is only dialled when the author's own 10063 lists it (Tron, #984/#988).
+        val npub = FipsMediaRouter.vaultFor(author, request.url.host) ?: return chain.proceed(request)
+        val base = dial(npub) ?: return chain.proceed(request)
 
         try {
             // A Range answer could never match the blob's hash: ask for all of it.
@@ -82,6 +81,10 @@ class FipsMeshInterceptor : Interceptor {
         private const val TAG = "FipsMesh"
         /** Set on a response that came over the mesh. */
         const val VIA_HEADER = "X-NV-Via"
+
+        /** Opens [npub]'s vault: its loopback base, or null. A seam so a test can see which node a read would dial. */
+        @Volatile
+        internal var dial: (String) -> String? = { FipsMediaRouter.ingressBase(it) }
 
         /** The most a mesh read will buffer. Bigger blobs come from the URL. */
         const val MAX_BYTES = 32L * 1024 * 1024
