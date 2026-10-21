@@ -8,9 +8,11 @@ import SwiftUI
 /// device by address is the one way in for every role.
 struct FipsMeshMyDevicesSection: View {
     let devices: [MeshDevice]
-    @EnvironmentObject var configService: ConfigService
+    /// Owned by the page: the sheet hangs off the page's List. On this
+    /// Section it went on every row, so with a device listed two sheets fought
+    /// over one flag and Add a device closed as it opened (2026-10-21).
+    @Binding var showAdd: Bool
     @ObservedObject private var mesh = FipsMeshService.shared
-    @State private var showAdd = false
 
     var body: some View {
         Section {
@@ -33,7 +35,6 @@ struct FipsMeshMyDevicesSection: View {
         } footer: {
             Text("Your Mac, phones, home vault and browser page, in one list. These are the devices this phone reaches over the mesh.")
         }
-        .sheet(isPresented: $showAdd) { FipsMeshAddDeviceSheet().environmentObject(configService) }
     }
 
     private func isInReach(_ device: MeshDevice) -> Bool? {
