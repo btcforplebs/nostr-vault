@@ -105,14 +105,17 @@ object MyDevicesRules {
      */
     fun add(
         peers: List<String>, homeVault: String?, labels: List<FipsDevice>, ownNpub: String?,
-        npub: String, role: DeviceRole, name: String, now: Long = 0,
+        npub: String, role: DeviceRole, name: String,
     ): Change? {
         if (!isMeshNpub(npub) || npub == ownNpub) return null
         val newHome = if (role == DeviceRole.HOME_VAULT) npub else homeVault.takeIf { it != npub }
         val kept = labels.filter { it.npub != npub }.map { if (it.npub == homeVault && newHome != homeVault) it.copy(role = DeviceRole.PHONE) else it }
-        val label = FipsDevice(npub = npub, role = role, name = name.trim(), lastSeen = now)
+        // Never seen until it is in reach: adding it is not seeing it.
+        val label = FipsDevice(npub = npub, role = role, name = name.trim(), lastSeen = byNpubSeen(labels, npub))
         return Change(peers = (peers + npub).distinct(), homeVault = newHome, labels = kept + label)
     }
+
+    private fun byNpubSeen(labels: List<FipsDevice>, npub: String) = labels.firstOrNull { it.npub == npub }?.lastSeen ?: 0
 
     /** Removing a device: out of the allowlist, its label gone, and no home vault if it was that. */
     fun remove(peers: List<String>, homeVault: String?, labels: List<FipsDevice>, npub: String): Change =

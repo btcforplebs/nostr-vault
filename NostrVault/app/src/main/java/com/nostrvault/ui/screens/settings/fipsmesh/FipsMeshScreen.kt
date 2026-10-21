@@ -106,8 +106,11 @@ fun FipsMeshScreen(
                 footer = if (status.running) "Your devices reach each other over the FIPS mesh, with no public IP or domain."
                 else "Turn the mesh on to reach your Mac, your home vault and your browser page from this phone.",
             ) {
-                MeshSwitchRow("Mesh", null, status.running, enabled = viewModel.isAvailable && !busy, onChange = viewModel::setEnabled)
-                StatusDot(MyDevicesRules.statusLine(status.running, devices), status.running, Modifier.padding(bottom = 12.dp))
+                MeshSwitchRow(
+                    "Mesh", null, status.running, enabled = viewModel.isAvailable && !busy,
+                    below = { StatusDot(MyDevicesRules.statusLine(status.running, devices), status.running, Modifier.padding(top = 2.dp)) },
+                    onChange = viewModel::setEnabled,
+                )
             }
             lastError?.let { MeshFooter(it, ErrorRed) }
 

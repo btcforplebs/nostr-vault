@@ -39,6 +39,7 @@ class MyDevicesRulesTest {
         assertEquals(listOf(kiosk), first.peers)
         assertEquals(kiosk, first.homeVault)
         assertEquals("Kitchen", first.labels.single().name)
+        assertEquals("adding a device is not seeing it", 0L, first.labels.single().lastSeen)
         // A second home vault: the first stays in the list, as a phone.
         val second = MyDevicesRules.add(first.peers, first.homeVault, first.labels, me, phone, DeviceRole.HOME_VAULT, "")!!
         assertEquals(listOf(kiosk, phone), second.peers)

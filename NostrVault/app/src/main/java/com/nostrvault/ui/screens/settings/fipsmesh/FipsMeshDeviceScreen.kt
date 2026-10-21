@@ -21,10 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,15 +55,30 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
     val device = devices.firstOrNull { it.npub == npub }
     val clipboard = LocalClipboardManager.current
     val colors = LocalNostrVaultColors.current
-    // Gone (removed here or elsewhere): back to the list.
-    LaunchedEffect(device == null) { if (device == null && devices.isNotEmpty()) onBack() }
+    // Leaving once: Remove goes back itself, so the "it is gone" effect below must not pop a second screen.
+    var leaving by remember { mutableStateOf(false) }
+    val leave = { if (!leaving) { leaving = true; onBack() } }
+    // Gone (removed elsewhere): back to the list.
+    LaunchedEffect(device == null) { if (device == null && devices.isNotEmpty()) leave() }
     var name by rememberSaveable(npub) { mutableStateOf(device?.name.orEmpty()) }
+    // The list can arrive a moment after the page: take the saved name then, unless something was typed.
+    var nameLoaded by rememberSaveable(npub) { mutableStateOf(device != null) }
+    LaunchedEffect(device != null) { if (device != null && !nameLoaded) { name = device.name; nameLoaded = true } }
+    // The name is kept however the page is left: back arrow, system back or Remove (then there is nothing to keep).
+    val latestName by rememberUpdatedState(name)
+    val latestNameLoaded by rememberUpdatedState(nameLoaded)
+    DisposableEffect(npub) {
+        onDispose {
+            val saved = viewModel.devices.value.firstOrNull { it.npub == npub }
+            if (saved != null && latestNameLoaded && latestName.trim() != saved.name) viewModel.updateDevice(npub) { it.copy(name = latestName.trim()) }
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(device?.title ?: "Device", maxLines = 1) },
-                navigationIcon = { IconButton(onClick = { if (device != null && name != device.name) viewModel.updateDevice(npub) { it.copy(name = name.trim()) }; onBack() }) { Icon(NostrVaultIcons.Back, contentDescription = "Back") } },
+                navigationIcon = { IconButton(onClick = { leave() }) { Icon(NostrVaultIcons.Back, contentDescription = "Back") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WindowBackground, titleContentColor = PrimaryText, navigationIconContentColor = PrimaryText),
             )
         },
@@ -81,7 +99,7 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
                 MeshDivider()
                 Text(d.role.blurb, color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
             }
-            OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Name") },
+            OutlinedTextField(value = name, onValueChange = { name = it; nameLoaded = true }, singleLine = true, label = { Text("Name") },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
 
             MeshSection("Mesh Address") {
@@ -104,7 +122,7 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
 
             MeshSection(null, footer = "It can no longer reach this phone's vault. Anything it already has stays on it.") {
                 Text("Remove from my devices", color = ErrorRed, fontSize = 16.sp,
-                    modifier = Modifier.fillMaxWidth().clickable { viewModel.removeDevice(npub); onBack() }.padding(vertical = 14.dp))
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.removeDevice(npub); leave() }.padding(vertical = 14.dp))
             }
             Spacer(Modifier.height(24.dp))
         }

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -68,22 +69,30 @@ internal fun MeshFooter(text: String, color: Color = SecondaryText) {
 internal fun MeshDivider() = HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
 @Composable
-internal fun MeshSwitchRow(title: String, subtitle: String?, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun MeshSwitchRow(
+    title: String, subtitle: String?, checked: Boolean, enabled: Boolean = true,
+    below: (@Composable () -> Unit)? = null, onChange: (Boolean) -> Unit,
+) {
     val colors = LocalNostrVaultColors.current
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title, color = PrimaryText, fontSize = 16.sp)
             subtitle?.let { Text(it, color = SecondaryText, fontSize = 13.sp, lineHeight = 18.sp) }
+            below?.invoke()
         }
         Spacer(Modifier.width(12.dp))
+        // Off reads as off: the iPhone's grey track and white thumb, not a dark pill on a dark card.
         Switch(checked = checked, onCheckedChange = onChange, enabled = enabled,
-            colors = SwitchDefaults.colors(checkedTrackColor = colors.primary))
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary,
+                uncheckedThumbColor = Color.White, uncheckedTrackColor = Color(0xFF39393D), uncheckedBorderColor = Color.Transparent,
+            ))
     }
 }
 
 /** A row with a value on the right; tappable when [onClick] is set (a picker, or a page with a chevron). */
 @Composable
-internal fun MeshValueRow(title: String, value: String, chevron: Boolean = false, onClick: (() -> Unit)? = null) {
+internal fun MeshValueRow(title: String, value: String, chevron: Boolean = false, menu: Boolean = false, onClick: (() -> Unit)? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(vertical = 14.dp),
@@ -91,6 +100,7 @@ internal fun MeshValueRow(title: String, value: String, chevron: Boolean = false
         Text(title, color = PrimaryText, fontSize = 16.sp, modifier = Modifier.weight(1f))
         Text(value, color = SecondaryText, fontSize = 14.sp, maxLines = 1)
         if (chevron) Icon(NostrVaultIcons.Navigate, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(20.dp))
+        if (menu) Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(18.dp))
     }
 }
 

@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CoroutineScope
+import com.nostrvault.di.ApplicationScope
 import javax.inject.Inject
 
 /**
@@ -31,6 +34,7 @@ class FipsMeshViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val homeVault: HomeVaultSender,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val status = mesh.status
@@ -75,25 +79,20 @@ class FipsMeshViewModel @Inject constructor(
     fun setServeLimit(bytes: Long) = guarded { mesh.setServeLimit(bytes) }
     fun sendHomeVaultNow() = homeVault.drainSoon(userInitiated = true)
 
-    /** Add a device: into the allowlist, and the home vault when that is its role. -> false when not added. */
+    /** Add a device: into the allowlist, and the home vault when that is its role. -> false when not a mesh address. */
     fun addDevice(npub: String, role: DeviceRole, name: String): Boolean {
-        val cfg = configStore.config.value
-        val change = MyDevicesRules.add(
-            cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, mesh.status.value.npub,
-            npub, role, name, System.currentTimeMillis() / 1000,
-        ) ?: return false
-        apply(change)
+        val own = mesh.status.value.npub
+        if (!MyDevicesRules.isMeshNpub(npub) || npub == own) return false
+        change { cfg -> MyDevicesRules.add(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, own, npub, role, name) }
         return true
     }
 
-    fun removeDevice(npub: String) {
-        val cfg = configStore.config.value
-        apply(MyDevicesRules.remove(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, npub))
-    }
+    fun removeDevice(npub: String) =
+        change { cfg -> MyDevicesRules.remove(cfg.fipsPeers, cfg.homeVaultNpub, cfg.fipsMesh.devices, npub) }
 
-    /** Name and switches on the device page. */
-    fun updateDevice(npub: String, change: (FipsDevice) -> FipsDevice) = viewModelScope.launch {
-        configStore.updateAsync { cfg ->
+    /** Name and switches on the device page. Synchronous, so a save as the page closes is not lost with its scope. */
+    fun updateDevice(npub: String, change: (FipsDevice) -> FipsDevice) {
+        configStore.update { cfg ->
             val labels = cfg.fipsMesh.devices
             val updated = if (labels.any { it.npub == npub }) labels.map { if (it.npub == npub) change(it) else it }
             else labels + change(FipsDevice(npub, role = if (npub == cfg.homeVaultNpub) DeviceRole.HOME_VAULT else DeviceRole.PHONE))
@@ -101,28 +100,50 @@ class FipsMeshViewModel @Inject constructor(
         }
     }
 
-    fun updateSettings(change: (FipsMeshSettings) -> FipsMeshSettings) = viewModelScope.launch {
-        configStore.updateAsync { it.copy(fipsMesh = change(it.fipsMesh)) }
+    fun updateSettings(change: (FipsMeshSettings) -> FipsMeshSettings) {
+        configStore.update { it.copy(fipsMesh = change(it.fipsMesh)) }
     }
 
     fun setFinderRelays(relays: List<String>) = guarded { mesh.setFinderRelays(relays) }
 
-    private fun apply(change: MyDevicesRules.Change) = guarded {
-        val before = configStore.config.value
-        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
-        if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
-        if (change.homeVault != before.homeVaultNpub) {
-            homeVault.setHomeVault(change.homeVault)
-            // This phone lists its home vault in the owner's 10063; a changed one drops the old entry.
-            nostrService.publishServerList(dropMesh = before.homeVaultNpub?.takeIf { it != change.homeVault })
+    /**
+     * Apply one My Devices change, start to finish. On the app's scope, not this screen's: Remove closes the device
+     * page at once, and a cancelled half-change would leave a device out of the allowlist but still the home vault.
+     * One at a time, each read from the config as the one before left it, so quick taps are queued, not dropped.
+     */
+    private fun change(compute: (com.nostrvault.relay.HavenConfig) -> MyDevicesRules.Change?) {
+        appScope.launch {
+            devicesLock.withLock {
+                _busy.value = true
+                try {
+                    val before = configStore.config.value
+                    val change = compute(before) ?: return@withLock
+                    configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
+                    if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
+                    if (change.homeVault != before.homeVaultNpub) {
+                        homeVault.setHomeVault(change.homeVault)
+                        // This phone lists its home vault in the owner's 10063; a changed one drops the old entry.
+                        nostrService.publishServerList(dropMesh = before.homeVaultNpub?.takeIf { it != change.homeVault })
+                    }
+                } finally {
+                    _busy.value = false
+                }
+            }
         }
     }
 
+    /** A mesh action (start, stop, restart for a setting) runs to the end even if the page closes: a restart cut
+     *  between stop and start would leave the mesh off. A tap while one runs is ignored, as before. */
     private fun guarded(block: suspend () -> Unit) {
         if (_busy.value) return
-        viewModelScope.launch {
+        appScope.launch {
             _busy.value = true
             try { block() } finally { _busy.value = false }
         }
+    }
+
+    private companion object {
+        /** Shared by every FIPS Mesh page: the list page and a device page each have their own view model. */
+        val devicesLock = kotlinx.coroutines.sync.Mutex()
     }
 }

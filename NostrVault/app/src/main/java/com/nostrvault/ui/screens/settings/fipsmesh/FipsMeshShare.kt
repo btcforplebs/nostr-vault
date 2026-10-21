@@ -108,7 +108,7 @@ internal val PHOTOS_GO_TO = listOf(
 internal fun <T> Picker(title: String, value: T, options: List<Pair<T, String>>, enabled: Boolean = true, onPick: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        MeshValueRow(title, options.firstOrNull { it.first == value }?.second ?: value.toString(), onClick = if (enabled) ({ open = true }) else null)
+        MeshValueRow(title, options.firstOrNull { it.first == value }?.second ?: value.toString(), menu = enabled, onClick = if (enabled) ({ open = true }) else null)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEach { (v, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { open = false; onPick(v) }) }
         }
