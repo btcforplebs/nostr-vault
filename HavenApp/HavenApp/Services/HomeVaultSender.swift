@@ -49,6 +49,13 @@ final class HomeVaultSender: ObservableObject {
 
     // MARK: - Choosing the vault
 
+    /// Where media goes: the home vault, else the Mac set by mesh npub.
+    var mediaVault: HomeVault? {
+        HomeVaultLogic.mediaVault(homeVault: homeVault,
+                                  macMeshNpub: ConfigService.shared.config.macRelayMeshNpub,
+                                  ownerHex: NostrService.shared.activeHexPubkey)
+    }
+
     /// The owner's own mesh vaults from their 10063, minus this phone's.
     static func meshEntries(serverList: [String]) -> [String] {
         HomeVaultLogic.meshEntries(serverList: serverList, excluding: FipsMeshService.shared.ownMeshNpub)
@@ -81,23 +88,25 @@ final class HomeVaultSender: ObservableObject {
 
     /// A blob just saved to this phone's own Blossom, signed for by `signer`.
     /// True when it is queued for the home vault.
+    /// `forwardTo`: the public server the vault passes it on to.
     @discardableResult
-    func enqueue(blobSha256 sha256: String, contentType: String, signer: String, byteCount: Int) -> Bool {
-        guard let vault = homeVault, signer == vault.ownerHex else { return false }
+    func enqueue(blobSha256 sha256: String, contentType: String, signer: String, byteCount: Int, forwardTo: String? = nil) -> Bool {
+        guard let vault = mediaVault, signer == vault.ownerHex else { return false }
         guard byteCount <= Self.maxBlobBytes else {
             appLog("\(sha256.prefix(8)) is \(byteCount) bytes, over the \(Self.maxBlobBytes) the kiosk takes — kept on this phone only", level: "WARN")
             lastResult = "A file over 256 MB stays on this phone only: the home vault doesn't take files that big."
             return false
         }
-        return add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: nil))
+        return add(HomeVaultItem(kind: .blob, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType, added: Date(), attempts: 0, notBefore: nil, server: forwardTo))
     }
 
     /// The public upload of a blob a note names on `server` (kiosk-only
     /// case). Retried until that server has it. False when the queue is full:
     /// the note must then wait instead of naming a link nothing will fill.
-    func enqueue(mirrorSha256 sha256: String, contentType: String, signer: String, server: String) -> Bool {
+    /// `firstTryAfter`: longer when the vault is passing it on itself.
+    func enqueue(mirrorSha256 sha256: String, contentType: String, signer: String, server: String, firstTryAfter: TimeInterval = 60) -> Bool {
         add(HomeVaultItem(kind: .mirror, id: sha256, ownerHex: signer, eventJSON: nil, contentType: contentType,
-                          added: Date(), attempts: 0, notBefore: Date().addingTimeInterval(60), server: server))
+                          added: Date(), attempts: 0, notBefore: Date().addingTimeInterval(firstTryAfter), server: server))
     }
 
     /// Make sure the home vault holds `sha256` now, for a note about to link
@@ -105,7 +114,7 @@ final class HomeVaultSender: ObservableObject {
     /// nowhere). Bounded: the composer waits at most `timeout`. True once the
     /// vault confirms it, by HEAD or by taking the upload.
     func ensureOnVault(sha256: String, timeout: TimeInterval = 45) async -> Bool {
-        guard let vault = homeVault, vault.ownerHex == NostrService.shared.activeHexPubkey else { return false }
+        guard let vault = mediaVault, vault.ownerHex == NostrService.shared.activeHexPubkey else { return false }
         return await withTaskGroup(of: Bool.self) { group in
             group.addTask { await self.confirmOrSend(sha256: sha256, vault: vault) }
             group.addTask {
@@ -239,7 +248,8 @@ final class HomeVaultSender: ObservableObject {
                 let ok = await blossom.mirrorFromLocal(sha256: item.id, contentType: item.contentType ?? "application/octet-stream", server: item.server)
                 result = ok ? .sent : .unreachable("no public server took it yet")
             } else {
-                guard let vault = homeVault, vault.ownerHex == item.ownerHex,
+                // Notes go to a kiosk only; media also to a Mac set by mesh npub.
+                guard let vault = item.kind == .event ? homeVault : mediaVault, vault.ownerHex == item.ownerHex,
                       vault.ownerHex == NostrService.shared.activeHexPubkey else { waiting = true; continue }
                 if item.kind == .event && mediaWaiting { waiting = true; continue }
                 if !meshTried {
@@ -308,18 +318,27 @@ final class HomeVaultSender: ObservableObject {
         guard let auth = await signUploadAuth(sha256: item.id, size: size) else {
             return .unreachable("could not sign the upload")
         }
-        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base)
+        // The public server's own token, for the vault to carry there: the
+        // vault holds no key, and this one only puts this blob up.
+        var forward: (server: String, authBase64: String)?
+        if let server = item.server, HomeVaultLogic.isPublicServer(server) {
+            guard let token = await signUploadAuth(sha256: item.id, size: size, lifetime: HomeVaultLogic.forwardAuthLifetime, note: "Upload via home vault") else {
+                return .unreachable("could not sign the public upload")
+            }
+            forward = (server, token)
+        }
+        return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base, forward: forward)
     }
 
     /// Signed at send time: a queued item can wait longer than an auth lives.
-    private func signUploadAuth(sha256: String, size: Int) async -> String? {
-        let expiration = Int(Date().timeIntervalSince1970) + 600
+    private func signUploadAuth(sha256: String, size: Int, lifetime: TimeInterval = 600, note: String = "Upload to home vault") async -> String? {
+        let expiration = Int(Date().timeIntervalSince1970 + lifetime)
         let tags = [["t", "upload"], ["x", sha256], ["size", String(size)], ["expiration", String(expiration)]]
         // A random word keeps two auths for the same blob in the same second
         // distinct: the vault takes each auth id once (#475), and its 403 for
         // a reuse would read here as a final no.
         let nonce = UUID().uuidString.prefix(8)
-        guard let event = await NostrService.shared.signEventAsync(kind: 24242, content: "Upload to home vault \(nonce)", tags: tags) else { return nil }
+        guard let event = await NostrService.shared.signEventAsync(kind: 24242, content: "\(note) \(nonce)", tags: tags) else { return nil }
         let dict: [String: Any] = ["id": event.id, "pubkey": event.pubkey, "created_at": event.created_at,
                                    "kind": event.kind, "tags": event.tags, "content": event.content, "sig": event.sig]
         guard let json = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
@@ -417,7 +436,10 @@ enum HomeVaultTransport {
     }
 
     /// BUD-02 `PUT /upload` to the vault, streamed from `file`, with the owner's 24242 authorisation.
-    static func upload(file: URL, size: Int, sha256: String, contentType: String, authBase64: String, base: URL) async -> SendResult {
+    /// `forward`: the vault passes the blob on to that public server with that
+    /// token once stored (haven-go blossom_forward.go).
+    static func upload(file: URL, size: Int, sha256: String, contentType: String, authBase64: String, base: URL,
+                       forward: (server: String, authBase64: String)? = nil) async -> SendResult {
         var request = URLRequest(url: base.appendingPathComponent("upload"))
         request.httpMethod = "PUT"
         request.timeoutInterval = 120
@@ -426,6 +448,10 @@ enum HomeVaultTransport {
         request.setValue(sha256, forHTTPHeaderField: "X-SHA-256")
         // The door answers 411 (final) without a length; never leave it to URLSession.
         request.setValue(String(size), forHTTPHeaderField: "Content-Length")
+        if let forward {
+            request.setValue(forward.server, forHTTPHeaderField: "X-Forward-To")
+            request.setValue("Nostr \(forward.authBase64)", forHTTPHeaderField: "X-Forward-Authorization")
+        }
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         do {
