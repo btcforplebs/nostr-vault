@@ -268,6 +268,12 @@ impl Bucket {
     }
 }
 
+/// The relay page's pairing link for a blob npub: read photos from it only.
+/// A fragment, so it never reaches nostrvault.app's server.
+fn photo_link(blob_npub: &str) -> String {
+    format!("https://nostrvault.app/relay/#blob={blob_npub}")
+}
+
 /// Bytes of a request head a gate reads before giving up on it.
 const GATE_HEAD_MAX: usize = 8 * 1024;
 /// Readers by hash served at once; more get 503.
@@ -556,7 +562,11 @@ async fn main() -> Result<()> {
             let blob_addr = bn.identity().address().to_ipv6();
             let blob_mtu = bn.effective_ipv6_mtu() as usize;
             let gate = start_gate(args.local, Bucket::new(args.blob_rate))?;
+            // Where readers find the photos: the web relay page pairs it from
+            // this link, the Mac app reads the file.
+            std::fs::write(args.state.join("blob-npub"), bn.npub())?;
             println!("blob npub {}", bn.npub());
+            println!("photo link {}", photo_link(&bn.npub()));
             println!("blob addr {blob_addr}  (mtu {blob_mtu})");
             println!("blob gate {gate} -> {} (GET/HEAD /<sha256> only, {} B/s)", args.local, args.blob_rate);
             bn.start().await?;
@@ -628,6 +638,12 @@ mod tests {
 
     fn blob(head_only: bool, path: &str) -> Option<Ask> {
         Some(Ask::Blob { head_only, path: path.into(), sha: SHA.into() })
+    }
+
+    #[test]
+    fn the_photo_link_names_the_blob_npub_in_the_fragment() {
+        let n = npub();
+        assert_eq!(photo_link(&n), format!("https://nostrvault.app/relay/#blob={n}"));
     }
 
     #[test]

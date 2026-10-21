@@ -1,6 +1,6 @@
 // FIPS section of the page: vault pairing by mesh address, start/stop, status (seed link, vault path, streams), and
 // showing a photo straight from a paired vault.
-import { parseOwners, saveOwners } from "./owners.js"
+import { parseOwners, saveOwners, savePhotoVaults } from "./owners.js"
 import { RELAY_SERVICE_PORT } from "./tcp-server.js"
 import { startFipsRelay } from "./node.js"
 import { parseBlobRef } from "./blob-get.js"
@@ -11,12 +11,14 @@ const $ = id => document.getElementById(id)
 /**
  * @param haven   Haven's started entry point, or undefined when it isn't running (no owner yet, or it failed)
  * @param owners  Set<x-only hex> of the vaults' mesh keys
+ * @param photoVaults Set<x-only hex> of vaults' blob nodes (photo addresses): read from, never written by
  * @param account the signed-in user's pubkey, if any: refused as a mesh address
  * @param storage the page's storage (src/page-storage.js): paired vaults and the relay's FIPS key
  */
-export function mountFipsPanel({ haven, owners, log, account, storage }) {
+export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, account, storage }) {
   let running
   $("fipsOwners").value = [...owners].join("\n")
+  $("fipsPhotoVaults").value = [...photoVaults].map(npubEncode).join("\n")
 
   const render = s => {
     const seeds = [...(s?.seeds ?? new Map())].map(([u, st]) => `${u.replace("wss://", "")}: ${st}`).join(", ") || "none"
@@ -47,6 +49,19 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
       $("fipsStatus").textContent = String(e)
     }
   }
+  // Read on each photo, so no restart: swap the set's contents in place.
+  $("fipsPhotoSave").onclick = () => {
+    try {
+      const next = parseOwners($("fipsPhotoVaults").value, { account })
+      photoVaults.clear()
+      for (const k of next) photoVaults.add(k)
+      savePhotoVaults(photoVaults, storage)
+      log("fips-photo-vaults-saved", { vaults: photoVaults.size })
+      $("blobStatus").textContent = `${photoVaults.size} photo address${photoVaults.size === 1 ? "" : "es"} saved`
+    } catch (e) {
+      $("blobStatus").textContent = String(e)
+    }
+  }
   $("fipsStart").onclick = async () => {
     if (running) {
       await running.stop()
@@ -57,7 +72,7 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
     }
     if (!owners.size || !haven) return render()
     try {
-      running = await startFipsRelay({ haven, getOwners: () => owners, storage, onStatus: render })
+      running = await startFipsRelay({ haven, getOwners: () => owners, getPhotoVaults: () => photoVaults, storage, onStatus: render })
       $("fipsStart").textContent = "Stop FIPS"
       log("fips-start", { npub: running.status.npub })
     } catch (e) {
@@ -65,7 +80,8 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
       $("fipsStatus").textContent = "FIPS failed to start: " + e
     }
   }
-  // A photo by hash from a paired vault. A .fips link names the vault; a bare hash tries each paired vault in turn.
+  // A photo by hash from a paired vault. A .fips link names the vault (an owner or a photo address); a bare hash
+  // tries each photo address, then each owner, in turn.
   let shown
   $("blobGet").onclick = async () => {
     const say = t => ($("blobStatus").textContent = t)
@@ -76,8 +92,8 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
     } catch (e) {
       return say(String(e.message ?? e))
     }
-    const vaults = ref.vault ? [ref.vault] : [...owners]
-    if (ref.vault && !owners.has(ref.vault)) return say(`${npubEncode(ref.vault)} is not one of your paired vaults. Add its mesh address above first.`)
+    const vaults = ref.vault ? [ref.vault] : [...new Set([...photoVaults, ...owners])]
+    if (ref.vault && !owners.has(ref.vault) && !photoVaults.has(ref.vault)) return say(`${npubEncode(ref.vault)} is not one of your paired vaults. Add it above as a photo address first.`)
     const t0 = Date.now()
     const errors = []
     for (const vault of vaults) {
