@@ -408,10 +408,12 @@ fun ProfileScreen(
 
             // ── Section content ──────────────────────────────────────
             if (selectedSection == ProfileSection.ARTICLES) {
+                // Cards carry 6 above and below; 10 more puts the first 16 under the tabs, as iOS.
+                item(key = "articles-top") { Spacer(Modifier.height(10.dp)) }
                 items(articles, key = { "article-" + it.id }) { article ->
                     ProfileArticleRow(article, onClick = { onArticleClick(viewModel.prepareOpen(article)) })
-                    HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
                 }
+                item(key = "articles-bottom") { Spacer(Modifier.height(10.dp)) }
             } else if (selectedSection == ProfileSection.DIVINES) {
                 // 9:16 posters, as many 110+ wide as fit; a tap plays them in a viewer.
                 val cols = ProfileGrid.divineColumns(gridWidthDp)
