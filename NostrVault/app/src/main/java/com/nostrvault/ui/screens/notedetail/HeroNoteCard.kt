@@ -117,7 +117,7 @@ internal fun HeroNoteCard(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = profile?.bestName ?: note.pubkey.take(8) + "...",
+                            text = profile?.bestName ?: shortKey(note.pubkey),
                             color = PrimaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -160,7 +160,7 @@ internal fun HeroNoteCard(
                             )
                             Spacer(Modifier.width(3.dp))
                             Text(
-                                text = "reply to ${profiles[replyToPubkey]?.bestName ?: replyToPubkey.take(8) + "..."}",
+                                text = "reply to ${profiles[replyToPubkey]?.bestName ?: shortKey(replyToPubkey)}",
                                 color = SecondaryText.copy(alpha = 0.7f),
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
