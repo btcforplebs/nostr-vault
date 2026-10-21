@@ -6,6 +6,9 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { actionContext } from "../net/actions.js"
 import { onPaid } from "../net/wallet.js"
+import { DEFAULT_RELAYS, pool, uniq } from "../net/pool.js"
+import { lightningAddressOf, resolvePay } from "../net/zaps.js"
+import { lookupZaps } from "../net/wallet-zaps.js"
 import { HISTORY_PAGE, counterparty, isUnsupported, listTransactions, mergeTransactions } from "../net/wallet-history.js"
 
 /** A zap you received was made out to you; one you sent was made by you, or anonymously from a throwaway key. Any
@@ -25,12 +28,32 @@ export function whenText(ts, now = Date.now() / 1000, locale) {
   return rtf.format(Math.round(d), "second")
 }
 
-export function WalletHistory({ wallet, list = listTransactions, me = actionContext()?.session?.pubkey }) {
+// The key each person's zap service signs receipts with, asked once per person per session.
+const publishers = new Map()
+function publisherOf(ctx, pubkey) {
+  if (!publishers.has(pubkey))
+    publishers.set(pubkey, lightningAddressOf(ctx, pubkey).then(ln => (ln ? resolvePay(ln).then(p => p.nostrPubkey) : null)).catch(() => null))
+  return publishers.get(pubkey)
+}
+
+/** Zaps the wallet didn't echo, from their receipts on your relays and this browser's, and the zapped posts. */
+export function zapLookup(txs, me, ctx = actionContext()) {
+  if (!ctx) return Promise.resolve({ details: new Map(), posts: new Map() })
+  const relays = uniq([...(ctx.account?.relays?.read ?? []), ...DEFAULT_RELAYS]).slice(0, 8)
+  const query = async (r, f) => {
+    const local = f.ids ? [] : await ctx.vault?.inbox?.query?.(f).catch(() => []) ?? []
+    return [...local, ...await pool.querySync(r, f, { maxWait: 6000 })]
+  }
+  return lookupZaps(txs, me, { relays, query, publisherOf: pk => publisherOf(ctx, pk), fits: (d, direction) => fits(d, direction, me) })
+}
+
+export function WalletHistory({ wallet, list = listTransactions, me = actionContext()?.session?.pubkey, lookup = zapLookup }) {
   const [txs, setTxs] = useState([])
   const [busy, setBusy] = useState(false)
   const [more, setMore] = useState(false)
   const [unsupported, setUnsupported] = useState(false)
   const [err, setErr] = useState("")
+  const [found, setFound] = useState({ details: new Map(), posts: new Map() })
   const running = useRef(false), pending = useRef(false)
   // One load at a time: a reload asked for mid-load runs after it (iPhone historyRefreshPending), so a slower,
   // older answer can't land over a newer one.
@@ -41,6 +64,8 @@ export function WalletHistory({ wallet, list = listTransactions, me = actionCont
     try {
       const page = await list(wallet.conn, { limit: HISTORY_PAGE, offset: reset ? 0 : txs.length })
       setTxs(reset ? page : mergeTransactions(txs, page))
+      // Then the zaps behind this page's payments, which arrive after the rows.
+      lookup(page, me).then(r => setFound(f => ({ details: new Map([...f.details, ...r.details]), posts: new Map([...f.posts, ...r.posts]) }))).catch(() => {})
       setMore(page.length >= HISTORY_PAGE)
       setUnsupported(false)
     } catch (e) {
@@ -63,19 +88,26 @@ export function WalletHistory({ wallet, list = listTransactions, me = actionCont
         ? <p class="muted small">Your wallet doesn't share its payment history with apps. If it supports it, reconnect the wallet with "transaction history" (list transactions) allowed.</p>
         : err && !txs.length ? <p class="error" role="alert">{err}</p>
         : !txs.length ? <p class="muted small">{busy ? "Loading…" : "No payments yet."}</p>
-        : <ul class="wallet-history">{ownZaps(txs, me).map(tx => <Tx key={tx.id} tx={tx} />)}</ul>}
+        : <ul class="wallet-history">{withFound(ownZaps(txs, me), found.details).map(tx => <Tx key={tx.id} tx={tx} post={tx.zap?.noteId ? found.posts.get(tx.zap.noteId) : null} />)}</ul>}
       {more && !unsupported && <button type="button" disabled={busy} onClick={() => load(false)}>{busy ? "Loading…" : "Show more"}</button>}
     </section>
   )
 }
 
-export function Tx({ tx, now }) {
+/** Rows the wallet didn't explain get the zap their receipt tells (already checked to involve you). */
+export const withFound = (txs, details) => txs.map(tx => (!tx.zap && details.has(tx.id) ? { ...tx, zap: details.get(tx.id), description: null } : tx))
+
+/** The zapped post's text, one line, for "on: …". */
+export const postLine = ev => String(ev?.content ?? "").replace(/\s+/g, " ").trim().slice(0, 120)
+
+export function Tx({ tx, now, post = null }) {
   const incoming = tx.direction === "incoming"
   const person = counterparty(tx)
   const done = tx.state === "settled", dead = tx.state === "failed" || tx.state === "expired"
   const sub = [whenText(tx.created_at, now), !done && tx.state, !incoming && tx.feeSats > 0 && `fee ${tx.feeSats.toLocaleString()}`].filter(Boolean).join(" · ")
   return (
-    <li class="wallet-tx">
+    <li class="wallet-tx" {...(post ? { role: "link", tabindex: 0, style: "cursor: pointer", onClick: () => { location.hash = `#/thread/${post.id}` },
+      onKeyDown: e => { if (e.key === "Enter") location.hash = `#/thread/${post.id}` } } : {})}>
       {person
         ? <span class="wallet-tx-icon zap" aria-hidden="true" style="position: relative; background: none">
             <Avatar pubkey={person} size={28} />
@@ -84,7 +116,7 @@ export function Tx({ tx, now }) {
         : <span class={`wallet-tx-icon${tx.zap ? " zap" : incoming ? " in" : " out"}`} aria-hidden="true">{tx.zap ? "⚡" : incoming ? "↙" : "↗"}</span>}
       <span class="wallet-tx-main">
         <span class="wallet-tx-title">{title(tx, person)}</span>
-        {tx.zap && <span class="muted small wallet-tx-line">{context(tx.zap, incoming)}</span>}
+        {tx.zap && <span class="muted small wallet-tx-line">{context(tx.zap, incoming, post)}</span>}
         <span class={`small wallet-tx-line ${dead ? "error" : "muted"}`}>{sub}</span>
       </span>
       <span class={`wallet-tx-amount${done && incoming ? " in" : ""}${!done ? " muted" : ""}`} style={dead ? "text-decoration: line-through" : ""}>
@@ -103,5 +135,6 @@ function title(tx, person) {
 }
 
 /** What the zap was for: the sender's comment, else a post or a profile. */
-const context = (zap, incoming) =>
-  zap.comment ? `“${zap.comment}”` : zap.noteId ? "on a post" : incoming ? "on your profile" : "on their profile"
+export const context = (zap, incoming, post = null) =>
+  zap.comment ? `“${zap.comment}”` : post ? (postLine(post) ? `on: ${postLine(post)}` : "on a post")
+    : zap.noteId ? "on a post" : incoming ? "on your profile" : "on their profile"
