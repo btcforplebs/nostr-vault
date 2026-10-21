@@ -3,6 +3,7 @@
 import { parseOwners, saveOwners, savePhotoVaults } from "./owners.js"
 import { RELAY_SERVICE_PORT } from "./tcp-server.js"
 import { startFipsRelay } from "./node.js"
+import { startPhotoReader } from "./photo-reader.js"
 import { parseBlobRef } from "./blob-get.js"
 import { npubEncode } from "nostr-tools/nip19"
 
@@ -20,21 +21,27 @@ export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, ac
   $("fipsOwners").value = [...owners].join("\n")
   $("fipsPhotoVaults").value = [...photoVaults].map(npubEncode).join("\n")
 
+  // No owner + Haven to serve, but photo addresses to read: start the photo-only reader instead of the relay.
+  const photoOnly = () => !(owners.size && haven) && photoVaults.size > 0
   const render = s => {
     const seeds = [...(s?.seeds ?? new Map())].map(([u, st]) => `${u.replace("wss://", "")}: ${st}`).join(", ") || "none"
     const paths = [...(s?.owners ?? new Map())].map(([k, o]) => `${k.slice(0, 8)}… ${o.transport === "webrtc" ? "DIRECT (webrtc)" : "via " + o.transport} ${o.state}`).join("; ")
     const sessions = [...(s?.sessions ?? new Map())].map(([k, st]) => `${k.slice(0, 8)}… ${st}`).join("; ")
     const sv = s?.server ?? {}
-    $("fipsStatus").textContent = running
+    $("fipsStatus").textContent = running?.status.photoOnly
+      ? [`photos only, throwaway key ${s.npub}`, `seed: ${seeds}`, `reads from your photo addresses only (${photoVaults.size})`,
+         `photos read ${s.blobs?.fetched ?? 0} (${s.blobs?.bytes ?? 0} bytes), failed ${s.blobs?.failed ?? 0}${s.blobs?.lastError ? ": " + s.blobs.lastError : ""}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
+      : running
       ? [`mesh address ${s.npub}`, `port ${RELAY_SERVICE_PORT}`, `seed: ${seeds}`, `vault session: ${sessions || "none"}`, `vault path: ${paths || "relayed via seed (no direct link)"}`,
          `streams open ${sv.open ?? 0}, accepted ${sv.accepted ?? 0}, stranger datagrams dropped ${sv.rejectedDatagrams ?? 0}`,
          `last request from a vault ${sv.lastInAt ? new Date(sv.lastInAt).toISOString() : "never"}`,
          `photos read ${s.blobs?.fetched ?? 0} (${s.blobs?.bytes ?? 0} bytes), failed ${s.blobs?.failed ?? 0}${s.blobs?.lastError ? ": " + s.blobs.lastError : ""}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
+      : photoOnly() ? "FIPS off. Start reads photos from your photo addresses only (no relay, a new key each time)."
       : !owners.size ? "FIPS off: add a vault's mesh address first"
       : !haven ? "FIPS off: Haven is not running"
       : "FIPS off"
     const seedUp = [...(s?.seeds?.values() ?? [])].includes("connected")
-    $("sfips").textContent = running ? `FIPS ${seedUp ? "seed up" : "seed DOWN"} · streams ${sv.open ?? 0}` : ""
+    $("sfips").textContent = running ? `FIPS ${seedUp ? "seed up" : "seed DOWN"} · ${running.status.photoOnly ? "photos only" : `streams ${sv.open ?? 0}`}` : ""
   }
 
   // Haven takes its owner at start, so a changed owner set means a restart: reload the page.
@@ -58,6 +65,7 @@ export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, ac
       savePhotoVaults(photoVaults, storage)
       log("fips-photo-vaults-saved", { vaults: photoVaults.size })
       $("blobStatus").textContent = `${photoVaults.size} photo address${photoVaults.size === 1 ? "" : "es"} saved`
+      if (!running) render()
     } catch (e) {
       $("blobStatus").textContent = String(e)
     }
@@ -70,11 +78,14 @@ export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, ac
       log("fips-stop")
       return render()
     }
-    if (!owners.size || !haven) return render()
+    const photosOnly = photoOnly()
+    if (!photosOnly && (!owners.size || !haven)) return render()
     try {
-      running = await startFipsRelay({ haven, getOwners: () => owners, getPhotoVaults: () => photoVaults, storage, onStatus: render })
+      running = photosOnly
+        ? await startPhotoReader({ getPhotoVaults: () => photoVaults, onStatus: render })
+        : await startFipsRelay({ haven, getOwners: () => owners, getPhotoVaults: () => photoVaults, storage, onStatus: render })
       $("fipsStart").textContent = "Stop FIPS"
-      log("fips-start", { npub: running.status.npub })
+      log("fips-start", { npub: running.status.npub, photoOnly: photosOnly })
     } catch (e) {
       log("fips-error", { err: String(e) })
       $("fipsStatus").textContent = "FIPS failed to start: " + e
@@ -92,8 +103,10 @@ export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, ac
     } catch (e) {
       return say(String(e.message ?? e))
     }
-    const vaults = ref.vault ? [ref.vault] : [...new Set([...photoVaults, ...owners])]
-    if (ref.vault && !owners.has(ref.vault) && !photoVaults.has(ref.vault)) return say(`${npubEncode(ref.vault)} is not one of your paired vaults. Add it above as a photo address first.`)
+    // The photo-only reader never asks an owner: a stranger's link must not reach a vault's main npub.
+    const readable = running.status.photoOnly ? photoVaults : new Set([...photoVaults, ...owners])
+    const vaults = ref.vault ? [ref.vault] : [...readable]
+    if (ref.vault && !readable.has(ref.vault)) return say(`${npubEncode(ref.vault)} is not one of your ${running.status.photoOnly ? "photo addresses" : "paired vaults"}. Add it above as a photo address first.`)
     const t0 = Date.now()
     const errors = []
     for (const vault of vaults) {
