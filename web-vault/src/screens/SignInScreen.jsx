@@ -33,18 +33,23 @@ export function SignInScreen({ onSignedIn }) {
   return (
     <main class="signin">
       <img src="./icon.svg" alt="" class="signin-logo" />
-      <h1>Nostr Vault</h1>
+      <h1>Nostr Vault <span class="beta">Beta</span></h1>
       <p class="muted">Your posts, messages and media, kept in this browser. Sign in with your own signer: your secret key stays with it.</p>
+      {cameForPost() && <p class="signin-for-post">Sign in to reply, like or zap the post you opened. Just looking works too.</p>}
       {saved.length > 0 && <div class="saved-accounts">
         {saved.map(a => <SavedAccount key={a.pubkey} account={a} busy={busy === a.pubkey} disabled={!!busy} onClick={resume(a)} />)}
         <p class="muted small">Or sign in as someone else:</p>
       </div>}
       <SignInOptions onSignedIn={signedIn} />
       <StorageNote />
+      <p class="muted small signin-home">New to Nostr Vault? <a href="/">See what it is, and get the apps</a>.</p>
       {err && <p class="error">{err}</p>}
     </main>
   )
 }
+
+/** Opened from a shared post's page (nostrvault.app/thread/…), which links here with the post in the address. */
+const cameForPost = () => /^#\/(thread\/|feed\?(.*&)?note=)[0-9a-f]{64}/.test(location.hash)
 
 function SavedAccount({ account, busy, disabled, onClick }) {
   const p = useProfile(account.pubkey)

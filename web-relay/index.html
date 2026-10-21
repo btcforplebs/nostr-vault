@@ -42,6 +42,11 @@
   <textarea id="fipsOwners" rows="2" placeholder="Your vault's npub (one per line)" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace"></textarea>
   <div><button id="fipsSave">Save owners</button><button id="fipsStart">Start FIPS</button></div>
   <pre id="fipsStatus"></pre>
+  <h2 style="font-size:15px;margin:16px 0 4px">Photo from your vault (mesh port 80)</h2>
+  <input id="blobRef" placeholder="sha256, or http://npub1….fips/<sha256>.jpg" autocapitalize="off" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace">
+  <div><button id="blobGet">Show photo</button></div>
+  <pre id="blobStatus"></pre>
+  <div id="blobView"></div>
   <pre id="info"></pre>
   <pre id="log"></pre>
 </main>

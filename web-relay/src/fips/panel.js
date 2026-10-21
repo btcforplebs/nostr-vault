@@ -1,7 +1,10 @@
-// FIPS section of the page: vault pairing by mesh address, start/stop, and status (seed link, vault path, streams).
+// FIPS section of the page: vault pairing by mesh address, start/stop, status (seed link, vault path, streams), and
+// showing a photo straight from a paired vault.
 import { parseOwners, saveOwners } from "./owners.js"
 import { RELAY_SERVICE_PORT } from "./tcp-server.js"
 import { startFipsRelay } from "./node.js"
+import { parseBlobRef } from "./blob-get.js"
+import { npubEncode } from "nostr-tools/nip19"
 
 const $ = id => document.getElementById(id)
 
@@ -23,7 +26,8 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
     $("fipsStatus").textContent = running
       ? [`mesh address ${s.npub}`, `port ${RELAY_SERVICE_PORT}`, `seed: ${seeds}`, `vault session: ${sessions || "none"}`, `vault path: ${paths || "relayed via seed (no direct link)"}`,
          `streams open ${sv.open ?? 0}, accepted ${sv.accepted ?? 0}, stranger datagrams dropped ${sv.rejectedDatagrams ?? 0}`,
-         `last request from a vault ${sv.lastInAt ? new Date(sv.lastInAt).toISOString() : "never"}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
+         `last request from a vault ${sv.lastInAt ? new Date(sv.lastInAt).toISOString() : "never"}`,
+         `photos read ${s.blobs?.fetched ?? 0} (${s.blobs?.bytes ?? 0} bytes), failed ${s.blobs?.failed ?? 0}${s.blobs?.lastError ? ": " + s.blobs.lastError : ""}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
       : !owners.size ? "FIPS off: add a vault's mesh address first"
       : !haven ? "FIPS off: Haven is not running"
       : "FIPS off"
@@ -60,6 +64,43 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
       log("fips-error", { err: String(e) })
       $("fipsStatus").textContent = "FIPS failed to start: " + e
     }
+  }
+  // A photo by hash from a paired vault. A .fips link names the vault; a bare hash tries each paired vault in turn.
+  let shown
+  $("blobGet").onclick = async () => {
+    const say = t => ($("blobStatus").textContent = t)
+    if (!running) return say("Start FIPS first: the photo comes over its session to your vault.")
+    let ref
+    try {
+      ref = parseBlobRef($("blobRef").value)
+    } catch (e) {
+      return say(String(e.message ?? e))
+    }
+    const vaults = ref.vault ? [ref.vault] : [...owners]
+    if (ref.vault && !owners.has(ref.vault)) return say(`${npubEncode(ref.vault)} is not one of your paired vaults. Add its mesh address above first.`)
+    const t0 = Date.now()
+    const errors = []
+    for (const vault of vaults) {
+      const who = npubEncode(vault).slice(0, 16) + "…"
+      try {
+        say(`asking ${who} for ${ref.sha256.slice(0, 12)}…`)
+        const { bytes, type } = await running.getBlob(vault, ref.sha256, { onProgress: n => say(`from ${who}: ${n} bytes…`) })
+        if (shown) URL.revokeObjectURL(shown)
+        // `type` is already limited to raster images and video (blob-get.js SAFE_TYPES): this URL has the page's origin.
+        shown = URL.createObjectURL(new Blob([bytes], { type }))
+        const el = document.createElement(type.startsWith("video/") ? "video" : "img")
+        el.src = shown
+        el.style.cssText = "max-width:100%;max-height:70vh;border-radius:8px"
+        if (el.tagName === "VIDEO") el.controls = true
+        $("blobView").replaceChildren(el)
+        log("fips-blob", { vault: vault.slice(0, 12), bytes: bytes.length, ms: Date.now() - t0 })
+        return say(`${bytes.length} bytes from ${who} in ${((Date.now() - t0) / 1000).toFixed(1)}s, sha256 matches, ${type}`)
+      } catch (e) {
+        errors.push(`${who}: ${e.message ?? e}`)
+      }
+    }
+    log("fips-blob-error", { errors })
+    say(errors.join("\n") || "no paired vault")
   }
   render()
 }
