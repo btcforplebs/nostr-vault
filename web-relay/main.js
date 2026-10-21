@@ -2,7 +2,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { npubEncode } from "nostr-tools/nip19"
 import { mountFipsPanel } from "./src/fips/panel.js"
-import { loadOwners } from "./src/fips/owners.js"
+import { loadOwners, loadPhotoVaults } from "./src/fips/owners.js"
 import { RELAY_NS, pageStorage, migrateRelayKeys } from "./src/page-storage.js"
 import { loadHaven } from "./src/haven/haven.js"
 import { HavenClient } from "./src/haven/client.js"
@@ -137,7 +137,10 @@ async function startHaven(owners) {
 }
 
 ;(async () => {
-  const owners = loadOwners({ log, storage: LS })
+  // One link can carry both #owner= and #blob=: read the fragment once, before either scrubs it.
+  const hash = location.hash
+  const owners = loadOwners({ log, storage: LS, hash })
+  const photoVaults = loadPhotoVaults({ log, storage: LS, hash })
   try {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
     const persistGranted = await navigator.storage.persist()
@@ -152,7 +155,7 @@ async function startHaven(owners) {
       $("status").textContent = `Haven ready (owner ${npubEncode([...owners][0]).slice(0, 16)}…)`
     }
   } catch (e) { $("status").textContent = "HAVEN FAILED TO START: " + e; log("init-error", { err: String(e) }); haven = relay = undefined }
-  mountFipsPanel({ haven, owners, log, storage: LS })
+  mountFipsPanel({ haven, owners, photoVaults, log, storage: LS })
 
   // heartbeat every 5s; generator event every 10s; beacon a heartbeat every 60s
   let n = 0

@@ -97,3 +97,46 @@ export function loadOwners({
 export function saveOwners(owners, storage) {
   storage.setItem(OWNERS_ITEM, [...owners].join(" "))
 }
+
+const PHOTO_VAULTS_ITEM = "fips-photo-vaults"
+
+/**
+ * The vaults this page may only read photos from: a vault's blob node (fips-v2 --blobs), a separate mesh npub with
+ * no link to the owner's. Not owners: they can't write to this relay, Haven never hears of them and they aren't
+ * dialed, only asked for a hash when a photo is shown. A pairing link `#blob=npub1...` adds one, after a confirm.
+ * Takes the same `hash`/`scrub` as loadOwners; pass both the same `hash` when the page reads one link.
+ */
+export function loadPhotoVaults({
+  account,
+  storage,
+  log = () => {},
+  confirm = msg => globalThis.confirm(msg),
+  hash = location.hash,
+  scrub = () => history.replaceState(null, "", location.pathname),
+} = {}) {
+  let vaults = new Set()
+  try {
+    vaults = parseOwners(storage.getItem(PHOTO_VAULTS_ITEM) ?? "", { account })
+  } catch {}
+  const frag = new URLSearchParams(String(hash).slice(1)).get("blob")
+  if (frag) {
+    try {
+      const fresh = [...parseOwners(frag, { account })].filter(k => !vaults.has(k))
+      const added = fresh.filter(k => confirm(`This link wants to show you photos from a vault's photo address:\n\n  ${npubEncode(k)}\n\n` +
+        "It can only send photos you ask for by hash. It can't write to this relay."))
+      if (added.length) {
+        vaults = new Set([...vaults, ...added])
+        savePhotoVaults(vaults, storage)
+        log("fips-photo-vault-paired", { offered: fresh.length, added: added.length, vaults: vaults.size })
+      }
+    } catch (e) {
+      log("fips-photo-vault-error", { err: String(e) })
+    }
+    scrub()
+  }
+  return vaults
+}
+
+export function savePhotoVaults(vaults, storage) {
+  storage.setItem(PHOTO_VAULTS_ITEM, [...vaults].join(" "))
+}
