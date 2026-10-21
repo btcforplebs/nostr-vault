@@ -26,24 +26,48 @@
 .condensed-list { display: flex; flex-direction: column; }
 .condensed { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px 6px calc(8px + var(--indent, 0px)); cursor: pointer; }
 .condensed:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
-.condensed-card { margin: 0 var(--gutter) 6px; padding: 8px 12px; background: var(--s1); border: 1px solid var(--hair); border-radius: var(--radius); }
+.condensed-card { margin: 0 var(--gutter) 6px; padding: 8px 12px; background: var(--s1); border: 1px solid var(--accent-line); border-radius: 10px; }
 .condensed-avatar { flex: none; line-height: 0; }
 .condensed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.condensed-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; }
+.condensed-head { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 13px; }
+.condensed-name { min-width: 0; overflow: hidden; color: inherit; }
+.condensed-seal { flex: none; color: var(--verified); font-size: 9px; font-weight: 900; }
+.condensed-nv { flex: none; width: 7px; height: 9px; border: 1.2px solid var(--accent-light); border-bottom: 0; border-radius: 4px 4px 0 0; box-shadow: 0 0 3px var(--accent); }
+.condensed-marks { margin-left: auto; padding-left: 4px; display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.condensed-mark { flex: none; }
+.condensed-mark.reply { color: rgb(230 115 38 / .7); }
+.condensed-mark.repost { color: rgb(51 217 128 / .7); }
+.condensed-mark.quote { color: rgb(10 132 255 / .7); }
+.condensed-link { display: inline-flex; align-items: center; gap: 3px; color: var(--accent-light); font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 1px; }
+.condensed-link b { font: 600 10px var(--mono); }
+.condensed-text .mention { pointer-events: auto; }
 .condensed.reply .condensed-head { font-size: 12px; }
 .condensed-head .author-name { font: inherit; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .condensed-head time { flex: none; color: var(--text-3); font-size: 11px; }
-.condensed-repost { flex: none; color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.condensed-repost { display: inline-flex; align-items: center; gap: 3px; color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
 .condensed-repost .author-name { font-weight: 400; }
 .condensed-thumb img.failed { display: none; }
 .condensed-text { margin: 0; font-size: 14px; line-height: 1.35; color: var(--text); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.condensed.reply .condensed-text { font-size: 13px; }
+.condensed.reply .condensed-text { font-size: 13px; color: rgb(255 255 255 / .8); }
+.condensed.reply .condensed-head .author-name { color: rgb(255 255 255 / .92); }
 .condensed-thumb { position: relative; flex: none; width: 56px; height: 56px; border-radius: 6px; overflow: hidden; background: var(--s2); display: grid; place-items: center; }
 .condensed-thumb.big { width: 80px; height: 80px; }
 .condensed-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .condensed-play { color: var(--text-2); font-size: 18px; }
 .condensed-more { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px; background: rgb(0 0 0 / .7); color: #fff; font-size: 10px; font-weight: 700; }
-.condensed-rail { position: absolute; left: calc(var(--indent, 0px) - 4px); top: 0; bottom: 0; width: 2px; background: var(--hair); }
+.condensed-rail { position: absolute; left: calc(var(--indent, 0px) - 4px); top: 0; bottom: 0; width: 1.5px; background: rgb(230 115 38 / .35); }
 .thread-card { padding: 6px 4px; display: flex; flex-direction: column; }
-.thread-missing { padding: 8px 12px; font-size: 13px; }
-.thread-fold { align-self: flex-start; margin: 2px 0 2px 46px; min-height: 28px; padding: 0 10px; font-size: 12px; background: none; border: 0; color: var(--accent-light); }
+.thread-missing { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font: 500 12px var(--mono); }
+.thread-missing svg { color: rgb(230 115 38 / .7); flex: none; }
+.thread-fold { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 22px; min-height: 28px; padding: 6px 10px; border: 0; border-radius: 8px;
+  background: var(--accent-pale); color: var(--accent); font: 700 12px var(--font-round); }
+.thread-open-link { display: flex; align-items: center; gap: 6px; margin-left: 22px; padding: 6px 10px; color: var(--text-2); font: 700 12px var(--font-round); }
+.thread-open-link svg { margin-left: auto; }
+/* A line opened in place: the full card with no chrome of its own, on the line's rail and indent. */
+.thread-open { position: relative; padding-left: var(--indent, 0px); }
+.thread-open > .note { margin: 0; padding: 8px; border: 0; background: none; border-radius: 8px; }
+.thread-open.reply > .note { margin-left: 8px; }
+/* The rail already says what an opened reply answers, and the line's own avatar size keeps it from jumping. */
+.thread-open .reply-to { display: none; }
+.thread-open .note-head .avatar { width: 32px !important; height: 32px !important; }
+.thread-open.reply .note-head .avatar { width: 26px !important; height: 26px !important; }
