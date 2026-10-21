@@ -26,6 +26,7 @@ internal fun ColumnScope.TrustWebViewSearch(
     onClear: () -> Unit,
     accent: Color,
     hits: List<TrustMap.PersonHit>,
+    me: String,
     searchingRelays: Boolean,
     pasted: String?,
     profiles: Map<String, FeedProfile>,
@@ -50,6 +51,7 @@ internal fun ColumnScope.TrustWebViewSearch(
         SearchResults(
             query = query.trim(),
             hits = hits,
+            me = me,
             searching = searchingRelays && pasted == null,
             profiles = profiles,
             name = name,

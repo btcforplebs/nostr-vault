@@ -69,7 +69,8 @@ internal fun TrustWebViewGlobe(
     layerFaces: List<String>,
     /** Who the WOT tab's filters leave lit; null when none is on. */
     filterLit: Set<String>?,
-    showingList: Boolean,
+    /** The people list or My Web covers it: no clock, no live connections (iOS `running`). */
+    paused: Boolean,
     isWOTTab: Boolean,
     layer: TrustMap.Layer,
     profiles: Map<String, FeedProfile>,
@@ -104,7 +105,7 @@ internal fun TrustWebViewGlobe(
             ringFaces = ringFaces,
             layerFaces = layerFaces,
             filterLit = if (isWOTTab) filterLit else null,
-            running = !showingList,
+            running = !paused,
             layer = if (isWOTTab && centerKey == me) layer else TrustMap.Layer.EVERYONE,
             summary = summary(frame, me, author, centerKey, name),
             profiles = profiles, name = name,
@@ -122,34 +123,35 @@ internal fun TrustWebViewGlobe(
         // the screen's height, which leaves the card no room beside it.
         if (isWOTTab) {
             Box(
-                Modifier.align(Alignment.Center).fillMaxSize(0.6f).aspectRatio(1f)
+                Modifier.align(Alignment.Center).fillMaxSize(0.5f).aspectRatio(1f)
                     .tutorialAnchor(TutorialContent.WOT_GLOBE),
             )
         }
         Box(Modifier.matchParentSize().padding(overlayPadding)) {
         when {
-            // Someone tapped, their follow list still on its way.
-            frame == null -> StatusPill(
+            // Moving onto someone keeps the globe up: the trail's chip spins
+            // instead. Only the very first globe has nothing to show (iOS).
+            frame == null && centerKey == me -> StatusPill(
                 text = "Loading ${name(centerKey)}'s follows…",
-                pubkey = centerKey, profile = profiles[centerKey], accent = accent,
+                pubkey = centerKey, profile = profiles[centerKey],
                 modifier = Modifier.align(Alignment.Center),
             )
             followsPending -> StatusPill(
-                text = "Loading your follows…", accent = accent,
+                text = "Loading your follows…", pubkey = me, profile = profiles[me],
                 modifier = Modifier.align(Alignment.Center),
             )
             // Your follows are in but the wider web (the haze) isn't yet.
             // The WOT tab says so in its live pill instead.
             !isWOTTab && mappingWeb && card == null ->
                 StatusPill(
-                    text = "Mapping your wider web…", accent = accent, small = true,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                    text = "Mapping your wider web…",
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
                 )
             mappingWider && card == null ->
                 StatusPill(
                     text = "Mapping ${name(centerKey)}'s web…",
-                    pubkey = centerKey, profile = profiles[centerKey], accent = accent, small = true,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                    pubkey = centerKey, profile = profiles[centerKey],
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
                 )
         }
         val followed by feedService.followedPubkeys.collectAsState()

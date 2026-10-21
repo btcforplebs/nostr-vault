@@ -22,6 +22,10 @@ internal fun TrustWebViewBreadcrumbs(
     accent: Color,
     name: (String) -> String,
     jump: (Int) -> Unit,
+    /** On the WOT tab the destination is always you, so its chip is left off (iOS). */
+    isWOTTab: Boolean = false,
+    /** Whose follows are still on their way: their chip spins (iOS). */
+    loading: (String) -> Boolean = { false },
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -32,9 +36,9 @@ internal fun TrustWebViewBreadcrumbs(
             if (index > 0) CrumbArrow()
             val on = index == crumbs.size - 1
             Chip(pubkey, name(pubkey), profiles[pubkey], on = on, destination = false, accent = accent,
-                onClick = if (on) null else ({ jump(index) }))
+                onClick = if (on) null else ({ jump(index) }), loading = loading(pubkey))
         }
-        if (centerKey != author) {
+        if (centerKey != author && !isWOTTab) {
             CrumbArrow()
             Chip(author, name(author), profiles[author], on = false, destination = true, accent = accent, onClick = null)
         }

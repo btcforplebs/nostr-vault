@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.nostrvault.relay.HavenBridge
-import com.nostrvault.service.NostrService
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -393,31 +392,7 @@ internal fun TrustWebContent(
         }
     }
 
-    if (isWOTTab) {
-        // Names not cached yet come from the relays. Their profiles land in
-        // the cache, so the local ranking above just runs again; nothing here
-        // reads the results.
-        LaunchedEffect(query) {
-            val text = query.trim()
-            if (text.isEmpty()) {
-                nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
-                searchingRelays = false
-                return@LaunchedEffect
-            }
-            if (pasted != null) {
-                nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT)
-                searchingRelays = false
-                nostrService.fetchMissingProfiles(listOf(pasted))
-                return@LaunchedEffect
-            }
-            delay(SEARCH_DEBOUNCE_MS)
-            searchingRelays = true
-            nostrService.globalSearch(text, NostrService.SearchCaller.WOT) { searchingRelays = false }
-        }
-        androidx.compose.runtime.DisposableEffect(Unit) {
-            onDispose { nostrService.cancelGlobalSearch(NostrService.SearchCaller.WOT) }
-        }
-    }
+    if (isWOTTab) WotRelaySearchEffect(query, pasted, nostrService) { searchingRelays = it }
 
     fun clearSearch() {
         query = ""
@@ -582,7 +557,8 @@ internal fun TrustWebContent(
 
     @Composable
     fun crumbRow(modifier: Modifier) {
-        TrustWebViewBreadcrumbs(modifier, crumbs, centerKey, author, profiles, accent, ::name, ::jump)
+        TrustWebViewBreadcrumbs(modifier, crumbs, centerKey, author, profiles, accent, ::name, ::jump,
+            isWOTTab = isWOTTab, loading = { it != me && frames[it] == null })
     }
 
     @Composable
@@ -596,7 +572,7 @@ internal fun TrustWebContent(
             modifier = modifier, clip = clip, overlayPadding = overlayPadding, cardAsSidePanel = cardAsSidePanel,
             frame = frame, centerKey = centerKey, me = me, author = author, myFollows = myFollows, haze = globeHaze,
             closeHaze = globeCloseHaze, lite = lite, ringFaces = ringFaces, layerFaces = outerFaces, filterLit = globeLit,
-            showingList = showingList, isWOTTab = isWOTTab, layer = layer, profiles = profiles, name = ::name,
+            paused = showingList || myWebOpen, isWOTTab = isWOTTab, layer = layer, profiles = profiles, name = ::name,
             tapped = ::tapped, card = card, cardPath = cardPath,
             onEmptyTap = { closeCard(); if (searchFocused) focusManager.clearFocus() },
             followsPending = followsPending, mappingWeb = mappingWeb, accent = accent,
@@ -645,6 +621,7 @@ internal fun TrustWebContent(
                         onClear = ::clearSearch,
                         accent = accent,
                         hits = hits,
+                        me = me,
                         searchingRelays = searchingRelays,
                         pasted = pasted,
                         profiles = profiles,
@@ -733,8 +710,6 @@ internal val SIDE_PANEL_WIDTH = 360.dp
 /** Room for a 360dp panel and a globe that is still the subject (iOS `cardIsSidePanel`, 900pt). */
 internal fun wotCardIsSidePanel(paneWidth: Dp): Boolean = paneWidth >= 900.dp
 
-/** Typing pauses this long before the relays are asked. */
-private const val SEARCH_DEBOUNCE_MS = 350L
 /** "Mapping your wider web…" gives up after this; an empty web may just be empty. */
 private const val WEB_WAIT_MS = 15_000L
 /** Seconds the globe keeps taking in faces' pictures as profiles arrive. */

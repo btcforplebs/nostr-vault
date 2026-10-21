@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -20,6 +21,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
@@ -40,6 +42,8 @@ internal fun Chip(
     destination: Boolean,
     accent: Color,
     onClick: (() -> Unit)?,
+    /** Their follows are still on their way: a spinner after the name (iOS). */
+    loading: Boolean = false,
 ) {
     val shape = RoundedCornerShape(50)
     Row(
@@ -55,6 +59,13 @@ internal fun Chip(
     ) {
         AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 22.dp, displayName = profile?.bestName)
         Text(name, color = if (destination) accent else PrimaryText, fontSize = 13.sp, maxLines = 1)
+        if (loading && !destination) {
+            CircularProgressIndicator(
+                color = Color.White,
+                strokeWidth = 1.5.dp,
+                modifier = Modifier.size(12.dp).semantics { contentDescription = "Loading $name's follows" },
+            )
+        }
     }
 }
 
