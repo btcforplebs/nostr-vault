@@ -56,8 +56,14 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {} }
   const since = top ? top.created_at - 600 : now() - 2 * 86400
   let stored = 0
   for (let i = 0; i < follows.length; i += 250) {
-    const evs = await pool.querySync(relays, { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }, { maxWait: 8000 })
-    stored += await storeAll(vault.feed, evs)
+    // Each relay's answer is stored as it lands, so the fastest relay's notes show without waiting for the slowest
+    // (up to maxWait). A note two relays send is written once: Haven takes one request per id at a time.
+    const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }, sent = new Set()
+    await Promise.all(relays.map(async url => {
+      const evs = (await pool.querySync([url], filter, { maxWait: 8000 }).catch(() => [])).filter(e => !sent.has(e.id) && sent.add(e.id))
+      const n = await storeAll(vault.feed, evs)
+      if (n) onProgress({ done: i, of: follows.length, stored: (stored += n) })
+    }))
     onProgress({ done: Math.min(i + 250, follows.length), of: follows.length, stored })
   }
   return stored
