@@ -55,9 +55,11 @@
 .live-tile:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
 .live-thumb { position: relative; aspect-ratio: 16 / 9; background: var(--s2); }
 .live-thumb img, .live-blank { width: 100%; height: 100%; object-fit: cover; display: block; }
-.live-badge { position: absolute; top: 8px; left: 8px; padding: 2px 6px; border-radius: 4px; background: var(--danger); color: #fff;
+.live-pills { position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; }
+.live-badge { padding: 2px 8px; border-radius: 999px; background: rgb(0 0 0 / .65); color: #fff;
   font: 700 10px/1.2 var(--font); letter-spacing: .04em; }
-.live-viewers { position: absolute; bottom: 8px; left: 8px; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / .6); color: #fff; font: var(--t-cap); }
+.live-viewers { padding: 2px 6px; border-radius: 999px; background: rgb(0 0 0 / .55); color: #fff; font: var(--t-cap); }
+.live-time { color: var(--text-3); font: var(--t-cap); }
 .live-text { padding: 10px; display: grid; gap: 4px; }
 .live-text h3 { margin: 0; font: 600 15px/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .live-text h3 a { color: inherit; text-decoration: none; }
@@ -177,3 +179,4 @@
 .market-seller { padding: 10px 12px; border-radius: 12px; background: var(--s1); border: 1px solid var(--hair); }
 .market-chevron { margin-left: auto; color: var(--text-3); font-size: 20px; }
 .market-description { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.live-dot { color: var(--danger); }
