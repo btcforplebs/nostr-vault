@@ -298,9 +298,23 @@ internal fun HeroNoteCard(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // The time is in the header, relative, as on iOS — the card no
-            // longer repeats it as a full date under the body.
-            HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+            // Action buttons. The real `EngagementBar`, not a copy of it — this
+            // was a hand-duplicated seven-button row under a comment claiming it
+            // was identical, which is how it kept Share and Broadcast inline
+            // while every other note on this screen had moved them to the menu.
+            EngagementBar(
+                noteId = note.effectiveEventId,
+                isLiked = isLiked,
+                isZapped = false,
+                isReposted = isReposted,
+                onReply = { onReply() },
+                onRepost = { onRepost() },
+                onQuote = { onQuote() },
+                onLike = { onLike() },
+                onZap = { onZap() },
+                onLongPressLike = { onLongPressLike() },
+                onTrustWeb = onTrustWeb,
+            )
 
             // Engagement row — only shown when at least one count is non-zero.
             // Reactions as per-emoji pills, zaps as "count · total sats", the
@@ -321,8 +335,12 @@ internal fun HeroNoteCard(
             val zapDetails = engagement?.zaps.orEmpty()
             val zapCount = if (zapDetails.isNotEmpty()) zapDetails.size else stats?.zaps ?: 0
             val zapSats = if (zapDetails.isNotEmpty()) zapDetails.sumOf { it.amountSats } else stats?.zapAmountSats ?: 0L
+            // iOS engagementDetailSection: under the action bar, a thin
+            // accent line 10pt down, then the pills 8pt below it.
             if (emojiGroups.isNotEmpty() || reposts > 0 || zapCount > 0) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider(color = themeColor.copy(alpha = 0.15f), thickness = 0.5.dp)
+                Spacer(Modifier.height(8.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -361,29 +379,7 @@ internal fun HeroNoteCard(
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Action buttons. The real `EngagementBar`, not a copy of it — this
-            // was a hand-duplicated seven-button row under a comment claiming it
-            // was identical, which is how it kept Share and Broadcast inline
-            // while every other note on this screen had moved them to the menu.
-            EngagementBar(
-                noteId = note.effectiveEventId,
-                isLiked = isLiked,
-                isZapped = false,
-                isReposted = isReposted,
-                onReply = { onReply() },
-                onRepost = { onRepost() },
-                onQuote = { onQuote() },
-                onLike = { onLike() },
-                onZap = { onZap() },
-                onLongPressLike = { onLongPressLike() },
-                onTrustWeb = onTrustWeb,
-            )
         }
     }
 }
