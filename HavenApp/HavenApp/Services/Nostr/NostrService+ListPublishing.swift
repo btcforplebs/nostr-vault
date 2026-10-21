@@ -422,15 +422,20 @@ enum PhotoNode {
         MacFipsMeshService.photoNpub().flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
     }
 
-    /// Republish once per launch when the owner's newest 10063 lacks the photo
-    /// node, so the entry appears with no setup and comes back if a stale list
-    /// (another device's) dropped it.
-    @MainActor static func ensureListed(in servers: [String], owner: String, nostr: NostrService) {
-        guard owner == nostr.activeHexPubkey, !republished, let npub = npub() else { return }
-        guard !servers.contains(where: { HomeVaultLogic.meshNpub(fromEntry: $0) == npub }) else { return }
-        republished = true
+    /// Republishes when the owner's kept 10063 lacks the photo node, so the
+    /// entry appears with no setup and comes back if a stale list (another
+    /// device's) dropped it. Checked when a 10063 arrives (even one already
+    /// seen: the newest list replays on every launch and is not "newer") and
+    /// when the Mac's mesh npub becomes known. At most once per npub every
+    /// 5 minutes, so a publish that never lands is retried, not looped.
+    @MainActor static func ensureListed(owner: String, nostr: NostrService) {
+        guard owner == nostr.activeHexPubkey, let npub = npub(),
+              HomeVaultLogic.photoNodeMissing(from: nostr.serverLists[owner], photoNpub: npub) else { return }
+        let key = "\(owner):\(npub)"
+        if let last = lastTry[key], Date().timeIntervalSince(last) < 300 { return }
+        lastTry[key] = Date()
         nostr.publishServerList()
     }
-    @MainActor private static var republished = false
+    @MainActor private static var lastTry: [String: Date] = [:]
 }
 #endif
