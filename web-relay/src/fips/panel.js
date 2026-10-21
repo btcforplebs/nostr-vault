@@ -19,7 +19,10 @@ const $ = id => document.getElementById(id)
 export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, account, storage }) {
   let running
   $("fipsOwners").value = [...owners].join("\n")
-  $("fipsPhotoVaults").value = [...photoVaults].map(npubEncode).join("\n")
+  // The photo parts (photo addresses, Show photo) are this page's own: the web app's Relay screen mounts the
+  // panel without them, and its Save/Start must still work there.
+  const photoUi = !!$("fipsPhotoVaults") && !!$("blobGet")
+  if (photoUi) $("fipsPhotoVaults").value = [...photoVaults].map(npubEncode).join("\n")
 
   // No owner + Haven to serve, but photo addresses to read: start the photo-only reader instead of the relay.
   const photoOnly = () => !(owners.size && haven) && photoVaults.size > 0
@@ -57,7 +60,7 @@ export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, ac
     }
   }
   // Read on each photo, so no restart: swap the set's contents in place.
-  $("fipsPhotoSave").onclick = () => {
+  if (photoUi) $("fipsPhotoSave").onclick = () => {
     try {
       const next = parseOwners($("fipsPhotoVaults").value, { account })
       photoVaults.clear()
@@ -94,7 +97,7 @@ export function mountFipsPanel({ haven, owners, photoVaults = new Set(), log, ac
   // A photo by hash from a paired vault. A .fips link names the vault (an owner or a photo address); a bare hash
   // tries each photo address, then each owner, in turn.
   let shown
-  $("blobGet").onclick = async () => {
+  if (photoUi) $("blobGet").onclick = async () => {
     const say = t => ($("blobStatus").textContent = t)
     if (!running) return say("Start FIPS first: the photo comes over its session to your vault.")
     let ref
