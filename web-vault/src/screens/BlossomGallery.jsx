@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { mediaServers } from "../net/upload.js"
+import { BlossomStats } from "./BlossomStats.jsx"
 import { listBlobs, deleteBlob, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -41,12 +42,11 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
 
   if (!found) return <div class="empty"><p><strong>Loading media…</strong></p><p class="muted small">Asking your media servers</p></div>
   const blobs = found.blobs.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
-  const down = Object.entries(found.status).filter(([, s]) => s !== "ok")
   const current = found.blobs.find(b => b.sha256 === open)
   const update = (sha, f) => setFound(x => ({ ...x, blobs: f(x.blobs) }))
   return (
     <div class="blossom">
-      <div class="status-line">{found.blobs.length} file{found.blobs.length === 1 ? "" : "s"} on {servers.length - down.length} of {servers.length} server{servers.length === 1 ? "" : "s"}{down.length ? ` · ${down.map(([s, r]) => `${hostOf(s)}: ${r}`).join(" · ")}` : ""}</div>
+      <BlossomStats blobs={found.blobs} servers={servers} status={found.status} />
       {note && <div class="status-line">{note}</div>}
       {found.blobs.length > 1 && (
         <label class="status-line blossom-sort">Sort by{" "}
