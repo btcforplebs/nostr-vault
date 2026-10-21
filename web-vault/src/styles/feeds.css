@@ -101,3 +101,6 @@
 .screen-head .feed-filter + button { margin-left: 8px; }
 .pull-indicator { display: grid; place-items: center; height: calc(var(--pull) * 44px); overflow: hidden; color: var(--accent); opacity: var(--pull); }
 .pull-indicator svg { transform: rotate(calc(var(--pull) * 270deg)); }
+.condensed-mark.article { color: rgb(230 115 38 / .7); }
+.condensed-mark.highlight { color: rgb(255 214 10 / .7); }
+.condensed-mark.poll { color: rgb(100 210 255 / .7); }

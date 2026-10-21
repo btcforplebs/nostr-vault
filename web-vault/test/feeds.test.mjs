@@ -45,7 +45,7 @@ test("a hashtag is one lowercased word without its #", () => {
 })
 
 test("each feed's relay filter", () => {
-  assert.deepEqual(feedFilter({ mode: "global" }), { kinds: [1, 6], limit: 100 })
+  assert.deepEqual(feedFilter({ mode: "global" }), { kinds: [1, 6, 30023, 1068, 9802], limit: 100 }) // the iPhone's timelineKinds
   assert.deepEqual(feedFilter({ mode: "hashtag", tag: "art" }, { until: 50, limit: 20 }), { kinds: [1], "#t": ["art"], limit: 20, until: 50 })
   assert.equal(feedFilter({ mode: "hashtag", tag: "" }), null)
   assert.equal(feedFilter({ mode: "following" }), null, "Following reads Haven, not this")
