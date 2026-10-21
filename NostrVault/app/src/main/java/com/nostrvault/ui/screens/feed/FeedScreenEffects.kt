@@ -8,6 +8,7 @@ import com.nostrvault.data.model.FeedThread
 import com.nostrvault.ui.navigation.FeedTabPicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.withContext
 
@@ -100,14 +101,19 @@ internal fun FeedAutoApplyEffect(
     // Auto-apply pending notes when at top with auto-load enabled.
     // Uses snapshotFlow so that rapid pendingCount changes don't restart
     // the effect (unlike LaunchedEffect with pendingCount as a key).
+    // iOS FeedView: a trailing debounce that restarts on every arrival,
+    // 1.5s while sitting at the top and 0.5s on coming back to the top.
+    // snapshotFlow keeps one collector; collectLatest restarts the wait.
     LaunchedEffect(Unit) {
-        snapshotFlow { pendingCount() > 0 && autoLoad() && isAtTop() }
-            .collect { shouldApply ->
-                if (shouldApply) {
-                    // Brief debounce to batch rapid arrivals
-                    delay(150)
+        var wasAtTop = isAtTop()
+        snapshotFlow { Triple(pendingCount(), autoLoad(), isAtTop()) }
+            .collectLatest { (count, auto, atTop) ->
+                val returnedToTop = atTop && !wasAtTop
+                wasAtTop = atTop
+                if (count > 0 && auto && atTop) {
+                    delay(autoLoadDelayMillis(returnedToTop))
                     // Re-check — user may have scrolled away during debounce
-                    if (isAtTop()) {
+                    if (isAtTop() && autoLoad()) {
                         // The reveal effect below performs the scroll once the
                         // prepend has actually landed in the list — scrolling
                         // here (even after a fixed delay) races composition and
@@ -118,6 +124,9 @@ internal fun FeedAutoApplyEffect(
             }
     }
 }
+
+/** iOS scheduleAutoLoad delays: 0.5s when the list has just come back to the top, else 1.5s. */
+internal fun autoLoadDelayMillis(returnedToTop: Boolean): Long = if (returnedToTop) 500L else 1_500L
 
 /** Bring prepended posts fully into view when the list is at the top. */
 @Composable
@@ -198,14 +207,16 @@ internal fun FeedTabEffects(
                 if (hashtagsListState.firstVisibleItemIndex == 0 && hashtagsListState.firstVisibleItemScrollOffset == 0) {
                     hashtagsViewModel.reload()
                 } else {
-                    hashtagsListState.scrollToItem(0)
+                    hashtagsListState.animateScrollToItem(0)
                 }
                 return@collect
             }
             if (isAtTop()) {
                 viewModel.refresh()
             } else {
-                listState.scrollToItem(0) // Instant scroll for better performance
+                // Animated, as on iOS; far down, LazyList jumps most of the
+                // way and animates the last stretch.
+                listState.animateScrollToItem(0)
             }
         }
     }

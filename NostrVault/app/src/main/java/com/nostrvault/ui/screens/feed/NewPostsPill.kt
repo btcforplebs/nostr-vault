@@ -1,6 +1,12 @@
 package com.nostrvault.ui.screens.feed
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
@@ -77,12 +83,23 @@ internal fun NewPostsPill(
                 modifier = Modifier.size(size.icon),
             )
             Spacer(Modifier.width(if (compact) 4.dp else PillStyle.innerGap))
-            Text(
-                text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
-                fontWeight = FontWeight.Bold,
-                fontSize = size.font,
-                color = PillStyle.textColor,
-            )
+            // iOS .contentTransition(.numericText) + monospacedDigit: the
+            // count rolls up as posts arrive and the pill keeps its width.
+            AnimatedContent(
+                targetState = count,
+                transitionSpec = {
+                    (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
+                },
+                label = "newPostsCount",
+            ) { shown ->
+                Text(
+                    text = if (compact) (if (shown > 99) "99+" else "$shown") else "$shown New Posts",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = size.font,
+                    fontFeatureSettings = "tnum",
+                    color = PillStyle.textColor,
+                )
+            }
         }
     }
     }

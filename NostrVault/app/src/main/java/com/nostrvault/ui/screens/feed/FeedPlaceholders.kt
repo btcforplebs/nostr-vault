@@ -3,6 +3,8 @@ package com.nostrvault.ui.screens.feed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -285,10 +287,15 @@ internal fun EmptyFeedPlaceholder(
 ) {
     val colors = LocalNostrVaultColors.current
     val gradient = Brush.linearGradient(listOf(colors.primary, colors.primaryLight))
+    // Scrollable at full height so the feed's pull-to-refresh reaches it
+    // (iOS: the empty state sits in the refreshable ScrollView).
+    BoxWithConstraints(Modifier.fillMaxSize()) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .fillMaxWidth()
+            .heightIn(min = maxHeight)
             .padding(horizontal = 24.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -386,4 +393,5 @@ internal fun EmptyFeedPlaceholder(
             }
         }
     }
+    } // BoxWithConstraints
 }
