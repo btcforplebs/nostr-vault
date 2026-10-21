@@ -21,8 +21,9 @@ fipsv2-probe serve --peer <npub-of-phone> --peer <npub-of-ipad> --forward 127.0.
 ```
 
 `--blobs` links to the public seeds (as a leaf) and sends everyone who is not an own device
-to a blob gate: `GET`/`HEAD /<sha256>[.ext]` is fetched from `--forward`, checked against the
-hash, and passed on with its type and length only. Anything else (`/`, `/list/..`, upload,
+to a blob gate: `GET`/`HEAD /<sha256>[.ext]` is fetched from `--forward` and passed on with
+its type and length only. The bytes stream as they come and the last chunk is held until the
+hash matches, so a mismatch ends short (most of it may already be out). Anything else (`/`, `/list/..`, upload,
 WebSocket) gets 404/405 and never reaches the relay. Readers come through the seeds and never
 link directly, so they never see this machine's address. No `Range` yet.
 

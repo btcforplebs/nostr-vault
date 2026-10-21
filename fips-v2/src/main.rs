@@ -193,10 +193,18 @@ fn source(pkt: &[u8]) -> Option<Ipv6Addr> {
 
 /// Own devices' packets to one stack, everyone else's to the other (or
 /// nowhere without `--blobs`), so a stranger's TCP never meets the relay.
-fn demux(from_mesh: Receiver<Vec<u8>>, own: HashSet<Ipv6Addr>, to_own: Sender<Vec<u8>>, to_others: Option<Sender<Vec<u8>>>) {
+/// FIPS's own ICMP (no route to a peer) carries `me` as its source; it goes
+/// to the own stack, so a splice to a gone device resets instead of hanging.
+fn demux(
+    from_mesh: Receiver<Vec<u8>>,
+    me: Ipv6Addr,
+    own: HashSet<Ipv6Addr>,
+    to_own: Sender<Vec<u8>>,
+    to_others: Option<Sender<Vec<u8>>>,
+) {
     for pkt in from_mesh {
         let to = match source(&pkt) {
-            Some(src) if own.contains(&src) => Some(&to_own),
+            Some(src) if src == me || own.contains(&src) => Some(&to_own),
             Some(_) => to_others.as_ref(),
             None => None,
         };
@@ -506,7 +514,7 @@ async fn main() -> Result<()> {
             others = Some(to_others);
         }
         let own: HashSet<Ipv6Addr> = peer_addrs.iter().copied().collect();
-        std::thread::spawn(move || demux(from_mesh, own, to_own, others));
+        std::thread::spawn(move || demux(from_mesh, my_addr, own, to_own, others));
         let forward = args.local;
         std::thread::spawn(move || {
             if let Err(e) = stack::run(my_addr, mtu, to_mesh, own_rx, stack::Mode::Serve { forward }) {
@@ -588,18 +596,19 @@ mod tests {
     fn own_devices_and_strangers_land_in_different_stacks() {
         let own_dev: Ipv6Addr = "fd00::1".parse().unwrap();
         let stranger: Ipv6Addr = "fd00::2".parse().unwrap();
+        let me: Ipv6Addr = "fd00::3".parse().unwrap();
         for blobs in [true, false] {
             let (tx, rx) = std::sync::mpsc::channel();
             let (own_tx, own_rx) = std::sync::mpsc::channel();
             let (oth_tx, oth_rx) = std::sync::mpsc::channel();
-            for p in [v6(own_dev), v6(stranger), vec![0x45; 60], vec![0x60; 10]] {
+            for p in [v6(own_dev), v6(stranger), v6(me), vec![0x45; 60], vec![0x60; 10]] {
                 tx.send(p).unwrap();
             }
             drop(tx);
-            demux(rx, HashSet::from([own_dev]), own_tx, blobs.then_some(oth_tx));
+            demux(rx, me, HashSet::from([own_dev]), own_tx, blobs.then_some(oth_tx));
             let own: Vec<_> = own_rx.try_iter().collect();
             let oth: Vec<_> = oth_rx.try_iter().collect();
-            assert_eq!(own, vec![v6(own_dev)]);
+            assert_eq!(own, vec![v6(own_dev), v6(me)]);
             assert_eq!(oth, if blobs { vec![v6(stranger)] } else { vec![] });
         }
     }
