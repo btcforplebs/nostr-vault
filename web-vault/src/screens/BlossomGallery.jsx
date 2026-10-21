@@ -8,6 +8,7 @@ import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
 import { listBlobs, deleteBlob, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
+import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 
@@ -41,7 +42,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   }
   useEffect(() => { load() }, [ctx.session.pubkey, refreshes])
 
-  if (!found) return <div class="empty"><p><strong>Loading media…</strong></p><p class="muted small">Asking your media servers</p></div>
+  if (!found) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
   const blobs = found.blobs.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
   const current = found.blobs.find(b => b.sha256 === open)
   const update = (sha, f) => setFound(x => ({ ...x, blobs: f(x.blobs) }))

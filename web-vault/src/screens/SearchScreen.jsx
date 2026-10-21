@@ -14,6 +14,9 @@ import { fetchProfiles, putProfile } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { visibleNotes, visiblePeople } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { SkeletonList, Spinner } from "../components/Loading.jsx"
+
+const SEARCHING = "Searching…"
 
 const DEBOUNCE_MS = 300
 const TABS = [
@@ -48,7 +51,7 @@ export function SearchScreen({ ctx, onProfile }) {
     if (q.type === "note") { setFound(null); setStatus(""); openNote(q.id); return }
     if (q.text.length < MIN_QUERY) { setFound(null); setStatus(""); return }
     if (!navigator.onLine) { setStatus("Offline: search needs the network"); return }
-    setStatus("Searching…")
+    setStatus(SEARCHING)
     setRecent(saveRecent(storage(), q.text))
     try {
       const { people, notes } = await searchNostr(q.text)
@@ -114,7 +117,8 @@ export function SearchScreen({ ctx, onProfile }) {
           {TABS.map(t => <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} class={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>{t.label}</button>)}
         </div>
       </>}
-      {status && <div class="status-line">{status}</div>}
+      {status && <div class="status-line">{status === SEARCHING && <Spinner />} {status}</div>}
+      {status === SEARCHING && !found && <SkeletonList count={5} rowClass="person-row" label={SEARCHING} />}
       {shown && !any && !status && <div class="empty">
         <p>No results found</p>
         {caption && filteredOut && <button type="button" class="small" onClick={() => setFilter(NO_FILTER)}>Clear filter</button>}

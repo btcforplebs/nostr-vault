@@ -10,6 +10,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { SECTIONS, searchVault, terms } from "../net/vault-search.js"
+import { Spinner } from "../components/Loading.jsx"
 
 /** Rows per section under "All", and rows in one section: the relay walk keeps every match, and the cap keeps a
  *  common word from building thousands of rows (VaultSearchResults.preview / sectionCap). */
@@ -58,7 +59,7 @@ export function VaultSearch({ ctx, onClose }) {
           {SECTIONS.filter(s => counts[s.id]).map(s => <Chip key={s.id} on={section === s.id} onClick={() => setSection(s.id)}>{s.title} {counts[s.id]}</Chip>)}
         </div>
       )}
-      {busy && <div class="status-line">Searching your Vault…</div>}
+      {busy && <div class="status-line"><Spinner /> Searching your Vault…</div>}
       {!busy && found?.cut && <div class="status-line">Your Vault has more matches than shown, so older items may be missing. Add a word to narrow it.</div>}
       {!found ? (text.trim().length === 1 ? <p class="empty">Type at least two letters.</p>
           : <Message title="Search your Vault" detail="Notes, people, hashtags, links, articles and media stored in this browser's relay." />)
