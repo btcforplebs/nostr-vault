@@ -147,6 +147,8 @@ class FipsMeshManager @Inject constructor(
         engineGen++
         return FipsStartOptions(
             peers = configStore.config.value.fipsPeers,
+            // FIPS Mesh → Advanced → Finder Relays; empty keeps the library's own.
+            relays = configStore.config.value.fipsMesh.finderRelays,
             lan = true,
             maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, engineBase),
         )
@@ -197,6 +199,14 @@ class FipsMeshManager @Inject constructor(
     suspend fun setPeers(npubs: List<String>) = withContext(Dispatchers.IO) {
         val cleaned = npubs.map { it.trim() }.filter { it.startsWith("npub1") }.distinct()
         configStore.updateAsync { it.copy(fipsPeers = cleaned) }
+        if (_status.value.running) restartKeepingAllowance()
+        refresh()
+    }
+
+    /** The finder relays the mesh posts its address to (empty: the library's own). Applied by a restart. */
+    suspend fun setFinderRelays(relays: List<String>) = withContext(Dispatchers.IO) {
+        val cleaned = relays.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(finderRelays = cleaned)) }
         if (_status.value.running) restartKeepingAllowance()
         refresh()
     }

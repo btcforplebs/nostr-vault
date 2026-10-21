@@ -20,7 +20,9 @@ import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
 import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayMatrixScreen
-import com.nostrvault.ui.screens.settings.MeshSettingsScreen
+import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshAdvancedScreen
+import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshDeviceScreen
+import com.nostrvault.ui.screens.settings.fipsmesh.FipsMeshScreen
 import com.nostrvault.ui.screens.settings.SettingsScreen
 
 /** Settings and its pages, lifted from [NostrVaultNavHost]. */
@@ -116,6 +118,7 @@ internal fun NavGraphBuilder.settingsRoutes(
     composable(Screen.BlossomSettings.route) {
         BlossomSettingsScreen(
             onBack = { navController.popBackStack() },
+            onOpenFipsMesh = { navController.navigate(Screen.MeshSettings.route) },
         )
     }
 
@@ -144,7 +147,22 @@ internal fun NavGraphBuilder.settingsRoutes(
     }
 
     composable(Screen.MeshSettings.route) {
-        MeshSettingsScreen(
+        FipsMeshScreen(
+            onBack = { navController.popBackStack() },
+            onOpenDevice = { npub -> navController.navigate(Screen.FipsMeshDevice.createRoute(npub)) },
+            onOpenAdvanced = { navController.navigate(Screen.FipsMeshAdvanced.route) },
+        )
+    }
+
+    composable(Screen.FipsMeshDevice.route) { entry ->
+        FipsMeshDeviceScreen(
+            npub = entry.arguments?.getString("npub").orEmpty(),
+            onBack = { navController.popBackStack() },
+        )
+    }
+
+    composable(Screen.FipsMeshAdvanced.route) {
+        FipsMeshAdvancedScreen(
             onBack = { navController.popBackStack() },
         )
     }

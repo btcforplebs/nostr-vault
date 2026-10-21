@@ -153,6 +153,10 @@ data class HavenConfig(
     // app launches. Reset when sharing is switched off or on.
     val fipsServedBytes: Long = 0,
 
+    // The FIPS Mesh screen's own settings: device names and roles, sharing
+    // choices, finder relays and middle server.
+    val fipsMesh: com.nostrvault.fips.FipsMeshSettings = com.nostrvault.fips.FipsMeshSettings(),
+
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
     /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
