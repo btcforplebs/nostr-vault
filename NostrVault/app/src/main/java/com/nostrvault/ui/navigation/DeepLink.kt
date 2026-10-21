@@ -54,6 +54,14 @@ interface NostrEntityDecoder {
 object DeepLinkRouter {
 
     /**
+     * The counterparty of a gift wrap the inbox has already opened, by the
+     * wrap's event id; null when it hasn't. Set once by MainActivity from
+     * DMService, so a NIP-17 notification can open its conversation.
+     */
+    @Volatile
+    var giftWrapPeer: (String) -> String? = { null }
+
+    /**
      * @return the destination, or null if the link is not one we serve — the
      *   caller should then leave the app wherever it was rather than guess.
      */
@@ -158,6 +166,7 @@ object DeepLinkRouter {
         npub: String?,
         event: String? = null,
         target: String? = null,
+        peerOf: (String) -> String? = giftWrapPeer,
     ): DeepLinkTarget? {
         val account = npub?.takeIf { it.isNotBlank() }
         if (type == null) return null
@@ -166,9 +175,12 @@ object DeepLinkRouter {
             "dm" -> author?.takeIf { isHex64(it) }
                 ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
             // A gift wrap's author is the one-time wrapping key, not the sender
-            // (that is only known after decrypting), so it opens the inbox —
-            // as iOS does. Opening a thread with the wrap key showed a stranger.
-            "giftwrap" -> DeepLinkTarget(Screen.DMInbox.route, account)
+            // (that is only known after decrypting). Opening a thread with the
+            // wrap key showed a stranger. As on iOS: the conversation when the
+            // inbox has opened the wrap, else the inbox.
+            "giftwrap" -> eventId?.takeIf { isHex64(it) }?.let(peerOf)?.takeIf { isHex64(it) }
+                ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
+                ?: DeepLinkTarget(Screen.DMInbox.route, account)
             // A post-related notification opens the post at once, from the
             // copy it carried, as on iOS. Without a copy a mention or reply
             // still opens by id. The Relay tab route is left for what has no

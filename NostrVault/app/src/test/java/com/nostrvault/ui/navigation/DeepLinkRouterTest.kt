@@ -193,8 +193,18 @@ class DeepLinkRouterTest {
 
     @Test fun `a gift wrap notification opens the inbox, not a thread with the wrap key`() {
         // The marker's author is the one-time wrapping key, not the sender.
-        val target = DeepLinkRouter.fromNotification("giftwrap", hexNote, hexAuthor, null)
+        val target = DeepLinkRouter.fromNotification("giftwrap", hexNote, hexAuthor, null, peerOf = { null })
         assertEquals(Screen.DMInbox.route, target?.route)
+    }
+
+    @Test fun `a gift wrap the inbox has opened opens its conversation, as on iOS`() {
+        val peer = "c".repeat(64)
+        val target = DeepLinkRouter.fromNotification(
+            "giftwrap", hexNote, hexAuthor, "npub1abc",
+            peerOf = { if (it == hexNote) peer else null },
+        )
+        assertEquals(Screen.DMThread.createRoute(peer), target?.route)
+        assertEquals("npub1abc", target?.accountNpub)
     }
 
     @Test fun `a new follower notification opens the follower's profile`() {
