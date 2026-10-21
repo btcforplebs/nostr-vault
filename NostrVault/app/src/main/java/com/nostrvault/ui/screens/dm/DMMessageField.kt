@@ -69,7 +69,7 @@ internal fun DMMessageField(
             },
         textStyle = LocalTextStyle.current.merge(TextStyle(color = MaterialTheme.colorScheme.onSurface)),
         cursorBrush = SolidColor(colors.primary),
-        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 4),
+        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
         interactionSource = interactionSource,
         decorator = { innerTextField ->
             OutlinedTextFieldDefaults.DecorationBox(
@@ -79,7 +79,7 @@ internal fun DMMessageField(
                 singleLine = false,
                 visualTransformation = VisualTransformation.None,
                 interactionSource = interactionSource,
-                placeholder = { Text("Message", color = PlaceholderText) },
+                placeholder = { Text("Message...", color = PlaceholderText) },
                 colors = fieldColors,
                 container = {
                     OutlinedTextFieldDefaults.ContainerBox(
