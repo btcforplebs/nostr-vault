@@ -170,3 +170,10 @@
 .reader-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .reader-comment { cursor: pointer; }
 .reader-empty button.link { margin-top: 6px; background: none; border: 0; color: var(--accent-light); font: var(--t-sub); font-weight: 600; cursor: pointer; }
+
+/* Marketplace as on iPhone: seller under the price, Auction beside the price, a seller card, a plain description */
+.market-seller-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.market-badge.inline { position: static; display: inline-block; margin-left: 8px; vertical-align: middle; }
+.market-seller { padding: 10px 12px; border-radius: 12px; background: var(--s1); border: 1px solid var(--hair); }
+.market-chevron { margin-left: auto; color: var(--text-3); font-size: 20px; }
+.market-description { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
