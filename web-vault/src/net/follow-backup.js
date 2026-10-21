@@ -69,26 +69,46 @@ export function diffLists(current, old) {
 // ---- Restore ----
 
 /**
- * Publish `old` as your follow list (its tags and content, signed now). Your relays are asked for the newest list first:
- * it is kept as a snapshot, so a restore can itself be undone, and the restored list is dated after it so no relay keeps
- * the newer one. Refused when your relays can't be heard (the newest list unknown) or the old list follows nobody.
- * -> { event, relays: [{ url, ok, message }] }
+ * Your newest follow list, as Restore will replace it. Refused when your relays can't be heard or none of them has a
+ * list (wipeGuard's first two rules): with no list to keep first, a restore couldn't be undone.
+ * -> the newest kind 3
  */
-export async function restoreList({ ctx, old, store, ask }) {
+export async function restoreBase({ ctx, ask }) {
   const me = ctx.session.pubkey
-  if (!ownList(old, me)) throw new Error("That list isn't one you signed, so it can't be restored.")
-  if (!followsOf(old).length) throw new Error("That list follows nobody, so it wasn't restored.")
   const relays = uniq([...ctx.account.relays.read, ...ctx.account.relays.write])
   const { base, asked, answered, netFound } = await findLatestList({ vault: ctx.vault, pubkey: me, relays, ask })
   if (!netFound && !(asked > 0 && answered * 2 > asked))
     throw new Error("Not enough of your relays answered to know your newest follow list, so nothing was changed. Try again when they're reachable.")
-  if (base && store) await keepSnapshot(store, base, me).catch(() => {})
-  const template = { kind: 3, created_at: Math.max(now(), (base?.created_at ?? 0) + 1), tags: old.tags.map(t => [...t]), content: old.content ?? "" }
+  if (!base) throw new Error("Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer.")
+  return base
+}
+
+/**
+ * Publish `old`'s follows as your follow list, signed now. `shown` is the list the user saw the change against
+ * (restoreBase): if your newest list is another one by now, nothing is published. The newest list is kept as a
+ * snapshot first, so a restore can itself be undone, and nothing is published if it can't be kept. The restored list
+ * keeps the newest one's content (where many apps keep your relays) and is dated after it so no relay keeps the newer one.
+ * -> { event, relays: [{ url, ok, message }] }
+ */
+export async function restoreList({ ctx, old, shown, store, ask }) {
+  const me = ctx.session.pubkey
+  if (!ownList(old, me)) throw new Error("That list isn't one you signed, so it can't be restored.")
+  if (!followsOf(old).length) throw new Error("That list follows nobody, so it wasn't restored.")
+  const base = await restoreBase({ ctx, ask })
+  if (shown && base.id !== shown.id) throw new Error("Your follow list changed since you looked, so nothing was changed. Check the changes again.")
+  try {
+    await keepSnapshot(store, base, me)
+    if (followsOf(base).length && !(await store.all()).some(s => s.id === base.id)) throw new Error("it isn't a list you signed")
+  } catch (e) {
+    throw new Error(`Your current list couldn't be saved in this browser first (${e?.message ?? e}), so nothing was changed.`)
+  }
+  const template = { kind: 3, created_at: Math.max(now(), base.created_at + 1), tags: old.tags.map(t => [...t]), content: base.content ?? "" }
   const event = checkSigned(await ctx.signer.signEvent(template), template, me)
   const { network } = publishRelays(ctx.account.relays.write)
   const results = await Promise.allSettled(pool.publish(network, event))
   const out = results.map((r, i) => ({ url: network[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) }))
   if (!out.some(r => r.ok)) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed.`)
-  await ctx.vault.outbox.event(event).catch(() => {})
+  const stored = await ctx.vault.outbox.event(event)
+  if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the follow list: ${stored.message}`)
   return { event, relays: out }
 }

@@ -5,7 +5,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { pool } from "../src/net/pool.js"
-import { ownList, keepSnapshot, scanRelays, diffLists, restoreList, MAX_SNAPSHOTS, backupDbName } from "../src/net/follow-backup.js"
+import { ownList, keepSnapshot, scanRelays, diffLists, restoreBase, restoreList, MAX_SNAPSHOTS, backupDbName } from "../src/net/follow-backup.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const OTHER = generateSecretKey()
@@ -55,27 +55,27 @@ test("diff: who the old list has that you no longer follow, who you added since"
   assert.deepEqual(diffLists(null, list([1], 10)), { removed: [P(1)], added: [] })
 })
 
-function ctxWith(outbox = []) {
+function ctxWith(outbox = [], keep = { ok: true }) {
   const stored = []
   return {
     stored,
     session: { pubkey: ME },
     account: { relays: { read: ["wss://r.example"], write: ["wss://w.example"] } },
     signer: { signEvent: async t => finalizeEvent(t, SK) },
-    vault: { outbox: { query: async () => outbox, event: async ev => { stored.push(ev); return { ok: true } } } },
+    vault: { outbox: { query: async () => outbox, event: async ev => { stored.push(ev); return keep } } },
   }
 }
 
-test("restore: current list kept first, the old one's tags and content signed after it, sent to your write relays", async t => {
-  const cur = list([1], Math.floor(Date.now() / 1000) + 100) // a clock ahead
+test("restore: current list kept first, the old one's tags signed after it with the current content, sent to your write relays", async t => {
+  const cur = finalizeEvent({ kind: 3, created_at: Math.floor(Date.now() / 1000) + 100, content: '{"wss://new.example":{"read":true,"write":true}}', tags: [["p", P(1)]] }, SK) // a clock ahead
   const old = list([1, 2, 3], 50, SK, [["t", "nostr"]])
   const ctx = ctxWith(), s = memStore()
   let sent
   t.mock.method(pool, "publish", (urls, ev) => { sent = { urls, ev }; return urls.map(() => Promise.resolve("")) })
   const ask = async () => ({ events: [cur], answered: true })
-  const { event } = await restoreList({ ctx, old, store: s, ask })
+  const { event } = await restoreList({ ctx, old, shown: cur, store: s, ask })
   assert.deepEqual(event.tags, old.tags)
-  assert.equal(event.content, old.content)
+  assert.equal(event.content, cur.content, "the relays your other apps use now aren't rolled back")
   assert.equal(event.created_at, cur.created_at + 1)
   assert.ok(sent.urls.includes("wss://w.example"))
   assert.deepEqual([...s.m.keys()], [cur.id], "the list it replaced is kept")
@@ -88,6 +88,46 @@ test("restore refuses: relays unheard, someone else's list, an empty list, or no
   await assert.rejects(restoreList({ ctx, old: list([1], 5), ask: async () => ({ events: [], answered: false }) }), /Not enough of your relays/)
   await assert.rejects(restoreList({ ctx, old: list([1], 5, OTHER), ask: async () => ({ events: [], answered: true }) }), /isn't one you signed/)
   await assert.rejects(restoreList({ ctx, old: list([], 5), ask: async () => ({ events: [], answered: true }) }), /follows nobody/)
-  await assert.rejects(restoreList({ ctx, old: list([1], 5), ask: async () => ({ events: [], answered: true }) }), /No relay took it/)
+  await assert.rejects(restoreList({ ctx, old: list([1], 5), store: memStore(), ask: async () => ({ events: [list([2], 9)], answered: true }) }), /No relay took it/)
   assert.deepEqual(ctx.stored, [])
+})
+
+test("restore refuses when no current list is found: nothing to keep first, so it couldn't be undone", async t => {
+  const ctx = ctxWith(), s = memStore()
+  let sent = false
+  t.mock.method(pool, "publish", urls => { sent = true; return urls.map(() => Promise.resolve("")) })
+  const ask = async () => ({ events: [], answered: true })
+  await assert.rejects(restoreBase({ ctx, ask }), /wasn't found on your relays/)
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), store: s, ask }), /wasn't found on your relays/)
+  assert.equal(sent, false)
+  assert.deepEqual(ctx.stored, [])
+})
+
+test("restore refuses when the current list can't be kept first", async t => {
+  const cur = list([1], 100), ctx = ctxWith()
+  let sent = false
+  t.mock.method(pool, "publish", urls => { sent = true; return urls.map(() => Promise.resolve("")) })
+  const ask = async () => ({ events: [cur], answered: true })
+  const full = { ...memStore(), put: async () => { throw new Error("QuotaExceededError") } }
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: cur, store: full, ask }), /couldn't be saved.*QuotaExceededError.*nothing was changed/)
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: cur, ask }), /couldn't be saved/, "no store, no copy")
+  const silent = { ...memStore(), put: async () => {} } // a write that resolves but keeps nothing
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: cur, store: silent, ask }), /couldn't be saved/)
+  assert.equal(sent, false)
+})
+
+test("restore refuses when the newest list isn't the one the change was shown against", async t => {
+  const seen = list([1], 100), newer = list([1, 9], 200), ctx = ctxWith(), s = memStore()
+  let sent = false
+  t.mock.method(pool, "publish", urls => { sent = true; return urls.map(() => Promise.resolve("")) })
+  const ask = async () => ({ events: [newer], answered: true })
+  assert.equal((await restoreBase({ ctx, ask })).id, newer.id, "the confirm is built from the list restore will replace")
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: seen, store: s, ask }), /changed since you looked/)
+  assert.equal(sent, false)
+})
+
+test("restore reports a vault that refuses the restored list", async t => {
+  const cur = list([1], 100), ctx = ctxWith([], { ok: false, message: "blocked: nope" }), s = memStore()
+  t.mock.method(pool, "publish", urls => urls.map(() => Promise.resolve("")))
+  await assert.rejects(restoreList({ ctx, old: list([1, 2], 5), shown: cur, store: s, ask: async () => ({ events: [cur], answered: true }) }), /Haven refused the follow list: blocked: nope/)
 })

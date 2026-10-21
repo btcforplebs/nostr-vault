@@ -8,7 +8,7 @@ import { READ_ONLY } from "../signer/readonly.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { followsOf, setFollow, findLatestList } from "../net/follows.js"
-import { snapshotStore, keepSnapshot, scanRelays, diffLists, restoreList } from "../net/follow-backup.js"
+import { snapshotStore, keepSnapshot, scanRelays, diffLists, restoreBase, restoreList } from "../net/follow-backup.js"
 
 const day = at => new Date(at * 1000).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
 const follows = n => `${n} follow${n === 1 ? "" : "s"}`
@@ -81,10 +81,12 @@ function ListRow({ list, current, onOpen, onDelete }) {
 /** One list: what changed since, Re-follow per person, and Restore. (iPhone SnapshotDetailView / Kind3EventDetailView) */
 function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
   const readOnly = !!ctx.signer?.readOnly
-  const { removed, added } = diffLists(current, list)
   const [refollowed, setRefollowed] = useState(() => new Set())
   const [busy, setBusy] = useState("")
   const [asking, setAsking] = useState(false)
+  const [shown, setShown] = useState(null) // the newest list, asked for again before Restore: the confirm and diff are against it
+  const now = asking && shown ? shown : current
+  const { removed, added } = diffLists(now, list)
   const [msg, setMsg] = useState("")
   const isNow = current && list.id === current.id
   useEffect(() => { const pks = [...removed, ...added].slice(0, 200); if (pks.length) fetchProfiles(ctx.vault, pks, uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS])).catch(() => {}) }, [list.id])
@@ -96,10 +98,16 @@ function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
       setRefollowed(s => new Set([...s, pk]))
     } catch (e) { setMsg(String(e?.message ?? e)) } finally { setBusy("") }
   }
+  const ask = async () => {
+    setBusy("check"); setMsg("")
+    try { setShown(await restoreBase({ ctx })); setAsking(true) } catch (e) { setMsg(String(e?.message ?? e)) } finally { setBusy("") }
+  }
   const restore = async () => {
     setBusy("restore"); setMsg("")
     try {
-      const { event, relays } = await restoreList({ ctx, old: list, store })
+      const { event, relays } = await restoreList({ ctx, old: list, shown, store })
+      // The rest of the app follows from ctx.account: left on the old list, its next follow would be refused.
+      await ctx.reloadAccount().catch(() => {})
       onRestored(event, `Restored: ${follows(followsOf(event).length)}, sent to ${relays.filter(r => r.ok).length} of ${relays.length} relays.`)
     } catch (e) { setMsg(String(e?.message ?? e)) } finally { setBusy(""); setAsking(false) }
   }
@@ -109,13 +117,13 @@ function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
       <div class="settings-note"><button class="small" onClick={onBack}>‹ Following Backup</button></div>
       <div class="card">
         <h3>{day(list.created_at)}</h3>
-        <p class="muted small">{follows(followsOf(list).length)}{isNow ? ", your follow list now" : ` · you follow ${followsOf(current).length} now`}.</p>
+        <p class="muted small">{follows(followsOf(list).length)}{isNow ? ", your follow list now" : ` · you follow ${followsOf(now).length} now`}.</p>
         {!isNow && !readOnly && (asking
           ? <>
-              <p class="small">This will replace your current {follows(followsOf(current).length)} with {follows(followsOf(list).length)} from this backup and publish it to your relays. Your current list is kept here first.</p>
+              <p class="small">This will replace your current {follows(followsOf(shown).length)} with {follows(followsOf(list).length)} from this backup and publish it to your relays. Your current list is kept here first.</p>
               <div class="row"><button class="danger" disabled={!!busy} onClick={restore}>{busy === "restore" ? "Restoring…" : "Restore this list"}</button><button disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
             </>
-          : <button class="primary" disabled={!!busy} onClick={() => setAsking(true)}>Restore this list…</button>)}
+          : <button class="primary" disabled={!!busy} onClick={ask}>{busy === "check" ? "Checking your relays…" : "Restore this list…"}</button>)}
         {readOnly && <p class="muted small">{READ_ONLY}</p>}
         {msg && <p class="muted small">{msg}</p>}
       </div>
