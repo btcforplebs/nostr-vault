@@ -38,12 +38,15 @@ internal object GlobeFaceFade {
 }
 
 /**
- * Each face's seat fade between frames. Two maps swapped each frame, so a
- * warm frame only boxes the fades themselves.
+ * Each face's seat fade between frames (iOS `seatFade`). Entries are kept and
+ * updated in place, so a warm frame allocates nothing; a face not drawn in a
+ * frame is forgotten, as iOS replaces its map.
  */
 internal class GlobeSeatFades {
-    private var fades = HashMap<String, Double>()
-    private var next = HashMap<String, Double>()
+    private class Fade(var value: Double, var frame: Long)
+
+    private val fades = HashMap<String, Fade>()
+    private var frame = 0L
 
     /** True while some face is still fading in or out: the frame clock stays up. */
     var fading = false
@@ -51,23 +54,28 @@ internal class GlobeSeatFades {
 
     /** Starts a frame's pass. */
     fun begin() {
-        next.clear()
+        frame++
         fading = false
     }
 
     /** Steps [key]'s fade toward [seated] and returns it. A face new to the globe starts where it is heading. */
     fun step(key: String, seated: Boolean, dt: Double, reduceMotion: Boolean): Double {
         val target = if (seated) 1.0 else 0.0
-        val fade = GlobeFaceFade.seat(fades[key] ?: target, seated, dt, reduceMotion)
-        next[key] = fade
-        if (fade != target) fading = true
-        return fade
+        val fade = fades[key]
+        val current = if (fade == null || fade.frame < frame - 1) target else fade.value
+        val next = GlobeFaceFade.seat(current, seated, dt, reduceMotion)
+        if (fade == null) fades[key] = Fade(next, frame) else { fade.value = next; fade.frame = frame }
+        if (next != target) fading = true
+        return next
     }
 
-    /** Ends the pass: faces not stepped this frame are forgotten, as iOS replaces its map. */
+    /** Ends the pass: drops faces that have been off the globe a while, so the map stays small. */
     fun end() {
-        val last = fades
-        fades = next
-        next = last
+        if (fades.size > SWEEP_AT) fades.values.removeAll { it.frame != frame }
+    }
+
+    private companion object {
+        /** Faces drawn at once are a few dozen; past this many entries, sweep the stale ones. */
+        const val SWEEP_AT = 256
     }
 }
