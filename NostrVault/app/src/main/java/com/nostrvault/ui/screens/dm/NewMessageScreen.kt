@@ -1,9 +1,17 @@
 package com.nostrvault.ui.screens.dm
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import com.nostrvault.ui.components.AvatarImage
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -211,6 +219,9 @@ fun NewMessageScreen(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let { viewModel.setAttachedImage(it) } }
 
+    // iOS MessageComposerView: Cancel and the title on top, the recipient
+    // card, the message, then a Send capsule at the bottom right. The photo
+    // button is Android's (iOS has none yet) and sits opposite Send.
     Scaffold(
         topBar = {
             TopAppBar(
@@ -218,28 +229,6 @@ fun NewMessageScreen(
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text("Cancel", color = colors.primary)
-                    }
-                },
-                actions = {
-                    if (isSending) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(end = 16.dp)
-                                .size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = colors.primary,
-                        )
-                    } else {
-                        TextButton(
-                            onClick = { viewModel.send(onMessageSent) },
-                            enabled = canSend,
-                        ) {
-                            Text(
-                                "Send",
-                                color = if (canSend) colors.primary else TertiaryText,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -253,69 +242,100 @@ fun NewMessageScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .imePadding(),
         ) {
             val recipient = selectedRecipient
             if (recipient != null) {
                 RecipientChip(
                     pubkey = recipient,
                     profile = viewModel.profileFor(recipient),
-                    canClear = viewModel.lockedRecipient == null,
                     onClear = { viewModel.clearRecipient() },
                 )
             } else {
-                RecipientSearchField(
+                RecipientSearch(
                     searchText = searchText,
                     onSearchChange = viewModel::setSearchText,
+                    results = searchResults,
+                    profileFor = viewModel::profileFor,
+                    onPick = viewModel::selectRecipient,
                 )
-                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                    items(items = searchResults, key = { it }) { pubkey ->
-                        SearchResultRow(
-                            pubkey = pubkey,
-                            profile = viewModel.profileFor(pubkey),
-                            onClick = { viewModel.selectRecipient(pubkey) },
-                        )
-                    }
-                }
             }
 
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
-            // Attached image preview
-            attachedImage?.let { uri ->
-                Box(modifier = Modifier.padding(start = 16.dp, top = 12.dp)) {
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Attached image",
-                        contentScale = ContentScale.Crop,
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp),
+            ) {
+                Box(Modifier.padding(12.dp)) {
+                    BasicTextField(
+                        value = messageText,
+                        onValueChange = viewModel::setMessageText,
+                        textStyle = TextStyle(color = PrimaryText, fontSize = 15.sp),
+                        cursorBrush = SolidColor(colors.primary),
                         modifier = Modifier
-                            .size(96.dp)
-                            .clip(RoundedCornerShape(12.dp)),
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp)
+                            .padding(horizontal = 5.dp, vertical = 8.dp),
                     )
-                    IconButton(
-                        onClick = { viewModel.clearAttachedImage() },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(24.dp),
-                    ) {
-                        Icon(
-                            imageVector = NostrVaultIcons.Dismiss,
-                            contentDescription = "Remove image",
-                            tint = PrimaryText,
-                            modifier = Modifier.size(18.dp),
+                    if (messageText.isEmpty()) {
+                        Text(
+                            "Write a message...",
+                            color = SecondaryText.copy(alpha = 0.5f),
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 8.dp),
                         )
+                    }
+                }
+
+                attachedImage?.let { uri ->
+                    Box(modifier = Modifier.padding(horizontal = 12.dp)) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Attached image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .clip(RoundedCornerShape(10.dp)),
+                        )
+                        IconButton(
+                            onClick = { viewModel.clearAttachedImage() },
+                            enabled = !isSending,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(24.dp),
+                        ) {
+                            Icon(
+                                imageVector = NostrVaultIcons.Dismiss,
+                                contentDescription = "Remove image",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
                 IconButton(
                     onClick = {
                         imagePicker.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                         )
                     },
-                    modifier = Modifier.padding(start = 8.dp),
+                    enabled = !isSending,
                 ) {
                     Icon(
                         imageVector = NostrVaultIcons.Media,
@@ -323,54 +343,91 @@ fun NewMessageScreen(
                         tint = colors.primary,
                     )
                 }
-                OutlinedTextField(
-                    value = messageText,
-                    onValueChange = viewModel::setMessageText,
-                    placeholder = { Text("Write a message...", color = PlaceholderText) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = SeparatorColor,
-                        cursorColor = colors.primary,
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 120.dp)
-                        .padding(8.dp),
-                )
+                Spacer(Modifier.weight(1f))
+                if (isSending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.primary,
+                    )
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (canSend) colors.primary else colors.primary.copy(alpha = 0.3f))
+                            .clickable(enabled = canSend) { viewModel.send(onMessageSent) }
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                    ) {
+                        Text("Send", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Send,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+/** "To:" over a card holding the search field and, while typing, up to 200dp of matches. */
 @Composable
-private fun RecipientSearchField(
+private fun RecipientSearch(
     searchText: String,
     onSearchChange: (String) -> Unit,
+    results: List<String>,
+    profileFor: (String) -> FeedProfile?,
+    onPick: (String) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        Text("To:", color = SecondaryText, fontSize = 15.sp)
-        Spacer(Modifier.width(10.dp))
-        OutlinedTextField(
-            value = searchText,
-            onValueChange = onSearchChange,
-            placeholder = { Text("Search users...", color = PlaceholderText) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = colors.primary,
-                unfocusedBorderColor = SeparatorColor,
-                cursorColor = colors.primary,
-            ),
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier.weight(1f),
+    Column(modifier = Modifier.padding(vertical = 16.dp)) {
+        Text(
+            "To:",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
+        Spacer(Modifier.height(8.dp))
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(TertiaryGroupedBg),
+        ) {
+            Box(Modifier.padding(12.dp)) {
+                BasicTextField(
+                    value = searchText,
+                    onValueChange = onSearchChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = PrimaryText, fontSize = 15.sp),
+                    cursorBrush = SolidColor(colors.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (searchText.isEmpty()) Text("Search users...", color = PlaceholderText, fontSize = 15.sp)
+            }
+            if (searchText.isNotEmpty() && results.isNotEmpty()) {
+                HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+                LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                    itemsIndexed(items = results, key = { _, it -> it }) { index, pubkey ->
+                        SearchResultRow(pubkey = pubkey, profile = profileFor(pubkey), onClick = { onPick(pubkey) })
+                        if (index < results.lastIndex) {
+                            HorizontalDivider(
+                                color = SeparatorColor,
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(start = 44.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -385,78 +442,63 @@ private fun SearchResultRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        AsyncImage(
-            model = profile?.pictureURL,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape),
-        )
+        AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 32.dp, displayName = profile?.bestName)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = profile?.bestName ?: pubkey.take(8),
                 color = PrimaryText,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = pubkey.take(12) + "…",
-                color = TertiaryText,
-                fontSize = 12.sp,
+                color = SecondaryText,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
             )
         }
     }
 }
 
+/** The picked recipient on a card. Its X clears it, unless it came locked from a profile. */
 @Composable
 private fun RecipientChip(
     pubkey: String,
     profile: FeedProfile?,
-    canClear: Boolean,
     onClear: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(TertiaryGroupedBg)
+            .padding(12.dp),
     ) {
-        Text("To:", color = SecondaryText, fontSize = 15.sp)
-        Spacer(Modifier.width(10.dp))
-        AsyncImage(
-            model = profile?.pictureURL,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape),
-        )
-        Spacer(Modifier.width(8.dp))
+        AvatarImage(url = profile?.pictureURL, pubkey = pubkey, size = 32.dp, displayName = profile?.bestName)
+        Spacer(Modifier.width(12.dp))
         Text(
-            text = profile?.bestName ?: pubkey.take(8) + "…",
+            text = profile?.bestName ?: pubkey.take(8),
             color = PrimaryText,
-            fontSize = 15.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        if (canClear) {
-            IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    imageVector = NostrVaultIcons.Dismiss,
-                    contentDescription = "Clear recipient",
-                    tint = TertiaryText,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+        IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
+            Icon(
+                imageVector = NostrVaultIcons.Dismiss,
+                contentDescription = "Clear recipient",
+                tint = SecondaryText.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

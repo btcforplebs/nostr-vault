@@ -120,8 +120,9 @@ internal fun NavGraphBuilder.tabRoutes(
             onProfileClick = { pubkey ->
                 navController.navigate(Screen.Profile.createRoute(pubkey))
             },
+            // iOS opens the composer with the recipient locked.
             onMessage = { pubkey ->
-                navController.navigate(Screen.DMThread.createRoute(pubkey))
+                navController.navigate(Screen.NewMessage.createRoute(pubkey))
             },
         )
     }
@@ -210,8 +211,9 @@ private fun ProfilePage(navController: NavHostController, pubkey: String, isTab:
         onOpenLightning = {
             navController.navigate(Screen.Wallet.route)
         },
+        // Profile "Message": the composer with the recipient locked, as on iOS.
         onNavigateToDMThread = { pk ->
-            navController.navigate(Screen.DMThread.createRoute(pk))
+            navController.navigate(Screen.NewMessage.createRoute(pk))
         },
         onMessageUser = { pk, draft ->
             navController.navigate(Screen.DMThread.createRoute(pk, draft))

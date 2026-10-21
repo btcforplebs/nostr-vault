@@ -146,11 +146,8 @@ internal fun NavGraphBuilder.detailRoutes(
         ),
     ) {
         NewMessageScreen(
-            onMessageSent = { recipientHex ->
-                navController.navigate(Screen.DMThread.createRoute(recipientHex)) {
-                    popUpTo(Screen.NewMessage.route) { inclusive = true }
-                }
-            },
+            // As on iOS, sending closes the composer back to where it opened.
+            onMessageSent = { navController.popBackStack() },
             onBack = { navController.popBackStack() },
         )
     }
