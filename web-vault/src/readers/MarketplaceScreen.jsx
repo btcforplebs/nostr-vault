@@ -8,7 +8,7 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { Scopes } from "./ArticlesScreen.jsx"
-import { Markdown } from "./Markdown.jsx"
+import { EmptyState } from "./EmptyState.jsx"
 import { MARKET_SCOPES, fetchListings, loadScope, marketCategories, plebeianUrl, priceLabel, saveScope } from "./market.js"
 
 if (import.meta.env) import("./readers.css")
@@ -23,6 +23,7 @@ export function MarketplaceScreen({ ctx }) {
   const [category, setCategory] = useState(null)
   const [status, setStatus] = useState("")
   const [open, setOpen] = useState(null)
+  const [failed, setFailed] = useState(false)
   const { blocked } = useBlocks(ctx)
   const seq = useRef(0)
 
@@ -31,6 +32,7 @@ export function MarketplaceScreen({ ctx }) {
     if (!follows.length) return setStatus("")
     if (navigator.onLine === false) return setStatus("Offline: the Marketplace needs the network")
     setStatus("Loading listings…")
+    setFailed(false)
     try {
       const got = await fetchListings({ scope, me: ctx.session?.pubkey, follows, blocked })
       if (n !== seq.current) return
@@ -39,7 +41,7 @@ export function MarketplaceScreen({ ctx }) {
       setListings(list)
       setStatus("")
       if (list?.length) fetchProfiles(vault, list.map(l => l.pubkey), account.relays.read, { save: false }).catch(() => {})
-    } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
+    } catch { if (n === seq.current) { setStatus(""); setFailed(true); setListings(l => l ?? []) } }
   }
   useEffect(() => { setOpen(null); setCategory(null); setListings(held.get(scope) ?? null); if (!held.has(scope)) load() }, [scope, follows.length])
 
@@ -51,43 +53,52 @@ export function MarketplaceScreen({ ctx }) {
   return (
     <div class="reader-feed">
       <Scopes scopes={MARKET_SCOPES} value={scope} onPick={pick} onRefresh={load} />
-      {cats.length > 1 && (
+      {cats.length > 0 && (
         <div class="reader-chips" role="tablist" aria-label="Category">
           <button type="button" class={!category ? "on" : ""} aria-selected={!category} onClick={() => setCategory(null)}>All</button>
           {cats.map(c => <button key={c} type="button" class={category === c ? "on" : ""} aria-selected={category === c} onClick={() => setCategory(category === c ? null : c)}>{c}</button>)}
         </div>
       )}
-      {status && <div class="status-line">{status}</div>}
+      {status && listings !== null && <div class="status-line">{status}</div>}
       {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see what they sell, or switch to Global."
           : "Global shows sellers your web of trust vouches for. Follow a few people first."}</p>
         : listings === null ? <p class="empty">Loading listings…</p>
-        : !shown.length ? <p class="empty">{listings.length && !unblocked.length ? "Every listing loaded here is from someone you blocked."
-          : scope === "following" ? "Nobody you follow is selling anything right now. Try Global." : "No listings found."}</p>
+        : !shown.length ? (listings.length && !unblocked.length ? <p class="empty">Every listing loaded here is from someone you blocked.</p>
+          : <MarketEmpty scope={scope} failed={failed} onGlobal={() => pick("global")} onRetry={load} />)
         : <div class="market-grid">{shown.map(l => <MarketTile key={l.id} listing={l} onOpen={() => setOpen(l)} />)}</div>}
     </div>
   )
 }
 
-/** A square photo, the title, the price; an auction says so. */
+/** The iPhone's empty Marketplace: nothing from your follows (Show Global listings), no relay answered, or nothing came. */
+export function MarketEmpty({ scope, failed, onGlobal, onRetry }) {
+  if (scope === "following") return <EmptyState title="No listings from your follows" detail="Nobody you follow is selling anything. Switch to Global to see every listing." action={{ label: "Show Global listings", onClick: onGlobal }} />
+  return failed
+    ? <EmptyState title="Could not reach any relay" detail="Listings come from other people's relays, so this one needs a connection." action={{ label: "Try again", onClick: onRetry }} />
+    : <EmptyState title="No listings found" detail="No products, auctions or classifieds with a photo came back." action={{ label: "Try again", onClick: onRetry }} />
+}
+
+/** A square photo, the title, the price and the seller; an auction says so. */
 export function MarketTile({ listing: l, onOpen }) {
   return (
     <article class="market-tile" tabindex="0" onClick={onOpen} onKeyDown={e => { if (e.key === "Enter") onOpen() }} aria-label={`${l.title}, ${priceLabel(l)}${l.isAuction ? ", auction" : ""}`}>
       <div class="market-photo"><img src={l.images[0]} alt="" loading="lazy" referrerpolicy="no-referrer" />{l.isAuction && <span class="market-badge">Auction</span>}</div>
-      <div class="market-text"><h3>{l.title}</h3><span class="market-price">{priceLabel(l)}</span></div>
+      <div class="market-text"><h3>{l.title}</h3><span class="market-price">{priceLabel(l)}</span><span class="muted small market-seller-name"><AuthorName pubkey={l.pubkey} /></span></div>
     </article>
   )
 }
 
-/** The listing: photos with previous/next, title, price, category and location, the description, the seller, and
- *  Buy (Bid) on Plebeian, where checkout happens. */
+/** The listing, in the iPhone's order: photos with previous/next, then title, price (with Auction beside it), category
+ *  and location, then the seller, then the description as plain text, then Buy (Bid) on Plebeian, where checkout
+ *  happens. */
 export function ListingView({ listing: l, onBack }) {
   const [at, setAt] = useState(0)
   useEffect(() => { globalThis.scrollTo?.(0, 0) }, [l.id])
   const details = [l.category !== "Other" && `🏷 ${l.category}`, l.location && `📍 ${l.location}`].filter(Boolean)
   return (
     <article class="reader market-listing">
-      <div class="reader-bar"><button type="button" class="small" onClick={onBack}>‹ Back</button></div>
-      <div class="market-photo big"><img src={l.images[at]} alt="" referrerpolicy="no-referrer" />{l.isAuction && <span class="market-badge">Auction</span>}</div>
+      <div class="reader-bar"><button type="button" class="small" onClick={onBack}>‹ Back</button><strong class="small">{l.isAuction ? "Auction" : "Listing"}</strong><span /></div>
+      <div class="market-photo big"><img src={l.images[at]} alt="" referrerpolicy="no-referrer" /></div>
       {l.images.length > 1 && (
         <div class="market-pager">
           <button type="button" class="small" disabled={at === 0} onClick={() => setAt(at - 1)} aria-label="Previous photo">‹</button>
@@ -96,12 +107,12 @@ export function ListingView({ listing: l, onBack }) {
         </div>
       )}
       <h1 class="reader-title">{l.title}</h1>
-      <div class="market-price big">{priceLabel(l)}</div>
+      <div class="market-price big">{priceLabel(l)}{l.isAuction && <span class="market-badge inline">Auction</span>}</div>
       {details.length > 0 && <div class="muted small market-details">{details.map(d => <span key={d}>{d}</span>)}</div>}
-      {l.summary && <Markdown body={l.summary} />}
       <a class="reader-byline market-seller" href={`#/profile/${l.pubkey}`}>
-        <Avatar pubkey={l.pubkey} size={32} /><span><span class="muted small">Sold by</span><br /><AuthorName pubkey={l.pubkey} /></span>
+        <Avatar pubkey={l.pubkey} size={32} /><span><span class="muted small">Sold by</span><br /><AuthorName pubkey={l.pubkey} /></span><span class="market-chevron" aria-hidden="true">›</span>
       </a>
+      {l.summary && <p class="market-description">{l.summary}</p>}
       <a class="market-buy" href={plebeianUrl(l)} target="_blank" rel="noopener noreferrer">{l.isAuction ? "Bid on Plebeian" : "Buy on Plebeian"}</a>
       <p class="muted small">Checkout happens on Plebeian Market. Nostr Vault doesn't take payments for listings.</p>
     </article>
