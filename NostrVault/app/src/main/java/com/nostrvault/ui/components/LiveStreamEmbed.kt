@@ -1,31 +1,19 @@
 package com.nostrvault.ui.components
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.model.QuoteRef
@@ -111,12 +99,12 @@ fun LiveStreamEmbed(stream: LiveStream, modifier: Modifier = Modifier) {
     val isLive = stream.isPlayableLive && stream.isOnAirAt(System.currentTimeMillis() / 1000)
     val hostName = host?.bestName ?: ("npub…" + stream.hostPubkey.takeLast(6))
 
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = SecondaryGroupedBg,
-        border = BorderStroke(0.5.dp, SeparatorColor),
+    LiveStreamCard(
+        stream = stream,
+        hostName = hostName,
+        isLive = isLive,
+        thumbnailHeight = 170.dp,
         modifier = modifier
-            .fillMaxWidth()
             .alpha(if (isLive) 1f else 0.75f)
             .semantics(mergeDescendants = true) {
                 contentDescription = buildString {
@@ -135,77 +123,6 @@ fun LiveStreamEmbed(stream: LiveStream, modifier: Modifier = Modifier) {
                     Modifier
                 },
             ),
-    ) {
-        Column {
-            Box {
-                LiveStreamThumbnail(
-                    urls = stream.previewImageUrls,
-                    modifier = Modifier.fillMaxWidth().height(170.dp),
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(8.dp),
-                ) {
-                    if (isLive) LivePill() else EndedPill()
-                    val participants = stream.participants
-                    if (isLive && participants != null) {
-                        Spacer(Modifier.width(6.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.55f))
-                                .padding(horizontal = 6.dp, vertical = 3.dp),
-                        ) {
-                            Icon(Icons.Default.People, null, tint = Color.White, modifier = Modifier.size(11.dp))
-                            Spacer(Modifier.width(3.dp))
-                            Text("$participants", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
-            Column(modifier = Modifier.padding(10.dp)) {
-                Text(
-                    text = stream.title ?: "Untitled stream",
-                    color = PrimaryText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(text = hostName, color = SecondaryText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-@Composable
-private fun LivePill() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(horizontal = 7.dp, vertical = 3.dp),
-    ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(Color.Red))
-        Spacer(Modifier.width(4.dp))
-        Text("LIVE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun EndedPill() {
-    Text(
-        text = "ENDED",
-        color = Color.White.copy(alpha = 0.8f),
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.55f))
-            .padding(horizontal = 7.dp, vertical = 3.dp),
     )
 }
 
