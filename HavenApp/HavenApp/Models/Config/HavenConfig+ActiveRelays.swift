@@ -64,12 +64,6 @@ extension HavenConfig {
         activeBlossomMirrors(detectedNpub: nil)
     }
 
-    /// Whether any mirror works for apps without the FIPS mesh. A fipsmesh
-    /// entry must never be a user's only server (NIP-F1).
-    var hasPublicBlossomMirror: Bool {
-        activeBlossomMirrors.contains { $0.hasPrefix("https://") && !$0.contains(".fips") }
-    }
-
     /// Active feed relays, including the Mac relay if configured.
     var activeFeedRelays: [String] {
         var relays = feedRelays

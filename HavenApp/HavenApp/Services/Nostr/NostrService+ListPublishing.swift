@@ -97,7 +97,11 @@ extension NostrService {
         return true
     }
 
-    private static let serverListStampsKey = "serverListStamps.v1"
+    // v2: builds before PR 999 stamped any 10063 a relay sent, signed or not, and
+    // a forged far-future created_at would outrank every real list forever. The
+    // v1 stamps (and the lists cached with them) are dropped once, in
+    // ProfileRepository.loadServerLists, so the next signed list wins again.
+    static let serverListStampsKey = "serverListStamps.v2"
 
     func publishServerList(fipsDetectedNpub: String? = nil) {
         var servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)

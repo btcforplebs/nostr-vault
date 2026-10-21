@@ -181,6 +181,23 @@ final class ServerListMergeTests: XCTestCase {
                                                     ownMeshNpub: me, photoNpub: third))
     }
 
+    func testAHomeAddressOnlyListIsNeverPublished() {
+        // Tod 2026-10-21: no home address is ever published, so a LAN, Tailscale
+        // or plain-http entry does not let a 10063 go out on its own.
+        for home in ["http://192.168.1.5:4443", "https://192.168.1.5:4443/", "https://box.tail1234.ts.net/",
+                     "https://100.101.102.103/", "https://mac.local/", "http://a.example/", "https://x.FIPS./"] {
+            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [], current: [home], previouslyManaged: [], ownMeshNpub: nil),
+                         home)
+            XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [home], current: [], previouslyManaged: [], ownMeshNpub: me,
+                                                        photoNpub: third), home)
+            XCTAssertFalse(HomeVaultLogic.isPublicServer(home), home)
+        }
+        // Next to a real public server it is kept, as another phone's entry.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["http://192.168.1.5:4443"], current: ["https://a.example/"],
+                                                      previouslyManaged: [], ownMeshNpub: nil),
+                       ["https://a.example/", "http://192.168.1.5:4443"])
+    }
+
     func testAFipsHostIsMeshOnlyAndNeverCountsAsAPublicServer() {
         // Tara's NIP-F1 check: http://npub….fips:port resolves only on the mesh; a list of only that must not go out.
         for meshOnly in ["http://\(kiosk).fips:8080/", "https://\(kiosk).fips/", "http://\(kiosk).FIPS./", "https://box.fips", "http://fips/"] {

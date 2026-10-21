@@ -176,15 +176,15 @@ extension HomeVaultLogic {
         }
         if let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }), photo != ownMeshNpub { add("fipsmesh://\(photo)/") }
 
-        guard out.contains(where: isReachableWithoutMesh) else { return nil }
+        // A list naming only home-network servers must not go out either: no
+        // reader outside could open one, and it would publish the home address.
+        guard out.contains(where: isPublicServer) else { return nil }
         return out
     }
 
     /// A server a reader without FIPS can reach: not a `fipsmesh://` entry, and
     /// not an `http(s)://….fips` host either, which only resolves on the mesh
-    /// (Tara's NIP-F1 check). A list with none of these must not go out.
-    /// Looser than isPublicServer (which a note's link must pass): a home
-    /// network server still counts here, as it did.
+    /// (Tara's NIP-F1 check). isPublicServer builds on it.
     static func isReachableWithoutMesh(_ url: String) -> Bool {
         guard meshNpub(fromEntry: url) == nil, !url.lowercased().hasPrefix("fipsmesh:") else { return false }
         guard let host = URLComponents(string: url.trimmingCharacters(in: .whitespaces))?.host?.lowercased(), !host.isEmpty else {
@@ -275,7 +275,7 @@ extension HomeVaultLogic {
     /// Public means reachable by any reader: not a mesh name, not a home
     /// network or Tailscale host, which would also tell readers about it.
     static func isPublicServer(_ server: String) -> Bool {
-        guard server.hasPrefix("https://"), !server.contains(".fips"),
+        guard server.hasPrefix("https://"), !server.contains(".fips"), isReachableWithoutMesh(server),
               let host = URL(string: server)?.host else { return false }
         return !HavenConfig.isPrivateNetworkHost(host)
     }
