@@ -171,3 +171,4 @@ button.person-row:hover { border-color: var(--accent-line); }
 .storage-note .storage-kept.on { color: var(--online); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.note-text code { font: .9em var(--mono); padding: 1px 4px; border-radius: 4px; background: var(--s2); }
