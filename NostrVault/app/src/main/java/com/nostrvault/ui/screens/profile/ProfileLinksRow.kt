@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +30,8 @@ internal fun ProfileLinksRow(
     npub: String?,
     onCopyLightning: () -> Unit,
     onCopyNpub: () -> Unit,
+    /** Until the kind 0 arrives: one grey Lightning chip holds the row's space (iOS linksPlaceholder). */
+    awaiting: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
@@ -40,6 +43,17 @@ internal fun ProfileLinksRow(
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp),
     ) {
+        if (awaiting) {
+            Box(
+                Modifier
+                    .height(26.dp)
+                    .width(150.dp)
+                    .clip(CircleShape)
+                    .background(SecondaryText.copy(alpha = 0.1f))
+                    .clearAndSetSemantics {},
+            )
+            return@FlowRow
+        }
         lightning?.let { address ->
             var copied by remember { mutableStateOf(false) }
             CopiedReset(copied) { copied = false }
@@ -80,7 +94,7 @@ internal fun ProfileLinksRow(
 private fun CopiedReset(copied: Boolean, reset: () -> Unit) {
     LaunchedEffect(copied) {
         if (copied) {
-            kotlinx.coroutines.delay(1_500)
+            kotlinx.coroutines.delay(2_000)
             reset()
         }
     }
@@ -107,7 +121,7 @@ private fun LinkChip(
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(11.dp))
         Text(
-            text,
+            middleEllipsis(text),
             color = PrimaryText.copy(alpha = 0.8f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -115,4 +129,16 @@ private fun LinkChip(
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
+}
+
+/**
+ * iOS cuts link chips in the middle (`truncationMode(.middle)`), keeping a
+ * Lightning address's domain. Compose 1.7 has no middle overflow, so long
+ * text is cut here to about what a chip shows on a phone.
+ */
+internal fun middleEllipsis(text: String, max: Int = 30): String {
+    if (text.length <= max) return text
+    val keep = max - 1
+    val head = (keep + 1) / 2
+    return text.take(head) + "…" + text.takeLast(keep - head)
 }

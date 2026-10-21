@@ -86,6 +86,9 @@ fun ProfileScreen(
     }
 
     val profile by viewModel.profile.collectAsState()
+    // Held here, not in the header item, so scrolling it away does not restart the wait.
+    val metadataWaitOver = rememberMetadataWaitOver(pubkey)
+    val awaitingMetadata = ProfileMetadataWait.awaiting(profile, metadataWaitOver)
     val filteredNotes by viewModel.filteredNotes.collectAsState()
     val selectedSection by viewModel.selectedSection.collectAsState()
     val counts by viewModel.counts.collectAsState()
@@ -139,6 +142,9 @@ fun ProfileScreen(
     var sellLaunched by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
     val colors = LocalNostrVaultColors.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    // iOS lays the grids out from width only on iPad; phones keep their counts.
+    val gridWidthDp = ProfileGrid.layoutWidth(configuration.screenWidthDp.toFloat(), configuration.smallestScreenWidthDp)
     val context = LocalContext.current
     val brainstormLink = remember(pubkey) { NostrWebLinks.forProfile(pubkey) }
     val lane = LocalNotificationManager.current
@@ -236,7 +242,7 @@ fun ProfileScreen(
                         }
                     } else {
                         IconButton(onClick = { onNavigateToDMThread(pubkey) }, modifier = Modifier.size(40.dp)) {
-                            Icon(NostrVaultIcons.Chat, "Message", tint = SecondaryText, modifier = Modifier.size(25.dp))
+                            Icon(NostrVaultIcons.Chat, "Message", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
                     }
                 }
@@ -285,6 +291,7 @@ fun ProfileScreen(
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     followsMe = followsMe,
+                    awaiting = awaitingMetadata,
                 )
             }
 
@@ -314,6 +321,7 @@ fun ProfileScreen(
                         lightningAddress?.let { clipboard.setText(AnnotatedString(it)) }
                     },
                     onCopyNpub = copyNpub,
+                    awaiting = awaitingMetadata,
                 )
             }
 
@@ -339,9 +347,11 @@ fun ProfileScreen(
                     onZap = { viewModel.zap() },
                     onZapLongPress = { zapSheetOpen = true },
                     onTrustWeb = { trustWebAuthor = pubkey },
+                    // iOS copies from ⋯ without a notice; Android 13+ shows its
+                    // own clipboard confirmation, older versions show nothing.
                     onCopyNpub = {
                         copyNpub()
-                        lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
+                        if (android.os.Build.VERSION.SDK_INT < 33) lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
                     },
                     webLink = brainstormLink,
                     onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
@@ -393,18 +403,19 @@ fun ProfileScreen(
                     HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
                 }
             } else if (selectedSection == ProfileSection.DIVINES) {
-                // 9:16 posters, three to a row; a tap plays them in a viewer.
-                items(reels.withIndex().chunked(3), key = { row -> "divine-" + row.first().value.id }) { row ->
+                // 9:16 posters, as many 110+ wide as fit; a tap plays them in a viewer.
+                val cols = ProfileGrid.divineColumns(gridWidthDp)
+                items(reels.withIndex().chunked(cols), key = { row -> "divine-" + row.first().value.id }) { row ->
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
                     ) {
                         row.forEach { (index, reel) ->
                             DiVineTile(reel, onClick = { reelIndex = index }, modifier = Modifier.weight(1f))
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             } else if (selectedSection == ProfileSection.MUSIC) {
@@ -441,7 +452,12 @@ fun ProfileScreen(
                 }
                 if (shopListings.isEmpty()) {
                     item {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(40.dp)) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp),
+                        ) {
+                            Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = SecondaryText.copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
                             Text(
                                 text = when {
                                     shopLoading -> "Loading…"
@@ -449,24 +465,25 @@ fun ProfileScreen(
                                     else -> "Nothing for sale"
                                 },
                                 color = SecondaryText,
-                                fontSize = 15.sp,
+                                fontSize = 12.sp,
                             )
                         }
                     }
                 } else {
-                    items(shopListings.chunked(2), key = { row -> "shop-" + row.first().id }) { row ->
+                    val cols = ProfileGrid.shopColumns(gridWidthDp)
+                    items(shopListings.chunked(cols), key = { row -> "shop-" + row.first().id }) { row ->
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
                         ) {
                             row.forEach { listing ->
                                 Box(Modifier.weight(1f)) {
                                     com.nostrvault.ui.screens.feed.ListingCard(listing, profile, onClick = { openListing = listing })
                                 }
                             }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                            repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
@@ -490,13 +507,15 @@ fun ProfileScreen(
                     )
                 }
             } else if (selectedSection == ProfileSection.MEDIA) {
-                // 3-column media grid as chunked rows (nested-scroll-safe).
-                items(mediaItems.chunked(3)) { row ->
+                // Three across on a phone, more on a tablet (iOS ideal 180),
+                // as chunked rows (nested-scroll-safe).
+                val cols = ProfileGrid.mediaColumns(gridWidthDp)
+                items(mediaItems.chunked(cols)) { row ->
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(ProfileGrid.MEDIA_SPACING_DP.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                            .padding(horizontal = 8.dp, vertical = (ProfileGrid.MEDIA_SPACING_DP / 2).dp),
                     ) {
                         row.forEach { (url, note) ->
                             val idx = mediaItems.indexOfFirst { it.first == url }
@@ -516,7 +535,7 @@ fun ProfileScreen(
                                 )
                             }
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             } else {

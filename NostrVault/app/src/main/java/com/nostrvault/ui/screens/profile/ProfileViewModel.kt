@@ -32,13 +32,13 @@ enum class ProfileSection(val displayName: String) {
     REPLIES("Replies"),
     /** This person's kind-6 reposts, kept out of Notes. */
     REPOSTS("Reposts"),
+    TAGGED("Tagged"),
     /** Long-form posts (kind 30023). Shown only when there are some. */
     ARTICLES("Articles"),
     /** Short videos (kind 34236). Shown only when there are some. */
     DIVINES("diVines"),
     /** Wavlake songs. Shown only when the artist is found. */
     MUSIC("Music"),
-    TAGGED("Tagged"),
     /** Marketplace listings. Shown only when there are some, or on your own profile. */
     SHOP("Shop"),
     ;
@@ -258,6 +258,11 @@ class ProfileViewModel @Inject constructor(
     private val seenTaggedIds = mutableSetOf<String>()
     private val followerPubkeys = mutableSetOf<String>()
     private var stream: NostrService.ProfileStream? = null
+
+    /** A stream is open to page on (see [canPageOlder]). */
+    private val _streamOpen = MutableStateFlow(false)
+    // Declared before init: loadProfile() can reach startStream() before its
+    // first suspension, while the constructor is still running.
 
     init {
         if (_pubkey.value.isNotEmpty()) {
@@ -542,8 +547,6 @@ class ProfileViewModel @Inject constructor(
     /** Automatic pages already spent on each empty tab (see [autoPageEmptyTab]). */
     private val emptyTabPaging = ProfileEmptyTabPaging()
 
-    /** A stream is open to page on (see [canPageOlder]). */
-    private val _streamOpen = MutableStateFlow(false)
 
     /** [canPageOlder] for the note tabs and for Tagged, for the screen to follow. */
     val canPageOlderNotes: StateFlow<Boolean> = combine(_streamOpen, _hasMoreNotes, _profileNotes) { open, more, notes -> open && more && notes.isNotEmpty() }
