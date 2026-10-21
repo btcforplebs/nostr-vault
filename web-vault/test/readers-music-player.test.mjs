@@ -124,9 +124,12 @@ test("artist and album pages get Play and Shuffle; an artist with a key gets On 
   assert.equal(nostrHex("nsec1xyz"), null)
 })
 
-test("the bar: seek slider, shuffle, repeat, stop, artist and album open their pages", () => {
-  const src = readFileSync(new URL("../src/readers/PlayerBar.jsx", import.meta.url), "utf8")
-  for (const k of ['type="range"', "onInput={e => seek(", "toggleShuffle", "cycleRepeat", "onClick={stop}", 'type: "artist"', 'type: "album"', "disabled={!hasNext(s)}"]) assert.ok(src.includes(k), k)
+test("Now Playing: seek slider, shuffle, repeat, artist and album open their pages; the bar stops and opens it", () => {
+  const src = readFileSync(new URL("../src/readers/NowPlaying.jsx", import.meta.url), "utf8")
+  for (const k of ['type="range"', "onInput={e => seek(", "toggleShuffle", "cycleRepeat", 'type: "artist"', 'type: "album"', "disabled={!hasNext(s)}"]) assert.ok(src.includes(k), k)
+  const bar = readFileSync(new URL("../src/readers/PlayerBar.jsx", import.meta.url), "utf8")
+  assert.match(bar, /onClick=\{stop\}/)
+  assert.match(bar, /onClick=\{\(\) => setFull\(true\)\}/)
   const music = readFileSync(new URL("../src/readers/MusicScreen.jsx", import.meta.url), "utf8")
   for (const w of ["Couldn't reach Wavlake. Tap to try again.", "Nothing trending right now.", 'No music found for "{term}".', "Search songs, albums, artists"]) assert.ok(music.includes(w), w)
   assert.match(music, /<PlayerBar onOpen=\{open\} \/>/)

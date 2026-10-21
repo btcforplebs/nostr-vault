@@ -1,10 +1,13 @@
 // The Music player (the iPhone's MusicPlayerService): one audio element for the page, a queue, play/pause, previous
 // and next, and on to the next song when one ends. It lives outside the Music screen, so switching feeds keeps the
 // song playing. Wavlake's mediaUrl is a plain MP3. Every song that starts puts its artist in Your artists. Shuffle,
-// repeat (off / all / one) and stop work as the iPhone's toggleShuffle, cycleRepeat and stop.
+// repeat (off / all / one) and stop work as the iPhone's toggleShuffle, cycleRepeat and stop. A live stream can be
+// minimized into it too (the iPhone's playLive): its sound plays here, through hls.js where the browser needs it.
 import { rememberRecent, trackArtist } from "./wavlake.js"
+import { attachHls, playMode } from "./hls.js"
 const listeners = new Set()
 let audio = null
+let stopHls = null // the hls.js feeding a minimized stream, when the browser can't play HLS itself
 const EMPTY = { queue: [], index: -1, playing: false, time: 0, duration: 0, error: "", shuffled: false, repeat: "off", unshuffled: [] }
 let state = { ...EMPTY }
 export const REPEATS = ["off", "all", "one"]
@@ -24,7 +27,7 @@ export function element(make = () => new Audio()) {
   audio.addEventListener("timeupdate", () => set({ time: audio.currentTime || 0 }))
   audio.addEventListener("durationchange", () => set({ duration: Number.isFinite(audio.duration) ? audio.duration : 0 }))
   audio.addEventListener("ended", ended)
-  audio.addEventListener("error", () => set({ playing: false, error: "This song didn't load." }))
+  audio.addEventListener("error", () => { if (!current()?.live || !stopHls) set({ playing: false, error: current()?.live ? "The stream didn't load." : "This song didn't load." }) })
   return audio
 }
 
@@ -33,9 +36,17 @@ function load(index) {
   if (!t) return
   const a = element()
   set({ index, time: 0, duration: t.duration ?? 0, error: "" })
-  a.src = t.mediaUrl
+  stopHls?.(); stopHls = null
   nowPlaying(t)
-  rememberRecent(trackArtist(t))
+  if (!t.live) rememberRecent(trackArtist(t))
+  if (t.live && playMode(a) === "hlsjs") {
+    // hls.js loads itself and the stream first: playing before that plays nothing, so play once there is something.
+    a.removeAttribute?.("src")
+    a.addEventListener?.("loadedmetadata", () => { if (current() === t) a.play()?.catch?.(() => {}) }, { once: true })
+    stopHls = attachHls(a, t.mediaUrl, () => set({ playing: false, error: "The stream didn't load." }))
+    return
+  }
+  a.src = t.mediaUrl
   const p = a.play()
   if (p?.catch) p.catch(e => { if (e?.name !== "AbortError") set({ playing: false, error: "Press play to start the song." }) })
 }
@@ -59,6 +70,22 @@ export function playList(tracks, at = 0) {
   load(at)
 }
 
+/** A live stream as a player item: no duration, no seeking, no queue. `stream` is live.js parseStream's. */
+export const liveItem = (stream, hostName = "") => ({
+  id: `live:${stream.address}`, live: true, title: stream.title || "Untitled stream", artist: hostName || "Live", art: stream.image ?? null,
+  mediaUrl: stream.streaming, duration: null, stream,
+})
+
+/** Minimize: the stream's sound carries on in the player while you browse (the iPhone's playLive). */
+export function playLive(stream, hostName) {
+  if (!stream?.streaming) return
+  state = { ...state, queue: [liveItem(stream, hostName)], shuffled: false, unshuffled: [] }
+  load(0)
+}
+
+/** The minimized stream at `address`, if that's what is playing. */
+export const liveAt = (address, s = state) => (current(s)?.live && current(s).stream.address === address ? current(s) : null)
+
 /** Fisher–Yates; `random` is for tests. */
 export function shuffled(list, random = Math.random) {
   const out = list.slice()
@@ -77,7 +104,7 @@ export function playShuffled(tracks, random) {
  *  with the current song in its place. */
 export function toggleShuffle(random) {
   const t = current()
-  if (!t) return
+  if (!t || t.live) return
   if (state.shuffled) {
     const back = state.unshuffled.length ? state.unshuffled : state.queue
     set({ queue: back, index: Math.max(0, back.findIndex(x => x.id === t.id)), shuffled: false, unshuffled: [] })
@@ -100,17 +127,19 @@ export function jump(position) {
 export const cycleRepeat = () => set({ repeat: REPEATS[(REPEATS.indexOf(state.repeat) + 1) % REPEATS.length] })
 
 /** Is there a song after this one: later in the queue, or round again under repeat all. */
-export const hasNext = (s = state) => s.index + 1 < s.queue.length || (s.repeat === "all" && s.queue.length > 0)
+export const hasNext = (s = state) => !current(s)?.live && (s.index + 1 < s.queue.length || (s.repeat === "all" && s.queue.length > 0))
 
 /** Stops and clears the queue; the player bar goes away. Repeat stays as chosen, as on the iPhone. */
 export function stop() {
   const a = element()
   a.pause()
+  stopHls?.(); stopHls = null
   a.removeAttribute?.("src")
   set({ ...EMPTY, repeat: state.repeat })
 }
 
 function ended() {
+  if (current()?.live) return stop() // the stream ended
   const a = element()
   if (state.repeat === "one") { a.currentTime = 0; const p = a.play(); if (p?.catch) p.catch(() => {}); return }
   next()
@@ -124,6 +153,7 @@ export function toggle() {
 
 /** Next song; under repeat all the end of the queue goes round to the first, otherwise it stops there. */
 export function next() {
+  if (current()?.live) return
   if (state.index + 1 < state.queue.length) load(state.index + 1)
   else if (hasNext()) load(0)
   else { const a = element(); a.pause(); a.currentTime = 0; set({ playing: false }) }
@@ -131,12 +161,13 @@ export function next() {
 
 /** Past three seconds, back to the start of this song; otherwise the song before. */
 export function previous() {
+  if (current()?.live) return
   const a = element()
   if (a.currentTime > 3 || state.index <= 0) { a.currentTime = 0; return }
   load(state.index - 1)
 }
 
-export function seek(seconds) { const a = element(); if (current()) a.currentTime = Math.max(0, seconds) }
+export function seek(seconds) { const a = element(); if (current() && !current().live) a.currentTime = Math.max(0, seconds) }
 
 /** For tests: forget the element and the queue. */
-export function resetPlayer() { audio = null; state = { ...EMPTY }; for (const f of listeners) f(state) }
+export function resetPlayer() { stopHls?.(); stopHls = null; audio = null; state = { ...EMPTY }; for (const f of listeners) f(state) }
