@@ -5,6 +5,7 @@
 // inbox route when it takes them, so the list still shows after a reload or offline. Nothing here signs.
 import { pool, uniq } from "./pool.js"
 import { groupNotifications, replyTarget, reactionEmoji, zapRequest, zapSats } from "./notifications.js"
+import { imageItem } from "./note-media.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 export const ARTICLE_KIND = 30023
@@ -76,7 +77,8 @@ export function previewOf(ev) {
  * mention, quote, article, highlight or zap with words is a line of its own.
  * `mine` is the user's own notes (for what a like or repost was about); `follows` is [{ pubkey, at }] of people
  * who follow the user; `blocked` is a Set of pubkeys to leave out.
- * -> [{ id, kind, actors: [pubkey], created_at, openId, preview, emojis, sats, images }]
+ * -> [{ id, kind, actors: [pubkey], created_at, openId, preview, emojis, sats, images, imagesBy }]; `imagesBy` is whose
+ * note the images are from (whose mesh vault MediaImage may ask).
  */
 export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set() } = {}) {
   const myText = new Map(mine.map(n => [n.id, previewOf(n)]))
@@ -112,7 +114,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       const comment = (req?.content ?? "").trim()
       if (target && myText.has(target) && !comment) fold("zap", target, sender, ev.created_at, { sats })
       else singles.push({ id: ev.id, kind: "zap", actors: [sender], created_at: ev.created_at, openId: target && myText.has(target) ? target : null,
-        preview: comment || (target && myText.get(target)) || "", emojis: [], sats, images: comment ? [] : (target && myImages.get(target)) || [] })
+        preview: comment || (target && myText.get(target)) || "", emojis: [], sats, images: comment ? [] : (target && myImages.get(target)) || [], imagesBy: me })
       continue
     }
     if (ev.pubkey === me || blocked.has(ev.pubkey)) continue
@@ -130,10 +132,10 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       if (quoted && myText.has(quoted)) kind = "quote"
       else if (ev.tags.some(t => (t[0] === "e" || t[0] === "E") && t[1])) kind = "reply"
     }
-    singles.push({ id: ev.id, kind, actors: [ev.pubkey], created_at: ev.created_at, openId: ev.id, preview: previewOf(ev), emojis: [], sats: 0, images: imagesOf(ev) })
+    singles.push({ id: ev.id, kind, actors: [ev.pubkey], created_at: ev.created_at, openId: ev.id, preview: previewOf(ev), emojis: [], sats: 0, images: imagesOf(ev), imagesBy: ev.pubkey })
   }
   const folded = [...folds].map(([key, f]) => ({ id: key, kind: f.kind, actors: uniq(f.actors), created_at: f.at, openId: f.target,
-    preview: myText.get(f.target) ?? "", emojis: uniq(f.emojis), sats: f.sats, images: myImages.get(f.target) ?? [] }))
+    preview: myText.get(f.target) ?? "", emojis: uniq(f.emojis), sats: f.sats, images: myImages.get(f.target) ?? [], imagesBy: me }))
   const days = new Map()
   for (const f of follows) {
     if (f.pubkey === me || blocked.has(f.pubkey)) continue
@@ -177,7 +179,8 @@ export function highlightSource(ev) {
   return tag(ev, "r") || tag(ev, "a") || tag(ev, "e") || ""
 }
 
-/** Media: every picture in your notes, newest first, with the note it came from. -> [{ url, noteId, created_at }] */
+/** Media: every picture in your notes, newest first, with the note it came from.
+ *  -> [{ url, noteId, created_at, item }] (`item`: for MediaImage, imageItem) */
 export function mediaFor(own) {
   const seen = new Set()
   const out = []
@@ -186,7 +189,7 @@ export function mediaFor(own) {
     for (const url of imagesOf(ev)) {
       if (seen.has(url)) continue
       seen.add(url)
-      out.push({ url, noteId: ev.id, created_at: ev.created_at })
+      out.push({ url, noteId: ev.id, created_at: ev.created_at, item: imageItem(url, ev.tags) })
     }
   }
   return out

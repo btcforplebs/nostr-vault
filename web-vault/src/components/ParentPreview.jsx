@@ -10,6 +10,8 @@ import { useQuote } from "./QuotedNote.jsx"
 import { ago } from "./time.js"
 import { plainText } from "./CondensedNote.jsx"
 import { mediaType, mediaUrls } from "../net/media.js"
+import { imageItem } from "../net/note-media.js"
+import { MediaImage } from "./MediaImage.jsx"
 import { fetchQuote, forgetQuote, quoteSource } from "../net/quotes.js"
 
 export const PARENT_TIMEOUT_MS = 12_000
@@ -32,7 +34,7 @@ export function ParentPreview({ id, relay, memoryOnly = false }) {
     setTries(tries + 1)
   }
   if (ev?.kind === 1) {
-    const media = mediaUrls(ev).filter(u => mediaType(u) === "image")
+    const media = mediaUrls(ev).filter(u => mediaType(u) !== "video") // a .fips photo link has no extension
     const text = plainText(ev.content)
     const open = e => { if (e.target.closest("a, button")) return; e.stopPropagation(); location.hash = `#/thread/${ev.id}` }
     return (
@@ -45,7 +47,7 @@ export function ParentPreview({ id, relay, memoryOnly = false }) {
             <time datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
           </div>
           {text && <p class="parent-text">{text}</p>}
-          {media[0] && <img class="parent-media" src={media[0]} alt="" loading="lazy" referrerpolicy="no-referrer" onError={e => e.currentTarget.remove()} />}
+          {media[0] && <MediaImage item={imageItem(media[0], ev.tags)} author={ev.pubkey} class="parent-media" loading="lazy" onError={e => e.currentTarget.remove()} />}
         </div>
       </div>
     )
