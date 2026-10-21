@@ -1,0 +1,13 @@
+/* Search's For you (SearchRecommendationsSection): label with its source, then side-scrolling rails. */
+.for-you-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.for-you-src { font: 400 10px/1.2 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-3); }
+.for-you-sub { padding: 4px var(--gutter) 8px; font: var(--t-foot); color: var(--text-2); }
+.for-you-rail { display: flex; gap: 10px; overflow-x: auto; padding: 2px var(--gutter) 14px; scrollbar-width: none; }
+.for-you-rail::-webkit-scrollbar { display: none; }
+.for-you-rail .chip.topic { flex: none; min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; text-decoration: none;
+  background: var(--accent-pale); color: var(--accent); border-color: transparent; font: var(--t-foot); font-weight: 600; }
+.for-you-card { flex: none; width: 108px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; min-height: 0;
+  border-radius: 12px; border: 1px solid transparent; background: var(--s2); color: var(--text); }
+.for-you-card b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
+.for-you-card span { font: 400 10px/1.2 var(--font); color: var(--text-2); white-space: nowrap; }
+.for-you-card:hover { border-color: var(--accent-line); }
