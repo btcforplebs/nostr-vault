@@ -26,7 +26,7 @@ const { OlderButton } = await import("../src/components/FeedExtras.jsx")
 
 const A = "a".repeat(64)
 const refs = `nostr:${npubEncode(A)} nostr:${noteEncode("b".repeat(64))}`
-const elements = node => [node.props.children].flat().filter(c => c && typeof c === "object")
+const elements = node => [node.props.children].flat(Infinity).filter(c => c && typeof c === "object")
 const body = card => elements(card.props.children).find(e => e.type.name === "NoteBody") // inside NoteCard's Undeleted gate
 
 test("a stranger's text passes memoryOnly to its @names and quotes", () => {

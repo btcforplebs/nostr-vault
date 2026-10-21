@@ -42,7 +42,7 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   if (ev === null) return <div class="quote quote-missing"><span class="quote-ref">{short}</span> Note not found</div>
 
   const open = e => {
-    if (e.target.closest("a, button, video, audio")) return
+    if (e.target.closest("a, button, video, audio, .media-box")) return
     e.stopPropagation() // the card around this one opens its own thread on a tap
     location.hash = quoteHash(ev)
   }
@@ -55,7 +55,7 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
         <time class="note-time" datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
       </div>
       {title && <strong class="quote-title">{title}</strong>}
-      <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} depth={depth + 1} memoryOnly={memoryOnly} />
+      <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} tags={title ? undefined : ev.tags} depth={depth + 1} memoryOnly={memoryOnly} />
     </div>
   )
 }

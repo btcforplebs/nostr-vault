@@ -8,37 +8,58 @@ import { fetchProfiles } from "../net/profiles.js"
 import { onQuotes, parseRef, quoteSource } from "../net/quotes.js"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { splitHashtags } from "../net/hashtags.js"
+import { mediaType } from "../net/media.js"
+import { noteMedia } from "../net/note-media.js"
+import { NoteMedia } from "./NoteMedia.jsx"
 
 const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+)/gi
-const IMAGE = /\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i
-const VIDEO = /\.(mp4|webm|mov)(\?\S*)?$/i
 const MAX_QUOTE_DEPTH = 1
 
 /** `dm`: the text is a private message, so nothing in it reaches the network on its own: video links stay links
  *  (no preload), nostr:npub / nprofile stay short text (no profile fetch), and an image waits for a tap unless
  *  `images` says the sender is trusted (a follow, or you). Otherwise any stranger's DM would be a tracking pixel:
  *  opening it would tell their server your IP and when you read it.
- *  `memoryOnly`: a stranger's note (Global, Hashtag): quotes and @names it loads aren't written to Haven /feed. */
-export function NoteText({ content, depth = 0, dm = false, memoryOnly = false, images = !dm }) {
-  const parts = String(content).split(TOKEN)
+ *  `memoryOnly`: a stranger's note (Global, Hashtag): quotes and @names it loads aren't written to Haven /feed.
+ *  `tags`: the note's tags, for its NIP-92 imeta media. Outside a DM, with images on, the note's media (text links
+ *  and imeta, noteMedia) go under the text as one picture or a carousel (NoteMedia) and their links leave the text,
+ *  as iOS FeedNoteRow does. */
+export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = false, images = !dm }) {
+  let parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
     const url = trimUrl(parts[i])
     parts[i + 1] = parts[i].slice(url.length) + parts[i + 1]
     parts[i] = url
   }
+  const media = !dm && images ? noteMedia(parts.filter((_, i) => i % 2), tags) : []
+  if (media.length) parts = withoutLinks(parts, new Set(media.map(m => m.url)))
   return (
     <div class="note-text">
       {parts.map((s, i) => {
         if (i % 2 === 0) return withHashtags(s, i)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
-        if (IMAGE.test(s)) return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
-        if (VIDEO.test(s) && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
+        const type = mediaType(s)
+        if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
+        if (type === "video" && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
+      {media.length > 0 && <NoteMedia items={media} />}
     </div>
   )
+}
+
+/** [text, link, text, …] with the `drop` links taken out (their text either side joined) and the whitespace left at
+ *  either end trimmed, as NostrContentFormatter strips media URLs and trims. */
+export function withoutLinks(parts, drop) {
+  const out = [parts[0]]
+  for (let i = 1; i < parts.length; i += 2) {
+    if (drop.has(parts[i])) out[out.length - 1] += parts[i + 1]
+    else out.push(parts[i], parts[i + 1])
+  }
+  out[0] = out[0].trimStart()
+  out[out.length - 1] = out.at(-1).trimEnd()
+  return out
 }
 
 /** Plain text with each #tag a link to that tag's feed (FeedNoteRow's hashtag links), spelled as the author wrote it. */
