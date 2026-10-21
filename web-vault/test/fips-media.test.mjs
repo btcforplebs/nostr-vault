@@ -2,13 +2,19 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode } from "nostr-tools/nip19"
+import { finalizeEvent, generateSecretKey, getPublicKey, verifiedSymbol } from "nostr-tools/pure"
 import { fipsRef, meshVaults } from "../src/net/fips-ref.js"
-import { createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, CLOSE_MS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
+import { LIST_RETRY_MS, createFipsMedia, meshPhotosOn, setMeshPhotosOn, setMeshPeople, meshAllowed, onMeshGate, MAX_READS, MAX_VAULTS, CLOSE_MS, READ_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from "../src/net/fips-media.js"
 import { noteMedia } from "../src/net/note-media.js"
 
 const A = "a1".repeat(32), B = "b2".repeat(32), SHA = "487dc1578912f424773b0befc4eff491f026f0f24652f1d4ff66a85639455217"
 const link = (k, ext = "") => `http://${npubEncode(k)}.fips/${SHA}${ext}`
 const tick = () => new Promise(r => setTimeout(r, 0))
+// P posts the notes; a .fips link reads only from a vault P's signed 10063 lists.
+const P_SK = generateSecretKey(), P = getPublicKey(P_SK)
+const signedList = (vaults, created_at = 1, sk = P_SK) =>
+  finalizeEvent({ kind: 10063, created_at, content: "", tags: vaults.map(v => ["server", `fipsmesh://${npubEncode(v)}/`]) }, sk)
+const listing = (...vaults) => async () => [signedList(vaults)]
 
 test("fipsRef: a NIP-F1 link names its vault and hash; anything else is not one", () => {
   assert.deepEqual(fipsRef(link(A)), { vault: A, sha256: SHA })
@@ -21,7 +27,8 @@ test("fipsRef: a NIP-F1 link names its vault and hash; anything else is not one"
 
 test("meshVaults: the fipsmesh:// entries of a 10063, in order, once each; https servers are not vaults", () => {
   const ev = { tags: [["server", "https://blossom.example"], ["server", `fipsmesh://${npubEncode(B)}/`], ["server", `fipsmesh://${npubEncode(A)}`], ["server", `fipsmesh://${npubEncode(B)}/`], ["server", "fipsmesh://nope/"]] }
-  assert.deepEqual(meshVaults(ev), [B, A])
+  assert.deepEqual(meshVaults(ev), [B], "fipsmesh://<npub> without the trailing slash is not well formed (NIP-F1)")
+  assert.deepEqual(meshVaults({ tags: [["server", `fipsmesh://${npubEncode(A)}/x`], ["server", `fipsmesh://${npubEncode(A)}:80/`], ["server", `fipsmesh://${npubEncode(A)}/?q`]] }), [])
   assert.deepEqual(meshVaults(undefined), [])
 })
 
@@ -53,13 +60,57 @@ function fakeReader({ have = new Map(), fail = new Set() } = {}) {
 
 test("one reader for the page, started on first need; one read per hash", async () => {
   const { startReader, log } = fakeReader({ have: new Map([[A, new Set([SHA])]]) })
-  const fm = createFipsMedia({ allow: () => true, startReader, query: async () => assert.fail("a .fips link needs no 10063") })
+  const fm = createFipsMedia({ allow: () => true, startReader, query: listing(A) })
   assert.equal(log.starts, 0, "nothing starts until a photo needs it")
-  const [u1, u2] = await Promise.all([fm.fallback({ url: link(A) }), fm.fallback({ url: link(A, ".jpg") })])
+  const [u1, u2] = await Promise.all([fm.fallback({ url: link(A) }, P), fm.fallback({ url: link(A, ".jpg") }, P)])
   assert.match(u1, /^blob:/)
   assert.equal(u1, u2, "the same hash is read once")
   assert.equal(log.starts, 1)
   assert.deepEqual(log.gets, [A])
+})
+
+test("a .fips link dials its host only if the author's signed 10063 lists it", async () => {
+  const { startReader, log } = fakeReader({ have: new Map([[A, new Set([SHA])], [B, new Set([SHA])]]) })
+  const fm = createFipsMedia({ allow: () => true, startReader, query: listing(B) })
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/, "anyone can write any npub into a link")
+  await assert.rejects(fm.fallback({ url: link(A) }), /no mesh vault/, "no author, no list")
+  assert.equal(log.starts, 0, "an unlisted vault is never dialled")
+  assert.match(await fm.fallback({ url: link(B) }, P), /^blob:/, "the listed one is")
+  assert.deepEqual(log.gets, [B])
+})
+
+test("a 10063 that fails its signature lists no vaults", async () => {
+  const good = signedList([A])
+  const lists = {
+    tampered: { ...good, tags: [["server", `fipsmesh://${npubEncode(B)}/`]] },
+    unsigned: { ...good, sig: undefined },
+    flagged: { ...good, tags: [["server", `fipsmesh://${npubEncode(B)}/`]], [verifiedSymbol]: true },
+  }
+  for (const [name, ev] of Object.entries(lists)) {
+    const fm = createFipsMedia({ allow: () => true, startReader: fakeReader().startReader, query: async () => [ev] })
+    assert.deepEqual(await fm.authorVaults(P), [], name)
+  }
+  const fm = createFipsMedia({ allow: () => true, query: async () => [good] })
+  assert.deepEqual(await fm.authorVaults(P), [A], "the signed list counts")
+})
+
+test("an author whose 10063 was missing or failed is asked again after LIST_RETRY_MS; a list with vaults is kept", async () => {
+  let now = 0, answer = async () => { throw new Error("no relay yet") }, queries = 0
+  const fm = createFipsMedia({ allow: () => true, clock: () => now, startReader: fakeReader({ have: new Map([[A, new Set([SHA])]]) }).startReader,
+    query: async (...a) => (queries++, answer(...a)) })
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/)
+  answer = async () => []
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/)
+  assert.equal(queries, 1, "not again inside the retry window")
+  now += LIST_RETRY_MS
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no mesh vault/)
+  assert.equal(queries, 2, "an empty list is asked again too")
+  answer = listing(A)
+  now += LIST_RETRY_MS
+  assert.match(await fm.fallback({ url: link(A) }, P), /^blob:/, "the list that arrived late counts")
+  now += 10 * LIST_RETRY_MS
+  await fm.authorVaults(P)
+  assert.equal(queries, 3, "a list with vaults is not asked again")
 })
 
 test("an https photo with a hash falls back to the author's mesh vaults from their 10063, in order", async () => {
@@ -67,18 +118,18 @@ test("an https photo with a hash falls back to the author's mesh vaults from the
   let queries = 0
   const query = async (_r, f) => {
     queries++
-    assert.deepEqual(f, { kinds: [10063], authors: [A] })
+    assert.deepEqual(f, { kinds: [10063], authors: [P] })
     return [
-      { kind: 10063, pubkey: A, created_at: 1, tags: [["server", `fipsmesh://${npubEncode(B)}/`]] },
-      { kind: 10063, pubkey: A, created_at: 2, tags: [["server", "https://x"], ["server", `fipsmesh://${npubEncode(A)}/`], ["server", `fipsmesh://${npubEncode(B)}/`]] },
-      { kind: 10063, pubkey: B, created_at: 9, tags: [["server", "fipsmesh://whatever/"]] },
+      signedList([B], 1),
+      finalizeEvent({ kind: 10063, created_at: 2, content: "", tags: [["server", "https://x"], ["server", `fipsmesh://${npubEncode(A)}/`], ["server", `fipsmesh://${npubEncode(B)}/`]] }, P_SK),
+      signedList(["c3".repeat(32)], 9, generateSecretKey()),
     ]
   }
   const fm = createFipsMedia({ allow: () => true, startReader, query })
-  const u = await fm.fallback({ url: `https://blossom.example/${SHA}.jpg`, x: SHA }, A)
+  const u = await fm.fallback({ url: `https://blossom.example/${SHA}.jpg`, x: SHA }, P)
   assert.match(u, /^blob:/)
   assert.deepEqual(log.gets, [A, B], "the newest list, tried in its order")
-  await fm.authorVaults(A)
+  await fm.authorVaults(P)
   assert.equal(queries, 1, "one 10063 query per author")
 })
 
@@ -94,10 +145,10 @@ test("no mesh source: no reader, and the photo shows its fallback", async () => 
 test("a failed read is forgotten, so a later scroll tries again; reads are capped", async () => {
   const fail = new Set([A])
   const { startReader, log } = fakeReader({ have: new Map([[A, new Set([SHA])]]), fail })
-  const fm = createFipsMedia({ allow: () => true, startReader })
-  await assert.rejects(fm.fallback({ url: link(A) }))
+  const fm = createFipsMedia({ allow: () => true, startReader, query: listing(A) })
+  await assert.rejects(fm.fallback({ url: link(A) }, P))
   fail.clear()
-  assert.match(await fm.fallback({ url: link(A) }), /^blob:/)
+  assert.match(await fm.fallback({ url: link(A) }, P), /^blob:/)
   const many = Array.from({ length: 6 }, (_, i) => fm.photo([A], i.toString(16).padStart(64, "0")).catch(() => {}))
   await Promise.all(many)
   assert.ok(log.maxOpen <= MAX_READS, `at most ${MAX_READS} reads at once (saw ${log.maxOpen})`)
@@ -105,20 +156,20 @@ test("a failed read is forgotten, so a later scroll tries again; reads are cappe
 
 test("a reader that fails to start is retried on the next photo", async () => {
   let n = 0
-  const fm = createFipsMedia({ allow: () => true, startReader: async () => { if (n++ === 0) throw new Error("no seed"); return { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) } } })
-  await assert.rejects(fm.fallback({ url: link(A) }), /no seed/)
-  assert.match(await fm.fallback({ url: link(A) }), /^blob:/)
+  const fm = createFipsMedia({ allow: () => true, query: listing(A), startReader: async () => { if (n++ === 0) throw new Error("no seed"); return { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) } } })
+  await assert.rejects(fm.fallback({ url: link(A) }, P), /no seed/)
+  assert.match(await fm.fallback({ url: link(A) }, P), /^blob:/)
 })
 
 test("two notes, one hash: a read from a dead vault doesn't sink the note whose vault has it", async () => {
   const { startReader, log } = fakeReader({ have: new Map([[B, new Set([SHA])]]) })
-  const fm = createFipsMedia({ allow: () => true, startReader })
-  const dead = fm.fallback({ url: link(A) })
-  const live = fm.fallback({ url: link(B) })
+  const fm = createFipsMedia({ allow: () => true, startReader, query: listing(A, B) })
+  const dead = fm.fallback({ url: link(A) }, P)
+  const live = fm.fallback({ url: link(B) }, P)
   await assert.rejects(dead)
   assert.match(await live, /^blob:/)
   assert.deepEqual(log.gets, [A, B])
-  assert.equal(await fm.fallback({ url: link(A) }), await live, "the bytes are the hash's: a later note gets them from cache")
+  assert.equal(await fm.fallback({ url: link(A) }, P), await live, "the bytes are the hash's: a later note gets them from cache")
 })
 
 // Review fixes (PR 989): no note's vault list can hold the line, a vault may answer only while asked, a photo on
@@ -129,9 +180,9 @@ test("hostile vault lists can't starve an honest photo: few vaults per photo, on
   const dead = Array.from({ length: 30 }, (_, i) => key(i + 1))
   const dead2 = Array.from({ length: 30 }, (_, i) => key(i + 100))
   const { startReader, log } = fakeReader({ have: new Map([[B, new Set([SHA])]]) })
-  const fm = createFipsMedia({ allow: () => true, startReader })
+  const fm = createFipsMedia({ allow: () => true, startReader, query: listing(B) })
   const h1 = fm.photo(dead, key(900)).catch(() => {}), h2 = fm.photo(dead2, key(901)).catch(() => {})
-  const honest = fm.fallback({ url: link(B) })
+  const honest = fm.fallback({ url: link(B) }, P)
   assert.match(await honest, /^blob:/)
   const before = log.gets.indexOf(B)
   assert.ok(before <= 2, `the honest vault was asked after ${before} dead reads`)
@@ -213,7 +264,8 @@ test("the Settings switch: FIPS photos are on until the person turns them off", 
 })
 
 test("only notes from you or people you follow use the mesh, and none with the switch off", async () => {
-  const me = key(500), friend = key(501), stranger = key(502)
+  const friendSk = generateSecretKey()
+  const me = key(500), friend = getPublicKey(friendSk), stranger = key(502)
   setMeshPeople(me, [friend])
   assert.equal(meshAllowed(me, true), true, "your own")
   assert.equal(meshAllowed(friend, true), true, "a follow")
@@ -224,7 +276,7 @@ test("only notes from you or people you follow use the mesh, and none with the s
   assert.equal(meshAllowed(stranger, true), true, "a new follow counts at once")
 
   let started = 0, queried = 0
-  const fm = createFipsMedia({ allow: a => a === friend, query: async () => (queried++, []), startReader: async () => (started++, { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) }) })
+  const fm = createFipsMedia({ allow: a => a === friend, query: async () => (queried++, [signedList([A], 1, friendSk)]), startReader: async () => (started++, { getBlob: async () => ({ bytes: new Uint8Array(1), type: "image/png" }) }) })
   await assert.rejects(fm.fallback({ url: link(A) }, stranger), /not from someone you follow/)
   await assert.rejects(fm.fallback({ url: `https://x/${SHA}.jpg`, x: SHA }, stranger), /not from someone you follow/)
   assert.equal(started + queried, 0, "a stranger's note starts no reader and reads no 10063")

@@ -9,7 +9,7 @@ import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
-import { replyRefs, replyToPubkey, repostedId } from "../net/thread.js"
+import { replyRefs, replyToPubkey, repostInner, repostedId } from "../net/thread.js"
 import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
@@ -50,8 +50,9 @@ export function Undeleted({ ids, children }) {
 function card(event, memoryOnly, showParent) {
   if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly)
   if (event.kind === 6) {
-    let inner
-    try { inner = JSON.parse(event.content) } catch {}
+    // The embedded note is only as good as whoever reposted it: unsigned or tampered, it is fetched by id instead,
+    // so its pubkey never stands in as the author (whose mesh vault a photo would dial).
+    const inner = repostInner(event)
     const target = actionTarget(event)
     if (target) rememberNote(target)
     const open = inner?.id ?? repostedId(event)

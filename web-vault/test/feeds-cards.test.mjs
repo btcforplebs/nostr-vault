@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
 import { npubEncode, noteEncode } from "nostr-tools/nip19"
+import { finalizeEvent, generateSecretKey } from "nostr-tools/pure"
 
 registerHooks({
   load(url, context, next) {
@@ -39,11 +40,24 @@ test("a stranger's text passes memoryOnly to its @names and quotes", () => {
 })
 
 test("a stranger's card and a stranger's repost pass memoryOnly down to the note text", () => {
-  const note = { id: "1", kind: 1, pubkey: A, created_at: 1, content: refs }
+  const note = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: refs }, generateSecretKey())
   assert.equal(body(NoteCard({ event: note, memoryOnly: true })).props.memoryOnly, true)
   assert.equal(body(NoteCard({ event: note })).props.memoryOnly, false)
-  const repost = { id: "2", kind: 6, pubkey: A, created_at: 2, content: JSON.stringify(note), tags: [["e", "1"], ["p", A]] }
+  const repost = { id: "2", kind: 6, pubkey: A, created_at: 2, content: JSON.stringify(note), tags: [["e", note.id], ["p", note.pubkey]] }
   assert.equal(body(NoteCard({ event: repost, memoryOnly: true })).props.memoryOnly, true)
+})
+
+test("a kind 6 whose embedded note fails its signature is fetched by id, never drawn as that pubkey's note", () => {
+  const note = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "real" }, generateSecretKey())
+  const drawn = inner => {
+    const repost = { id: "2", kind: 6, pubkey: A, created_at: 2, content: JSON.stringify(inner), tags: [["e", note.id], ["p", note.pubkey]] }
+    return body(NoteCard({ event: repost }))?.props.event
+  }
+  assert.deepEqual(drawn(note), note, "a signed note is drawn as itself")
+  // A forged copy names someone you follow, so its .fips photo would dial a vault they never listed.
+  assert.equal(drawn({ ...note, content: `http://${npubEncode(A)}.fips/${"c".repeat(64)}` }), undefined, "tampered content")
+  assert.equal(drawn({ ...note, sig: undefined }), undefined, "no signature")
+  assert.equal(drawn({ ...note, pubkey: A }), undefined, "someone else's pubkey")
 })
 
 test("Global and Hashtag cards are memoryOnly; Following cards aren't", () => {

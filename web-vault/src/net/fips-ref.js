@@ -4,7 +4,7 @@ import { decode } from "nostr-tools/nip19"
 
 const NPUB = "npub1[02-9ac-hj-np-z]+"
 const LINK = new RegExp(`^http://(${NPUB})\\.fips/([0-9a-f]{64})(\\.[a-z0-9]{1,8})?$`)
-const MESH_SERVER = new RegExp(`^fipsmesh://(${NPUB})/?$`)
+const MESH_SERVER = new RegExp(`^fipsmesh://(${NPUB})/$`) // NIP-F1: the trailing slash is required
 
 const hexOf = npub => { try { const d = decode(npub); return d.type === "npub" ? d.data : undefined } catch { return undefined } }
 
