@@ -6,7 +6,8 @@ import { decode } from "nostr-tools/nip19"
 import { AvatarMenu } from "./AuthorQuickMenu.jsx"
 import { AuthorName, Undeleted } from "./NoteCard.jsx"
 import { Mention } from "./NoteText.jsx"
-import { useQuote } from "./QuotedNote.jsx"
+import { useBlocked, useQuote } from "./QuotedNote.jsx"
+import { repostState } from "../net/blocks.js"
 import { Badges } from "./Badges.jsx"
 import { ago } from "./time.js"
 import { mediaType, mediaUrls, tileNote } from "../net/media.js"
@@ -77,10 +78,12 @@ function Line(props) {
   return <Row {...props} note={inner ?? event} />
 }
 
+const NOTE_ONLY = new Set([1])
+const PLACEHOLDER = { loading: "Loading the reposted note…", missing: "The reposted note is unavailable", blocked: "Repost of someone you blocked" }
 function BareRepost(props) {
-  const ev = useQuote({ type: "note", id: props.id, relays: [] }, true)
-  if (ev?.kind === 1) return <Row {...props} note={ev} />
-  return <Row {...props} note={props.event} placeholder={ev === undefined ? "Loading the reposted note…" : "The reposted note is unavailable"} />
+  const ev = useQuote({ type: "note", id: props.id, relays: [] }, true), state = repostState(ev, NOTE_ONLY, useBlocked())
+  if (state === "note") return <Row {...props} note={ev} />
+  return <Row {...props} note={props.event} placeholder={PLACEHOLDER[state]} />
 }
 
 function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen }) {

@@ -10,7 +10,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { askRelay, MAX_SKEW } from "./follows.js"
 import { checkSigned } from "./sync.js"
-import { replyRefs } from "./thread.js"
+import { replyRefs, repostInner } from "./thread.js"
 import { findExtension } from "../signer/nip07.js"
 import { groupNotifications, classify } from "./notifications.js"
 
@@ -111,20 +111,23 @@ export function loadBlocks({ vault, session, signer }, relays, { opener, query, 
   return loading
 }
 
-/** The author a kind 6 carries, from its embedded note, or null. */
+/** The author a repost carries, from its embedded note if that note's signature checks (repostInner), or null:
+ *  anyone can write any pubkey into a repost, so an unchecked one is not known. */
 function repostedAuthor(ev) {
-  try { const inner = JSON.parse(ev.content); return typeof inner?.pubkey === "string" ? inner.pubkey.toLowerCase() : null } catch { return null }
+  return repostInner(ev)?.pubkey?.toLowerCase() ?? null
 }
 
-/** True when a note is a blocked person's, a repost of one (someone you follow can repost a blocked person; a bare
- *  repost names them in its p tag), or a reply to one, when `authorOf` knows who wrote the parent (the iPhone's
- *  FeedFilterEngine.isBlocked). */
+/** True when a note is a blocked person's, a repost of one (someone you follow can repost a blocked person), or a reply
+ *  to one, when `authorOf` knows who wrote the parent (the iPhone's FeedFilterEngine.isBlocked). A repost whose note
+ *  doesn't check is hidden if its p tag names a blocked person, but a p tag never clears one: the card checks the note
+ *  it fetches by id instead (repostState). */
 export function isBlockedNote(ev, blocked, authorOf = () => null) {
   if (!ev || !blocked.size) return false
   if (blocked.has(String(ev.pubkey).toLowerCase())) return true
   if (ev.kind === 6 || ev.kind === 16) {
-    const original = repostedAuthor(ev) ?? (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
-    return blocked.has(original)
+    const original = repostedAuthor(ev)
+    if (original) return blocked.has(original)
+    return blocked.has((ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase())
   }
   if (ev.kind === 1111) {
     const answered = (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
@@ -133,6 +136,14 @@ export function isBlockedNote(ev, blocked, authorOf = () => null) {
   const parent = ev.kind === 1 ? replyRefs(ev).parent : null
   const parentAuthor = parent && authorOf(parent)
   return !!parentAuthor && blocked.has(String(parentAuthor).toLowerCase())
+}
+
+/** What a repost card shows for the note it fetched by id: "loading", "missing" (not found, or not a kind `kinds`
+ *  allows), "blocked" (a blocked person's note, whoever the repost claimed it was), or "note". */
+export function repostState(ev, kinds, blocked) {
+  if (ev === undefined) return "loading"
+  if (!kinds.has(ev?.kind)) return "missing"
+  return blocked?.size && isBlockedNote(ev, blocked) ? "blocked" : "note"
 }
 
 /** Notes left once blocked people's, and replies to the blocked people's notes among them, are taken out. */
