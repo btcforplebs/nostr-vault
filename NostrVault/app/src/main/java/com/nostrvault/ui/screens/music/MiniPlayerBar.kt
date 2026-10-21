@@ -1,6 +1,9 @@
 package com.nostrvault.ui.screens.music
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,6 +37,7 @@ import com.nostrvault.ui.theme.SecondaryText
  * stream's own window back out (video, chat and all). iOS: MiniPlayerBar,
  * PlayerSheet.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     val track by MusicPlayer.current.collectAsState()
@@ -50,22 +54,37 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     val windowOpen by com.nostrvault.ui.components.LiveStreamRouter.playing.collectAsState()
     val livePlayer = minimizedStream?.takeIf { windowOpen == null }?.let { MusicPlayer.livePlayer(it.address) }
 
+    var menu by remember { mutableStateOf(false) }
+    val openPlayer = {
+        if (minimizedStream != null) {
+            com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
+        } else {
+            showFull = true
+        }
+    }
+    val shape = RoundedCornerShape(26.dp)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .height(com.nostrvault.ui.navigation.FloatingButtonRow.miniPlayerHeight)
-            .clip(RoundedCornerShape(26.dp))
-            .background(Color(0xFF1E1E22).copy(alpha = 0.96f))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(26.dp))
-            .clickable(onClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player") {
-                if (minimizedStream != null) {
-                    com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
-                } else {
-                    showFull = true
-                }
-            },
+            // A translucent surface with a soft shadow, as iOS's material
+            // capsule: it follows the theme rather than a fixed dark grey.
+            .shadow(8.dp, shape)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .combinedClickable(
+                onClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player",
+                onLongClickLabel = "More",
+                onClick = openPlayer,
+                onLongClick = { menu = true },
+            ),
     ) {
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            MusicNowPlayingMenuItems(t, openPlayer = openPlayer) { menu = false }
+        }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(start = 6.dp)) {
             Box(Modifier.size(40.dp).clip(CircleShape)) {
                 Artwork(t.artworkUrl, 40.dp, CircleShape)

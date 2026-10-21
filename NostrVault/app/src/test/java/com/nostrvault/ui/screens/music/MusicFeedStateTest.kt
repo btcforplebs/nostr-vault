@@ -71,6 +71,42 @@ class MusicFeedStateTest {
         assertEquals("1 min", MusicCount.minutes(10))
         assertEquals("1 hr 5 min", MusicCount.minutes(3900))
     }
+
+    @Test fun albumArtistLinkGoesBackToTheArtistUnderIt() {
+        val artist = MusicPage.artistOf(track)!!
+        val album = MusicPage.albumOf(track)!!
+        // Album opened from that artist's page: Back.
+        assertTrue(MusicFeedState.albumArtistIsBack(listOf(artist, album), null, "a1"))
+        // From another artist's page: open on top.
+        assertFalse(MusicFeedState.albumArtistIsBack(listOf(artist, album), null, "a2"))
+        // From another album: open on top, even if the toolbar picked this artist.
+        assertFalse(MusicFeedState.albumArtistIsBack(listOf(album, album), "a1", "a1"))
+    }
+
+    @Test fun albumArtistLinkGoesBackToTheToolbarArtist() {
+        val album = MusicPage.albumOf(track)!!
+        // Opened straight from the artist the toolbar picked: Back to that page.
+        assertTrue(MusicFeedState.albumArtistIsBack(listOf(album), "a1", "a1"))
+        // Picked artist is someone else, or none (trending): open on top.
+        assertFalse(MusicFeedState.albumArtistIsBack(listOf(album), "a2", "a1"))
+        assertFalse(MusicFeedState.albumArtistIsBack(listOf(album), null, "a1"))
+    }
+
+    @Test fun searchStatusIsSeparateFromTheToolbarChoice() {
+        // Trending still loading under a search: the search's own state shows.
+        assertNull(MusicStatus.of("abba", loading = true, error = null, searching = false, searchError = null))
+        assertEquals(MusicStatus.Loading, MusicStatus.of("abba", loading = false, error = "x", searching = true, searchError = null))
+        assertEquals(
+            MusicStatus.Message("No music found for \"abba\".", retries = false),
+            MusicStatus.of("abba", loading = false, error = "Nothing trending right now.", searching = false, searchError = "No music found for \"abba\"."),
+        )
+        // Search cleared while it ran: the toolbar choice's state, and its message retries.
+        assertEquals(MusicStatus.Loading, MusicStatus.of("", loading = true, error = null, searching = true, searchError = null))
+        assertEquals(
+            MusicStatus.Message("Couldn't reach Wavlake. Tap to try again.", retries = true),
+            MusicStatus.of("", loading = false, error = "Couldn't reach Wavlake. Tap to try again.", searching = false, searchError = "old"),
+        )
+    }
 }
 
 class MusicFeedRowsTest {
@@ -100,4 +136,5 @@ class MusicFeedRowsTest {
         list = MusicRecentArtists.add(list, WavlakeArtist("d", "D"), 3)
         assertEquals(listOf("d", "c", "a"), list.map { it.id })
     }
+
 }

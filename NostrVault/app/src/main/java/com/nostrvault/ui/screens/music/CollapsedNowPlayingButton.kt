@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.unit.dp
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -24,8 +26,8 @@ import com.nostrvault.ui.theme.LocalNostrVaultColors
 /**
  * The folded bar's stand-in for the mini player: the cover as a small disc
  * with play/pause on it and the song's progress around its edge (a steady red
- * ring for a live stream). Tap plays or pauses; hold opens the full player,
- * or pops a minimized live stream back out.
+ * ring for a live stream). Tap plays or pauses; hold offers Open player (or
+ * the minimized live stream) and Go to the artist or album.
  * Nothing at all when nothing is loaded, so the folded bar is unchanged
  * without music. iOS: CollapsedNowPlayingButton.
  */
@@ -43,57 +45,67 @@ fun CollapsedNowPlayingButton(actions: MusicActions) {
     val minimizedStream = liveStream?.takeIf { t.isLive }
     val progress = if (!t.isLive && duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val accent = LocalNostrVaultColors.current.primary
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .combinedClickable(
-                onClickLabel = if (playing) "Pause" else "Play",
-                onLongClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player",
-                onClick = MusicPlayer::togglePlayPause,
-                onLongClick = {
-                    if (minimizedStream != null) {
-                        com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
-                    } else {
-                        showFull = true
-                    }
-                },
-            )
-            .semantics { stateDescription = "${t.title}, ${t.artist}" },
-    ) {
-        Artwork(t.artworkUrl, 36.dp, CircleShape)
-        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.45f)))
-        if (buffering && playing) {
-            CircularProgressIndicator(Modifier.size(14.dp), color = Color.White, strokeWidth = 1.5.dp)
+    var menu by remember { mutableStateOf(false) }
+    val openPlayer = {
+        if (minimizedStream != null) {
+            com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
         } else {
-            Icon(
-                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp),
-            )
+            showFull = true
         }
-        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
-            val stroke = 2.dp.toPx()
-            val inset = stroke / 2
-            val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
-            val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
-            drawCircle(
-                color = if (t.isLive) Color.Red.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.2f),
-                radius = (size.minDimension - stroke) / 2,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
-            )
-            if (progress > 0f) drawArc(
-                color = accent,
-                startAngle = -90f,
-                sweepAngle = 360f * progress,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-            )
+    }
+
+    Box {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .combinedClickable(
+                    onClickLabel = if (playing) "Pause" else "Play",
+                    onLongClickLabel = "More",
+                    onClick = MusicPlayer::togglePlayPause,
+                    onLongClick = { menu = true },
+                )
+                .semantics {
+                    stateDescription = "${t.title}, ${t.artist}"
+                    customActions = listOf(CustomAccessibilityAction("Open player") { openPlayer(); true })
+                },
+        ) {
+            Artwork(t.artworkUrl, 36.dp, CircleShape)
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.45f)))
+            if (buffering && playing) {
+                CircularProgressIndicator(Modifier.size(14.dp), color = Color.White, strokeWidth = 1.5.dp)
+            } else {
+                Icon(
+                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                val stroke = 2.dp.toPx()
+                val inset = stroke / 2
+                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+                drawCircle(
+                    color = if (t.isLive) Color.Red.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.2f),
+                    radius = (size.minDimension - stroke) / 2,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
+                )
+                if (progress > 0f) drawArc(
+                    color = accent,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            MusicNowPlayingMenuItems(t, openPlayer = openPlayer) { menu = false }
         }
     }
     if (showFull) NowPlayingSheet(actions = actions, onDismiss = { showFull = false })

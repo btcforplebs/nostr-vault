@@ -2,7 +2,13 @@ package com.nostrvault.ui.screens.music
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -79,6 +85,10 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
     var results by remember { mutableStateOf<List<WavlakeSearchResult>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Search keeps its own spinner and message, so clearing a search can't
+    // stop the toolbar choice's load, or the other way round.
+    var searching by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf<String?>(null) }
     val current by MusicPlayer.current.collectAsState()
     val playing by MusicPlayer.isPlaying.collectAsState()
     val path by MusicFeedState.path.collectAsState()
@@ -141,13 +151,13 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
     // Search once typing pauses, so each keystroke isn't a request.
     LaunchedEffect(query) {
         val term = query.trim()
-        if (term.isEmpty()) { results = emptyList(); error = null; loading = false; return@LaunchedEffect }
+        if (term.isEmpty()) { results = emptyList(); searchError = null; searching = false; return@LaunchedEffect }
         delay(400)
-        loading = true; error = null
+        searching = true; searchError = null
         val found = runCatching { WavlakeApi.search(term) }.getOrDefault(emptyList())
         results = found
-        loading = false
-        if (found.isEmpty()) error = "No music found for \"$term\"."
+        searching = false
+        if (found.isEmpty()) searchError = "No music found for \"$term\"."
     }
 
     // The open page's contents, loaded when it opens (cached for Back and forth).
@@ -205,7 +215,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 item(key = "page-head") {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                         MusicBackButton(onBack = if (pageIsScope) ({ MusicFeedState.setScope(MusicScope.Trending) }) else MusicFeedState::goBack)
-                        Artwork(shown.artUrl, 148.dp, CircleShape)
+                        Artwork(shown.artUrl, 148.dp, CircleShape, shadow = 12.dp)
                         Spacer(Modifier.height(8.dp))
                         Text(shown.name, color = PrimaryText, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                         if (albums.isNotEmpty()) {
@@ -261,7 +271,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 item(key = "page-head") {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                         MusicBackButton()
-                        Artwork(shown.artUrl, 220.dp, RoundedCornerShape(14.dp))
+                        Artwork(shown.artUrl, 220.dp, RoundedCornerShape(14.dp), shadow = 14.dp)
                         Spacer(Modifier.height(12.dp))
                         Text(shown.title, color = PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                         shown.artist?.let { name ->
@@ -331,9 +341,8 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                         }
                         if (shownTrending.isNotEmpty()) item(key = "header") { MusicSectionTitle("Their songs") }
                     }
-                } else {
-                    item(key = "header") { MusicSectionTitle("Songs") }
                 }
+                // Search: albums and artists first, then songs; a header only over results.
                 if (collections.isNotEmpty()) {
                     item(key = "collections") {
                         Column {
@@ -355,6 +364,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                         }
                     }
                 }
+                if (query.isNotBlank() && tracksOf.isNotEmpty()) item(key = "header") { MusicSectionTitle("Songs") }
                 itemsIndexed(tracksOf, key = { _, t -> t.id }) { index, track ->
                     MusicTrackRow(
                         track = track,
@@ -367,13 +377,16 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                     )
                 }
                 item(key = "status") {
-                    when {
-                        loading -> MusicSpinner()
-                        error != null -> Text(
-                            text = error!!, color = SecondaryText, fontSize = 14.sp,
-                            modifier = Modifier.fillMaxWidth().padding(24.dp)
-                                .clickable(enabled = query.isBlank()) { loadAttempt++ },
+                    // The toolbar choice's status, or the search's.
+                    when (val status = MusicStatus.of(query, loading, error, searching, searchError)) {
+                        MusicStatus.Loading -> MusicSpinner()
+                        is MusicStatus.Message -> Text(
+                            text = status.text, color = SecondaryText, fontSize = 14.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable(enabled = status.retries) { loadAttempt++ }
+                                .padding(vertical = 30.dp),
                         )
+                        null -> Unit
                     }
                 }
             }
@@ -382,7 +395,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
             val ctx = LocalContext.current
             Text(
                 text = "Music from Wavlake",
-                color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(16.dp)
                     .clickable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wavlake.com"))) } },
             )
@@ -391,13 +404,11 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
 }
 
 /**
- * The album's artist: opened from that artist's page, Back is the way
- * there; otherwise the artist opens on top.
+ * The album's artist: opened from that artist's page (or the artist the
+ * toolbar picked), Back is the way there; otherwise the artist opens on top.
  */
 private fun openAlbumArtist(id: String, name: String, tracks: List<WavlakeTrack>) {
-    val path = MusicFeedState.path.value
-    val previous = path.getOrNull(path.size - 2) as? MusicPage.Artist
-    if (previous?.artist?.id == id) {
+    if (MusicFeedState.albumArtistIsBack(MusicFeedState.path.value, MusicFeedState.currentArtist?.id, id)) {
         MusicFeedState.goBack()
     } else {
         val art = tracks.firstOrNull { it.artistId == id }?.artistArtUrl
@@ -407,21 +418,32 @@ private fun openAlbumArtist(id: String, name: String, tracks: List<WavlakeTrack>
 
 @Composable
 private fun MusicSearchField(query: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onChange,
-        placeholder = { Text("Search songs, albums, artists") },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) IconButton(onClick = { onChange("") }) {
-                Icon(Icons.Filled.Close, contentDescription = "Clear search")
-            }
-        },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    // A filled grey rounded field, as iOS: the secondary colour at 12%.
+    val fill = MaterialTheme.colorScheme.onSurfaceVariant.let { it.copy(alpha = it.alpha * 0.12f) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fill)
+            .padding(start = 12.dp, end = 4.dp).heightIn(min = 44.dp),
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) Text("Search songs, albums, artists", color = SecondaryText, fontSize = 16.sp)
+            BasicTextField(
+                value = query,
+                onValueChange = onChange,
+                singleLine = true,
+                textStyle = TextStyle(color = PrimaryText, fontSize = 16.sp),
+                cursorBrush = SolidColor(LocalNostrVaultColors.current.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search songs, albums, artists" },
+            )
+        }
+        if (query.isNotEmpty()) IconButton(onClick = { onChange("") }, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Filled.Cancel, contentDescription = "Clear search", tint = SecondaryText, modifier = Modifier.size(18.dp))
+        }
+        if (query.isEmpty()) Spacer(Modifier.width(8.dp))
+    }
 }
 
 /** Round artist pictures in a sideways row; tap one for their page. */

@@ -224,6 +224,18 @@ object MusicFeedState {
         _revealRequested.value = false
     }
 
+    /**
+     * Whether an album page's artist link should go Back rather than open
+     * the artist on top: the page under the album is that artist's, or the
+     * album was opened straight from the artist the toolbar picked.
+     * iOS: MusicAlbumPage.openArtist.
+     */
+    fun albumArtistIsBack(path: List<MusicPage>, scopeArtistId: String?, id: String): Boolean {
+        val previous = path.getOrNull(path.size - 2)
+        return if (previous is MusicPage.Artist) previous.artist.id == id
+        else path.size == 1 && scopeArtistId == id
+    }
+
     /** The artist page on screen, so a song's "Go to" doesn't offer the page you're on. */
     val showingArtistId: String?
         get() = if (!isVisible) null else when (val last = _path.value.lastOrNull()) {
@@ -287,6 +299,25 @@ object MusicRecentArtists {
         val known = list.firstOrNull { it.id == artist.id }
         val merged = artist.copy(artUrl = artist.artUrl ?: known?.artUrl, npub = artist.npub ?: known?.npub)
         return (listOf(merged) + list.filter { it.id != artist.id }).take(max)
+    }
+}
+
+/**
+ * The spinner or message under the feed. Search keeps its own, so clearing a
+ * search can't stop the toolbar choice's load, or the other way round; only
+ * the toolbar choice's message retries on tap. iOS: MusicBrowserView.status.
+ */
+sealed class MusicStatus {
+    data object Loading : MusicStatus()
+    data class Message(val text: String, val retries: Boolean) : MusicStatus()
+
+    companion object {
+        fun of(query: String, loading: Boolean, error: String?, searching: Boolean, searchError: String?): MusicStatus? {
+            val browsing = query.isEmpty()
+            if (if (browsing) loading else searching) return Loading
+            val text = (if (browsing) error else searchError) ?: return null
+            return Message(text, retries = browsing)
+        }
     }
 }
 

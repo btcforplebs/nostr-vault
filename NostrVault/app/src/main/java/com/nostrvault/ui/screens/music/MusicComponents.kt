@@ -26,7 +26,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +38,8 @@ import com.nostrvault.data.music.WavlakeLink
 import com.nostrvault.data.music.WavlakeTrack
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.theme.LocalNostrVaultColors
+import com.nostrvault.ui.theme.NostrVaultIcons
+import com.nostrvault.ui.theme.ZapOrange
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
 
@@ -48,11 +52,14 @@ fun MusicSpinner() {
 
 @Composable
 fun MusicBackButton(onBack: () -> Unit = MusicFeedState::goBack) {
+    val accent = LocalNostrVaultColors.current.primary
     Box(Modifier.fillMaxWidth()) {
-        TextButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Back")
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.heightIn(min = 36.dp).clickable(role = Role.Button, onClick = onBack),
+        ) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = accent, modifier = Modifier.size(22.dp))
+            Text("Back", color = accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -125,8 +132,14 @@ fun CollectionTile(
 }
 
 @Composable
-fun Artwork(url: String?, size: androidx.compose.ui.unit.Dp, shape: Shape = RoundedCornerShape(8.dp)) {
-    Box(Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
+fun Artwork(url: String?, size: Dp, shape: Shape = RoundedCornerShape(8.dp), shadow: Dp = 0.dp) {
+    // The secondary colour at 15%, as iOS, so it shows on light and dark.
+    val placeholder = MaterialTheme.colorScheme.onSurfaceVariant.let { it.copy(alpha = it.alpha * 0.15f) }
+    Box(
+        Modifier.size(size).then(if (shadow > 0.dp) Modifier.shadow(shadow, shape) else Modifier)
+            .clip(shape).background(placeholder),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(Icons.Filled.MusicNote, contentDescription = null, tint = SecondaryText)
         if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
     }
@@ -144,7 +157,6 @@ fun MusicTrackRow(
     onTap: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    val ctx = LocalContext.current
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -181,29 +193,93 @@ fun MusicTrackRow(
                 )
                 Text(track.artist, color = SecondaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Spacer(Modifier.width(8.dp))
             track.sats?.takeIf { it > 0 }?.let { sats ->
-                Text("⚡ %,d".format(sats), color = Color(0xFFF7931A), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Icon(NostrVaultIcons.Zap, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("%,d".format(sats), color = ZapOrange, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(8.dp))
             }
             track.duration?.takeIf { it > 0 }?.let { Text(formatTime(it.toLong()), color = SecondaryText, fontSize = 12.sp) }
+            // The same actions as a long-press, in plain sight.
+            MusicMoreButton("More for ${track.title}") { menu = true }
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            MusicPage.artistOf(track)?.takeIf { MusicFeedState.showingArtistId != track.artistId }?.let { page ->
-                DropdownMenuItem(text = { Text("Go to ${track.artist}") }, onClick = { menu = false; MusicFeedState.reveal(page) })
-            }
-            MusicPage.albumOf(track)?.takeIf { MusicFeedState.showingAlbumId != track.albumId }?.let { page ->
-                DropdownMenuItem(
-                    text = { Text(track.albumTitle?.let { "Go to $it" } ?: "Go to album") },
-                    onClick = { menu = false; MusicFeedState.reveal(page) },
-                )
-            }
-            DropdownMenuItem(text = { Text("Share to Nostr") }, onClick = { menu = false; actions.onShare(WavlakeLink.shareText(track)) })
-            track.artistNpub?.let(actions.npubToHex)?.let { hex ->
-                DropdownMenuItem(text = { Text("${track.artist} on Nostr") }, onClick = { menu = false; actions.onOpenProfile(hex) })
-            }
-            DropdownMenuItem(text = { Text("Open on Wavlake") }, onClick = {
-                menu = false; runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.pageUrl))) }
-            })
+            MusicTrackMenuItems(track, actions) { menu = false }
         }
     }
+}
+
+/** A song's ⋯: its long-press actions behind a visible button. iOS: MusicMoreMenu. */
+@Composable
+fun MusicMoreButton(label: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(width = 36.dp, height = 44.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+    ) {
+        Icon(Icons.Filled.MoreHoriz, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(20.dp))
+    }
+}
+
+/**
+ * A song's actions: go to its artist or album, share, the artist on Nostr,
+ * Wavlake. [opensPages] off where the caller offers its own way to the
+ * pages. iOS: MusicTrackActions.
+ */
+@Composable
+fun MusicTrackMenuItems(
+    track: WavlakeTrack,
+    actions: MusicActions,
+    opensPages: Boolean = true,
+    /** Closes the menu (and anything else) before an action runs. */
+    onDone: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    if (opensPages) {
+        MusicPage.artistOf(track)?.takeIf { MusicFeedState.showingArtistId != track.artistId }?.let { page ->
+            MusicMenuItem("Go to ${track.artist}", Icons.Filled.Mic) { onDone(); MusicFeedState.reveal(page) }
+        }
+        MusicPage.albumOf(track)?.takeIf { MusicFeedState.showingAlbumId != track.albumId }?.let { page ->
+            MusicMenuItem(track.albumTitle?.let { "Go to $it" } ?: "Go to album", NostrVaultIcons.Layers) {
+                onDone(); MusicFeedState.reveal(page)
+            }
+        }
+    }
+    MusicMenuItem("Share to Nostr", NostrVaultIcons.Share) { onDone(); actions.onShare(WavlakeLink.shareText(track)) }
+    track.artistNpub?.let(actions.npubToHex)?.let { hex ->
+        MusicMenuItem("${track.artist} on Nostr", NostrVaultIcons.AccountCircle) { onDone(); actions.onOpenProfile(hex) }
+    }
+    MusicMenuItem("Open on Wavlake", Icons.Filled.Explore) {
+        onDone(); runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(track.pageUrl))) }
+    }
+}
+
+/**
+ * The mini player's and folded button's long-press: open the player, or go
+ * to the playing song's artist or album. iOS: MusicNowPlayingPageActions.
+ */
+@Composable
+fun MusicNowPlayingMenuItems(track: com.nostrvault.service.music.PlayerTrack, openPlayer: () -> Unit, onDone: () -> Unit) {
+    MusicMenuItem("Open player", NostrVaultIcons.Music) { onDone(); openPlayer() }
+    val song = track.wavlake ?: return
+    MusicPage.artistOf(song)?.let { page ->
+        MusicMenuItem("Go to ${song.artist}", Icons.Filled.Mic) { onDone(); MusicFeedState.reveal(page) }
+    }
+    MusicPage.albumOf(song)?.let { page ->
+        MusicMenuItem(song.albumTitle?.let { "Go to $it" } ?: "Go to album", NostrVaultIcons.Layers) {
+            onDone(); MusicFeedState.reveal(page)
+        }
+    }
+}
+
+@Composable
+private fun MusicMenuItem(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(title) },
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        onClick = onClick,
+    )
 }
