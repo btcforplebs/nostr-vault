@@ -127,3 +127,20 @@ test("the first relay's notes show while a slower relay is still answering", asy
   await until(() => /notes saved to your relay/.test(text(m.el)), "the finished sync")
   render(null, m.el)
 })
+
+test("two syncs at once (Refresh during the background tick) don't fail on a note both are writing", async () => {
+  const { syncFeed } = await vite.ssrLoadModule("/src/net/sync.js")
+  pool.ensureRelay = async () => ({})
+  const evs = Array.from({ length: 150 }, (_, i) => ({ id: hex(i + 1), pubkey: follows[0], kind: 1, created_at: now - i, tags: [], content: "", sig: "" }))
+  pool.querySync = async () => evs
+  // Haven's client: one request per id at a time, answered on a later tick.
+  const busy = new Set(), saved = new Set()
+  const feed = {
+    event: ev => busy.has(ev.id) ? Promise.reject(new Error(`request ${ev.id} already in flight`))
+      : (busy.add(ev.id), tick(1).then(() => { busy.delete(ev.id); const ok = !saved.has(ev.id); saved.add(ev.id); return { ok, message: ok ? "" : "duplicate:" } })),
+    query: async () => [],
+  }
+  const vault = { feed }
+  const [a, b] = await Promise.all([syncFeed(vault, follows.slice(0, 3), ["wss://a", "wss://b"]), syncFeed(vault, follows.slice(0, 3), ["wss://a", "wss://b"])])
+  assert.equal(a + b, 150, "every note saved once, neither sync failed")
+})

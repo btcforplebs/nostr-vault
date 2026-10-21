@@ -58,12 +58,14 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {} }
   for (let i = 0; i < follows.length; i += 250) {
     // Each relay's answer is stored as it lands, so the fastest relay's notes show without waiting for the slowest
     // (up to maxWait). A note two relays send is written once: Haven takes one request per id at a time.
+    // A relay whose notes Haven refused doesn't stop the others; the sync fails once they have all finished.
     const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }, sent = new Set()
-    await Promise.all(relays.map(async url => {
+    const failed = (await Promise.allSettled(relays.map(async url => {
       const evs = (await pool.querySync([url], filter, { maxWait: 8000 }).catch(() => [])).filter(e => !sent.has(e.id) && sent.add(e.id))
       const n = await storeAll(vault.feed, evs)
       if (n) onProgress({ done: i, of: follows.length, stored: (stored += n) })
-    }))
+    }))).find(r => r.status === "rejected")
+    if (failed) throw failed.reason
     onProgress({ done: Math.min(i + 250, follows.length), of: follows.length, stored })
   }
   return stored
@@ -80,11 +82,20 @@ export async function syncOwn(vault, pubkey, relays) {
 }
 
 /**
- * Writes events into a Haven route all at once, not one round trip after another: a first sync's 500 notes took
- * ~1 s in turn. Haven answers each by its id, and querySync never returns one id twice. -> how many were stored
+ * Writes events into a Haven route 100 at a time, not one round trip after another: a first sync's 500 notes took
+ * ~1 s in turn. Haven takes one request per id at a time, so a note another sync (Refresh, the background tick)
+ * is writing right now counts as a duplicate here. -> how many were stored
  */
 async function storeAll(route, evs) {
-  return (await Promise.all(evs.map(ev => route.event(ev)))).filter(r => r.ok).length
+  let stored = 0
+  for (let i = 0; i < evs.length; i += 100) {
+    const rs = await Promise.all(evs.slice(i, i + 100).map(ev => route.event(ev).catch(e => {
+      if (/already in flight/.test(e?.message)) return { ok: false }
+      throw e
+    })))
+    stored += rs.filter(r => r.ok).length
+  }
+  return stored
 }
 
 export async function readOwn(vault, pubkey, kinds, limit = 100) {
