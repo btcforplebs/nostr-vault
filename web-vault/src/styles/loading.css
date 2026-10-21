@@ -21,6 +21,8 @@
 .skeleton > .sk-lines .sk-bar:first-child { height: 14px; } /* the name line, at the headline's height */
 /* A plain list row, for lists without a row box of their own. */
 .sk-row { display: flex; align-items: center; gap: 12px; margin: 0 var(--gutter) 8px; padding: 12px; border-radius: var(--radius); background: var(--s1); }
+.dm-bubble.sk-bubble { height: 38px; background: var(--s2); }
+.dm-bubble.sk-bubble.mine { background: rgb(230 115 38 / .18); }
 .sk-tile { aspect-ratio: 1; background: var(--s1); border-radius: inherit; }
 
 /* A status line that stays in place while its text comes and goes, so the list under it never moves. */

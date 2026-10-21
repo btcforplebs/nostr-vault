@@ -13,6 +13,7 @@ import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
 import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
+import { SkeletonList } from "../components/Loading.jsx"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
 if (import.meta.env) import("../styles/compose.css")
@@ -183,7 +184,10 @@ export function MessagesScreen({ ctx }) {
         </div>
       )}
       {err && <div class="status-line error">{err}</div>}
-      {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
+      {!loaded && !list.length ? <>
+          {ctx.session.method === "nip46" && <p class="status-line">Your signer may ask you to approve.</p>}
+          <SkeletonList rowClass="dm-row" avatar={44} label="Opening your messages…" />
+        </>
         : !list.length ? (note ? null : (
           // DMInboxView's empty state; the web composer is the "New message to" box above, not a button.
           <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with New message above</p></div>

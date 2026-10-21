@@ -25,7 +25,7 @@ const fiveLines = el => { const cs = getComputedStyle(el); return parseFloat(cs.
 const isImageFile = f => !f.type || /^image\//.test(f.type)
 
 export function ConversationScreen({ ctx, peer }) {
-  const { messages, note, trouble, retry, refresh, more } = useMessages(ctx)
+  const { messages, note, trouble, retry, refresh, more, loaded } = useMessages(ctx)
   const { blocked } = useBlocks(ctx)
   // A link may start the box with a message (DMThreadView initialMessage): typed in, never sent until Send.
   const [text, setText] = useState(() => dmPrefill().text)
@@ -101,7 +101,7 @@ export function ConversationScreen({ ctx, peer }) {
       {hasLegacy(rows) && <div class="status-line" role="note">Some messages use NIP-04 (legacy encryption). New messages default to NIP-17.</div>}
       {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
       <div class="dm-thread">
-        {!rows.length && !note && <p class="empty">Start a conversation</p>}
+        {!rows.length && !note && (loaded ? <p class="empty">Start a conversation</p> : <BubbleSkeletons />)}
         {rows.map(m => (
           <div key={m.id} class={m.from === me ? "dm-bubble mine" : "dm-bubble"}>
             {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write
@@ -143,3 +143,9 @@ export function ConversationScreen({ ctx, peer }) {
     </main>
   )
 }
+
+/** Message bubbles, theirs and yours, while the inbox is read: the thread's shape before its words. */
+const BubbleSkeletons = () => <>
+  <span class="sr-only" role="status">Opening your messages…</span>
+  {[["", 58], ["mine", 42], ["", 70], ["mine", 34]].map(([side, w], i) => <div key={i} class={`dm-bubble ${side} skeleton sk-bubble`} style={{ width: `${w}%` }} aria-hidden="true" />)}
+</>

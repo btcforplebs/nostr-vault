@@ -21,6 +21,8 @@ import {
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, fetchInbound, fetchOwnExtras, fetchFollowerLists, fetchGivenZaps,
 } from "../net/vault-lists.js"
+import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
+import { SkeletonRows } from "../components/FeedExtras.jsx"
 
 const ICONS = {
   activity: "M3 13h5l1.5 3h5L16 13h5M3 13l2-7h14l2 7v6H3z",
@@ -154,11 +156,19 @@ export function VaultScreen({ ctx, desk = false }) {
         </div>
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
-      {status && <div class="status-line">{status}</div>}
-      {!loaded ? <p class="empty">Loading…</p> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} />}
+      <div class="status-line keep">{status}</div>
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={fetched} />}
       </>}
     </main>
   )
+}
+
+/** The list's shape while the relay is read: tiles for media, people rows for followers, cards otherwise. */
+function VaultSkeleton({ mode }) {
+  if (mode === "media") return <SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb" label="Loading your media…" />
+  if (mode === "followers") return <SkeletonList rowClass="person-row" label="Loading your followers…" />
+  if (mode === "notes" || mode === "articles" || mode === "highlights") return <SkeletonRows count={4} label="Loading your vault…" />
+  return <SkeletonList rowClass="note notification" avatar={32} label="Loading your vault…" />
 }
 
 function merge(prev, fresh) {
@@ -189,7 +199,9 @@ function Menu({ label, title, align = "left", children }) {
 }
 const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={on ? "on" : ""} aria-checked={on} onClick={onClick}>{children}</button>
 
-function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted, refreshes = 0 }) {
+function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted, refreshes = 0, fetched = true }) {
+  // Nothing in this browser's relay yet, but the relays are still being asked: placeholders, not "nothing here".
+  const Empty = ({ text }) => fetched ? <p class="empty">{text}</p> : <VaultSkeleton mode={mode} />
   switch (mode) {
     case "activity": {
       const follows = followers
@@ -227,7 +239,6 @@ function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt,
   }
 }
 
-const Empty = ({ text }) => <p class="empty">{text}</p>
 
 /** One "Vault" line: who did what, the text or the note it was about, the pictures as thumbnails (your own notes').
  *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP. */
