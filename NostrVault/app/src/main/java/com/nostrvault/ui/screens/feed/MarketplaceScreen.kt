@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens.feed
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,42 +13,32 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,13 +48,11 @@ import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.MarketCategory
 import com.nostrvault.data.model.MarketListing
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.theme.CardBackground
 import com.nostrvault.ui.theme.LocalNostrVaultColors
-import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
-import com.nostrvault.ui.theme.TertiaryText
+import com.nostrvault.ui.theme.SeparatorColor
 
 /**
  * Marketplace feed (port of the iPhone's Marketplace grid, itself after the
@@ -102,10 +89,10 @@ internal fun MarketplaceGrid(
             } else {
                 ScopedEmptyPlaceholder(
                     FeedMode.MARKETPLACE,
-                    scopeFollowing = scopeFollowing,
+                    // iOS says the same thing whether you follow nobody or nobody sells.
+                    scopeFollowing = scopeFollowing || followSetIsEmpty,
                     onRefresh = onRefresh,
                     onShowGlobal = onShowGlobal,
-                    subtitleOverride = if (followSetIsEmpty) "You don't follow anyone yet. Switch to Global to see every listing." else null,
                     loadFailed = loadFailed,
                 )
             }
@@ -165,7 +152,7 @@ private fun CategoryChips(
     ) {
         Chip("All", selected == null) { onSelect(null) }
         categories.forEach { category ->
-            Chip(category.displayName, selected == category) { onSelect(category) }
+            Chip(category.displayName, selected == category) { onSelect(toggledCategory(selected, category)) }
         }
     }
 }
@@ -189,58 +176,101 @@ private fun Chip(label: String, isSelected: Boolean, onClick: () -> Unit) {
 @Composable
 internal fun ListingCard(listing: MarketListing, seller: FeedProfile?, onClick: () -> Unit) {
     val colors = LocalNostrVaultColors.current
-    Column(modifier = Modifier.clickable(onClick = onClick)) {
+    val shape = RoundedCornerShape(12.dp)
+    // One rounded box around the photo and the text, as iOS MarketplaceCardView.
+    Column(
+        modifier = Modifier
+            .clip(shape)
+            .background(CardBackground)
+            .border(0.5.dp, SeparatorColor, shape)
+            .clickable(onClick = onClick),
+    ) {
         Box {
-            AsyncImage(
-                model = listing.coverImage,
-                contentDescription = listing.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(CardBackground),
-            )
-            if (listing.isAuction) {
-                Text(
-                    text = "Auction",
-                    color = Color.Black,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .clip(CircleShape)
-                        .background(colors.primary)
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+            val photo = Modifier.fillMaxWidth().aspectRatio(1f)
+            if (listing.coverImage != null) {
+                AsyncImage(
+                    model = listing.coverImage,
+                    contentDescription = listing.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = photo,
                 )
+            } else {
+                MarketplaceImagePlaceholder(photo)
+            }
+            if (listing.isAuction) {
+                MarketplaceAuctionBadge(Modifier.padding(8.dp))
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = listing.title,
-            color = PrimaryText,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = listing.priceLabel,
-            color = colors.primaryLight,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = sellerName(listing.pubkey, seller),
-            color = TertiaryText,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = listing.title,
+                color = PrimaryText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = listing.priceLabel,
+                color = colors.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = sellerName(listing.pubkey, seller),
+                color = SecondaryText,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** A listing without a photo: a bag on pale accent. iOS MarketplaceImagePlaceholder. */
+@Composable
+internal fun MarketplaceImagePlaceholder(modifier: Modifier = Modifier) {
+    val colors = LocalNostrVaultColors.current
+    Box(contentAlignment = Alignment.Center, modifier = modifier.background(colors.primaryPale)) {
+        Icon(
+            Icons.Outlined.ShoppingBag,
+            contentDescription = null,
+            tint = colors.primary.copy(alpha = 0.7f),
+            modifier = Modifier.size(28.dp),
         )
     }
 }
 
+/** Hammer and "Auction", white on the accent. iOS MarketplaceAuctionBadge. */
+@Composable
+internal fun MarketplaceAuctionBadge(modifier: Modifier = Modifier) {
+    val colors = LocalNostrVaultColors.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(colors.primary)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Icon(Icons.Filled.Gavel, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Auction", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** A seller's name, or "npub…" and the last six of their key (iOS). */
 internal fun sellerName(pubkey: String, profile: FeedProfile?): String =
-    profile?.bestName ?: (HavenBridge.encodeNpub(pubkey)?.take(12)?.plus("…") ?: pubkey.take(8))
+    profile?.bestName ?: sellerFallbackName(pubkey)
+
+internal fun sellerFallbackName(pubkey: String): String = "npub…" + pubkey.takeLast(6)
+
+/** A tap on a category chip: the selected one clears back to All (iOS). */
+internal fun toggledCategory(selected: MarketCategory?, tapped: MarketCategory): MarketCategory? =
+    if (selected == tapped) null else tapped
+
+/** Message seller is never offered on your own listing (iOS). */
+internal fun showsMessageSeller(sellerPubkey: String, activeHexPubkey: String): Boolean =
+    sellerPubkey != activeHexPubkey

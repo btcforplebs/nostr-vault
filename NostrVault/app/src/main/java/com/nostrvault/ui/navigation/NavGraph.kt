@@ -178,8 +178,13 @@ fun NostrVaultNavHost(
         }
     }
 
+    // Message seller on a listing quoted anywhere under the nav host.
+    val messageUser: (String, String) -> Unit = remember(navController) {
+        { pubkey, draft -> navController.navigate(Screen.DMThread.createRoute(pubkey, draft)) }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalOpenHashtag provides openHashtag) {
+        CompositionLocalProvider(LocalOpenHashtag provides openHashtag, LocalMessageUser provides messageUser) {
             NavHost(
                 navController = navController,
                 startDestination = startDestination,
