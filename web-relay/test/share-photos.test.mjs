@@ -6,7 +6,7 @@ import assert from "node:assert/strict"
 import { randomBytes, createHash } from "node:crypto"
 import { toHex } from "@fips/core"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
-import { meshTarget, wireMeshPhotos } from "../src/fips/share-photos.js"
+import { meshTarget, wireMeshPhotos, MAX_PARALLEL, MAX_PHOTOS } from "../src/fips/share-photos.js"
 import { startPhotoReader, throwawayIdentity } from "../src/fips/photo-reader.js"
 import { meshHttpVault } from "../tools/lib/mesh-http-vault.js"
 import { nodeFabric } from "./support/node-fabric.js"
@@ -28,17 +28,25 @@ function img({ x = HASH, vaults = `${V1},${V2}`, failed = false } = {}) {
 const doc = imgs => ({ querySelectorAll: sel => (sel === "img[data-x][data-vaults]" ? imgs.filter(i => i.dataset.x && i.dataset.vaults) : []) })
 const settle = () => new Promise(r => setTimeout(r, 5))
 
-function fakeReader(has) {
-  const calls = { starts: 0, gets: [], allowed: [] }
+function fakeReader(has, { size = 3, delayMs = 0 } = {}) {
+  const calls = { starts: 0, stops: 0, gets: [], allowed: [], live: 0, peak: 0 }
   const start = async getPhotoVaults => {
     calls.starts++
-    return { getBlob: async (vault, x) => {
-      calls.gets.push(vault); calls.allowed.push([...getPhotoVaults()])
-      if (!has.includes(vault)) throw new Error("no route")
-      return { bytes: new Uint8Array([1, 2, 3]), type: "image/png" }
-    } }
+    return {
+      stop: async () => { calls.stops++ },
+      getBlob: async (vault, x, { onProgress = () => {}, signal } = {}) => {
+        calls.gets.push(vault); calls.allowed.push([...getPhotoVaults()])
+        calls.peak = Math.max(calls.peak, ++calls.live)
+        try {
+          if (delayMs) await new Promise(r => setTimeout(r, delayMs))
+          if (!has.includes(vault)) throw new Error("no route")
+          for (let n = 0; n < size; n += 1 << 20) { onProgress(Math.min(n + (1 << 20), size)); if (signal?.aborted) throw new Error("aborted") }
+          return { bytes: new Uint8Array(Math.min(size, 3)), type: "image/png" }
+        } finally { calls.live-- }
+      },
+    }
   }
-  return { calls, start, toUrl: (b, t) => `blob:${t}:${b.length}` }
+  return { calls, start, toUrl: (b, t) => `blob:${t}:${b.length}`, revoke: () => {}, onLeave: () => {} }
 }
 
 test("meshTarget: a 64-hex hash and up to three 64-hex vaults, else nothing", () => {
@@ -80,6 +88,41 @@ test("an unmarked photo is never read", async () => {
   const f = fakeReader([V1]), a = img({ failed: true, vaults: "" })
   await wireMeshPhotos(doc([a]), f)
   assert.equal(f.calls.starts, 0)
+})
+
+test("fifty failed photos: a few at a time, MAX_PHOTOS in all, the rest keep their link", async () => {
+  const f = fakeReader([], { delayMs: 2 }), imgs = Array.from({ length: 50 }, (_, i) => img({ failed: true, x: (i + 16).toString(16).padStart(64, "0") }))
+  await wireMeshPhotos(doc(imgs), f)
+  assert.equal(f.calls.peak, MAX_PARALLEL)
+  assert.equal(f.calls.gets.length, MAX_PHOTOS * 2, "two vaults each, MAX_PHOTOS photos")
+  assert.equal(imgs.filter(i => i.dataset.mesh === "skipped").length, 50 - MAX_PHOTOS)
+})
+
+test("a photo over the per-photo cap is aborted; the page's byte budget stops the rest", async () => {
+  const big = fakeReader([V1], { size: 5 << 20 })
+  const a = img({ failed: true, vaults: V1 })
+  await wireMeshPhotos(doc([a]), { ...big, limits: { photoBytes: 2 << 20 } })
+  assert.equal(a.dataset.mesh, "failed")
+
+  const f = fakeReader([V1], { size: 3 << 20 })
+  const imgs = [1, 2, 3].map(i => img({ failed: true, vaults: V1, x: String(i).repeat(64) }))
+  await wireMeshPhotos(doc(imgs), { ...f, limits: { pageBytes: 5 << 20, parallel: 1 } })
+  assert.deepEqual(imgs.map(i => i.dataset.mesh), ["loaded", "failed", "failed"])
+  assert.equal(f.calls.gets.length, 2, "the third never asks")
+})
+
+test("the reader stops once nothing is left to read; leaving the page revokes the photos", async () => {
+  let leave
+  const revoked = [], f = fakeReader([V1])
+  const a = img({ failed: true }), later = img()
+  await wireMeshPhotos(doc([a, later]), { ...f, revoke: u => revoked.push(u), onLeave: fn => { leave = fn } })
+  await settle()
+  assert.equal(f.calls.stops, 1)
+  later.fail(); await settle()
+  assert.equal(f.calls.starts, 2, "a later failure starts a fresh reader")
+  assert.equal(f.calls.stops, 2)
+  leave()
+  assert.deepEqual(revoked, [a.src, later.src])
 })
 
 test("end to end: the real photo-only reader fetches the blob, hash-checked, from the named vault", async () => {

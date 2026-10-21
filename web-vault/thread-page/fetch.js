@@ -46,8 +46,9 @@ export async function readMeshVaults(pubkeys, query, relays = READ_RELAYS) {
   return out
 }
 
-/** -> { post, events (replies), profiles: Map<pubkey, { name, picture, nip05 }>, vaults: Map<pubkey, [hex]> } (see
- *  readMeshVaults), post null when no relay had it.
+/** -> { post, events (replies), profiles: Map<pubkey, { name, picture, nip05 }>, vaults: [hex] }, post null when no
+ *  relay had it. `vaults`: the mesh vaults the post author's 10063 names (readMeshVaults), only when the post has a
+ *  hashed photo; replies get none, since anyone can reply.
  *  Reads run side by side where they can (the post with its replies), since a chat app's unfurler waits seconds. */
 export async function loadThread(target, query) {
   const relays = relaysFor(target)
@@ -62,7 +63,7 @@ export async function loadThread(target, query) {
   const found = verified(postEvents)
     .filter(ev => (address ? ev.kind === target.kind && ev.pubkey === target.author && ev.tags.some(t => t[0] === "d" && t[1] === target.identifier) : ev.id === target.id))
   const post = found.sort((a, b) => b.created_at - a.created_at)[0] ?? null
-  if (!post) return { post: null, events: [], profiles: new Map(), vaults: new Map() }
+  if (!post) return { post: null, events: [], profiles: new Map(), vaults: [] }
   let events = verified(replySets.flat())
 
   const peopleOf = evs => evs.flatMap(e => [e.pubkey, ...mentionedPubkeys(e.content)])
@@ -78,14 +79,10 @@ export async function loadThread(target, query) {
   const deeper = !address && events.length
     ? query(relays, { kinds: [1], "#e": events.map(e => e.id).slice(0, 100), limit: REPLY_LIMIT })
     : Promise.resolve([])
-  const vaultsOf = evs => readMeshVaults(meshPhotoAuthors(evs), query, relays)
-  const [more, , vaults] = await Promise.all([deeper, readProfiles(peopleOf([post, ...events])), vaultsOf([post, ...events])])
+  const vaults = readMeshVaults(meshPhotoAuthors([post]), query, relays).then(m => m.get(post.pubkey) ?? [])
+  const [more] = await Promise.all([deeper, readProfiles(peopleOf([post, ...events])), vaults])
   const have = new Set(events.map(e => e.id))
   const extra = verified(more).filter(e => !have.has(e.id))
-  if (extra.length) {
-    events = [...events, ...extra]
-    const [, extraVaults] = await Promise.all([readProfiles(peopleOf(extra)), vaultsOf(extra.filter(e => !vaults.has(e.pubkey)))])
-    for (const [pk, vs] of extraVaults) vaults.set(pk, vs)
-  }
-  return { post, events, profiles, vaults }
+  if (extra.length) { events = [...events, ...extra]; await readProfiles(peopleOf(extra)) }
+  return { post, events, profiles, vaults: await vaults }
 }
