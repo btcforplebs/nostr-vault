@@ -68,15 +68,24 @@ export async function readFeed(vault, follows, { limit = 100, until } = {}) {
 /** Pull follows' notes since the newest one cached (or the last two days) into Haven /feed. -> notes stored */
 export async function syncFeed(vault, follows, relays, { onProgress = () => {} } = {}) {
   if (!follows.length) return 0
-  // querySync treats a relay it can't reach as an empty answer, so check that at least one relay is up first.
-  const up = await Promise.allSettled(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 })))
-  if (!up.some(r => r.status === "fulfilled")) throw new Error("no relay reachable")
+  // querySync treats a relay it can't reach as an empty answer, so check that at least one relay is up first. The
+  // first one up is enough: the rest join the query as they connect, rather than the slowest connect (up to 5 s for
+  // a host that never answers) holding back every relay's notes.
+  await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
   const top = (await readFeed(vault, follows, { limit: 1 }))[0]
   const since = top ? top.created_at - 600 : now() - 2 * 86400
   let stored = 0
   for (let i = 0; i < follows.length; i += 250) {
-    const evs = await pool.querySync(relays, { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }, { maxWait: 8000 })
-    for (const ev of evs) if ((await vault.feed.event(ev)).ok) stored++
+    // Each relay's answer is stored as it lands, so the fastest relay's notes show without waiting for the slowest
+    // (up to maxWait). A note two relays send is written once: Haven takes one request per id at a time.
+    // A relay whose notes Haven refused doesn't stop the others; the sync fails once they have all finished.
+    const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }, sent = new Set()
+    const failed = (await Promise.allSettled(relays.map(async url => {
+      const evs = (await pool.querySync([url], filter, { maxWait: 8000 }).catch(() => [])).filter(e => !sent.has(e.id) && sent.add(e.id))
+      const n = await storeAll(vault.feed, evs)
+      if (n) onProgress({ done: i, of: follows.length, stored: (stored += n) })
+    }))).find(r => r.status === "rejected")
+    if (failed) throw failed.reason
     onProgress({ done: Math.min(i + 250, follows.length), of: follows.length, stored })
   }
   return stored
@@ -89,9 +98,23 @@ export async function syncOwn(vault, pubkey, relays) {
     pool.querySync(relays, { kinds: [1], authors: [pubkey], limit: 300 }, { maxWait: 8000 }),
     pool.querySync(relays, { kinds: [30023], authors: [pubkey], limit: 50 }, { maxWait: 8000 }),
   ])
-  const evs = [...notes, ...articles]
+  return storeAll(vault.outbox, [...notes, ...articles])
+}
+
+/**
+ * Writes events into a Haven route 100 at a time, not one round trip after another: a first sync's 500 notes took
+ * ~1 s in turn. Haven takes one request per id at a time, so a note another sync (Refresh, the background tick)
+ * is writing right now counts as a duplicate here. -> how many were stored
+ */
+async function storeAll(route, evs) {
   let stored = 0
-  for (const ev of evs) if ((await vault.outbox.event(ev)).ok) stored++
+  for (let i = 0; i < evs.length; i += 100) {
+    const rs = await Promise.all(evs.slice(i, i + 100).map(ev => route.event(ev).catch(e => {
+      if (/already in flight/.test(e?.message)) return { ok: false }
+      throw e
+    })))
+    stored += rs.filter(r => r.ok).length
+  }
   return stored
 }
 
