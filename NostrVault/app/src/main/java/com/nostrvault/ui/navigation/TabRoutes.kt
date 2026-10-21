@@ -221,6 +221,7 @@ private fun ProfilePage(navController: NavHostController, pubkey: String, isTab:
         onOpenFollowList = { tab, total ->
             navController.navigate(Screen.FollowList.createRoute(pubkey, tab.name, total))
         },
+        onCompose = { navController.navigate(Screen.ComposeNote.createRoute()) },
         onBack = { navController.popBackStack() },
         isTab = isTab,
     )

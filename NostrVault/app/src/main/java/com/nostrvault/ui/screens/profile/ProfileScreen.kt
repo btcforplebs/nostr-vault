@@ -69,6 +69,8 @@ fun ProfileScreen(
     onComposeText: (String) -> Unit = {},
     /** Opens the Following / Followers lists on a tab, with the follower count shown here. */
     onOpenFollowList: (FollowListTab, Int?) -> Unit = { _, _ -> },
+    /** The note composer: the Profile tab's floating Post button. */
+    onCompose: () -> Unit = {},
     onBack: () -> Unit,
     /** The Profile tab, as opposed to a profile pushed from a note or a list.
      *  Only the tab goes without a back button; your own profile pushed from a
@@ -250,6 +252,8 @@ fun ProfileScreen(
                 }
             }
         },
+        // iOS has the Post capsule on the Profile tab only (MyProfileView.postButton).
+        floatingActionButton = { if (isTab) ProfilePostCapsule(onPost = onCompose) },
     ) { padding ->
         // Items before the section tabs: header, bio (when there is one),
         // links, follow counts and actions.
