@@ -17,6 +17,7 @@ import { EmptyState } from "./EmptyState.jsx"
 import { copyLink, shareLink, threadLink } from "./share.js"
 import { fanfaresLink, gatedArticle, lockStatus, stripTeaser } from "./gated.js"
 import { useProfile } from "../components/useProfile.js"
+import { SkeletonRows } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -56,7 +57,7 @@ export function ArticlesScreen({ ctx }) {
       {status && <div class="status-line">{status}</div>}
       {!follows.length ? <p class="empty">{!account.loaded ? "Loading your follows…" : scope === "following" ? "Follow someone to see their articles here."
           : "Global shows articles from people your web of trust vouches for. Follow a few people first."}</p>
-        : items === null ? <p class="empty">Loading articles…</p>
+        : items === null ? <SkeletonRows count={3} label="Loading articles…" />
         : !shown.length ? (items.length ? <p class="empty">Every article loaded here is from someone you blocked.</p>
           : <EmptyState title="No articles yet" detail={scope === "following" ? "Long-form posts from people you follow show up here. Nothing to read yet." : "Long-form posts from across Nostr show up here. Nothing to read yet."} />)
         : <>

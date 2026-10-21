@@ -9,6 +9,7 @@ import * as wl from "./wavlake.js"
 import { current, onPlayer, playList, playShuffled, playerState } from "./player.js"
 import { decode } from "nostr-tools/nip19"
 import { PlayerBar } from "./PlayerBar.jsx"
+import { Waiting } from "../components/Loading.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -71,7 +72,7 @@ export function MusicScreen({ ctx }) {
 }
 
 function Trending({ tracks, days, blocked, onOpen }) {
-  if (tracks === null) return <p class="empty">Loading trending songs…</p>
+  if (tracks === null) return <Waiting>Loading trending songs…</Waiting>
   const shown = wl.visibleTracks(tracks, blocked)
   if (!shown.length) return tracks.length ? <p class="empty">Every song here is by someone you blocked.</p> : null
   const span = days === 7 ? "this week" : "this month"
@@ -114,7 +115,7 @@ export function Following({ follows, loaded, blocked, onOpen }) {
 
 export function FollowingList({ follows, loaded, found, blocked, onOpen }) {
   if (!follows.length) return <p class="empty">{loaded === false ? "Loading your follows…" : "Follow people on Nostr, and the Wavlake artists among them show up here."}</p>
-  if (!found) return <p class="empty">Looking for the Wavlake artists you follow…</p>
+  if (!found) return <Waiting>Looking for the Wavlake artists you follow…</Waiting>
   const artists = wl.visibleArtists(found.artists, blocked), songs = wl.visibleTracks(found.tracks, blocked)
   if (!artists.length) return <p class="empty">None of the Wavlake artists checked are people you follow. Artists show up here once they link their Nostr key on Wavlake.</p>
   return <>
@@ -156,7 +157,7 @@ function ArtistPage({ id, seed, blocked, onOpen, onBack }) {
     <div class="music-page">
       <PageBar onBack={onBack} href={wl.artistPage(id)} />
       <div class="music-hero">{a.art ? <img class="round" src={a.art} alt="" referrerpolicy="no-referrer" /> : <div class="music-art round" />}<div><h2>{a.name}</h2>{data && <p class="muted small">{data.albums.length === 1 ? "1 album" : `${data.albums.length} albums`} · {wl.songs(data.tracks.length)}</p>}</div></div>
-      {error ? <p class="empty">{error}</p> : !data ? <p class="empty">Loading…</p> : hidden ? <p class="empty">You blocked this artist.</p> : <>
+      {error ? <p class="empty">{error}</p> : !data ? <Waiting>Loading…</Waiting> : hidden ? <p class="empty">You blocked this artist.</p> : <>
         <PlayButtons tracks={wl.visibleTracks(data.tracks, blocked)} play="▶ Play all" extra={nostrHex(a.npub) && <a class="button small" href={`#/profile/${nostrHex(a.npub)}`}>On Nostr</a>} />
         {data.albums.length > 0 && <><h3 class="music-head">Albums</h3><Row items={data.albums.map(al => ({ key: al.id, title: al.title, sub: al.year ? String(al.year) : "Album", art: al.art, open: () => onOpen({ type: "album", album: al }) }))} /></>}
         <h3 class="music-head">Songs</h3>
@@ -178,7 +179,7 @@ function AlbumPage({ id, seed, blocked, onOpen, onBack }) {
         {al.artist && (al.artistId ? <button type="button" class="link" onClick={() => onOpen({ type: "artist", artist: { id: al.artistId, name: al.artist, art: null, npub: null } })}>{al.artist}</button> : <p class="muted">{al.artist}</p>)}
         {data && <p class="muted small">{[al.year, wl.songs(tracks.length), albumMinutes(tracks)].filter(Boolean).join(" · ")}</p>}
       </div></div>
-      {error ? <p class="empty">{error}</p> : !data ? <p class="empty">Loading…</p> : <>
+      {error ? <p class="empty">{error}</p> : !data ? <Waiting>Loading…</Waiting> : <>
         <PlayButtons tracks={tracks} play="▶ Play" />
         {tracks.length ? <Tracks tracks={tracks} numbered /> : <p class="empty">{data.tracks.length ? "Every song here is by someone you blocked." : "No songs on this album."}</p>}
       </>}

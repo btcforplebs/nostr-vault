@@ -122,9 +122,9 @@ function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
         {!isNow && !readOnly && (asking
           ? <>
               <p class="small">This will replace your current {follows(followsOf(shown).length)} with {follows(followsOf(list).length)} from this backup and publish the updated list to your relays. Your current list is kept here first.</p>
-              <div class="row"><button class="danger" disabled={!!busy} onClick={restore}>{busy === "restore" ? "Restoring…" : "Restore"}</button><button disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+              <div class="row"><button class="danger" disabled={!!busy} onClick={restore} aria-busy={busy === "restore" || undefined}>{busy === "restore" ? "Restoring…" : "Restore"}</button><button disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
             </>
-          : <button class="primary" disabled={!!busy} onClick={ask}>{busy === "check" ? "Checking your relays…" : "Restore This List"}</button>)}
+          : <button class="primary" disabled={!!busy} onClick={ask} aria-busy={busy === "check" || undefined}>{busy === "check" ? "Checking your relays…" : "Restore This List"}</button>)}
         {readOnly && <p class="muted small">{READ_ONLY}</p>}
         {msg && <p class="muted small">{msg}</p>}
       </div>
@@ -136,7 +136,7 @@ function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
               <Avatar pubkey={pk} size={34} />
               <span class="person-names"><a href={`#/profile/${pk}`}><AuthorName pubkey={pk} /></a></span>
               {refollowed.has(pk) ? <span class="tag">✓</span>
-                : !readOnly && <button class="small" disabled={!!busy} onClick={() => refollow(pk)}>{busy === pk ? "Following…" : "Re-follow"}</button>}
+                : !readOnly && <button class="small" disabled={!!busy} onClick={() => refollow(pk)} aria-busy={busy === pk || undefined}>{busy === pk ? "Following…" : "Re-follow"}</button>}
             </div>
           ))}
           <p class="settings-note muted small">People in this backup that you no longer follow.</p>

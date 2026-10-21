@@ -77,12 +77,12 @@ export function SignInOptions({ onSignedIn }) {
 
   return (
     <>
-      {hasExt && <button class="primary" disabled={!!busy} onClick={run("ext", extensionSignIn)}>{busy === "ext" ? "Waiting for the extension…" : "Sign in with extension"}</button>}
+      {hasExt && <button class="primary" disabled={!!busy} onClick={run("ext", extensionSignIn)} aria-busy={busy === "ext" || undefined}>{busy === "ext" ? "Waiting for the extension…" : "Sign in with extension"}</button>}
       <label class="field">
         <span>Bunker link (NIP-46)</span>
         <input value={bunker} onInput={e => setBunker(e.currentTarget.value)} placeholder="bunker://… or name@domain" autocapitalize="off" autocorrect="off" spellcheck={false} />
       </label>
-      <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))}>
+      <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))} aria-busy={busy === "bunker" || undefined}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
       <ReadOnlySignIn disabled={!!busy} onSignedIn={onSignedIn} />

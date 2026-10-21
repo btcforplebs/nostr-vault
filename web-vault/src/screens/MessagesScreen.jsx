@@ -88,7 +88,7 @@ export function OpenMore({ ctx, more }) {
   return (
     <div class="status-line">
       {more === 1 ? "1 more message isn't open yet." : `${more} more messages aren't open yet.`}{" "}
-      <button type="button" class="small" disabled={busy} onClick={go}>{busy ? (ctx.session.method === "nip46" ? "Waiting for your signer…" : "Opening…") : "Open more"}</button>
+      <button type="button" class="small" disabled={busy} onClick={go} aria-busy={busy || undefined}>{busy ? (ctx.session.method === "nip46" ? "Waiting for your signer…" : "Opening…") : "Open more"}</button>
     </div>
   )
 }
@@ -162,7 +162,7 @@ export function MessagesScreen({ ctx }) {
         <h2>Messages</h2>
         <span class="dm-head-actions">
           {total > 0 && <button type="button" class="small" onClick={() => markRead(ctx.session.pubkey, [...messages.values()].filter(m => !blocked.has(m.peer)))}>Mark all read</button>}
-          {!note && <button type="button" class="small" onClick={refresh} disabled={syncing} aria-label="Refresh messages">{syncing ? "Refreshing…" : "Refresh"}</button>}
+          {!note && <button type="button" class="small" onClick={refresh} disabled={syncing} aria-busy={syncing || undefined} aria-label="Refresh messages">{syncing ? "Refreshing…" : "Refresh"}</button>}
         </span>
       </header>
       {note && <div class="status-line">Your messages can't be read here ({note}).</div>}

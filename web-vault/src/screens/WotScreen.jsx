@@ -232,7 +232,7 @@ function TrustCard({ ctx, web, built, root, pubkey, onPick, onSeeWeb, onClose })
       )}
       {!isMe && (
         <div class="wot-actions">
-          <button type="button" class={iFollow ? "small" : "small primary"} disabled={busy || !account.loaded} onClick={toggle}>
+          <button type="button" class={iFollow ? "small" : "small primary"} disabled={busy || !account.loaded} onClick={toggle} aria-busy={busy || undefined}>
             {busy ? (signer.method === "nip46" ? "Waiting for your signer…" : "…") : iFollow ? "Unfollow" : "Follow"}
           </button>
           <a class="button small" href={`#/profile/${pubkey}`}>Profile</a>

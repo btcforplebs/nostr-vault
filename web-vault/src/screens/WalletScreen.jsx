@@ -10,6 +10,7 @@ import { actionContext } from "../net/actions.js"
 import { WalletReceive } from "./WalletReceive.jsx"
 import { WalletHistory } from "./WalletHistory.jsx"
 import { WalletSend } from "./WalletSend.jsx"
+import { Waiting } from "../components/Loading.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
@@ -19,7 +20,7 @@ export function WalletScreen() {
   return (
     <main class="screen wallet">
       <header class="screen-head"><h2>Wallet</h2></header>
-      {wallet.status === "loading" ? <p class="empty">Opening your wallet…</p>
+      {wallet.status === "loading" ? <Waiting>Opening your wallet…</Waiting>
         : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletSend wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /><WalletHistory wallet={wallet} /></> : <Connect />}
       {wallet.status !== "loading" && <DefaultZap sats={wallet.defaultSats} />}
     </main>
@@ -43,7 +44,7 @@ function Connect() {
       <input class="wallet-uri" type="password" autocomplete="off" autocapitalize="off" spellcheck={false}
         placeholder="nostr+walletconnect://…" value={uri} onInput={e => setUri(e.currentTarget.value)} aria-label="Wallet connection link" />
       {err && <p class="error" role="alert">{err}</p>}
-      <button class="primary" disabled={busy || !uri.trim()}>{busy ? "Connecting…" : "Connect wallet"}</button>
+      <button class="primary" disabled={busy || !uri.trim()} aria-busy={busy || undefined}>{busy ? "Connecting…" : "Connect wallet"}</button>
       <p class="muted small">The link stays in this browser and is deleted when you sign out. Its encryption only keeps it out of plain sight on this device: script on this page, or anyone who copies this browser's profile, can still read it. Anyone with the link can spend from the wallet, so give this app a connection with a spending limit.</p>
     </form>
   )

@@ -94,7 +94,7 @@ export function PersonScreen({ ctx, pubkey }) {
       <ProfileHeader pubkey={pubkey} you={false} relation={relation(iFollow, followsMe)} follows={lists?.contacts ? followsOf(lists.contacts).length : null}>
         <div class="person-actions">
           {/* Until the user's own list has been read there is nothing safe to build a new one on. */}
-          <button class={iFollow ? "follow-btn on" : "follow-btn"} disabled={busy || !account.loaded} onClick={toggle}>
+          <button class={iFollow ? "follow-btn on" : "follow-btn"} disabled={busy || !account.loaded} onClick={toggle} aria-busy={busy || undefined}>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
               <circle cx="9" cy="8" r="4" /><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7" />{iFollow ? <path d="M17 11h6" /> : <path d="M20 8v6M17 11h6" />}
             </svg>

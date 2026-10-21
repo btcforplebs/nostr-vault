@@ -5,6 +5,7 @@ import { READ_ONLY } from "../signer/readonly.js"
 import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
 import { latestList, publishList, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
+import { SkeletonList } from "../components/Loading.jsx"
 
 const loopback = url => { try { return /^(localhost|127\.|\[::1\])/.test(new URL(url).hostname) } catch { return false } }
 
@@ -48,7 +49,7 @@ export function MediaServersPage({ ctx }) {
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
-  if (!loaded) return <p class="empty">Loading…</p>
+  if (!loaded) return <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your media servers…" />
   return (
     <>
       <p class="settings-note muted small">Photos you attach to a note are uploaded here (Blossom), the first server first. Other apps read this list (BUD-03) to find your files.</p>
@@ -74,7 +75,7 @@ export function MediaServersPage({ ctx }) {
           </form>
           {dirty && (
             <div class="settings-note row">
-              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save}>{busy ? "Publishing…" : "Save and publish"}</button>
+              <button class="primary" disabled={busy || !!problem || !loaded.checked} onClick={save} aria-busy={busy || undefined}>{busy ? "Publishing…" : "Save and publish"}</button>
               <button disabled={busy} onClick={() => { setUrls(saved); setErr("") }}>Discard changes</button>
             </div>
           )}

@@ -290,7 +290,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
           {loaded === key && (text.trim() || ready.length > 0) && !result && <span class="muted small compose-draft">Draft saved</span>}
         </div>
       </div>
-      <button class="primary" disabled={!canPost} onClick={post}>{busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"}</button>
+      <button class="primary" disabled={!canPost} onClick={post} aria-busy={busy || uploading || undefined}>{busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"}</button>
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}
     </main>

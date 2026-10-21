@@ -135,7 +135,7 @@ export function ConversationScreen({ ctx, peer }) {
                 if (!e.clipboardData.getData("text/plain")) e.preventDefault() // text copied with the image still pastes
                 attach(files)
               }} />
-            <button type="submit" class="primary small" disabled={busy || preparing || (!text.trim() && !photo)}>{busy ? "Sending…" : "Send"}</button>
+            <button type="submit" class="primary small" disabled={busy || preparing || (!text.trim() && !photo)} aria-busy={busy || undefined}>{busy ? "Sending…" : "Send"}</button>
           </div>
         </form>
       )}

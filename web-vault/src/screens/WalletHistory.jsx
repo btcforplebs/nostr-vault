@@ -10,6 +10,7 @@ import { DEFAULT_RELAYS, pool, uniq } from "../net/pool.js"
 import { lightningAddressOf, resolvePay } from "../net/zaps.js"
 import { lookupZaps } from "../net/wallet-zaps.js"
 import { HISTORY_PAGE, counterparty, isUnsupported, listTransactions, mergeTransactions } from "../net/wallet-history.js"
+import { Spinner } from "../components/Loading.jsx"
 
 /** A zap you received was made out to you; one you sent was made by you, or anonymously from a throwaway key. Any
  *  other zap request riding on your payment is somebody else's story, and the row shows as a plain payment. */
@@ -83,13 +84,13 @@ export function WalletHistory({ wallet, list = listTransactions, me = actionCont
   return (
     <section class="card wallet-card">
       <div class="wallet-row"><h3 style="margin: 0; flex: 1">History</h3>
-        {!unsupported && <button type="button" class="small" disabled={busy} onClick={() => load(true)} aria-label="Refresh history">↻</button>}</div>
+        {!unsupported && <button type="button" class="small" disabled={busy} onClick={() => load(true)} aria-busy={busy || undefined} aria-label="Refresh history">↻</button>}</div>
       {unsupported
         ? <p class="muted small">Your wallet doesn't share its payment history with apps. If it supports it, reconnect the wallet with "transaction history" (list transactions) allowed.</p>
         : err && !txs.length ? <p class="error" role="alert">{err}</p>
-        : !txs.length ? <p class="muted small">{busy ? "Loading…" : "No payments yet."}</p>
+        : !txs.length ? <p class="muted small">{busy ? <><Spinner /> Loading…</> : "No payments yet."}</p>
         : <ul class="wallet-history">{withFound(ownZaps(txs, me), found.details).map(tx => <Tx key={tx.id} tx={tx} post={tx.zap?.noteId ? found.posts.get(tx.zap.noteId) : null} />)}</ul>}
-      {more && !unsupported && <button type="button" disabled={busy} onClick={() => load(false)}>{busy ? "Loading…" : "Show more"}</button>}
+      {more && !unsupported && <button type="button" disabled={busy} onClick={() => load(false)} aria-busy={busy || undefined}>{busy ? "Loading…" : "Show more"}</button>}
     </section>
   )
 }

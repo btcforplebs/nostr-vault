@@ -87,7 +87,7 @@ function Card({ ctx, pubkey, left, top, above }) {
         <span class="peek-actions">
           <a class="button small" href={`#/profile/${pubkey}`}>Profile</a>
           {!me && !signer?.readOnly && (
-            <button type="button" class={iFollow ? "small" : "small primary"} disabled={busy || !account.loaded} onClick={toggle}>
+            <button type="button" class={iFollow ? "small" : "small primary"} disabled={busy || !account.loaded} onClick={toggle} aria-busy={busy || undefined}>
               {busy ? "…" : iFollow ? "Unfollow" : "Follow"}
             </button>
           )}
