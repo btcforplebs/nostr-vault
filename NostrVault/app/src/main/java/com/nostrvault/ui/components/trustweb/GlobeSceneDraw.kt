@@ -6,11 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -28,13 +24,12 @@ import com.nostrvault.ui.components.GlobeScene.Slot
 import com.nostrvault.ui.theme.Motion
 import kotlin.math.max
 
-// GlobeScene's drawing: what goes under the faces, and the names over them. Split out of GlobeScene.kt.
+// GlobeScene's drawing: what goes under the faces (stars, the threads' glow, threads), and the names over them. Split out of GlobeScene.kt.
 
-    /** Stars, threads, glows and embers: everything under the faces. */
+    /** The core's glow and the stars under the threads: haze, your follows and mutuals. */
     internal fun GlobeScene.drawBack(scope: DrawScope, accent: Color) = with(scope) {
         prepare(size.width, size.height, density)
         if (!ready) return@with
-        val dp = dpPx
 
         // Glow behind the core.
         val glowR = (coreR * 3).toFloat()
@@ -46,50 +41,45 @@ import kotlin.math.max
                 center = Offset(originX.toFloat(), originY.toFloat()),
             )
         }
+        fillStars(this, Slot.HAZE, HazeColor)
+        fillStars(this, Slot.RING, RingColor)
+        fillStars(this, Slot.MUTUAL, Color.White)
+    }
 
-        fun fill(slot: Slot, color: Color) {
-            if (lite) {
-                drawIntoCanvas { canvas ->
-                    for (bucket in pointOrder) {
-                        if (bucket.slot != slot || bucket.count == 0) continue
-                        pointPaint.color = color.copy(alpha = bucket.level.toFloat() / LEVELS).toArgb()
-                        pointPaint.strokeWidth = bucket.diameter
-                        canvas.nativeCanvas.drawPoints(bucket.xy, 0, bucket.count * 2, pointPaint)
-                    }
-                }
-                return
-            }
-            for (level in 1..LEVELS) {
-                val path = buckets[slot.ordinal][level]
-                if (!path.isEmpty) drawPath(path, color.copy(alpha = level.toFloat() / LEVELS))
+    /**
+     * The threads' glow, brightening toward the front (iOS's blurred layer in
+     * `GlobeScene.draw`). [blurred]: drawn into a layer [GlobeThreads.glowBlur]
+     * blurs; otherwise two soft strokes stand in for the blur.
+     */
+    internal fun GlobeScene.drawThreadGlow(scope: DrawScope, accent: Color, blurred: Boolean) = with(scope) {
+        prepare(size.width, size.height, density)
+        if (!ready) return@with
+        val strokes = GlobeThreads.strokes(dpPx)
+        for (level in 0 until GlobeThreads.BANDS) {
+            val a = GlobeThreads.glowAlpha(level).toFloat()
+            if (glow[level].isEmpty || a <= GlobeThreads.GLOW_MIN) continue
+            if (blurred) {
+                drawPath(glow[level], accent.copy(alpha = a), style = strokes.glow)
+            } else {
+                drawPath(glow[level], accent.copy(alpha = a * 0.25f), style = strokes.softWide)
+                drawPath(glow[level], accent.copy(alpha = a * 0.45f), style = strokes.softNarrow)
             }
         }
-        fill(Slot.HAZE, HazeColor)
-        fill(Slot.RING, RingColor)
-        fill(Slot.MUTUAL, Color.White)
+    }
 
-        // Glow brightens toward the front. No blur on every Android version,
-        // so two soft strokes stand in for iOS's blurred layer.
-        fun bandAlpha(level: Int): Float {
-            val front = (level + 0.5f) / 4
-            return 0.10f + 0.75f * front * front
+    /** Threads, the hot stars, live arcs and embers: everything over the glow and under the faces. */
+    internal fun GlobeScene.drawFront(scope: DrawScope, accent: Color) = with(scope) {
+        prepare(size.width, size.height, density)
+        if (!ready) return@with
+        val dp = dpPx
+        val strokes = GlobeThreads.strokes(dp)
+        for (level in 0 until GlobeThreads.BANDS) {
+            val a = GlobeThreads.bandAlpha(level).toFloat()
+            if (!faint[level].isEmpty) drawPath(faint[level], ThreadColor.copy(alpha = a * 0.45f), style = strokes.faint)
+            if (!strong[level].isEmpty) drawPath(strong[level], ThreadColor.copy(alpha = a), style = strokes.strong)
         }
-        for (level in 0 until 4) {
-            if (glow[level].isEmpty) continue
-            val a = bandAlpha(level) * 0.6f
-            drawPath(glow[level], accent.copy(alpha = a * 0.25f), style = Stroke(width = 8 * dp, cap = StrokeCap.Round))
-            drawPath(glow[level], accent.copy(alpha = a * 0.45f), style = Stroke(width = 4 * dp, cap = StrokeCap.Round))
-        }
-        for (level in 0 until 4) {
-            val a = bandAlpha(level)
-            if (!faint[level].isEmpty) drawPath(faint[level], ThreadColor.copy(alpha = a * 0.45f), style = Stroke(width = 0.8f * dp))
-            if (!strong[level].isEmpty) drawPath(strong[level], ThreadColor.copy(alpha = a), style = Stroke(width = 1.3f * dp))
-        }
-        if (!dashed.isEmpty) {
-            drawPath(dashed, ThreadColor.copy(alpha = 0.7f), style = Stroke(width = 1.2f * dp, cap = StrokeCap.Round,
-                join = StrokeJoin.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5 * dp, 4 * dp))))
-        }
-        fill(Slot.HOT, accent)
+        if (!dashed.isEmpty) drawPath(dashed, ThreadColor.copy(alpha = 0.7f), style = strokes.dashed)
+        fillStars(this, Slot.HOT, accent)
 
         // Live arcs over the stars and threads, under the faces.
         val arcProjector = lastProjector
@@ -98,14 +88,14 @@ import kotlin.math.max
                 arcProjector.facing, { arcProjector.project(it, 1.0) }, { key, ring -> arcPoint(key, ring) })
         }
 
-        // A soft tint behind each face, and embers for those behind the globe.
+        // Embers, in the face's own colour as iOS, cross-fading with the face
+        // over them; then a soft tint behind each face that shows.
         for (spot in spots) {
             val c = Offset(spot.x.toFloat(), spot.y.toFloat())
-            if (spot.ember) {
-                // In the face's own colour, as iOS.
-                drawCircle(spot.tint.copy(alpha = spot.alpha.toFloat().coerceIn(0f, 1f)), radius = spot.r.toFloat(), center = c)
-                continue
+            if (spot.emberAlpha > 0 && spot.emberR > 0) {
+                drawCircle(spot.tint.copy(alpha = spot.emberAlpha.toFloat().coerceIn(0f, 1f)), radius = spot.emberR.toFloat(), center = c)
             }
+            if (spot.ember) continue
             val r = spot.r.toFloat()
             if (r <= 0f) continue
             drawCircle(
@@ -117,6 +107,25 @@ import kotlin.math.max
                 radius = r * 1.9f,
                 center = c,
             )
+        }
+    }
+
+    /** One slot's stars, a fill per brightness step. */
+    private fun GlobeScene.fillStars(scope: DrawScope, slot: Slot, color: Color) = with(scope) {
+        if (lite) {
+            drawIntoCanvas { canvas ->
+                for (bucket in pointOrder) {
+                    if (bucket.slot != slot || bucket.count == 0) continue
+                    pointPaint.color = color.copy(alpha = bucket.level.toFloat() / LEVELS).toArgb()
+                    pointPaint.strokeWidth = bucket.diameter
+                    canvas.nativeCanvas.drawPoints(bucket.xy, 0, bucket.count * 2, pointPaint)
+                }
+            }
+            return@with
+        }
+        for (level in 1..LEVELS) {
+            val path = buckets[slot.ordinal][level]
+            if (!path.isEmpty) drawPath(path, color.copy(alpha = level.toFloat() / LEVELS))
         }
     }
 

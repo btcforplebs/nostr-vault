@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -26,6 +27,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -222,6 +224,7 @@ internal fun TrustGlobe(
     }
 
     val faceKeys = scene.faceKeys
+    val glowBlurred = !lite && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val accent = GlobeAccent
     Box(
         Modifier
@@ -292,7 +295,9 @@ internal fun TrustGlobe(
             .clearAndSetSemantics {
                 contentDescription = "Web of Trust globe"
                 stateDescription = summary
-                customActions = faceKeys.filter { it != center }.map { key ->
+                // Compose throws at 32 actions on one node, so a big globe crashed
+                // under TalkBack: at most 28 faces plus the 3 below.
+                customActions = faceKeys.filter { it != center }.take(28).map { key ->
                     CustomAccessibilityAction("Go to ${name(key)}") { currentOnTap(key); true }
                 } + listOf(
                     CustomAccessibilityAction("Zoom in") { scene.zoomStep(0.3); true },
@@ -302,6 +307,16 @@ internal fun TrustGlobe(
             },
     ) {
         Canvas(Modifier.fillMaxSize()) { scene.drawBack(this, accent) }
+        // The threads' glow in its own blurred layer, as iOS (API 31+; a lite
+        // phone and older Android get soft strokes). Only while threads show.
+        if (scene.threaded) {
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .then(if (glowBlurred) Modifier.graphicsLayer { renderEffect = GlobeThreads.glowBlur(density) } else Modifier),
+            ) { scene.drawThreadGlow(this, accent, glowBlurred) }
+        }
+        Canvas(Modifier.fillMaxSize()) { scene.drawFront(this, accent) }
 
         Layout(
             content = {

@@ -34,5 +34,5 @@ class GlobeEdgeTest {
         }
     }
 
-    // Skipped: aSeatFadesInAQuarterSecondAndReduceMotionCuts — GlobeEdge.seat is not ported.
+    // aSeatFadesInAQuarterSecondAndReduceMotionCuts: ported as GlobeFaceFade.seat, tested in ui/components/GlobeFaceFadeTest.
 }
