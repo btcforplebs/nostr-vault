@@ -186,3 +186,45 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 999px;
   background: var(--s3); border: 1px solid var(--strong); font: var(--t-foot); font-weight: 600; }
 .desk-split.single .desk-detail-head .desk-x { display: none; } /* Back is the way out */
+
+/* Column toolbars. On the phone a screen's title is a floating glass pill; on the iPad and Mac it sits in the
+   navigation bar (.navigationTitle + .toolbar). Every desktop column gets that bar: 52px, sticky, black glass with a
+   hairline under it, the title as plain text on the left and the screen's buttons on the right. */
+.desk-app .screen { padding-top: 0; }
+.desk-app .screen-head { min-height: 52px; margin: 0 0 10px; padding: 8px 12px 8px var(--gutter); gap: 8px; flex-wrap: nowrap;
+  background: rgb(0 0 0 / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-bottom: 1px solid var(--hair); }
+.desk-app .screen-head h2 { min-width: 0; margin-right: auto; padding: 0; border: 0; border-radius: 0; background: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; font: var(--t-headline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desk-app .screen-head button.small, .desk-app .screen-head a.button.small { flex: none; min-height: 32px; padding: 0 12px;
+  background: var(--s1); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.desk-app .screen-head .vault-pill-btn { width: 32px; height: 32px; background: var(--s1); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.desk-app .screen-head .layout-button { margin-left: 0; }
+.desk-app .screen-head .layout-button + button { margin-left: 0; }
+.desk-detail-head { min-height: 52px; padding: 8px 12px 8px var(--gutter); background: rgb(0 0 0 / .82); }
+.desk-crumb { padding: 10px var(--gutter); background: rgb(0 0 0 / .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--hair); }
+.desk-crumb button { background: var(--s1); }
+.desk-crumb + .screen .screen-head { top: 55px; }
+/* A narrow list column: the layout button keeps its icon, the name goes to its tooltip. */
+@container (max-width: 460px) { .screen-head .layout-button span { display: none; } .screen-head .layout-button { padding: 0 9px; } }
+
+/* The feed picker and the profile tabs scroll sideways under a fade, instead of being cut off at the divider. */
+.desk-app .feed-modes, .desk-app .segmented { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+.desk-app .segmented:not(.wot-views) { overflow-x: auto; scrollbar-width: none; }
+.desk-app .segmented:not(.wot-views) button { flex: 1 0 auto; padding: 0 12px; white-space: nowrap; }
+
+/* Profile: Wallet sits in the account menu and Settings in the sidebar on desktop, so the banner keeps only Refresh,
+   floating over it as on the phone. */
+.desk-app .screen-head.profile-hud { justify-content: flex-end; margin-bottom: -52px; background: none; border-bottom: 0;
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+.desk-app .profile-hud a[href="#/wallet"], .desk-app .profile-hud a[href="#/settings"] { display: none; }
+.desk-app .profile-hud .vault-pill-btn { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+
+/* Vault: the mode strip takes the first row, its filter, search and Dashboard buttons the second. */
+.desk-app .screen-head.vault-head { flex-wrap: wrap; row-gap: 8px; }
+.desk-app .vault-head .vault-modes { flex: 1 1 100%; }
+
+/* WoT: the title and the Globe / My Web switch in one bar. */
+.desk-app .wot-head .wot-views { mask-image: none; -webkit-mask-image: none; border: 0; }
+.desk-app .wot-views button { min-height: 32px; }
