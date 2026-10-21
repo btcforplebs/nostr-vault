@@ -33,6 +33,42 @@ extension GlobeArcs {
     /// Points along a drawn trail: smooth for a few lines, fewer in a storm.
     static func arcSamples(lines: Int) -> Int { lines > 60 ? 16 : 40 }
 
+    // MARK: Frame rate
+
+    /// How fast the globe's clock runs. Only a finger gets the screen's
+    /// full rate: a storm of arrivals left at ProMotion's 120 a second ran
+    /// Logen's phone hot (10/20).
+    enum FrameRate: Equatable {
+        /// A finger turning or pinching the globe, or the flick it left.
+        case finger
+        /// A storm of arrivals.
+        case storm
+        /// Drift, settling and a few arcs.
+        case slow
+
+        static func pick(finger: Bool, busy: Bool) -> FrameRate {
+            finger ? .finger : busy ? .storm : .slow
+        }
+
+        /// Frames a second; nil for as fast as the screen goes.
+        var perSecond: Double? {
+            switch self {
+            case .finger: return nil
+            case .storm: return 60
+            case .slow: return 30
+            }
+        }
+    }
+
+    // MARK: The globe's own connections
+
+    /// How long the globe waits before trying its own dropped connection to
+    /// a relay again, after `attempts` tries in a row: 5 s, doubling, up to
+    /// 5 minutes. A dead relay was being dialled every 5 s for good.
+    static func ownRetryWait(attempts: Int) -> TimeInterval {
+        min(300, 5 * pow(2, Double(max(0, attempts - 1))))
+    }
+
     // MARK: Sharing the feed's connections
 
     /// Every globe subscription id starts with this. The feed skips

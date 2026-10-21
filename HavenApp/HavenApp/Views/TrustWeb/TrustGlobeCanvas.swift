@@ -112,10 +112,10 @@ struct TrustGlobeCanvas: View {
 
     var body: some View {
         GeometryReader { geo in
-            // Full rate only under a finger (a drag, its flick, a pinch) or
-            // in a storm of arrivals. Drift, settling and a few arcs at 30 fps:
-            // the idle globe was the heat.
-            TimelineView(.animation(minimumInterval: scene.fullRate || pinchActive ? nil : 1 / GlobeScene.slowRate,
+            // Full rate only under a finger (a drag, its flick, a pinch). A
+            // storm of arrivals at 60 fps; drift, settling and a few arcs at 30.
+            // The idle globe was the heat, then a storm at 120 (10/20).
+            TimelineView(.animation(minimumInterval: pinchActive ? nil : scene.frameRate.perSecond.map { 1 / $0 },
                                     paused: !scene.awake || !clockAllowed)) { timeline in
                 Canvas { context, size in
                     let now = timeline.date.timeIntervalSinceReferenceDate
@@ -174,13 +174,15 @@ struct TrustGlobeCanvas: View {
         }
         .onDisappear { onScreen = false }
         .onChange(of: layer) { _, layer in scene.focus(layer) }
-        .task(id: liveArcs && liveArcsOn && appIsActive ? LiveRequest(rings: rings, show: show) : nil) {
-            // Listens while the switch is on, the globe is on screen and the
-            // app is in front; leaving the tab or the app cancels this, and
-            // coming back starts it again, asking from then: what arrived
-            // meanwhile never flies as a burst (Android stops on pause too).
+        .task(id: liveArcs && liveArcsOn && clockAllowed ? LiveRequest(rings: rings, show: show) : nil) {
+            // Listens while the switch is on, the globe is on screen and
+            // uncovered, and the app is in front; leaving the tab or the app,
+            // or a sheet over the globe, cancels this and closes the
+            // connections (arrivals were dropped there anyway), and coming
+            // back starts it again, asking from then: what arrived meanwhile
+            // never flies as a burst (Android stops on pause too).
             // A feed or sort switched in My Web reopens it asking for just those.
-            guard liveArcs && liveArcsOn && appIsActive else { return }
+            guard liveArcs && liveArcsOn && clockAllowed else { return }
             scene.setLiveArcs(true)
             let token = arrivals.start(me: me, rings: rings, show: show)
             while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }

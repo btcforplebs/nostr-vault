@@ -15,12 +15,10 @@ final class GlobeScene: ObservableObject {
     @Published private(set) var awake = true
     /// Who is drawn with a picture: the core, the author, and the faces.
     @Published private(set) var faceKeys: [String] = []
-    /// A finger is turning the globe, its flick is still spinning, or a storm
-    /// of arrivals is flying: the clock runs at full rate. Otherwise drift,
-    /// settling and a few arcs draw at `slowRate`, which keeps the phone cool.
-    @Published private(set) var fullRate = false
-    /// Frames a second while nothing is under a finger.
-    static let slowRate = 30.0
+    /// A finger is turning the globe or its flick is still spinning: the
+    /// clock runs at full rate. A storm of arrivals draws at 60, and drift,
+    /// settling and a few arcs at 30, which keeps the phone cool.
+    @Published private(set) var frameRate: GlobeArcs.FrameRate = .slow
 
     /// Pictures are drawn from a symbol this size, scaled to each face.
     static let pictureSize: CGFloat = 64
@@ -338,8 +336,10 @@ final class GlobeScene: ObservableObject {
         wake()
     }
 
-    /// A finger on the globe, the spin it left, or a busy sky: full rate.
-    private var handsOn: Bool { camera.dragging || camera.spin != .zero || board.isBusy }
+    /// A finger on the globe or the spin it left: full rate. A busy sky: 60.
+    private var wantedRate: GlobeArcs.FrameRate {
+        .pick(finger: camera.dragging || camera.spin != .zero, busy: board.isBusy)
+    }
 
     /// Works out each star's lit flags again, after the stars, the core,
     /// the author, the traced path or the filter change.
@@ -350,8 +350,8 @@ final class GlobeScene: ObservableObject {
 
     func wake() {
         sleepQueued = false
-        let full = handsOn
-        if fullRate != full { fullRate = full }
+        let rate = wantedRate
+        if frameRate != rate { frameRate = rate }
         if !awake {
             lastTick = nil
             awake = true
@@ -447,12 +447,12 @@ final class GlobeScene: ObservableObject {
         }
         let cameraWants = camera.wantsFrames(now: now, reduceMotion: reduceMotion)
         let still = !settling && !fading && !cameraWants
-        if handsOn != fullRate {
+        if wantedRate != frameRate {
             // Not from inside the draw: the rate publishes on the next turn.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                let full = self.handsOn
-                if self.fullRate != full { self.fullRate = full }
+                let rate = self.wantedRate
+                if self.frameRate != rate { self.frameRate = rate }
             }
         }
         if still, board.isIdle, awake, !sleepQueued {
