@@ -79,6 +79,7 @@ fun ProfileScreen(
     /** Deletes your own Blossom files from the Media grid, as the Vault grid does. */
     mediaActions: com.nostrvault.ui.screens.MediaViewerViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(isTab) { viewModel.setOpensAsTab(isTab) }
     LaunchedEffect(pubkey) {
         if (viewModel.pubkey.isEmpty() || viewModel.pubkey != pubkey) {
             viewModel.setPubkey(pubkey)
@@ -94,6 +95,7 @@ fun ProfileScreen(
     val counts by viewModel.counts.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val isOwnProfile by viewModel.isOwnProfile.collectAsState()
+    val visibleSections by viewModel.visibleSections.collectAsState()
     val isOwnerAccount = remember(pubkey) { viewModel.isOwnerAccount(pubkey) }
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
@@ -381,17 +383,10 @@ fun ProfileScreen(
                         ProfileSection.MUSIC to tracks.size,
                     ),
                     // Shop only shows when this person sells something, or on
-                    // your own profile where it holds the Sell button; the
-                    // others only when this person has some.
-                    shown = { section ->
-                        when (section) {
-                            ProfileSection.SHOP -> isOwnProfile || shopListings.isNotEmpty()
-                            ProfileSection.ARTICLES -> articles.isNotEmpty()
-                            ProfileSection.DIVINES -> reels.isNotEmpty()
-                            ProfileSection.MUSIC -> tracks.isNotEmpty()
-                            else -> true
-                        }
-                    },
+                    // the Profile tab where it holds the Sell button; the
+                    // others only when this person has some, all at once
+                    // when their loads are done (ProfileLateTabs).
+                    shown = { it in visibleSections },
                     onSelect = selectSection,
                 )
             }
