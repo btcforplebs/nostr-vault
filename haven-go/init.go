@@ -749,6 +749,7 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	normalizeNostrAuthHeader(r)
 	relay.ServeHTTP(w, r)
 }
 
