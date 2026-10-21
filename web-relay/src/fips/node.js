@@ -1,11 +1,13 @@
 // The page's FIPS node: non-forwarding, first route via the public iris seeds over WSS, then WebRTC
-// (offers accepted only from owners). Serves NIP-01 over TCP/FIPS on RELAY_SERVICE_PORT.
+// (offers accepted only from owners). Serves NIP-01 over TCP/FIPS on RELAY_SERVICE_PORT, and reads photos from the
+// owners' vaults on mesh port 80 (blob-get.js).
 // Runs on the main thread: WebRTC needs RTCPeerConnection, which workers don't have.
 import { FipsNode, identityFromSecretKey, encodeNpub, toHex } from "@fips/core"
 import { WebSocketTransport } from "@fips/transport-websocket"
 import { WebRtcTransport } from "@fips/transport-webrtc"
 import { isOwner, xOnly } from "./owners.js"
 import { TcpFipsRelayServer, RELAY_SERVICE_PORT } from "./tcp-server.js"
+import { MeshBlobClient } from "./blob-get.js"
 
 export const PUBLIC_SEEDS = ["wss://fips1.iris.to/fips", "wss://fips2.iris.to/fips"]
 const KEY_ITEM = "fips-relay-key"
@@ -76,6 +78,9 @@ export async function startFipsRelay({ haven, getOwners, storage, onStatus = () 
 
   const server = new TcpFipsRelayServer(node, haven, getOwners)
   status.server = server.stats
+  // Photos from the owners' vaults (GET /<sha256> on mesh port 80), over the same session as the 7447 stream.
+  const blobs = new MeshBlobClient(node, identity.publicKey, { allow: k => isOwner(getOwners(), k) })
+  status.blobs = blobs.stats
   await node.start()
   server.start()
   const statsTimer = setInterval(emit, 1000)
@@ -101,9 +106,12 @@ export async function startFipsRelay({ haven, getOwners, storage, onStatus = () 
     status,
     /** Ask an owner's vault for a direct WebRTC link (needs an existing FIPS route, i.e. a session). */
     goDirect,
+    /** A blob from an owner's vault by sha256: { bytes, type }, hash-checked. See blob-get.js. */
+    getBlob: (vault, sha256, opts) => blobs.get(vault, sha256, opts),
     stop: async () => {
       clearInterval(statsTimer)
       clearInterval(dialTimer)
+      await blobs.stop()
       await server.stop()
       await node.stop()
     },
