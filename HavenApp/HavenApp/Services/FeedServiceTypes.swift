@@ -583,6 +583,8 @@ struct MediaHint: Equatable {
     var size: CGSize?
     var mime: String?
     var blurhash: String?
+    /// The blob's sha256 (`x`): lets a photo be found by hash, as on the FIPS mesh.
+    var sha256: String?
 
     /// width / height, when the note published a usable `dim`.
     var aspectRatio: CGFloat? {
@@ -642,6 +644,8 @@ final class MediaHints: @unchecked Sendable {
                 if !value.isEmpty { hint.mime = value }
             case "blurhash":
                 if !value.isEmpty { hint.blurhash = value }
+            case "x":
+                hint.sha256 = MeshMediaRouter.normalizedSha256(value)
             default:
                 continue
             }

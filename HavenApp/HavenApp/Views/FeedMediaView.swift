@@ -237,6 +237,7 @@ private struct FeedPhotoView: View {
     @State private var image: PlatformImage?
     @State private var aspectRatio: CGFloat?
     @State private var isLoading = false
+    @Environment(\.meshMediaAuthor) private var meshAuthor
 
     var body: some View {
         ZStack {
@@ -300,7 +301,7 @@ private struct FeedPhotoView: View {
         isLoading = true
 
         Task {
-            if let data = await MediaCacheService.shared.fetchData(url: url) {
+            if let data = await MediaCacheService.shared.fetchData(url: url, meshAuthor: meshAuthor) {
                 let maxDimension: CGFloat = isThumbnail ? 300 : 800
                 if let downsampled = await ImageDownsampler.downsample(data: data, maxDimension: maxDimension) {
                     MediaCacheService.shared.cacheImage(downsampled, for: url)
