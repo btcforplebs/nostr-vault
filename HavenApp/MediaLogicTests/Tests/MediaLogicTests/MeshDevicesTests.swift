@@ -186,6 +186,8 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(opts["strangers_port"] as? Int, config.meshPlainPort)
         XCTAssertNotEqual(opts["strangers_port"] as? Int, config.relayPort)
         XCTAssertNil(opts["strangers"], "the old switch pointed strangers at the relay port")
+        // A phone on the Mac's Wi-Fi links over the LAN, not a hairpin.
+        XCTAssertEqual(opts["lan"] as? Bool, true)
         // No valid door port: the engine stays off rather than open strangers anywhere.
         XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: [], meshDoorPort: 0))
     }

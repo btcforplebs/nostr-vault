@@ -202,11 +202,16 @@ enum MeshDevicesLogic {
         // (fips-v2-android strangers.rs), and get only Haven's mesh door:
         // blob reads and owner-signed writes, never the relay port.
         guard (1...Int(UInt16.max)).contains(meshDoorPort) else { return nil }
+        // `lan`: the Mac's answers carry its LAN address too, as the iPhone's
+        // and the old helper's (`--lan`) do. A phone on the same Wi-Fi gets
+        // only the shared public address without it, and most home routers
+        // do not hairpin, so it never links. Only My Devices get answers.
         return [
             "own_devices": npubs,
             "relays": relays.isEmpty ? defaultFinderRelays : relays,
             "public_seeds": true,
             "strangers_port": meshDoorPort,
+            "lan": true,
         ]
     }
 
