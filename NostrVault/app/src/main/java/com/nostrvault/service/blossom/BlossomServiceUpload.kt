@@ -42,16 +42,7 @@ import com.nostrvault.service.BlossomService.UploadSource
         }
         val savedLocalUrl = if (localOk && localUrl != null) "$localUrl/$sha256" else null
 
-        // What to report when no outside server hosted it: a post may only wait
-        // for one if the blob is actually on this device.
-        fun notHosted(mirrors: List<String>): PostUploadOutcome = when {
-            !localOk -> PostUploadOutcome.NotSavedOnDevice
-            // The home vault is a server to wait for.
-            mirrors.isEmpty() && toHomeVault && homeVault.homeVaultNpub != null ->
-                PostUploadOutcome.SavedOnDevice(listOf("fipsmesh://${homeVault.homeVaultNpub}/"))
-            mirrors.isEmpty() -> PostUploadOutcome.NoOutsideServer
-            else -> PostUploadOutcome.SavedOnDevice(mirrors)
-        }
+        fun notHosted(mirrors: List<String>): PostUploadOutcome = notHostedOutcome(localOk, mirrors)
 
         val mirrors = configStore.config.value.activeBlossomMirrors
 
@@ -68,9 +59,6 @@ import com.nostrvault.service.BlossomService.UploadSource
         }
 
         if (mirrors.isEmpty()) {
-            if (localOk && toHomeVault && !skipOutsideServers) {
-                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
-            }
             Log.e(TAG, "No Blossom mirrors configured — refusing to embed a localhost media URL")
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
         }
@@ -105,3 +93,15 @@ import com.nostrvault.service.BlossomService.UploadSource
         }
         UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)
     }
+
+/**
+ * What to report when no outside server hosted a blob. A post may only wait for a server if the blob is actually on
+ * this device. With no media server at all it is [BlossomService.PostUploadOutcome.NoOutsideServer], the "set up a
+ * media server" path, as on iPhone: never a post that waits on the home vault alone, since a mesh-only note is one
+ * no other app can load (NIP-F1).
+ */
+internal fun notHostedOutcome(localOk: Boolean, mirrors: List<String>): BlossomService.PostUploadOutcome = when {
+    !localOk -> BlossomService.PostUploadOutcome.NotSavedOnDevice
+    mirrors.isEmpty() -> BlossomService.PostUploadOutcome.NoOutsideServer
+    else -> BlossomService.PostUploadOutcome.SavedOnDevice(mirrors)
+}

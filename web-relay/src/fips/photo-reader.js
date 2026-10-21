@@ -1,7 +1,7 @@
-// Photo-only FIPS on the page: for a reader with no paired owner and no Haven (a stranger opening a #blob= link).
-// A fresh key per start, never saved; the public seeds only (no WebRTC, so no direct link and no offers); no relay
-// server; reads photos by hash from the photo addresses (vaults' blob nodes) and nothing else. Owners are never
-// asked, so a stranger's link can't reach a vault's main npub through this page.
+// Photo-only FIPS reader, used by the web app's feed (web-vault/src/net/fips-media.js) to read a photo from the
+// vault its author lists in their 10063 (fipsmesh://). A fresh key per start, never saved; the public seeds only (no
+// WebRTC, so no direct link and no offers); no relay server; reads photos by hash from the vaults the caller allows
+// (getPhotoVaults) and nothing else.
 import { FipsNode, generateIdentity, encodeNpub } from "@fips/core"
 import { WebSocketTransport } from "@fips/transport-websocket"
 import { isOwner } from "./owners.js"
@@ -44,7 +44,7 @@ export async function startPhotoReader({ getPhotoVaults, onStatus = () => {}, se
   return {
     node,
     status,
-    /** A blob from a photo address by sha256: { bytes, type }, hash-checked. Any other vault is refused. */
+    /** A blob from an allowed vault by sha256: { bytes, type }, hash-checked. Any other vault is refused. */
     getBlob: (vault, sha256, opts) => blobs.get(vault, sha256, opts),
     stop: async () => {
       clearInterval(statsTimer)

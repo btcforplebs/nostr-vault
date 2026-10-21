@@ -3,7 +3,7 @@ import { test, beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
-import { loadOwners, loadPhotoVaults, parseOwners } from "../src/fips/owners.js"
+import { loadOwners, parseOwners } from "../src/fips/owners.js"
 
 const key = () => getPublicKey(generateSecretKey())
 let store, prompts
@@ -90,32 +90,4 @@ test("the signed-in account is never a mesh address: refused when typed, from a 
   assert.deepEqual([...loadOwners({ storage, account, confirm: m => (prompts.push(m), true) })], [vault])
   assert.equal(prompts.length, 0)
   assert.equal(location.hash, "", "fragment scrubbed")
-})
-
-test("a #blob= link adds a photo vault after a confirm, never an owner", () => {
-  const mine = key(), blob = key()
-  store.set("fips-owners", mine)
-  const hash = "#owner=" + npubEncode(mine) + "&blob=" + npubEncode(blob)
-  let scrubbed = 0
-  const scrub = () => scrubbed++
-  const owners = loadOwners({ storage, hash, scrub, confirm: () => assert.fail("known owner asks nothing") })
-  const photos = loadPhotoVaults({ storage, hash, scrub, confirm: m => (prompts.push(m), true) })
-  assert.deepEqual([...owners], [mine])
-  assert.deepEqual([...photos], [blob])
-  assert.equal(store.get("fips-owners"), mine, "the blob npub is not an owner")
-  assert.equal(store.get("fips-photo-vaults"), blob)
-  assert.equal(prompts.length, 1)
-  assert.match(prompts[0], new RegExp(npubEncode(blob)))
-  assert.match(prompts[0], /can't write to this relay/)
-  assert.equal(scrubbed, 2)
-  // Saved: loads again with no link and no prompt.
-  assert.deepEqual([...loadPhotoVaults({ storage, hash: "", confirm: () => assert.fail("no link, no prompt") })], [blob])
-})
-
-test("a declined #blob= link adds nothing; the account is never a photo vault", () => {
-  const account = key()
-  assert.deepEqual([...loadPhotoVaults({ storage, hash: "#blob=" + npubEncode(key()), scrub: () => {}, confirm: () => false })], [])
-  assert.equal(store.get("fips-photo-vaults"), undefined)
-  assert.deepEqual([...loadPhotoVaults({ storage, account, hash: "#blob=" + npubEncode(account), scrub: () => {}, confirm: () => true })], [])
-  assert.equal(store.get("fips-photo-vaults"), undefined)
 })

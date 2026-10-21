@@ -136,9 +136,6 @@ class HomeVaultSender @Inject constructor(
     /** The chosen home vault's mesh npub, or null when there is none. */
     val homeVaultNpub: String? get() = configStore.config.value.homeVaultNpub
 
-    /** The home vault's blob node npub, where readers fetch photos; null when it has none. */
-    val homeVaultBlobNpub: String? get() = configStore.config.value.homeVaultBlobNpub
-
     /** The home vault to send to right now: none while another account is active. */
     private val activeVault: String? get() = homeVaultNpub?.takeIf { ownerIsActive() }
 

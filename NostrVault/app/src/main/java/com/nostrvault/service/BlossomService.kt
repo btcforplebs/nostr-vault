@@ -126,22 +126,16 @@ class BlossomService @Inject constructor(
      * publish under the first public server's https URL now, and keep
      * pushing the copy there. NIP-F1 readers find it on the vault by hash
      * through the owner's 10063; other apps once the public copy lands.
-     * With no public server at all, the vault is the only host and the note
-     * names it ([HomeVaultRules.meshOnlyUrl]), by its blob node when it has
-     * one ([HomeVaultRules.photoNpub]). Null when there is no home
-     * vault or the vault doesn't have it: the post waits.
+     * Never mesh-only (NIP-F1): with no public server there is no URL to
+     * publish, so this is null, as when there is no home vault or the vault
+     * doesn't have it.
      */
     internal suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
-        val vault = homeVault.homeVaultNpub ?: return null
+        homeVault.homeVaultNpub ?: return null
         val server = com.nostrvault.fips.HomeVaultRules.publicServerFor(mirrors) {
             com.nostrvault.relay.isPrivateNetworkURL(it)
-        }
+        } ?: return null
         if (!homeVault.ensureOnVault(sha256)) return null
-        if (server == null) {
-            Log.i(TAG, "${sha256.take(8)}: no public server; hosted only on the home vault over the mesh")
-            val reader = com.nostrvault.fips.HomeVaultRules.photoNpub(vault, homeVault.homeVaultBlobNpub)
-            return PostUploadOutcome.Hosted(com.nostrvault.fips.HomeVaultRules.meshOnlyUrl(reader, sha256))
-        }
         // No queued copy (queue full), no URL: the post waits instead.
         if (!homeVault.needsPublicCopy(sha256, contentType, server)) return null
         Log.i(TAG, "${sha256.take(8)}: only on the home vault; publishing under $server, public copy pending")
