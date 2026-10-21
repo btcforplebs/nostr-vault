@@ -112,6 +112,17 @@ class HomeVaultQueueTest {
     }
 
     @Test
+    fun `a phone republishing keeps the Mac's photo node entry, with or without a home vault`() {
+        // The Mac lists its photo node (blob npub) in the 10063; a phone that knows nothing of it must not drop it.
+        val photo = "npub1" + "z".repeat(58)
+        val macList = listOf("https://a.example", "fipsmesh://$photo/")
+        assertEquals(listOf("https://a.example", "https://b.example", "fipsmesh://$photo/"),
+            HomeVaultRules.mergeServerList(macList, listOf("https://a.example", "https://b.example")))
+        assertEquals(listOf("https://a.example", "fipsmesh://$photo/", "fipsmesh://$kiosk/"),
+            HomeVaultRules.mergeServerList(macList, listOf("https://a.example"), homeVault = kiosk))
+    }
+
+    @Test
     fun `a sender lists its home vault and drops the one it replaced`() {
         val other = "npub1" + "z".repeat(58)
         val newest = listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$self/")

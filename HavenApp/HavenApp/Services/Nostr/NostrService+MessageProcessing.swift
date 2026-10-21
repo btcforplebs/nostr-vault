@@ -115,6 +115,9 @@ extension NostrService {
                     guard self.acceptServerListStamp(pubkey: pubkey, createdAt: createdAt, id: eventId) else { return }
                     if !servers.isEmpty { self.serverLists[pubkey] = servers }
                     self.saveProfilesThrottled()
+                    #if os(macOS)
+                    PhotoNode.ensureListed(in: servers, owner: pubkey, nostr: self)
+                    #endif
                 }
                 return
             }

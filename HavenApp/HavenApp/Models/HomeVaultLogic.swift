@@ -133,8 +133,13 @@ extension HomeVaultLogic {
     ///   its home vault's `fipsmesh://` entry, listed after the others.
     /// - previouslyManaged: what this phone published last time, so a server
     ///   removed here is removed, while another phone's server is kept.
-    /// - ownMeshNpub/shareOwnMesh: this phone's mesh entry, listed last while
-    ///   it shares (kiosk mode) and dropped otherwise.
+    /// - ownMeshNpub: this device's own (main) mesh npub. Never listed, and
+    ///   dropped if an older list carried it: the main node is for the owner's
+    ///   own devices only, so naming it in public is never right (Logen, FIPS
+    ///   photos, 2026-10-21).
+    /// - photoNpub: the photo node's npub (the Mac's blob node, which serves
+    ///   photos by hash to anyone), listed last. Nil lists nothing: there is no
+    ///   fallback to the main npub.
     /// Returns nil when the result has no https server: a list only mesh
     /// readers can use must not go out (NIP-F1).
     static func mergeServerList(
@@ -142,7 +147,7 @@ extension HomeVaultLogic {
         current: [String],
         previouslyManaged: Set<String>,
         ownMeshNpub: String?,
-        shareOwnMesh: Bool
+        photoNpub: String? = nil
     ) -> [String]? {
         func key(_ url: String) -> String {
             var k = url.trimmingCharacters(in: .whitespaces).lowercased()
@@ -169,7 +174,7 @@ extension HomeVaultLogic {
             // This phone's home vault: the sender lists it, the kiosk needs no key.
             if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }
         }
-        if shareOwnMesh, let own = ownMeshNpub { add("fipsmesh://\(own)/") }
+        if let photo = photoNpub.flatMap({ meshNpub(fromInput: $0) }), photo != ownMeshNpub { add("fipsmesh://\(photo)/") }
 
         guard out.contains(where: { meshNpub(fromEntry: $0) == nil }) else { return nil }
         return out

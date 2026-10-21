@@ -84,14 +84,14 @@ final class ServerListMergeTests: XCTestCase {
         // NIP-F1 order (Tao): a sender keeps the kiosk entry, after the public servers.
         let existing = [mesh(kiosk), "https://a.example/"]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                 ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me)
         XCTAssertEqual(out, ["https://a.example/", mesh(kiosk)])
     }
 
     func testOtherMeshEntriesKeepTheirOrder() {
         let existing = ["https://a.example/", mesh(third), mesh(kiosk)]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                 ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me)
         XCTAssertEqual(out, ["https://a.example/", mesh(third), mesh(kiosk)])
     }
 
@@ -100,30 +100,60 @@ final class ServerListMergeTests: XCTestCase {
         let existing = ["https://a.example/", "https://b.example/", "https://c.example/"]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example"],
                                                  previouslyManaged: ["https://a.example/", "https://b.example/"],
-                                                 ownMeshNpub: nil, shareOwnMesh: false)
+                                                 ownMeshNpub: nil)
         XCTAssertEqual(out, ["https://a.example", "https://c.example/"])
     }
 
-    func testThisPhonesMeshEntryOnlyWhileSharingAndLast() {
+    func testThisDevicesMainNpubIsNeverListedAndAnOldEntryIsDropped() {
+        // The main node is for the owner's own devices: an older list that named it loses it.
         let existing = [mesh(me), "https://a.example/", mesh(kiosk), "https://other-phone.example/"]
-        let sharing = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                     ownMeshNpub: me, shareOwnMesh: true)
-        XCTAssertEqual(sharing, ["https://a.example/", "https://other-phone.example/", mesh(kiosk), mesh(me)])
-        let stopped = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
-                                                     ownMeshNpub: me, shareOwnMesh: false)
-        XCTAssertEqual(stopped, ["https://a.example/", "https://other-phone.example/", mesh(kiosk)])
+        let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/"], previouslyManaged: [],
+                                                 ownMeshNpub: me)
+        XCTAssertEqual(out, ["https://a.example/", "https://other-phone.example/", mesh(kiosk)])
+    }
+
+    func testThePhotoNodeIsListedLast() {
+        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", mesh(kiosk)], current: ["https://a.example/"],
+                                                 previouslyManaged: [], ownMeshNpub: me, photoNpub: third)
+        XCTAssertEqual(out, ["https://a.example/", mesh(kiosk), mesh(third)])
+        // Already listed: once, where it was.
+        let again = HomeVaultLogic.mergeServerList(existing: out ?? [], current: ["https://a.example/"],
+                                                   previouslyManaged: [], ownMeshNpub: me, photoNpub: third)
+        XCTAssertEqual(again, out)
+    }
+
+    func testNoPhotoNodeListsNothingAndNeverFallsBackToTheMainNpub() {
+        let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
+                                                 previouslyManaged: [], ownMeshNpub: me, photoNpub: nil)
+        XCTAssertEqual(out, ["https://a.example/"])
+        // A photo npub equal to the main one is refused, not listed.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
+                                                      previouslyManaged: [], ownMeshNpub: me, photoNpub: me), ["https://a.example/"])
+        // The file's text as written (trailing newline) is read; garbage is not.
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: [], previouslyManaged: [],
+                                                      ownMeshNpub: nil, photoNpub: "\(third)\n"), ["https://a.example/", mesh(third)])
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: [], previouslyManaged: [],
+                                                      ownMeshNpub: nil, photoNpub: "not an npub"), ["https://a.example/"])
+    }
+
+    func testAPhoneKeepsTheMacsPhotoNodeWhenItRepublishes() {
+        // The Mac listed its photo node; a phone that knows nothing of it republishes its own servers.
+        let macList = ["https://a.example/", mesh(third)]
+        let out = HomeVaultLogic.mergeServerList(existing: macList, current: ["https://a.example/", "https://b.example/"],
+                                                 previouslyManaged: ["https://a.example/"], ownMeshNpub: me)
+        XCTAssertEqual(out, ["https://a.example/", "https://b.example/", mesh(third)])
     }
 
     func testAWithdrawnKioskEntryIsNotPutBack() {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"], previouslyManaged: [],
-                                                 ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me)
         XCTAssertEqual(out, ["https://a.example/"])
     }
 
     func testASenderListsItsHomeVaultAfterOtherMeshEntries() {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", mesh(third)],
                                                  current: ["https://a.example/", mesh(kiosk)], previouslyManaged: [],
-                                                 ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me)
         XCTAssertEqual(out, ["https://a.example/", mesh(third), mesh(kiosk)])
     }
 
@@ -132,7 +162,7 @@ final class ServerListMergeTests: XCTestCase {
         let existing = ["https://a.example/", mesh(kiosk), mesh(fourth)]
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example/", mesh(third)],
                                                  previouslyManaged: ["https://a.example/", mesh(kiosk)],
-                                                 ownMeshNpub: me, shareOwnMesh: false)
+                                                 ownMeshNpub: me)
         XCTAssertEqual(out, ["https://a.example/", mesh(fourth), mesh(third)])
     }
 
@@ -148,12 +178,12 @@ final class ServerListMergeTests: XCTestCase {
 
     func testAMeshOnlyListIsNeverPublished() {
         XCTAssertNil(HomeVaultLogic.mergeServerList(existing: [mesh(kiosk)], current: [], previouslyManaged: [],
-                                                    ownMeshNpub: me, shareOwnMesh: true))
+                                                    ownMeshNpub: me, photoNpub: third))
     }
 
     func testMalformedMeshEntriesAreDropped() {
         let out = HomeVaultLogic.mergeServerList(existing: ["https://a.example/", "fipsmesh://\(kiosk)/evil"], current: [],
-                                                 previouslyManaged: [], ownMeshNpub: nil, shareOwnMesh: false)
+                                                 previouslyManaged: [], ownMeshNpub: nil)
         XCTAssertEqual(out, ["https://a.example/"])
     }
 }

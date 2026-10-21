@@ -104,23 +104,24 @@ extension NostrService {
         // phone): another phone's servers and mesh entries stay; only the
         // servers this phone manages change. Public servers first (NIP-F1).
         var ownMesh: String?
-        var shareOwnMesh = false
+        var photoNpub: String?
         #if os(iOS)
+        // This phone's own mesh npub is never listed (and is dropped from an
+        // older list that had it): the main node is for the owner's devices.
         ownMesh = FipsMeshService.shared.ownMeshNpub
-        // Kiosk mode: this vault is on the FIPS mesh, listed last. Never the
-        // only usable entry (NIP-F1): the merge refuses a mesh-only list.
-        // The owner can keep it unlisted (FIPS Mesh → List in my media servers).
-        shareOwnMesh = FipsMeshService.shared.meshServerURL != nil && ConfigService.shared.config.hasPublicBlossomMirror
-            && FipsMeshSettings.listInServers
         // The home vault this phone sends to: listed by the sender, so the
         // kiosk itself never needs the owner's key.
         if let vault = HomeVaultSender.shared.homeVault, vault.ownerHex == owner {
             servers.append("fipsmesh://\(vault.meshNpub)/")
         }
+        #else
+        // The Mac lists its photo node, so a photo post points viewers to the
+        // Mac with no setup; phones keep the entry through this same merge.
+        photoNpub = PhotoNode.npub()
         #endif
         let managedKey = "serverListManaged.\(owner)"
         let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
-        let ownMeshNpub = ownMesh, share = shareOwnMesh, current = servers
+        let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
 
         Task {
             // Start from the newest list on the relays, not this phone's cache
@@ -143,7 +144,7 @@ extension NostrService {
                 current: current,
                 previouslyManaged: previouslyManaged,
                 ownMeshNpub: ownMeshNpub,
-                shareOwnMesh: share
+                photoNpub: photo
             ) else {
                 #if DEBUG
                 print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
@@ -402,3 +403,37 @@ extension NostrService {
         }
     }
 }
+
+#if os(macOS)
+/// The Mac's photo node: the second fips node (the blob node) that serves
+/// photos by hash to anyone, through the public seeds only. Its npub goes in
+/// the owner's 10063; the main node's never does.
+enum PhotoNode {
+    /// The blob node's npub, or nil when this Mac runs none. For now the
+    /// hand-run fips-v2 helper writes it (`--blobs`, `<state>/blob-npub`);
+    /// when the blob node moves into the app, only this function changes.
+    static func npub() -> String? {
+        guard let text = try? String(contentsOf: stateFile, encoding: .utf8) else { return nil }
+        return HomeVaultLogic.meshNpub(fromInput: text)
+    }
+
+    /// `~/fips-mac-probe/state/blob-npub` in the user's real home: the app is
+    /// sandboxed, so its own home is the container. Read-only entitlement for
+    /// exactly this file (HavenApp.entitlements).
+    private static var stateFile: URL {
+        let home = getpwuid(getuid()).flatMap { String(validatingCString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
+        return URL(fileURLWithPath: home).appendingPathComponent("fips-mac-probe/state/blob-npub")
+    }
+
+    /// Republish once per launch when the owner's newest 10063 lacks the photo
+    /// node, so the entry appears with no setup and comes back if a stale list
+    /// (another device's) dropped it.
+    @MainActor static func ensureListed(in servers: [String], owner: String, nostr: NostrService) {
+        guard owner == nostr.activeHexPubkey, !republished, let npub = npub() else { return }
+        guard !servers.contains(where: { HomeVaultLogic.meshNpub(fromEntry: $0) == npub }) else { return }
+        republished = true
+        nostr.publishServerList()
+    }
+    @MainActor private static var republished = false
+}
+#endif
