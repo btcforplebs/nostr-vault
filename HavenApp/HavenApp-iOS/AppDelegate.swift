@@ -63,6 +63,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        // Before anything can fetch: URLSession.shared refuses .fips hosts on iOS.
+        FipsHostBlocker.install()
+
         // Register the background processing task so the system can wake us
         // when conditions are right (charging + Wi-Fi).
         BGTaskScheduler.shared.register(
