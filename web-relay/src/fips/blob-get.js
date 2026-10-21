@@ -27,6 +27,7 @@ const RETRY_MS = 1_000
 const SHA256 = /^[0-9a-f]{64}$/
 
 const toHex = b => Array.from(b, x => x.toString(16).padStart(2, "0")).join("")
+const abortError = () => Object.assign(new Error("read cancelled"), { name: "AbortError" })
 const ascii = b => new TextDecoder().decode(b)
 
 /**
@@ -150,16 +151,20 @@ export class MeshBlobClient {
   /**
    * GET /<sha256> from `vault` (x-only hex, compressed hex, or npub). Resolves to { bytes, type } with
    * sha256(bytes) === sha256 and `type` a SAFE_TYPES media type or "application/octet-stream"; rejects on any other
-   * status, a hash mismatch, a size over MAX_BLOB_BYTES, or `timeoutMs` to connect or without progress.
+   * status, a hash mismatch, a size over MAX_BLOB_BYTES, or `timeoutMs` to connect or without progress. `signal`
+   * aborting resets the stream at once (AbortError). `closed` resolves once the stream needs no more segments from
+   * the vault (after the polite close lingers), so a caller keeps the vault allowed until then.
    */
-  async get(vault, hash, { timeoutMs = DEFAULT_TIMEOUT_MS, onProgress = () => {} } = {}) {
+  async get(vault, hash, { timeoutMs = DEFAULT_TIMEOUT_MS, onProgress = () => {}, signal } = {}) {
     const key = xOnly(vault)
     if (!key || !this.allow(key)) throw new Error("not one of this relay's vaults")
     const sha = String(hash).toLowerCase()
     if (!SHA256.test(sha)) throw new Error("not a sha256")
-    let id, ok = false
+    let id, ok = false, closedNow
+    const closed = new Promise(r => { closedNow = r })
     try {
-      id = await this.#connect("02" + key, this.clock() + timeoutMs)
+      if (signal?.aborted) throw abortError()
+      id = await this.#connect("02" + key, this.clock() + timeoutMs, signal)
       let deadline = this.clock() + timeoutMs
       const req = `GET /${sha} HTTP/1.1\r\nHost: ${npubEncode(key)}.fips\r\nAccept: */*\r\nConnection: close\r\n\r\n`
       const out = new TextEncoder().encode(req)
@@ -168,6 +173,7 @@ export class MeshBlobClient {
       for (;;) {
         const now = this.clock()
         if (this.stopped) throw new Error("FIPS stopped")
+        if (signal?.aborted) throw abortError()
         if (now > deadline) throw new Error(sent ? "timed out waiting for the vault" : "timed out connecting to the vault")
         await this.tcp.poll(now)
         const st = await this.tcp.state(id)
@@ -198,7 +204,7 @@ export class MeshBlobClient {
       this.stats.fetched++
       this.stats.bytes += result.length
       const type = (head.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase()
-      return { bytes: result.slice(), type: SAFE_TYPES.test(type) ? type : "application/octet-stream" }
+      return { bytes: result.slice(), type: SAFE_TYPES.test(type) ? type : "application/octet-stream", closed }
     } catch (e) {
       this.stats.failed++
       this.stats.lastError = String(e?.message ?? e).slice(0, 160)
@@ -207,8 +213,9 @@ export class MeshBlobClient {
       // A finished read closes politely; a failed one is reset so the vault stops sending at once.
       if (id !== undefined) {
         await (ok ? this.tcp.close(id, this.clock()) : this.tcp.abort(id)).catch(() => {})
-        if (ok) this.#linger(id)
-      }
+        if (ok) this.#linger(id).then(closedNow)
+        else closedNow()
+      } else closedNow()
     }
   }
 
@@ -216,11 +223,12 @@ export class MeshBlobClient {
    * Open the stream, retrying while the mesh has no route yet. Through the public seeds a session to a vault whose
    * tree parent is the other seed can fail its lookup ("no route", "FSP handshake timeout") and work on a later try.
    */
-  async #connect(peer, deadline) {
+  async #connect(peer, deadline, signal) {
     for (;;) {
       try {
         return await this.tcp.connect(peer, this.clock())
       } catch (e) {
+        if (signal?.aborted) throw abortError()
         if (this.clock() + RETRY_MS >= deadline) throw e
         this.stats.retries++
         this.stats.lastError = String(e?.message ?? e).slice(0, 160)
