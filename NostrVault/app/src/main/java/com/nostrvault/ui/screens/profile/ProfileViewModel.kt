@@ -259,6 +259,11 @@ class ProfileViewModel @Inject constructor(
     private val followerPubkeys = mutableSetOf<String>()
     private var stream: NostrService.ProfileStream? = null
 
+    /** A stream is open to page on (see [canPageOlder]). */
+    private val _streamOpen = MutableStateFlow(false)
+    // Declared before init: loadProfile() can reach startStream() before its
+    // first suspension, while the constructor is still running.
+
     init {
         if (_pubkey.value.isNotEmpty()) {
             loadProfile()
@@ -542,8 +547,6 @@ class ProfileViewModel @Inject constructor(
     /** Automatic pages already spent on each empty tab (see [autoPageEmptyTab]). */
     private val emptyTabPaging = ProfileEmptyTabPaging()
 
-    /** A stream is open to page on (see [canPageOlder]). */
-    private val _streamOpen = MutableStateFlow(false)
 
     /** [canPageOlder] for the note tabs and for Tagged, for the screen to follow. */
     val canPageOlderNotes: StateFlow<Boolean> = combine(_streamOpen, _hasMoreNotes, _profileNotes) { open, more, notes -> open && more && notes.isNotEmpty() }
