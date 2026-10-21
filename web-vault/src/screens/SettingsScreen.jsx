@@ -1,9 +1,8 @@
 // Settings (iPhone SettingsView, the phone's single list): the relay status card first, then the groups of rows,
-// then About. A row opens its page at "#/settings/<page>"; the Accounts & backup row opens the Accounts screen
+// then About. Close goes back to Profile, where the gear opened it (the phone shows Settings as a sheet from there). A row opens its page at "#/settings/<page>"; the Accounts & backup row opens the Accounts screen
 // (#/accounts) and Who Can Reach You the Relay screen's FIPS panel (#/relay).
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
-import { signedInWith } from "../session.js"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { StorageNote } from "../components/StorageNote.jsx"
@@ -44,12 +43,11 @@ export function SettingsScreen({ ctx, page }) {
 }
 
 function Index({ ctx }) {
-  const { session } = ctx
   const [copied, setCopied] = useState(false)
   const copy = async () => { await navigator.clipboard.writeText(SUPPORT_NPUB); setCopied(true); setTimeout(() => setCopied(false), 1500) }
   return (
     <main class="screen settings">
-      <header class="screen-head"><h2>Settings</h2></header>
+      <header class="screen-head"><a class="button small" href="#/profile">Close</a><h2>Settings</h2><span style="width: 64px" /></header>
       <RelayStatusCard ctx={ctx} />
       {SETTINGS_GROUPS.map(g => (
         <section key={g.title} class="settings-group">
@@ -70,7 +68,6 @@ function Index({ ctx }) {
         <div class="card settings-about">
           <div class="settings-app">Nostr Vault</div>
           <div class="muted small">Version {APP_VERSION} (web)</div>
-          <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 16)}… {signedInWith(session.method)}.</div>
           <hr />
           <div class="settings-support">Support &amp; Abuse Reporting</div>
           <p class="muted small">To report objectionable content or abusive users, contact the developer via Nostr</p>

@@ -13,21 +13,21 @@ export const PRIVACY_URL = "https://nostrvault.app/privacy.html"
 
 /**
  * The phone's groups (SettingsView.groups), with the rows the web has. A row's `href` is where it goes: a page of
- * this screen ("#/settings/<page>"), another screen ("#/accounts" is the Accounts & backup screen, "#/relay" the
+ * this screen ("#/settings/<page>"), another screen ("#/accounts" is the Accounts & Keys screen, "#/relay" the
  * Relay screen with its FIPS panel, which is the web's "Who Can Reach You"). Rows the phone has and the web
  * doesn't are left out rather than shown dead: Feed, Appearance,
  * Media & Cache, Notifications, Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay Automatically.
  */
 export const SETTINGS_GROUPS = [
   { title: "Account", rows: [
-    { id: "accounts", title: "Accounts & backup", icon: "key", color: "#0a84ff", href: "#/accounts" },
+    { id: "accounts", title: "Accounts & Keys", icon: "key", color: "#0a84ff", href: "#/accounts" },
     { id: "blocked", title: "Blocked", icon: "block", color: "#ff453a", href: "#/settings/blocked" },
     { id: "recently-deleted", title: "Recently Deleted", icon: "trash", color: "#8e8e93", href: "#/settings/recently-deleted" },
-    { id: "following-backup", title: "Following Backup", icon: "people", color: "#30d158", href: "#/settings/following-backup" },
+    { id: "following-backup", title: "Following Backup", icon: "people", color: "#40c8e0", href: "#/settings/following-backup" },
     { id: "wallet", title: "Wallet", icon: "bolt", color: "#ff9f0a", href: "#/wallet" },
   ] },
   { title: "Relays", rows: [
-    { id: "relays", title: "Relays", icon: "relays", color: "#8e5cf6", href: "#/settings/relays" },
+    { id: "relays", title: "Relays", icon: "relays", color: "var(--accent)", href: "#/settings/relays" },
     { id: "media-servers", title: "Media Servers", icon: "server", color: "#30d158", href: "#/settings/media-servers" },
   ] },
   { title: "Your Vault Relay", rows: [
@@ -37,7 +37,7 @@ export const SETTINGS_GROUPS = [
   ] },
   { title: "Advanced", rows: [
     { id: "database", title: "Database & Reset", icon: "gear2", color: "#8e8e93", href: "#/settings/database" },
-    { id: "logs", title: "Logs", icon: "logs", color: "#636366", href: "#/settings/logs" },
+    { id: "logs", title: "Logs", icon: "logs", color: "#98989f", href: "#/settings/logs" },
   ] },
 ]
 
