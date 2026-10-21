@@ -28,6 +28,8 @@ internal val WizardBgElevated = Color(0xFF27272A)
 internal val WizardBorderSubtle = Color.White.copy(alpha = 0.06f)
 internal val WizardBorderActive = Color(0xFFF59E0B).copy(alpha = 0.4f)
 internal val WizardAccent = Color(0xFFF59E0B)
+internal val WizardAccentGlow = Color(0xFFF59E0B).copy(alpha = 0.3f)
+internal val WizardTextMuted = Color(0xFF71717A)
 internal val WizardGradient = Brush.horizontalGradient(
     colors = listOf(Color(0xFFEA580C), Color(0xFFF59E0B)),
 )
