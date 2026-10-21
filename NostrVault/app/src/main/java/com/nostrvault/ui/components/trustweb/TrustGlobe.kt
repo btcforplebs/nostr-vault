@@ -295,7 +295,9 @@ internal fun TrustGlobe(
             .clearAndSetSemantics {
                 contentDescription = "Web of Trust globe"
                 stateDescription = summary
-                customActions = faceKeys.filter { it != center }.map { key ->
+                // Compose throws at 32 actions on one node, so a big globe crashed
+                // under TalkBack: at most 28 faces plus the 3 below.
+                customActions = faceKeys.filter { it != center }.take(28).map { key ->
                     CustomAccessibilityAction("Go to ${name(key)}") { currentOnTap(key); true }
                 } + listOf(
                     CustomAccessibilityAction("Zoom in") { scene.zoomStep(0.3); true },
