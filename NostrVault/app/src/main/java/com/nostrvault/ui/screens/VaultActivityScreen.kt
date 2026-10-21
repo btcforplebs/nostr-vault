@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.util.RelativeTime
 import com.nostrvault.ui.components.rememberFilterNoteState
 import com.nostrvault.ui.components.countNote
 import com.nostrvault.ui.components.VaultRightPill
@@ -79,7 +80,6 @@ import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
-import com.nostrvault.ui.components.formatTimestamp
 import com.nostrvault.ui.components.reactionEmojiSummary
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.navigation.FloatingButtonRow
@@ -616,7 +616,7 @@ private fun VaultActivityRow(
                         )
                     }
                 }
-                Text(formatTimestamp(line.createdAt), color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(RelativeTime.abbreviated(line.createdAt, System.currentTimeMillis() / 1000), color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 if (isUnread) {
                     Spacer(Modifier.width(8.dp))
                     Box(Modifier.size(8.dp).background(colors.primary, CircleShape))

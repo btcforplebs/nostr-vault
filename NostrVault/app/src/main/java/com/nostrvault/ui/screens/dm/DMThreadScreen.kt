@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dm
 
+import com.nostrvault.util.RelativeTime
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -59,7 +60,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 
@@ -455,7 +455,6 @@ private fun MessageBubble(
 ) {
     val colors = LocalNostrVaultColors.current
     val oled = LocalOledMode.current
-    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     // iOS DMThreadView bubbles: own = solid primary→primaryDark gradient with
     // white text, others = dark gray; 75% max width, radius 18 with a 6dp tail.
@@ -574,7 +573,8 @@ private fun MessageBubble(
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = timeFormat.format(Date(message.timestamp * 1000)),
+                    // iOS: relative, "5 minutes ago".
+                    text = RelativeTime.numeric(message.timestamp, System.currentTimeMillis() / 1000),
                     color = SecondaryText.copy(alpha = 0.7f),
                     fontSize = 11.sp,
                 )
