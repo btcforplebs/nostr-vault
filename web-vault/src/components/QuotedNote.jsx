@@ -6,6 +6,7 @@ import { AuthorName } from "./NoteCard.jsx"
 import { NoteText } from "./NoteText.jsx"
 import { ago } from "./time.js"
 import { fetchProfiles } from "../net/profiles.js"
+import { getBlocks, isBlockedNote, onBlocks } from "../net/blocks.js"
 import { fetchQuote, getQuote, hasQuote, onQuotes, quoteHash, quoteKey, quoteSource } from "../net/quotes.js"
 
 /** The cached event for a parsed reference (undefined while loading, null when not found), fetching it once.
@@ -29,6 +30,9 @@ export function useQuote(q, memoryOnly = false) {
 
 export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   const ev = useQuote(q, memoryOnly)
+  // Someone you blocked says nothing inside another's note either (QuotedNoteView's blocked placeholder).
+  const [blocked, setBlocked] = useState(() => getBlocks().blocked)
+  useEffect(() => onBlocks(() => setBlocked(getBlocks().blocked)), [])
   // A quote no relay answers for gives up after 12 s, as the iPhone's does, instead of loading forever.
   const [late, setLate] = useState(false)
   useEffect(() => { const t = setTimeout(() => setLate(true), 12_000); return () => clearTimeout(t) }, [quoteKey(q)])
@@ -40,6 +44,7 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   if (ev === undefined && late) return <div class="quote quote-missing">Quoted note unavailable</div>
   if (ev === undefined) return <div class="quote quote-pending"><span class="quote-ref">{short}</span> Loading…</div>
   if (ev === null) return <div class="quote quote-missing"><span class="quote-ref">{short}</span> Note not found</div>
+  if (blocked && isBlockedNote(ev, blocked)) return <div class="quote quote-missing">Quote from someone you blocked</div>
 
   const open = e => {
     if (e.target.closest("a, button, video, audio, .media-box")) return

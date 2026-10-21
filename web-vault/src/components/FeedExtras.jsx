@@ -94,3 +94,32 @@ export function OlderButton({ onOlder, state = "" }) {
     </button>
   </>
 }
+
+/** Pull down from the top of the page on a touch screen to refresh (the iPhone's .refreshable). Returns how far the
+ *  pull has gone, 0..1, for the indicator. */
+export function usePullToRefresh(onRefresh, { enabled = true, distance = 80 } = {}) {
+  const [pull, setPull] = useState(0)
+  const run = useRef(onRefresh)
+  run.current = onRefresh
+  useEffect(() => {
+    if (!enabled || !("ontouchstart" in globalThis)) return
+    let start = null, amount = 0
+    const down = e => { start = scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; amount = 0 }
+    const move = e => {
+      if (start === null) return
+      amount = Math.max(0, Math.min(1, (e.touches[0].clientY - start) / distance))
+      setPull(amount)
+    }
+    const up = () => { if (start !== null && amount >= 1) run.current(); start = null; amount = 0; setPull(0) }
+    addEventListener("touchstart", down, { passive: true }); addEventListener("touchmove", move, { passive: true }); addEventListener("touchend", up)
+    return () => { removeEventListener("touchstart", down); removeEventListener("touchmove", move); removeEventListener("touchend", up) }
+  }, [enabled, distance])
+  return pull
+}
+
+export function PullIndicator({ pull, busy }) {
+  if (!pull && !busy) return null
+  return <div class={`pull-indicator${busy ? " busy" : ""}`} style={`--pull: ${busy ? 1 : pull}`} aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" /></svg>
+  </div>
+}

@@ -99,3 +99,5 @@
 @keyframes spin { to { transform: rotate(360deg) } }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .screen-head .feed-filter + button { margin-left: 8px; }
+.pull-indicator { display: grid; place-items: center; height: calc(var(--pull) * 44px); overflow: hidden; color: var(--accent); opacity: var(--pull); }
+.pull-indicator svg { transform: rotate(calc(var(--pull) * 270deg)); }

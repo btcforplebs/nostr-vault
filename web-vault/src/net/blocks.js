@@ -10,6 +10,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { askRelay, MAX_SKEW } from "./follows.js"
 import { checkSigned } from "./sync.js"
+import { replyRefs } from "./thread.js"
 import { findExtension } from "../signer/nip07.js"
 import { groupNotifications, classify } from "./notifications.js"
 
@@ -115,15 +116,27 @@ function repostedAuthor(ev) {
   try { const inner = JSON.parse(ev.content); return typeof inner?.pubkey === "string" ? inner.pubkey.toLowerCase() : null } catch { return null }
 }
 
-/** True when a note is a blocked person's, or a repost of one (someone you follow can repost a blocked person). */
-export function isBlockedNote(ev, blocked) {
+/** True when a note is a blocked person's, a repost of one (someone you follow can repost a blocked person; a bare
+ *  repost names them in its p tag), or a reply to one, when `authorOf` knows who wrote the parent (the iPhone's
+ *  FeedFilterEngine.isBlocked). */
+export function isBlockedNote(ev, blocked, authorOf = () => null) {
   if (!ev || !blocked.size) return false
   if (blocked.has(String(ev.pubkey).toLowerCase())) return true
-  return ev.kind === 6 && blocked.has(repostedAuthor(ev))
+  if (ev.kind === 6) {
+    const original = repostedAuthor(ev) ?? (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
+    return blocked.has(original)
+  }
+  const parent = ev.kind === 1 ? replyRefs(ev).parent : null
+  const parentAuthor = parent && authorOf(parent)
+  return !!parentAuthor && blocked.has(String(parentAuthor).toLowerCase())
 }
 
-/** Notes left once blocked people's are taken out. */
-export const visibleNotes = (evs, blocked) => (blocked.size ? evs.filter(ev => !isBlockedNote(ev, blocked)) : evs)
+/** Notes left once blocked people's, and replies to the blocked people's notes among them, are taken out. */
+export function visibleNotes(evs, blocked) {
+  if (!blocked.size) return evs
+  const byId = new Map(evs.map(ev => [ev.id, ev]))
+  return evs.filter(ev => !isBlockedNote(ev, blocked, id => byId.get(id)?.pubkey))
+}
 
 /** Pubkeys left once blocked people are taken out (Search's People). */
 export const visiblePeople = (pubkeys, blocked) => (blocked.size ? pubkeys.filter(pk => !blocked.has(pk.toLowerCase())) : pubkeys)
