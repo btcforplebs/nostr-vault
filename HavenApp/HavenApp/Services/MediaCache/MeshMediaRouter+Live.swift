@@ -60,7 +60,7 @@ private enum MeshMediaGet {
                 collector.start(task, continuation)
             }
         } onCancel: {
-            task.cancel()
+            collector.cancel(task)
         }
     }
 }
@@ -72,6 +72,7 @@ private final class CappedCollector: NSObject, URLSessionDataDelegate, @unchecke
     private var data = Data()
     private var status = 0
     private var oversized = false
+    private var cancelled = false
     private var continuation: CheckedContinuation<MeshMediaRouter.Reply?, Never>?
 
     init(maxBytes: Int) {
@@ -79,8 +80,17 @@ private final class CappedCollector: NSObject, URLSessionDataDelegate, @unchecke
     }
 
     func start(_ task: URLSessionDataTask, _ continuation: CheckedContinuation<MeshMediaRouter.Reply?, Never>) {
-        lock.withLock { self.continuation = continuation }
-        task.resume()
+        let alreadyCancelled = lock.withLock { () -> Bool in
+            if !cancelled { self.continuation = continuation }
+            return cancelled
+        }
+        // Cancelled before it began: a task that never runs never completes.
+        if alreadyCancelled { continuation.resume(returning: nil) } else { task.resume() }
+    }
+
+    func cancel(_ task: URLSessionDataTask) {
+        lock.withLock { cancelled = true }
+        task.cancel()
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
@@ -131,15 +141,39 @@ extension MediaCacheService {
         else { return await fetchData(url: url).map { ($0, url) } }
 
         let key = plan.hashFromPath ? url : MeshMediaRouter.blobCacheKey(sha256: plan.sha256)
-        if !plan.hashFromPath, let cached = loadFromCache(url: key) { return (cached, key) }
+        if !plan.hashFromPath, let cached = loadMeshCached(key) { return (cached, key) }
 
         if plan.meshFirst {
-            if plan.hashFromPath, let cached = loadFromCache(url: url) { return (cached, url) }
+            if plan.hashFromPath, let cached = loadMeshCached(url) { return (cached, url) }
             if let data = await readOverMesh(plan: plan, author: author, key: key) { return (data, key) }
             return await fetchFipsURL(url, plan: plan).map { ($0, url) }
         }
         if let data = await fetchData(url: url) { return (data, url) }
         return await readOverMesh(plan: plan, author: author, key: key).map { ($0, key) }
+    }
+
+    /// A cached copy the mesh path may stand on. Hash-named files are
+    /// re-hashed on load only up to the integrity limit, and a plain download
+    /// of any `https://…/<sha>` lands in the same file, so a copy too big to
+    /// be a mesh read is treated as absent rather than trusted unchecked.
+    private func loadMeshCached(_ key: URL) -> Data? {
+        guard let file = internalLocalFileURL(for: key),
+              let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+              size <= MeshMediaRouter.maxBytes
+        else { return nil }
+        return try? Data(contentsOf: file)
+    }
+
+    /// True for a `.fips` URL on iOS, where only the mesh engine can reach it:
+    /// there is no FIPS daemon, so a plain fetch would only send the vault's
+    /// npub to DNS and take whatever a resolver answers. Every loader outside
+    /// the mesh path checks this before going to the network.
+    static func isMeshOnly(_ url: URL) -> Bool {
+        #if os(iOS)
+        return MeshMediaRouter.meshNpub(inHost: url.host) != nil
+        #else
+        return false
+        #endif
     }
 
     /// A `.fips` URL outside the mesh engine. The iPhone has no FIPS daemon,
