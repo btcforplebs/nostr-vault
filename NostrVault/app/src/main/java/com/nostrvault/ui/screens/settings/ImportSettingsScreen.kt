@@ -51,7 +51,7 @@ fun ImportSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Import") },
+                title = { Text("Import Notes") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")

@@ -69,6 +69,7 @@ sealed class Screen(val route: String) {
 
     // Wallet
     data object Wallet : Screen("wallet")
+    data object WalletSettings : Screen("settings/wallet")
     data object BitcoinSweep : Screen("bitcoin_sweep")
     data object BitcoinWallet : Screen("settings/bitcoin")
 
