@@ -30,7 +30,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -104,8 +103,8 @@ internal fun MarketplaceSellScreen(onDone: () -> Unit, viewModel: ModeComposeVie
             TopAppBar(
                 title = { Text("Sell something") },
                 navigationIcon = {
-                    IconButton(onClick = onDone, enabled = !busy) {
-                        Icon(NostrVaultIcons.Dismiss, contentDescription = "Cancel")
+                    TextButton(onClick = onDone, enabled = !busy) {
+                        Text("Cancel", color = if (busy) SecondaryText else colors.primary)
                     }
                 },
                 actions = {
@@ -140,17 +139,18 @@ internal fun MarketplaceSellScreen(onDone: () -> Unit, viewModel: ModeComposeVie
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            SectionHeader("Photos")
             PhotoStrip(photos = photos, enabled = !busy, onChange = { photos = it })
-            Text("At least one photo. The first is the cover in the grid.", color = SecondaryText, fontSize = 12.sp)
+            Text("At least one. The first is the cover in the grid.", color = SecondaryText, fontSize = 12.sp)
 
             SellField(title, { title = it }, "What are you selling?")
             SellField(summary, { summary = it }, "One-line summary (optional)")
 
+            SectionHeader("Price")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = price,
                     onValueChange = { price = it },
-                    label = { Text("Price") },
                     placeholder = { Text(if (currency == "SATS") "21000" else "45.00") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -174,7 +174,8 @@ internal fun MarketplaceSellScreen(onDone: () -> Unit, viewModel: ModeComposeVie
                 )
             }
             SellField(location, { location = it }, "Location (optional)")
-            SellField(description, { description = it }, "Description", minLines = 5)
+            SectionHeader("Description")
+            SellField(description, { description = it }, null, minLines = 5)
             Text(
                 "Condition, size, shipping, and how buyers should pay or reach you. " +
                     "Buyers see this here and on Plebeian Market, and can message you from the listing.",
@@ -194,14 +195,27 @@ internal fun MarketplaceSellScreen(onDone: () -> Unit, viewModel: ModeComposeVie
 }
 
 @Composable
-private fun SellField(value: String, onChange: (String) -> Unit, label: String, minLines: Int = 1) {
+private fun SellField(value: String, onChange: (String) -> Unit, label: String?, minLines: Int = 1) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        label = { Text(label) },
+        label = label?.let { { Text(it) } },
         minLines = minLines,
         singleLine = minLines == 1,
         modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** A form section's header, as iOS Form shows "Photos", "Price", "Description". */
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        color = SecondaryText,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(top = 8.dp),
     )
 }
 
@@ -288,8 +302,11 @@ private fun PhotoStrip(photos: List<Uri>, enabled: Boolean, onChange: (List<Uri>
                     },
             ) {
                 Icon(NostrVaultIcons.Media, contentDescription = null, tint = colors.primary, modifier = Modifier.size(22.dp))
-                Text("Add photos", color = colors.primary, fontSize = 11.sp, modifier = Modifier.width(80.dp), maxLines = 1)
+                Text(addTileLabel(photos.size), color = colors.primary, fontSize = 11.sp, modifier = Modifier.width(80.dp), maxLines = 1)
             }
         }
     }
 }
+
+/** The add tile's word: "Add photos" until one is picked, then "Add" (iOS). */
+internal fun addTileLabel(photoCount: Int): String = if (photoCount == 0) "Add photos" else "Add"
