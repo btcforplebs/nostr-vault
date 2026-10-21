@@ -61,16 +61,18 @@ struct MessageComposerView: View {
 
                         Spacer()
 
-                        Button(action: {
-                            if recipientPubkey == nil {
+                        // Filled in from a profile: the recipient is fixed, so no X.
+                        if recipientPubkey == nil {
+                            Button(action: {
                                 selectedRecipient = nil
                                 searchText = ""
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary.opacity(0.6))
                             }
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary.opacity(0.6))
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear recipient")
                         }
-                        .buttonStyle(.plain)
                     }
                     .padding(12)
                     .background(Color.platformTertiaryGroupedBackground)
