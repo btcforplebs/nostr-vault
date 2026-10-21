@@ -18,9 +18,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -148,7 +145,6 @@ fun MediaGalleryScreen(
     // Upload choices, as on iOS: Photos and Videos pick several at once from
     // the photo picker, Files opens the document picker (images and videos,
     // several at once), Paste takes an image or link from the clipboard.
-    var showUploadMenu by remember { mutableStateOf(false) }
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris: List<Uri> ->
@@ -178,7 +174,6 @@ fun MediaGalleryScreen(
     var sortOption by remember {
         mutableStateOf(MediaSortOption.fromKey(sortPrefs.getString(MediaSortOption.STORAGE_KEY, null)))
     }
-    var showSortMenu by remember { mutableStateOf(false) }
 
     val filteredItems = remember(mediaItems, typeSelection, sortOption) {
         sortOption.sorted(mediaItems.filter { MediaTypeSelection.matches(typeSelection, it) })
@@ -220,126 +215,34 @@ fun MediaGalleryScreen(
                                     .background(Color.White.copy(alpha = 0.18f)),
                             )
                         }
-                        MediaTypeMenu(selection = typeSelection, onSelect = onTypeTap)
-                        Box {
-                            IconButton(
-                                onClick = { showSortMenu = true },
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Filled.SwapVert,
-                                    contentDescription = "Sort by: ${sortOption.label}",
-                                    tint = SecondaryText,
-                                    modifier = Modifier.size(25.dp),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false },
-                            ) {
-                                for (option in MediaSortOption.entries) {
-                                    DropdownMenuItem(
-                                        text = { Text(option.label) },
-                                        // A checkmark on the active row: one choice of many.
-                                        leadingIcon = {
-                                            if (option == sortOption) {
-                                                Icon(
-                                                    androidx.compose.material.icons.Icons.Filled.Check,
-                                                    contentDescription = "Selected",
-                                                    tint = colors.primary,
-                                                    modifier = Modifier.size(20.dp),
-                                                )
-                                            } else {
-                                                Spacer(Modifier.size(20.dp))
-                                            }
-                                        },
-                                        onClick = {
-                                            showSortMenu = false
-                                            sortOption = option
-                                            sortPrefs.edit().putString(MediaSortOption.STORAGE_KEY, option.key).apply()
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        IconButton(
-                            onClick = {
+                        MediaGalleryToolbarActions(
+                            typeSelection = typeSelection,
+                            onTypeTap = onTypeTap,
+                            sortOption = sortOption,
+                            onSort = { option ->
+                                sortOption = option
+                                sortPrefs.edit().putString(MediaSortOption.STORAGE_KEY, option.key).apply()
+                            },
+                            layoutMode = layoutMode,
+                            onToggleLayout = {
                                 layoutMode = if (layoutMode == MediaLayoutMode.GRID)
                                     MediaLayoutMode.LIST else MediaLayoutMode.GRID
                                 galleryPrefs.edit().putString(LAYOUT_MODE_KEY, layoutMode.name).apply()
                             },
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (layoutMode == MediaLayoutMode.GRID)
-                                    NostrVaultIcons.CompactView else NostrVaultIcons.GridLayout,
-                                contentDescription = if (layoutMode == MediaLayoutMode.GRID)
-                                    "List view" else "Grid view",
-                                tint = SecondaryText,
-                                modifier = Modifier.size(25.dp),
-                            )
-                        }
-                        Box {
-                            IconButton(
-                                onClick = { showUploadMenu = true },
-                                enabled = !isUploading,
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = NostrVaultIcons.Create,
-                                    contentDescription = "Upload",
-                                    tint = colors.primary,
-                                    modifier = Modifier.size(25.dp),
+                            isUploading = isUploading,
+                            onPickPhotos = {
+                                mediaPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                                 )
-                            }
-                            DropdownMenu(
-                                expanded = showUploadMenu,
-                                onDismissRequest = { showUploadMenu = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Photos") },
-                                    leadingIcon = { Icon(NostrVaultIcons.Media, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                                    onClick = {
-                                        showUploadMenu = false
-                                        mediaPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                        )
-                                    },
+                            },
+                            onPickVideos = {
+                                mediaPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("Videos") },
-                                    leadingIcon = { Icon(NostrVaultIcons.Video, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                                    onClick = {
-                                        showUploadMenu = false
-                                        mediaPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
-                                        )
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Files") },
-                                    leadingIcon = { Icon(NostrVaultIcons.Document, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                                    onClick = {
-                                        showUploadMenu = false
-                                        filePickerLauncher.launch(arrayOf("image/*", "video/*"))
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Magic Paste") },
-                                    leadingIcon = {
-                                        Icon(
-                                            androidx.compose.material.icons.Icons.Filled.ContentPaste,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    },
-                                    onClick = {
-                                        showUploadMenu = false
-                                        viewModel.pasteFromClipboard(context)
-                                    },
-                                )
-                            }
-                        }
+                            },
+                            onPickFiles = { filePickerLauncher.launch(arrayOf("image/*", "video/*")) },
+                            onMagicPaste = { viewModel.pasteFromClipboard(context) },
+                        )
                     }
                 }
             }
