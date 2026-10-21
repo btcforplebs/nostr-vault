@@ -195,9 +195,10 @@ internal fun FeedTopBar(
         }
 
         // ── Trailing pill: compact toggle + mode-dependent filters.
-        // Reels has no layout button, so collapsed there leaves nothing to show.
+        // Feeds without a layout button leave nothing to show collapsed.
+        val hasLayouts = feedMode.hasLayoutButton
         AnimatedVisibility(
-            visible = !(collapsed && feedMode == FeedMode.REELS),
+            visible = !(collapsed && !hasLayouts),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
         ) { GlassPill(
@@ -205,8 +206,7 @@ internal fun FeedTopBar(
             modifier = Modifier.tutorialAnchor(com.nostrvault.tutorials.TutorialContent.FEED_TOOLBAR),
         ) {
             // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
-            // Reels is one video per screen — there is no layout to switch.
-            if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
+            if (hasLayouts) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
                 val icon = when (layoutMode) {
                     FeedLayoutMode.EXPANDED -> NostrVaultIcons.ExpandedView
                     FeedLayoutMode.CONDENSED -> NostrVaultIcons.CompactView
@@ -224,7 +224,10 @@ internal fun FeedTopBar(
             // feeds get only Following / Global and the shield: reposts,
             // replies and auto-load are all about kind-1 traffic.
             Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
-                FeedMode.MUSIC -> com.nostrvault.ui.screens.music.MusicToolbarButtons()
+                FeedMode.MUSIC -> {
+                    com.nostrvault.ui.screens.music.MusicToolbarButtons()
+                    MusicScopeNoteObserver()
+                }
                 // The hashtag sheet's rule: follows, then your Web of Trust or everyone.
                 FeedMode.HASHTAGS -> TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
                 // One rule for every feed with the choice: Following, Global
@@ -311,6 +314,15 @@ internal fun FeedTopBar(
         } }
     }
 }
+
+/**
+ * Whether the top bar shows the layout button. Grids, card lists and Reels
+ * ignore expanded / condensed / threaded, so the button there would cycle an
+ * icon and nothing else: Reels, Marketplace, Live, Music and Articles
+ * (iOS `currentFeedHasLayouts`, FeedView+Layout.swift).
+ */
+internal val FeedMode.hasLayoutButton: Boolean
+    get() = this !in setOf(FeedMode.REELS, FeedMode.MARKETPLACE, FeedMode.LIVE, FeedMode.MUSIC, FeedMode.ARTICLES)
 
 /**
  * Who Global (and Media's Global) shows: the shield is your Web of Trust, the
