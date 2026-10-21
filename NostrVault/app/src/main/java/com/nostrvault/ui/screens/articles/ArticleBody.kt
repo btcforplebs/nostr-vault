@@ -26,6 +26,7 @@ import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.theme.*
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import java.text.DateFormat
@@ -62,7 +63,7 @@ internal fun ArticleBody(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
+                    .height(200.dp)
                     .clip(RoundedCornerShape(12.dp)),
             )
             Spacer(Modifier.height(16.dp))
@@ -70,26 +71,39 @@ internal fun ArticleBody(
         Text(
             text = meta.title,
             color = PrimaryText,
-            fontSize = 24.sp,
+            fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 30.sp,
+            lineHeight = 32.sp,
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = buildString {
-                append(author?.bestName ?: note.pubkey.take(8))
-                append(" · ")
-                append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(meta.publishedAt))
-                if (gated != null) append(" · 🔒 ${gated.priceSats} sats")
-                else readMinutes?.let { append(" · $it min read") }
-            },
-            color = SecondaryText,
-            fontSize = 13.sp,
-            modifier = Modifier.clickable { onProfileClick(note.pubkey) },
-        )
+        Spacer(Modifier.height(16.dp))
+        // iOS: avatar, then name over "date · N min read". Not a link there.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AvatarImage(url = author?.pictureURL, pubkey = note.pubkey, size = 28.dp, displayName = author?.bestName)
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    author?.bestName ?: ("npub…" + note.pubkey.takeLast(6)),
+                    color = PrimaryText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Text(
+                    text = buildString {
+                        append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(meta.publishedAt))
+                        // The price stays on Android (Logen): iOS hides it only for an App Store rule.
+                        if (gated != null) append(" · 🔒 ${gated.priceSats} sats")
+                        else readMinutes?.let { append(" · $it min read") }
+                    },
+                    color = SecondaryText,
+                    fontSize = 11.sp,
+                )
+            }
+        }
         meta.summary?.let {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             Text(it, color = SecondaryText, fontSize = 15.sp, lineHeight = 21.sp)
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = SecondaryText.copy(alpha = 0.2f))
         }
         Spacer(Modifier.height(16.dp))
         actions()
@@ -147,7 +161,10 @@ internal fun ArticleBody(
         } else {
             // Highlight mode: one tappable block per paragraph, tinted so the
             // reader can see what a tap will pick up.
-            Text("Tap a paragraph to highlight it", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Outlined.BorderColor, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
+                Text("Tap a paragraph to highlight it", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            }
             Spacer(Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 blocks.forEach { block ->
@@ -198,6 +215,8 @@ internal fun ArticleBody(
                         comment = comment,
                         author = profiles[comment.pubkey],
                         replies = tally.replyCounts[comment.id] ?: 0,
+                        profiles = profiles,
+                        onProfileClick = onProfileClick,
                         onClick = { onOpenComment(comment) },
                     )
                 }

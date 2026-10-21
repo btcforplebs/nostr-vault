@@ -16,14 +16,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.ArticleEngagementEvent
 import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.NostrContentText
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.ui.theme.*
 import android.text.format.DateUtils
 
 /** One comment under an article: who, when, what. Opens as a note, where its replies are. */
 @Composable
-internal fun ArticleCommentRow(comment: ArticleEngagementEvent, author: FeedProfile?, replies: Int, onClick: () -> Unit) {
+internal fun ArticleCommentRow(
+    comment: ArticleEngagementEvent,
+    author: FeedProfile?,
+    replies: Int,
+    onClick: () -> Unit,
+    profiles: Map<String, FeedProfile> = emptyMap(),
+    onProfileClick: (String) -> Unit = {},
+) {
     val colors = LocalNostrVaultColors.current
+    // Media links are dropped from the text, as iOS NostrContentFormatter does.
+    val mediaURLs = remember(comment.id) { comment.toNote().mediaURLs.toSet() }
     Column(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
@@ -48,7 +58,16 @@ internal fun ArticleCommentRow(comment: ArticleEngagementEvent, author: FeedProf
             )
         }
         if (comment.content.isNotBlank()) {
-            Text(comment.content.trim(), color = PrimaryText, fontSize = 14.sp, lineHeight = 20.sp)
+            // Mentions as names, links tappable (iOS ArticleCommentRow formats the text).
+            NostrContentText(
+                content = comment.content.trim(),
+                profiles = profiles,
+                mediaURLs = mediaURLs,
+                onProfileClick = onProfileClick,
+                onPlainTextClick = onClick,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
         }
         if (replies > 0) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

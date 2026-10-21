@@ -79,6 +79,13 @@ class ArticleReaderViewModel @Inject constructor(
     private val _zapped = MutableStateFlow(false)
     val zapped: StateFlow<Boolean> = _zapped.asStateFlow()
 
+    /** Notes you have zapped anywhere in the app, so a past zap still lights the bolt (iOS zappedEventIds). */
+    val zappedEventIds: StateFlow<Map<String, Int>> = feedService.zappedEventIds
+
+    /** The author has a Lightning address to zap (iOS ArticleReaderView.lightningAddress). */
+    fun canZap(pubkey: String): Boolean = nostrService.profiles.value[pubkey]
+        .let { !it?.lud16.isNullOrBlank() || !it?.lud06.isNullOrBlank() }
+
     /** Sats you zapped from this screen, counted before the receipt arrives. */
     private val _zappedSats = MutableStateFlow(0L)
     val zappedSats: StateFlow<Long> = _zappedSats.asStateFlow()

@@ -31,6 +31,9 @@ internal fun ArticleActionBar(
     onZap: () -> Unit,
     onHighlight: () -> Unit,
     onShare: () -> Unit,
+    /** "Open in <site>", last in the bar (iOS ArticleReaderView); null when the article has no web address. */
+    openWebLabel: String? = null,
+    onOpenWeb: () -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -40,10 +43,12 @@ internal fun ArticleActionBar(
             count = engagementCountLabel(commentCount))
         // Hidden, count and all, when ⚡️ is out of Appearance → Post buttons (iOS ArticleReaderView).
         if (LocalShowZapButton.current) ActionPill(if (zapped) Icons.Filled.Bolt else Icons.Outlined.Bolt, "Zap",
-            if (zapped || zapSats > 0) Color(0xFFF5A623) else SecondaryText, onZap,
+            // Orange only for your own zap; other people's show as the count.
+            if (zapped) Color(0xFFF5A623) else SecondaryText, onZap,
             count = zapSats.takeIf { it > 0 }?.let { formatCount(it) })
         ActionPill(Icons.Outlined.BorderColor, "Highlight",
             if (highlighting) colors.primary else SecondaryText, onHighlight)
         ActionPill(Icons.Outlined.Share, "Share", SecondaryText, onShare)
+        if (openWebLabel != null) ActionPill(NostrVaultIcons.OpenExternal, openWebLabel, SecondaryText, onOpenWeb)
     }
 }

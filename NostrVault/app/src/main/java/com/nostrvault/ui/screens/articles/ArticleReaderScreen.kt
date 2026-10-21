@@ -15,11 +15,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nostrvault.data.model.ArticleHighlight
-import com.nostrvault.data.model.ArticleMeta
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.NostrWebLinks
-import com.nostrvault.ui.components.threadLink
+import com.nostrvault.ui.components.shareNote
 import com.nostrvault.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,7 +31,9 @@ fun ArticleReaderScreen(
 ) {
     val note by viewModel.note.collectAsState()
     val liked by viewModel.likedEventIds.collectAsState()
-    val zapped by viewModel.zapped.collectAsState()
+    val zappedHere by viewModel.zapped.collectAsState()
+    val zappedEventIds by viewModel.zappedEventIds.collectAsState()
+    var noLightningAddress by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var highlighting by remember { mutableStateOf(false) }
     var highlightContext by remember { mutableStateOf<String?>(null) }
@@ -67,18 +67,11 @@ fun ArticleReaderScreen(
         containerColor = WindowBackground,
         topBar = {
             TopAppBar(
-                title = { Text("Article", color = PrimaryText, fontSize = 17.sp) },
+                // iOS shows no title over an article; its web link is in the action bar.
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back", tint = colors.primary)
-                    }
-                },
-                actions = {
-                    // Recipes to zap.cooking, other articles to YakiHonne.
-                    note?.let { NostrWebLinks.forEvent(it.kind, it.pubkey, it.tags) }?.let { link ->
-                        IconButton(onClick = { NostrWebLinks.open(context, link.url) }) {
-                            Icon(NostrVaultIcons.OpenExternal, contentDescription = link.label, tint = colors.primary)
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WindowBackground),
@@ -97,9 +90,11 @@ fun ArticleReaderScreen(
                 onProfileClick = onProfileClick,
                 actions = {
                     val isLiked = current.id in liked
+                    // Recipes to zap.cooking, other articles to YakiHonne.
+                    val webLink = remember(current.id) { NostrWebLinks.forEvent(current.kind, current.pubkey, current.tags) }
                     ArticleActionBar(
                         liked = isLiked,
-                        zapped = zapped,
+                        zapped = zappedHere || current.id in zappedEventIds,
                         // Your own like and zap count as soon as you make them,
                         // before a relay echoes them back.
                         likeCount = tally.likers.size + if (isLiked && viewModel.myPubkey !in tally.likers) 1 else 0,
@@ -108,18 +103,12 @@ fun ArticleReaderScreen(
                         highlighting = highlighting,
                         onLike = { viewModel.like(current) },
                         onComment = { onComment(current.id) },
-                        onZap = { showZapSheet = true },
+                        onZap = { if (viewModel.canZap(current.pubkey)) showZapSheet = true else noLightningAddress = true },
                         onHighlight = { highlighting = !highlighting },
-                        onShare = {
-                            val ref = HavenBridge.encodeNevent(current.id, current.pubkey, current.kind)
-                            val link = ref?.let { threadLink(it) } ?: "nostr:${current.id}"
-                            val title = ArticleMeta.from(current).title
-                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, "$title\n$link")
-                            }
-                            context.startActivity(android.content.Intent.createChooser(intent, "Share Article"))
-                        },
+                        // Only the thread link, as iOS's ShareLink sends.
+                        onShare = { shareNote(context, current) },
+                        openWebLabel = webLink?.label,
+                        onOpenWeb = { webLink?.let { NostrWebLinks.open(context, it.url) } },
                     )
                 },
                 onHighlightBlock = if (highlighting) { text -> highlightContext = text } else null,
@@ -155,23 +144,18 @@ fun ArticleReaderScreen(
     }
 
     shownHighlights?.let { group ->
+        // iOS: a medium/large sheet with an inline "Highlights" title and Done.
         ModalBottomSheet(
             onDismissRequest = { shownHighlights = null },
             sheetState = highlightSheetState,
             containerColor = WindowBackground,
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 32.dp),
-            ) {
-                Text("Highlights", color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                group.forEach { h ->
-                    HighlightRow(h, profiles[h.pubkey], onComment = { commentOnHighlight(h) })
-                }
-            }
+            HighlightsSheetContent(
+                highlights = group,
+                profiles = profiles,
+                onDone = { shownHighlights = null },
+                onComment = commentOnHighlight,
+            )
         }
     }
 
@@ -189,7 +173,7 @@ fun ArticleReaderScreen(
     }
     val passageContext = highlightContext
     if (passageContext != null && target != null) {
-        HighlightDialog(
+        HighlightSheet(
             initialPassage = passageContext,
             onDismiss = { highlightContext = null },
             onPublish = { passage, comment ->
@@ -197,6 +181,14 @@ fun ArticleReaderScreen(
                 highlightContext = null
                 highlighting = false
             },
+        )
+    }
+    if (noLightningAddress) {
+        AlertDialog(
+            onDismissRequest = { noLightningAddress = false },
+            title = { Text("No Lightning address") },
+            text = { Text("This author can't receive zaps yet.") },
+            confirmButton = { TextButton(onClick = { noLightningAddress = false }) { Text("OK", color = colors.primary) } },
         )
     }
 }
