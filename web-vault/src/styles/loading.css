@@ -32,9 +32,10 @@
 .waiting { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; padding: 24px var(--gutter); color: var(--text-2); font: var(--t-sub); min-height: 68px; }
 
 /* A button that is signing or publishing: aria-busy draws a spinner before its label and keeps its colour, dimmed,
-   instead of the grey of a button that can't be pressed. */
+   instead of the grey of a button that can't be pressed. Note actions (pulse, note-actions.css) and Older (its own
+   spinner, FeedExtras) already show their wait, so they are left out. */
 button[aria-busy="true"] { cursor: progress; }
-button[aria-busy="true"]::before { content: ""; display: inline-block; flex: none; width: 11px; height: 11px; margin-right: 7px; vertical-align: -1px;
+button[aria-busy="true"]:not(.note-action, .more)::before { content: ""; display: inline-block; flex: none; width: 11px; height: 11px; margin-right: 7px; vertical-align: -1px;
   border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; opacity: .85; }
 button[aria-busy="true"]:has(> svg)::before { margin-right: 0; } /* an icon button's own gap spaces it */
 @media (prefers-reduced-motion: no-preference) { button[aria-busy="true"]::before { animation: spin .8s linear infinite; } }
