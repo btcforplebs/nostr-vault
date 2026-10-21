@@ -110,4 +110,39 @@ final class MacMeshRelayTests: XCTestCase {
         let old = status("running", beat: 999_990, url: "ws://127.0.0.1:40000/oldtoken")
         XCTAssertFalse(RelayConfiguration.macSyncNeedsMesh(mesh: mesh, status: old, now: now))
     }
+
+    /// relays_blastr.json carries this session's mesh address; read back as
+    /// a saved broadcast relay it is dead after the next launch. The 12 mini
+    /// had eight of them and nothing else (2026-10-21).
+    func testSavedMeshAddressesAreDropped() {
+        let saved = [
+            "ws://127.0.0.1:60707/5a0e9fbac56fe8892287621964880fef",
+            "wss://w.example",
+            "ws://127.0.0.1:59341/69339cfe34aafa073b1b83998571537a",
+        ]
+        XCTAssertEqual(RelayConfiguration.droppingMeshAddresses(saved), ["wss://w.example"])
+        XCTAssertTrue(RelayConfiguration.isMeshAddress(meshURL))
+    }
+
+    /// Only the mesh shape goes: the phone's own relay paths, a LAN Mac and
+    /// public relays stay.
+    func testOtherRelaysAreKept() {
+        for relay in ["ws://127.0.0.1:3355", "ws://127.0.0.1:3355/inbox", "ws://127.0.0.1:3355/chat",
+                      "ws://192.168.1.5:3355/abcdef0123456789", "wss://relay.damus.io",
+                      "ws://127.0.0.1/abcdef0123456789", "ws://127.0.0.1:41234/abcdef"] {
+            XCTAssertFalse(RelayConfiguration.isMeshAddress(relay), relay)
+        }
+    }
+
+    /// The broadcast list has this session's Mac address once, first, and no
+    /// address left over from an earlier session.
+    func testBroadcastListHasOnlyTheLiveMeshAddress() {
+        var config = config(mac: macNpub)
+        config.blastrRelays = ["ws://127.0.0.1:60707/5a0e9fbac56fe8892287621964880fef", "wss://w.example"]
+        let mesh = RelayConfiguration.MacMeshRelay(npub: macNpub, url: meshURL)
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL, "wss://w.example"])
+        config.blastrRelays = [meshURL]
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: mesh), [meshURL])
+        XCTAssertEqual(RelayConfiguration.blastrRelays(config: config, mesh: nil), [])
+    }
 }

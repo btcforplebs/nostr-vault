@@ -238,11 +238,31 @@ enum RelayConfiguration {
         )
     }
 
+    /// A mesh dial's local address (`ws://127.0.0.1:<port>/<hex token>`,
+    /// see MacMeshRelay). It lives for one app session: the next dial gets a
+    /// new port and token, so a saved copy is a dead relay.
+    static func isMeshAddress(_ relay: String) -> Bool {
+        guard let url = URL(string: relay.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme?.lowercased() == "ws", url.host == "127.0.0.1", url.port != nil else { return false }
+        let parts = url.path.split(separator: "/")
+        guard parts.count == 1, let token = parts.first, token.count >= 16 else { return false }
+        return token.allSatisfy { $0.isHexDigit }
+    }
+
+    /// `relays` without saved mesh addresses. relays_blastr.json carries this
+    /// session's Mac address for the relay, and ConfigService read it back as
+    /// one of the owner's own broadcast relays: one more dead entry per launch
+    /// (eight on the 12 mini by 2026-10-21), and every post said no relay had
+    /// confirmed it.
+    static func droppingMeshAddresses(_ relays: [String]) -> [String] {
+        relays.filter { !isMeshAddress($0) }
+    }
+
     /// The broadcast list the relay writes to: a Mac on the mesh goes first,
     /// as a Mac with a URL does (HavenConfig.activeBlastrRelays), so the
     /// phone's notes reach it.
     static func blastrRelays(config: HavenConfig, mesh: MacMeshRelay?) -> [String] {
-        var relays = config.activeBlastrRelays
+        var relays = droppingMeshAddresses(config.activeBlastrRelays)
         if let npub = config.macRelayMeshNpub, let mesh, mesh.npub == npub, !relays.contains(mesh.url) {
             relays.insert(mesh.url, at: 0)
         }
