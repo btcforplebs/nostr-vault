@@ -11,7 +11,7 @@ import coil.request.ImageRequest
  * A read is routed only to the author of the note being drawn, passed in
  * with the image request ([meshAuthor]); never to whoever first mentioned a
  * blob, or anyone could post someone else's URL and pull readers to their
- * node. Only authors the owner follows are dialled ([mayDial]). Author ->
+ * node. Only the owner and authors they follow are dialled ([mayDial]). Author ->
  * mesh npub comes from their 10063 ([serverLists]).
  */
 object FipsMediaRouter {
@@ -31,8 +31,13 @@ object FipsMediaRouter {
     @Volatile
     var follows: Set<String> = emptySet()
 
-    /** Whether a read of [author]'s media may go over the mesh. */
-    fun mayDial(author: String): Boolean = author in follows
+    /** The owner's hex pubkey: their own notes read from their own vault. Wired by NostrService. */
+    @Volatile
+    var ownerHex: () -> String = { "" }
+
+    /** Whether a read of [author]'s media may go over the mesh (iOS: follows or the owner). */
+    fun mayDial(author: String): Boolean =
+        author in follows || (author.isNotEmpty() && author == ownerHex())
 
     /** Ask relays for an author's 10063. Wired by NostrService. */
     @Volatile
