@@ -40,19 +40,19 @@ export function RelaysPage({ ctx }) {
   if (!loaded) return <p class="empty">Loading…</p>
   return (
     <>
-      <p class="settings-note muted small">Where your notes are published (Write) and where people find them (Read), as your relay list (NIP-65) says. Your phone and other apps use the same list.</p>
       {!loaded.checked && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
-      {!loaded.event && loaded.checked && <p class="settings-note muted small">No relay list of yours was found. Saving publishes your first one.</p>}
+      {!loaded.event && loaded.checked && <p class="settings-note muted small">No relays yet. Add one below.</p>}
       {rows.map(r => (
         <div key={r.url} class="settings-row static relay-edit-row">
-          <span class="settings-title mono" title={r.url}>{r.url}{isDead(r.url) && <span class="tag">not answering</span>}</span>
+          <span class="settings-title mono" title={r.url}>{host(r.url)}{isDead(r.url) && <span class="tag">not answering</span>}</span>
           <span class="settings-tags">
-            <Job on={r.read} label="read" disabled={readOnly || busy} onClick={() => setRows(setJob(rows, r.url, "read", !r.read))} />
-            <Job on={r.write} label="write" disabled={readOnly || busy} onClick={() => setRows(setJob(rows, r.url, "write", !r.write))} />
+            <Job on={r.read} label="Read" disabled={readOnly || busy} onClick={() => setRows(setJob(rows, r.url, "read", !r.read))} />
+            <Job on={r.write} label="Write" disabled={readOnly || busy} onClick={() => setRows(setJob(rows, r.url, "write", !r.write))} />
             {!readOnly && <button type="button" class="small relay-remove" disabled={busy} aria-label={`Remove ${r.url}`} onClick={() => setRows(removeRelay(rows, r.url))}>Remove</button>}
           </span>
         </div>
       ))}
+      <p class="settings-note muted small">Read + Write are your public relay list (10002). Your phone and other apps use the same list.</p>
       {readOnly ? <p class="settings-note muted small">{READ_ONLY}</p> : (
         <>
           <form class="settings-row static relay-add" onSubmit={add}>
@@ -70,16 +70,19 @@ export function RelaysPage({ ctx }) {
       )}
       {status && <p class="settings-note muted small">{status}</p>}
       {err && <p class="settings-note small error">{err}</p>}
-      <RelayUrlList ctx={ctx} kind={10050} title="Messages" needsOne
-        note="Where people send you private messages (NIP-17, kind 10050). Messages here read from these relays too."
+      <RelayUrlList ctx={ctx} kind={10050} title="DMs" needsOne
+        note="Your DM inbox (10050): where people send you private messages. Messages here read from these relays too."
         empty="No messages list of yours was found, so people send to your Read relays." />
-      <RelayUrlList ctx={ctx} kind={10006} title="Never connect"
+      <RelayUrlList ctx={ctx} kind={10006} title="Never Connect"
         note="Relays your apps should never connect to (NIP-51, kind 10006). Your phone skips them; this list goes with your account."
         empty="No relays are on your never-connect list." />
     </>
   )
 }
 
+/** The phone shows a relay by its host (RelayMatrix's label): the address without wss://. */
+const host = url => url.replace(/^wss:\/\//, "")
+
 const Job = ({ on, label, disabled, onClick }) => (
-  <button type="button" class={`tag job ${on ? "on" : ""}`} aria-pressed={on} disabled={disabled} title={on ? `Stop using it to ${label}` : `Use it to ${label}`} onClick={onClick}>{label}</button>
+  <button type="button" class={`tag job ${on ? "on" : ""}`} aria-pressed={on} disabled={disabled} title={on ? `Stop using it to ${label.toLowerCase()}` : `Use it to ${label.toLowerCase()}`} onClick={onClick}>{label}</button>
 )

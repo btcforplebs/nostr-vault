@@ -49,7 +49,7 @@ export function RelayScreen({ ctx, log }) {
     <main class="screen">
       <header class="screen-head"><h2>Relay</h2></header>
       <section class="card">
-        <div class="relay-state"><span class="dot on" />Haven running in this browser</div>
+        <div class="relay-state"><span class="dot on" />Your vault is running in this browser</div>
         <div class="stats">
           <div><div class="k">your events</div><div class="v">{counts.own ?? "–"}</div></div>
           <div><div class="k">feed cache</div><div class="v">{counts.feed ?? "–"}</div></div>
