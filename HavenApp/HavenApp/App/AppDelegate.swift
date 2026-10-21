@@ -56,6 +56,9 @@ class AppDelegate: NSObject, ObservableObject {
                 // Starts, or quietly finishes, the Fill your vault guide once the
                 // follow list is known.
                 FillYourVaultCoordinator.shared.start()
+                // The Mac's mesh engine, if its switch is on: My Devices reach
+                // the relay port through it, and the relay starts just after.
+                MacFipsMeshService.shared.sync()
                 guard ConfigService.shared.config.autoStartRelay else { return }
                 guard RelayProcessManager.shared.state == .idle else { return }
                 RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)

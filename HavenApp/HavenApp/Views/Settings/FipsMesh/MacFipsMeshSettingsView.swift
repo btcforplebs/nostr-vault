@@ -2,11 +2,12 @@ import SwiftUI
 
 #if os(macOS)
 /// FIPS Mesh on the Mac: the same sections, in the same order, as the iPhone
-/// page. The Mac app runs no mesh engine itself (a FIPS transport such as
-/// nostr-vpn does), so Mesh shows the transport, Sync points at the phones,
-/// and Advanced holds the published address's source.
+/// page. Mesh is the switch for the app's own engine (MacFipsMeshService),
+/// open to My Devices only. Share With Others and Advanced still list a FIPS
+/// transport such as nostr-vpn, which the engine does not replace.
 struct MacFipsMeshSettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @ObservedObject private var mesh = MacFipsMeshService.shared
     @StateObject private var detection = FIPSDetectionService()
     @State private var showQR = false
     @State private var newAddress = ""
@@ -24,7 +25,10 @@ struct MacFipsMeshSettingsView: View {
             advancedSection
         }
         .groupedFormStyleCompat()
-        .onAppear { detection.startPolling() }
+        .onAppear {
+            detection.startPolling()
+            mesh.loadOwnNpub()
+        }
         .onDisappear { detection.stopPolling() }
     }
 
@@ -32,6 +36,12 @@ struct MacFipsMeshSettingsView: View {
 
     private var meshSection: some View {
         Section {
+            Toggle(isOn: Binding(
+                get: { mesh.enabled },
+                set: { mesh.setEnabled($0) }
+            )) {
+                Text("Mesh").font(.appBody)
+            }
             HStack(spacing: 8) {
                 Circle()
                     .fill(statusColor)
@@ -41,35 +51,35 @@ struct MacFipsMeshSettingsView: View {
                     .foregroundColor(.secondary)
             }
             .accessibilityElement(children: .combine)
+            if let error = mesh.lastError {
+                Text(error)
+                    .font(.appCaption)
+                    .foregroundColor(.red)
+            }
         } header: {
             Text("Mesh")
         } footer: {
-            Text("Your devices reach each other over the FIPS mesh, with no public IP or domain. On a Mac the mesh runs in a FIPS transport such as nostr-vpn.")
+            Text("Your devices reach this Mac's vault over the FIPS mesh, with no public IP or domain. Only the devices in My Devices can reach it.")
         }
     }
 
     private var statusColor: Color {
-        switch detection.status {
-        case .running: return .havenOnline
-        case .installed, .stale: return .yellow
-        case .notInstalled: return .gray
-        }
+        if mesh.running { return .havenOnline }
+        if mesh.starting { return .yellow }
+        return .gray
     }
 
     private var statusText: String {
-        switch detection.status {
-        case .running: return "On · FIPS transport active"
-        case .stale: return "FIPS transport not responding"
-        case .installed: return "Off · FIPS transport installed but not running"
-        case .notInstalled: return "Off · no FIPS transport found"
-        }
+        if mesh.running { return "On · open to \(configService.config.meshDevices.count) of your devices" }
+        if mesh.starting { return "Starting…" }
+        return "Off"
     }
 
     // MARK: 2 This Device
 
     private var thisDeviceSection: some View {
         Section {
-            if let npub = detection.detectedNpub {
+            if let npub = mesh.ownNpub {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Mesh address")
                         .font(.appCaption)
@@ -95,7 +105,7 @@ struct MacFipsMeshSettingsView: View {
                     MeshQRCode.view(for: npub, label: "This Mac's mesh address QR code")
                 }
             } else {
-                Text("No mesh address yet. Start a FIPS transport such as nostr-vpn and it shows here.")
+                Text("Reading this Mac's mesh address…")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
             }
@@ -126,6 +136,7 @@ struct MacFipsMeshSettingsView: View {
                     Button(role: .destructive) {
                         configService.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: configService.config.meshDevices)
                         configService.save()
+                        mesh.sync()
                     } label: {
                         Image(systemName: "minus.circle")
                     }
@@ -169,13 +180,14 @@ struct MacFipsMeshSettingsView: View {
             addError = "That isn't a mesh address."
             return
         }
-        guard npub != detection.detectedNpub else {
+        guard npub != mesh.ownNpub, npub != detection.detectedNpub else {
             addError = "That is this Mac's own address."
             return
         }
         let device = MeshDevice(npub: npub, name: newName.trimmingCharacters(in: .whitespacesAndNewlines), role: newRole)
         configService.config.meshDevices = MeshDevicesLogic.adding(device, to: configService.config.meshDevices)
         configService.save()
+        mesh.sync()
         newAddress = ""
         newName = ""
         addError = nil

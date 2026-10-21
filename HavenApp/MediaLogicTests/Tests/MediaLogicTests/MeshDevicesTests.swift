@@ -166,4 +166,31 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(config.relayPort, 4869)
         XCTAssertEqual(config.meshDevices, [])
     }
+
+    // MARK: macEngineOptions
+
+    func testTheMacEngineIsOpenToMyDevicesOnly() throws {
+        let devices = [
+            MeshDevice(npub: moto, name: "Moto", role: .phone),
+            MeshDevice(npub: page, name: "", role: .browser),
+            MeshDevice(npub: mac, name: "", role: .mac),
+        ]
+        let opts = try XCTUnwrap(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: ["wss://a"]))
+        XCTAssertEqual(opts["own_devices"] as? [String], [moto, page], "this Mac is never its own device")
+        XCTAssertEqual(opts["relays"] as? [String], ["wss://a"])
+        XCTAssertNil(opts["peers"])
+        XCTAssertNil(opts["public_seeds"])
+    }
+
+    func testNoDevicesMeansTheMacEngineStaysOff() {
+        // An empty own_devices would open the engine to anyone.
+        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: [], ownNpub: nil, relays: []))
+        let onlySelf = [MeshDevice(npub: mac, name: "", role: .mac)]
+        XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: onlySelf, ownNpub: mac, relays: []))
+    }
+
+    func testTheMacEngineFallsBackToTheDefaultFinderRelays() throws {
+        let opts = try XCTUnwrap(MeshDevicesLogic.macEngineOptions(devices: [MeshDevice(npub: moto, name: "", role: .phone)], ownNpub: nil, relays: []))
+        XCTAssertEqual(opts["relays"] as? [String], MeshDevicesLogic.defaultFinderRelays)
+    }
 }

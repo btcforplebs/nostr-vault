@@ -187,6 +187,19 @@ enum MeshDevicesLogic {
         return "On · \(inReach) of \(total) devices in reach"
     }
 
+    /// Start options for the Mac's engine: only My Devices reach it (the
+    /// engine's `own_devices`), each dialed at start. Nil with no devices,
+    /// because an empty `own_devices` would open the Mac to anyone; the Mac
+    /// then stays off. `ownNpub` (this Mac) is left out.
+    static func macEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String]) -> [String: Any]? {
+        var npubs: [String] = []
+        for device in devices where device.npub != ownNpub && !npubs.contains(device.npub) {
+            npubs.append(device.npub)
+        }
+        guard !npubs.isEmpty else { return nil }
+        return ["own_devices": npubs, "relays": relays.isEmpty ? defaultFinderRelays : relays]
+    }
+
     /// A finder relay as typed: `wss://` added when missing, trailing
     /// slashes dropped. Nil for anything that is not a websocket host.
     static func normalizedFinderRelay(_ input: String) -> String? {
