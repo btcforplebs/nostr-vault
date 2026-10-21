@@ -1,3 +1,9 @@
+# Nostr Vault v2.7.2 Build 40 (macOS / iOS) Release Notes
+
+The App Store build. The app now stays cool with it open all day: the relay pauses work nobody can see while the app is in the background, backs off from flaky relays and signers, and the Web of Trust globe draws more cheaply. On the iPhone a locked article no longer links out to buy it on Fanfares; the Mac keeps that link, and on both it can only point at the article itself. New Message from a profile keeps the person you picked. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (40).
+
+---
+
 # Nostr Vault v2.7.2 Build 39 (macOS / iOS) Release Notes
 
 The App Store release candidate. Your keys and settings are safer: the config file is written atomically, backed up, and never reset by a damaged copy, and imported keys are checked. Fanfares articles get "Open in Fanfares" and "Already unlocked?"; the app itself never pays. Recipes, streams, articles and profiles can be opened in the rest of Nostr. Zaps on posts, live streams and articles are opt-in on the Mac as on the iPhone, the on-chain wallet moves to Settings → Advanced, and blocked people's highlights and comments no longer show under articles. iPad fixes for the relay card, the tour card and the Media viewer. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (39).

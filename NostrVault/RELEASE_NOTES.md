@@ -1,3 +1,9 @@
+# Nostr Vault v2.7.2 (Build 40) Release Notes
+
+Android now looks and acts like the iPhone app. Messages and notifications, Settings, the tab bar, setup, profiles, search, follow lists, the Web of Trust globe, the feed, note details and the composer have all been matched to the iPhone. The app also runs cooler: the relay pauses work nobody can see while the app is in the background and backs off from flaky relays. A crash at launch on a new install is fixed. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (40).
+
+---
+
 # Nostr Vault v2.7.2 (Build 39) Release Notes
 
 The App Store review pass for Android. Reposts, deletes, profile edits and follow-list changes are signed only as the account they belong to, and switching accounts can't carry one account's follow list into another. Settings are saved atomically and survive a damaged file, the owner key moves out of the config file, and a broken credential store no longer crashes the app. Notes backup works. Fanfares articles can be unlocked with a zap from the lock card; other locked articles stay locked. Recipes, streams, articles and profiles can be opened in the rest of Nostr, and Global shows a new account's web. Copying your nsec is marked sensitive, secrets stay out of the log, and the on-chain wallet moves to Settings → Advanced. Plus tablet two-pane notes and more iPhone parity. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (39).
