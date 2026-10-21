@@ -78,14 +78,14 @@ extension FeedNoteRow {
     var moreMenu: some View {
         Menu {
             ShareLink(
-                item: URL(string: "https://mynostrspace.com/thread/\(bodySource.nevent)")!,
+                item: URL(string: "https://nostrvault.app/thread/\(bodySource.nevent)")!,
                 subject: Text(String(localized: "feed.share.subject")),
                 message: Text(String(localized: "feed.share.message"))
             ) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             Button {
-                copyToPasteboard("https://mynostrspace.com/thread/\(bodySource.nevent)")
+                copyToPasteboard("https://nostrvault.app/thread/\(bodySource.nevent)")
                 ActionToastManager.shared.show(icon: "link", message: "Link copied")
             } label: {
                 Label("Copy Link", systemImage: "link")
