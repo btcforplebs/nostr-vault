@@ -104,9 +104,19 @@ final class QueuedMediaPostTests: XCTestCase {
         )
     }
 
+    /// The Mac was asked and did not take it: the message must point at the
+    /// Mac, not tell a user with a Mac set up to go add a server.
+    func testVaultMessageNamesTheMacNotMissingServers() {
+        let message = MediaUploadOutcomeMessage.vaultDidNotTake
+        XCTAssertTrue(message.contains("Mac"), message)
+        XCTAssertFalse(message.localizedCaseInsensitiveContains("no outside media server"), message)
+        XCTAssertNotEqual(message, MediaUploadOutcomeMessage.noOutsideServer)
+    }
+
     func testNoMessageBlamesTheConnection() {
         for message in [
             MediaUploadOutcomeMessage.noOutsideServer,
+            MediaUploadOutcomeMessage.vaultDidNotTake,
             MediaUploadOutcomeMessage.notSavedOnDevice,
             MediaUploadOutcomeMessage.queued(hosts: ["x"], macHost: nil),
         ] {

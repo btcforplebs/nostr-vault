@@ -90,6 +90,12 @@ enum MediaUploadOutcomeMessage {
     static let noOutsideServer =
         "Your post wasn't sent: no outside media server is set up, so nobody else could see this photo. Add your Mac or another server in Settings → Media Servers, then post again."
 
+    /// This phone has no server of its own and the home vault that passes
+    /// photos on (the Mac, or a kiosk) did not take it. Saying "no server is
+    /// set up" here sent us looking at settings when the Mac app was closed.
+    static let vaultDidNotTake =
+        "Your post wasn't sent: your Mac didn't take the photo. Check that Nostr Vault is open on your Mac (or your home vault is on), then post again."
+
     /// The blob never reached this device's own relay.
     static let notSavedOnDevice =
         "Your post wasn't sent: the photo couldn't be saved on this device. Try again in a moment."

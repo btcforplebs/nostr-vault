@@ -189,12 +189,12 @@ extension ComposeView {
                         alt: attachments[i].altText, byteCount: byteCount
                     ))
                     continue
-                case .noOutsideServer, .notSavedOnDevice:
+                case .noOutsideServer, .vaultDidNotTake, .notSavedOnDevice:
                     let message: String
-                    if case .noOutsideServer = outcome {
-                        message = MediaUploadOutcomeMessage.noOutsideServer
-                    } else {
-                        message = MediaUploadOutcomeMessage.notSavedOnDevice
+                    switch outcome {
+                    case .noOutsideServer: message = MediaUploadOutcomeMessage.noOutsideServer
+                    case .vaultDidNotTake: message = MediaUploadOutcomeMessage.vaultDidNotTake
+                    default: message = MediaUploadOutcomeMessage.notSavedOnDevice
                     }
                     DispatchQueue.main.async {
                         error = message
