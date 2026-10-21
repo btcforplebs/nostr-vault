@@ -1,7 +1,9 @@
 // The public post page, nostrvault.app/thread/<nevent|note|naddr>: what a shared Nostr Vault link opens. It is drawn
-// on the server (thread-page/server.mjs) as plain HTML, so it opens signed out with no script and no haven.wasm, and a
-// chat app that unfurls the link reads its og: tags for the preview card. This file is the pure half: the address,
-// the reply list and the HTML. The relay half is fetch.js.
+// on the server (thread-page/server.mjs) as plain HTML, so it opens signed out with no haven.wasm, and a chat app that
+// unfurls the link reads its og: tags for the preview card. Its one script, only on a page with a photo its author's
+// 10063 puts on a mesh vault, reads that photo over FIPS when its https server can't serve it (web-relay
+// src/fips/share-photos.js). This file is the pure half: the address, the reply list and the HTML. The relay half is
+// fetch.js.
 import { decode, neventEncode, naddrEncode, npubEncode } from "nostr-tools/nip19"
 import { buildThread, flattenThread, replyRefs } from "../src/net/thread.js"
 import { displayTitle, longFormMeta, parseInline, parseMarkdown, plainText, LONG_FORM_KIND } from "../src/readers/longform.js"
@@ -58,10 +60,15 @@ function httpsUrl(s) {
 const TOKEN = /(https?:\/\/[^\s<>"]+)|nostr:((?:npub|nprofile|note|nevent|naddr)1[02-9ac-hj-np-z]+)/gi
 
 /** A note's text as parts, its media links pulled out (drawn under the text, as the apps do).
- *  -> { parts: [{ type: "text" | "link" | "mention" | "ref", ... }], media: [{ url, type }] } */
+ *  -> { parts: [{ type: "text" | "link" | "mention" | "ref", ... }], media: [{ url, type, x? }] } (x: an image's
+ *  sha256, from its imeta or its Blossom path) */
 export function noteParts(content, tags = []) {
-  const parts = [], media = []
-  const addMedia = (url, type) => { if (!media.some(m => m.url === url)) media.push({ url, type }) }
+  const parts = [], media = [], hashes = imetaHashes(tags)
+  const addMedia = (url, type) => {
+    if (media.some(m => m.url === url)) return
+    const x = type === "image" ? hashes.get(url) ?? blossomHash(url) : undefined
+    media.push(x ? { url, type, x } : { url, type })
+  }
   let at = 0
   const text = String(content ?? "")
   for (const m of text.matchAll(TOKEN)) {
@@ -91,6 +98,46 @@ export function noteParts(content, tags = []) {
   while (parts.length && parts.at(-1).type === "text" && !parts.at(-1).text.trim()) parts.pop()
   if (parts.length && parts.at(-1).type === "text") parts.at(-1).text = parts.at(-1).text.trimEnd()
   return { parts, media }
+}
+
+/** imeta url -> its x (sha256), for the mesh fallback. */
+function imetaHashes(tags) {
+  const out = new Map()
+  for (const t of tags ?? []) {
+    if (t?.[0] !== "imeta") continue
+    const f = {}
+    for (const part of t.slice(1)) {
+      const s = String(part), i = s.indexOf(" ")
+      if (i > 0) f[s.slice(0, i)] ??= s.slice(i + 1).trim() // the first of a field wins
+    }
+    const url = httpsUrl(f.url ?? "")
+    if (url && HEX64.test(String(f.x ?? "").toLowerCase()) && !out.has(url)) out.set(url, f.x.toLowerCase())
+  }
+  return out
+}
+
+/** The sha256 a Blossom link names in its path (/<sha256>[.ext], BUD-01), else undefined. */
+export function blossomHash(url) {
+  try { return /\/([0-9a-f]{64})(\.[a-z0-9]{1,8})?$/i.exec(new URL(url).pathname)?.[1].toLowerCase() } catch { return undefined }
+}
+
+const MESH_SERVER = /^fipsmesh:\/\/(npub1[02-9ac-hj-np-z]+)\/$/ // NIP-F1: the trailing slash is required
+const MAX_MESH_VAULTS = 3
+/** The mesh vaults a kind 10063 names: its `fipsmesh://<npub>/` servers as x-only hex, in order, once each, at most 3. */
+export function meshVaults(ev) {
+  const out = []
+  for (const t of ev?.tags ?? []) {
+    const m = t?.[0] === "server" && MESH_SERVER.exec(String(t[1] ?? "").trim().toLowerCase())
+    let hex
+    try { const d = m && decode(m[1]); hex = d?.type === "npub" ? d.data : undefined } catch {}
+    if (hex && !out.includes(hex)) out.push(hex)
+  }
+  return out.slice(0, MAX_MESH_VAULTS)
+}
+
+/** Authors whose notes have a photo the mesh could serve (one with a hash), for the 10063 read. */
+export function meshPhotoAuthors(events) {
+  return [...new Set(events.filter(ev => ev && ev.kind !== LONG_FORM_KIND && noteParts(ev.content, ev.tags).media.some(m => m.x)).map(ev => ev.pubkey))]
 }
 
 /** Pubkeys a note's text names (nostr:npub / nprofile), for the profile fetch. */
@@ -167,7 +214,13 @@ function inlineHtml(text) {
   ).join("")
 }
 
-function noteHtml(ev, profiles) {
+// The script that reads a photo over the mesh when its server can't serve it (web-relay src/fips/share-photos.js,
+// built into /relay/ with the relay page).
+export const MESH_PHOTO_SCRIPT = "/relay/share-photos.js"
+
+/** `vaults`: Map pubkey -> the mesh vaults its 10063 names. A photo with a hash whose author names one carries both,
+ *  for MESH_PHOTO_SCRIPT. */
+function noteHtml(ev, profiles, vaults = new Map()) {
   const { parts, media } = noteParts(ev.content, ev.tags)
   const text = parts.map(p => {
     if (p.type === "text") return esc(p.text)
@@ -177,10 +230,12 @@ function noteHtml(ev, profiles) {
   }).join("")
   const mediaHtml = media.map(m => m.type === "video"
     ? `<video src="${esc(m.url)}" controls playsinline preload="metadata"></video>`
-    : `<a href="${esc(m.url)}" rel="nofollow ugc noopener"><img src="${esc(m.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>`,
+    : `<a href="${esc(m.url)}" rel="nofollow ugc noopener"><img src="${esc(m.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"${meshAttrs(m, vaults.get(ev.pubkey))}></a>`,
   ).join("")
   return `${text ? `<div class="text">${text}</div>` : ""}${mediaHtml ? `<div class="media">${mediaHtml}</div>` : ""}`
 }
+
+const meshAttrs = (m, vs) => (m.x && vs?.length ? ` data-x="${esc(m.x)}" data-vaults="${esc(vs.join(","))}"` : "")
 
 function articleHtml(ev) {
   const meta = longFormMeta(ev)
@@ -203,7 +258,7 @@ function byline(ev, profiles, size) {
 }
 
 /** The whole page for a found post. `code` is the address it was opened by. */
-export function renderPost({ post, replies, profiles, code }) {
+export function renderPost({ post, replies, profiles, code, vaults = new Map() }) {
   const url = `${SITE}/thread/${code}`
   const meta = previewMeta(post, profiles, url)
   const parent = post.kind === 1 ? replyRefs(post).parent : null
@@ -212,7 +267,7 @@ export function renderPost({ post, replies, profiles, code }) {
 <article class="post">
   ${parent ? `<a class="up" href="/thread/${esc(neventEncode({ id: parent }))}">↑ Replying to an earlier post</a>` : ""}
   ${byline(post, profiles, 48)}
-  ${post.kind === LONG_FORM_KIND ? articleHtml(post) : noteHtml(post, profiles)}
+  ${post.kind === LONG_FORM_KIND ? articleHtml(post) : noteHtml(post, profiles, vaults)}
 </article>
 ${hex ? actionRow(hex) : ""}
 <div class="join">
@@ -227,14 +282,14 @@ ${hex ? actionRow(hex) : ""}
   ${replies.map(({ event, depth }) => `
   <div class="reply" style="--d:${Math.min(depth, MAX_DEPTH) - 1}">
     ${byline(event, profiles, 32)}
-    ${noteHtml(event, profiles)}
+    ${noteHtml(event, profiles, vaults)}
   </div>`).join("")}
 </section>`
-  return page({ meta, body })
+  return page({ meta, body, script: body.includes(" data-vaults=") ? MESH_PHOTO_SCRIPT : null })
 }
 
 // The post's buttons, as in the app. Every one opens this post in the web Vault, where the reader signs in and acts:
-// this page has no script and no signer, so it never writes anything itself.
+// this page has no signer, so it never writes anything itself.
 const ICONS = {
   Reply: `<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20l1.1-4.4A8.4 8.4 0 1 1 21 11.5Z"/>`,
   Repost: `<path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>`,
@@ -257,7 +312,7 @@ ${valid ? `<div class="open"><a class="btn primary" href="nostr:${esc(code)}">Op
   return page({ meta: { title: "Post not found · Nostr Vault", description: "A post on Nostr, shared from Nostr Vault.", image: `${SITE}/assets/og-image.jpg`, url: `${SITE}/thread/${code}`, type: "website" }, body, noindex: true })
 }
 
-function page({ meta, body, noindex = false }) {
+function page({ meta, body, noindex = false, script = null }) {
   const card = meta.imageIsMedia ? "summary_large_image" : "summary"
   return `<!DOCTYPE html>
 <html lang="en">
@@ -281,6 +336,7 @@ ${noindex ? `<meta name="robots" content="noindex">` : ""}
 <link rel="icon" type="image/png" href="/assets/haven_icon.png">
 <link rel="apple-touch-icon" href="/assets/haven_icon.png">
 <style>${CSS}</style>
+${script ? `<script type="module" src="${esc(script)}"></script>` : ""}
 </head>
 <body>
 <header><a class="logo" href="/"><img src="/assets/haven_icon.png" alt="" width="28" height="28">Nostr Vault</a><nav class="top"><a class="get" href="/">Get the app</a><a class="pill" href="/vault/">Open web app <span class="beta">Beta</span></a></nav></header>
