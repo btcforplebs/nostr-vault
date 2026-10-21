@@ -185,8 +185,8 @@ export function MessagesScreen({ ctx }) {
       {err && <div class="status-line error">{err}</div>}
       {!loaded && !list.length ? <p class="empty">Opening your messages…{ctx.session.method === "nip46" ? " Your signer may ask you to approve." : ""}</p>
         : !list.length ? (note ? null : (
-          // DMInboxView's empty state: its title and subtitle, word for word.
-          <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with the compose button above</p></div>
+          // DMInboxView's empty state; the web composer is the "New message to" box above, not a button.
+          <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with New message above</p></div>
         ))
         : list.map(c => { const unread = counts.get(c.peer) ?? 0; return (
           <a key={c.peer} class={unread ? "dm-row unread" : "dm-row"} href={`#/dm/${c.peer}`} aria-label={unread ? `${unread} unread` : undefined}>
