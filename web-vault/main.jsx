@@ -6,7 +6,7 @@ import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven/vault.js"
-import { readAccount, refreshAccount } from "./src/net/sync.js"
+import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
@@ -93,6 +93,8 @@ function App() {
   useEffect(() => {
     if (!session) return
     let live = true
+    // The account's relays are asked while haven.wasm downloads (seconds on a first visit), not after Haven is up.
+    const early = navigator.onLine ? fetchAccount(session.pubkey, uniq([...DEFAULT_RELAYS, ...PROFILE_RELAYS])) : null
     ;(async () => {
       const v = await startVault({ pubkey: session.pubkey, log })
       if (!live) return
@@ -103,7 +105,7 @@ function App() {
       setQuoteSource({ vault: v, relays: uniq([...local.relays.read, ...DEFAULT_RELAYS]) }) // quoted notes and mention names (NoteText)
       setAccount({ ...local, loaded: !!local.contacts })
       if (!navigator.onLine) return
-      const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log })
+      const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log, early })
       putProfile(fresh.profileEvent)
       if (live) setAccount({ ...fresh, loaded: true })
       log("account", { follows: fresh.follows.length, cachedFollows: local.follows.length })
@@ -215,6 +217,9 @@ function SignOutScreen({ busy, failed = [], revoked, error, onRetry, onDone }) {
   )
 }
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
+// Registered once the page has loaded: the worker's install fetches every file index.html links, haven.wasm's preload
+// among them, and by then they're in the HTTP cache instead of downloading a second time beside the page's own.
+const registerWorker = () => navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
+if ("serviceWorker" in navigator) document.readyState === "complete" ? registerWorker() : addEventListener("load", registerWorker, { once: true })
 navigator.storage?.persist?.().then(granted => log("persist", { granted }))
 render(<App />, document.getElementById("app"))

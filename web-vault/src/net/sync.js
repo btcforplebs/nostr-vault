@@ -1,6 +1,7 @@
 // Network -> in-page Haven. Every event that comes in is written to Haven (the user's own events to the
 // outbox route, follows' notes to /feed); the screens read only from Haven.
 import { verifyEvent } from "nostr-tools/pure"
+import { normalizeURL } from "nostr-tools/utils"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 
 // Notes and reposts, plus the articles, polls, highlights, comments, pictures and generic reposts the iPhone shows in
@@ -26,9 +27,28 @@ function account(evs) {
   }
 }
 
-/** Fetch the account's replaceable events from the network into Haven, then read it back from Haven. */
-export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {} } = {}) {
-  const evs = await pool.querySync(hintRelays, { kinds: [0, 3, 10002], authors: [pubkey] }, { maxWait: 6000 })
+const norm = url => { try { return normalizeURL(url) } catch { return url } }
+const accountQuery = (relays, pubkey) => pool.querySync(relays, { kinds: [0, 3, 10002], authors: [pubkey] }, { maxWait: 6000 })
+
+/**
+ * The account's kind 0, 3 and 10002 from `relays`, asked before Haven is up: boot starts this while haven.wasm
+ * downloads, so the relays are connected and the answer is in hand when Haven starts. Hand it to refreshAccount.
+ */
+export function fetchAccount(pubkey, relays) {
+  const events = accountQuery(relays, pubkey).catch(() => [])
+  // The feed asks the account's read relays next: open them now as well.
+  events.then(evs => { for (const url of account(evs).relays.read) pool.ensureRelay(url, { connectionTimeout: 5000 }).catch(() => {}) })
+  return { relays, events }
+}
+
+/**
+ * Fetch the account's replaceable events from the network into Haven, then read it back from Haven. `early`, a
+ * fetchAccount already under way, counts as asking its relays: only the hint relays it didn't ask are asked now.
+ */
+export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}, early } = {}) {
+  const asked = new Set(early?.relays.map(norm))
+  const rest = hintRelays.filter(u => !asked.has(norm(u)))
+  const evs = (await Promise.all([early?.events ?? [], rest.length ? accountQuery(rest, pubkey) : []])).flat()
   for (const k of [0, 3, 10002]) {
     const ev = newest(evs.filter(e => e.kind === k))
     if (!ev) continue
