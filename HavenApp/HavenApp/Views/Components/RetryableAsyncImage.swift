@@ -34,6 +34,10 @@ struct RetryableAsyncImage: View {
                         ProgressView().controlSize(.small)
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
+                } else if MediaCacheService.isMeshOnly(url) {
+                    // AsyncImage would resolve the `.fips` host itself.
+                    Rectangle().fill(Color.gray.opacity(0.1))
+                        .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     AsyncImage(url: url, transaction: Transaction(animation: .default)) { phase in
                         switch phase {

@@ -237,6 +237,7 @@ private struct FeedPhotoView: View {
     @State private var image: PlatformImage?
     @State private var aspectRatio: CGFloat?
     @State private var isLoading = false
+    @Environment(\.meshMediaNote) private var meshNote
 
     var body: some View {
         ZStack {
@@ -291,7 +292,11 @@ private struct FeedPhotoView: View {
         guard image == nil, !isLoading else { return }
 
         // Fast path: check in-memory decoded image cache (no disk I/O)
-        if let cached = MediaCacheService.shared.cachedImage(for: url) {
+        // A photo read by the note's own imeta hash is cached under that hash.
+        let imetaSha256 = meshNote?.imetaSha256[url.absoluteString]
+        let blobKey = imetaSha256.map { MeshMediaRouter.blobCacheKey(sha256: $0) }
+        if let cached = MediaCacheService.shared.cachedImage(for: url)
+            ?? blobKey.flatMap({ MediaCacheService.shared.cachedImage(for: $0) }) {
             self.image = cached
             self.aspectRatio = ratioFor(cached); Self.knownRatios[url] = self.aspectRatio
             return
@@ -300,10 +305,10 @@ private struct FeedPhotoView: View {
         isLoading = true
 
         Task {
-            if let data = await MediaCacheService.shared.fetchData(url: url) {
+            if let (data, cacheKey) = await MediaCacheService.shared.fetchData(url: url, meshAuthor: meshNote?.author, imetaSha256: imetaSha256) {
                 let maxDimension: CGFloat = isThumbnail ? 300 : 800
                 if let downsampled = await ImageDownsampler.downsample(data: data, maxDimension: maxDimension) {
-                    MediaCacheService.shared.cacheImage(downsampled, for: url)
+                    MediaCacheService.shared.cacheImage(downsampled, for: cacheKey)
                     await MainActor.run {
                         // No `withAnimation`: the row must take its final
                         // height in one frame. Animating `aspectRatio` grew
@@ -315,7 +320,7 @@ private struct FeedPhotoView: View {
                         self.isLoading = false
                     }
                 } else if let img = PlatformImage(data: data) {
-                    MediaCacheService.shared.cacheImage(img, for: url)
+                    MediaCacheService.shared.cacheImage(img, for: cacheKey)
                     await MainActor.run {
                         self.image = img
                         self.aspectRatio = ratioFor(img); Self.knownRatios[url] = self.aspectRatio
