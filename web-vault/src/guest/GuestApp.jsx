@@ -8,6 +8,8 @@ import { setActionContext } from "../net/actions.js"
 import { setQuoteSource } from "../net/quotes.js"
 import { setMeshPeople, fipsMedia } from "../net/fips-media.js"
 import { guestContext, guestRelays, guestTarget } from "./guest.js"
+import { guestPostDeleted } from "./deleted.js"
+import { SkeletonRows } from "../components/FeedExtras.jsx"
 import "../styles/guest.css"
 
 /** `bootHash`: the address the page opened with, before the desktop layout rewrote it (it carries the link's relay
@@ -27,6 +29,16 @@ export function GuestApp({ bootHash, onSignedIn }) {
   const lastId = useRef(null) // a profile or hashtag tapped from the post: sign-in, with a way back to the post
   if (id) lastId.current = id
 
+  // Nothing of the post is drawn until we know its author didn't delete it: its photos could otherwise still come off
+  // their vault over the mesh. { id, deleted } once asked for this id.
+  const [checked, setChecked] = useState(null)
+  useEffect(() => {
+    if (!id) return
+    let live = true
+    guestPostDeleted(id, ctx.account.relays.read).then(deleted => { if (live) setChecked({ id, deleted }) }, () => { if (live) setChecked({ id, deleted: false }) })
+    return () => { live = false }
+  }, [id])
+
   // Whose photos may load over the mesh: everyone who wrote in this thread, each from their own vaults (fips-media.js
   // asks only the vaults the photo's own author lists). The reader starts as the thread opens.
   const onAuthors = authors => {
@@ -44,7 +56,9 @@ export function GuestApp({ bootHash, onSignedIn }) {
   }
   return (
     <div class="app guest-app">
-      <ThreadScreen key={id} ctx={ctx} id={id} onAuthors={onAuthors} />
+      {checked?.id !== id ? <main class="screen"><SkeletonRows count={2} label="Opening the post…" /></main>
+        : checked.deleted ? <main class="screen"><p class="empty">This post was deleted by its author.</p></main>
+        : <ThreadScreen key={id} ctx={ctx} id={id} onAuthors={onAuthors} />}
       <div class="guest-bar" role="region" aria-label="Guest">
         <span class="guest-note">Viewing as a guest</span>
         <a class="button small" href="/">Get the app</a>
