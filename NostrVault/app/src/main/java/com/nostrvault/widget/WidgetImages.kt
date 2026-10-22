@@ -44,11 +44,13 @@ object WidgetImages {
     private const val OVERALL_TIMEOUT_MS = 10_000L
     private const val MAX_BYTES = 15L * 1024 * 1024
 
-    private val client: OkHttpClient by lazy {
+    internal val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(FETCH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(FETCH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(FETCH_TIMEOUT_SECONDS * 2, TimeUnit.SECONDS)
+            // A .fips host is a mesh name: never sent to DNS.
+            .addInterceptor(com.nostrvault.fips.FipsHostGuard)
             .build()
     }
 

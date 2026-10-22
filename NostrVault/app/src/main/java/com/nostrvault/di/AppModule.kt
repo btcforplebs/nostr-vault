@@ -89,17 +89,7 @@ object AppModule {
             }
             // Bounded timeouts so a slow/dead avatar host fails fast (and can retry)
             // instead of hanging forever as a perpetually-blank profile picture.
-            .okHttpClient {
-                okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
-                    // Blossom media through Morganite when it runs on this phone.
-                    .addInterceptor(com.nostrvault.service.LocalBlossomCache.interceptor)
-                    // A friend's vault on the FIPS mesh serves its blobs directly.
-                    .addInterceptor(com.nostrvault.fips.FipsMeshInterceptor())
-                    .build()
-            }
+            .okHttpClient { imageHttpClient() }
             .components {
                 // Before the built-in HTTP fetcher, which would download a whole
                 // video to read one frame of it.
@@ -117,5 +107,19 @@ object AppModule {
             }
             .crossfade(false) // Disable crossfade for instant rendering and better scroll performance
             .respectCacheHeaders(false) // Nostr profile pics rarely have proper cache headers
+            .build()
+
+    /** Coil's HTTP client. A seam so a test can check what it refuses. */
+    internal fun imageHttpClient(): okhttp3.OkHttpClient =
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+            // Blossom media through Morganite when it runs on this phone.
+            .addInterceptor(com.nostrvault.service.LocalBlossomCache.interceptor)
+            // A friend's vault on the FIPS mesh serves its blobs directly.
+            .addInterceptor(com.nostrvault.fips.FipsMeshInterceptor())
+            // A .fips read the mesh did not take never goes to DNS.
+            .addInterceptor(com.nostrvault.fips.FipsHostGuard)
             .build()
 }
