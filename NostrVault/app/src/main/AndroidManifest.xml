@@ -147,12 +147,13 @@
                 android:value="Local Nostr relay server that must run continuously to receive and serve events" />
         </service>
 
-        <!-- Auto-start relay on boot (user-toggleable) -->
+        <!-- Auto-start relay on boot and after an app update (user-toggleable) -->
         <receiver
             android:name=".relay.BootCompletedReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
