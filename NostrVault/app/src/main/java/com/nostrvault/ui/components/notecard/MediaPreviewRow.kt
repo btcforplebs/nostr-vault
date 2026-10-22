@@ -12,6 +12,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
@@ -134,13 +135,20 @@ private fun SingleMediaPreview(
 
     // The hint wins while it exists, so the height does not change *again* when
     // the decode lands and reports a ratio a rounded `dim` disagrees with by a
-    // pixel.
-    val ratio = hintedRatio ?: decodedRatio
+    // pixel. A video's hint is overruled when it has the frame the wrong way
+    // round (a phone's rotated portrait video, see videoBoxRatio).
+    val ratio = if (isVideo) videoBoxRatio(hintedRatio, decodedRatio) else hintedRatio ?: decodedRatio
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
 
     val loaded = painter.state is AsyncImagePainter.State.Success
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val cap = if (ratio != null && ratio < 1f) 600.dp else 400.dp
+        val cap = when {
+            // A portrait video stands at its own shape, but never fills the screen.
+            ratio != null && ratio < 1f && isVideo -> feedVideoMaxHeightDp(screenHeightDp).dp
+            ratio != null && ratio < 1f -> 600.dp
+            else -> 400.dp
+        }
         val displayHeight = if (ratio != null) minOf(maxWidth / ratio, cap) else 200.dp
         // Square to its edges, with no rounded frame, and grey only while
         // the photo loads (iOS #286, Logen: screen room).
