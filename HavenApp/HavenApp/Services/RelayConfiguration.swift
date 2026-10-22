@@ -435,15 +435,41 @@ enum RelayConfiguration {
     ///
     /// A kind 10050 also goes to the DM relays it names, where senders look
     /// for it.
-    static func directBroadcastRelays(kind: Int, tags: [[String]], blastrRelays: [String]) -> [String] {
+    ///
+    /// A kind 10063 also goes to every write relay in the owner's 10002 and
+    /// to purplepag.es, where readers look for it. On 2026-10-22 four lists
+    /// in a row each landed on one relay only, so a reader asking another
+    /// relay saw an older list. `ownerWriteRelays`: the author's 10002 write
+    /// relays; only wss, never this machine.
+    static func directBroadcastRelays(kind: Int, tags: [[String]], blastrRelays: [String],
+                                      ownerWriteRelays: [String] = []) -> [String] {
         var relays = blastrRelays.isEmpty ? fallbackBroadcastRelays : blastrRelays
         if kind == 10050 {
             for tag in tags where tag.count >= 2 && tag[0] == "relay" && !relays.contains(tag[1]) {
                 relays.append(tag[1])
             }
         }
+        if kind == 10063 {
+            func key(_ url: String) -> String {
+                var k = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                while k.hasSuffix("/") { k.removeLast() }
+                return k
+            }
+            var seen = Set(relays.map(key))
+            for relay in ownerWriteRelays + [serverListIndexerRelay] {
+                let url = relay.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let parsed = URL(string: url), parsed.scheme?.lowercased() == "wss",
+                      let host = parsed.host?.lowercased(),
+                      host != "localhost", host != "127.0.0.1", host != "0.0.0.0", host != "::1",
+                      seen.insert(key(url)).inserted else { continue }
+                relays.append(url)
+            }
+        }
         return relays
     }
+
+    /// The indexer relay every 10063 is also sent to (and read from).
+    static let serverListIndexerRelay = "wss://purplepag.es"
 
     /// The NIP-65 relay list for a new account whose relay is this device.
     ///

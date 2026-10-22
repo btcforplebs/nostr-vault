@@ -161,7 +161,8 @@ extension NostrService {
             let relays = RelayConfiguration.directBroadcastRelays(
                 kind: event.kind,
                 tags: event.tags,
-                blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh)
+                blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
+                ownerWriteRelays: outboxRelays[event.pubkey] ?? []
             )
             if let onBroadcastOutcome {
                 broadcastConfirmed(eventDict, to: relays, attemptsLeft: 3, completion: onBroadcastOutcome)

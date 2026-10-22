@@ -67,7 +67,11 @@ final class MeshDevicesTests: XCTestCase {
             MeshDevice(npub: moto, name: "", role: .phone),
         ]
         let vault = MeshDevicesLogic.adding(MeshDevice(npub: home, name: "", role: .homeVault), to: stored)
-        XCTAssertEqual(vault.map(\.npub), [moto, home])
+        // The old vault stays one of your devices (HomeVaultSwitchTests).
+        XCTAssertEqual(vault.map(\.npub), ["npub1old", moto, home])
+        XCTAssertEqual(vault.map(\.role), [.phone, .phone, .homeVault])
+        let mac2 = MeshDevicesLogic.adding(MeshDevice(npub: "npub1mac2", name: "", role: .mac), to: [MeshDevice(npub: mac, name: "", role: .mac)])
+        XCTAssertEqual(mac2.map(\.npub), ["npub1mac2"], "a new Mac still replaces the old one")
         let phones = MeshDevicesLogic.adding(MeshDevice(npub: "npub1ipad", name: "", role: .phone), to: stored)
         XCTAssertEqual(phones.count, 3)
     }

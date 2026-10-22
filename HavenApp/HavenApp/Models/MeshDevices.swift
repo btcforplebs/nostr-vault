@@ -150,8 +150,15 @@ enum MeshDevicesLogic {
             out[i] = device
         } else {
             // One Mac, one home vault and one browser page: a new one replaces
-            // the old entry, as it replaces the setting behind it.
-            if device.role != .phone { out.removeAll { $0.role == device.role } }
+            // the old entry, as it replaces the setting behind it. An old home
+            // vault stays one of your devices, as a plain device: switching
+            // vaults must not drop it from My Devices, its mesh access or the
+            // 10063 (2026-10-22: Mac to Moto dropped the Mac).
+            if device.role == .homeVault {
+                for i in out.indices where out[i].role == .homeVault { out[i].role = .phone }
+            } else if device.role != .phone {
+                out.removeAll { $0.role == device.role }
+            }
             out.append(device)
         }
         return out
