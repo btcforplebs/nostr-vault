@@ -84,8 +84,8 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
         Picker("Photos go to", settings.photosGoTo, PHOTOS_GO_TO) { v -> viewModel.updateSettings { it.copy(photosGoTo = v) } }
         if (shareRelay && status.running) {
             MeshDivider()
-            val c = status.counters
-            StatusDot("Sharing · served ${c.servedTotal} ${if (c.servedTotal == 1L) "request" else "requests"}, ${bytesLabel(c.servedTx)}", true,
+            val n = status.servedRequests
+            StatusDot("Sharing · served $n ${if (n == 1L) "request" else "requests"}, ${bytesLabel(status.servedBytes)}", true,
                 Modifier.padding(vertical = 14.dp))
         }
     }

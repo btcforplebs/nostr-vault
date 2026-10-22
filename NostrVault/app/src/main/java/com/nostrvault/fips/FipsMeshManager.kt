@@ -212,7 +212,7 @@ class FipsMeshManager @Inject constructor(
     private suspend fun restartNow() {
         engineGen++  // a refresh reading the old engine now discards its count
         if (configStore.config.value.fipsShareRelay) {
-            val served = engineBase + FipsBridge.status().counters.servedTx
+            val served = engineBase + FipsBridge.status().visitorServedTx
             configStore.updateAsync { it.copy(fipsServedBytes = served) }
         }
         FipsBridge.stop()
@@ -315,7 +315,7 @@ class FipsMeshManager @Inject constructor(
         // Keep the session's count on disk as it grows, so an app restart
         // (Android kills background processes often) resumes it.
         if (status.running && configStore.config.value.fipsShareRelay && gen == engineGen) {
-            servedToPersist(base, status.counters.servedTx, configStore.config.value.fipsServedBytes)
+            servedToPersist(base, status.visitorServedTx, configStore.config.value.fipsServedBytes)
                 ?.let { served -> configStore.updateAsync { it.copy(fipsServedBytes = served) } }
         }
         // The library already stopped sharing; turn the switch off to match, so

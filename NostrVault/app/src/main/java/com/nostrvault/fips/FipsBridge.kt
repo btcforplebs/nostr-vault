@@ -205,11 +205,34 @@ data class FipsStatus(
     /** The mesh pulled [maxServeBytes] and the library stopped sharing. */
     @SerialName("cap_reached") val capReached: Boolean = false,
     @SerialName("max_serve_bytes") val maxServeBytes: Long = 0,
+    /** With My Devices set: everyone else's traffic, through the door. Absent on an open node. */
+    val strangers: FipsStrangers? = null,
 ) {
+    /**
+     * What the share limit counts: visitors' bytes. On an open node that is everyone the stack
+     * served; with My Devices set it is strangers only, since own devices are not capped and
+     * [counters] then holds theirs alone (Tron, #1025).
+     */
+    val visitorServedTx: Long get() = strangers?.tx ?: counters.servedTx
+
+    /** Everything served, own devices and strangers, for the Sharing line. */
+    val servedRequests: Long get() = counters.servedTotal + (strangers?.total ?: 0)
+    val servedBytes: Long get() = counters.servedTx + (strangers?.tx ?: 0)
+
     companion object {
         val stopped = FipsStatus()
     }
 }
+
+/** Strangers' side of an own-devices node, as `status_json` reports it. */
+@Serializable
+data class FipsStrangers(
+    val open: Long = 0,
+    val total: Long = 0,
+    val refused: Long = 0,
+    val rx: Long = 0,
+    val tx: Long = 0,
+)
 
 @Serializable
 data class FipsReading(val npub: String, val port: Int)

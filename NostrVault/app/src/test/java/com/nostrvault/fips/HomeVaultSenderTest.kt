@@ -88,6 +88,24 @@ class HomeVaultSenderTest {
         assertEquals(0, s.state.value.waiting)
     }
 
+    /** Tron's repro (#1025): a drain before the config loads must not take a Mac's queue for a removed one. */
+    @Test
+    fun `a drain before the config is loaded keeps every mac queue`() = runBlocking {
+        val dir = tmp.newFolder()
+        val macDir = java.io.File(dir, "mesh_send_queue/$mac")
+        HomeVaultQueue(macDir).addEvent("e1", "{}")
+        val context = mockk<Context> { every { filesDir } returns dir }
+        val config = mockk<ConfigStore>()
+        every { config.config } returns MutableStateFlow(HavenConfig())  // defaults: not loaded
+        val s = HomeVaultSender(context, config).apply {
+            ownerHex = { "a".repeat(64) }
+            ownerIsActive = { true }
+        }
+        s.drain()
+        assertTrue(macDir.isDirectory)
+        assertEquals(1, HomeVaultQueue(macDir).size)
+    }
+
     @Test
     fun `nothing is offered while another account is active`() = runBlocking {
         val s = sender()

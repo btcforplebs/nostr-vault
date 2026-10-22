@@ -334,8 +334,17 @@ class HomeVaultSender @Inject constructor(
         if (queues.isEmpty()) return
         // Off the caller's thread: postEvent runs on the main thread.
         scope.launch {
-            val queued = queues.map { it.addEvent(eventId, eventJson) }
-            if (queued.all { it }) drain() else full()
+            val queued = queues.map { q ->
+                try {
+                    q.addEvent(eventId, eventJson)
+                } catch (e: Exception) {
+                    Log.w(TAG, "home vault: could not queue event ${eventId.take(8)}: ${e.message}")
+                    false
+                }
+            }
+            val (drainNow, someFull) = MeshSendTargets.afterQueueing(queued)
+            if (drainNow) drain()
+            if (someFull) full()
         }
     }
 
@@ -362,10 +371,12 @@ class HomeVaultSender @Inject constructor(
                 Log.w(TAG, "home vault: could not queue ${sha256.take(8)}: ${e.message}")
                 false
             }
-        }.all { it }
+        }
         // The timer, not a drain: the caller drains once its upload is done,
         // and this covers an upload that throws before it gets there.
-        if (queued) scheduleRetry() else full()
+        val (retry, someFull) = MeshSendTargets.afterQueueing(queued)
+        if (retry) scheduleRetry()
+        if (someFull) full()
         publish()
     }
 
@@ -431,7 +442,9 @@ class HomeVaultSender @Inject constructor(
 
     /** A Mac taken out of My Devices: what waited for it has nowhere to go. */
     private fun dropRemovedMacQueues(lanes: List<Pair<MeshSendTarget, HomeVaultQueue>>) {
-        if (!ownerIsActive()) return
+        // Only against a loaded config: before it loads it lists no Mac at all, and every
+        // queue would go (Tron, #1025). A loaded one always names its owner.
+        if (configStore.config.value.ownerNpub.isBlank() || !ownerIsActive()) return
         val macs = lanes.filter { it.first.role == DeviceRole.MAC }.map { it.first.npub }.toSet()
         macQueueRoot.listFiles()?.filter { it.isDirectory && it.name !in macs }?.forEach { dir ->
             macQueues.remove(dir.name)?.clear()

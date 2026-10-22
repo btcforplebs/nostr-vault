@@ -37,4 +37,11 @@ class MeshSendTargetsTest {
     fun `a phone is never a target`() {
         assertEquals(emptyList<MeshSendTarget>(), MeshSendTargets.of(config(listOf(FipsDevice(phone, DeviceRole.PHONE)))))
     }
+
+    @Test
+    fun `one lane that could not queue does not hold up the others`() {
+        assertEquals(true to true, MeshSendTargets.afterQueueing(listOf(true, false)))  // drain the home vault, say "full"
+        assertEquals(true to false, MeshSendTargets.afterQueueing(listOf(true, true)))
+        assertEquals(false to true, MeshSendTargets.afterQueueing(listOf(false, false)))
+    }
 }

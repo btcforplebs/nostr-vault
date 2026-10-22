@@ -20,6 +20,12 @@ internal object MeshSendTargets {
         return listOfNotNull(home?.let { MeshSendTarget(it, DeviceRole.HOME_VAULT, notes = true, media = true) }) + macs
     }
 
+    /**
+     * After queueing one item on each lane: drain if any lane took it, so one full or broken lane
+     * does not hold up the others, and say "full" if any did not (Tron, #1025).
+     */
+    fun afterQueueing(queued: List<Boolean>): Pair<Boolean, Boolean> = queued.any { it } to !queued.all { it }
+
     /** How a target is named in the card's problem line. */
     fun label(role: DeviceRole): String = if (role == DeviceRole.MAC) "Your Mac" else "Home vault"
 
