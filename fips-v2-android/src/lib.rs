@@ -295,6 +295,15 @@ pub fn generate_nsec() -> String {
     encode_nsec(&Identity::generate().keypair().secret_key())
 }
 
+/// Parse and validate the generated config. Parsing alone accepts a malformed
+/// `offer_allowlist` or `reserved_npubs` entry and the node then drops it,
+/// which would refuse the owner's own device with no error.
+fn mesh_config(yaml: &str) -> Result<Config> {
+    let config: Config = serde_yaml::from_str(yaml).context("mesh config")?;
+    config.validate().context("mesh config")?;
+    Ok(config)
+}
+
 /// Start the node. Idempotent: an already-running node returns Ok.
 pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
     let mut state = state();
@@ -308,7 +317,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         // A socket file left by a run that was killed would fail the bind.
         let _ = std::fs::remove_file(path);
     }
-    let config: Config = serde_yaml::from_str(&yaml).context("mesh config")?;
+    let config = mesh_config(&yaml)?;
     drop(yaml);
 
     let node::Spawned { npub, address, mtu, tun, control, stop: stop_tx, thread: node_thread } =
@@ -754,6 +763,44 @@ mod jni_api {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_config_the_app_generates_validates() {
+        let nsec = generate_nsec();
+        let phone = Identity::generate().npub();
+        let shapes = [
+            StartOptions::default(),
+            StartOptions { peers: vec![phone.clone()], relays: vec!["wss://nos.lol".into()], lan: true, ..Default::default() },
+            StartOptions {
+                own_devices: vec![phone.clone()],
+                strangers_port: 7778,
+                public_seeds: true,
+                relay_socket: "/tmp/nvr-test.sock".into(),
+                ..Default::default()
+            },
+        ];
+        for opts in shapes {
+            let yaml = config_yaml(&nsec, &opts).unwrap();
+            mesh_config(&yaml).unwrap_or_else(|e| panic!("{e:#}\n{}", yaml.as_str()));
+        }
+    }
+
+    #[test]
+    fn a_malformed_list_entry_stops_the_mesh_config() {
+        let nsec = generate_nsec();
+        let opts = StartOptions { own_devices: vec![Identity::generate().npub()], ..Default::default() };
+        let yaml = config_yaml(&nsec, &opts).unwrap();
+        let typo = yaml.replace("offer_allowlist: [\"", "offer_allowlist: [\"npub1typo\", \"");
+        assert_ne!(typo, *yaml, "the allowlist line is there to break");
+        assert!(serde_yaml::from_str::<Config>(&typo).is_ok(), "parsing alone accepts the typo");
+        let err = mesh_config(&typo).expect_err("a typo in offer_allowlist must stop the start");
+        assert!(format!("{err:#}").contains("offer_allowlist"), "{err:#}");
+
+        let reserved = yaml.replace("  leaf_only: true\n", "  leaf_only: true\n  limits:\n    reserved_npubs: [\"npub1typo\"]\n");
+        assert_ne!(reserved, *yaml);
+        let err = mesh_config(&reserved).expect_err("a typo in reserved_npubs must stop the start");
+        assert!(format!("{err:#}").contains("reserved_npubs"), "{err:#}");
+    }
 
     #[test]
     fn config_parses_with_and_without_peers() {
