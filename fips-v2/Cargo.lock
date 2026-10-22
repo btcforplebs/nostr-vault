@@ -318,6 +318,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+ "zeroize",
 ]
 
 [[package]]
@@ -966,6 +967,7 @@ dependencies = [
  "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]
@@ -1100,9 +1102,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80bb028c8b4148c9ee0cca68fcd9add6044e81d3619f48577ddf13a263d047a2"
 
 [[package]]
-name = "fips"
-version = "0.5.2"
-source = "git+https://github.com/btcforplebs/fips?rev=8e21e513#8e21e513a902de43e5bf207bd44285647ef206c1"
+name = "fips-mesh"
+version = "0.5.3"
+source = "git+https://github.com/btcforplebs/fips?rev=cf84766d#cf84766da987daa3dd141de2469f5d4e8117be6d"
 dependencies = [
  "arc-swap",
  "bech32 0.12.0",
@@ -1113,6 +1115,8 @@ dependencies = [
  "futures",
  "hex",
  "hkdf",
+ "hmac 0.13.0",
+ "if-addrs",
  "libc",
  "libm",
  "mdns-sd",
@@ -1142,6 +1146,7 @@ dependencies = [
  "tracing-subscriber",
  "tun",
  "windows-service",
+ "windows-sys 0.61.2",
  "wintun",
  "zeroize",
 ]
@@ -1151,7 +1156,7 @@ name = "fipsv2-probe"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "fips",
+ "fips-mesh",
  "getrandom 0.3.4",
  "sha2 0.10.9",
  "smoltcp",
