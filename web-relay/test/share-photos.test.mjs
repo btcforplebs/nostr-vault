@@ -148,3 +148,52 @@ test("end to end: the real photo-only reader fetches the blob, hash-checked, fro
     assert.equal(vault.stats.served, 1)
   } finally { clearInterval(timer); await reader?.stop(); await vault.stop() }
 })
+
+// A fake DOM just big enough for the placeholder card: elements with children, text, attributes and `hidden`.
+function el(tag) {
+  const e = { tagName: tag, children: [], dataset: {}, attrs: {}, hidden: false, textContent: "", parentNode: null,
+    setAttribute: (k, v) => { e.attrs[k] = v },
+    append: (...cs) => cs.forEach(c => { c.parentNode = e; e.children.push(c) }),
+    insertBefore: (c, ref) => { c.parentNode = e; e.children.splice(e.children.indexOf(ref), 0, c) },
+    remove: () => { const p = e.parentNode; if (p) p.children.splice(p.children.indexOf(e), 1); e.parentNode = null },
+  }
+  return e
+}
+function domImg(opts) {
+  const i = img(opts), box = el("div"), a = el("a")
+  box.append(a); a.append(i)
+  i.closest = sel => (sel === "a" ? a : null)
+  i.ownerDocument = { createElement: el }
+  return { i, a, box }
+}
+const card = box => box.children.find(c => c.className === "mesh-ph")
+const cardText = c => c.children.map(x => x.textContent).join("")
+
+test("while a photo reads over the mesh its dead link is hidden behind a loading card; the photo replaces it", async () => {
+  const f = fakeReader([V1], { delayMs: 20 }), { i, a, box } = domImg({ failed: true })
+  const done = wireMeshPhotos(doc([i]), f)
+  await settle()
+  assert.equal(a.hidden, true, "the broken-image link is hidden while the mesh reads")
+  assert.equal(cardText(card(box)), "Loading image over FIPS…")
+  assert.equal(card(box).attrs.role, "status")
+  assert.ok(box.children.indexOf(card(box)) < box.children.indexOf(a), "the card sits where the photo will be")
+  await done
+  assert.equal(card(box), undefined, "the card goes once the photo loads")
+  assert.equal(a.hidden, false)
+  assert.equal(i.src, "blob:image/png:3")
+})
+
+test("a photo no vault has: the card says the vault couldn't be reached, no spinner, dead link stays hidden", async () => {
+  const f = fakeReader([]), { a, box, i } = domImg({ failed: true })
+  await wireMeshPhotos(doc([i]), f)
+  assert.equal(card(box).dataset.state, "failed")
+  assert.equal(cardText(card(box)), "Couldn't reach the owner's vault")
+  assert.equal(card(box).children.some(c => c.className === "spin"), false)
+  assert.equal(a.hidden, true)
+})
+
+test("a photo that loads over https never gets a card", async () => {
+  const f = fakeReader([V1]), { box, i } = domImg()
+  await wireMeshPhotos(doc([i]), f)
+  assert.equal(card(box), undefined)
+})
