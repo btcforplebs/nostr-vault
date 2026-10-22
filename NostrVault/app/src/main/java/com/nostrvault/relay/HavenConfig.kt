@@ -398,9 +398,15 @@ data class HavenConfig(
 
     // ── Haven Relay Derived URLs ──────────────────────────────────
 
-    /** Strips any scheme and trailing slashes from macRelayURL to give the bare host[:port]. */
+    /**
+     * Strips any scheme and trailing slashes from macRelayURL to give the bare host[:port].
+     * Empty for a mesh npub (`npub1…`, `nostr:npub1…`, `fipsmesh://npub1…/`): that
+     * Mac has no address anyone else can use, and the relay reaches it through
+     * FIPS ([MacSync.macRelayURL]). Same as iOS HavenConfig.macRelayNormalizedBase.
+     */
     val macRelayNormalizedBase: String
         get() {
+            if (com.nostrvault.fips.HomeVaultRules.meshNpubFromInput(macRelayURL) != null) return ""
             var url = macRelayURL.trim()
             for (scheme in listOf("wss://", "ws://", "https://", "http://")) {
                 if (url.lowercase().startsWith(scheme)) {
