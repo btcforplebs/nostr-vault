@@ -1,0 +1,81 @@
+<!--page
+{
+  "title": "Who Can Reach You",
+  "nav": "Who Can Reach You",
+  "section": "vault",
+  "order": 2,
+  "eyebrow": "Your vault",
+  "h1": "Decide <span>who can reach you</span>.",
+  "lede": "Your vault only takes mentions and messages from people you trust, measured by who you follow. Who Can Reach You sets how far that trust goes.",
+  "description": "Nostr Vault's Who Can Reach You settings: Follow Distance, Minimum Followers and Refresh Trust List decide which people can send to your vault's inbox and messages. Spam control by Web of Trust.",
+  "labels": {
+    "ios": ["Who Can Reach You", "Web of Trust", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Every hour", "Every 12 hours", "Every day", "Every week", "Rate Limits", "Who can reach you", "Trust list not built yet"],
+    "android": ["Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Changes restart the relay automatically."],
+    "mac": ["Who Can Reach You", "Follow Distance"],
+    "web": ["Who can reach this relay"]
+  }
+}
+-->
+
+<section id="what">
+<p class="eyebrow">The basics</p>
+<h2>What it controls</h2>
+<p>Your vault has an inbox, where notes that mention you land, and a chat store for your direct messages.
+    Anyone on Nostr can try to send to them. Who Can Reach You keeps out everyone who isn't close to you in
+    your follows. This is your Web of Trust, and it's the vault's spam filter.</p>
+<ul>
+    <li><strong>Mentions and messages</strong> from people outside your trust list are turned away.</li>
+    <li><strong>Replies and quotes of your own posts</strong> still get in, from anyone.</li>
+    <li><strong>Your messages</strong> can only be read by people on the list who sign in.</li>
+    <li><strong>Your own notes</strong> aren't affected. You can always post.</li>
+</ul>
+<p>Open it from <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span>, or tap
+    <strong>Who can reach you</strong> on the Vault tab, which shows how many people can reach your inbox right
+    now.</p>
+</section>
+
+<section id="settings">
+<p class="eyebrow">The settings</p>
+<h2>Follow Distance, Minimum Followers, Refresh Trust List</h2>
+<h3>Follow Distance</h3>
+<p>How many follows away someone can be and still reach you. Lower is more private.</p>
+<div class="docs-table-wrap">
+<table>
+    <tr><th>Distance</th><th>Who can reach you</th></tr>
+    <tr><td>1</td><td>Only you.</td></tr>
+    <tr><td>2</td><td>You and the people you follow.</td></tr>
+    <tr><td>3 (default)</td><td>You, the people you follow, and the people they follow, if enough of your
+        follows follow them (see Minimum Followers).</td></tr>
+</table>
+</div>
+<p>The control goes up to 5, but 4 and 5 work the same as 3.</p>
+
+<h3>Minimum Followers</h3>
+<p>At distance 3, how many of the people you follow must also follow someone before they can reach you.
+    The default is 3. Raise it to keep out more strangers, lower it to let more friends of friends in. It has no
+    effect at distance 1 or 2.</p>
+
+<h3>Refresh Trust List</h3>
+<p>How often the vault rebuilds the list from your follows: <strong>Every hour</strong>,
+    <strong>Every 12 hours</strong>, <strong>Every day</strong> (default) or <strong>Every week</strong>.
+    Someone you just followed can reach you after the next rebuild.</p>
+
+<h3>Rate Limits</h3>
+<p>Leave these as they are.</p>
+</section>
+
+<section id="platforms">
+<p class="eyebrow">Where to find it</p>
+<h2>Phone, Mac and web</h2>
+<ul>
+    <li><strong>iPhone and Mac</strong> have the same screen. On the Mac it's in the Settings sidebar.</li>
+    <li><strong>Android</strong> has the same settings, and restarts the vault for you when you change one.</li>
+    <li><strong>The web</strong> has no trust settings. Its Who Can Reach You row opens the browser relay's
+        mesh panel, where <strong>Who can reach this relay</strong> is a list of your own vaults' mesh
+        addresses.</li>
+</ul>
+<div class="note">
+    <p><strong>Not getting a mention you expected?</strong> The sender may be too far from you. Follow them, or
+        raise Follow Distance, then wait for the next trust list refresh.</p>
+</div>
+</section>

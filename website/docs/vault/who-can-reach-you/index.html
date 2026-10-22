@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/vault/who-can-reach-you.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Who Can Reach You — Nostr Vault Docs</title>
+    <meta name="description" content="Nostr Vault's Who Can Reach You settings: Follow Distance, Minimum Followers and Refresh Trust List decide which people can send to your vault's inbox and messages. Spam control by Web of Trust.">
+    <link rel="canonical" href="https://nostrvault.app/docs/vault/who-can-reach-you/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/vault/who-can-reach-you/">
+    <meta property="og:title" content="Who Can Reach You — Nostr Vault Docs">
+    <meta property="og:description" content="Nostr Vault's Who Can Reach You settings: Follow Distance, Minimum Followers and Refresh Trust List decide which people can send to your vault's inbox and messages. Spam control by Web of Trust.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/" aria-current="page">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Your vault</p>
+            <h1>Decide <span>who can reach you</span>.</h1>
+            <p class="docs-lede">Your vault only takes mentions and messages from people you trust, measured by who you follow. Who Can Reach You sets how far that trust goes.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-it-controls">What it controls</a></li><li><a href="#follow-distance-minimum-followers-refresh-trust-list">Follow Distance, Minimum Followers, Refresh Trust List</a></li><li><a href="#phone-mac-and-web">Phone, Mac and web</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="what">
+                <p class="eyebrow">The basics</p>
+                <h2 id="what-it-controls">What it controls</h2>
+                <p>Your vault has an inbox, where notes that mention you land, and a chat store for your direct messages.
+                    Anyone on Nostr can try to send to them. Who Can Reach You keeps out everyone who isn't close to you in
+                    your follows. This is your Web of Trust, and it's the vault's spam filter.</p>
+                <ul>
+                    <li><strong>Mentions and messages</strong> from people outside your trust list are turned away.</li>
+                    <li><strong>Replies and quotes of your own posts</strong> still get in, from anyone.</li>
+                    <li><strong>Your messages</strong> can only be read by people on the list who sign in.</li>
+                    <li><strong>Your own notes</strong> aren't affected. You can always post.</li>
+                </ul>
+                <p>Open it from <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span>, or tap
+                    <strong>Who can reach you</strong> on the Vault tab, which shows how many people can reach your inbox right
+                    now.</p>
+                </section>
+
+                <section id="settings">
+                <p class="eyebrow">The settings</p>
+                <h2 id="follow-distance-minimum-followers-refresh-trust-list">Follow Distance, Minimum Followers, Refresh Trust List</h2>
+                <h3>Follow Distance</h3>
+                <p>How many follows away someone can be and still reach you. Lower is more private.</p>
+                <div class="docs-table-wrap">
+                <table>
+                    <tr><th>Distance</th><th>Who can reach you</th></tr>
+                    <tr><td>1</td><td>Only you.</td></tr>
+                    <tr><td>2</td><td>You and the people you follow.</td></tr>
+                    <tr><td>3 (default)</td><td>You, the people you follow, and the people they follow, if enough of your
+                        follows follow them (see Minimum Followers).</td></tr>
+                </table>
+                </div>
+                <p>The control goes up to 5, but 4 and 5 work the same as 3.</p>
+
+                <h3>Minimum Followers</h3>
+                <p>At distance 3, how many of the people you follow must also follow someone before they can reach you.
+                    The default is 3. Raise it to keep out more strangers, lower it to let more friends of friends in. It has no
+                    effect at distance 1 or 2.</p>
+
+                <h3>Refresh Trust List</h3>
+                <p>How often the vault rebuilds the list from your follows: <strong>Every hour</strong>,
+                    <strong>Every 12 hours</strong>, <strong>Every day</strong> (default) or <strong>Every week</strong>.
+                    Someone you just followed can reach you after the next rebuild.</p>
+
+                <h3>Rate Limits</h3>
+                <p>Leave these as they are.</p>
+                </section>
+
+                <section id="platforms">
+                <p class="eyebrow">Where to find it</p>
+                <h2 id="phone-mac-and-web">Phone, Mac and web</h2>
+                <ul>
+                    <li><strong>iPhone and Mac</strong> have the same screen. On the Mac it's in the Settings sidebar.</li>
+                    <li><strong>Android</strong> has the same settings, and restarts the vault for you when you change one.</li>
+                    <li><strong>The web</strong> has no trust settings. Its Who Can Reach You row opens the browser relay's
+                        mesh panel, where <strong>Who can reach this relay</strong> is a list of your own vaults' mesh
+                        addresses.</li>
+                </ul>
+                <div class="note">
+                    <p><strong>Not getting a mention you expected?</strong> The sender may be too far from you. Follow them, or
+                        raise Follow Distance, then wait for the next trust list refresh.</p>
+                </div>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/vault/"><span>Previous</span>Your vault</a>
+                <a class="next" href="/docs/backup/"><span>Next</span>Backup and restore</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
