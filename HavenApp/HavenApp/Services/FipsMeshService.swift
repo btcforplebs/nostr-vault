@@ -121,14 +121,18 @@ final class FipsMeshService: ObservableObject {
             lastError = Self.offMessage
             return
         }
-        // The relay's mesh door: plain HTTP, blob reads and owner-signed writes.
-        let port = ConfigService.shared.config.meshPlainPort
+        // Own devices get the relay port in full, as on the Mac; strangers get
+        // the relay's mesh door (plain HTTP, blob reads and owner-signed
+        // writes). They must differ: the engine refuses to share the strangers'
+        // door as the relay port (share_split, -5).
+        let port = ConfigService.shared.config.relayPort
+        let door = ConfigService.shared.config.meshPlainPort
         // Own-devices mode, as on the Mac: only My Devices get answers (the
         // home IP goes to no one else) and strangers get the mesh door,
         // capped. Never open: with no other device listed, sharing does not start.
         guard let options = MeshDevicesLogic.kioskEngineOptions(
             devices: FipsMeshDevices.current(ConfigService.shared.config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
-            relays: FipsMeshSettings.finderRelays, meshDoorPort: port,
+            relays: FipsMeshSettings.finderRelays, meshDoorPort: door,
             seeds: FipsMeshSettings.middleServer == .publicSeeds) else {
             lastError = "Add your other phone or your Mac under My Devices first: kiosk mode serves your own devices in full, and anyone else only the photos you post."
             return
