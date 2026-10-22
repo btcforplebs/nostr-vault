@@ -26,6 +26,9 @@ export const MAX_VAULTS = 3
 export const MAX_KEPT = 60
 /** Longest a vault stays allowed after a good read while its stream closes (blob-get lingers 5 s). */
 export const CLOSE_MS = 10_000
+/** A stream the vault dropped (reset or refused) gets one more turn, after the photo's other vaults: seen on a page
+ *  still loading its feed, and the photo box never asks again by itself. A 404 or a timeout is not retried. */
+const DROPPED = /^vault (closed|refused) the connection/
 /** With no photo reading, the reader is stopped after this long (sockets and timer gone). */
 export const IDLE_STOP_MS = 60_000
 
@@ -103,7 +106,8 @@ export function createFipsMedia({
     const r = await getReader()
     const end = clock() + PHOTO_TIMEOUT_MS
     let last
-    for (const vault of entry.vs) {
+    const tries = [...entry.vs], retried = new Set()
+    for (let vault; (vault = tries.shift()); ) {
       if (entry.users === 0) throw aborted()
       const left = end - clock()
       if (left <= 0) throw last ?? new Error("timed out")
@@ -117,6 +121,7 @@ export function createFipsMedia({
         return URL.createObjectURL(new Blob([got.bytes], { type: got.type }))
       } catch (e) {
         last = e
+        if (DROPPED.test(String(e?.message)) && !retried.has(vault)) { retried.add(vault); tries.push(vault) }
       } finally {
         entry.attempt = undefined
         // The slot frees now; the vault stays allowed until a polite close has finished, so its ACK/FIN still gets in.

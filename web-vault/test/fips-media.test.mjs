@@ -191,6 +191,22 @@ test("hostile vault lists can't starve an honest photo: few vaults per photo, on
   assert.ok(log.maxOpen <= MAX_READS)
 })
 
+test("a vault that drops the stream gets one more turn; a 404 does not", async () => {
+  const gets = []
+  const reader = errs => async () => ({ getBlob: async v => { gets.push(v); const e = errs.shift(); if (e) throw new Error(e); return { bytes: new Uint8Array(1), type: "image/png" } } })
+  const fm = createFipsMedia({ allow: () => true, startReader: reader(["vault closed the connection"]) })
+  assert.match(await fm.photo([A], SHA), /^blob:/, "a busy page's dropped stream is asked again")
+  assert.deepEqual(gets, [A, A])
+  gets.length = 0
+  const fm2 = createFipsMedia({ allow: () => true, startReader: reader(["vault refused the connection", "404", "vault refused the connection"]) })
+  await assert.rejects(fm2.photo([A, B], SHA), /refused/)
+  assert.deepEqual(gets, [A, B, A], "the retry waits behind the other vault, and comes once")
+  gets.length = 0
+  const fm3 = createFipsMedia({ allow: () => true, startReader: reader(["404"]) })
+  await assert.rejects(fm3.photo([A], SHA), /404/)
+  assert.deepEqual(gets, [A])
+})
+
 test("a photo stops trying new vaults past its own deadline", async () => {
   let now = 0
   const fm = createFipsMedia({ allow: () => true, clock: () => now, startReader: async () => ({ getBlob: async (_v, _s, { timeoutMs }) => { now += timeoutMs; throw new Error("timed out") } }) })
