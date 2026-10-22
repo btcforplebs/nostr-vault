@@ -41,6 +41,8 @@ import (
 //	  opts.mode  "nip01" (default): NDJSON, one NIP-01 array per "\n" line in
 //	             each direction, carried as ws text messages on opts.route.
 //	             "raw": the HTTP upgrade and ws frames themselves; owner only.
+//	             "mesh": raw HTTP from a FIPS peer the page has not paired:
+//	             served by the native mesh door (mesh_door.go), never owner.
 //	  opts.route mount path for nip01 (default "/").
 //	  opts.owner true for the owner's own streams: skips the connection rate
 //	             limiter, which is what loopback gets natively.
@@ -82,6 +84,8 @@ type wasmRelay struct {
 	cancel  context.CancelFunc
 	server  *http.Server
 	ln      *pipeListener
+	mesh    *http.Server // the mesh door, for "mesh" streams
+	meshLn  *pipeListener
 	streams map[string]*jsStream
 }
 
@@ -194,8 +198,13 @@ func havenStart(cfg js.Value) error {
 		},
 	}
 	go server.Serve(ln)
+	// The apps' mesh port, with its timeouts and connection caps: a "mesh"
+	// stream gets exactly what a stranger gets natively.
+	meshLn := newPipeListener()
+	mesh := newMeshServer("")
+	go mesh.Serve(newMeshListener(meshLn))
 
-	running = &wasmRelay{cancel: cancel, server: server, ln: ln, streams: map[string]*jsStream{}}
+	running = &wasmRelay{cancel: cancel, server: server, ln: ln, mesh: mesh, meshLn: meshLn, streams: map[string]*jsStream{}}
 	store := "IndexedDB"
 	if runningUnderNode() {
 		store = "memory (node)"
@@ -216,6 +225,7 @@ func havenStop() {
 		s.shutdown("relay stopped")
 	}
 	r.server.Close()
+	r.mesh.Close()
 	r.cancel()
 	CloseDBs()
 }
@@ -559,10 +569,12 @@ func jsHavenConn(_ js.Value, args []js.Value) any {
 	switch {
 	case id == "":
 		return refuse("havenConn: id is required")
-	case mode != "nip01" && mode != "raw":
+	case mode != "nip01" && mode != "raw" && mode != "mesh":
 		return refuse(fmt.Sprintf("havenConn: unknown mode %q", mode))
 	case mode == "raw" && !owner:
 		return refuse("havenConn: raw mode is owner-only")
+	case mode == "mesh" && owner:
+		return refuse("havenConn: a mesh stream is never the owner's")
 	case len(route) == 0 || route[0] != '/':
 		return refuse(fmt.Sprintf("havenConn: route %q must start with /", route))
 	}
@@ -585,13 +597,17 @@ func jsHavenConn(_ js.Value, args []js.Value) any {
 	s.closeIO = func() { clientSide.Close() }
 	s.mu.Unlock()
 	go func() {
-		if !r.ln.deliver(&havenStream{Conn: serverSide, addr: streamAddr(peer), owner: owner}) {
+		ln := r.ln
+		if mode == "mesh" {
+			ln = r.meshLn
+		}
+		if !ln.deliver(&havenStream{Conn: serverSide, addr: streamAddr(peer), owner: owner}) {
 			serverSide.Close()
 			s.shutdown("relay stopped")
 		}
 	}()
 
-	if mode == "raw" {
+	if mode == "raw" || mode == "mesh" {
 		go s.pump(func(b []byte) error { _, err := clientSide.Write(b); return err })
 		go func() {
 			buf := make([]byte, 32<<10)
