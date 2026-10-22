@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/whats-new.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What's new — Nostr Vault Docs</title>
+    <meta name="description" content="Nostr Vault release notes for iPhone, Mac and Android: 3.0.0 (in testing) with the FIPS mesh, and the 2.7.2 builds you can download today.">
+    <link rel="canonical" href="https://nostrvault.app/docs/whats-new/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/whats-new/">
+    <meta property="og:title" content="What's new — Nostr Vault Docs">
+    <meta property="og:description" content="Nostr Vault release notes for iPhone, Mac and Android: 3.0.0 (in testing) with the FIPS mesh, and the 2.7.2 builds you can download today.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/" aria-current="page">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Help</p>
+            <h1>What's new in <span>Nostr Vault</span></h1>
+            <p class="docs-lede">The release notes for iPhone, Mac and Android, newest first. Where a change is on only some of the apps, it says which.</p>
+            <div class="docs-banner" role="note"><strong>3.0 coming soon.</strong> This page is about Nostr Vault 3.0, which is in testing. The apps you can download today are 2.7.2.</div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#3-0-0">3.0.0</a></li><li><a href="#2-7-2-build-40">2.7.2 (build 40)</a></li><li><a href="#2-7-2-build-39">2.7.2 (build 39)</a></li><li><a href="#2-7-2-first-builds">2.7.2 (first builds)</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="v3-0-0">
+                <p class="eyebrow">Build 41 &middot; iPhone, Mac and Android</p>
+                <h2 id="3-0-0">3.0.0</h2>
+                <p><span class="tag tag-test">In testing</span></p>
+                <p>3.0 is in testing and not released yet. The apps you can download today are 2.7.2.</p>
+                <p>Nostr Vault 3.0 connects your own devices directly over the
+                    <a class="inline" href="/docs/mesh/">FIPS mesh</a>, with no server in between.</p>
+                <ul>
+                    <li><strong>Your devices, connected.</strong> Turn on <strong>FIPS Mesh</strong> in Settings and add your
+                        devices by address or QR code. On Android you can add your Mac, your other phones or a home vault.
+                        See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</li>
+                    <li><strong>iPhone and Mac:</strong> the mesh engine runs inside the Mac app, so there is nothing else to
+                        install. The Mac serves your photos to your own devices, and your public photos to anyone else who
+                        asks. See <a class="inline" href="/docs/mesh/#server">your own photo server</a>.</li>
+                    <li><strong>Notes and photos to your Mac.</strong> Add your Mac as <strong>Vault on Mac</strong> and each
+                        new note and photo goes to it over the mesh. Your notes and history also sync back from the Mac.</li>
+                    <li><strong>iPhone and Mac:</strong> <strong>Check sync with Vault on Mac</strong> now ends on
+                        "Done" with counts, or says why it stopped.</li>
+                    <li><strong>Home vault.</strong> A spare phone can be your home vault. It gets your new posts and media
+                        and passes them on. See <a class="inline" href="/docs/mesh/#kiosk">kiosk mode</a>.</li>
+                    <li><strong>Photos over the mesh.</strong> Photos kept on your devices load over the mesh in the feed,
+                        the Vault and profiles.</li>
+                    <li><strong>Your address stays private.</strong> Once you add a device, only your devices learn this
+                        phone's address. Anyone else gets public photos only. On Android, that is up to the limit you set
+                        under <strong>Pause after</strong>. See <a class="inline" href="/docs/mesh/#privacy">privacy</a>.</li>
+                    <li><strong>Android:</strong> if the mesh was on, it starts again with the relay when the phone
+                        restarts.</li>
+                </ul>
+                <h3>Fixes</h3>
+                <ul>
+                    <li><strong>iPhone:</strong> the phone ran hot with the app open. The relay now gets memory sized to the
+                        phone.</li>
+                    <li><strong>iPhone and Mac:</strong> search no longer freezes while you type a common word.</li>
+                    <li><strong>Android:</strong> on some phones the app ran out of memory and closed when a long note full
+                        of links was in the feed.</li>
+                </ul>
+                <div class="note">
+                    <p>Posting a photo still needs a public media server.</p>
+                </div>
+                </section>
+
+                <section id="v2-7-2-40">
+                <p class="eyebrow">Build 40 &middot; iPhone, Mac and Android</p>
+                <h2 id="2-7-2-build-40">2.7.2 (build 40)</h2>
+                <p><strong>iPhone and Mac.</strong> This is the App Store build.</p>
+                <ul>
+                    <li>The app now stays cool with it open all day. The relay pauses work nobody can see while the app is
+                        in the background, and backs off from flaky relays and signers. The Web of Trust globe draws more
+                        cheaply.</li>
+                    <li>On the iPhone, a locked article no longer links out to buy it on Fanfares. The Mac keeps that link.
+                        On both, it can only point at the article itself.</li>
+                    <li>New Message from a profile keeps the person you picked.</li>
+                </ul>
+                <p><strong>Android.</strong></p>
+                <ul>
+                    <li>Android now looks and acts like the iPhone app. Messages and notifications, Settings, the tab bar,
+                        setup, profiles, search, follow lists, the Web of Trust globe, the feed, note details and the composer
+                        have all been matched to the iPhone.</li>
+                    <li>The app runs cooler. The relay pauses work nobody can see while the app is in the background, and
+                        backs off from flaky relays.</li>
+                    <li>A crash at launch on a new install is fixed.</li>
+                </ul>
+                </section>
+
+                <section id="v2-7-2-39">
+                <p class="eyebrow">Build 39 &middot; iPhone, Mac and Android</p>
+                <h2 id="2-7-2-build-39">2.7.2 (build 39)</h2>
+                <p><strong>iPhone and Mac.</strong> The App Store release candidate.</p>
+                <ul>
+                    <li>Your keys and settings are safer. The config file is written in one go, backed up, and never reset
+                        by a damaged copy. Imported keys are checked.</li>
+                    <li>Fanfares articles get <strong>Open in Fanfares</strong> and <strong>Already unlocked?</strong>.
+                        The app itself never pays.</li>
+                    <li>Recipes, streams, articles and profiles can be opened in the rest of Nostr.</li>
+                    <li>Zaps on posts, live streams and articles are opt-in on the Mac, as on the iPhone.</li>
+                    <li>The on-chain wallet moves to <span class="path">Settings &rarr; Advanced</span>.</li>
+                    <li>Highlights and comments from people you blocked no longer show under articles.</li>
+                    <li>iPad fixes for the relay card, the tour card and the Media viewer.</li>
+                </ul>
+                <p><strong>Android.</strong> The App Store review pass for Android.</p>
+                <ul>
+                    <li>Reposts, deletes, profile edits and follow-list changes are signed only as the account they belong
+                        to. Switching accounts can't carry one account's follow list into another.</li>
+                    <li>Settings are saved in one go and survive a damaged file. The owner key moves out of the config file,
+                        and a broken credential store no longer crashes the app.</li>
+                    <li>Notes backup works.</li>
+                    <li>Fanfares articles can be unlocked with a zap from the lock card. Other locked articles stay
+                        locked.</li>
+                    <li>Recipes, streams, articles and profiles can be opened in the rest of Nostr.</li>
+                    <li>Global shows a new account's web.</li>
+                    <li>Copying your nsec is marked sensitive, and secrets stay out of the log.</li>
+                    <li>The on-chain wallet moves to <span class="path">Settings &rarr; Advanced</span>.</li>
+                    <li>Two-pane notes on tablets, and more matching with the iPhone.</li>
+                </ul>
+                </section>
+
+                <section id="v2-7-2">
+                <p class="eyebrow">iPhone and Mac build 19 &middot; Android build 20</p>
+                <h2 id="2-7-2-first-builds">2.7.2 (first builds)</h2>
+                <p>Music, hashtags, highlights, and direct messages that reach every device you own. On Android, the app
+                    now matches the iPhone: same tabs, same wording, same feed, thread and Relay tab.</p>
+                <div class="note">
+                    <p><strong>iPhone and Mac, coming from 2.7.0 (build 15)?</strong> That was the last GitHub download.
+                        2.7.1 and 2.7.2 brought a built-in Lightning wallet, Sign In With Clave, a Web of Trust switch and
+                        language filter for Global, and a security pass on fetched notes and zap receipts.</p>
+                </div>
+
+                <h3>Security (iPhone and Mac)</h3>
+                <ul>
+                    <li><strong>A mention could plant a fake link (iPhone).</strong> A profile name wasn't escaped before
+                        it went into the link that makes a mention tappable. A crafted display name could break out of that
+                        link and put an attacker's link elsewhere in the note, just by being mentioned. Names are now
+                        escaped.</li>
+                    <li><strong>A note could make your phone call out to hundreds of hosts.</strong> Every link in a note got
+                        its own preview card, and each card fetches its page. Previews now stop at 3 per note. The rest stay
+                        as text.</li>
+                    <li><strong>An early Follow tap could wipe your follow list.</strong> A timeout or error could count as
+                        your follow list having loaded, and a tap in that window replaced your follow list everywhere with a
+                        list of one. Now only a real, signed list (or every relay agreeing there is none) counts, and an early
+                        tap waits instead.</li>
+                    <li><strong>Setup accepted an npub that didn't match your key.</strong> A hand-edited npub could be saved next to a different nsec, and a
+                        one-character typo in an npub was accepted as a different person. The npub is now worked out from the
+                        nsec you paste, and a typed npub must pass its checksum.</li>
+                    <li><strong>Highlights could be forged or flooded.</strong> Every highlight is now signature-checked,
+                        length-capped, and refused if dated more than 10 minutes in the future.</li>
+                </ul>
+
+                <h3>New</h3>
+                <ul>
+                    <li><strong>Music.</strong> Wavlake music that keeps playing in the background.
+                        <strong>iPhone and Mac:</strong> a music feed with Trending, Artists, Following and search;
+                        lock-screen, Control Center and Mac Now Playing controls; artist and album pages, an Up Next queue,
+                        shuffle and repeat, and AirPlay. A Wavlake link in a post shows a play card, and sharing a song
+                        mentions the artist's Nostr profile so they're notified.
+                        <strong>Android:</strong> shuffle, repeat, a queue and artist pages, and MP3s shared in posts play
+                        from a card.</li>
+                    <li><strong>Hashtags.</strong> Tap a hashtag in a post to open a live feed of everything carrying it.
+                        On iPhone and Mac you can show it from everyone or just people you follow. <strong>Android:</strong>
+                        you can also follow hashtags and get a feed of them, with a chip for each tag and suggestions to
+                        follow.</li>
+                    <li><strong>Articles and highlights.</strong> The article reader lets you like, comment, zap, highlight
+                        and share. Select a passage to highlight it. Other people's highlights show in the text.
+                        <strong>iPhone and Mac:</strong> the actions sit under the byline and at the end of the piece, a
+                        highlight can carry an optional thought, and a highlight count shows who highlighted.
+                        <strong>Android:</strong> you can comment on highlights, and profiles have Articles, diVines and
+                        Music tabs.</li>
+                    <li><strong>Post diVines, articles and recipes.</strong> Post from their own feeds.
+                        <strong>iPhone and Mac:</strong> the Post button writes what the feed in front of you shows. In diVines
+                        (formerly Reels) you can record up to 6 seconds or pick a video, trimmed to loop cleanly. In Articles
+                        and Recipes it opens a long-form editor.</li>
+                    <li><strong>GIFs from nostr.build.</strong> The GIF picker searches nostr.build, which licenses its GIFs
+                        for this use.</li>
+                    <li><strong>Text length.</strong> Choose in Settings how many lines of text Compact and Threaded views
+                        show.</li>
+                    <li><strong>Live streams.</strong> <strong>iPhone:</strong> a quoted stream, or a zap.stream, shosho or
+                        njump link, plays in the feed, with an ENDED pill once it's over. <strong>Android:</strong> streams
+                        play inside posts, pop out to a moving mini player, rejoin after a drop, and live chat takes pictures
+                        from your Blossom servers.</li>
+                    <li><strong>iPhone and Mac:</strong> replies follow the threads spec. Answering an article, video,
+                        highlight or a repost of one now sends a NIP-22 comment, which other apps thread correctly. Replying
+                        to a plain note still sends a normal reply. Threads gain a "Quotes &amp; highlights" section.</li>
+                    <li><strong>iPhone and Mac:</strong> image and link addresses are hidden from note text, with one preview
+                        card per link, and a domain-only card when a site has no preview.</li>
+                    <li><strong>iPad:</strong> Feed, Relay, Search and Profile show the list and the note side by side in
+                        portrait too.</li>
+                    <li><strong>Android:</strong> a Marketplace feed, a Shop tab on profiles, Sell a listing, and Message
+                        seller.</li>
+                    <li><strong>Android:</strong> posts in another language get a Translate button. Translation runs on your
+                        phone (ML Kit), and the text is not sent anywhere.</li>
+                    <li><strong>Android:</strong> see and vote on polls in the feed and in a note.</li>
+                    <li><strong>Android:</strong> profiles show their banner, and Edit Profile has a Banner URL field.</li>
+                    <li><strong>Android:</strong> tap to react, hold to pick a reaction, and a Thread Stats panel.</li>
+                    <li><strong>Android:</strong> media on a profile opens the full viewer, with video, audio and drag to
+                        close. The Media grid has Report and Block.</li>
+                    <li><strong>Android:</strong> the feed dashboard has Noise Filtering and Actions.</li>
+                    <li><strong>Android:</strong> pick the sound for notifications.</li>
+                    <li><strong>Android:</strong> select and copy text in a note.</li>
+                    <li><strong>Android:</strong> Search has filters and tappable links. People in your Web of Trust are
+                        listed right after the people you follow, in Search and in @mentions.</li>
+                    <li><strong>Android:</strong> every post has an Event Info panel with the relays it came from, its
+                        details and actions.</li>
+                    <li><strong>Android:</strong> the Relay tab gets Likes Given and Zaps Given, count sheets, search, a
+                        compact layout, Whitelisted, load more, and tap the tab to jump to the top.</li>
+                    <li><strong>Android:</strong> the Media tab can upload several files at once, paste, sort, show dates,
+                        and has a grid menu.</li>
+                    <li><strong>Android:</strong> a Mosaic media widget, widgets you can set up, avatars in the feed widget,
+                        and a choice of app icon.</li>
+                    <li><strong>Android:</strong> posts sent from Nostr Vault carry a small glowing badge.</li>
+                    <li><strong>Android:</strong> pair a signer with a nostrconnect:// link, and switch signer accounts
+                        without logging in again.</li>
+                </ul>
+
+                <h3>Direct messages</h3>
+                <ul>
+                    <li><strong>One inbox on every device.</strong> <strong>iPhone and Mac:</strong> your copy of a sent
+                        message could land on relays no device reads messages from. There is now one message inbox list for
+                        every device, with your Mac relay first, and messages stranded by earlier builds are fetched back
+                        once. A private Mac address is never published. <strong>Android:</strong> one message list across all
+                        your devices, and messages you sent from another app are caught up once.</li>
+                    <li><strong>Alerts.</strong> No alert for your own sent messages. Tapping an alert opens the chat.
+                        <strong>iPhone and Mac:</strong> no alert for a chat you already have open, and the message box clears
+                        after sending. <strong>Android:</strong> notifications show the message; with notifications off, a
+                        banner shows inside the app; photos show in the conversation.</li>
+                    <li><strong>Android:</strong> message signatures are checked, and a forged sender is rejected.</li>
+                    <li><strong>Android:</strong> a new account can be messaged straight away, and messages arrive live.</li>
+                </ul>
+
+                <h3>Changed and removed</h3>
+                <ul>
+                    <li><strong>iPhone and Mac:</strong> getyarn.io is removed from the GIF keyboard in every build. There is
+                        no permission to use it.</li>
+                    <li><strong>iPhone and Mac:</strong> the "Post as Comment" switch is gone. The reply type is now chosen
+                        automatically.</li>
+                    <li><strong>Android:</strong> the location is taken out of photos and videos before they upload.</li>
+                    <li><strong>Android:</strong> the Threaded view of Global and Popular loads the replies under each post,
+                        and bare reposts show in thread lines.</li>
+                    <li><strong>Android:</strong> the "Approve in your signer" banner is gone.</li>
+                    <li><strong>Android:</strong> Following, Global and the shield work the same way in every feed. Everyone
+                        is a crossed-out shield.</li>
+                    <li><strong>Android:</strong> notifications come from your Web of Trust, and zap notifications name the
+                        person who zapped you.</li>
+                    <li><strong>Android:</strong> replies to your own posts are kept even when they come from outside your
+                        network.</li>
+                    <li><strong>Android:</strong> the app asks to confirm before you delete or remove something.</li>
+                    <li><strong>Android:</strong> group chats (NIP-29) are removed.</li>
+                </ul>
+
+                <h3>Fixes</h3>
+                <ul>
+                    <li><strong>Blocked people</strong> stay out of every feed. On iPhone and Mac, blocking didn't refresh
+                        the feed, and reposts, replies and thread context from a blocked person slipped through. They're now
+                        filtered everywhere the moment you block.</li>
+                    <li><strong>Photo posts</strong> no longer wait behind a signer request nobody answered. On iPhone and
+                        Mac this could hold a photo post for 90 seconds after returning to the app.</li>
+                    <li><strong>Follow taps</strong> made while your list is still loading are applied once it loads. On
+                        iPhone and Mac, "Contacts still loading" could stick forever.</li>
+                    <li><strong>Reposts</strong> show when the original note was written.</li>
+                    <li><strong>iPhone and Mac:</strong> the Zaps Given list fetches sent zaps from your feed relays again,
+                        survives a refresh, and shows the note you actually zapped.</li>
+                    <li><strong>iPhone:</strong> the feed ran hot while scrolling. There is less work on the main thread while
+                        notes stream in, and the feed picker menu no longer stutters.</li>
+                    <li><strong>iPhone:</strong> banners and the zap strike now draw above any open sheet.</li>
+                    <li><strong>iPhone and Mac:</strong> each remote signer keeps its own session, so switching accounts no
+                        longer reconnects from scratch, and your relay sign-in always goes to your own signer.</li>
+                    <li><strong>iPhone and Mac:</strong> your Media tab showed reposted media. Only your own uploads appear
+                        there now.</li>
+                    <li><strong>iPhone and Mac:</strong> in the Web of Trust, changing the depth rebuilds the graph, the graph
+                        saves at every depth, and a slow relay no longer drops lists already received.</li>
+                    <li><strong>iPhone and Mac:</strong> GIFs beside thread lines animate and fill the square instead of
+                        sitting still and letterboxed.</li>
+                    <li><strong>iPhone:</strong> Edit and Undo on the post countdown pill take taps again.</li>
+                    <li><strong>Android:</strong> a repost opens, zaps, reports and replies as the note it reposts.</li>
+                    <li><strong>Android:</strong> the Web of Trust list was read and saved wrongly, which emptied Global and
+                        Discovery. Fixed.</li>
+                    <li><strong>Android:</strong> Following reads the people you follow from their own relays and keeps bare
+                        reposts.</li>
+                    <li><strong>Android:</strong> big follow lists can be signed through a remote signer.</li>
+                    <li><strong>Android:</strong> saving your profile keeps your other fields, such as your banner.</li>
+                    <li><strong>Android:</strong> nprofile links open the right profile, link addresses are hidden behind one
+                        card per link, and a post is sent from the account that was active when you tapped Post.</li>
+                </ul>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/media/"><span>Previous</span>Media servers</a>
+                <a class="next" href="/docs/developers/"><span>Next</span>NIP-F1 and the mesh</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
