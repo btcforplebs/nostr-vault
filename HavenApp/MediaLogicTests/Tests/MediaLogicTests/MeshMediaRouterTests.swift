@@ -235,23 +235,61 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(dials.count, 2)
     }
 
-    func testABrokenConnectionBacksOffThenDialsAgain() async {
+    func testAConnectionResetBeforeTheRouteIsUpIsTriedAgainAndLoads() async {
+        // Logen's own photo, 10-22: the engine had just started, the first
+        // read went out before the route to his vault was found, the
+        // connection was reset and the app said "Couldn't reach the owner's
+        // vault" at once, while the web retried and loaded it.
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        await fake.setGetFailures(2)
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let data = await router.read(plan: .init(sha256: sha, hostNpub: vault), author: author)
+        XCTAssertEqual(data, photo, "same patience as the web: the third try gets the photo")
+        let state = await fake.snapshot()
+        XCTAssertEqual(state.gets.count, 3)
+        XCTAssertEqual(state.dials.count, 3, "each retry dials again: the old loopback base may be dead")
+        XCTAssertEqual(state.sleeps, 2)
+    }
+
+    func testAPhotoThatLeftTheScreenStopsAskingAndLeavesTheVaultStanding() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        await fake.setGetFailures(.max)
+        let router = MeshMediaRouter(fake.deps(follows: [author]))
+        let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
+        let read = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await router.read(plan: plan, author: author)
+        }
+        let gone = await read.value
+        XCTAssertNil(gone)
+        let gets = await fake.snapshot().gets.count
+        XCTAssertEqual(gets, 1, "no retries for a photo nobody shows")
+        await fake.setGetFailures(0)
+        let data = await router.read(plan: plan, author: author)
+        XCTAssertEqual(data, photo, "a cancelled read is not the vault's fault")
+    }
+
+    func testAVaultThatNeverAnswersIsGivenUpAfterTheWebsPatienceThenBacksOff() async {
         let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
         let router = MeshMediaRouter(fake.deps(follows: [author]))
         let plan = MeshMediaRouter.Plan(sha256: sha, hostNpub: vault)
-        await fake.setGetFails(true)
+        await fake.setGetFailures(.max)
+        let start = await fake.time()
         let failed = await router.read(plan: plan, author: author)
         XCTAssertNil(failed)
-        await fake.setGetFails(false)
+        let waited = await fake.time().timeIntervalSince(start)
+        XCTAssertEqual(waited, MeshMediaRouter.readPatience, accuracy: 1)
+        await fake.setGetFailures(0)
+        let dialsBefore = await fake.snapshot().dials.count
         let soon = await router.read(plan: plan, author: author)
         XCTAssertNil(soon, "a vault that dials but never answers is not dialled per photo")
         var dials = await fake.snapshot().dials
-        XCTAssertEqual(dials.count, 1)
+        XCTAssertEqual(dials.count, dialsBefore)
         await fake.advance(MeshMediaRouter.ingressRetry + 1)
         let data = await router.read(plan: plan, author: author)
         XCTAssertEqual(data, photo)
         dials = await fake.snapshot().dials
-        XCTAssertEqual(dials.count, 2, "the old loopback base may be dead")
+        XCTAssertEqual(dials.count, dialsBefore + 1)
     }
 }
 
@@ -273,7 +311,7 @@ private actor Fake {
     private var status = 200
     private var oversized = false
     private var dialFails = false
-    private var getFails = false
+    private var getFailures = 0
     private let dialDelayPolls: Int
     private let clock = TestClock()
     private var state = Snapshot(dials: [], gets: [], listLookups: 0, requests: 0, sleeps: 0)
@@ -290,7 +328,8 @@ private actor Fake {
     func setStatus(_ code: Int) { status = code }
     func setOversized(_ on: Bool) { oversized = on }
     func setDialFails(_ on: Bool) { dialFails = on }
-    func setGetFails(_ on: Bool) { getFails = on }
+    func setGetFailures(_ count: Int) { getFailures = count }
+    func time() -> Date { clock.now }
     func advance(_ seconds: TimeInterval) { clock.advance(seconds) }
 
     func listArrivesAfterRequest(_ author: String, _ list: [String], afterPolls: Int) {
@@ -306,8 +345,9 @@ private actor Fake {
         state.requests += 1
     }
 
-    func slept() {
+    func slept(_ duration: Duration) {
         state.sleeps += 1
+        clock.advance(TimeInterval(duration.components.seconds) + TimeInterval(duration.components.attoseconds) / 1e18)
         for (author, entry) in pending where state.requests > 0 {
             if entry.afterPolls <= 1 {
                 lists[author] = entry.list
@@ -328,7 +368,10 @@ private actor Fake {
     func get(_ url: URL, maxBytes: Int) -> MeshMediaRouter.Reply? {
         state.gets.append(url)
         state.maxBytes = maxBytes
-        if getFails { return nil }
+        if getFailures > 0 {
+            getFailures -= 1
+            return nil
+        }
         return .init(status: status, data: oversized ? nil : photo)
     }
 
@@ -340,7 +383,7 @@ private actor Fake {
             ingress: { await self.dial($0) },
             get: { await self.get($0, maxBytes: $1) },
             now: { [clock] in clock.now },
-            sleep: { _ in await self.slept() }
+            sleep: { await self.slept($0) }
         )
     }
 }
