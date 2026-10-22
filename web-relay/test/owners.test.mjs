@@ -3,7 +3,7 @@ import { test, beforeEach } from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
-import { loadOwners, parseOwners } from "../src/fips/owners.js"
+import { loadOwners, parseOwners, isOwner, havenAuthors, loadOwnerAccount, saveOwnerAccount } from "../src/fips/owners.js"
 
 const key = () => getPublicKey(generateSecretKey())
 let store, prompts
@@ -90,4 +90,24 @@ test("the signed-in account is never a mesh address: refused when typed, from a 
   assert.deepEqual([...loadOwners({ storage, account, confirm: m => (prompts.push(m), true) })], [vault])
   assert.equal(prompts.length, 0)
   assert.equal(location.hash, "", "fragment scrubbed")
+})
+
+test("the owner's account is a Haven author only: whitelisted, never an owner", () => {
+  const mesh = key(), other = key(), account = key(), testKey = key()
+  const owners = new Set([mesh, other])
+  const opts = havenAuthors({ owners, account, extra: [testKey] })
+  assert.equal(opts.ownerNpub, npubEncode(mesh))
+  assert.deepEqual(opts.whitelist.sort(), [other, account, testKey].map(k => npubEncode(k)).sort())
+  assert.equal(isOwner(owners, account), false, "never dialed, never let in as a FIPS peer")
+  assert.deepEqual(havenAuthors({ owners, extra: [testKey] }).whitelist.sort(), [other, testKey].map(k => npubEncode(k)).sort())
+})
+
+test("the account box saves one npub, clears on empty, refuses anything else", () => {
+  const account = key()
+  assert.equal(saveOwnerAccount(npubEncode(account), storage), account)
+  assert.equal(loadOwnerAccount(storage), account)
+  assert.throws(() => saveOwnerAccount("not-a-key", storage), /not an npub/)
+  assert.equal(loadOwnerAccount(storage), account, "a bad entry leaves the saved one")
+  saveOwnerAccount("  ", storage)
+  assert.equal(loadOwnerAccount(storage), undefined)
 })

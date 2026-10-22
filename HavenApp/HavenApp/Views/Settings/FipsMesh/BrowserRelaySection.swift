@@ -22,7 +22,7 @@ struct BrowserRelaySection: View {
                     .foregroundColor(.secondary)
             } else {
                 if let npub = mesh.status?.relay_link == true ? mesh.ownMeshNpub : nil {
-                    Text("This phone's mesh address. Paste it into the page under Vault mesh address, Save vaults, then Start FIPS:")
+                    Text("This phone's mesh address. Paste it into the page's mesh address box, put your Nostr account npub in the box below it, tap Save owners, then Start FIPS:")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
                     Text(npub)

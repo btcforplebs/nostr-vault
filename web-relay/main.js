@@ -2,7 +2,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { npubEncode } from "nostr-tools/nip19"
 import { mountFipsPanel } from "./src/fips/panel.js"
-import { loadOwners } from "./src/fips/owners.js"
+import { loadOwners, loadOwnerAccount, havenAuthors } from "./src/fips/owners.js"
 import { RELAY_NS, pageStorage, migrateRelayKeys } from "./src/page-storage.js"
 import { loadHaven } from "./src/haven/haven.js"
 import { HavenClient } from "./src/haven/client.js"
@@ -124,14 +124,14 @@ async function info() {
   return lines
 }
 
-// Haven needs its owner at start: the first saved owner is Haven's owner, any others and the test key are whitelisted.
+// Haven needs its owner at start: the first saved owner is Haven's owner; any others, the owner's account (the
+// key the vault app signs pushed notes with) and the test key are whitelisted.
 async function startHaven(owners) {
-  const [owner, ...rest] = [...owners]
   const t = Date.now()
   haven = await loadHaven()
   const loadMs = Date.now() - t
   // Its own stores ("haven:relay:<route>"): the vault's are "haven:<pubkey>:<route>" on the same origin.
-  await haven.start({ ownerNpub: npubEncode(owner), whitelist: [...rest.map(npubEncode), npubEncode(pk)], storePrefix: "relay" })
+  await haven.start({ ...havenAuthors({ owners, account: loadOwnerAccount(LS), extra: [pk] }), storePrefix: "relay" })
   relay = new HavenClient(haven.conn("page", { mode: "nip01", route: "/" }))
   return { loadMs, startMs: Date.now() - t - loadMs }
 }

@@ -97,3 +97,34 @@ export function loadOwners({
 export function saveOwners(owners, storage) {
   storage.setItem(OWNERS_ITEM, [...owners].join(" "))
 }
+
+// The owner's Nostr account: the key the vault app signs the notes it pushes with (BrowserRelaySender). Haven
+// keeps a note only from its owner or a whitelisted author, and the owner set holds mesh addresses, so without
+// this the owner's own notes are refused. It is an author only: never an owner, never dialed, never let in as
+// a FIPS peer.
+const ACCOUNT_ITEM = "fips-owner-account"
+
+/** The saved account as x-only hex, or undefined. */
+export function loadOwnerAccount(storage) {
+  return xOnly(storage.getItem(ACCOUNT_ITEM) ?? "")
+}
+
+/** Save one npub (or hex) as the owner's account; empty clears it. Throws on anything else. */
+export function saveOwnerAccount(text, storage) {
+  const t = String(text ?? "").trim()
+  if (!t) return storage.setItem(ACCOUNT_ITEM, ""), undefined
+  const k = xOnly(t)
+  if (!k) throw new Error(`not an npub: ${t.slice(0, 20)}`)
+  storage.setItem(ACCOUNT_ITEM, k)
+  return k
+}
+
+/**
+ * Haven's start options from the owner set: the first owner is Haven's owner, the other owners, the owner's
+ * account and `extra` (the page's test key) are whitelisted authors. No other key can post.
+ */
+export function havenAuthors({ owners, account, extra = [] }) {
+  const [owner, ...rest] = [...owners]
+  const whitelist = [...new Set([...rest, ...(account ? [account] : []), ...extra])].filter(k => k !== owner)
+  return { ownerNpub: npubEncode(owner), whitelist: whitelist.map(k => npubEncode(k)) }
+}
