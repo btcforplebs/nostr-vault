@@ -70,6 +70,11 @@ struct ImageDownsampler {
     }
 }
 
+/// Where an `AnimatedImage` load got to, read and written on the main actor only.
+private final class MeshPhaseBox: @unchecked Sendable {
+    var value: MeshMediaPhase = .loading
+}
+
 struct AnimatedImageHelper {
     /// Sniffs the GIF87a / GIF89a magic bytes for extensionless URLs (blossom hashes).
     static func isGIFData(_ data: Data) -> Bool {
@@ -95,6 +100,9 @@ struct AnimatedImage: NSViewRepresentable {
     /// nothing (e.g. a CDN variant that 200s with an empty body).
     var fallbackURL: URL? = nil
     var onLoad: ((CGSize) -> Void)? = nil
+    /// Told when the photo is being looked up over FIPS, and how a failed
+    /// load ended, for the caller's placeholder.
+    var onPhase: ((MeshMediaPhase) -> Void)? = nil
 
     func makeNSView(context: Context) -> AspectFillImageView {
         let view = AspectFillImageView()
@@ -104,7 +112,7 @@ struct AnimatedImage: NSViewRepresentable {
         view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentHuggingPriority(.defaultLow, for: .vertical)
-        loadAsync(url: url, into: view)
+        loadAsync(url: url, into: view, meshNote: context.environment.meshMediaNote)
         return view
     }
 
@@ -113,7 +121,7 @@ struct AnimatedImage: NSViewRepresentable {
         nsView.shouldAnimate = shouldAnimate
     }
 
-    private func loadAsync(url: URL, into view: AspectFillImageView) {
+    private func loadAsync(url: URL, into view: AspectFillImageView, meshNote: MeshMediaNote?) {
         // Check in-memory cache first for instant rendering. Skipped when animation
         // is requested: the cache may hold a static first-frame decode left behind
         // by a non-animating caller (e.g. a grid thumbnail) for the same URL.
@@ -123,15 +131,26 @@ struct AnimatedImage: NSViewRepresentable {
             return
         }
 
+        let phase = MeshPhaseBox()
         Task.detached(priority: .utility) {
             let data: Data?
             if let cached = MediaCacheService.shared.loadFromCache(url: url) {
                 data = cached
             } else {
-                data = await MediaCacheService.shared.fetchData(url: url)
+                // The note's own vault on the mesh when the URL fails.
+                data = await MediaCacheService.shared.fetchData(
+                    url: url, meshAuthor: meshNote?.author,
+                    imetaSha256: meshNote?.imetaSha256[url.absoluteString],
+                    onLookup: { phase.value = .meshLookup; self.onPhase?(.meshLookup) }
+                )?.data
             }
 
-            guard let data else { return }
+            guard let data else {
+                await MainActor.run {
+                    self.onPhase?(.failed(after: phase.value, meshOnly: MediaCacheService.isMeshOnly(url)))
+                }
+                return
+            }
 
             let image: PlatformImage?
             let isGIF = url.pathExtension.lowercased() == "gif" || AnimatedImageHelper.isGIFData(data)
@@ -257,6 +276,9 @@ struct AnimatedImage: UIViewRepresentable {
     /// nothing (e.g. a CDN variant that 200s with an empty body).
     var fallbackURL: URL? = nil
     var onLoad: ((CGSize) -> Void)? = nil
+    /// Told when the photo is being looked up over FIPS, and how a failed
+    /// load ended, for the caller's placeholder.
+    var onPhase: ((MeshMediaPhase) -> Void)? = nil
 
     func makeUIView(context: Context) -> UIImageView {
         let view = UIImageView()
@@ -266,7 +288,7 @@ struct AnimatedImage: UIViewRepresentable {
         view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentHuggingPriority(.defaultLow, for: .vertical)
-        loadAsync(url: url, into: view)
+        loadAsync(url: url, into: view, meshNote: context.environment.meshMediaNote)
         return view
     }
 
@@ -274,7 +296,7 @@ struct AnimatedImage: UIViewRepresentable {
         uiView.contentMode = contentMode == .fill ? .scaleAspectFill : .scaleAspectFit
     }
 
-    private func loadAsync(url: URL, into view: UIImageView) {
+    private func loadAsync(url: URL, into view: UIImageView, meshNote: MeshMediaNote?) {
         // Check in-memory cache first for instant rendering. Skipped when animation
         // is requested: the cache may hold a static first-frame decode left behind
         // by a non-animating caller (e.g. a grid thumbnail) for the same URL.
@@ -284,15 +306,26 @@ struct AnimatedImage: UIViewRepresentable {
             return
         }
 
+        let phase = MeshPhaseBox()
         Task.detached(priority: .utility) {
             let data: Data?
             if let cached = MediaCacheService.shared.loadFromCache(url: url) {
                 data = cached
             } else {
-                data = await MediaCacheService.shared.fetchData(url: url)
+                // The note's own vault on the mesh when the URL fails.
+                data = await MediaCacheService.shared.fetchData(
+                    url: url, meshAuthor: meshNote?.author,
+                    imetaSha256: meshNote?.imetaSha256[url.absoluteString],
+                    onLookup: { phase.value = .meshLookup; self.onPhase?(.meshLookup) }
+                )?.data
             }
 
-            guard let data else { return }
+            guard let data else {
+                await MainActor.run {
+                    self.onPhase?(.failed(after: phase.value, meshOnly: MediaCacheService.isMeshOnly(url)))
+                }
+                return
+            }
 
             let image: UIImage?
             // Animated WebP (nostr.build GIF previews) plays through the same

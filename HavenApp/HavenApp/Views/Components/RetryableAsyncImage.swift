@@ -12,6 +12,7 @@ struct RetryableAsyncImage: View {
     @State private var retryCount = 0
     @State private var cachedImage: PlatformImage?
     @State private var isLoading = false
+    @State private var phase: MeshMediaPhase = .loading
 
     init(url: URL, contentMode: ContentMode, targetSize: CGSize? = nil) {
         self.url = url
@@ -31,10 +32,14 @@ struct RetryableAsyncImage: View {
                         .aspectRatio(contentMode: contentMode)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
-                } else if isLoading {
+                } else if isLoading || phase != .loading {
                     ZStack {
                         Rectangle().fill(Color.gray.opacity(0.1))
-                        ProgressView().controlSize(.small)
+                        if phase == .loading {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            MeshMediaStatusView(phase: phase)
+                        }
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
                 } else if MediaCacheService.isMeshOnly(url) {
@@ -146,8 +151,12 @@ struct RetryableAsyncImage: View {
 
     private func autoCache() {
         isLoading = true
+        phase = .loading
         Task {
-            if let (data, cacheKey) = await MediaCacheService.shared.fetchData(url: url, meshAuthor: meshNote?.author, imetaSha256: meshImetaSha256),
+            if let (data, cacheKey) = await MediaCacheService.shared.fetchData(
+                url: url, meshAuthor: meshNote?.author, imetaSha256: meshImetaSha256,
+                onLookup: { phase = .meshLookup }
+            ),
                let image = await decode(data: data) {
                 await MainActor.run {
                     self.cachedImage = image
@@ -158,6 +167,7 @@ struct RetryableAsyncImage: View {
             } else {
                 await MainActor.run {
                     self.isLoading = false
+                    self.phase = .failed(after: phase, meshOnly: MediaCacheService.isMeshOnly(url))
                 }
             }
         }

@@ -62,13 +62,17 @@ struct InlineFeedVideoPlayer: View {
     @State private var loopObserver: NSObjectProtocol? = nil
     @State private var isReadyToPlay: Bool = false
     @State private var deferredSetup: DispatchWorkItem? = nil
+    /// The URL failed: the note author's vault on the mesh is asked instead.
+    @Environment(\.meshMediaNote) private var meshNote
+    @State private var meshPhase: MeshMediaPhase = .loading
+    @State private var meshFile: URL? = nil
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 Color.platformTertiaryGroupedBackground
 
-                if failures.hasFailed(url) {
+                if failures.hasFailed(url) && meshFile == nil {
                     // Show thumbnail with play overlay on error
                     if let thumb = thumbnail {
                         Image(platformImage: thumb)
@@ -76,10 +80,14 @@ struct InlineFeedVideoPlayer: View {
                             .scaledToFill()
                             .frame(width: geo.size.width, height: geo.size.height)
                     }
-                    Image(systemName: "play.circle.fill")
-                        .font(.appSystem(size: 36))
-                        .foregroundColor(.white.opacity(0.85))
-                        .shadow(color: .black.opacity(0.5), radius: 4)
+                    if meshPhase == .loading {
+                        Image(systemName: "play.circle.fill")
+                            .font(.appSystem(size: 36))
+                            .foregroundColor(.white.opacity(0.85))
+                            .shadow(color: .black.opacity(0.5), radius: 4)
+                    } else {
+                        MeshMediaStatusView(phase: meshPhase, video: true)
+                    }
                 } else if let player = player {
                     ZStack {
                         if cache.activeFullScreenURL != url {
@@ -159,6 +167,7 @@ struct InlineFeedVideoPlayer: View {
                 }
             }
             .clipped()
+            .task(id: failures.hasFailed(url)) { await rescueOverMesh() }
             .onAppear {
                 if geo.size.width > 50 {
                     if player == nil {
@@ -219,6 +228,25 @@ struct InlineFeedVideoPlayer: View {
                 }
             }
         }
+    }
+
+    /// The URL's ladder ran out: read the video from the note author's vault
+    /// on the mesh, then play that file.
+    private func rescueOverMesh() async {
+        guard failures.hasFailed(url), meshFile == nil, meshNote != nil else { return }
+        meshPhase = .loading
+        let file = await MediaCacheService.shared.meshVideoFile(url: url, note: meshNote, onLookup: { meshPhase = .meshLookup })
+        guard let file else {
+            meshPhase = .failed(after: meshPhase, meshOnly: MediaCacheService.isMeshOnly(url))
+            return
+        }
+        meshFile = file
+        let meshPlayer = await VideoPlaybackService.shared.preparedPlayer(for: file, intent: .inline)
+        meshPlayer.isMuted = isMuted
+        player?.pause()
+        player = meshPlayer
+        meshPlayer.play()
+        isPlaying = true
     }
 
     private func setupPlayer() {

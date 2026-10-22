@@ -136,21 +136,26 @@ extension MediaCacheService {
     /// known hash only when its URL fails. Returns the bytes and the key they
     /// are cached under: the URL when its own path names the hash, else the
     /// hash, so a note's `imeta` can never put its bytes under someone else's URL.
-    func fetchData(url: URL, meshAuthor: String?, imetaSha256: String?) async -> (data: Data, cacheKey: URL)? {
+    ///
+    /// `onLookup` runs on the main actor when the mesh is about to be asked,
+    /// so the view can say "Loading image over FIPS…" as the web does.
+    func fetchData(url: URL, meshAuthor: String?, imetaSha256: String?,
+                   onLookup: (@MainActor @Sendable () -> Void)? = nil) async -> (data: Data, cacheKey: URL)? {
         guard let author = meshAuthor,
               let plan = MeshMediaRouter.plan(url: url, imetaSha256: imetaSha256)
         else { return await fetchData(url: url).map { ($0, url) } }
+        let lookup: (@Sendable () async -> Void)? = onLookup.map { report in { @Sendable in await report() } }
 
         let key = plan.hashFromPath ? url : MeshMediaRouter.blobCacheKey(sha256: plan.sha256)
         if !plan.hashFromPath, let cached = loadMeshCached(key) { return (cached, key) }
 
         if plan.meshFirst {
             if plan.hashFromPath, let cached = loadMeshCached(url) { return (cached, url) }
-            if let data = await readOverMesh(plan: plan, author: author, key: key) { return (data, key) }
+            if let data = await readOverMesh(plan: plan, author: author, key: key, onLookup: lookup) { return (data, key) }
             return await fetchFipsURL(url, plan: plan).map { ($0, url) }
         }
         if let data = await fetchData(url: url) { return (data, url) }
-        return await readOverMesh(plan: plan, author: author, key: key).map { ($0, key) }
+        return await readOverMesh(plan: plan, author: author, key: key, onLookup: lookup).map { ($0, key) }
     }
 
     /// A cached copy the mesh path may stand on. Hash-named files are
@@ -203,8 +208,27 @@ extension MediaCacheService {
         #endif
     }
 
-    private func readOverMesh(plan: MeshMediaRouter.Plan, author: String, key: URL) async -> Data? {
-        guard let data = await MeshMediaRouter.shared.read(plan: plan, author: author) else { return nil }
+    /// A video the player could not get from its URL, read whole from the
+    /// note author's vault on the mesh (up to `MeshMediaRouter.maxBytes`),
+    /// checked against its hash: the local file to play, or nil. Mesh only:
+    /// the URL already failed, and a big video must never be pulled into
+    /// memory by a plain download here.
+    func meshVideoFile(url: URL, note: MeshMediaNote?,
+                       onLookup: (@MainActor @Sendable () -> Void)? = nil) async -> URL? {
+        guard let note,
+              let plan = MeshMediaRouter.plan(url: url, imetaSha256: note.imetaSha256[url.absoluteString])
+        else { return nil }
+        let key = plan.hashFromPath ? url : MeshMediaRouter.blobCacheKey(sha256: plan.sha256)
+        let hint = url.pathExtension.isEmpty ? nil : url.pathExtension
+        if !plan.hashFromPath, loadMeshCached(key) != nil { return preparePlayableURL(for: key, extensionHint: hint) }
+        let lookup: (@Sendable () async -> Void)? = onLookup.map { report in { @Sendable in await report() } }
+        guard await readOverMesh(plan: plan, author: note.author, key: key, onLookup: lookup) != nil else { return nil }
+        return preparePlayableURL(for: key, extensionHint: hint)
+    }
+
+    private func readOverMesh(plan: MeshMediaRouter.Plan, author: String, key: URL,
+                              onLookup: (@Sendable () async -> Void)? = nil) async -> Data? {
+        guard let data = await MeshMediaRouter.shared.read(plan: plan, author: author, onLookup: onLookup) else { return nil }
         // print reaches relay.log, the file pulled off a device.
         print("FipsMesh: read \(plan.sha256.prefix(8)) over the mesh (\(data.count) bytes)")
         saveToCache(url: key, data: data)
@@ -246,6 +270,21 @@ struct MeshMediaNote: Equatable {
     init(author: String, tags: [[String]]) {
         self.author = author
         self.imetaSha256 = MeshMediaRouter.imetaSha256s(tags: tags)
+    }
+}
+
+/// The note whose photo was just tapped open. The full-screen viewer is
+/// presented from the feed, outside the note's environment, so it picks the
+/// note up here; only for a moment, so a later open never inherits it.
+@MainActor
+enum MeshMediaTap {
+    private static var last: (note: MeshMediaNote?, at: Date)?
+
+    static func opened(_ note: MeshMediaNote?) { last = (note, Date()) }
+
+    static var note: MeshMediaNote? {
+        guard let last, Date().timeIntervalSince(last.at) < 3 else { return nil }
+        return last.note
     }
 }
 

@@ -165,6 +165,7 @@ struct VaultActivityRow: View {
                 previewText
                 if !line.images.isEmpty {
                     VaultActivityThumbnails(urls: line.images, onTap: onImage)
+                        .environment(\.meshMediaNote, line.imagesAuthor.map { MeshMediaNote(author: $0, tags: line.imagesTags) })
                 }
             }
         }

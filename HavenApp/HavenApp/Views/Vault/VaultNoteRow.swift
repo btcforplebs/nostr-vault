@@ -211,6 +211,7 @@ struct NoteRow: View {
             if let firstMedia = firstMedia {
                 ZStack(alignment: .bottomTrailing) {
                     FeedMediaView(url: firstMedia, isThumbnail: true)
+                        .meshMediaNote(author: event.pubkey, tags: event.tags)
                         .frame(width: 60, height: 60)
                         .aspectRatio(1, contentMode: .fill)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
