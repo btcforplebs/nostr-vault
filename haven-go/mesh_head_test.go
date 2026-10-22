@@ -68,6 +68,38 @@ func TestMeshHeadIsNoOracle(t *testing.T) {
 			t.Errorf("HEAD with %s: %d, want 404", name, code)
 		}
 	}
+	// Forged owner auths (Tron, #1050): the whitelist alone would let these through.
+	ownerPK, _ := nostr.GetPublicKey(h.ownerSK)
+	forged := func(tamper func(*nostr.Event)) string {
+		ev := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Content: nostr.GeneratePrivateKey(),
+			Tags: nostr.Tags{{"t", "get"}, {"x", hash}, {"expiration", fmt.Sprint(time.Now().Add(time.Hour).Unix())}}}
+		if err := ev.Sign(nostr.GeneratePrivateKey()); err != nil {
+			t.Fatal(err)
+		}
+		tamper(&ev)
+		j, _ := json.Marshal(ev)
+		return "Nostr " + base64.StdEncoding.EncodeToString(j)
+	}
+	// The owner's pubkey pasted onto a stranger's event: the id no longer matches (CheckID).
+	if code, _ := head(door, forged(func(ev *nostr.Event) { ev.PubKey = ownerPK })); code != http.StatusNotFound {
+		t.Errorf("HEAD with the owner's pubkey on a stranger's event: %d, want 404", code)
+	}
+	// The owner's pubkey with a matching id but a stranger's signature (CheckSignature).
+	if code, _ := head(door, forged(func(ev *nostr.Event) { ev.PubKey = ownerPK; ev.ID = ev.GetID() })); code != http.StatusNotFound {
+		t.Errorf("HEAD with the owner's pubkey and id but a stranger's signature: %d, want 404", code)
+	}
+	// A real owner get for another blob, its x edited to this one without re-signing: the signature
+	// still covers the old id, so only CheckID catches it.
+	other := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Content: "get",
+		Tags: nostr.Tags{{"t", "get"}, {"x", hex.EncodeToString(make([]byte, 32))}, {"expiration", fmt.Sprint(time.Now().Add(time.Hour).Unix())}}}
+	if err := other.Sign(h.ownerSK); err != nil {
+		t.Fatal(err)
+	}
+	other.Tags[1][1] = hash
+	oj, _ := json.Marshal(other)
+	if code, _ := head(door, "Nostr "+base64.StdEncoding.EncodeToString(oj)); code != http.StatusNotFound {
+		t.Errorf("HEAD with an owner get re-pointed at this blob: %d, want 404", code)
+	}
 	if code, n := head(door, getAuth(h.ownerSK, hash, time.Hour)); code != http.StatusOK || n != fmt.Sprint(len(body)) {
 		t.Errorf("owner-signed HEAD over the mesh: %d, length %q; want 200", code, n)
 	}
