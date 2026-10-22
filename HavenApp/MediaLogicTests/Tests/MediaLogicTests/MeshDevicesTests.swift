@@ -265,6 +265,34 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertEqual(noSeeds["read_anyone"] as? Bool, true)
     }
 
+    // MARK: engineAfterDevicesChange (NIP-F1 revoke)
+
+    /// A stolen phone removed from My Devices must stop reaching the kiosk
+    /// now, not at the next kiosk start: its engine keeps the old list.
+    func testRemovingADeviceRestartsTheKiosk() {
+        let before = [MeshDevice(npub: moto, name: "Moto", role: .phone), MeshDevice(npub: mac, name: "", role: .mac)]
+        let after = [MeshDevice(npub: mac, name: "", role: .mac)]
+        XCTAssertEqual(MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: home, kiosk: true, client: false), .restartKiosk)
+        XCTAssertEqual(MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: home, kiosk: true, client: true), .restartKiosk)
+    }
+
+    func testRemovingADeviceStopsTheClientEngine() {
+        let before = [MeshDevice(npub: moto, name: "Moto", role: .phone), MeshDevice(npub: mac, name: "", role: .mac)]
+        let after = [MeshDevice(npub: mac, name: "", role: .mac)]
+        XCTAssertEqual(MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: page, kiosk: false, client: true), .stopClient)
+    }
+
+    func testAnUnchangedListLeavesTheEngineAlone() {
+        let before = [MeshDevice(npub: moto, name: "Moto", role: .phone), MeshDevice(npub: page, name: "", role: .phone)]
+        // A rename, or this phone's own entry going, leaves own_devices as it was.
+        let renamed = [MeshDevice(npub: moto, name: "Lost Moto", role: .phone), MeshDevice(npub: page, name: "", role: .phone)]
+        let selfGone = [MeshDevice(npub: moto, name: "Moto", role: .phone)]
+        XCTAssertEqual(MeshDevicesLogic.engineAfterDevicesChange(before: before, after: renamed, ownNpub: page, kiosk: true, client: false), .keep)
+        XCTAssertEqual(MeshDevicesLogic.engineAfterDevicesChange(before: before, after: selfGone, ownNpub: page, kiosk: true, client: false), .keep)
+        // Nothing running: the next start reads the new list anyway.
+        XCTAssertEqual(MeshDevicesLogic.engineAfterDevicesChange(before: before, after: selfGone, ownNpub: nil, kiosk: false, client: false), .keep)
+    }
+
     func testNoDevicesMeansTheMacEngineStaysOff() {
         // An empty own_devices would open the engine to anyone.
         XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: [], ownNpub: nil, relays: [], meshDoorPort: 3356))

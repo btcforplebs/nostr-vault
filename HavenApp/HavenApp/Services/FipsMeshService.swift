@@ -62,6 +62,13 @@ final class FipsMeshService: ObservableObject {
     /// sender), not to share this one. Kiosk mode reuses it.
     private var clientActive = false
     private var clientBackgroundObserver: NSObjectProtocol?
+    /// Client starts queued or dialing. clientActive is set only once a dial
+    /// returns (~10 s, a relay push up to 90 s), and each start carries the
+    /// My Devices it was queued with, so a revoke must count these too.
+    private var clientOps = 0
+    /// Kiosk mode is starting again after a My Devices change. A failed start
+    /// then republishes the 10063, which still names this phone's vault.
+    private var restartingKiosk = false
 
     private init() {}
 
@@ -162,8 +169,10 @@ final class FipsMeshService: ObservableObject {
     }
 
     /// `leavingApp`: the app left the screen, so kiosk mode comes back with it.
-    /// Otherwise the owner turned it off.
-    func stopKiosk(leavingApp: Bool = false) {
+    /// Otherwise the owner turned it off. `republish` false: kiosk mode is
+    /// starting again at once, so the 10063 keeps its mesh entry.
+    func stopKiosk(leavingApp: Bool = false, republish: Bool = true) {
+        restartingKiosk = false
         if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
@@ -182,8 +191,67 @@ final class FipsMeshService: ObservableObject {
         resignObserver = nil
         stopEngine()
         status = nil
-        publishServerListInBackgroundTask()
+        if republish { publishServerListInBackgroundTask() }
         if leavingApp { notifyPaused() }
+    }
+
+    /// My Devices changed. A running engine keeps the `own_devices` it started
+    /// with, so a removed (lost or stolen) phone would keep reaching this
+    /// vault: restart it with the new list (NIP-F1 revoke). `before` is the
+    /// list from just before the change.
+    func myDevicesChanged(from before: [MeshDevice]) {
+        let after = FipsMeshDevices.current(ConfigService.shared.config)
+        let own = ownMeshNpub ?? Self.meshNpubFromKey()
+        // Any engine that may be up, not just clientActive: a dial still in
+        // flight has an engine running, or queued, with the old list (Tron, #1054).
+        let client = clientActive || clientOps > 0 || Self.engineRunning()
+        switch MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: own,
+                                                         kiosk: kioskActive || starting, client: client) {
+        case .keep:
+            return
+        case .restartKiosk:
+            print("FipsMesh: My Devices changed, kiosk mode starts again with the new list")
+            // No other device left: kiosk mode can't start, so it goes off
+            // and the 10063 drops its entry.
+            let startsAgain = !MeshDevicesLogic.ownDevices(after, ownNpub: own).isEmpty
+            stopKiosk(republish: !startsAgain)
+            if startsAgain {
+                // Still wanted: if this start fails or the app leaves
+                // mid-start, coming back tries again (resumeIfWanted).
+                UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
+                restartingKiosk = true
+                startKiosk()
+                if !starting { kioskRestartFailed() }
+            }
+        case .stopClient:
+            print("FipsMesh: My Devices changed, client engine stopped")
+            clientActive = false
+            if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+            clientBackgroundObserver = nil
+            // Queued after any dial in flight, so its start (with the old
+            // list) can't outlive this stop.
+            stopEngine()
+            status = nil
+        }
+        // The relay dials a Mac set by its mesh address once, at start,
+        // through this engine; a cold start drops that link: dial again.
+        if ConfigService.shared.config.macRelayMeshNpub != nil {
+            Task { _ = await RelayProcessManager.shared.gracefulRestart() }
+        }
+    }
+
+    /// The restart after a My Devices change did not go live: the 10063
+    /// still names this phone's vault.
+    private func kioskRestartFailed() {
+        guard restartingKiosk else { return }
+        restartingKiosk = false
+        publishServerListInBackgroundTask()
+    }
+
+    nonisolated private static func engineRunning() -> Bool {
+        guard let raw = NvFipsStatusJSON() else { return false }
+        defer { NvFipsFreeString(raw) }
+        return (try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8)))?.running == true
     }
 
     private func stopEngine() {
@@ -222,12 +290,15 @@ final class FipsMeshService: ObservableObject {
         switch result {
         case .failure(let error):
             lastError = error.message
+            kioskRestartFailed()
         case .success:
             // The app left while the engine was starting: kiosk mode never goes live.
             guard UIApplication.shared.applicationState != .background else {
                 stopEngine()
+                kioskRestartFailed()
                 return
             }
+            restartingKiosk = false
             kioskActive = true
             UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
@@ -297,7 +368,9 @@ final class FipsMeshService: ObservableObject {
             return Self.startClientAndIngress(meshNpub: meshNpub, closeDoor: !sharing, clientOptions: clientOptions)
         }
         engineOp = Task { _ = await op.value }
+        clientOps += 1
         let url = await op.value
+        clientOps -= 1
         if url != nil { refresh() }
         // The dial failed but the engine may be up: nothing else needs it.
         if url == nil, !kioskActive, !starting, !clientActive { stopEngine() }
@@ -383,7 +456,10 @@ final class FipsMeshService: ObservableObject {
             return Self.startClientWithRelayLink(closeDoor: !sharing, clientOptions: clientOptions)
         }
         engineOp = Task { _ = await op.value }
-        guard await op.value else {
+        clientOps += 1
+        let started = await op.value
+        clientOps -= 1
+        guard started else {
             lastError = "The mesh did not start"
             return nil
         }
@@ -417,7 +493,9 @@ final class FipsMeshService: ObservableObject {
             return .success(String(cString: out))
         }
         engineOp = Task { _ = await op.value }
+        clientOps += 1
         let result = await op.value
+        clientOps -= 1
         markClientActive()
         refresh()
         return result

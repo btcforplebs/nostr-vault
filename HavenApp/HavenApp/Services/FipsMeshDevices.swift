@@ -35,6 +35,7 @@ enum FipsMeshDevices {
     /// Adds `device`, or says in plain words why it can't. `address` is what
     /// was pasted or scanned: an npub, `nostr:npub…` or `fipsmesh://npub…/`.
     static func add(address: String, name: String, role: MeshDeviceRole, config: ConfigService) -> String? {
+        let before = current(config.config)
         guard let npub = HomeVaultLogic.meshNpub(fromInput: address) else {
             return "That isn't a mesh address. Copy it from FIPS Mesh → This Device on the other device."
         }
@@ -70,6 +71,7 @@ enum FipsMeshDevices {
         config.save()
         // The Mac is listed in the 10063 by this phone (HomeVaultLogic.phoneMeshEntries).
         if role == .mac { NostrService.shared.publishServerList() }
+        FipsMeshService.shared.myDevicesChanged(from: before)
         return nil
     }
 
@@ -81,6 +83,7 @@ enum FipsMeshDevices {
     }
 
     static func remove(_ device: MeshDevice, config: ConfigService) {
+        let before = current(config.config)
         let roles = rolesNaming(device.npub, config: config.config)
         for role in roles {
             clearSetting(role, npub: device.npub, config: config)
@@ -88,6 +91,9 @@ enum FipsMeshDevices {
         config.config.meshDevices = MeshDevicesLogic.removing(npub: device.npub, from: config.config.meshDevices)
         config.save()
         if roles.contains(.mac) { NostrService.shared.publishServerList() }
+        // A lost phone's mesh key stops reaching this one's vault now, not
+        // at the next kiosk start (NIP-F1 revoke).
+        FipsMeshService.shared.myDevicesChanged(from: before)
     }
 
     private static func clearSetting(_ role: MeshDeviceRole, npub: String, config: ConfigService) {
