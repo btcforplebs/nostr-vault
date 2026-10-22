@@ -66,7 +66,7 @@ func meshPut(t *testing.T, door, auth string, body []byte) int {
 }
 
 // The owner's other phone can push a blob through the mesh door and read it
-// back; anyone else is turned away by the Blossom whitelist.
+// back with a signed request; anyone else is turned away by the Blossom whitelist.
 func TestMeshUploadOwnerOnly(t *testing.T) {
 	h := startHaven(t)
 	door := startMeshDoor(t)
@@ -91,14 +91,32 @@ func TestMeshUploadOwnerOnly(t *testing.T) {
 	if code := meshPut(t, door, blossomUploadAuth(t, h.ownerSK, body), body); code != http.StatusOK {
 		t.Fatalf("owner upload: got %d, want 200", code)
 	}
+	// No note names it yet, so a plain read over the mesh is a stranger's
+	// and gets 404 (mesh_safety.go); the owner's signed "get" reads it back.
 	resp, err = http.Get(door + "/" + hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unsigned read of an unposted blob over the mesh: %d, want 404", resp.StatusCode)
+	}
+	getAuth := nostr.Event{Kind: 24242, CreatedAt: nostr.Now(), Content: "get",
+		Tags: nostr.Tags{{"t", "get"}, {"x", hash}, {"expiration", fmt.Sprint(time.Now().Add(10 * time.Minute).Unix())}}}
+	if err := getAuth.Sign(h.ownerSK); err != nil {
+		t.Fatal(err)
+	}
+	gj, _ := json.Marshal(getAuth)
+	req, _ := http.NewRequest(http.MethodGet, door+"/"+hash, nil)
+	req.Header.Set("Authorization", "Nostr "+base64.StdEncoding.EncodeToString(gj))
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, body) {
-		t.Fatalf("read back over the mesh: %d %q", resp.StatusCode, got)
+		t.Fatalf("owner-signed read back over the mesh: %d %q", resp.StatusCode, got)
 	}
 
 	// HEAD /upload answers the pre-flight with the same whitelist.
