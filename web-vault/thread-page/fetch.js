@@ -1,7 +1,7 @@
 // The relay half of the public post page: the post, its replies and the profiles to name them, from public relays.
 // Every event is signature-checked before it is drawn. `query(relays, filter)` is injectable for tests.
 import { verifiedCopy } from "../src/net/thread.js"
-import { mentionedPubkeys, profileOf } from "./page.js"
+import { mentionedPubkeys, meshPhotoAuthors, meshVaults, profileOf } from "./page.js"
 
 /** Where to look, after the link's own relay hints. */
 export const READ_RELAYS = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://relay.btcforplebs.com", "wss://relay.snort.social"]
@@ -32,7 +32,23 @@ const verified = evs => {
   return [...byId.values()]
 }
 
-/** -> { post, events (replies), profiles: Map<pubkey, { name, picture, nip05 }> }, post null when no relay had it.
+/** The mesh vaults each author's newest signed 10063 names (fipsmesh://), for the photos the page puts on the mesh.
+ *  -> Map<pubkey, [x-only hex]>, only authors that name one. */
+export async function readMeshVaults(pubkeys, query, relays = READ_RELAYS) {
+  const out = new Map()
+  const want = [...new Set(pubkeys)].slice(0, 100)
+  if (!want.length) return out
+  const lists = verified(await query(relays, { kinds: [10063], authors: want }))
+    .filter(ev => ev.kind === 10063 && want.includes(ev.pubkey))
+    .sort((a, b) => a.created_at - b.created_at) // newest wins
+  const newest = new Map(lists.map(ev => [ev.pubkey, ev]))
+  for (const [pk, ev] of newest) { const vs = meshVaults(ev); if (vs.length) out.set(pk, vs) }
+  return out
+}
+
+/** -> { post, events (replies), profiles: Map<pubkey, { name, picture, nip05 }>, vaults: [hex] }, post null when no
+ *  relay had it. `vaults`: the mesh vaults the post author's 10063 names (readMeshVaults), only when the post has a
+ *  hashed photo; replies get none, since anyone can reply.
  *  Reads run side by side where they can (the post with its replies), since a chat app's unfurler waits seconds. */
 export async function loadThread(target, query) {
   const relays = relaysFor(target)
@@ -47,7 +63,7 @@ export async function loadThread(target, query) {
   const found = verified(postEvents)
     .filter(ev => (address ? ev.kind === target.kind && ev.pubkey === target.author && ev.tags.some(t => t[0] === "d" && t[1] === target.identifier) : ev.id === target.id))
   const post = found.sort((a, b) => b.created_at - a.created_at)[0] ?? null
-  if (!post) return { post: null, events: [], profiles: new Map() }
+  if (!post) return { post: null, events: [], profiles: new Map(), vaults: [] }
   let events = verified(replySets.flat())
 
   const peopleOf = evs => evs.flatMap(e => [e.pubkey, ...mentionedPubkeys(e.content)])
@@ -63,9 +79,10 @@ export async function loadThread(target, query) {
   const deeper = !address && events.length
     ? query(relays, { kinds: [1], "#e": events.map(e => e.id).slice(0, 100), limit: REPLY_LIMIT })
     : Promise.resolve([])
-  const [more] = await Promise.all([deeper, readProfiles(peopleOf([post, ...events]))])
+  const vaults = readMeshVaults(meshPhotoAuthors([post]), query, relays).then(m => m.get(post.pubkey) ?? [])
+  const [more] = await Promise.all([deeper, readProfiles(peopleOf([post, ...events])), vaults])
   const have = new Set(events.map(e => e.id))
   const extra = verified(more).filter(e => !have.has(e.id))
   if (extra.length) { events = [...events, ...extra]; await readProfiles(peopleOf(extra)) }
-  return { post, events, profiles }
+  return { post, events, profiles, vaults: await vaults }
 }

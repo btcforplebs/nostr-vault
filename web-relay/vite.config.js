@@ -26,6 +26,14 @@ export function precompress({ min = 1024 } = {}) {
 
 export default {
   base: "/relay/",
-  build: { outDir: "../website/relay", emptyOutDir: true },
+  build: {
+    outDir: "../website/relay", emptyOutDir: true,
+    rollupOptions: {
+      // share-photos: the public post page's mesh photo script (web-vault/thread-page), at a fixed /relay/share-photos.js
+      // because that page is drawn by a server that can't know a hash. Its reader is a hashed chunk it imports late.
+      input: { index: "index.html", "share-photos": "src/fips/share-photos.js" },
+      output: { entryFileNames: c => (c.name === "share-photos" ? "share-photos.js" : "assets/[name]-[hash].js") },
+    },
+  },
   plugins: [precompress()],
 }
