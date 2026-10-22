@@ -85,7 +85,6 @@
     <li>Everyone else can only read the photos in your posts, and only slowly: 1 MB/s shared between all of
         them, at most 256 MB each, and 1 GB per session before they have to wait. They can't read your notes
         or change anything.</li>
-    <li>You can also limit who can view to only your own devices.</li>
 </ul>
 <p>Set another phone to use it as its <strong>Home vault</strong>, and your new notes and photos go to the
     kiosk phone over the mesh, which sends your notes on to your relays.</p>
@@ -120,8 +119,10 @@
         anything private.</li>
     <li><strong>A separate key.</strong> The device's mesh key is its own key, made once and kept on that
         device. Your Nostr key never goes to the mesh.</li>
-    <li><strong>Follows only.</strong> In the apps, mesh photos load only from people you follow, so
-        strangers' devices aren't contacted.</li>
+    <li><strong>Follows only is about what your app loads.</strong> Your app asks the mesh for photos only
+        from people you follow, so strangers' devices aren't contacted. It doesn't limit who can see your
+        photos: there's no setting for that. See
+        <a class="inline" href="/docs/vault/who-can-reach-you/#who-sees-what">who can see what</a>.</li>
 </ul>
 <div class="note">
     <p><strong>Two honest caveats.</strong> First, the public mesh entry points (seeds) can see the IP of
