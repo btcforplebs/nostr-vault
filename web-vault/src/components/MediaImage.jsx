@@ -1,7 +1,8 @@
 // One note image (NoteMedia, MediaLightbox). An https photo is a plain <img>. A photo on a FIPS vault loads by
 // itself once it nears the screen (fips-media.js), only in notes from you or people you follow and only with the
 // Settings switch on: a NIP-F1 .fips link at once, an https photo after its server fails when the imeta gives its
-// hash and the author lists a fipsmesh:// vault. A spinner while it loads, a plain box if it can't be reached.
+// hash and the author lists a fipsmesh:// vault. A box saying "Loading image over FIPS…" while it loads (never the dead
+// https image's broken icon), "Couldn't reach the owner's vault" if the read gives up.
 // Leaving the page stops its read and lets its blob: URL go. When the gate changes (a follow added, the switch
 // flipped) a photo still waiting re-checks it: one now allowed starts, one no longer allowed stops.
 import { useEffect, useRef, useState } from "preact/hooks"
@@ -19,7 +20,8 @@ const NEAR = "600px" // start the read this far before the photo scrolls into vi
  *  tests. */
 export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAllowed, gate = onMeshGate, onError: broken, ...img }) {
   const first = () => (fipsRef(item.url) ? (allowed(author) ? "wait" : "failed") : "web")
-  // "web": the url itself; "wait": a mesh read is due; "mesh": src is a blob: URL; "failed": nothing reached it
+  // "web": the url itself; "wait": a mesh read is due; "mesh": src is a blob: URL; "failed": not read (the gate);
+  // "unreached": the read gave up
   const [state, setState] = useState(first)
   const [src, setSrc] = useState(state === "web" ? item.url : undefined)
   const [why, setWhy] = useState("")
@@ -51,7 +53,7 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
       const c = (ctl.current = new AbortController())
       media.fallback(item, author, { signal: c.signal }).then(
         u => { got = true; if (live) { setSrc(u); setState("mesh") } },
-        e => { if (live && e?.name !== "AbortError") { setWhy(String(e?.message ?? e)); setState("failed") } })
+        e => { if (live && e?.name !== "AbortError") { setWhy(String(e?.message ?? e)); setState("unreached") } })
     }
     const el = box.current
     const io = el && typeof IntersectionObserver === "function"
@@ -68,9 +70,18 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
     broken?.(e)
   }
 
-  if (state === "wait") return <span ref={box} class="media-mesh" style={ratio(item)}><Spinner label="Loading photo" /></span>
-  if (state === "failed") return <span class="media-mesh failed" style={ratio(item)} title={why}>Photo not reachable</span>
+  if (state === "wait" || state === "failed" || state === "unreached") return <MeshBox state={state} item={item} why={why} box={box} />
   return <img src={src} alt="" referrerpolicy="no-referrer" onError={onError} {...img} />
+}
+
+export const LOADING_TEXT = "Loading image over FIPS…"
+export const UNREACHED_TEXT = "Couldn't reach the owner's vault"
+
+/** What stands in the photo's place while it isn't one: loading over the mesh, not read, or the read gave up. */
+export function MeshBox({ state, item, why = "", box }) {
+  if (state === "wait") return <span ref={box} class="media-mesh" style={ratio(item)} role="status"><Spinner /><span class="media-mesh-text">{LOADING_TEXT}</span></span>
+  const text = state === "unreached" ? UNREACHED_TEXT : "Photo not reachable"
+  return <span class="media-mesh failed" style={ratio(item)} title={why || text}><span class="media-mesh-text">{text}</span></span>
 }
 
 // Hold the photo's own shape while it loads, when the note says it.
