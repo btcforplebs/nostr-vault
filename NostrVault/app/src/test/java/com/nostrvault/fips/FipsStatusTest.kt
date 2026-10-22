@@ -118,7 +118,7 @@ class FipsStatusTest {
         val obj = Json.parseToJsonElement(encoded).jsonObject
 
         assertEquals(
-            setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes", "public_seeds", "relay_socket"),
+            setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes", "public_seeds", "relay_socket", "own_devices", "strangers_port"),
             obj.keys,
         )
         assertEquals("true", obj["public_seeds"]!!.jsonPrimitive.content)

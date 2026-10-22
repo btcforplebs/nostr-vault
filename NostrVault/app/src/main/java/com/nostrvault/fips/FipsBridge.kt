@@ -123,6 +123,8 @@ object FipsBridge {
     const val ERR_BAD_NPUB = -6
     const val ERR_RELAY_OFF = -7
     const val ERR_BAD_EVENTS = -8
+    /** `ingress` to an npub outside [FipsStartOptions.ownDevices]: the dial would send it this device's address. */
+    const val ERR_NOT_OWN = -9
     const val ERR_UNAVAILABLE = -100
 
     private external fun nativeStart(nsec: String, optionsJson: String): Int
@@ -146,7 +148,10 @@ data class FipsIngress(val url: String? = null, val error: Int = 0)
 /** What [FipsBridge.start] passes to the library, as JSON. */
 @Serializable
 data class FipsStartOptions(
-    /** The only npubs allowed to reach this device. */
+    /**
+     * Npubs dialed at start. Not an allowlist: without [ownDevices] anyone can
+     * reach this device, and `ingress` dials any npub on demand.
+     */
     val peers: List<String> = emptyList(),
     /** Advert and signaling relays. Empty keeps the library's defaults. */
     val relays: List<String> = emptyList(),
@@ -159,6 +164,18 @@ data class FipsStartOptions(
     @SerialName("public_seeds") val publicSeeds: Boolean = false,
     /** Datagram API socket inside the app's files dir; empty leaves [FipsBridge.relayPush] off. */
     @SerialName("relay_socket") val relaySocket: String = "",
+    /**
+     * The owner's devices (My Devices). Set, only they get this device's
+     * address (offers from anyone else go unanswered) and only they reach the
+     * exported port; `ingress` to anyone else returns [FipsBridge.ERR_NOT_OWN].
+     * Empty leaves the device open to anyone, as before.
+     */
+    @SerialName("own_devices") val ownDevices: List<String> = emptyList(),
+    /**
+     * With [ownDevices]: the loopback port everyone else reaches while sharing,
+     * capped. Haven's mesh door, never the relay port. 0: they get silence.
+     */
+    @SerialName("strangers_port") val strangersPort: Int = 0,
 )
 
 /**

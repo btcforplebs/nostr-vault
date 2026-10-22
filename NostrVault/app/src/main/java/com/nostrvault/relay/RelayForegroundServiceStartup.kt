@@ -190,6 +190,7 @@ import kotlinx.coroutines.withTimeoutOrNull
             _relayStatus.value = RelayStatus.RUNNING
             updateNotification(RelayStatus.RUNNING)
             Log.i(TAG, "Go relay started successfully and health check passed")
+            restoreMesh()
 
             // Staggered startup: brief delay before client connections so the relay
             // settles first. The TCP health check above already proved it's listening,

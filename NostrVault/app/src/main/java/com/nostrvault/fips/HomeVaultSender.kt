@@ -57,6 +57,7 @@ class HomeVaultSender @Inject constructor(
     @ApplicationContext context: Context,
     private val configStore: ConfigStore,
 ) {
+    private val filesDir: File = context.filesDir
     /** Signs a Nostr event as the owner, or returns null. Wired by NostrService. */
     @Volatile
     var signer: suspend (kind: Int, content: String, tags: List<List<String>>) -> String? = { _, _, _ -> null }
@@ -82,6 +83,29 @@ class HomeVaultSender @Inject constructor(
     var signerIsLocal: () -> Boolean = { false }
 
     private val queue = HomeVaultQueue(File(context.filesDir, "home_vault_queue"))
+
+    /** One queue per Mac in My Devices ([MeshSendTargets]), each sent on its own. */
+    private val macQueues = java.util.concurrent.ConcurrentHashMap<String, HomeVaultQueue>()
+    private val macQueueRoot get() = File(filesDir, "mesh_send_queue")
+    private fun macQueue(npub: String) = macQueues.getOrPut(npub) { HomeVaultQueue(File(macQueueRoot, npub)) }
+
+    /**
+     * Where the owner's new notes and media go right now, each with its queue: the home vault,
+     * then each Mac. None while another account is active.
+     */
+    private fun lanes(): List<Pair<MeshSendTarget, HomeVaultQueue>> {
+        if (!ownerIsActive()) return emptyList()
+        return MeshSendTargets.of(configStore.config.value).map { t ->
+            t to (if (t.role == DeviceRole.HOME_VAULT) queue else macQueue(t.npub))
+        }
+    }
+
+    /**
+     * What waits, across the home vault and every Mac queue on disk. From disk, not the config: at
+     * launch the config may not be loaded yet, and a queue left by a removed Mac goes on its next pass.
+     */
+    private fun waitingCount(): Int =
+        queue.size + (macQueueRoot.listFiles()?.filter { it.isDirectory }?.sumOf { macQueue(it.name).size } ?: 0)
 
     /**
      * Blobs a note was published for while only the home vault had them.
@@ -130,7 +154,7 @@ class HomeVaultSender @Inject constructor(
         val lastProblem: String? = null,
     )
 
-    private val _state = MutableStateFlow(State(waiting = queue.size, publicPending = publicCopies.size))
+    private val _state = MutableStateFlow(State(publicPending = publicCopies.size))
     val state: StateFlow<State> = _state.asStateFlow()
 
     /** The chosen home vault's mesh npub, or null when there is none. */
@@ -140,7 +164,8 @@ class HomeVaultSender @Inject constructor(
     private val activeVault: String? get() = homeVaultNpub?.takeIf { ownerIsActive() }
 
     init {
-        if (queue.size > 0) scheduleRetry()
+        publish()
+        if (_state.value.waiting > 0) scheduleRetry()
         if (publicCopies.size > 0) schedulePublicCopies()
     }
 
@@ -191,8 +216,8 @@ class HomeVaultSender @Inject constructor(
         val base = FipsMediaRouter.ingressBase(npub) ?: return false
         val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
         if (item != null) {
-            val outcome = sendBlob(base, item, ensureClient)
-            record(item, outcome, npub, System.currentTimeMillis())
+            val outcome = sendBlob(base, item, queue, ensureClient)
+            record(item, outcome, npub, System.currentTimeMillis(), queue, DeviceRole.HOME_VAULT)
             return outcome == HomeVaultSend.SENT
         }
         return ensureClient.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
@@ -302,11 +327,16 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    /** Also send this signed event to the home vault, if it is the owner's. */
+    /** Also send this signed event to the home vault and each Mac taking notes, if it is the owner's. */
     fun offerEvent(eventId: String, pubkey: String, eventJson: String) {
-        if (activeVault == null || pubkey.isEmpty() || pubkey != ownerHex()) return
+        if (pubkey.isEmpty() || pubkey != ownerHex()) return
+        val queues = lanes().filter { it.first.notes }.map { it.second }
+        if (queues.isEmpty()) return
         // Off the caller's thread: postEvent runs on the main thread.
-        scope.launch { if (queue.addEvent(eventId, eventJson)) drain() else full() }
+        scope.launch {
+            val queued = queues.map { it.addEvent(eventId, eventJson) }
+            if (queued.all { it }) drain() else full()
+        }
     }
 
     /** Also send this blob to the home vault, copied from [source]. */
@@ -323,13 +353,16 @@ class HomeVaultSender @Inject constructor(
 
     /** Synchronous (the caller's source may be deleted next), and never throws into an upload. */
     private fun offer(sha256: String, contentType: String, byteCount: Long, writeTo: (File) -> Unit) {
-        if (activeVault == null) return
-        val queued = try {
-            queue.addBlob(sha256, safeType(contentType), byteCount, writeTo = writeTo)
-        } catch (e: Exception) {
-            Log.w(TAG, "home vault: could not queue ${sha256.take(8)}: ${e.message}")
-            false
-        }
+        val queues = lanes().filter { it.first.media }.map { it.second }
+        if (queues.isEmpty()) return
+        val queued = queues.map { q ->
+            try {
+                q.addBlob(sha256, safeType(contentType), byteCount, writeTo = writeTo)
+            } catch (e: Exception) {
+                Log.w(TAG, "home vault: could not queue ${sha256.take(8)}: ${e.message}")
+                false
+            }
+        }.all { it }
         // The timer, not a drain: the caller drains once its upload is done,
         // and this covers an upload that throws before it gets there.
         if (queued) scheduleRetry() else full()
@@ -390,7 +423,25 @@ class HomeVaultSender @Inject constructor(
 
     private suspend fun drainPass(userInitiated: Boolean) = drainLock.withLock {
         publish()
-        val npub = activeVault ?: return@withLock
+        val lanes = lanes()
+        dropRemovedMacQueues(lanes)
+        for ((target, q) in lanes) drainLane(target.npub, q, target.role, userInitiated)
+        publish()
+    }
+
+    /** A Mac taken out of My Devices: what waited for it has nowhere to go. */
+    private fun dropRemovedMacQueues(lanes: List<Pair<MeshSendTarget, HomeVaultQueue>>) {
+        if (!ownerIsActive()) return
+        val macs = lanes.filter { it.first.role == DeviceRole.MAC }.map { it.first.npub }.toSet()
+        macQueueRoot.listFiles()?.filter { it.isDirectory && it.name !in macs }?.forEach { dir ->
+            macQueues.remove(dir.name)?.clear()
+            dir.deleteRecursively()
+        }
+    }
+
+    /** One device's queue. Only an unreachable device stops its own pass. */
+    private suspend fun drainLane(npub: String, queue: HomeVaultQueue, role: DeviceRole, userInitiated: Boolean) {
+        val label = MeshSendTargets.label(role)
         val now = System.currentTimeMillis()
         val gaveUp = queue.items().filter { HomeVaultRules.expired(it, now) }
         gaveUp.forEach {
@@ -398,20 +449,20 @@ class HomeVaultSender @Inject constructor(
             queue.remove(it.key)
         }
         if (gaveUp.isNotEmpty()) {
-            problem("Gave up sending ${gaveUp.size} ${if (gaveUp.size == 1) "item" else "items"} to the home vault")
+            problem("Gave up sending ${gaveUp.size} ${if (gaveUp.size == 1) "item" else "items"} to ${MeshSendTargets.destination(role)}")
         }
         val items = queue.items()
-        if (items.isEmpty()) return@withLock publish()
+        if (items.isEmpty()) return
         if (!FipsBridge.status().running) {
             problem("The mesh is off")
             scheduleRetry()
-            return@withLock publish()
+            return
         }
         val base = FipsMediaRouter.ingressBase(npub)
         if (base == null) {
-            problem("Home vault not reachable")
+            problem("$label not reachable")
             scheduleRetry()
-            return@withLock publish()
+            return
         }
         // Each blob is one signer prompt; a tap approves a batch, not the whole queue.
         val selection = HomeVaultRules.select(
@@ -422,7 +473,7 @@ class HomeVaultSender @Inject constructor(
         for (item in selection.toTry) {
             val outcome = try {
                 when (item.type) {
-                    HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item)
+                    HomeVaultQueue.TYPE_BLOB -> sendBlob(base, item, queue)
                     HomeVaultQueue.TYPE_EVENT -> sendEvent(base, item)
                     else -> HomeVaultSend.REJECTED
                 }
@@ -430,7 +481,7 @@ class HomeVaultSender @Inject constructor(
                 // The vault, not the item: stop and try the lot later.
                 Log.w(TAG, "home vault: ${item.type} ${item.key.take(8)}: ${e.message}")
                 FipsMediaRouter.forget(npub)
-                problem("Home vault not reachable")
+                problem("$label not reachable")
                 break
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -441,14 +492,13 @@ class HomeVaultSender @Inject constructor(
                 Log.e(TAG, "home vault: dropping ${item.type} ${item.key.take(8)}", e)
                 HomeVaultSend.REJECTED
             }
-            record(item, outcome, npub, now)
+            record(item, outcome, npub, now, queue, role)
         }
         if (queue.size > 0) scheduleRetry()
-        publish()
     }
 
     /** Apply one send's outcome to the queue. */
-    private fun record(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long) {
+    private fun record(item: HomeVaultQueue.Item, outcome: HomeVaultSend, npub: String, now: Long, queue: HomeVaultQueue, role: DeviceRole) {
         when (outcome) {
             HomeVaultSend.SENT -> {
                 queue.remove(item.key)
@@ -457,7 +507,7 @@ class HomeVaultSender @Inject constructor(
             }
             HomeVaultSend.REJECTED -> {
                 queue.remove(item.key)
-                problem("The home vault refused a ${item.type}")
+                problem("${MeshSendTargets.destination(role).replaceFirstChar { it.uppercase() }} refused a ${item.type}")
             }
             HomeVaultSend.RETRY -> {
                 val attempts = item.attempts + 1
@@ -466,7 +516,7 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private suspend fun sendBlob(base: String, item: HomeVaultQueue.Item, http: OkHttpClient = client): HomeVaultSend {
+    private suspend fun sendBlob(base: String, item: HomeVaultQueue.Item, queue: HomeVaultQueue, http: OkHttpClient = client): HomeVaultSend {
         val sha = item.key
         val file = queue.blobFile(sha)
         // Already there (sent before a crash, or uploaded on the kiosk itself).
@@ -564,7 +614,7 @@ class HomeVaultSender @Inject constructor(
         retryJob = scope.launch {
             while (isActive) {
                 delay(RETRY_MS)
-                if (queue.size == 0 || activeVault == null) break
+                if (lanes().none { it.second.size > 0 }) break
                 drain()
             }
         }
@@ -575,7 +625,7 @@ class HomeVaultSender @Inject constructor(
     }
 
     private fun publish() {
-        _state.value = _state.value.copy(waiting = queue.size, publicPending = publicCopies.size)
+        _state.value = _state.value.copy(waiting = waitingCount(), publicPending = publicCopies.size)
     }
 
     private fun Response.reason(max: Int): String =
