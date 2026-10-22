@@ -1,5 +1,6 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.util.findAllOnce
 /**
  * What the Vault's search makes of the notes the local relay matched (iOS
  * `VaultSearchLogic.swift`): which kind of result each one is, the hashtags and
@@ -53,7 +54,7 @@ object VaultSearchLogic {
 
     /** `#word` hashtags in a note's text, lowercased, without the `#`. */
     fun hashtagsInText(text: String): List<String> =
-        hashtagRegex.findAll(text).map { it.groupValues[1].lowercase() }.toList()
+        hashtagRegex.findAllOnce(text).map { it.groupValues[1].lowercase() }.toList()
 
     data class Link(
         val url: String,
@@ -75,7 +76,7 @@ object VaultSearchLogic {
         val seen = HashSet<String>()
         val links = ArrayList<Link>()
         for ((id, content) in notes) {
-            for (match in urlRegex.findAll(content)) {
+            for (match in urlRegex.findAllOnce(content)) {
                 val url = trimmingTrailingPunctuation(match.value)
                 if (!seen.add(url)) continue
                 links += Link(url, url.replace("https://", "").replace("http://", ""), id)

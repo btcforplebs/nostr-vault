@@ -1,5 +1,6 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.util.findAllOnce
 /**
  * The tags a composed kind-1 note carries *about its own content*: the hashtags
  * the author typed (NIP-24 `t`) and a description of each piece of media it
@@ -37,7 +38,7 @@ object NoteTagging {
 
         for (token in text.split(WHITESPACE)) {
             if (token.isEmpty() || isReference(token)) continue
-            for (match in HASHTAG.findAll(token)) {
+            for (match in HASHTAG.findAllOnce(token)) {
                 val tag = match.groupValues[1].lowercase()
                 if (tag.none { it.isLetter() }) continue
                 if (tag.length > MAX_HASHTAG_LENGTH) continue
