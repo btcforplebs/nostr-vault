@@ -84,7 +84,9 @@ enum MeshPhotoDestination: String, CaseIterable, Identifiable {
 
 /// The server that links two devices that can't reach each other directly.
 enum MeshMiddleServer: String, CaseIterable, Identifiable {
-    /// fips1 and fips2.iris.to, joined when a browser page is set up.
+    /// fips1 and fips2.iris.to: the route to anyone outside My Devices
+    /// (follows' vaults read without a dial, a browser page, kiosk
+    /// visitors). They see this phone's public IP while the mesh runs.
     case publicSeeds = "public"
     case none
 
@@ -220,12 +222,45 @@ enum MeshDevicesLogic {
     /// offers, so the home's addresses go to no one else, and are dialed at
     /// start; strangers reach the kiosk through the public seeds, capped,
     /// and get only Haven's mesh door, which serves blobs public notes name.
-    /// No `max_serve_bytes`: in own-devices mode the engine ignores it (own
-    /// devices are uncapped; strangers have their own fixed caps, strangers.rs).
+    /// `max_serve_bytes` is what strangers together may pull per sharing
+    /// session (own devices are uncapped): a phone's data may be metered,
+    /// and 1 MiB/s alone is 3.6 GB an hour (strangers.rs).
     /// Nil with no other device listed: an empty `own_devices` would leave
     /// the kiosk open to anyone, so it does not start.
-    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int) -> [String: Any]? {
-        macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort)
+    /// `seeds` false (middle server None): no seeds, so no visitors reach
+    /// the kiosk and follows' vaults are out of reach; own devices still are.
+    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int, seeds: Bool = true) -> [String: Any]? {
+        guard var options = macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort) else { return nil }
+        options["max_serve_bytes"] = kioskStrangersTotal
+        options["public_seeds"] = seeds
+        // Reading a follow's photos while sharing: without a dial, as a client does.
+        options["read_anyone"] = true
+        return options
+    }
+
+    /// Strangers' total per kiosk sharing session.
+    static let kioskStrangersTotal: Int64 = 1 << 30
+
+    /// Start options for an iPhone that reads: the Mac and the vaults of
+    /// people you follow. Offers are answered for My Devices only (for no
+    /// one with none listed), and a vault outside My Devices is read through
+    /// the public seeds without a dial (`read_anyone`), so it never learns
+    /// this phone's address. `seeds` is false when the middle server is set
+    /// to None: those vaults are then out of reach and photos load from
+    /// their URL, but the engine is still never open.
+    static func clientEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], seeds: Bool) -> [String: Any] {
+        var npubs: [String] = []
+        for device in devices where device.npub != ownNpub && !npubs.contains(device.npub) {
+            npubs.append(device.npub)
+        }
+        return [
+            "own_devices": npubs,
+            "read_anyone": true,
+            "relays": relays.isEmpty ? defaultFinderRelays : relays,
+            "public_seeds": seeds,
+            // LAN candidates go only to My Devices: they alone get answers or dials.
+            "lan": true,
+        ]
     }
 
     /// A finder relay as typed: `wss://` added when missing, trailing

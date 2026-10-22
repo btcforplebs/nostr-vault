@@ -210,9 +210,14 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertNotEqual(opts["strangers_port"] as? Int, HavenConfig().relayPort)
         XCTAssertEqual(opts["public_seeds"] as? Bool, true)
         XCTAssertEqual(opts["lan"] as? Bool, true)
-        // The engine ignores a cap in own-devices mode: sending one would only
-        // promise a pause that never comes (Tron, #1023).
-        XCTAssertNil(opts["max_serve_bytes"])
+        // In own-devices mode the engine applies it to strangers only (#1025):
+        // without it strangers had no total on a phone whose data may be metered.
+        XCTAssertEqual(opts["max_serve_bytes"] as? Int64, 1 << 30)
+        // While sharing, a follow's photos are read without a dial too (Tron, #1030 F2).
+        XCTAssertEqual(opts["read_anyone"] as? Bool, true)
+        // Middle server None: no seeds while sharing either (#1030 F3).
+        let noSeeds = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: kiosk, relays: [], meshDoorPort: door, seeds: false))
+        XCTAssertEqual(noSeeds["public_seeds"] as? Bool, false)
         XCTAssertNil(opts["peers"])
     }
 
@@ -223,6 +228,38 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: onlySelf, ownNpub: page, relays: [], meshDoorPort: 3356))
         let devices = [MeshDevice(npub: moto, name: "", role: .phone)]
         XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: page, relays: [], meshDoorPort: 0))
+    }
+
+    // MARK: clientEngineOptions
+
+    /// A reading phone answers My Devices only, and reads anyone else's vault
+    /// without a dial, so that vault never gets its address. Before, the
+    /// client engine started open: anyone who knew its npub got an answer
+    /// with its public and LAN address.
+    func testTheClientEngineAnswersMyDevicesOnly() {
+        let phone = page // this phone
+        let devices = [
+            MeshDevice(npub: mac, name: "", role: .mac),
+            MeshDevice(npub: phone, name: "", role: .phone),
+            MeshDevice(npub: mac, name: "again", role: .mac),
+        ]
+        let opts = MeshDevicesLogic.clientEngineOptions(devices: devices, ownNpub: phone, relays: ["wss://a"], seeds: true)
+        XCTAssertEqual(opts["own_devices"] as? [String], [mac])
+        XCTAssertEqual(opts["read_anyone"] as? Bool, true)
+        XCTAssertEqual(opts["public_seeds"] as? Bool, true, "anyone else is reached through the seeds")
+        XCTAssertNil(opts["strangers_port"], "a reading phone serves no strangers")
+        XCTAssertNil(opts["peers"])
+    }
+
+    /// With no devices it is still not open: the engine answers no one.
+    func testTheClientEngineIsNeverOpen() {
+        let none = MeshDevicesLogic.clientEngineOptions(devices: [], ownNpub: page, relays: [], seeds: true)
+        XCTAssertEqual(none["own_devices"] as? [String], [])
+        XCTAssertEqual(none["read_anyone"] as? Bool, true)
+        // Middle server None: no seeds, still closed.
+        let noSeeds = MeshDevicesLogic.clientEngineOptions(devices: [], ownNpub: page, relays: [], seeds: false)
+        XCTAssertEqual(noSeeds["public_seeds"] as? Bool, false)
+        XCTAssertEqual(noSeeds["read_anyone"] as? Bool, true)
     }
 
     func testNoDevicesMeansTheMacEngineStaysOff() {

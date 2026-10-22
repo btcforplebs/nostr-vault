@@ -22,6 +22,9 @@ class MeshEnginePlanTest {
 
         assertEquals(listOf(phone, mac, kiosk), options.ownDevices)
         assertEquals(config.meshPort, options.strangersPort)
+        // A follow's vault is read through the seeds, no dial: it never gets this phone's address,
+        // and ingress to it is not refused (ERR_NOT_OWN) as it was with own devices set.
+        assertTrue(options.readAnyone)
         // Own devices reach the relay; the engine refuses the door and the relay being one port.
         val share = MeshEnginePlan.sharePort(config, options.ownDevices)
         assertEquals(4000, share)
@@ -29,13 +32,19 @@ class MeshEnginePlanTest {
     }
 
     @Test
-    fun `with no devices the engine stays open and shares the door, as before`() {
+    fun `with no devices the engine is still closed, and strangers still get the door`() {
         val config = HavenConfig(relayPort = 4000)
         val options = MeshEnginePlan.options(config, ownNpub = me, maxServeBytes = 1)
 
         assertEquals(emptyList<String>(), options.ownDevices)
-        assertEquals(0, options.strangersPort)  // the library refuses strangers_port without own_devices
-        assertEquals(config.meshPort, MeshEnginePlan.sharePort(config, options.ownDevices))
+        // read_anyone keeps own-devices mode on with an empty list: no one's offers are answered,
+        // so the default install no longer gives its address away (Tron, #1030 F4).
+        assertTrue(options.readAnyone)
+        // Strangers reach the door through the seeds, as with devices listed; the relay is no one's.
+        assertEquals(config.meshPort, options.strangersPort)
+        val share = MeshEnginePlan.sharePort(config, options.ownDevices)
+        assertEquals(4000, share)
+        assertNotEquals(options.strangersPort, share)
     }
 
     @Test
@@ -53,6 +62,7 @@ class MeshEnginePlanTest {
 
         assertTrue(json, json.contains("\"own_devices\":[\"$mac\"]"))
         assertTrue(json, json.contains("\"strangers_port\":4001"))
+        assertTrue(json, json.contains("\"read_anyone\":true"))
     }
 
     /**

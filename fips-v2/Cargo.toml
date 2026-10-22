@@ -7,10 +7,11 @@ publish = false
 
 # Upstream FIPS (jmcorgan). Git-only; pin a release tag, never a branch.
 [dependencies]
-# Our fork, branch nv/v0.5.3: v0.5.3 plus the native API built on Android and
-# iOS, offer_allowlist and reserved_npubs. Same rev as fips-v2-android and
+# Our fork, branch nv/v0.5.3-cache-identity (nv/v0.5.3 at cf84766d plus the
+# cache_identity control command): v0.5.3 plus the native API built on Android
+# and iOS, offer_allowlist and reserved_npubs. Same rev as fips-v2-android and
 # web-relay-vault. Back to a jmcorgan/fips tag once they land in a release.
-fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "cf84766d" }
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "2cad66d8" }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 anyhow = "1"

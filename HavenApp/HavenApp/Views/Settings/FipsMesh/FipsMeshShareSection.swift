@@ -43,7 +43,7 @@ struct FipsMeshShareSection: View {
         } header: {
             Text("Share With Others")
         } footer: {
-            Text("Kiosk mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, and at most 256 MB each per session. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
+            Text("Kiosk mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, at most 1 GB per session (then they wait 3 minutes), and 256 MB each. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
         }
     }
 

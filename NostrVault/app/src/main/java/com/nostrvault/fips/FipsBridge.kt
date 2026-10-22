@@ -167,8 +167,8 @@ data class FipsStartOptions(
     /**
      * The owner's devices (My Devices). Set, only they get this device's
      * address (offers from anyone else go unanswered) and only they reach the
-     * exported port; `ingress` to anyone else returns [FipsBridge.ERR_NOT_OWN].
-     * Empty leaves the device open to anyone, as before.
+     * exported port; `ingress` to anyone else returns [FipsBridge.ERR_NOT_OWN]
+     * unless [readAnyone]. Empty leaves the device open to anyone, as before.
      */
     @SerialName("own_devices") val ownDevices: List<String> = emptyList(),
     /**
@@ -176,6 +176,11 @@ data class FipsStartOptions(
      * capped. Haven's mesh door, never the relay port. 0: they get silence.
      */
     @SerialName("strangers_port") val strangersPort: Int = 0,
+    /**
+     * With [ownDevices]: `ingress` also opens anyone else's vault, through the
+     * public seeds with no dial, so it never gets this device's address.
+     */
+    @SerialName("read_anyone") val readAnyone: Boolean = false,
 )
 
 /**
