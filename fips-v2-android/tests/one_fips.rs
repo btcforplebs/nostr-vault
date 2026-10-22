@@ -26,3 +26,14 @@ fn fips_is_v0_5_3() {
         .expect("fips-mesh in Cargo.lock");
     assert!(pkg.contains("\nversion = \"0.5.3\"\n"), "{pkg}");
 }
+
+/// fips v0.5.3 moved rustls to 0.23.46 for RUSTSEC-2026-0346..0349. A rev bump
+/// leaves transitive deps where the lock had them, so check ours moved too.
+#[test]
+fn rustls_has_the_v0_5_3_advisory_fixes() {
+    for pkg in LOCK.split("[[package]]").filter(|p| p.contains("\nname = \"rustls\"\n")) {
+        let v = pkg.lines().find_map(|l| l.strip_prefix("version = \"")).expect("version").trim_end_matches('"');
+        let patch: u32 = v.strip_prefix("0.23.").expect("rustls 0.23.x").parse().unwrap();
+        assert!(patch >= 46, "rustls {v} predates the v0.5.3 TLS advisory fixes");
+    }
+}

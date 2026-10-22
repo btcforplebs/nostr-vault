@@ -1,6 +1,6 @@
 # fips-v2 (spike)
 
-Milestone-1 probe for Nostr Vault FIPS v2: upstream jmcorgan/fips v0.5.2 embedded
+Milestone-1 probe for Nostr Vault FIPS v2: upstream jmcorgan/fips v0.5.3 embedded
 in-process, app-owned TUN, smoltcp userspace TCP/IP. No VPN, no system TUN, no seed.
 
 ```sh
