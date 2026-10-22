@@ -2,13 +2,14 @@ import SwiftUI
 
 #if os(iOS)
 /// FIPS Mesh → Share With Others: kiosk mode (this vault on the mesh while the
-/// app stays open), its limit, what it has served, and where posted photos go.
+/// app stays open), what it has served, and where posted photos go. No
+/// "Pause after" limit: kiosk mode runs the engine for My Devices, which
+/// ignores one (own devices uncapped, strangers on fixed caps; #1023).
 /// No listing switch: a phone's own mesh npub is never put in the 10063; the
 /// Mac's photo node is listed on its own (PhotoNode, Logen 2026-10-21).
 struct FipsMeshShareSection: View {
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var mesh = FipsMeshService.shared
-    @AppStorage(FipsMeshService.serveLimitKey) private var serveLimit = 0
 
     var body: some View {
         Section {
@@ -24,13 +25,6 @@ struct FipsMeshShareSection: View {
                 }
             }
             .tint(Color.havenPurple)
-
-            Picker("Pause after", selection: $serveLimit) {
-                ForEach(FipsMeshService.serveLimitChoices, id: \.self) { bytes in
-                    Text(bytes == 0 ? "No limit" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).tag(Int(bytes))
-                }
-            }
-            .disabled(mesh.kioskActive || mesh.starting)
 
             if mesh.kioskActive, let status = mesh.status {
                 kioskStatus(status)
@@ -49,7 +43,7 @@ struct FipsMeshShareSection: View {
         } header: {
             Text("Share With Others")
         } footer: {
-            Text("Kiosk mode keeps the screen on, and anyone on the mesh can read your media. With no limit, sharing runs until you turn it off. If you pick a limit, sharing pauses for 3 minutes once the mesh has downloaded that much, then starts again by itself. One visitor gets at most 256 MB per session. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
+            Text("Kiosk mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, and at most 256 MB each per session. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
         }
     }
 

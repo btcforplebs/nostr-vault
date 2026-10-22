@@ -220,13 +220,12 @@ enum MeshDevicesLogic {
     /// offers, so the home's addresses go to no one else, and are dialed at
     /// start; strangers reach the kiosk through the public seeds, capped,
     /// and get only Haven's mesh door, which serves blobs public notes name.
-    /// `serveLimit` is the owner's sharing cap (KioskCapPause.engineServeLimit).
+    /// No `max_serve_bytes`: in own-devices mode the engine ignores it (own
+    /// devices are uncapped; strangers have their own fixed caps, strangers.rs).
     /// Nil with no other device listed: an empty `own_devices` would leave
     /// the kiosk open to anyone, so it does not start.
-    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int, serveLimit: Int64) -> [String: Any]? {
-        guard var options = macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort) else { return nil }
-        options["max_serve_bytes"] = serveLimit
-        return options
+    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int) -> [String: Any]? {
+        macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort)
     }
 
     /// A finder relay as typed: `wss://` added when missing, trailing

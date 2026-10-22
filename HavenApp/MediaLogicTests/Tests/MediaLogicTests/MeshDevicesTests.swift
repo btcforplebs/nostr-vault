@@ -204,23 +204,25 @@ final class MeshDevicesTests: XCTestCase {
             MeshDevice(npub: kiosk, name: "", role: .homeVault),
         ]
         let door = HavenConfig().meshPlainPort
-        let opts = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: kiosk, relays: ["wss://a"], meshDoorPort: door, serveLimit: 5_000))
+        let opts = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: kiosk, relays: ["wss://a"], meshDoorPort: door))
         XCTAssertEqual(opts["own_devices"] as? [String], [moto, mac], "the kiosk is never its own device")
         XCTAssertEqual(opts["strangers_port"] as? Int, door)
         XCTAssertNotEqual(opts["strangers_port"] as? Int, HavenConfig().relayPort)
         XCTAssertEqual(opts["public_seeds"] as? Bool, true)
         XCTAssertEqual(opts["lan"] as? Bool, true)
-        XCTAssertEqual(opts["max_serve_bytes"] as? Int64, 5_000, "the owner's sharing cap still reaches the engine")
+        // The engine ignores a cap in own-devices mode: sending one would only
+        // promise a pause that never comes (Tron, #1023).
+        XCTAssertNil(opts["max_serve_bytes"])
         XCTAssertNil(opts["peers"])
     }
 
     /// Never an open kiosk: with no other device listed it does not start.
     func testNoDevicesMeansTheKioskDoesNotStart() {
-        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: [], ownNpub: page, relays: [], meshDoorPort: 3356, serveLimit: .max))
+        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: [], ownNpub: page, relays: [], meshDoorPort: 3356))
         let onlySelf = [MeshDevice(npub: page, name: "", role: .homeVault)]
-        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: onlySelf, ownNpub: page, relays: [], meshDoorPort: 3356, serveLimit: .max))
+        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: onlySelf, ownNpub: page, relays: [], meshDoorPort: 3356))
         let devices = [MeshDevice(npub: moto, name: "", role: .phone)]
-        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: page, relays: [], meshDoorPort: 0, serveLimit: .max))
+        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: page, relays: [], meshDoorPort: 0))
     }
 
     func testNoDevicesMeansTheMacEngineStaysOff() {

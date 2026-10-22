@@ -109,15 +109,6 @@ final class FipsMeshService: ObservableObject {
     var ownMeshNpub: String? { status?.npub ?? UserDefaults.standard.string(forKey: Self.ownNpubKey) }
     private static let ownNpubKey = "fipsMesh.ownNpub"
 
-    /// What one kiosk session may send to the mesh before sharing pauses.
-    /// 0 is no limit, the default: a kiosk is meant for home Wi-Fi.
-    static let serveLimitKey = "fipsMeshServeLimitBytes"
-    static let serveLimitChoices: [Int64] = [0, 250 << 20, 1 << 30, 5 << 30]
-    static var serveLimit: Int64 {
-        let v = Int64(UserDefaults.standard.integer(forKey: serveLimitKey))
-        return serveLimitChoices.contains(v) ? v : 0
-    }
-
     /// The 10063 entry for this phone's vault while kiosk mode is on.
     var meshServerURL: String? {
         guard kioskActive, let npub = status?.npub else { return nil }
@@ -137,19 +128,20 @@ final class FipsMeshService: ObservableObject {
         // capped. Never open: with no other device listed, sharing does not start.
         guard let options = MeshDevicesLogic.kioskEngineOptions(
             devices: FipsMeshDevices.current(ConfigService.shared.config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
-            relays: FipsMeshSettings.finderRelays, meshDoorPort: port,
-            serveLimit: KioskCapPause.engineServeLimit(Self.serveLimit)) else {
-            lastError = "Add your phone under My Devices first: sharing serves your own devices, and strangers only the photos you post."
+            relays: FipsMeshSettings.finderRelays, meshDoorPort: port) else {
+            lastError = "Add your other phone or your Mac under My Devices first: kiosk mode serves your own devices in full, and anyone else only the photos you post."
             return
         }
-        // A client engine runs with other options (open, to read the vaults
-        // of people you follow): kiosk mode starts its own.
-        if clientActive {
-            clientActive = false
-            if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
-            clientBackgroundObserver = nil
-            stopEngine()
-        }
+        // Always a cold start. NvFipsStart keeps a running engine and drops
+        // new options, and an open client engine can be up while clientActive
+        // is still false (ingressURL sets it only once its dial returns), so
+        // a check on clientActive would let kiosk mode inherit an open engine
+        // and share the relay port with anyone (Tron, #1023). stopEngine
+        // queues on engineOp, after any dial already in flight.
+        clientActive = false
+        if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+        clientBackgroundObserver = nil
+        stopEngine()
         starting = true
         startGen += 1
         let gen = startGen
@@ -235,7 +227,7 @@ final class FipsMeshService: ObservableObject {
             UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
             // print reaches relay.log (stdout), the file pulled off a device.
-            print("FipsMesh: kiosk live, serve limit \(Self.serveLimit) bytes")
+            print("FipsMesh: kiosk live, My Devices only, strangers at the mesh door")
             // Leaving the app ends kiosk mode: iOS would suspend the mesh anyway.
             // A banner or Control Center (willResignActive) does not.
             resignObserver = NotificationCenter.default.addObserver(
