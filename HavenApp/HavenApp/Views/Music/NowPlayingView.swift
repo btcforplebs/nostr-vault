@@ -31,6 +31,8 @@ struct NowPlayingView: View {
     @State private var scrubbing: Double?
     @State private var sheet: MusicSheet?
     @State private var showingQueue = false
+    /// The playing song's artist on Nostr, once known; Zap needs it.
+    @State private var artistHex: String?
 
     private static let artSize: CGFloat = 280
 
@@ -76,6 +78,13 @@ struct NowPlayingView: View {
         #endif
         .presentationDetents([.large])
         .modifier(MusicSheetHost(sheet: $sheet))
+        .task(id: player.current?.wavlake?.id) {
+            artistHex = nil
+            guard let song = player.current?.wavlake,
+                  let hex = await MusicArtistKey.hex(for: song) else { return }
+            NostrService.shared.fetchMissingProfiles(for: [hex])
+            withAnimation(Motion.toggle) { artistHex = hex }
+        }
     }
 
     // MARK: Pieces
@@ -221,39 +230,60 @@ struct NowPlayingView: View {
         .accessibilityValue(value)
     }
 
-    /// Where a song leads: its artist and album pages, and Share. A live
-    /// stream offers its video and host.
-    @ViewBuilder
+    /// Where a song leads: its artist and album pages, Share, and Zap for
+    /// an artist on Nostr. A live stream offers its video and host. When the
+    /// words don't fit (Zap joins, or large text), the others go icon-only.
     private func pageButtons(_ track: PlayerTrack) -> some View {
+        ViewThatFits(in: .horizontal) {
+            pageButtonRow(track, showsWords: true)
+            pageButtonRow(track, showsWords: false)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private func pageButtonRow(_ track: PlayerTrack, showsWords: Bool) -> some View {
         HStack(spacing: 10) {
             if let song = track.wavlake {
                 if let page = MusicFeedState.artistPage(of: song) {
-                    actionButton("Artist", icon: "music.mic") { go(page) }
+                    actionButton("Artist", icon: "music.mic", showsWord: showsWords) { go(page) }
                 }
                 if let page = MusicFeedState.albumPage(of: song) {
-                    actionButton("Album", icon: "square.stack") { go(page) }
+                    actionButton("Album", icon: "square.stack", showsWord: showsWords) { go(page) }
                 }
-                actionButton("Share", icon: "square.and.arrow.up") {
-                    sheet = .share(WavlakeLink.shareText(for: song))
+                actionButton("Share", icon: "square.and.arrow.up", showsWord: showsWords) {
+                    MusicArtistKey.share(song, into: $sheet)
+                }
+                if let artistHex {
+                    ArtistZapPill(pubkey: artistHex, artist: song.artist)
                 }
             } else if let host = track.hostPubkey {
                 if let stream = player.liveStream {
-                    actionButton("Watch", icon: "play.rectangle") { sheet = .live(stream) }
+                    actionButton("Watch", icon: "play.rectangle", showsWord: showsWords) { sheet = .live(stream) }
                 }
-                actionButton("Host", icon: "person.crop.circle") { sheet = .profile(host) }
+                actionButton("Host", icon: "person.crop.circle", showsWord: showsWords) { sheet = .profile(host) }
             }
         }
+        .fixedSize()
     }
 
-    private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ title: String, icon: String, showsWord: Bool = true,
+                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.appSystem(size: 14, weight: .semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+            Group {
+                if showsWord {
+                    Label(title, systemImage: icon)
+                } else {
+                    Image(systemName: icon)
+                }
+            }
+            .font(.appSystem(size: 14, weight: .semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.secondary.opacity(0.15)))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     /// AirPlay, Up Next, and the song's other actions.
@@ -350,6 +380,83 @@ struct NowPlayingView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
             MusicFeedState.shared.reveal(page)
+        }
+    }
+}
+
+/// Zaps the artist the default amount; long-press picks one. The same zap
+/// as a profile's Zap pill: to the person, not to a note. Hidden while the
+/// artist's profile has no lightning address.
+private struct ArtistZapPill: View {
+    let pubkey: String
+    let artist: String
+    @EnvironmentObject private var nostrService: NostrService
+    @EnvironmentObject private var configService: ConfigService
+    @State private var picker: ZapSheetContext?
+    @State private var burst = false
+
+    private var defaultSats: Int {
+        max(1, configService.config.defaultZapAmount / 1000)
+    }
+
+    private var lightningAddress: String? {
+        guard let profile = nostrService.profiles[pubkey] else { return nil }
+        if let lud06 = profile.lud06, !lud06.isEmpty { return "lnurl:" + lud06 }
+        if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
+        return nil
+    }
+
+    var body: some View {
+        if let address = lightningAddress {
+            HStack(spacing: 5) {
+                Image(systemName: "bolt.fill")
+                Text("Zap \(defaultSats)").lineLimit(1)
+            }
+            .font(.appSystem(size: 14, weight: .semibold))
+            .foregroundColor(.orange)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.orange.opacity(0.15)))
+            .overlay { ZapBurstView(isAnimating: $burst) }
+            .contentShape(Capsule())
+            .onLongPressGesture {
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                #endif
+                picker = ZapSheetContext(defaultAmount: defaultSats)
+            }
+            .onTapGesture { zap(address) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Zap \(artist) \(defaultSats) sats")
+            .accessibilityHint("Long-press to choose an amount")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { zap(address) }
+            .sheet(item: $picker) { context in
+                CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
+                    zap(address, amount: amount)
+                }
+                #if os(iOS)
+                .presentationDetents([.height(380), .medium])
+                .smallSheetSizing()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color.platformWindowBackground)
+                #endif
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        }
+    }
+
+    /// A failed zap is reported by the zap toast (`ZapService`).
+    private func zap(_ address: String, amount: Int? = nil) {
+        Task {
+            do {
+                try await ZapService.shared.zapNote(noteId: "", notePubkey: pubkey, lud16: address, amountSats: amount)
+                await MainActor.run { burst = true }
+            } catch {
+                #if DEBUG
+                print("ArtistZapPill: Zap failed: \(error)")
+                #endif
+            }
         }
     }
 }
