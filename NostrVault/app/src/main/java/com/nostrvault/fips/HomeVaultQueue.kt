@@ -197,12 +197,15 @@ object HomeVaultRules {
         homeVault: String? = null,
         dropMesh: Collection<String> = emptyList(),
         macs: List<String> = emptyList(),
+        myDevices: Collection<String> = emptyList(),
     ): List<String>? {
         // This phone lists its own home vault and the Macs linked in My Devices (a Mac without the owner's
         // key cannot sign the 10063 itself; iOS 8af86b0d), and drops the ones it listed before when the
-        // setting changes.
+        // setting changes. A device still in My Devices is never dropped: a vault that stopped being the
+        // home vault still holds and serves what it was sent (Mac→Moto switch, Tim 2026-10-22).
         val listed = (listOfNotNull(homeVault) + macs).map { "fipsmesh://$it/" }
-        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n !in dropMesh } + listed
+        val drop = dropMesh.toSet() - myDevices.toSet()
+        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n !in drop } + listed
         val out = (managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + mesh).distinct()
         // NIP-F1: never a list only the mesh or this home network can open. It reaches no outside reader
         // and would publish a home address (iOS #999, Tod: a real public server, not just reachable).

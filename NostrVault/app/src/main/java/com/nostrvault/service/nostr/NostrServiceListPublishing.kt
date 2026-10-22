@@ -105,6 +105,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         kind: Int,
         author: String,
         forceOwner: Boolean,
+        extraRelays: () -> List<String> = { emptyList() },
         build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
@@ -120,7 +121,20 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 Log.w(TAG, "kind $kind: nothing that may be published; not published")
                 return@launch
             }
-            signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+            val extra = extraRelays()
+            if (extra.isEmpty()) {
+                signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+                return@launch
+            }
+            val event = try {
+                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+            } catch (e: Exception) {
+                Log.e(TAG, "kind $kind not signed: ${e.message}")
+                null
+            } ?: return@launch
+            postEvent(event)
+            val json = serializeEvent(event)
+            extra.forEach { fireAndForgetPublish(json, it) }
         }
     }
 
@@ -134,12 +148,13 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         kind: Int,
         name: String,
         local: List<String>,
+        extraRelays: () -> List<String> = { emptyList() },
         adjust: (List<List<String>>) -> List<List<String>>? = { it },
     ) {
         val owner = ownerHexPubkey
         val bases = configStore.config.value.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }
         val baseKey = "$kind:$owner"
-        publishMergedList(kind, owner, forceOwner = true) { published ->
+        publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
             val tags = ListMerge.tags(name, local, published?.tags.orEmpty()) { base == null || ListMerge.key(it) !in base }
             // Null: [adjust] refused the list. Nothing goes out, so the base stays what was last published.
@@ -204,10 +219,17 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // it there), after the public servers; this phone's home vault and
         // linked Macs are added and the ones it listed before ([dropMesh])
         // removed. With no public server nothing is published (NIP-F1).
-        publishOwnerEntryList(10063, "server", mirrors) { tags ->
+        // Every write relay the owner's 10002 names, and purplepag.es, not only this phone's broadcast
+        // list: readers look a 10063 up on the author's write relays (Logen 2026-10-22: each list landed
+        // on one relay).
+        val extraRelays = {
+            ServerListRelays.extra(_outboxRelays.value[ownerHexPubkey], config.activeBlastrRelays)
+        }
+        publishOwnerEntryList(10063, "server", mirrors, extraRelays) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
-            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(servers, servers, home, dropMesh, macs)
-                ?: return@publishOwnerEntryList null
+            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(
+                servers, servers, home, dropMesh, macs, myDevices = config.fipsPeers,
+            ) ?: return@publishOwnerEntryList null
             merged.map { listOf("server", it) } + tags.filter { it.isNotEmpty() && it[0] != "server" }
         }
     }
@@ -215,6 +237,24 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     /** The Macs in My Devices this phone lists in the owner's 10063 (iOS 8af86b0d). */
     internal fun linkedMacs(config: com.nostrvault.relay.HavenConfig): List<String> =
         com.nostrvault.fips.MeshSendTargets.of(config).filter { it.role == com.nostrvault.fips.DeviceRole.MAC }.map { it.npub }
+
+/** Where a 10063 goes besides the broadcast relays. Pure for the tests. */
+internal object ServerListRelays {
+    const val INDEX_RELAY = "wss://purplepag.es"
+
+    /**
+     * The owner's published 10002 write relays and purplepag.es, minus what the broadcast already
+     * reaches ([broadcast]) and loopback addresses; compared without case or a trailing slash.
+     */
+    fun extra(publishedWrite: List<String>?, broadcast: List<String>): List<String> {
+        fun key(url: String) = url.trim().trimEnd('/').lowercase()
+        val sent = broadcast.map(::key).toMutableSet()
+        return (publishedWrite.orEmpty() + INDEX_RELAY)
+            .filter { it.startsWith("wss://") || it.startsWith("ws://") }
+            .filter { !NostrService.isLoopbackRelay(it) }
+            .filter { sent.add(key(it)) }
+    }
+}
 
 /**
  * Merging this device's entries into a list published by any client. NIP-51
