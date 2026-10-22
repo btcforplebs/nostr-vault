@@ -12,10 +12,11 @@ name = "nvfips"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Our fork: v0.5.2 plus leaf-only mode and the dual-init offer re-send, both
-# headed upstream, and the datagram API built on Android and iOS (dbb6c848,
-# branch nv/native-api-mobile) for the browser relay link. Back to a jmcorgan/fips tag once they land in a release.
-fips = { git = "https://github.com/btcforplebs/fips", rev = "8e21e513" }
+# Our fork, branch nv/v0.5.3: v0.5.3 plus the datagram API built on Android and
+# iOS (for the browser relay link), offer_allowlist and reserved_npubs. Must be
+# the same rev as web-relay-vault, so the app links one fips. Back to a
+# jmcorgan/fips tag once they land in a release.
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "cf84766d" }
 # The browser relay protocol (NIP-01 over TCP/FIPS 7447), over this node's
 # datagram API: relay_link.rs.
 web-relay-vault = { path = "../web-relay-vault" }

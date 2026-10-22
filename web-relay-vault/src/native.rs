@@ -1,4 +1,4 @@
-//! `DatagramLink` over a jmcorgan v0.5.2 node's native datagram API.
+//! `DatagramLink` over a jmcorgan v0.5.3 node's native datagram API.
 //!
 //! The flow holds local FSP port 7447 because the page's `FipsTcpEndpoint`
 //! sends every segment from 7447 to 7447, not back to the sender's port.
