@@ -1,3 +1,19 @@
+# Nostr Vault v3.0.0 (Build 41) Release Notes
+
+Nostr Vault 3.0 connects your own devices directly over the FIPS mesh, with no server in between.
+
+- **Your devices, connected.** Turn on FIPS Mesh in Settings and add your Mac, your other phones or a home vault, by address or QR code.
+- **Notes and photos to your Mac.** Add your Mac as "Vault on Mac" and each new note and photo goes to it over the mesh. Your notes and history also sync back from the Mac.
+- **Home vault.** A spare phone can be your home vault: it gets your new posts and media and passes them on.
+- **Photos over the mesh.** Photos kept on your devices load over the mesh in the feed, the Vault and profiles.
+- **Your address stays private.** Once you add a device, only your devices learn this phone's address. Anyone else gets public photos only, up to the limit you set under "Pause after".
+- **Back after a restart.** If the mesh was on, it starts again with the relay when the phone restarts.
+- **Fixed:** the app ran out of memory and closed on some phones when a long note full of links was in the feed.
+
+Posting a photo still needs a public media server.
+
+---
+
 # Nostr Vault v2.7.2 (Build 40) Release Notes
 
 Android now looks and acts like the iPhone app. Messages and notifications, Settings, the tab bar, setup, profiles, search, follow lists, the Web of Trust globe, the feed, note details and the composer have all been matched to the iPhone. The app also runs cooler: the relay pauses work nobody can see while the app is in the background and backs off from flaky relays. A crash at launch on a new install is fixed. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (40).
