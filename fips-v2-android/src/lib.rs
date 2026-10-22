@@ -696,7 +696,17 @@ pub fn init_logging() {
             .with(filter)
             .with(tracing_android::layer("FipsMesh").ok())
             .try_init();
-        #[cfg(not(target_os = "android"))]
+        // The Mac app is sandboxed and launched with no terminal, so stdout is
+        // lost and its container is TCC-locked to other tools. The unified log
+        // is the one place seed links and sessions can be read back:
+        // `log show --predicate 'subsystem == "com.bitvora.haven" AND category == "fips-mesh"'`.
+        #[cfg(target_os = "macos")]
+        let _ = tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_oslog::OsLogger::new("com.bitvora.haven", "fips-mesh"))
+            .try_init();
+        #[cfg(not(any(target_os = "android", target_os = "macos")))]
         let _ = tracing_subscriber::registry()
             .with(filter)
             .with(tracing_subscriber::fmt::layer())

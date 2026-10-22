@@ -37,6 +37,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 jni = "0.21"
 tracing-android = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+tracing-oslog = "0.3"
+
 [profile.release]
 lto = "thin"
 strip = true
