@@ -1,9 +1,10 @@
 // The public post page, nostrvault.app/thread/<nevent|note|naddr>: what a shared Nostr Vault link opens. It is drawn
 // on the server (thread-page/server.mjs) as plain HTML, so it opens signed out with no haven.wasm, and a chat app that
-// unfurls the link reads its og: tags for the preview card. Its one script, only on a page whose shared post has a
-// photo its author's 10063 puts on a mesh vault, reads that photo over FIPS when its https server can't serve it
-// (web-relay src/fips/share-photos.js). Replies never arm it: anyone can reply. This file is the pure half: the address, the reply list and the HTML. The relay half is
-// fetch.js.
+// unfurls the link reads its og: tags for the preview card. Its one script, only on a page with a photo its author's
+// 10063 puts on a mesh vault, reads that photo over FIPS when its https server can't serve it (web-relay
+// src/fips/share-photos.js). The shared post's photos get the full path (reader at page open, the server's copy); a
+// reply's photo only falls back to its own author's vault once its https link fails (data-mesh-on="error").
+// This file is the pure half: the address, the reply list and the HTML. The relay half is fetch.js.
 import { decode, neventEncode, naddrEncode, npubEncode } from "nostr-tools/nip19"
 import { buildThread, flattenThread, replyRefs } from "../src/net/thread.js"
 import { displayTitle, longFormMeta, parseInline, parseMarkdown, plainText, LONG_FORM_KIND } from "../src/readers/longform.js"
@@ -222,9 +223,9 @@ function inlineHtml(text) {
 // built into /relay/ with the relay page).
 export const MESH_PHOTO_SCRIPT = "/relay/share-photos.js"
 
-/** `vaults`: the mesh vaults the post author's 10063 names (the shared post only). A photo with a hash carries both,
- *  for MESH_PHOTO_SCRIPT. */
-function noteHtml(ev, profiles, vaults = []) {
+/** `vaults`: the mesh vaults the note author's 10063 names. A photo with a hash carries both, for MESH_PHOTO_SCRIPT;
+ *  `fallback` (a reply) marks it as read only after its https link fails. */
+function noteHtml(ev, profiles, vaults = [], fallback = false) {
   const { parts, media } = noteParts(ev.content, ev.tags)
   const text = parts.map(p => {
     if (p.type === "text") return esc(p.text)
@@ -234,12 +235,13 @@ function noteHtml(ev, profiles, vaults = []) {
   }).join("")
   const mediaHtml = media.map(m => m.type === "video"
     ? `<video src="${esc(m.url)}" controls playsinline preload="metadata"></video>`
-    : `<a href="${esc(m.url)}" rel="nofollow ugc noopener"><img src="${esc(m.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"${meshAttrs(m, vaults)}></a>`,
+    : `<a href="${esc(m.url)}" rel="nofollow ugc noopener"><img src="${esc(m.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"${meshAttrs(m, vaults, fallback)}></a>`,
   ).join("")
   return `${text ? `<div class="text">${text}</div>` : ""}${mediaHtml ? `<div class="media">${mediaHtml}</div>` : ""}`
 }
 
-const meshAttrs = (m, vs) => (m.x && vs?.length ? ` data-x="${esc(m.x)}" data-vaults="${esc(vs.join(","))}"` : "")
+const meshAttrs = (m, vs, fallback) =>
+  (m.x && vs?.length ? ` data-x="${esc(m.x)}" data-vaults="${esc(vs.join(","))}"${fallback ? ` data-mesh-on="error"` : ""}` : "")
 
 function articleHtml(ev) {
   const meta = longFormMeta(ev)
@@ -261,12 +263,14 @@ function byline(ev, profiles, size) {
   return `<div class="by">${avatar(ev.pubkey, profiles, size)}<div><a class="name" href="nostr:${esc(npubEncode(ev.pubkey))}">${esc(nameFor(ev.pubkey, profiles))}</a><time datetime="${new Date(ev.created_at * 1000).toISOString()}">${date(ev.created_at)}</time></div></div>`
 }
 
-/** Whether the post has a photo the mesh script would read: one with a hash, its author naming a vault. */
-const hasMeshPhoto = (post, vaults) => post.kind !== LONG_FORM_KIND && vaults.length > 0 && noteParts(post.content, post.tags).media.some(m => m.x)
+/** Whether a note has a photo the mesh script would read: one with a hash, its author naming a vault. */
+const hasMeshPhoto = (ev, vaults) => ev.kind !== LONG_FORM_KIND && vaults.length > 0 && noteParts(ev.content, ev.tags).media.some(m => m.x)
 
 /** The whole page for a found post. `code` is the address it was opened by. `vaults`: the mesh vaults the post
- *  author's 10063 names (fetch.js), for the post's own photos only. */
-export function renderPost({ post, replies, profiles, code, vaults = [] }) {
+ *  author's 10063 names (fetch.js), for the post's own photos. `replyVaults`: pubkey -> vaults, for each reply's
+ *  photos, as a fallback only. */
+export function renderPost({ post, replies, profiles, code, vaults = [], replyVaults = new Map() }) {
+  const replyMesh = ev => replyVaults.get(ev.pubkey) ?? []
   const url = `${SITE}/thread/${code}`
   const meta = previewMeta(post, profiles, url)
   const parent = post.kind === 1 ? replyRefs(post).parent : null
@@ -290,10 +294,11 @@ ${hex ? actionRow(hex) : ""}
   ${replies.map(({ event, depth }) => `
   <div class="reply" style="--d:${Math.min(depth, MAX_DEPTH) - 1}">
     ${byline(event, profiles, 32)}
-    ${noteHtml(event, profiles)}
+    ${noteHtml(event, profiles, replyMesh(event), true)}
   </div>`).join("")}
 </section>`
-  return page({ meta, body, script: hasMeshPhoto(post, vaults) ? MESH_PHOTO_SCRIPT : null })
+  const mesh = hasMeshPhoto(post, vaults) || replies.some(({ event }) => hasMeshPhoto(event, replyMesh(event)))
+  return page({ meta, body, script: mesh ? MESH_PHOTO_SCRIPT : null })
 }
 
 // The post's buttons, as in the app. Every one opens this post in the web Vault, where the reader signs in and acts:

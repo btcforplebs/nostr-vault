@@ -1,6 +1,7 @@
 // The public post page's mesh photos: the server reads the shared post author's 10063 and, for a photo of that post
 // with a hash, when the author names a fipsmesh:// vault, writes the hash and vaults on the <img> and adds the one
-// script that reads it over FIPS (web-relay src/fips/share-photos.js). Replies never do: anyone can reply. Signed
+// script that reads it over FIPS (web-relay src/fips/share-photos.js). A reply's photo gets its own author's vaults as
+// a fallback only (data-mesh-on="error"). Signed
 // events from throwaway keys and a fake relay query.
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -53,17 +54,20 @@ test("the page: the post's hashed photo carries data-x/data-vaults, and only the
   const page = vaults => renderPost({ post, replies: [{ event: reply, depth: 1 }], profiles: new Map(), code: "x", vaults })
   const withVault = page([V, V2])
   assert.match(withVault, new RegExp(`<img src="${PHOTO}"[^>]* data-x="${HASH}" data-vaults="${V},${V2}">`))
-  assert.doesNotMatch(withVault, new RegExp(`${OTHER}.jpg"[^>]*data-x`), "a reply's photo stays plain")
+  assert.doesNotMatch(withVault, new RegExp(`${OTHER}.jpg"[^>]*data-x`), "a reply whose author names no vault stays plain")
   assert.equal(withVault.split(`<script type="module" src="${MESH_PHOTO_SCRIPT}"></script>`).length, 2, "one script")
   const plain = page([])
   assert.doesNotMatch(plain, /data-vaults|<script/, "no vault: no script at all")
 })
 
-test("a reply's photo never arms the script, even when its author names a vault", () => {
+test("a reply's photo falls back to its own author's vaults, marked fallback-only, and arms the script", () => {
   const post = sign(alice, 1, "text only, no photo")
   const reply = sign(bob, 1, `look ${PHOTO}`, [["e", post.id, "", "root"], ["imeta", `url ${PHOTO}`, `x ${HASH}`]])
-  const html = renderPost({ post, replies: [{ event: reply, depth: 1 }], profiles: new Map(), code: "x", vaults: [V] })
-  assert.doesNotMatch(html, /data-vaults|<script/)
+  const render = replyVaults => renderPost({ post, replies: [{ event: reply, depth: 1 }], profiles: new Map(), code: "x", vaults: [V], replyVaults })
+  const html = render(new Map([[B, [V2]]]))
+  assert.match(html, new RegExp(`data-x="${HASH}" data-vaults="${V2}" data-mesh-on="error">`), "the reply author's vault, not the post's")
+  assert.match(html, /<script/)
+  assert.doesNotMatch(render(new Map([[A, [V]]])), /data-vaults|<script/, "no vault of their own: no fallback")
 })
 
 test("the script is chosen from the post's data, not from text that looks like the attribute", () => {
@@ -72,7 +76,7 @@ test("the script is chosen from the post's data, not from text that looks like t
   assert.doesNotMatch(html, /<script/)
 })
 
-test("loadThread reads only the post author's 10063, and only when the post has a hashed photo", async () => {
+test("loadThread reads one 10063 for the post's and reply photo authors; no photo, no read", async () => {
   const post = sign(alice, 1, `look ${PHOTO}`)
   const reply = sign(bob, 1, `mine https://media.example/${OTHER}.jpg`, [["e", post.id, "", "root"]])
   const asked = []
@@ -83,9 +87,10 @@ test("loadThread reads only the post author's 10063, and only when the post has 
     if (f.kinds?.[0] === 10063) return [list(alice, [mesh(V)]), list(bob, [mesh(V2)])]
     return []
   }
-  const { vaults } = await loadThread({ id: post.id, relays: [] }, query)
+  const { vaults, replyVaults } = await loadThread({ id: post.id, relays: [] }, query)
   assert.deepEqual(vaults, [V])
-  assert.deepEqual(asked.filter(f => f.kinds?.[0] === 10063).map(f => f.authors), [[A]], "the post author only")
+  assert.deepEqual(replyVaults.get(B), [V2])
+  assert.deepEqual(asked.filter(f => f.kinds?.[0] === 10063).map(f => f.authors), [[A, B]], "one read")
   assert.deepEqual(meshPhotoAuthors([post, reply]), [A, B])
 
   const textPost = sign(alice, 1, "no photo")

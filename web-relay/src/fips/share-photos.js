@@ -1,11 +1,12 @@
 // The public post page's mesh photos (nostrvault.app/thread/, web-vault/thread-page/). A note photo its https server
 // can't serve is read over FIPS from the vault its author's 10063 names (fipsmesh://), for any visitor, signed out.
-// The page server checked the 10063 and wrote the photo's hash and those vaults on the <img> (data-x, data-vaults),
-// for the shared post's own photos only (a reply's author can't make visitors join the mesh); this script reads
-// nothing else and asks no one else. The reader (photo-reader.js: a throwaway key, the public seeds only, no WebRTC)
-// starts as the page opens when it has such a photo, so the seed handshake is done by the time the https link fails,
-// and stops once nothing is left to read. A failed photo asks the page server's copy (PHOTO_CACHE_PATH, which a warm
-// server node keeps for photos it has already read) and the mesh at once, and shows whichever answers first.
+// The page server checked the 10063 and wrote the photo's hash and those vaults on the <img> (data-x, data-vaults);
+// this script reads nothing else and asks no one else. The reader (photo-reader.js: a throwaway key, the public seeds
+// only, no WebRTC) starts as the page opens when the shared post has such a photo, so the seed handshake is done by
+// the time the https link fails, and stops once nothing is left to read. A failed post photo asks the page server's
+// copy (PHOTO_CACHE_PATH, which a warm server node keeps for photos it has already read) and the mesh at once, and
+// shows whichever answers first. A reply's photo (data-mesh-on="error") is a fallback only: it starts no reader at
+// page open and asks no server copy, just its own author's vaults once its https link fails.
 const HEX = /^[0-9a-f]{64}$/
 const MAX_VAULTS = 3 // a 10063 can list any number; the page server already keeps the first few
 const READ_TIMEOUT_MS = 45_000 // per vault: a cold mesh route can take a while
@@ -73,7 +74,7 @@ function placeholder(doc, img) {
 export function meshTarget(img) {
   const x = String(img.dataset?.x ?? "").toLowerCase()
   const vaults = [...new Set(String(img.dataset?.vaults ?? "").toLowerCase().split(",").filter(v => HEX.test(v)))].slice(0, MAX_VAULTS)
-  return HEX.test(x) && vaults.length ? { x, vaults } : undefined
+  return HEX.test(x) && vaults.length ? { x, vaults, fallback: img.dataset?.meshOn === "error" } : undefined
 }
 
 /**
@@ -134,7 +135,7 @@ export function wireMeshPhotos(doc, {
 
   async function readOne(img, t) {
     const stop = new AbortController()
-    const fromServer = Promise.resolve().then(() => loadCached(t.x, stop.signal)).catch(() => null)
+    const fromServer = t.fallback ? Promise.resolve(null) : Promise.resolve().then(() => loadCached(t.x, stop.signal)).catch(() => null)
     const url = await firstFound([fromServer, readMesh(t, stop.signal)])
     stop.abort() // the other one stops
     if (!url) return "failed"
@@ -183,8 +184,9 @@ export function wireMeshPhotos(doc, {
 
   const reads = []
   const marked = [...doc.querySelectorAll("img[data-x][data-vaults]")].filter(img => meshTarget(img))
-  // Start the reader now, while the https links load: when one fails, the seed handshake is already done.
-  if (marked.length) { getReader().catch(() => {}); if (!active && !waiting.length) quietStop() }
+  // Start the reader now, while the https links load: when one fails, the seed handshake is already done. Reply
+  // photos (fallback) don't: a page whose only mesh photos are replies' opens no connection until one fails.
+  if (marked.some(img => !meshTarget(img).fallback)) { getReader().catch(() => {}); if (!active && !waiting.length) quietStop() }
   for (const img of marked) {
     if (img.complete && img.naturalWidth === 0) reads.push(read(img))
     else img.addEventListener("error", () => read(img), { once: true })

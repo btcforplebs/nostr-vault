@@ -43,10 +43,10 @@ async function build(code) {
   const pool = newPool()
   try {
     const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
-    const { post, events, profiles, vaults } = await loadThread(target, query)
+    const { post, events, profiles, vaults, replyVaults } = await loadThread(target, query)
     if (!post) { if (target.id) photos.drop(target.id); return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL } }
     if (MESH) photos.sync(post.id, meshPhotoHashes(post), vaults)
-    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults }), ttl: FOUND_TTL }
+    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults, replyVaults }), ttl: FOUND_TTL }
   } finally {
     pool.destroy()
   }
