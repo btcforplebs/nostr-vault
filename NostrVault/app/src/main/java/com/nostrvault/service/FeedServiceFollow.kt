@@ -22,6 +22,11 @@ import com.nostrvault.ui.notification.FollowKind
     ) {
         // The key has a list now; from here on its load must find it.
         FreshAccountKeys.clear(appContext, nostrService.activeHexPubkey)
+        // Discovery's follows-of-follows tally is an hour-long cache of the
+        // old list: after an unfollow it kept everyone that follow brought
+        // in. The next Discovery visit counts again. (The relay's web reloads
+        // itself: it rebuilds on a new list and the FileObserver re-reads it.)
+        lastExtendedNetworkLoadTime = 0L
         val tags = ContactManager.contactListTags(pubkeys, contactListTags)
         // Signed as the account this list belongs to: a switch while a signer
         // prompt is open must not put A's follows under B's key.

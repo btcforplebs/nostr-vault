@@ -94,6 +94,7 @@ func main() {
 		config.WotCachePath,
 		config.WotCacheTTLMinutes,
 	)
+	wotModel.LocalFollowLists = ownerFollowLists
 
 	if err := initRelays(mainCtx); err != nil {
 		log.Fatal("🚫 error initializing databases/relays:", err)
@@ -125,6 +126,7 @@ func main() {
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
 		runsafe.Go("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(mainCtx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
+		runsafe.Go("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(mainCtx, wot.FollowListCheckInterval, ownerFollowListAt) })
 	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))

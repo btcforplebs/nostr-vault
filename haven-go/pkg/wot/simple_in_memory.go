@@ -91,6 +91,16 @@ type SimpleInMemory struct {
 	WotFetchTimeout int
 	CachePath       string
 	CacheTTLMinutes int
+
+	// LocalFollowLists returns the owners' follow lists as stored on this
+	// relay. The app publishes an unfollow here first; a rebuild that asked
+	// only the seed relays could get the list from before it and keep
+	// everyone the unfollowed account brought in. Nil asks only the seeds.
+	LocalFollowLists func() []*nostr.Event
+
+	// builtAt is when the graph in pubkeys started building (unix seconds),
+	// or the saved cache's time. A follow list newer than this is not in it.
+	builtAt atomic.Int64
 }
 
 type layers struct {
@@ -204,6 +214,7 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 	}
 	wt.pubkeys.Store(&cache.Pubkeys)
 	wt.layers.Store(&layers{follows: cache.Follows, vouches: cache.Vouches})
+	wt.builtAt.Store(cache.Timestamp)
 	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
 	return true, age
 }
@@ -219,9 +230,13 @@ func (wt *SimpleInMemory) SaveCache() {
 		return
 	}
 
+	stamp := wt.builtAt.Load()
+	if stamp == 0 {
+		stamp = time.Now().Unix()
+	}
 	cache := wotCache{
 		Pubkeys:   *m,
-		Timestamp: time.Now().Unix(),
+		Timestamp: stamp,
 		Depth:     wt.WotDepth,
 		Version:   wotCacheVersion,
 	}
@@ -336,10 +351,19 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	wt.build(ctx)
 }
 
+// BuiltAt is when the graph being served started building: a follow list
+// published after it is not in it.
+func (wt *SimpleInMemory) BuiltAt() time.Time {
+	return time.Unix(wt.builtAt.Load(), 0)
+}
+
 // build is Refresh's work; the caller holds claimRefresh and build releases it.
 func (wt *SimpleInMemory) build(ctx context.Context) {
 	phase, size := "stopped", 0
 	defer func() { releaseRefresh(phase, size) }()
+	// Stamped with the start, not the save: a list published while this
+	// build runs may have missed it, and must still look newer than the graph.
+	started := time.Now().Unix()
 
 	var eventsAnalysed atomic.Int64
 	pubkeyFollowers := xsync.NewMap[string, *atomic.Int64]()
@@ -364,6 +388,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	if wt.WotDepth == 1 {
 		wt.layers.Store(&layers{})
 		wt.pubkeys.Store(&newWot)
+		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
 		phase, size = "saved", len(newWot)
@@ -382,7 +407,24 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	slog.Info("🛜 fetching Nostr events to build WoT")
 
 	events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
+	ownerLists := make(map[string]*nostr.Event)
 	for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
+		ownerLists[ev.PubKey] = ev
+	}
+	if wt.LocalFollowLists != nil {
+		for _, ev := range wt.LocalFollowLists() {
+			if _, owner := wt.WhitelistedPubKeys[ev.PubKey]; !owner || ev.Kind != nostr.KindFollowList {
+				continue
+			}
+			if old, ok := ownerLists[ev.PubKey]; !ok || ev.CreatedAt > old.CreatedAt {
+				if !ok {
+					eventsAnalysed.Add(1)
+				}
+				ownerLists[ev.PubKey] = ev
+			}
+		}
+	}
+	for _, ev := range ownerLists {
 		for contact := range ev.Tags.FindAll("p") {
 			if len(contact) > 1 {
 				followers, _ := pubkeyFollowers.LoadOrStore(contact[1], &atomic.Int64{})
@@ -410,6 +452,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		slog.Info("🕸️ analysed Nostr events", "count", eventsAnalysed.Load())
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
+		wt.builtAt.Store(started)
 		wt.SaveCache()
 		wt.saveLinks(nil, nil)
 		phase, size = "saved", len(newWot)
@@ -421,7 +464,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	// Split analysis into batches of listBatchSize pubkeys and process them sequentially
 	// Process sequentially with yielding to avoid blocking the host app's UI/Events
 	keys := follows
-	ownerLists := eventsAnalysed.Load()
+	ownerListCount := eventsAnalysed.Load()
 	// Someone is in at MinFollowers; 0 and 1 both mean "any one follow".
 	bar := max(int64(wt.MinFollowers), 1)
 	followIndex := make(map[string]int, len(follows))
@@ -485,7 +528,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 	// Same rule for the follows' lists: a pass that was cut short, or that
 	// fetched none of them and would leave a smaller web, keeps the web we
 	// have. (Follows with no lists anywhere still grow it, so they save.)
-	if ctx.Err() != nil || (len(keys) > 0 && eventsAnalysed.Load() == ownerLists && len(newWot) < len(previous)) {
+	if ctx.Err() != nil || (len(keys) > 0 && eventsAnalysed.Load() == ownerListCount && len(newWot) < len(previous)) {
 		slog.Warn("🚫 WoT rebuild got none of the follows' lists; keeping the saved web")
 		return
 	}
@@ -579,6 +622,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	wt.layers.Store(&layers{follows: follows, vouches: vouches})
 	wt.pubkeys.Store(&newWot)
+	wt.builtAt.Store(started)
 	wt.SaveCache()
 	wt.saveLinks(follows, links)
 	phase, size = "saved", len(newWot)

@@ -287,6 +287,7 @@ func StartRelayC(importMode bool) {
 				config.WotCachePath,
 				config.WotCacheTTLMinutes,
 			)
+			wotModel.LocalFollowLists = ownerFollowLists
 
 			// Try to load from cache first - instant startup
 			// Only run full network rebuild if cache is missing or expired
@@ -320,6 +321,7 @@ func StartRelayC(importMode bool) {
 			cycle.spawn("periodicCloudBackups", func() { startPeriodicCloudBackups(cycle.ctx) })
 			cycle.spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(cycle.ctx, config.WotRefreshInterval) })
 			cycle.spawn("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(cycle.ctx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
+			cycle.spawn("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(cycle.ctx, wot.FollowListCheckInterval, ownerFollowListAt) })
 		})
 
 		// Use a fresh ServeMux each cycle so stop/start never panics on
