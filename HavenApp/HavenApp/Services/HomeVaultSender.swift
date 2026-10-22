@@ -142,12 +142,14 @@ final class HomeVaultSender: ObservableObject {
         }
         sending = true
         defer { sending = false }
-        if await HomeVaultTransport.vaultHas(sha256: sha256, base: base) { return true }
+        // One signed "get" for both checks below.
+        let checkAuth = await signGetAuth(sha256: sha256)
+        if await HomeVaultTransport.vaultHas(sha256: sha256, base: base, authBase64: checkAuth) { return true }
         // A background pass may hold the item or the vault's one upload slot:
         // then the vault itself is the answer.
         guard let item = queue.first(where: { $0.kind == .blob && $0.id == sha256 }),
               await sendBlob(item, base: base) == .sent else {
-            return await HomeVaultTransport.vaultHas(sha256: sha256, base: base)
+            return await HomeVaultTransport.vaultHas(sha256: sha256, base: base, authBase64: checkAuth)
         }
         appLog("sent blob \(sha256.prefix(8)) before publishing its note")
         remove(item)
@@ -330,6 +332,19 @@ final class HomeVaultSender: ObservableObject {
         return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base, forward: forward)
     }
 
+    /// The owner's "get" for one blob on the vault; nil if signing failed (the
+    /// check then goes unsigned, which a Mac's own relay port still answers).
+    private func signGetAuth(sha256: String) async -> String? {
+        let nonce = UUID().uuidString.prefix(8)
+        guard let event = await NostrService.shared.signEventAsync(
+            kind: 24242, content: "Check home vault \(nonce)",
+            tags: HomeVaultLogic.vaultCheckAuthTags(sha256: sha256)) else { return nil }
+        let dict: [String: Any] = ["id": event.id, "pubkey": event.pubkey, "created_at": event.created_at,
+                                   "kind": event.kind, "tags": event.tags, "content": event.content, "sig": event.sig]
+        guard let json = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return json.base64EncodedString()
+    }
+
     /// Signed at send time: a queued item can wait longer than an auth lives.
     private func signUploadAuth(sha256: String, size: Int, lifetime: TimeInterval = 600, note: String = "Upload to home vault") async -> String? {
         let expiration = Int(Date().timeIntervalSince1970 + lifetime)
@@ -462,11 +477,11 @@ enum HomeVaultTransport {
         }
     }
 
-    /// Whether the vault already serves `sha256` (its mesh door answers HEAD /<sha256>).
-    static func vaultHas(sha256: String, base: URL) async -> Bool {
-        var request = URLRequest(url: base.appendingPathComponent(sha256))
-        request.httpMethod = "HEAD"
-        request.timeoutInterval = 20
+    /// Whether the vault already serves `sha256` (its mesh door answers HEAD
+    /// /<sha256>). `authBase64`: the owner's signed "get", without which the
+    /// door answers 404 for a blob no posted note names yet.
+    static func vaultHas(sha256: String, base: URL, authBase64: String?) async -> Bool {
+        let request = HomeVaultLogic.vaultCheckRequest(sha256: sha256, base: base, authBase64: authBase64)
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         guard let (_, response) = try? await session.data(for: request) else { return false }

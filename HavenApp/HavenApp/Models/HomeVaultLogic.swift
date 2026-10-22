@@ -322,3 +322,28 @@ extension HomeVaultLogic {
         mirrors.first { publicBlobURL(server: $0, sha256: sha256, contentType: contentType) != nil }
     }
 }
+
+extension HomeVaultLogic {
+    /// How long the owner's signed check of one blob is good for.
+    static let vaultCheckAuthLifetime: TimeInterval = 300
+
+    /// Tags of the owner's kind 24242 "get" for `sha256`. The mesh door
+    /// serves an unposted blob only to such a request (haven-go
+    /// mesh_safety.go); unsigned, the check answers 404 and the phone sends
+    /// a photo the vault already has.
+    static func vaultCheckAuthTags(sha256: String, now: Date = Date()) -> [[String]] {
+        [["t", "get"], ["x", sha256],
+         ["expiration", String(Int(now.timeIntervalSince1970 + vaultCheckAuthLifetime))]]
+    }
+
+    /// HEAD /<sha256> on the vault, signed when `authBase64` is given.
+    static func vaultCheckRequest(sha256: String, base: URL, authBase64: String?) -> URLRequest {
+        var request = URLRequest(url: base.appendingPathComponent(sha256))
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 20
+        if let authBase64 {
+            request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+}
