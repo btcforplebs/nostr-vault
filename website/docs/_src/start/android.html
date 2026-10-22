@@ -4,18 +4,16 @@
   "nav": "Android",
   "section": "start",
   "order": 2,
-  "description": "Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours with Amber or another signer.",
+  "description": "Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours, with Amber or another signer.",
   "checked": "Nostr Vault 3.0.0 (41) for Android",
   "labels": {
-    "android": ["Create an account", "I already use Nostr", "Just look around", "What's inside?",
+    "android": ["Create an account", "I already use Nostr", "What's inside?",
                 "Where should your notes live?", "Built-in Relay", "A Relay You Already Run", "Relay URL", "Blossom URL (optional)",
                 "Welcome to Nostr", "Create My Account", "Your Keys", "I saved my secret key", "Protect Your Key", "Your Profile",
                 "Skip for Now", "Welcome to Nostr!", "Start Exploring", "Who are you on Nostr?", "Read-only", "You can post",
                 "Encrypted key · you can post", "Signer link · you can post", "Use Amber", "Use a signer app", "Sign in with a signer app",
                 "Scan your key or signer link", "Checking your relays", "Start import", "Bringing your notes home",
-                "Keep it running in the background", "Enter your identity", "Resolve & Continue", "Import from Network",
-                "Restore from Backup", "Ready to Browse", "Launch Nostr Vault",
-                "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Tutorials"]
+                "Keep it running in the background", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Tutorials"]
   }
 }
 -->
@@ -29,14 +27,16 @@
     Android asks you to allow installs from that app the first time.</p>
 
 <h2>Pick a way in</h2>
-<p>The first screen has three buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+<p>The first screen has two buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
 <ul>
     <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
     <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. Your old notes come
         home to your phone.</li>
-    <li><span class="ui">Just look around</span> to read with your public key only. You can't post until you add a
-        key or a signer.</li>
 </ul>
+
+<div class="shots">
+    <figure><img src="/docs/img/android/frontdoor.webp" alt="The first screen on Android" width="900" height="2000" loading="lazy"><figcaption>The first screen on Android</figcaption></figure>
+</div>
 
 <h2 id="relay">Where should your notes live?</h2>
 <p>Every way in asks this first.</p>
@@ -48,6 +48,10 @@
         <span class="ui">Blossom URL (optional)</span> for media. The built-in relay never starts, and setup skips
         importing your notes.</li>
 </ul>
+<div class="shots">
+    <figure><img src="/docs/img/android/relay-choice.webp" alt="Where should your notes live?" width="900" height="2000" loading="lazy"><figcaption>Where should your notes live?</figcaption></figure>
+</div>
+
 <p>You can change it later in <span class="path">Settings &rarr; Advanced</span>.</p>
 
 <h2 id="new">Create an account</h2>
@@ -64,6 +68,11 @@
         that helps you find people. Five follows build your web of trust, which fills your feed and filters out
         spam.</li>
 </ol>
+
+<div class="shots">
+    <figure><img src="/docs/img/android/your-keys.webp" alt="Your Keys (secret key hidden here)" width="900" height="2000" loading="lazy"><figcaption>Your Keys (secret key hidden here)</figcaption></figure>
+    <figure><img src="/docs/img/android/protect-key.webp" alt="Protect Your Key" width="900" height="2000" loading="lazy"><figcaption>Protect Your Key</figcaption></figure>
+</div>
 
 <h2 id="existing">Bring the account you have</h2>
 <ol class="steps">
@@ -86,16 +95,9 @@
         <span class="ui">Keep it running in the background</span> and start using the app.</li>
 </ol>
 
-<h2 id="browse">Just look around</h2>
-<ol class="steps">
-    <li>Choose where your notes live.</li>
-    <li><strong>Enter your identity.</strong> Type your npub or name@domain, or scan a QR code, and tap
-        <span class="ui">Resolve &amp; Continue</span>.</li>
-    <li><strong>Import Notes.</strong> <span class="ui">Import from Network</span> copies your notes from public relays
-        to your phone. <span class="ui">Restore from Backup</span> reads a Nostr Vault backup file (.zip). Or skip.</li>
-    <li><strong>Ready to Browse.</strong> Tap <span class="ui">Launch Nostr Vault</span>.</li>
-</ol>
-<p>To post later, add your key or a signer in <a href="/docs/keys/">Accounts &amp; Keys</a>.</p>
+<div class="shots">
+    <figure><img src="/docs/img/android/use-nostr.webp" alt="Who are you on Nostr?, with an npub pasted" width="900" height="2000" loading="lazy"><figcaption>Who are you on Nostr?, with an npub pasted</figcaption></figure>
+</div>
 
 <h2>Find your way around</h2>
 <p>The tab bar along the bottom has <span class="ui">Feed</span>, <span class="ui">Search</span>,

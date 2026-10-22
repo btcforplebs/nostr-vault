@@ -308,12 +308,38 @@ function check({ pages, files }) {
     return problems;
 }
 
+// A label named only in a code comment isn't on screen ("Just look around" is in a comment in the Android front door).
+// Drops // and /* */ comments in code files; a // inside a string literal ("https://…") is kept.
+function stripComments(text, file) {
+    if (!/\.(swift|kt|js|jsx)$/.test(file)) return text;
+    let out = '', i = 0, quote = null;
+    while (i < text.length) {
+        const c = text[i], n = text[i + 1];
+        if (quote) {
+            out += c;
+            if (c === '\\') { out += n ?? ''; i += 2; continue; }
+            if (c === quote || c === '\n') quote = null;
+            i++;
+        } else if (c === '/' && n === '/') {
+            while (i < text.length && text[i] !== '\n') i++;
+        } else if (c === '/' && n === '*') {
+            const end = text.indexOf('*/', i + 2);
+            i = end < 0 ? text.length : end + 2;
+        } else {
+            if (c === '"' || c === "'" || c === '`') quote = c;
+            out += c;
+            i++;
+        }
+    }
+    return out;
+}
+
 function labels(pages, root) {
     const corpus = {};
     for (const [plat, { dirs, ext }] of Object.entries(LABEL_SOURCES)) {
         corpus[plat] = dirs.flatMap((d) => walk(path.join(root, d), ext))
             .filter((f) => !/Tests?\//.test(f))
-            .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+            .map((f) => stripComments(fs.readFileSync(f, 'utf8'), f)).join('\n');
     }
     // Positive control: the check has to be able to fail, and has to see real source.
     const control = '__docs_label_check_control__';
