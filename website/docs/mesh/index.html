@@ -81,6 +81,12 @@
                 <p class="docs-nav-title">Mesh and your devices</p>
                 <ul>
                     <li><a href="/docs/mesh/" aria-current="page">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/my-devices/">My Devices <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/sync/">Sync with your Mac <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/photo-server/">Mac photo server <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/remove-a-device/">Remove a device <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/advanced/">Advanced mesh settings <span class="docs-nav-tag">3.0</span></a></li>
                     <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
                 </ul>
             </div>
@@ -143,7 +149,8 @@
                 <p class="eyebrow">Your own server</p>
                 <h2 id="your-phone-or-mac-as-your-photo-server">Your phone or Mac as your photo server</h2>
                 <p>Your Nostr profile already keeps a list of where your media lives. Nostr Vault adds one more entry to
-                    that list: your own device, written as its mesh address. It goes after your normal media servers, so
+                    that list: your Mac, or a spare phone you use as your home vault, written as its mesh address. Your
+                    everyday phone isn't listed. It goes after your normal media servers, so
                     apps that don't know about the mesh carry on as before.</p>
                 <p>An app that does know about it can ask your device for a photo directly, by its fingerprint, the same
                     way it would ask any media server. Your photos still go to your normal servers too. Your device is one
@@ -153,6 +160,8 @@
                         Mac is an always-on photo server.</li>
                     <li><strong>On a phone</strong>, it serves while the app is open, or full-time in
                         <a class="inline" href="#kiosk">kiosk mode</a> on a spare phone.</li>
+                    <li>Step by step: <a class="inline" href="/docs/mesh/photo-server/">your Mac as your photo server</a>,
+                        <a class="inline" href="/docs/mesh/home-vault/">home vault and kiosk mode</a>.</li>
                 </ul>
                 <p>To turn it on, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and switch on
                     <strong>Mesh</strong>. Serving is off until you turn it on.</p>
@@ -273,7 +282,7 @@
             </article>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/web-of-trust/"><span>Previous</span>Web of trust</a>
-                <a class="next" href="/docs/browser-relay/"><span>Next</span>Browser relay</a>
+                <a class="next" href="/docs/mesh/my-devices/"><span>Next</span>My Devices</a>
             </div>
         </main>
     </div>

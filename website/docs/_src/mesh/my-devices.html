@@ -1,0 +1,70 @@
+<!--page
+{
+  "title": "My Devices",
+  "nav": "My Devices",
+  "section": "mesh",
+  "order": 2,
+  "needs": "3.0",
+  "description": "Connect your iPhone, Android phone, Mac, home vault and browser page over the FIPS mesh, by address or QR code, so they sync with each other.",
+  "checked": "Nostr Vault 3.0.0 (41)",
+  "labels": {
+    "ios": ["FIPS Mesh", "Mesh", "This Device", "Mesh address", "Copy", "Show QR", "My Devices", "Add a device by address", "Add a Device",
+            "Scan its QR code", "This Is", "Name (optional)", "Vault on Mac", "Phone", "Home vault", "Browser page", "In reach", "Not in reach"],
+    "android": ["FIPS Mesh", "Mesh", "This Device", "Mesh address", "Mesh IP", "Copy", "Show QR", "My Devices", "Add a device by address",
+                "Add a Device", "Scan its QR code", "This Is", "Name (optional)", "In reach", "Not in reach", "What It Gets", "Send new notes",
+                "Send new media"],
+    "mac": ["This Device", "My Devices", "Add a device by address", "Add this address on your phones under FIPS Mesh → My Devices, as Vault on Mac."]
+  }
+}
+-->
+<p><strong>My Devices</strong> is the list of your own phones, Macs, home vault and browser page that reach each other
+    over the mesh. They don't need a public IP or a domain: the mesh finds each device by its key, at home or on
+    mobile data.</p>
+<p>Devices on the list sync with each other: your notes, your photos and your history. Anyone not on the list can
+    only read the photos in your public posts.</p>
+
+<h2>Turn the mesh on</h2>
+<p>On each device, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and switch on
+    <span class="ui">Mesh</span>. Under <span class="ui">This Device</span> you'll see its
+    <span class="ui">Mesh address</span>, a long key starting with <code>npub</code>. That's how your other devices
+    find this one.</p>
+
+<h2 id="add">Add a device</h2>
+<ol class="steps">
+    <li>On the device you want to add, open <span class="ui">FIPS Mesh</span> and, under
+        <span class="ui">This Device</span>, tap <span class="ui">Copy</span>, or <span class="ui">Show QR</span> to
+        scan it from the other device.</li>
+    <li>On the other device, tap <span class="ui">Add a device by address</span>. Paste the address, or tap
+        <span class="ui">Scan its QR code</span>.</li>
+    <li>Under <span class="ui">This Is</span>, pick what it is:
+        <ul>
+            <li><span class="ui">Vault on Mac</span>: Nostr Vault on your Mac. Your new notes and photos go to it, and
+                your history syncs back. See <a href="/docs/mesh/sync/">Sync with your Mac</a>.</li>
+            <li><span class="ui">Phone</span>: another phone of yours.</li>
+            <li><span class="ui">Home vault</span>: a spare phone in kiosk mode that keeps your posts. See
+                <a href="/docs/mesh/home-vault/">Home vault and kiosk mode</a>.</li>
+            <li><span class="ui">Browser page</span>: a Nostr Vault page in a browser that keeps a copy of your
+                notes.</li>
+        </ul></li>
+    <li>Give it a name if you like, and tap <span class="ui">Add</span>.</li>
+    <li><strong>Do it in both directions.</strong> Add the Mac on each phone, and each phone on the Mac. A device only
+        lets in the devices on its own list.</li>
+</ol>
+<div class="done"><p><strong>You're done when</strong> both devices show each other as <span class="ui">In reach</span>
+    under My Devices. It can take a moment after the mesh turns on.</p></div>
+
+<h2 id="list">The list</h2>
+<ul>
+    <li>Each device shows <span class="ui">In reach</span> or <span class="ui">Not in reach</span>. A Mac is in reach
+        while Nostr Vault is open on it; a phone while the app is open or in kiosk mode.</li>
+    <li>Tap a device to rename it, copy its address, or remove it. On Android, <span class="ui">What It Gets</span>
+        chooses whether it gets <span class="ui">Send new notes</span> and <span class="ui">Send new media</span>.</li>
+    <li>Once a device is on the list, only the devices on the list learn this phone's address. Anyone else on the mesh
+        gets public photos only.</li>
+</ul>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
+    <li><a href="/docs/mesh/remove-a-device/">Remove a device, or a lost phone</a></li>
+</ul>

@@ -1,0 +1,33 @@
+<!--page
+{
+  "title": "Mesh settings: finder relays and middle server",
+  "nav": "Advanced mesh settings",
+  "section": "mesh",
+  "order": 7,
+  "needs": "3.0",
+  "description": "What the finder relays and the middle server do in Nostr Vault's FIPS mesh settings, what they can see, and when to change them.",
+  "checked": "Nostr Vault 3.0.0 (41)",
+  "labels": {
+    "ios": ["Advanced", "Finder relays, middle server", "Finder Relays", "Middle Server", "Public (fips1, fips2.iris.to)", "None", "Reset to defaults",
+            "Changes apply the next time the mesh starts."],
+    "android": ["Advanced", "Finder Relays", "Middle Server", "Public (fips1, fips2.iris.to)", "None", "Reset to defaults"]
+  }
+}
+-->
+<p>Open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh &rarr; Advanced</span>. Most people never need to
+    change these. Changes apply the next time the mesh starts.</p>
+
+<h2>Finder Relays</h2>
+<p>Your devices post where they are on these relays, so your other devices can find them. Like any relay, they see
+    this device's IP address. Swipe to remove one; at least one must stay.</p>
+
+<h2>Middle Server</h2>
+<p>The middle server links two devices that can't reach each other directly. It's how this phone reaches anyone
+    outside My Devices: the photos of people you follow, a browser page, and visitors to your kiosk. They never get
+    this phone's address, but the middle server does see it.</p>
+<ul>
+    <li><span class="ui">Public (fips1, fips2.iris.to)</span>: the default.</li>
+    <li><span class="ui">None</span>: only devices on the same network can connect. Follows' photos load from their web
+        addresses instead, a browser page only connects on the same network, and a kiosk takes no visitors.</li>
+</ul>
+<p><span class="ui">Reset to defaults</span> puts both lists back.</p>

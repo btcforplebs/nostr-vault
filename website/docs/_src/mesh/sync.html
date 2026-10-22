@@ -1,0 +1,50 @@
+<!--page
+{
+  "title": "Sync with your Mac",
+  "nav": "Sync with your Mac",
+  "section": "mesh",
+  "order": 3,
+  "needs": "3.0",
+  "description": "Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.",
+  "checked": "Nostr Vault 3.0.0 (41)",
+  "labels": {
+    "ios": ["Vault on Mac", "Sync", "Send now", "Check sync with Vault on Mac", "Copying your full history from the Mac…", "Copy was interrupted",
+            "Sync with Vault on Mac"],
+    "android": ["Vault on Mac", "Sync", "Send now", "Sync with Vault on Mac", "Check sync with Vault on Mac"],
+    "mac": ["Your phones sync with this Mac. Check sync from FIPS Mesh on the phone."]
+  }
+}
+-->
+<p>With your Mac on your phone's list as <span class="ui">Vault on Mac</span>, each new note and photo you post on the
+    phone also goes to the Mac over the mesh. Your notes and history sync back from the Mac to the phone. The Mac becomes
+    the second, always-on copy of your vault.</p>
+
+<h2>Set it up</h2>
+<ol class="steps">
+    <li>Turn on the mesh on the Mac and on the phone, and add each to the other's
+        <a href="/docs/mesh/my-devices/">My Devices</a>. On the phone, pick <span class="ui">Vault on Mac</span>.</li>
+    <li>Keep Nostr Vault open on the Mac. It syncs while it's open.</li>
+    <li>Shortly after the phone's relay starts, it copies your full history from the Mac on its own. After that, new
+        posts and mentions keep syncing by themselves.</li>
+</ol>
+
+<h2 id="check">Check that it arrived</h2>
+<p>On an iPhone, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and, under
+    <span class="ui">Sync</span>, tap <span class="ui">Check sync with Vault on Mac</span>. On Android it's in
+    <span class="path">Settings &rarr; Sync with Vault on Mac</span>. It ends on
+    <strong>Done</strong> with counts of what's on each side, or says why it stopped.</p>
+<ul>
+    <li><em>Copying your full history from the Mac…</em>: the first copy is still running. Leave the app open.</li>
+    <li><span class="ui">Copy was interrupted</span>: the app closed during the copy. It picks up again the next time
+        the relay starts.</li>
+</ul>
+<p><span class="ui">Send now</span>, under Sync, sends anything that's waiting without waiting for the next post.</p>
+<p>On iPhone, the same check is also under <span class="path">Settings &rarr; Sync with Vault on Mac</span>.</p>
+
+<h2>Good to know</h2>
+<ul>
+    <li>Nothing goes through a server of ours. The phone and the Mac talk over the mesh, end to end encrypted.</li>
+    <li>When the Mac is closed or out of reach, new posts still go to your public relays as usual. The Mac catches up
+        when it's back.</li>
+    <li>Posting a photo still needs a public media server. The Mac gets a copy as well.</li>
+</ul>

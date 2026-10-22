@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/mesh/sync.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync with your Mac — Nostr Vault Docs</title>
+    <meta name="description" content="Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.">
+    <link rel="canonical" href="https://nostrvault.app/docs/mesh/sync/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/mesh/sync/">
+    <meta property="og:title" content="Sync with your Mac — Nostr Vault Docs">
+    <meta property="og:description" content="Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/">Messages</a></li>
+                    <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/my-devices/">My Devices <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/sync/" aria-current="page">Sync with your Mac <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/photo-server/">Mac photo server <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/remove-a-device/">Remove a device <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/mesh/advanced/">Advanced mesh settings <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Mesh and your devices</p>
+            <h1>Sync with your Mac</h1>
+            <div class="docs-banner" role="note"><strong>3.0 coming soon.</strong> This page is about Nostr Vault 3.0, which is in testing. The apps you can download today are 2.7.2.</div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#set-it-up">Set it up</a></li><li><a href="#check">Check that it arrived</a></li><li><a href="#good-to-know">Good to know</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>With your Mac on your phone's list as <span class="ui">Vault on Mac</span>, each new note and photo you post on the
+                    phone also goes to the Mac over the mesh. Your notes and history sync back from the Mac to the phone. The Mac becomes
+                    the second, always-on copy of your vault.</p>
+
+                <h2 id="set-it-up">Set it up</h2>
+                <ol class="steps">
+                    <li>Turn on the mesh on the Mac and on the phone, and add each to the other's
+                        <a href="/docs/mesh/my-devices/">My Devices</a>. On the phone, pick <span class="ui">Vault on Mac</span>.</li>
+                    <li>Keep Nostr Vault open on the Mac. It syncs while it's open.</li>
+                    <li>Shortly after the phone's relay starts, it copies your full history from the Mac on its own. After that, new
+                        posts and mentions keep syncing by themselves.</li>
+                </ol>
+
+                <h2 id="check">Check that it arrived</h2>
+                <p>On an iPhone, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and, under
+                    <span class="ui">Sync</span>, tap <span class="ui">Check sync with Vault on Mac</span>. On Android it's in
+                    <span class="path">Settings &rarr; Sync with Vault on Mac</span>. It ends on
+                    <strong>Done</strong> with counts of what's on each side, or says why it stopped.</p>
+                <ul>
+                    <li><em>Copying your full history from the Mac…</em>: the first copy is still running. Leave the app open.</li>
+                    <li><span class="ui">Copy was interrupted</span>: the app closed during the copy. It picks up again the next time
+                        the relay starts.</li>
+                </ul>
+                <p><span class="ui">Send now</span>, under Sync, sends anything that's waiting without waiting for the next post.</p>
+                <p>On iPhone, the same check is also under <span class="path">Settings &rarr; Sync with Vault on Mac</span>.</p>
+
+                <h2 id="good-to-know">Good to know</h2>
+                <ul>
+                    <li>Nothing goes through a server of ours. The phone and the Mac talk over the mesh, end to end encrypted.</li>
+                    <li>When the Mac is closed or out of reach, new posts still go to your public relays as usual. The Mac catches up
+                        when it's back.</li>
+                    <li>Posting a photo still needs a public media server. The Mac gets a copy as well.</li>
+                </ul>
+            </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/mesh/my-devices/"><span>Previous</span>My Devices</a>
+                <a class="next" href="/docs/mesh/home-vault/"><span>Next</span>Home vault and kiosk</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
