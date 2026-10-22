@@ -44,7 +44,9 @@ extension SearchView {
     @ViewBuilder
     var resultsContent: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            // Lazy: a common word returns 1000+ people and 100 notes, and an
+            // eager stack rebuilt every row on each streamed update and froze typing.
+            LazyVStack(spacing: 24) {
                 // Users section
                 if (resultTypeFilter == .all || resultTypeFilter == .users) && !searchResults.users.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
@@ -53,7 +55,7 @@ extension SearchView {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 16)
 
-                        VStack(spacing: 8) {
+                        LazyVStack(spacing: 8) {
                             ForEach(searchResults.orderedUsers, id: \.key) { pubkey, profile in
                                 userRow(pubkey: pubkey, profile: profile)
                             }
@@ -70,7 +72,7 @@ extension SearchView {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 16)
 
-                        VStack(spacing: 8) {
+                        LazyVStack(spacing: 8) {
                             ForEach(searchResults.notes) { note in
                                 FeedNoteRow(
                                    note: note,
@@ -107,7 +109,7 @@ extension SearchView {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 16)
 
-                        VStack(spacing: 8) {
+                        LazyVStack(spacing: 8) {
                             ForEach(searchResults.hashtags, id: \.self) { hashtag in
                                 hashtagRow(hashtag: hashtag)
                             }
@@ -124,7 +126,7 @@ extension SearchView {
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 16)
 
-                        VStack(spacing: 8) {
+                        LazyVStack(spacing: 8) {
                             ForEach(searchResults.links, id: \.url) { link in
                                 linkRow(link: link)
                             }
