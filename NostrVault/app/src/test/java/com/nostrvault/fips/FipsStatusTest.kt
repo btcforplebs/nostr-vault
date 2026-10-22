@@ -102,6 +102,19 @@ class FipsStatusTest {
         assertEquals("npub1x", status.npub)
     }
 
+    /** Own-devices mode: strangers' bytes are what the share limit counts (Tron, #1025). */
+    @Test fun `strangers are parsed and counted toward the share limit`() {
+        val own = FipsBridge.parseStatus(
+            """{"running":true,"counters":{"served_total":2,"served_tx":5000},"strangers":{"open":1,"total":3,"refused":0,"rx":10,"tx":700}}""",
+        )
+        assertEquals(700, own.visitorServedTx)
+        assertEquals(5, own.servedRequests)
+        assertEquals(5700, own.servedBytes)
+        // An open node has no strangers object: everyone is a visitor.
+        val open = FipsBridge.parseStatus("""{"running":true,"counters":{"served_total":2,"served_tx":5000}}""")
+        assertEquals(5000, open.visitorServedTx)
+    }
+
     @Test fun `garbage reads as stopped, not as a crash`() {
         assertEquals(FipsStatus.stopped, FipsBridge.parseStatus("not json"))
     }
@@ -118,7 +131,7 @@ class FipsStatusTest {
         val obj = Json.parseToJsonElement(encoded).jsonObject
 
         assertEquals(
-            setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes", "public_seeds", "relay_socket"),
+            setOf("peers", "relays", "udp_port", "lan", "max_serve_bytes", "public_seeds", "relay_socket", "own_devices", "strangers_port"),
             obj.keys,
         )
         assertEquals("true", obj["public_seeds"]!!.jsonPrimitive.content)

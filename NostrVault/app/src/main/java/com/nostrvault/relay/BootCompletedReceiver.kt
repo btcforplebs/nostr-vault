@@ -13,6 +13,8 @@ import dagger.hilt.components.SingletonComponent
 /**
  * Auto-start the relay service when the device boots.
  * Honors the user's "Auto-start Relay" advanced setting.
+ * The FIPS mesh, if left on, comes back with it (RelayForegroundService.restoreMesh),
+ * which is why the config is loaded here first: the mesh's allowlist comes from it.
  */
 class BootCompletedReceiver : BroadcastReceiver() {
 

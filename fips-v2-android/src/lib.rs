@@ -180,6 +180,23 @@ struct Running {
     node_thread: std::thread::JoinHandle<()>,
 }
 
+impl Running {
+    /// A total cap turned sharing off: the owner's stack's (an open node) or
+    /// the strangers' (own-devices mode, where own devices have none).
+    fn cap_reached(&self) -> bool {
+        self.ctl.cap_reached() || self.strangers.as_ref().is_some_and(|s| s.ctl.cap_reached())
+    }
+
+    /// The session total in force, 0 for none: in own-devices mode it binds
+    /// strangers only.
+    fn serve_total(&self) -> u64 {
+        match &self.strangers {
+            Some(s) => s.ctl.limits().total_bytes,
+            None => self.ctl.limits().total_bytes,
+        }
+    }
+}
+
 static STATE: Mutex<Option<Running>> = Mutex::new(None);
 
 /// The state, even after a panic while it was held: a poisoned lock would
@@ -312,7 +329,8 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
             let (to_stack, stack_rx) = std::sync::mpsc::channel();
             let to_strangers = if opts.strangers_port != 0 {
                 let (tx, rx) = std::sync::mpsc::channel();
-                match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx) {
+                // The app's limit is the strangers' total: own devices stay uncapped.
+                match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx, opts.max_serve_bytes) {
                     Ok(s) => stranger_side = Some(s),
                     Err(e) => {
                         let _ = stop_tx.send(());
@@ -382,7 +400,7 @@ pub fn export(port: u16) -> i32 {
     let mut state = state();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
     // After the total cap turned sharing off, sharing again starts a new count.
-    if !run.ctl.cap_reached() {
+    if !run.cap_reached() {
         match run.exported {
             Some(p) if p == port => return 0,
             Some(_) => return ERR_ALREADY_EXPORTED,
@@ -552,12 +570,12 @@ pub fn status_json() -> String {
             npub: Some(run.npub.clone()),
             address: Some(run.address.to_string()),
             uptime_s: run.started.elapsed().as_secs(),
-            exported: run.exported.filter(|_| !run.ctl.cap_reached()).into_iter().collect(),
+            exported: run.exported.filter(|_| !run.cap_reached()).into_iter().collect(),
             peers: Vec::new(),
             reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port }).collect(),
             counters: CountersOut::from(&run.ctl.counters),
-            cap_reached: run.ctl.cap_reached(),
-            max_serve_bytes: run.ctl.limits().total_bytes,
+            cap_reached: run.cap_reached(),
+            max_serve_bytes: run.serve_total(),
             relay_link: run.relay_socket.is_some(),
             strangers: run.strangers.as_ref().map(|s| {
                 let get = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed);

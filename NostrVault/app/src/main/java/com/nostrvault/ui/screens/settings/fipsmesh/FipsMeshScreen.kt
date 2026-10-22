@@ -173,7 +173,13 @@ private fun ThisDeviceSection(status: FipsStatus) {
 private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: (String) -> Unit, onAdd: () -> Unit) {
     val colors = LocalNostrVaultColors.current
     val now = System.currentTimeMillis() / 1000
-    MeshSection("My Devices", footer = "Your Mac, phones, home vault and browser page, in one list. Only the addresses here can reach this phone's vault.") {
+    // The address is hidden only once a device is listed (MeshEnginePlan): say so while none is (Tron, #1025).
+    val footer = if (devices.isEmpty()) {
+        "Your Mac, phones, home vault and browser page, in one list. Until you add one, anyone on the mesh can learn this phone's address."
+    } else {
+        "Your Mac, phones, home vault and browser page, in one list. Only the addresses here can reach this phone's vault or learn its address."
+    }
+    MeshSection("My Devices", footer = footer) {
         devices.forEach { d ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpen(d.npub) }.padding(vertical = 12.dp)) {
                 RoleTile(d.role)

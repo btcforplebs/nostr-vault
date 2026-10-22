@@ -46,10 +46,15 @@ const _: () = assert!(PER_STRANGER_OPEN < STRANGER_SLOTS);
 /// How long the door waits for the relay to take a connection.
 const RELAY_CONNECT: Duration = Duration::from_secs(3);
 
-pub fn limits() -> stack::ServeLimits {
-    // No total: the rate cap bounds it, and a total would turn strangers off
-    // for good on a Mac that shares for days.
-    stack::ServeLimits { total_bytes: 0, per_peer_bytes: PER_STRANGER_BYTES, per_peer_open: PER_STRANGER_OPEN }
+/// `total`: what strangers may pull this sharing session before it stops
+/// (`StartOptions::max_serve_bytes`). 0 is no total: the rate cap bounds it,
+/// and a total would turn strangers off for good on a Mac that shares for
+/// days. A phone passes its limit, since its data may be metered: 1 MiB/s is
+/// 3.6 GB an hour (Tron, #1025).
+pub fn limits(total: u64) -> stack::ServeLimits {
+    // One stranger's share never exceeds the whole, as for an open phone (serve_limits).
+    let per_peer_bytes = if total == 0 { PER_STRANGER_BYTES } else { PER_STRANGER_BYTES.min(total) };
+    stack::ServeLimits { total_bytes: total, per_peer_bytes, per_peer_open: PER_STRANGER_OPEN }
 }
 
 /// Strangers' counters, for `status_json`.
@@ -77,8 +82,9 @@ pub struct Strangers {
 }
 
 impl Strangers {
-    pub fn start(address: Ipv6Addr, mtu: usize, to_mesh: TunOutboundTx, from_mesh: Receiver<Vec<u8>>) -> Result<Self> {
-        Self::start_with(address, mtu, to_mesh, from_mesh, STRANGER_RATE, STRANGER_SLOTS)
+    /// `total`: see [`limits`].
+    pub fn start(address: Ipv6Addr, mtu: usize, to_mesh: TunOutboundTx, from_mesh: Receiver<Vec<u8>>, total: u64) -> Result<Self> {
+        Self::start_with(address, mtu, to_mesh, from_mesh, STRANGER_RATE, STRANGER_SLOTS, total)
     }
 
     fn start_with(
@@ -88,6 +94,7 @@ impl Strangers {
         from_mesh: Receiver<Vec<u8>>,
         rate: u64,
         slots: usize,
+        total: u64,
     ) -> Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).context("bind stranger door")?;
         let door = listener.local_addr()?;
@@ -99,7 +106,7 @@ impl Strangers {
             .name("fips-stranger-door".into())
             .spawn(move || gate.run(listener))?;
         let ctl = stack::Control::new();
-        ctl.set_limits(limits());
+        ctl.set_limits(limits(total));
         let stack_ctl = ctl.clone();
         let stack_thread = std::thread::Builder::new().name("fips-stranger-stack".into()).spawn(move || {
             if let Err(e) = stack::run_with(address, mtu, to_mesh, from_mesh, &stack_ctl) {
@@ -430,7 +437,7 @@ mod tests {
         let (mesh_tx, mesh_rx) = std::sync::mpsc::channel();
         let (own_tx, own_rx) = std::sync::mpsc::channel();
         let (str_tx, str_rx) = std::sync::mpsc::channel();
-        let side = Strangers::start(me, 1280, me_out.clone(), str_rx).unwrap();
+        let side = Strangers::start(me, 1280, me_out.clone(), str_rx, 0).unwrap();
         std::thread::spawn(move || crate::own_devices::filter(mesh_rx, me, HashSet::from([own_dev]), own_tx, Some(str_tx)));
         let own_ctl = stack::Control::new();
         let c = own_ctl.clone();
@@ -466,8 +473,60 @@ mod tests {
 
     #[test]
     fn strangers_have_visitor_caps_and_no_total() {
-        let l = limits();
+        let l = limits(0);
         assert_eq!(l.total_bytes, 0);
         assert!(l.per_peer_bytes > 0 && l.per_peer_open > 0);
+    }
+
+    /// End to end: strangers who pull past a phone's limit turn their sharing
+    /// off (cap_reached, which the app turns into its auto-off), while the
+    /// owner's stack is untouched (Tron, #1025).
+    #[test]
+    fn strangers_past_the_total_turn_their_sharing_off() {
+        use std::collections::HashSet;
+        let me: Ipv6Addr = "fd00::a".parse().unwrap();
+        let stranger: Ipv6Addr = "fd00::b".parse().unwrap();
+        let blob: &'static [u8] = Box::leak(vec![b'x'; 64 * 1024].into_boxed_slice());
+        let mesh_door = banner(blob);
+        let relay_port = banner(b"relay");
+
+        let (me_out, mut me_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+        let (mesh_tx, mesh_rx) = std::sync::mpsc::channel();
+        let (own_tx, own_rx) = std::sync::mpsc::channel();
+        let (str_tx, str_rx) = std::sync::mpsc::channel();
+        let side = Strangers::start(me, 1280, me_out.clone(), str_rx, 16 * 1024).unwrap();
+        std::thread::spawn(move || crate::own_devices::filter(mesh_rx, me, HashSet::new(), own_tx, Some(str_tx)));
+        let own_ctl = stack::Control::new();
+        let c = own_ctl.clone();
+        std::thread::spawn(move || stack::run_with(me, 1280, me_out, own_rx, &c));
+        assert!(crate::share_split(&own_ctl, Some(&side), relay_port, mesh_door));
+        let (to_stranger, from_me) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            while let Some(p) = me_out_rx.blocking_recv() {
+                let _ = to_stranger.send(p);
+            }
+        });
+        let (s_ctl, s_port) = dial(stranger, me, mesh_tx, from_me);
+
+        let _ = read_all(s_port);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !side.ctl.cap_reached() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(side.ctl.cap_reached(), "64 KiB to strangers is past a 16 KiB limit");
+        assert!(!own_ctl.cap_reached(), "own devices have no total");
+        s_ctl.stop();
+        own_ctl.stop();
+        side.stop();
+    }
+
+    /// A phone's limit holds for strangers (Tron, #1025): without it they had no total.
+    #[test]
+    fn a_phone_limit_is_the_strangers_total() {
+        let l = limits(100 << 20);
+        assert_eq!(l.total_bytes, 100 << 20);
+        // One stranger's share never exceeds the whole.
+        assert_eq!(l.per_peer_bytes, 100 << 20);
+        assert_eq!(limits(1 << 30).per_peer_bytes, PER_STRANGER_BYTES);
     }
 }

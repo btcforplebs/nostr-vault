@@ -11,9 +11,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,10 +63,48 @@ class FipsMeshManager @Inject constructor(
     /** False when this build ships no mesh library for the device's ABI. */
     val isAvailable: Boolean get() = FipsBridge.isAvailable
 
-    /** Start on launch if the user left it on. */
+    /**
+     * Start if the user left it on: on launch, and from the relay service, which is what brings
+     * it back after a reboot. Both may ask; one start at a time, and none while it runs.
+     */
     fun restoreIfEnabled(scope: CoroutineScope) {
-        if (!configStore.config.value.fipsMeshEnabled) return
-        scope.launch { start(persist = false) }
+        if (!configStore.config.value.fipsMeshEnabled || _status.value.running) return
+        if (!restoring.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                if (!FipsBridge.status().running) start(persist = false) else refresh()
+            } finally {
+                restoring.set(false)
+            }
+        }
+    }
+
+    private val restoring = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    // Both above init: its collector may run before the rest of the constructor.
+    /** The allowlist the running engine started with; null before the first start. */
+    @Volatile private var engineOwnDevices: List<String>? = null
+
+    /** One restart at a time: setPeers and the My Devices watch can both ask. */
+    private val restartLock = kotlinx.coroutines.sync.Mutex()
+
+    init {
+        // My Devices is the engine's allowlist and is fixed at start: a running engine restarts
+        // when it changes. setPeers restarts on its own; this covers the home vault, which is
+        // set from elsewhere (HomeVaultSender.setHomeVault).
+        appScope.launch {
+            configStore.config
+                .map { MeshEnginePlan.ownDevices(it, _status.value.npub) }
+                .distinctUntilChanged()
+                .collect {
+                    withContext(Dispatchers.IO) {
+                        restartKeepingAllowance(onlyIf = {
+                            engineOwnDevices != null &&
+                                MeshEnginePlan.ownDevices(configStore.config.value, _status.value.npub) != engineOwnDevices
+                        })
+                    }
+                }
+        }
     }
 
     /**
@@ -132,27 +172,19 @@ class FipsMeshManager @Inject constructor(
     }
 
     /**
-     * Who may reach this device, and how.
-     *
-     * Only the npubs the user has added can connect: the library runs FIPS's
-     * configured-only policy, so an empty list means nobody. LAN candidates are
-     * shared because a friend is often on the same home network, where the
-     * public address alone cannot connect the two; with configured-only, only
-     * those friends ever see them.
+     * Who may reach this device, and how: My Devices only, when there are any
+     * ([MeshEnginePlan]). The library used to run open to anyone, so any npub
+     * that sent an offer learned this phone's public and LAN addresses.
      */
     private fun startOptions(): FipsStartOptions {
         // What is left of this sharing session's allowance: neither a restart
         // for a peer or limit change nor an app launch hands out a fresh one.
-        engineBase = configStore.config.value.fipsServedBytes
+        val config = configStore.config.value
+        engineBase = config.fipsServedBytes
         engineGen++
-        return FipsStartOptions(
-            peers = configStore.config.value.fipsPeers,
-            // FIPS Mesh → Advanced: the finder relays (the same three as iPhone and Mac by default) and the middle server.
-            relays = configStore.config.value.fipsMesh.engineFinderRelays,
-            publicSeeds = configStore.config.value.fipsMesh.middleServer == com.nostrvault.fips.FipsMeshSettings.MIDDLE_PUBLIC,
-            lan = true,
-            maxServeBytes = remainingServeBytes(configStore.config.value.fipsServeLimitBytes, engineBase),
-        )
+        val options = MeshEnginePlan.options(config, _status.value.npub, remainingServeBytes(config.fipsServeLimitBytes, engineBase))
+        engineOwnDevices = options.ownDevices
+        return options
     }
 
     /**
@@ -168,11 +200,19 @@ class FipsMeshManager @Inject constructor(
     /** One reaction to a reached cap at a time; the Mesh screen polls too. */
     private val turningOffForCap = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** Restart to apply start-time settings, keeping what was already served. */
-    private suspend fun restartKeepingAllowance() {
+    /**
+     * Restart to apply start-time settings, keeping what was already served.
+     * Skipped when the engine is not running or [onlyIf], checked under the lock, says no.
+     */
+    private suspend fun restartKeepingAllowance(onlyIf: () -> Boolean = { true }) = restartLock.withLock {
+        if (!_status.value.running || !onlyIf()) return@withLock
+        restartNow()
+    }
+
+    private suspend fun restartNow() {
         engineGen++  // a refresh reading the old engine now discards its count
         if (configStore.config.value.fipsShareRelay) {
-            val served = engineBase + FipsBridge.status().counters.servedTx
+            val served = engineBase + FipsBridge.status().visitorServedTx
             configStore.updateAsync { it.copy(fipsServedBytes = served) }
         }
         FipsBridge.stop()
@@ -217,14 +257,17 @@ class FipsMeshManager @Inject constructor(
     /**
      * Offer this device's media to the mesh.
      *
-     * The export is the relay's mesh port, which serves blob GET/HEAD only:
-     * a mesh peer arrives from loopback, so it must never reach the relay
-     * itself (NIP-F1). There is no un-export — the accept loop lives as long
+     * With no devices the export is the relay's mesh door (blob reads and
+     * owner-signed writes only): a mesh peer arrives from loopback, so a
+     * stranger must never reach the relay itself (NIP-F1). With My Devices
+     * set, they get the relay port and the engine sends everyone else to the
+     * door ([MeshEnginePlan]). There is no un-export — the accept loop lives as long
      * as the endpoint does — which is why [setShareRelay] restarts the bridge
      * to withdraw rather than pretending a flag is enough.
      */
     private fun offerRelay() {
-        val port = configStore.config.value.meshPort
+        val port = MeshEnginePlan.sharePort(configStore.config.value, engineOwnDevices.orEmpty())
+        // The door, for strangers (or for everyone when the engine is open).
         HavenBridge.setMeshServing(true)
         val rc = FipsBridge.export(port)
         if (rc != 0) Log.w(TAG, "FipsBridgeExport($port) failed: $rc")
@@ -272,7 +315,7 @@ class FipsMeshManager @Inject constructor(
         // Keep the session's count on disk as it grows, so an app restart
         // (Android kills background processes often) resumes it.
         if (status.running && configStore.config.value.fipsShareRelay && gen == engineGen) {
-            servedToPersist(base, status.counters.servedTx, configStore.config.value.fipsServedBytes)
+            servedToPersist(base, status.visitorServedTx, configStore.config.value.fipsServedBytes)
                 ?.let { served -> configStore.updateAsync { it.copy(fipsServedBytes = served) } }
         }
         // The library already stopped sharing; turn the switch off to match, so
