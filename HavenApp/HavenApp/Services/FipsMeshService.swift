@@ -130,8 +130,20 @@ final class FipsMeshService: ObservableObject {
             lastError = Self.offMessage
             return
         }
-        // A client engine was started with LAN candidates for the owner's own
-        // vault; kiosk mode is open to anyone, so it starts fresh without them.
+        // The relay's mesh door: plain HTTP, blob reads and owner-signed writes.
+        let port = ConfigService.shared.config.meshPlainPort
+        // Own-devices mode, as on the Mac: only My Devices get answers (the
+        // home IP goes to no one else) and strangers get the mesh door,
+        // capped. Never open: with no other device listed, sharing does not start.
+        guard let options = MeshDevicesLogic.kioskEngineOptions(
+            devices: FipsMeshDevices.current(ConfigService.shared.config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
+            relays: FipsMeshSettings.finderRelays, meshDoorPort: port,
+            serveLimit: KioskCapPause.engineServeLimit(Self.serveLimit)) else {
+            lastError = "Add your phone under My Devices first: sharing serves your own devices, and strangers only the photos you post."
+            return
+        }
+        // A client engine runs with other options (open, to read the vaults
+        // of people you follow): kiosk mode starts its own.
         if clientActive {
             clientActive = false
             if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
@@ -142,14 +154,12 @@ final class FipsMeshService: ObservableObject {
         startGen += 1
         let gen = startGen
         lastError = nil
-        // The relay's mesh port: plain HTTP, blob reads only.
-        let port = ConfigService.shared.config.meshPlainPort
         kioskPort = UInt16(exactly: port)
-        let limit = Self.serveLimit
+        let optionsJSON = Self.startOptions(options)
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {
             await previous?.value
-            let result = Self.startAndShare(port: port, limit: limit)
+            let result = Self.startAndShare(port: port, options: optionsJSON)
             await MainActor.run { self.didStart(gen: gen, result) }
         }
     }
@@ -545,7 +555,8 @@ final class FipsMeshService: ObservableObject {
     }
 
     /// Off the main thread: start can take seconds (relays, UDP bind).
-    nonisolated private static func startAndShare(port: Int, limit: Int64) -> Result<Void, MeshError> {
+    /// `options`: the start options JSON (MeshDevicesLogic.kioskEngineOptions).
+    nonisolated private static func startAndShare(port: Int, options: String) -> Result<Void, MeshError> {
         guard let nsec = meshNsec() else {
             return .failure(MeshError(message: "Could not create the mesh key"))
         }
@@ -553,9 +564,7 @@ final class FipsMeshService: ObservableObject {
         guard let port = UInt16(exactly: port) else {
             return .failure(MeshError(message: "Relay port \(port) is out of range"))
         }
-        // No start-time peers: anyone can reach this vault, and reading
-        // another vault adds its npub on demand.
-        let rc = NvFipsStart(nsec, startOptions(["max_serve_bytes": KioskCapPause.engineServeLimit(limit)]))
+        let rc = NvFipsStart(nsec, options)
         guard rc == 0 else { return .failure(MeshError(message: "Mesh did not start (\(rc))")) }
         // The relay's mesh port listens only while sharing.
         SetMeshServingC(1)

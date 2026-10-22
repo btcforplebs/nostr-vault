@@ -192,6 +192,37 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: [], meshDoorPort: 0))
     }
 
+    // MARK: kioskEngineOptions
+
+    /// The iPhone kiosk (home vault) answers My Devices only, so the home IP
+    /// goes to no one else; strangers get the mesh door, capped.
+    func testTheKioskEngineIsOpenToMyDevicesOnly() throws {
+        let kiosk = page // this phone's own mesh npub
+        let devices = [
+            MeshDevice(npub: moto, name: "Moto", role: .phone),
+            MeshDevice(npub: mac, name: "", role: .mac),
+            MeshDevice(npub: kiosk, name: "", role: .homeVault),
+        ]
+        let door = HavenConfig().meshPlainPort
+        let opts = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: kiosk, relays: ["wss://a"], meshDoorPort: door, serveLimit: 5_000))
+        XCTAssertEqual(opts["own_devices"] as? [String], [moto, mac], "the kiosk is never its own device")
+        XCTAssertEqual(opts["strangers_port"] as? Int, door)
+        XCTAssertNotEqual(opts["strangers_port"] as? Int, HavenConfig().relayPort)
+        XCTAssertEqual(opts["public_seeds"] as? Bool, true)
+        XCTAssertEqual(opts["lan"] as? Bool, true)
+        XCTAssertEqual(opts["max_serve_bytes"] as? Int64, 5_000, "the owner's sharing cap still reaches the engine")
+        XCTAssertNil(opts["peers"])
+    }
+
+    /// Never an open kiosk: with no other device listed it does not start.
+    func testNoDevicesMeansTheKioskDoesNotStart() {
+        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: [], ownNpub: page, relays: [], meshDoorPort: 3356, serveLimit: .max))
+        let onlySelf = [MeshDevice(npub: page, name: "", role: .homeVault)]
+        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: onlySelf, ownNpub: page, relays: [], meshDoorPort: 3356, serveLimit: .max))
+        let devices = [MeshDevice(npub: moto, name: "", role: .phone)]
+        XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: page, relays: [], meshDoorPort: 0, serveLimit: .max))
+    }
+
     func testNoDevicesMeansTheMacEngineStaysOff() {
         // An empty own_devices would open the engine to anyone.
         XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: [], ownNpub: nil, relays: [], meshDoorPort: 3356))
