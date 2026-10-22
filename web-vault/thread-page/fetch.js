@@ -46,9 +46,19 @@ export async function readMeshVaults(pubkeys, query, relays = READ_RELAYS) {
   return out
 }
 
+/** Whether `post`'s author signed a deletion (kind 5) of it, by id or, for an addressable post, by address. */
+export async function readDeleted(post, query, relays = READ_RELAYS) {
+  const d = post.kind >= 30000 && post.kind < 40000 ? post.tags.find(t => t[0] === "d")?.[1] : null
+  const address = typeof d === "string" ? `${post.kind}:${post.pubkey}:${d}` : null
+  const filters = [{ kinds: [5], authors: [post.pubkey], "#e": [post.id] }, ...(address ? [{ kinds: [5], authors: [post.pubkey], "#a": [address] }] : [])]
+  const found = verified((await Promise.all(filters.map(f => query(relays, f)))).flat())
+  return found.some(ev => ev.kind === 5 && ev.pubkey === post.pubkey &&
+    ev.tags.some(t => (t[0] === "e" && t[1] === post.id) || (address && t[0] === "a" && t[1] === address && ev.created_at >= post.created_at)))
+}
+
 /** -> { post, events (replies), profiles: Map<pubkey, { name, picture, nip05 }>, vaults: [hex] }, post null when no
  *  relay had it. `vaults`: the mesh vaults the post author's 10063 names (readMeshVaults), only when the post has a
- *  hashed photo; replies get none, since anyone can reply.
+ *  hashed photo and its author hasn't deleted it (readDeleted); replies get none, since anyone can reply.
  *  Reads run side by side where they can (the post with its replies), since a chat app's unfurler waits seconds. */
 export async function loadThread(target, query) {
   const relays = relaysFor(target)
@@ -79,7 +89,9 @@ export async function loadThread(target, query) {
   const deeper = !address && events.length
     ? query(relays, { kinds: [1], "#e": events.map(e => e.id).slice(0, 100), limit: REPLY_LIMIT })
     : Promise.resolve([])
-  const vaults = readMeshVaults(meshPhotoAuthors([post]), query, relays).then(m => m.get(post.pubkey) ?? [])
+  const meshAuthors = meshPhotoAuthors([post])
+  const vaults = Promise.all([readMeshVaults(meshAuthors, query, relays), meshAuthors.length ? readDeleted(post, query, relays) : false])
+    .then(([m, deleted]) => (deleted ? [] : m.get(post.pubkey) ?? []))
   const [more] = await Promise.all([deeper, readProfiles(peopleOf([post, ...events])), vaults])
   const have = new Set(events.map(e => e.id))
   const extra = verified(more).filter(e => !have.has(e.id))
