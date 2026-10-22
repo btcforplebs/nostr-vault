@@ -1,0 +1,48 @@
+<!--page
+{
+  "title": "Remove a device, or a lost phone",
+  "nav": "Remove a device",
+  "section": "mesh",
+  "order": 6,
+  "needs": "3.0",
+  "description": "Take a device off My Devices so it can no longer reach your vault, and what to do when a phone with Nostr Vault is lost or stolen.",
+  "checked": "Nostr Vault 3.0.0 (41)",
+  "labels": {
+    "ios": ["My Devices", "Remove from my devices", "Accounts & Keys", "Disconnect Remote Signer", "Remove Account"],
+    "android": ["My Devices", "Remove from my devices", "It can no longer reach this phone's vault. Anything it already has stays on it."],
+    "mac": ["My Devices"]
+  }
+}
+-->
+<p>Removing a device from My Devices stops it reaching this device's vault. Do it on every device that has it on its
+    list.</p>
+
+<h2>Remove a device</h2>
+<ol class="steps">
+    <li>Open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and tap the device under
+        <span class="ui">My Devices</span>. On the Mac, use the remove button on its row.</li>
+    <li>Tap <span class="ui">Remove from my devices</span> and confirm.</li>
+    <li>Repeat on each of your other devices.</li>
+</ol>
+<p>What changes:</p>
+<ul>
+    <li>It can no longer reach this device's vault, or learn its address.</li>
+    <li>New notes and media stop going to it. A home vault also leaves your media server list.</li>
+    <li>Anything it already has stays on it. Removing a device doesn't wipe it.</li>
+</ul>
+
+<h2 id="lost">A lost or stolen phone</h2>
+<ol class="steps">
+    <li><strong>Remove it from My Devices</strong> on your Mac, your home vault and your other phones, as above.</li>
+    <li><strong>Signer:</strong> if the phone signed through a signer app, revoke its connection in the signer. Your key
+        was never on the phone.</li>
+    <li><strong>Local key:</strong> if your secret key was on the phone, it's locked with your key password. Someone with
+        the phone still needs that password. If you think they have it, treat the key as exposed: a Nostr key can't be
+        changed, so make a new account and tell people to follow it.</li>
+    <li><strong>Set up the new phone</strong>: sign in with your key or signer
+        (<a href="/docs/start/iphone/#existing">iPhone</a>, <a href="/docs/start/android/#existing">Android</a>), then
+        add it to My Devices on your other devices. Your notes come back from your relays, your Mac or your home
+        vault.</li>
+</ol>
+<div class="note"><p>Your public posts are on public relays and stay there. A lost phone loses only what nothing else
+    holds a copy of, which is why a Mac or home vault is worth having.</p></div>
