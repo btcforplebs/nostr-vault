@@ -132,6 +132,11 @@ struct InlineFeedVideoPlayer: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .contentShape(Rectangle())
                     .onTapGesture { onTap?() }
+                    // The player knows the shape (rotation applied) as soon as
+                    // it can play; the frame grab may wait on a full download.
+                    .onReceive(player.publisher(for: \.currentItem?.presentationSize)) { size in
+                        if let size, let ratio = FeedVideoShape.ratio(of: size) { onAspectRatio?(ratio) }
+                    }
                 } else {
                     // Loading — show thumbnail if ready, otherwise shimmer placeholder
                     if let thumb = thumbnail {
