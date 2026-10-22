@@ -188,6 +188,9 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertNil(opts["strangers"], "the old switch pointed strangers at the relay port")
         // A phone on the Mac's Wi-Fi links over the LAN, not a hairpin.
         XCTAssertEqual(opts["lan"] as? Bool, true)
+        // A follow's photos are read through the seeds, with no dial: the
+        // engine refuses (ERR_NOT_OWN) any vault outside My Devices without it.
+        XCTAssertEqual(opts["read_anyone"] as? Bool, true)
         // No valid door port: the engine stays off rather than open strangers anywhere.
         XCTAssertNil(MeshDevicesLogic.macEngineOptions(devices: devices, ownNpub: mac, relays: [], meshDoorPort: 0))
     }
