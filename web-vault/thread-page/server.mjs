@@ -10,13 +10,29 @@ const PORT = Number(process.env.PORT || 8790)
 const WAIT_MS = Number(process.env.THREAD_WAIT_MS || 3500) // per relay read; chat unfurlers give up after ~5-10 s
 const FOUND_TTL = 10 * 60_000, MISSING_TTL = 60_000, MAX_CACHED = 500
 
+/** Node 22's WebSocket fires "error" from inside close() when the socket was reset during the handshake, and
+ *  nostr-tools calls close() from its onerror, so the two call each other until the stack overflows (RangeError) and
+ *  the service restarts. Later Node versions don't. Here a second close() on the same socket does nothing. */
+export function closeOnce(Base) {
+  return class extends Base {
+    #closing = false
+    close(...args) {
+      if (this.#closing) return
+      this.#closing = true
+      super.close(...args)
+    }
+  }
+}
+
+export const newPool = (Base = globalThis.WebSocket) => new SimplePool({ websocketImplementation: closeOnce(Base) })
+
 const cache = new Map() // code -> { at, ttl, status, html }
 const inflight = new Map() // code -> Promise
 
 async function build(code) {
   const target = parseTarget(code)
   if (!target) return { status: 404, html: renderMissing({ code, valid: false }), ttl: FOUND_TTL }
-  const pool = new SimplePool()
+  const pool = newPool()
   try {
     const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
     const { post, events, profiles, vaults } = await loadThread(target, query)
@@ -61,4 +77,4 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, () => console.log(`thread pages on http://localhost:${PORT}/thread/<nevent>`))
+if (!process.env.THREAD_PAGE_NO_LISTEN) server.listen(PORT, () => console.log(`thread pages on http://localhost:${PORT}/thread/<nevent>`))
