@@ -1,0 +1,108 @@
+<!--page
+{
+  "title": "Your web of trust",
+  "nav": "Web of trust",
+  "section": "use",
+  "order": 3,
+  "eyebrow": "Using the app",
+  "h1": "Your <span>web of trust</span>",
+  "lede": "The people you follow, and the people they follow, decide who can reach you. Nostr Vault draws that web as a globe and uses it to keep spam out of your vault, your notifications and your feeds.",
+  "description": "Nostr Vault's web of trust: the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, Rebuild your web, and the Who Can Reach You settings.",
+  "labels": {
+    "ios": ["WoT", "Web of Trust", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Talk with you", "Follow you back", "Find someone", "My Web", "See their web", "Open in WoT", "Profile", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust"],
+    "android": ["WoT", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Find someone", "My Web", "See their web", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust"],
+    "web": ["WoT", "Web of Trust", "Globe", "My Web", "See their web", "Open in WoT", "Find a name, npub or key"]
+  }
+}
+-->
+
+<section id="what">
+<h2>What it is</h2>
+<p>Nostr has no central moderator. Instead, Nostr Vault trusts who you trust. Your web has three rings:</p>
+<ul>
+    <li><strong>Following</strong>: the people you follow.</li>
+    <li><strong>Vouched</strong>: people that 10 or more of your follows follow.</li>
+    <li><strong>Further out</strong>: people your follows follow, but fewer than 10 of them.</li>
+</ul>
+<p>Your vault relay rebuilds the web on its own once a day. If you follow very few people, it borrows from your
+    follows' follows so a new account isn't empty.</p>
+</section>
+
+<section id="globe">
+<p class="eyebrow">The WoT tab</p>
+<h2>The globe</h2>
+<p>Open the <strong>WoT</strong> tab. You're in the middle. Your follows sit on the first ring, Vouched people
+    on the next, and everyone else is a faint outer shell. Each person always sits in the same spot, because
+    their place comes from their key.</p>
+<ul>
+    <li><strong>Layers.</strong> The menu at the top left picks <strong>Everyone</strong>,
+        <strong>Following</strong>, <strong>Vouched</strong> or <strong>Further out</strong>, each with a count.
+        Vouched shows up once your vault has counted your web.</li>
+    <li><strong>Filters.</strong> <strong>Talk with you</strong> keeps people you've replied to, reposted, liked
+        or zapped, or who did that to you. <strong>Follow you back</strong> keeps follows who follow you too.</li>
+    <li><strong>Find someone.</strong> Tap the magnifier and type a name. Your follows come first, then your
+        web, then everyone else.</li>
+</ul>
+</section>
+
+<section id="path">
+<p class="eyebrow">Why someone is here</p>
+<h2>Trust paths and their web</h2>
+<p>Tap a face to open their card. The line under their name says how they reach you, for example
+    "You follow them · 1 hop" or "Followed by Ann, Bo + more you follow · 2 hops". If no one you follow follows
+    them, it says "Not in your web".</p>
+<p>From the card you can follow or unfollow, open their <strong>Profile</strong>, or tap
+    <strong>See their web</strong> to put them in the middle and see the globe from their side. A globe opened
+    from a profile or a post has <strong>Open in WoT</strong> instead, which takes you to the WoT tab.</p>
+<p>A post's Event Info shows the same trust path for its author.</p>
+</section>
+
+<section id="my-web">
+<p class="eyebrow">The numbers</p>
+<h2>My Web and rebuilding</h2>
+<p>Tap <strong>My Web</strong> for the whole picture: how many people are in your web, how many you follow,
+    how many are Vouched, who talks with you and who follows you back. Under Upkeep it says when the web was
+    last rebuilt.</p>
+<p>Just followed a lot of people? Tap <strong>Rebuild your web</strong> (in My Web, or at the bottom of the
+    layer menu). The globe shows each step: reading your follow list, reading your follows' lists, counting.
+    A full rebuild can take a few minutes. If it fails or the vault relay isn't running, the globe keeps your
+    last saved web.</p>
+</section>
+
+<section id="reach">
+<p class="eyebrow">Where it's used</p>
+<h2>What your web decides</h2>
+<ul>
+    <li><strong>Who can reach your vault.</strong> Only people in your web can post to your vault's inbox.
+        Strangers can still reply to or quote your own posts.</li>
+    <li><strong>Notifications.</strong> Replies, likes and mentions notify you only from people in your web.
+        Zaps, follows and messages always come through. A new follower outside your web is folded into
+        "N new followers".</li>
+    <li><strong>Feeds.</strong> Global, Media and the other discovery feeds show only your web unless you
+        switch them to Everyone. See <a class="inline" href="/docs/feeds/">Feeds</a>.</li>
+    <li><strong>Search.</strong> Your follows and your web rank above everyone else.</li>
+    <li><strong>Mesh photos.</strong> Photos load over the mesh only from people you follow, not from your
+        wider web.</li>
+</ul>
+</section>
+
+<section id="settings">
+<p class="eyebrow">Settings</p>
+<h2>Who Can Reach You</h2>
+<p>On iPhone and Android, open <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span>.
+    <strong>Follow Distance</strong> sets how far out your web reaches (3, your whole web, to start),
+    <strong>Minimum Followers</strong> how many of your follows must vouch for someone further out, and
+    <strong>Refresh Trust List</strong> how often it's rebuilt. Details on
+    <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>.</p>
+</section>
+
+<section id="platforms">
+<h2>On each device</h2>
+<ul>
+    <li><strong>iPhone, iPad and Android</strong> have everything on this page.</li>
+    <li><strong>The web app</strong> has a WoT tab with a <strong>Globe</strong> and <strong>My Web</strong>.
+        It builds your web in the browser from follow lists, so there's no Rebuild button and no trust
+        settings. Its search box says "Find a name, npub or key".</li>
+</ul>
+<p class="note">Replay it in the app: <span class="path">Settings &rarr; Help &rarr; Tutorials &rarr; Your Web of Trust</span>.</p>
+</section>

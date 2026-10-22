@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/web-of-trust.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your web of trust — Nostr Vault Docs</title>
+    <meta name="description" content="Nostr Vault's web of trust: the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, Rebuild your web, and the Who Can Reach You settings.">
+    <link rel="canonical" href="https://nostrvault.app/docs/web-of-trust/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/web-of-trust/">
+    <meta property="og:title" content="Your web of trust — Nostr Vault Docs">
+    <meta property="og:description" content="Nostr Vault's web of trust: the WoT tab globe, layers (Following, Vouched, Further out), Find someone, trust paths, My Web, Rebuild your web, and the Who Can Reach You settings.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/">Messages</a></li>
+                    <li><a href="/docs/web-of-trust/" aria-current="page">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Using the app</p>
+            <h1>Your <span>web of trust</span></h1>
+            <p class="docs-lede">The people you follow, and the people they follow, decide who can reach you. Nostr Vault draws that web as a globe and uses it to keep spam out of your vault, your notifications and your feeds.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-it-is">What it is</a></li><li><a href="#the-globe">The globe</a></li><li><a href="#trust-paths-and-their-web">Trust paths and their web</a></li><li><a href="#my-web-and-rebuilding">My Web and rebuilding</a></li><li><a href="#what-your-web-decides">What your web decides</a></li><li><a href="#who-can-reach-you">Who Can Reach You</a></li><li><a href="#on-each-device">On each device</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="what">
+                <h2 id="what-it-is">What it is</h2>
+                <p>Nostr has no central moderator. Instead, Nostr Vault trusts who you trust. Your web has three rings:</p>
+                <ul>
+                    <li><strong>Following</strong>: the people you follow.</li>
+                    <li><strong>Vouched</strong>: people that 10 or more of your follows follow.</li>
+                    <li><strong>Further out</strong>: people your follows follow, but fewer than 10 of them.</li>
+                </ul>
+                <p>Your vault relay rebuilds the web on its own once a day. If you follow very few people, it borrows from your
+                    follows' follows so a new account isn't empty.</p>
+                </section>
+
+                <section id="globe">
+                <p class="eyebrow">The WoT tab</p>
+                <h2 id="the-globe">The globe</h2>
+                <p>Open the <strong>WoT</strong> tab. You're in the middle. Your follows sit on the first ring, Vouched people
+                    on the next, and everyone else is a faint outer shell. Each person always sits in the same spot, because
+                    their place comes from their key.</p>
+                <ul>
+                    <li><strong>Layers.</strong> The menu at the top left picks <strong>Everyone</strong>,
+                        <strong>Following</strong>, <strong>Vouched</strong> or <strong>Further out</strong>, each with a count.
+                        Vouched shows up once your vault has counted your web.</li>
+                    <li><strong>Filters.</strong> <strong>Talk with you</strong> keeps people you've replied to, reposted, liked
+                        or zapped, or who did that to you. <strong>Follow you back</strong> keeps follows who follow you too.</li>
+                    <li><strong>Find someone.</strong> Tap the magnifier and type a name. Your follows come first, then your
+                        web, then everyone else.</li>
+                </ul>
+                </section>
+
+                <section id="path">
+                <p class="eyebrow">Why someone is here</p>
+                <h2 id="trust-paths-and-their-web">Trust paths and their web</h2>
+                <p>Tap a face to open their card. The line under their name says how they reach you, for example
+                    "You follow them · 1 hop" or "Followed by Ann, Bo + more you follow · 2 hops". If no one you follow follows
+                    them, it says "Not in your web".</p>
+                <p>From the card you can follow or unfollow, open their <strong>Profile</strong>, or tap
+                    <strong>See their web</strong> to put them in the middle and see the globe from their side. A globe opened
+                    from a profile or a post has <strong>Open in WoT</strong> instead, which takes you to the WoT tab.</p>
+                <p>A post's Event Info shows the same trust path for its author.</p>
+                </section>
+
+                <section id="my-web">
+                <p class="eyebrow">The numbers</p>
+                <h2 id="my-web-and-rebuilding">My Web and rebuilding</h2>
+                <p>Tap <strong>My Web</strong> for the whole picture: how many people are in your web, how many you follow,
+                    how many are Vouched, who talks with you and who follows you back. Under Upkeep it says when the web was
+                    last rebuilt.</p>
+                <p>Just followed a lot of people? Tap <strong>Rebuild your web</strong> (in My Web, or at the bottom of the
+                    layer menu). The globe shows each step: reading your follow list, reading your follows' lists, counting.
+                    A full rebuild can take a few minutes. If it fails or the vault relay isn't running, the globe keeps your
+                    last saved web.</p>
+                </section>
+
+                <section id="reach">
+                <p class="eyebrow">Where it's used</p>
+                <h2 id="what-your-web-decides">What your web decides</h2>
+                <ul>
+                    <li><strong>Who can reach your vault.</strong> Only people in your web can post to your vault's inbox.
+                        Strangers can still reply to or quote your own posts.</li>
+                    <li><strong>Notifications.</strong> Replies, likes and mentions notify you only from people in your web.
+                        Zaps, follows and messages always come through. A new follower outside your web is folded into
+                        "N new followers".</li>
+                    <li><strong>Feeds.</strong> Global, Media and the other discovery feeds show only your web unless you
+                        switch them to Everyone. See <a class="inline" href="/docs/feeds/">Feeds</a>.</li>
+                    <li><strong>Search.</strong> Your follows and your web rank above everyone else.</li>
+                    <li><strong>Mesh photos.</strong> Photos load over the mesh only from people you follow, not from your
+                        wider web.</li>
+                </ul>
+                </section>
+
+                <section id="settings">
+                <p class="eyebrow">Settings</p>
+                <h2 id="who-can-reach-you">Who Can Reach You</h2>
+                <p>On iPhone and Android, open <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span>.
+                    <strong>Follow Distance</strong> sets how far out your web reaches (3, your whole web, to start),
+                    <strong>Minimum Followers</strong> how many of your follows must vouch for someone further out, and
+                    <strong>Refresh Trust List</strong> how often it's rebuilt. Details on
+                    <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>.</p>
+                </section>
+
+                <section id="platforms">
+                <h2 id="on-each-device">On each device</h2>
+                <ul>
+                    <li><strong>iPhone, iPad and Android</strong> have everything on this page.</li>
+                    <li><strong>The web app</strong> has a WoT tab with a <strong>Globe</strong> and <strong>My Web</strong>.
+                        It builds your web in the browser from follow lists, so there's no Rebuild button and no trust
+                        settings. Its search box says "Find a name, npub or key".</li>
+                </ul>
+                <p class="note">Replay it in the app: <span class="path">Settings &rarr; Help &rarr; Tutorials &rarr; Your Web of Trust</span>.</p>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/messages/"><span>Previous</span>Messages</a>
+                <a class="next" href="/docs/mesh/"><span>Next</span>The mesh</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

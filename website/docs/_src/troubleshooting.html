@@ -1,0 +1,110 @@
+<!--page
+{
+  "title": "Troubleshooting",
+  "nav": "Troubleshooting",
+  "section": "help",
+  "order": 1,
+  "eyebrow": "Help",
+  "h1": "When something <span>isn't working</span>",
+  "lede": "One heading per problem: what you see, why it happens, and what to tap. Items marked 3.0 are about the mesh, which comes with Nostr Vault 3.0.",
+  "description": "Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, kiosk mode paused.",
+  "labels": {
+    "ios": ["Fill Your Feed", "Media Servers", "Reveal Key", "Accounts & Keys", "My Devices", "In reach", "Not in reach", "This Device", "Vault on Mac", "Check sync with Vault on Mac", "Copy was interrupted", "Kiosk mode", "Kiosk mode paused", "Share With Others", "No Write relay"],
+    "android": ["Media Servers", "Start Relay Automatically", "My Devices", "This Device", "Vault on Mac", "Kiosk mode"]
+  }
+}
+-->
+
+<section id="empty-feed">
+<h2>My feed is empty</h2>
+<p>You see "No Following Feed". Nostr has no algorithm, so a new account starts with nothing: you see posts from
+    people you follow.</p>
+<p><strong>Fix:</strong> follow a few people. <strong>Fill Your Feed</strong> helps you find them by topic, and
+    five follows builds your web of trust, which fills Discover and Global too. Replay it from
+    <span class="path">Settings &rarr; Help &rarr; Tutorials</span>. More on <a class="inline" href="/docs/feeds/#new-account">Feeds</a>.</p>
+<p>Global and Media also stay empty until your web is built. That's on purpose: they show nothing rather than
+    everyone.</p>
+</section>
+
+<section id="read-only">
+<h2>I can't post, like or follow</h2>
+<p>You see "Read-only for now", "No private key stored for this account" or "This account is read-only. Add its
+    key to follow." You signed in with an npub or a name@domain, which lets you look but not sign.</p>
+<p><strong>Fix:</strong> add the account's key or connect a signer in
+    <span class="path">Settings &rarr; Accounts &amp; Keys</span>.</p>
+</section>
+
+<section id="signer">
+<h2>My signer never answers</h2>
+<p>You see "Your signer didn't answer in time", "Clave didn't answer" or, on Android, "Amber signing was cancelled
+    or timed out". Your signer app has a request waiting that you haven't approved, or it can't reach its relay.</p>
+<p><strong>Fix:</strong> open the signer app, approve the pending request, then tap Retry in Nostr Vault. If it
+    says "Couldn't reach your signer's relay", check your connection. "This signer is for a different account"
+    means the signer holds another key than the account you picked.</p>
+</section>
+
+<section id="photo-post">
+<h2>My photo post didn't send</h2>
+<p>You see "Your post wasn't sent: no outside media server is set up". A photo has to sit on a public media
+    server so other people can see it, even with the mesh.</p>
+<p><strong>Fix:</strong> add a server in <span class="path">Settings &rarr; Relays &rarr; Media Servers</span>,
+    then post again. (Android's message says "Settings &rarr; Blossom"; the row is called Media Servers.)</p>
+<p>If it says your Mac didn't take the photo, check that Nostr Vault is open on your Mac. "Saved on this device"
+    means the post will send itself as soon as the server answers.</p>
+</section>
+
+<section id="relays">
+<h2>A relay isn't answering</h2>
+<p>In the relay list you see "<em>relay</em> isn't answering". It didn't answer just now. Relays go down.</p>
+<p><strong>Fix:</strong> leave it a while. If it stays down, remove it. "No Write relay" means none of your relays
+    is set to Write, so your posts have nowhere to go: mark at least one as Write.</p>
+</section>
+
+<section id="android-update">
+<h2>Android: my vault went quiet after an update</h2>
+<p>Installing an update stops the app, and with it your vault relay.</p>
+<p><strong>Fix:</strong> open the app once after updating. Keep <strong>Start Relay Automatically</strong> on:
+    newer builds then start the relay again by themselves after an update.</p>
+</section>
+
+<section id="dot">
+<h2>A device on My Devices is never in reach <span class="tag tag-next">3.0</span></h2>
+<p>Under <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh &rarr; My Devices</span> a device stays "Not in
+    reach" (Android shows when it was last seen). A Mac or a kiosk phone only answers devices that are on its own
+    My Devices list, and a Mac with an empty list doesn't start the mesh at all.</p>
+<p><strong>Fix:</strong> add the devices both ways. On each device, copy the address under
+    <strong>This Device</strong> and add it on the other one; on your phones, add the Mac as
+    <strong>Vault on Mac</strong>. Check that Mesh is on, on both. See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</p>
+</section>
+
+<section id="check-sync">
+<h2>Check sync stops early <span class="tag tag-next">3.0</span></h2>
+<p>On iPhone, <strong>Check sync with Vault on Mac</strong> ends on "Stopped · N still missing", "Copy didn't
+    finish" with a reason, or "Copy was interrupted". The button is greyed out while a copy is running or when
+    your vault relay isn't running.</p>
+<p><strong>Fix:</strong> read the reason line. "Copy was interrupted" means the app closed during the copy; it
+    picks up again the next time the relay starts. Anything that couldn't be copied is tried again once a day,
+    and tapping the button starts a new run.</p>
+</section>
+
+<section id="mesh-photos">
+<h2>Someone's photos don't load over the mesh <span class="tag tag-next">3.0</span></h2>
+<p>The app only asks the mesh for photos from people you follow, and only if they list their own vault as a
+    media server. Files over 32 MB always come from the normal web address.</p>
+<p><strong>Fix:</strong> follow them, and check they have the mesh turned on. Otherwise the photo loads from
+    its web address as usual.</p>
+</section>
+
+<section id="kiosk">
+<h2>Kiosk mode paused <span class="tag tag-next">3.0</span></h2>
+<p>On iPhone you get "Kiosk mode paused". Leaving the app pauses kiosk mode.</p>
+<p><strong>Fix:</strong> tap the notification or open the app again; kiosk mode turns back on by itself. If it
+    won't start, add your other phone or your Mac under My Devices first. If it says you hit the limit for one
+    session, it starts again next session. See <a class="inline" href="/docs/mesh/#kiosk">Kiosk mode</a>.</p>
+</section>
+
+<section id="more">
+<h2>Still stuck?</h2>
+<p>Ask on Nostr, or open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a>
+    with what you saw, word for word.</p>
+</section>

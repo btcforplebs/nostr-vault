@@ -1,0 +1,126 @@
+<!--page
+{
+  "title": "Messages and notifications",
+  "nav": "Messages",
+  "section": "use",
+  "order": 2,
+  "eyebrow": "Using the app",
+  "h1": "Messages and <span>notifications</span>",
+  "lede": "Private messages are end-to-end encrypted, and your notifications are made by your own vault on your phone. No outside push server sees them.",
+  "description": "Nostr Vault messages and notifications: where Messages is, starting a message, NIP-17 and NIP-04, photos, DM relays, who can message you, the Vault activity list, notification settings and in-app pills.",
+  "labels": {
+    "ios": ["Messages", "New Message", "Attach photo", "Paste Photo", "Message", "Message seller", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Switch", "Retry", "No DM relay", "Only one DM relay", "Follow Distance", "Mentions", "All", "Notifications", "New Notes in Your Feed", "Sound", "Replies", "Direct Messages", "Zaps", "Reactions", "Reposts", "New Followers"],
+    "android": ["Messages", "New Message", "Mark all read", "Attach image", "Paste Photo", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Mentions", "Notifications", "New Notes in Your Feed", "Direct Messages", "New Followers", "Missed while open"],
+    "web": ["Messages", "Notifications", "Photo", "Open", "Mentions"]
+  }
+}
+-->
+
+<section id="where">
+<h2>Where your messages are</h2>
+<ul>
+    <li><strong>iPhone and Android:</strong> open the Vault tab and tap the envelope at the top right. A red
+        dot means something is unread.</li>
+    <li><strong>iPad:</strong> <strong>Messages</strong> in the sidebar, with an unread count.</li>
+    <li><strong>Mac:</strong> the <strong>Messages</strong> button on your profile.</li>
+    <li><strong>Web:</strong> <strong>Messages</strong> on the Vault tab, or in the sidebar on a computer
+        (shortcut <kbd>g</kbd> <kbd>m</kbd>).</li>
+</ul>
+</section>
+
+<section id="new">
+<p class="eyebrow">Write to someone</p>
+<h2>Start a message</h2>
+<ol>
+    <li>In Messages, tap the compose button (<strong>New Message</strong>).</li>
+    <li>In To:, type at least two letters of a name, or paste an npub.</li>
+    <li>Write your message and tap Send.</li>
+</ol>
+<p>You can also tap <strong>Message</strong> on someone's profile or on their card in the WoT tab, or
+    <strong>Message seller</strong> on a Marketplace listing, which fills in the listing for you. On the web, type
+    a name or paste an npub and tap <strong>Open</strong>.</p>
+<p>Opening a conversation marks it read. <strong>Mark all as read</strong> is at the top of the list. Read
+    state stays on each device.</p>
+</section>
+
+<section id="photos">
+<p class="eyebrow">Photos</p>
+<h2>Sending a photo</h2>
+<p>In a conversation, tap <strong>Attach photo</strong> (Android: Attach image, web: Photo), paste one with
+    <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. The photo goes to your media server first, and
+    its link goes in the message. Photos other than GIFs are re-saved, which removes their location.</p>
+<p>On iPhone, the New Message screen has no photo button: send the first message, then add photos in the
+    conversation.</p>
+<p>You can select and copy text in a message on iPhone and Android. There is no way to delete a message.</p>
+</section>
+
+<section id="encryption">
+<p class="eyebrow">Encryption</p>
+<h2>NIP-17 and NIP-04</h2>
+<p>Messages are sent with <strong>NIP-17</strong>: the message is sealed and wrapped so relays can't see who it's
+    from, who it's for, or what it says. A copy goes to you too, so your other devices see it.</p>
+<p>Some older apps only speak the older <strong>NIP-04</strong>, which hides the text but not who's talking.
+    Nostr Vault reads both. On iPhone and Android, the bar above the message box says
+    <strong>NIP-17 (encrypted)</strong>; tap <strong>Switch</strong> to send <strong>NIP-04 (legacy)</strong> in
+    that conversation. It goes back to NIP-17 next time you open it. The web app sends NIP-17 only.</p>
+<p>If you sign with a signer app, some messages may wait for it: "N messages are waiting for your signer to open
+    them". Open the signer, approve, and tap <strong>Retry</strong>.</p>
+</section>
+
+<section id="relays">
+<p class="eyebrow">Where messages go</p>
+<h2>DM relays and who can reach you</h2>
+<p>Your DM inbox is a list of relays (the DMs column under
+    <span class="path">Settings &rarr; Relays &rarr; Relays</span>). Other apps send your messages there. Keep at
+    least two: with <strong>No DM relay</strong> people can't message you, and with <strong>Only one DM
+    relay</strong> nobody can if it goes down. If your Mac is your vault, its inbox is listed first.</p>
+<p>When you send, Nostr Vault uses the other person's DM inbox, and falls back to their normal relays if they
+    don't have one.</p>
+<p>Someone delivering straight to your vault's own inbox has to be in your
+    <a class="inline" href="/docs/web-of-trust/">web of trust</a>. <strong>Follow Distance</strong> under
+    <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span> sets how far out that
+    goes (<a class="inline" href="/docs/vault/who-can-reach-you/">more</a>). There is no separate requests folder. Messages from people you've blocked are hidden.</p>
+</section>
+
+<section id="notifications">
+<p class="eyebrow">What happened</p>
+<h2>Your notifications</h2>
+<p>On iPhone and Android, the Vault tab opens on your activity: replies, mentions, quotes, likes, reposts,
+    zaps and new followers. Likes, zaps and reposts on the same post fold into one line ("Ann and 3 others"), and
+    new followers fold per day. Tap <strong>Mentions</strong> to see only replies, mentions and quotes. The web
+    app has the same list under <strong>Notifications</strong>.</p>
+</section>
+
+<section id="settings">
+<p class="eyebrow">Settings</p>
+<h2>Notification settings</h2>
+<p>Open <span class="path">Settings &rarr; Notifications</span>.</p>
+<ul>
+    <li><strong>Notifications</strong> turns them all on or off.</li>
+    <li><strong>New Notes in Your Feed</strong> tells you when new posts arrive.</li>
+    <li><strong>Sound</strong> picks the alert sound.</li>
+    <li>For each account: <strong>Mentions</strong>, <strong>Replies</strong>, <strong>Direct Messages</strong>,
+        <strong>Zaps</strong>, <strong>Reactions</strong>, <strong>Reposts</strong> and
+        <strong>New Followers</strong>.</li>
+</ul>
+<p>Only people in your web of trust can set off an alert. Messages, zaps and follows always come through. A new
+    follower outside your web is counted ("3 new followers") instead of named.</p>
+<p>A message alert says who it's from. If you don't see it, the copy left in Notification Center just says
+    "New message", without the sender or the text.</p>
+</section>
+
+<section id="delivery">
+<p class="eyebrow">How they arrive</p>
+<h2>No push server</h2>
+<p>Your vault makes the notifications on your phone. Nothing goes through Apple's or Google's push servers.</p>
+<ul>
+    <li><strong>iPhone:</strong> iOS wakes the app in the background now and then to check. Alerts can come a
+        little late while the app is closed.</li>
+    <li><strong>Android:</strong> the vault keeps running, shown by the "Nostr Vault Relay" notification, so
+        alerts come right away.</li>
+    <li><strong>While the app is open,</strong> new things show as a pill at the top instead of a system alert.
+        When you come back after a while, one pill sums it up, like "5 mentions · 2 zaps · 1 DM". Android files
+        pills you didn't see under "Missed while open".</li>
+    <li><strong>The web app</strong> doesn't send notifications.</li>
+</ul>
+</section>

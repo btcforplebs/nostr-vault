@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/messages.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Messages and notifications — Nostr Vault Docs</title>
+    <meta name="description" content="Nostr Vault messages and notifications: where Messages is, starting a message, NIP-17 and NIP-04, photos, DM relays, who can message you, the Vault activity list, notification settings and in-app pills.">
+    <link rel="canonical" href="https://nostrvault.app/docs/messages/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/messages/">
+    <meta property="og:title" content="Messages and notifications — Nostr Vault Docs">
+    <meta property="og:description" content="Nostr Vault messages and notifications: where Messages is, starting a message, NIP-17 and NIP-04, photos, DM relays, who can message you, the Vault activity list, notification settings and in-app pills.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/" aria-current="page">Messages</a></li>
+                    <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Using the app</p>
+            <h1>Messages and <span>notifications</span></h1>
+            <p class="docs-lede">Private messages are end-to-end encrypted, and your notifications are made by your own vault on your phone. No outside push server sees them.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#where-your-messages-are">Where your messages are</a></li><li><a href="#start-a-message">Start a message</a></li><li><a href="#sending-a-photo">Sending a photo</a></li><li><a href="#nip-17-and-nip-04">NIP-17 and NIP-04</a></li><li><a href="#dm-relays-and-who-can-reach-you">DM relays and who can reach you</a></li><li><a href="#your-notifications">Your notifications</a></li><li><a href="#notification-settings">Notification settings</a></li><li><a href="#no-push-server">No push server</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="where">
+                <h2 id="where-your-messages-are">Where your messages are</h2>
+                <ul>
+                    <li><strong>iPhone and Android:</strong> open the Vault tab and tap the envelope at the top right. A red
+                        dot means something is unread.</li>
+                    <li><strong>iPad:</strong> <strong>Messages</strong> in the sidebar, with an unread count.</li>
+                    <li><strong>Mac:</strong> the <strong>Messages</strong> button on your profile.</li>
+                    <li><strong>Web:</strong> <strong>Messages</strong> on the Vault tab, or in the sidebar on a computer
+                        (shortcut <kbd>g</kbd> <kbd>m</kbd>).</li>
+                </ul>
+                </section>
+
+                <section id="new">
+                <p class="eyebrow">Write to someone</p>
+                <h2 id="start-a-message">Start a message</h2>
+                <ol>
+                    <li>In Messages, tap the compose button (<strong>New Message</strong>).</li>
+                    <li>In To:, type at least two letters of a name, or paste an npub.</li>
+                    <li>Write your message and tap Send.</li>
+                </ol>
+                <p>You can also tap <strong>Message</strong> on someone's profile or on their card in the WoT tab, or
+                    <strong>Message seller</strong> on a Marketplace listing, which fills in the listing for you. On the web, type
+                    a name or paste an npub and tap <strong>Open</strong>.</p>
+                <p>Opening a conversation marks it read. <strong>Mark all as read</strong> is at the top of the list. Read
+                    state stays on each device.</p>
+                </section>
+
+                <section id="photos">
+                <p class="eyebrow">Photos</p>
+                <h2 id="sending-a-photo">Sending a photo</h2>
+                <p>In a conversation, tap <strong>Attach photo</strong> (Android: Attach image, web: Photo), paste one with
+                    <strong>Paste Photo</strong>, or drag it in on a Mac or iPad. The photo goes to your media server first, and
+                    its link goes in the message. Photos other than GIFs are re-saved, which removes their location.</p>
+                <p>On iPhone, the New Message screen has no photo button: send the first message, then add photos in the
+                    conversation.</p>
+                <p>You can select and copy text in a message on iPhone and Android. There is no way to delete a message.</p>
+                </section>
+
+                <section id="encryption">
+                <p class="eyebrow">Encryption</p>
+                <h2 id="nip-17-and-nip-04">NIP-17 and NIP-04</h2>
+                <p>Messages are sent with <strong>NIP-17</strong>: the message is sealed and wrapped so relays can't see who it's
+                    from, who it's for, or what it says. A copy goes to you too, so your other devices see it.</p>
+                <p>Some older apps only speak the older <strong>NIP-04</strong>, which hides the text but not who's talking.
+                    Nostr Vault reads both. On iPhone and Android, the bar above the message box says
+                    <strong>NIP-17 (encrypted)</strong>; tap <strong>Switch</strong> to send <strong>NIP-04 (legacy)</strong> in
+                    that conversation. It goes back to NIP-17 next time you open it. The web app sends NIP-17 only.</p>
+                <p>If you sign with a signer app, some messages may wait for it: "N messages are waiting for your signer to open
+                    them". Open the signer, approve, and tap <strong>Retry</strong>.</p>
+                </section>
+
+                <section id="relays">
+                <p class="eyebrow">Where messages go</p>
+                <h2 id="dm-relays-and-who-can-reach-you">DM relays and who can reach you</h2>
+                <p>Your DM inbox is a list of relays (the DMs column under
+                    <span class="path">Settings &rarr; Relays &rarr; Relays</span>). Other apps send your messages there. Keep at
+                    least two: with <strong>No DM relay</strong> people can't message you, and with <strong>Only one DM
+                    relay</strong> nobody can if it goes down. If your Mac is your vault, its inbox is listed first.</p>
+                <p>When you send, Nostr Vault uses the other person's DM inbox, and falls back to their normal relays if they
+                    don't have one.</p>
+                <p>Someone delivering straight to your vault's own inbox has to be in your
+                    <a class="inline" href="/docs/web-of-trust/">web of trust</a>. <strong>Follow Distance</strong> under
+                    <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span> sets how far out that
+                    goes (<a class="inline" href="/docs/vault/who-can-reach-you/">more</a>). There is no separate requests folder. Messages from people you've blocked are hidden.</p>
+                </section>
+
+                <section id="notifications">
+                <p class="eyebrow">What happened</p>
+                <h2 id="your-notifications">Your notifications</h2>
+                <p>On iPhone and Android, the Vault tab opens on your activity: replies, mentions, quotes, likes, reposts,
+                    zaps and new followers. Likes, zaps and reposts on the same post fold into one line ("Ann and 3 others"), and
+                    new followers fold per day. Tap <strong>Mentions</strong> to see only replies, mentions and quotes. The web
+                    app has the same list under <strong>Notifications</strong>.</p>
+                </section>
+
+                <section id="settings">
+                <p class="eyebrow">Settings</p>
+                <h2 id="notification-settings">Notification settings</h2>
+                <p>Open <span class="path">Settings &rarr; Notifications</span>.</p>
+                <ul>
+                    <li><strong>Notifications</strong> turns them all on or off.</li>
+                    <li><strong>New Notes in Your Feed</strong> tells you when new posts arrive.</li>
+                    <li><strong>Sound</strong> picks the alert sound.</li>
+                    <li>For each account: <strong>Mentions</strong>, <strong>Replies</strong>, <strong>Direct Messages</strong>,
+                        <strong>Zaps</strong>, <strong>Reactions</strong>, <strong>Reposts</strong> and
+                        <strong>New Followers</strong>.</li>
+                </ul>
+                <p>Only people in your web of trust can set off an alert. Messages, zaps and follows always come through. A new
+                    follower outside your web is counted ("3 new followers") instead of named.</p>
+                <p>A message alert says who it's from. If you don't see it, the copy left in Notification Center just says
+                    "New message", without the sender or the text.</p>
+                </section>
+
+                <section id="delivery">
+                <p class="eyebrow">How they arrive</p>
+                <h2 id="no-push-server">No push server</h2>
+                <p>Your vault makes the notifications on your phone. Nothing goes through Apple's or Google's push servers.</p>
+                <ul>
+                    <li><strong>iPhone:</strong> iOS wakes the app in the background now and then to check. Alerts can come a
+                        little late while the app is closed.</li>
+                    <li><strong>Android:</strong> the vault keeps running, shown by the "Nostr Vault Relay" notification, so
+                        alerts come right away.</li>
+                    <li><strong>While the app is open,</strong> new things show as a pill at the top instead of a system alert.
+                        When you come back after a while, one pill sums it up, like "5 mentions · 2 zaps · 1 DM". Android files
+                        pills you didn't see under "Missed while open".</li>
+                    <li><strong>The web app</strong> doesn't send notifications.</li>
+                </ul>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/feeds/"><span>Previous</span>Feeds</a>
+                <a class="next" href="/docs/web-of-trust/"><span>Next</span>Web of trust</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
