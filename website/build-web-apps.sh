@@ -25,7 +25,7 @@ need() { for f in "$@"; do [ -s "$f" ] || { echo "build-web-apps: missing or emp
 
 web-relay/tools/build-haven-wasm.sh
 (cd web-relay && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
-need website/relay/index.html website/relay/haven.wasm website/relay/haven.wasm.gz website/relay/sw.js
+need website/relay/index.html website/relay/haven.wasm website/relay/haven.wasm.gz website/relay/sw.js website/relay/share-photos.js
 ls website/relay/assets/index-*.js >/dev/null
 
 # web-vault imports web-relay's code and haven.wasm, so it builds second.

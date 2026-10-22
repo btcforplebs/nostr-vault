@@ -19,9 +19,9 @@ async function build(code) {
   const pool = new SimplePool()
   try {
     const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
-    const { post, events, profiles } = await loadThread(target, query)
+    const { post, events, profiles, vaults } = await loadThread(target, query)
     if (!post) return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL }
-    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code }), ttl: FOUND_TTL }
+    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults }), ttl: FOUND_TTL }
   } finally {
     pool.destroy()
   }
