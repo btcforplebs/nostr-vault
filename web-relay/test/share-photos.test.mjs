@@ -15,11 +15,11 @@ import { nodeFabric } from "./support/node-fabric.js"
 const sha = b => createHash("sha256").update(b).digest("hex")
 const HASH = "e4".repeat(32), V1 = "11".repeat(32), V2 = "22".repeat(32)
 
-function img({ x = HASH, vaults = `${V1},${V2}`, failed = false } = {}) {
+function img({ x = HASH, vaults = `${V1},${V2}`, failed = false, reply = false } = {}) {
   const link = { href: "https://media.example/dead.png" }
   const listeners = {}
   return {
-    dataset: { ...(x && { x }), ...(vaults && { vaults }) },
+    dataset: { ...(x && { x }), ...(vaults && { vaults }), ...(reply && { meshOn: "error" }) },
     complete: failed, naturalWidth: 0, src: "https://media.example/dead.png", link,
     closest: sel => (sel === "a" ? link : null),
     addEventListener: (type, fn) => { listeners[type] = fn },
@@ -51,7 +51,8 @@ function fakeReader(has, { size = 3, delayMs = 0 } = {}) {
 }
 
 test("meshTarget: a 64-hex hash and up to three 64-hex vaults, else nothing", () => {
-  assert.deepEqual(meshTarget(img()), { x: HASH, vaults: [V1, V2] })
+  assert.deepEqual(meshTarget(img()), { x: HASH, vaults: [V1, V2], fallback: false })
+  assert.equal(meshTarget(img({ reply: true })).fallback, true)
   assert.equal(meshTarget(img({ vaults: "nothex" })), undefined)
   assert.equal(meshTarget(img({ x: "abc" })), undefined)
   assert.equal(meshTarget(img({ vaults: [V1, V2, "33".repeat(32), "44".repeat(32)].join(",") })).vaults.length, 3)
@@ -235,4 +236,21 @@ test("a photo that loads over https never gets a card", async () => {
   const f = fakeReader([V1]), { box, i } = domImg()
   await wireMeshPhotos(doc([i]), f)
   assert.equal(card(box), undefined)
+})
+
+test("a reply's photo is a fallback only: no reader at page open, no server copy, its vaults once it fails", async () => {
+  const f = fakeReader([V1]), reply = img({ reply: true }), asked = []
+  await wireMeshPhotos(doc([reply, img({ reply: true })]), { ...f, loadCached: async x => { asked.push(x); return "/thread/photo/" + x } })
+  await settle()
+  assert.equal(f.calls.starts, 0, "replies whose https photos load open no fips connection")
+  reply.fail(); await settle()
+  assert.equal(f.calls.starts, 1)
+  assert.deepEqual(asked, [], "no server copy for a reply")
+  assert.equal(reply.src, "blob:image/png:3")
+})
+
+test("a reply that already failed when the script ran is read at once, still without the server copy", async () => {
+  const f = fakeReader([V1]), asked = [], reply = img({ reply: true, failed: true })
+  await wireMeshPhotos(doc([reply]), { ...f, loadCached: async x => { asked.push(x); return null } })
+  assert.deepEqual([f.calls.starts, asked.length, reply.dataset.mesh], [1, 0, "loaded"])
 })
