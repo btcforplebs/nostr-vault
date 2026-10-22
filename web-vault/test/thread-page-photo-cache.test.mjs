@@ -3,7 +3,8 @@
 // post, a dropped photo or a 10063 that stops naming the vault drops it at once. A fake reader and clock.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createPhotoCache } from "../thread-page/photo-cache.js"
+import { createPhotoCache, servedType, WAIT_MS } from "../thread-page/photo-cache.js"
+import { readFileSync } from "node:fs"
 
 const X = "e4".repeat(32), Y = "f1".repeat(32), V1 = "11".repeat(32), V2 = "22".repeat(32)
 const settle = () => new Promise(r => setTimeout(r, 5))
@@ -39,7 +40,7 @@ test("a build arms the photo; the warm reader reads it from the post's vaults on
   assert.deepEqual([...got.bytes], [7, 7, 7])
   assert.equal(got.type, "image/png")
   assert.deepEqual(f.calls.gets, [[V1, X], [V2, X]])
-  assert.deepEqual(f.calls.allowed, [[V1], [V2]], "the reader may ask only the vault being read")
+  assert.deepEqual(f.calls.allowed, [[V1], [V2]], "with one read at a time, only the vault being read (two parallel reads share the set)")
   cache.sync("note1", [X], [V1, V2])
   await settle()
   assert.equal(f.calls.gets.length, 2, "kept: not read again")
@@ -139,4 +140,17 @@ test("reads queue a couple at a time and the queue is capped", async () => {
   assert.equal(cache.stats().running, 2)
   await new Promise(r => setTimeout(r, 60))
   assert.equal(f.calls.gets.length, 5, "two running and three queued; the sixth was not taken")
+})
+
+test("served types: raster images as given, anything else (SVG too) as an opaque download", () => {
+  assert.equal(servedType("image/png"), "image/png")
+  assert.equal(servedType("IMAGE/JPEG"), "image/jpeg")
+  for (const t of ["image/svg+xml", "text/html", "image/png; charset=x", "", undefined]) assert.equal(servedType(t), "application/octet-stream", String(t))
+})
+
+test("a photo request waits less than nginx gives /thread/, so the answer is ours, not a 504", () => {
+  const conf = readFileSync(new URL("../../website/nginx.conf", import.meta.url), "utf8")
+  const block = conf.slice(conf.indexOf("location ^~ /thread/"))
+  const nginxMs = Number(/proxy_read_timeout (\d+)s/.exec(block)[1]) * 1000
+  assert.ok(WAIT_MS < nginxMs - 2000, `${WAIT_MS} ms vs nginx ${nginxMs} ms`)
 })
