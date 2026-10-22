@@ -1,6 +1,6 @@
 // FIPS section of the page: vault pairing by mesh address, start/stop, status (seed link, vault path, streams), and
 // showing a photo straight from a paired vault.
-import { parseOwners, saveOwners } from "./owners.js"
+import { parseOwners, saveOwners, loadOwnerAccount, saveOwnerAccount } from "./owners.js"
 import { RELAY_SERVICE_PORT } from "./tcp-server.js"
 import { startFipsRelay } from "./node.js"
 import { parseBlobRef } from "./blob-get.js"
@@ -17,6 +17,10 @@ const $ = id => document.getElementById(id)
 export function mountFipsPanel({ haven, owners, log, account, storage }) {
   let running
   $("fipsOwners").value = [...owners].join("\n")
+  // The web app's Relay screen mounts this panel without the account box.
+  const accountUi = !!$("fipsAccount")
+  const savedAccount = accountUi ? loadOwnerAccount(storage) : undefined
+  if (accountUi) $("fipsAccount").value = savedAccount ? npubEncode(savedAccount) : ""
   // Show photo is this page's own: the web app's Relay screen mounts the panel without it, and its Save/Start must
   // still work there.
   const photoUi = !!$("blobGet")
@@ -41,9 +45,10 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
   $("fipsSave").onclick = () => {
     try {
       const next = parseOwners($("fipsOwners").value, { account })
+      const nextAccount = accountUi ? saveOwnerAccount($("fipsAccount").value, storage) : savedAccount
       saveOwners(next, storage)
-      log("fips-owners-saved", { owners: next.size })
-      const same = next.size === owners.size && [...next].every(k => owners.has(k))
+      log("fips-owners-saved", { owners: next.size, account: !!nextAccount })
+      const same = next.size === owners.size && [...next].every(k => owners.has(k)) && nextAccount === savedAccount
       if (!same) location.reload()
     } catch (e) {
       $("fipsStatus").textContent = String(e)
