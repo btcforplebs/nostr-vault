@@ -105,11 +105,11 @@ data class QueuedMediaPost(
 object MediaUploadOutcomeMessage {
     /**
      * No outside Blossom server is configured at all: the post can never be
-     * sent as-is, so it is not queued. "Settings → Blossom" is the row that
-     * opens the Blossom Servers screen on Android.
+     * sent as-is, so it is not queued. "Settings → Media Servers" is the row that
+     * opens the Media Servers screen on Android.
      */
     const val NO_OUTSIDE_SERVER =
-        "Your post wasn't sent: no outside media server is set up, so nobody else could see this photo. Add your Mac or another server in Settings → Blossom, then post again."
+        "Your post wasn't sent: no outside media server is set up, so nobody else could see this photo. Add your Mac or another server in Settings → Media Servers, then post again."
 
     /** The blob never reached this device's own relay. */
     const val NOT_SAVED_ON_DEVICE =
