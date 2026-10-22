@@ -450,14 +450,14 @@ func initRelays(ctx context.Context) error {
 	relayCtx := ctx
 	blastQ := openBlastQueue(blastPendingFile)
 	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx, blastQ) })
-	blastStored := func(ctx context.Context, event *nostr.Event) error {
-		slog.Info("event stored")
-		// The relay's context, not the connection's: a sender that hangs up
-		// right after OK (the other phone over the mesh) must not cut the blast.
+	// Only what the store now holds, and nothing a stranger sent over the
+	// mesh door (mesh_safety.go). The relay's context, not the connection's:
+	// a sender that hangs up right after OK must not cut the blast.
+	blastStored := newBlastStored(outboxHolds, func(event *nostr.Event) {
 		runsafe.Go("blast", func() { blastOrKeep(relayCtx, blastQ, event) })
-		return nil
-	}
-	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, blastStored)
+	})
+	meshBlobs.reset()
+	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, noteStoredForMeshBlobs, blastStored)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
@@ -465,7 +465,7 @@ func initRelays(ctx context.Context) error {
 	// khatru hands replaceable kinds (0, 3, 10002, 10063, 30023…) to ReplaceEvent,
 	// never StoreEvent, so they are blasted here too: a phone's 10063 sent only
 	// to this relay otherwise never reaches the public relays.
-	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent, blastStored)
+	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent, noteStoredForMeshBlobs, blastStored)
 
 	mux = outboxRelay.Router()
 
@@ -522,6 +522,8 @@ func initRelays(ctx context.Context) error {
 		return nil
 	})
 	blossomServer.LoadBlob = append(blossomServer.LoadBlob, loadBlob)
+	// Over the mesh, only blobs a public note names (mesh_safety.go).
+	guardMeshBlobs(blossomServer)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
 		return fs.Remove(config.BlossomPath + sha256)

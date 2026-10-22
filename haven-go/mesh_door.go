@@ -155,7 +155,9 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 		dynamicRelayHandler(w, markMesh(r))
 	default:
 		setTransferDeadline(w)
-		meshBlobHandler(w, r)
+		// Marked so Blossom's RejectGet knows a stranger is asking; the
+		// writer drops a reader that stops taking bytes (mesh_safety.go).
+		meshBlobHandler(newMeshSendFloorWriter(w), markMesh(r))
 	}
 }
 
