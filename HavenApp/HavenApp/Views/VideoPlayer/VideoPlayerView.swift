@@ -15,11 +15,17 @@ struct VideoPlayerView: View {
     @ObservedObject private var failures = VideoPlaybackFailures.shared
 
     @State private var viewSize: CGSize = .zero
+    /// The URL failed: the note author's vault on the mesh is asked instead.
+    @Environment(\.meshMediaNote) private var meshNote
+    @State private var meshPhase: MeshMediaPhase = .loading
+    @State private var meshFile: URL? = nil
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if failures.hasFailed(url) {
+                if failures.hasFailed(url) && meshFile == nil && meshPhase == .meshLookup {
+                    MeshMediaStatusView(phase: meshPhase, video: true)
+                } else if failures.hasFailed(url) && meshFile == nil {
                     errorContent
                 } else if let player = player {
                     NativeVideoPlayer(player: player)
@@ -35,6 +41,7 @@ struct VideoPlayerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minWidth: 300, minHeight: 200) // Avoid AVPlayerView constraint warnings
+            .task(id: failures.hasFailed(url)) { await rescueOverMesh() }
             .onChange(of: geo.size) { _, newSize in
                 // Strict size gate: Don't load player unless we have enough width for the controls
                 if viewSize == .zero && newSize.width > 100 && newSize.height > 100 {
@@ -68,7 +75,7 @@ struct VideoPlayerView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.appSystem(size: 40))
                 .foregroundColor(.orange)
-            Text("Failed to load video")
+            Text(meshPhase.text(video: true) ?? "Failed to load video")
                 .font(.appHeadline)
             Text("Every source for this video failed to play.")
                 .font(.appCaption)
@@ -89,7 +96,21 @@ struct VideoPlayerView: View {
         VideoPlayerCache.shared.removePlayer(for: url)
         VideoPlaybackService.shared.invalidateLadder(for: url)
         VideoPlaybackFailures.shared.clear(url)
+        meshPhase = .loading
         setupPlayer()
+    }
+
+    /// The URL's ladder ran out: read the video from the note author's vault
+    /// on the mesh, then play that file.
+    private func rescueOverMesh() async {
+        guard failures.hasFailed(url), meshFile == nil, meshNote != nil else { return }
+        let file = await MediaCacheService.shared.meshVideoFile(url: url, note: meshNote, onLookup: { meshPhase = .meshLookup })
+        guard let file else {
+            meshPhase = .failed(after: meshPhase, meshOnly: MediaCacheService.isMeshOnly(url))
+            return
+        }
+        meshFile = file
+        player = await VideoPlaybackService.shared.preparedPlayer(for: file, mimeHint: mimeType, intent: .standalone)
     }
 
     private func setupPlayer() {

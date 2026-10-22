@@ -134,10 +134,12 @@ extension NoteRow {
                 if !urls.isEmpty {
                     if urls.count == 1 {
                         FeedMediaView(url: urls[0], maxHeight: 300, portraitMaxHeight: 400, isThumbnail: false)
+                            .meshMediaNote(author: event.pubkey, tags: event.tags)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     } else {
                         MediaPagerView(items: urls) { url in
                             FeedMediaView(url: url, maxHeight: 300, portraitMaxHeight: 400, isThumbnail: false)
+                                .meshMediaNote(author: event.pubkey, tags: event.tags)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 #if os(iOS)
                                 .transition(.opacity.animation(Motion.media))

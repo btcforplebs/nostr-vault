@@ -141,9 +141,13 @@ actor MeshMediaRouter {
 
     /// The photo's bytes from the author's vault, checked against its hash,
     /// or nil (not followed, no vault listed, unreachable, wrong bytes).
-    func read(plan: Plan, author: String) async -> Data? {
-        guard await deps.mayDial(author),
-              let list = await serverList(of: author),
+    /// `onLookup` runs once the author is known to be one the mesh may be
+    /// asked about, before the wait for their list or the dial: the moment a
+    /// photo starts "Loading over FIPS…", as on the web.
+    func read(plan: Plan, author: String, onLookup: (@Sendable () async -> Void)? = nil) async -> Data? {
+        guard await deps.mayDial(author) else { return nil }
+        await onLookup?()
+        guard let list = await serverList(of: author),
               // A `.fips` URL may name any node; only the author's own signed
               // list says which are theirs.
               let npub = Self.vault(for: plan, serverList: list)
@@ -199,5 +203,39 @@ actor MeshMediaRouter {
         // A vault distrusted while this dial ran stays dropped.
         if !distrusted.contains(npub) { ingressCache[npub] = (base, deps.now()) }
         return base
+    }
+}
+
+/// What a photo or video shows in its place while it isn't drawn: the web's
+/// `MeshBox` (web-vault MediaImage.jsx), same words.
+enum MeshMediaPhase: Equatable, Sendable {
+    /// The usual load from the URL; nothing to say yet.
+    case loading
+    /// The URL failed (or is a `.fips` link) and the author's vault is being
+    /// asked over the mesh.
+    case meshLookup
+    /// The mesh was asked and gave up.
+    case unreached
+    /// A `.fips` link the mesh may not be asked about (author not followed).
+    case notReachable
+    /// The URL failed and there was no mesh to ask.
+    case notFound
+
+    /// The phase a load that came back empty ends in.
+    static func failed(after phase: MeshMediaPhase, meshOnly: Bool) -> MeshMediaPhase {
+        if phase == .meshLookup { return .unreached }
+        return meshOnly ? .notReachable : .notFound
+    }
+
+    var isFailure: Bool { self == .unreached || self == .notReachable || self == .notFound }
+
+    func text(video: Bool = false) -> String? {
+        switch self {
+        case .loading: return nil
+        case .meshLookup: return video ? "Loading video over FIPS…" : "Loading image over FIPS…"
+        case .unreached: return "Couldn't reach the owner's vault"
+        case .notReachable: return video ? "Video not reachable" : "Photo not reachable"
+        case .notFound: return video ? "Video not found" : "Photo not found"
+        }
     }
 }

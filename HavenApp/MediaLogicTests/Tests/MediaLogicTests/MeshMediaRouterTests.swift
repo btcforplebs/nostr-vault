@@ -102,6 +102,31 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(state.gets, [])
     }
 
+    func testTheLookupIsAnnouncedOnlyForAnAuthorTheMeshMayAsk() async {
+        let fake = Fake(photo: photo, base: base, lists: [author: ["fipsmesh://\(vault)/"]])
+        let lookups = Counter()
+        let followed = MeshMediaRouter(fake.deps(follows: [author]))
+        _ = await followed.read(plan: .init(sha256: sha, hostNpub: nil), author: author, onLookup: { await lookups.bump() })
+        let afterFollowed = await lookups.value
+        XCTAssertEqual(afterFollowed, 1, "a followed author's photo says it is loading over FIPS")
+        let stranger = MeshMediaRouter(fake.deps(follows: []))
+        _ = await stranger.read(plan: .init(sha256: sha, hostNpub: nil), author: author, onLookup: { await lookups.bump() })
+        let afterStranger = await lookups.value
+        XCTAssertEqual(afterStranger, 1, "no spinner for a read that never starts")
+    }
+
+    func testAFailedLoadSaysWhatTheWebSays() {
+        XCTAssertEqual(MeshMediaPhase.failed(after: .meshLookup, meshOnly: false), .unreached)
+        XCTAssertEqual(MeshMediaPhase.failed(after: .meshLookup, meshOnly: true), .unreached)
+        XCTAssertEqual(MeshMediaPhase.failed(after: .loading, meshOnly: true), .notReachable)
+        XCTAssertEqual(MeshMediaPhase.failed(after: .loading, meshOnly: false), .notFound)
+        XCTAssertEqual(MeshMediaPhase.meshLookup.text(), "Loading image over FIPS…", "web-vault MediaImage.jsx LOADING_TEXT")
+        XCTAssertEqual(MeshMediaPhase.unreached.text(), "Couldn't reach the owner's vault", "web-vault UNREACHED_TEXT")
+        XCTAssertEqual(MeshMediaPhase.notReachable.text(), "Photo not reachable")
+        XCTAssertEqual(MeshMediaPhase.meshLookup.text(video: true), "Loading video over FIPS…")
+        XCTAssertNil(MeshMediaPhase.loading.text())
+    }
+
     func testAPlainURLUsesTheAuthorsListedVault() async {
         let fake = Fake(photo: photo, base: base, lists: [author: ["https://blossom.band/", "fipsmesh://\(other)/"]])
         let router = MeshMediaRouter(fake.deps(follows: [author]))
@@ -326,4 +351,9 @@ private final class TestClock: @unchecked Sendable {
     private var date = Date(timeIntervalSince1970: 1_000_000)
     var now: Date { lock.withLock { date } }
     func advance(_ seconds: TimeInterval) { lock.withLock { date += seconds } }
+}
+
+private actor Counter {
+    private(set) var value = 0
+    func bump() { value += 1 }
 }
