@@ -9,7 +9,7 @@
   "lede": "Your vault only takes mentions and messages from people you trust, measured by who you follow. Who Can Reach You sets how far that trust goes.",
   "description": "Nostr Vault's Who Can Reach You settings: Follow Distance, Minimum Followers and Refresh Trust List decide which people can send to your vault's inbox and messages. Spam control by Web of Trust.",
   "labels": {
-    "ios": ["Who Can Reach You", "Web of Trust", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Every hour", "Every 12 hours", "Every day", "Every week", "Rate Limits", "Who can reach you", "Trust list not built yet"],
+    "ios": ["Who Can Reach You", "Web of Trust", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Every hour", "Every 12 hours", "Every day", "Every week", "Who can reach you", "Trust list not built yet"],
     "android": ["Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Changes restart the relay automatically."],
     "mac": ["Who Can Reach You", "Follow Distance"],
     "web": ["Who can reach this relay"]
@@ -48,7 +48,7 @@
         follows follow them (see Minimum Followers).</td></tr>
 </table>
 </div>
-<p>The control goes up to 5, but 4 and 5 work the same as 3.</p>
+<p>The control stops at 3. An older setting of 4 or 5 shows as 3, which is how the relay always ran it.</p>
 
 <h3>Minimum Followers</h3>
 <p>At distance 3, how many of the people you follow must also follow someone before they can reach you.
@@ -60,8 +60,6 @@
     <strong>Every 12 hours</strong>, <strong>Every day</strong> (default) or <strong>Every week</strong>.
     Someone you just followed can reach you after the next rebuild.</p>
 
-<h3>Rate Limits</h3>
-<p>Leave these as they are.</p>
 </section>
 
 <section id="platforms">
