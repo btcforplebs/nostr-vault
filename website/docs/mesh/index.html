@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/mesh/index.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The mesh — Nostr Vault Docs</title>
+    <meta name="description" content="How Nostr Vault's mesh works: your phone or Mac serves your own photos over the FIPS mesh, with no public IP, domain or cloud. My Devices, kiosk mode, share pages and privacy.">
+    <link rel="canonical" href="https://nostrvault.app/docs/mesh/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/mesh/">
+    <meta property="og:title" content="The mesh — Nostr Vault Docs">
+    <meta property="og:description" content="How Nostr Vault's mesh works: your phone or Mac serves your own photos over the FIPS mesh, with no public IP, domain or cloud. My Devices, kiosk mode, share pages and privacy.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/" aria-current="page">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Mesh and your devices</p>
+            <h1>Your phone is your <span>photo server</span> now.</h1>
+            <p class="docs-lede">Nostr Vault can serve your photos straight from your own phone or Mac, over a mesh network that finds devices by their Nostr key. No cloud bucket, no domain, no port forwarding, and no third party holding your files.</p>
+            <div class="docs-banner" role="note"><strong>3.0 coming soon.</strong> This page is about Nostr Vault 3.0, which is in testing. The apps you can download today are 2.7.2.</div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-the-mesh-is">What the mesh is</a></li><li><a href="#your-phone-or-mac-as-your-photo-server">Your phone or Mac as your photo server</a></li><li><a href="#my-devices">My Devices</a></li><li><a href="#kiosk-mode">Kiosk mode</a></li><li><a href="#share-pages">Share pages</a></li><li><a href="#privacy">Privacy</a></li><li><a href="#what-s-live-vs-what-s-in-3-0">What's live vs what's in 3.0</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="mesh">
+                <p class="eyebrow">The basics</p>
+                <h2 id="what-the-mesh-is">What the mesh is</h2>
+                <p>Most phones and home computers can't be reached from the internet. They sit behind a home router, move
+                    between Wi-Fi and cell, and have no fixed address. That's why your photos normally live on someone
+                    else's server.</p>
+                <p><strong>FIPS</strong> is a mesh network where you reach a device by its Nostr key (an npub) instead of
+                    an IP address. It works across home routers and mobile networks, and the connection between two devices
+                    is encrypted end to end. Nostr Vault uses it to let your devices reach each other, and to let other
+                    people fetch your photos from you.</p>
+                <p>Photos stay trustworthy no matter who hands them over. On Nostr, a photo is named by its fingerprint (a
+                    hash). Whoever sends it, the app checks the fingerprint, and if it matches, it's the photo. If it
+                    doesn't, the photo is thrown away and loaded the normal way.</p>
+                </section>
+
+                <section id="server">
+                <p class="eyebrow">Your own server</p>
+                <h2 id="your-phone-or-mac-as-your-photo-server">Your phone or Mac as your photo server</h2>
+                <p>Your Nostr profile already keeps a list of where your media lives. Nostr Vault adds one more entry to
+                    that list: your own device, written as its mesh address. It goes after your normal media servers, so
+                    apps that don't know about the mesh carry on as before.</p>
+                <p>An app that does know about it can ask your device for a photo directly, by its fingerprint, the same
+                    way it would ask any media server. Your photos still go to your normal servers too. Your device is one
+                    more place they can come from, and the one you own.</p>
+                <ul>
+                    <li><strong>On a Mac</strong>, the Nostr Vault app serves while it's open. Leave it running and your
+                        Mac is an always-on photo server.</li>
+                    <li><strong>On a phone</strong>, it serves while the app is open, or full-time in
+                        <a class="inline" href="#kiosk">kiosk mode</a> on a spare phone.</li>
+                </ul>
+                <p>To turn it on, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and switch on
+                    <strong>Mesh</strong>. Serving is off until you turn it on.</p>
+                </section>
+
+                <section id="devices">
+                <p class="eyebrow">Your devices, together</p>
+                <h2 id="my-devices">My Devices</h2>
+                <p><strong>My Devices</strong> is the list of your own phones, Macs, home vault and browser page that reach
+                    each other over the mesh. Devices on this list sync with each other in full: your notes, your photos and
+                    your history.</p>
+                <ol>
+                    <li>On each device, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span>, turn on
+                        <strong>Mesh</strong>, and in <strong>This Device</strong> tap <strong>Copy</strong>. That's the
+                        device's mesh address.</li>
+                    <li>On your other devices, go to <span class="path">My Devices &rarr; Add a device by address</span>,
+                        paste it, and pick what it is: <strong>Vault on Mac</strong>, <strong>Phone</strong> or
+                        <strong>Home vault</strong>.</li>
+                    <li>Do it in both directions: add each phone on the Mac, and the Mac on each phone.</li>
+                </ol>
+                <p>A device on the list shows a dot when it's in reach. To check that everything arrived, use
+                    <span class="path">FIPS Mesh &rarr; Sync &rarr; Check sync</span> on a phone.</p>
+                </section>
+
+                <section id="kiosk">
+                <p class="eyebrow">An always-on vault</p>
+                <h2 id="kiosk-mode">Kiosk mode</h2>
+                <p>Kiosk mode turns a phone into a small always-on vault. Put an old phone on a charger at home, turn kiosk
+                    mode on under <strong>Share With Others</strong>, and it keeps serving.</p>
+                <ul>
+                    <li>It keeps the screen on, so the phone keeps serving. Leaving the app pauses kiosk mode, and it turns
+                        on again when you come back.</li>
+                    <li>Your own devices in My Devices reach it in full.</li>
+                    <li>Everyone else can only read the photos in your posts, and only slowly: 1 MB/s shared between all of
+                        them, at most 256 MB each, and 1 GB per session before they have to wait. They can't read your notes
+                        or change anything.</li>
+                    <li>You can also limit who can view to only your own devices.</li>
+                </ul>
+                <p>Set another phone to use it as its <strong>Home vault</strong>, and your new notes and photos go to the
+                    kiosk phone over the mesh, which sends your notes on to your relays.</p>
+                </section>
+
+                <section id="share">
+                <p class="eyebrow">Works in any browser</p>
+                <h2 id="share-pages">Share pages</h2>
+                <p>When you share a post from Nostr Vault, the link opens that post in the Nostr Vault web app, in any normal
+                    browser. Anyone can read it as a guest, with no account and nothing to install, and sign in from there
+                    to reply or like.</p>
+                <p>If a photo in that post or its replies can't be loaded from its usual server, the browser fetches it from
+                    that author's own device over the mesh. It joins the mesh for that one visit with a throwaway key, asks
+                    the device for the photo by its fingerprint, checks the fingerprint, and shows it.</p>
+                <ul>
+                    <li>The photo is fetched by the visitor's own browser. nostrvault.app keeps no copy of it, and a guest's
+                        browser keeps nothing once the tab is closed.</li>
+                    <li>You may see <code>blob:https://nostrvault.app/&hellip;</code> as the image address. That's just the
+                        browser's name for a photo it already has, and it only works in that tab.</li>
+                    <li>The first load is slow for now: around 15 seconds for a full photo.</li>
+                </ul>
+                </section>
+
+                <section id="privacy">
+                <p class="eyebrow">What others can see</p>
+                <h2 id="privacy">Privacy</h2>
+                <ul>
+                    <li><strong>Your home IP isn't published.</strong> Your profile lists your device by its mesh key, not
+                        its address. The mesh finds it by key.</li>
+                    <li><strong>The door only serves photos.</strong> To anyone outside My Devices, your device only hands
+                        out the photos in your public posts. It doesn't expose your relay, your messages, your keys or
+                        anything private.</li>
+                    <li><strong>A separate key.</strong> The device's mesh key is its own key, made once and kept on that
+                        device. Your Nostr key never goes to the mesh.</li>
+                    <li><strong>Follows only.</strong> In the apps, mesh photos load only from people you follow, so
+                        strangers' devices aren't contacted.</li>
+                </ul>
+                <div class="note">
+                    <p><strong>Two honest caveats.</strong> First, the public mesh entry points (seeds) can see the IP of
+                        the browser or phone that connects to them, the same way any server you visit can. Running our own
+                        seed is on the plan.</p>
+                    <p>Second, listing your device in your profile publicly links your npub to your device's mesh key.
+                        Removing it later doesn't erase older copies of your profile list that relays may still hold.</p>
+                </div>
+                </section>
+
+                <section id="status">
+                <p class="eyebrow">Where it works</p>
+                <h2 id="what-s-live-vs-what-s-in-3-0">What's live vs what's in 3.0</h2>
+                <div class="status-grid">
+                    <div class="status-card">
+                        <span class="tag tag-live">Live today</span>
+                        <h3>Share pages</h3>
+                        <ul>
+                            <li>Shared posts open in the web app as a guest, mesh photos included, in any plain browser.</li>
+                        </ul>
+                    </div>
+                    <div class="status-card">
+                        <span class="tag tag-test">In 3.0 testing</span>
+                        <h3>The apps</h3>
+                        <ul>
+                            <li>Mesh on iPhone, Android and Mac.</li>
+                            <li>My Devices, sync and Check sync.</li>
+                            <li>Kiosk mode and home vault.</li>
+                            <li>Photos from people you follow.</li>
+                        </ul>
+                    </div>
+                    <div class="status-card">
+                        <span class="tag tag-next">Next</span>
+                        <h3>Coming after</h3>
+                        <ul>
+                            <li>Faster loads after the first visit.</li>
+                            <li>Notes over the mesh, not just photos.</li>
+                            <li>Our own seed.</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="margin-top: 22px;">3.0 is in testing and not released yet. Until then, the apps you can download
+                    are 2.7.2.</p>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <span></span>
+                <a class="next" href="/docs/developers/"><span>Next</span>NIP-F1 and the mesh</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
