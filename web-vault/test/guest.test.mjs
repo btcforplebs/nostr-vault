@@ -7,6 +7,7 @@ import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure
 import { GUEST_ONLY, GUEST_RELAYS, guestContext, guestRelays, guestTarget } from "../src/guest/guest.js"
 import { memoryStore, memoryVault } from "../src/guest/memory-vault.js"
 import { createFipsMedia, setMeshPeople, meshAllowed } from "../src/net/fips-media.js"
+import { guestPostDeleted, readDeleted } from "../src/guest/deleted.js"
 
 const ID = "ab".repeat(32)
 const SK = generateSecretKey(), PK = getPublicKey(SK)
@@ -93,4 +94,27 @@ test("warm: starts the reader for an allowed author with a vault, and only then"
   await mk(() => true, [list]).warm(["", PK, PK])
   assert.equal(starts, 1, "allowed with a vault: one reader")
   assert.equal(timers.length, 1, "and its idle stop is armed, so an unused reader doesn't run on")
+})
+
+test("a post its author deleted (kind 5) is found deleted; someone else's kind 5 or a forged one doesn't count", async () => {
+  const bob = generateSecretKey()
+  const post = note({ content: "look https://media.example/a.png" })
+  const del = (sk, tags, at = 200) => finalizeEvent({ kind: 5, created_at: at, content: "", tags }, sk)
+  const relaysWith = fives => async (_r, f) => (f.ids ? [post] : f.kinds?.[0] === 5 ? fives : [])
+  assert.equal(await readDeleted(post, relaysWith([del(SK, [["e", post.id]])])), true)
+  assert.equal(await readDeleted(post, relaysWith([del(bob, [["e", post.id]])])), false, "only the author can delete")
+  assert.equal(await readDeleted(post, relaysWith([{ ...del(SK, [["e", ID]]), tags: [["e", post.id]] }])), false, "forged")
+  assert.equal(await readDeleted(post, relaysWith([])), false)
+
+  assert.equal(await guestPostDeleted(post.id, [], relaysWith([del(SK, [["e", post.id]])])), true, "the guest view asks before it draws")
+  assert.equal(await guestPostDeleted(post.id, [], relaysWith([])), false)
+  assert.equal(await guestPostDeleted(ID, [], async () => []), false, "no relay has it: not deleted, the thread screen says not found")
+  assert.equal(await guestPostDeleted(post.id, [], async (_r, f) => (f.ids ? [{ ...post, content: "forged" }] : [del(SK, [["e", post.id]])])), false,
+    "a forged copy of the post is not the post")
+
+  const article = finalizeEvent({ kind: 30023, created_at: 100, content: "# hi", tags: [["d", "a"]] }, SK)
+  const addr = `30023:${PK}:a`
+  const withA = fives => async (_r, f) => (f["#a"] ? fives : [])
+  assert.equal(await readDeleted(article, withA([del(SK, [["a", addr]], 150)])), true, "an address deletion after the post")
+  assert.equal(await readDeleted(article, withA([del(SK, [["a", addr]], 50)])), false, "one older than this version doesn't cover it")
 })
