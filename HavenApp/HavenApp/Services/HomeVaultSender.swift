@@ -32,6 +32,8 @@ final class HomeVaultSender: ObservableObject {
     static let maxBlobBytes = 256 * 1024 * 1024
 
     private var retryTimer: Timer?
+    /// One signed "get" per blob for the "already there?" checks.
+    private var checkAuths = VaultCheckAuths()
     private var foregroundObserver: NSObjectProtocol?
 
     private init() {
@@ -332,9 +334,13 @@ final class HomeVaultSender: ObservableObject {
         return await HomeVaultTransport.upload(file: file, size: size, sha256: item.id, contentType: item.contentType ?? "application/octet-stream", authBase64: auth, base: base, forward: forward)
     }
 
-    /// The owner's "get" for one blob on the vault; nil if signing failed (the
-    /// check then goes unsigned, which a Mac's own relay port still answers).
+    /// The owner's "get" for one blob on the vault, signed once per blob and
+    /// reused while it is good. nil when the key is not on this phone (no
+    /// remote signer prompt for a check) or signing failed: the check then
+    /// goes unsigned, which a Mac's own relay port still answers.
     private func signGetAuth(sha256: String) async -> String? {
+        if let kept = checkAuths.auth(for: sha256) { return kept }
+        guard HomeVaultLogic.signsVaultCheck(signingMode: ConfigService.shared.config.activeSigningMode()) else { return nil }
         let nonce = UUID().uuidString.prefix(8)
         guard let event = await NostrService.shared.signEventAsync(
             kind: 24242, content: "Check home vault \(nonce)",
@@ -342,7 +348,9 @@ final class HomeVaultSender: ObservableObject {
         let dict: [String: Any] = ["id": event.id, "pubkey": event.pubkey, "created_at": event.created_at,
                                    "kind": event.kind, "tags": event.tags, "content": event.content, "sig": event.sig]
         guard let json = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
-        return json.base64EncodedString()
+        let auth = json.base64EncodedString()
+        checkAuths.remember(auth, for: sha256)
+        return auth
     }
 
     /// Signed at send time: a queued item can wait longer than an auth lives.
