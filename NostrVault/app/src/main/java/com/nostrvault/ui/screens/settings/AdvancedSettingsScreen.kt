@@ -48,13 +48,11 @@ class AdvancedSettingsViewModel @Inject constructor(
     /** True while a saved change is restarting the relay onto it. */
     val isRestartingRelay: StateFlow<Boolean> = configStore.relayApplier.isRestarting
 
-    fun setMaxEvents(v: Int) = save { it.copy(outboxMaxEventsPerMinute = v.coerceIn(10, 1000)) }
-    fun setMaxConnections(v: Int) = save { it.copy(outboxMaxConnectionsPerMinute = v.coerceIn(1, 100)) }
     fun setAutoplay(v: Boolean) = save { it.copy(autoplayVideos = v) }
     fun setDisableMediaCache(v: Boolean) = save { it.copy(disableMediaCache = v) }
     fun setPrefetch(v: Boolean) = save { it.copy(prefetchAvatars = v) }
     fun setCacheTTL(v: Int) = save { it.copy(cacheTTLDays = v) }
-    fun setWotDepth(v: Int) = save { it.copy(chatRelayWotDepth = v.coerceIn(1, 5)) }
+    fun setWotDepth(v: Int) = save { it.copy(chatRelayWotDepth = RelayAccessLimits.clampedFollowDistance(v)) }
     fun setWotMinFollowers(v: Int) = save { it.copy(chatRelayMinFollowers = v.coerceIn(0, 100)) }
     fun setWotRefresh(v: String) = save { it.copy(wotRefreshInterval = v) }
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }

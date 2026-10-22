@@ -218,11 +218,6 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Trust Refresh",
         "How often your trust list is recalculated.",
     ),
-    RELAY_RATE_LIMITS(
-        "relay.rateLimits",
-        "Rate Limits",
-        "Limits on events and connections per minute, to block spam.",
-    ),
     RELAY_IMPORT(
         "relay.import",
         "Import",

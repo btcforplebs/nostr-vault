@@ -30,10 +30,12 @@ internal val WOT_REFRESH_OPTIONS = listOf(
 )
 
 /**
- * Who Can Reach You: who may write to your relay's inbox and chat, and how
- * fast (iOS RelayAccessSettingsView). These used to be split between
- * "Performance & Limits" and "Global Web of Trust" in Advanced, although both
- * answer the same question.
+ * Who Can Reach You: who may write to your relay's inbox and chat (iOS
+ * RelayAccessSettingsView). These used to be split between "Performance &
+ * Limits" and "Global Web of Trust" in Advanced, although both answer the
+ * same question. The old Rate Limits rows (events and connections per minute)
+ * are gone: haven-go never read them, it uses its own fixed limits
+ * (haven-go/limits.go).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,7 +72,7 @@ fun RelayAccessSettingsScreen(
                 .padding(16.dp),
         ) {
             SectionLabel("Web of Trust")
-            StepperRow("Follow Distance", config.chatRelayWotDepth, 1..5, 1, SettingsHelp.RELAY_WOT_DEPTH) {
+            StepperRow("Follow Distance", RelayAccessLimits.clampedFollowDistance(config.chatRelayWotDepth), RelayAccessLimits.FOLLOW_DISTANCE, 1, SettingsHelp.RELAY_WOT_DEPTH) {
                 viewModel.setWotDepth(it)
             }
             StepperRow("Minimum Followers", config.chatRelayMinFollowers, 0..100, 1, SettingsHelp.RELAY_MIN_FOLLOWERS) {
@@ -80,15 +82,6 @@ fun RelayAccessSettingsScreen(
                 viewModel.setWotRefresh(it)
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            SectionLabel("Rate Limits")
-            StepperRow("Events", config.outboxMaxEventsPerMinute, 10..1000, 10, SettingsHelp.RELAY_RATE_LIMITS, unit = " / min") {
-                viewModel.setMaxEvents(it)
-            }
-            StepperRow("Connections", config.outboxMaxConnectionsPerMinute, 1..100, 1, unit = " / min") {
-                viewModel.setMaxConnections(it)
-            }
             Caption("Changes restart the relay automatically.")
             if (isRestartingRelay) Caption("Restarting relay…")
 
