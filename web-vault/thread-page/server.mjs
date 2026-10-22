@@ -1,13 +1,15 @@
 // The public post page's server: GET /thread/<nevent|note|naddr> -> the post and its replies as HTML (page.js), read
 // from public relays (fetch.js). nginx proxies /thread/ here (website/nginx.conf); run it with `npm run thread`.
 // Pages are kept in memory for a while, so a link pasted into a busy chat costs the relays one read.
-// GET /thread/photo/<sha256> serves the shared post's mesh photo from the server's copy (photo-cache.js), which a warm
-// FIPS node fills; THREAD_MESH=off turns that off (no node, every such request 404s).
+// It keeps no photos: a photo its https server can't serve is read over FIPS by the visitor's browser
+// (web-relay src/fips/share-photos.js), and the page names that script with a hash of its content so a browser
+// never keeps running an old copy.
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 import http from "node:http"
 import { SimplePool } from "nostr-tools/pool"
-import { meshPhotoHashes, parseTarget, renderMissing, renderPost, replyList } from "./page.js"
+import { parseTarget, renderMissing, renderPost, replyList } from "./page.js"
 import { loadThread } from "./fetch.js"
-import { createPhotoCache, servedType } from "./photo-cache.js"
 
 const PORT = Number(process.env.PORT || 8790)
 const WAIT_MS = Number(process.env.THREAD_WAIT_MS || 3500) // per relay read; chat unfurlers give up after ~5-10 s
@@ -29,10 +31,12 @@ export function closeOnce(Base) {
 
 export const newPool = (Base = globalThis.WebSocket) => new SimplePool({ websocketImplementation: closeOnce(Base) })
 
-const MESH = process.env.THREAD_MESH !== "off"
-const photos = createPhotoCache({
-  startReader: async getPhotoVaults => (await import("../../web-relay/src/fips/photo-reader.js")).startPhotoReader({ getPhotoVaults }),
-})
+/** The first 12 hex of the built share-photos.js's sha256 (the image copies it to MESH_SCRIPT_FILE), for its
+ *  ?v=: a new build is a new URL, past any browser's cached copy. "" when the file isn't there (a dev run). */
+export function scriptVersion(file = process.env.MESH_SCRIPT_FILE) {
+  try { return file ? createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 12) : "" } catch { return "" }
+}
+const SCRIPT_VERSION = scriptVersion()
 
 const cache = new Map() // code -> { at, ttl, status, html }
 const inflight = new Map() // code -> Promise
@@ -44,9 +48,8 @@ async function build(code) {
   try {
     const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
     const { post, events, profiles, vaults, replyVaults } = await loadThread(target, query)
-    if (!post) { if (target.id) photos.drop(target.id); return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL } }
-    if (MESH) photos.sync(post.id, meshPhotoHashes(post), vaults)
-    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults, replyVaults }), ttl: FOUND_TTL }
+    if (!post) return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL }
+    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults, replyVaults, scriptVersion: SCRIPT_VERSION }), ttl: FOUND_TTL }
   } finally {
     pool.destroy()
   }
@@ -66,24 +69,10 @@ async function pageFor(code) {
   return inflight.get(code)
 }
 
-/** GET /thread/photo/<sha256>: the kept copy, or 404 (the page then reads it over the mesh itself). */
-async function servePhoto(x, req, res) {
-  const got = MESH ? await photos.lookup(x) : undefined
-  if (!got) { res.writeHead(404, { "Content-Type": "text/plain", "Cache-Control": "no-store" }); return res.end("not kept") }
-  res.writeHead(200, {
-    "Content-Type": servedType(got.type),
-    "Content-Length": got.bytes.length,
-    "Cache-Control": "private, max-age=60", // short: a photo whose note was deleted must stop showing soon
-  })
-  res.end(req.method === "HEAD" ? undefined : Buffer.from(got.bytes.buffer, got.bytes.byteOffset, got.bytes.length))
-}
-
 const server = http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, "http://x")
   const m = /^\/thread\/([A-Za-z0-9:]{1,2000})\/?$/.exec(pathname)
   if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); return res.end() }
-  const photo = /^\/thread\/photo\/([0-9a-f]{64})$/.exec(pathname)
-  if (photo) return servePhoto(photo[1], req, res).catch(err => { console.error("thread photo:", err); if (!res.headersSent) res.writeHead(500); res.end() })
   if (!m) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("not found") }
   try {
     const page = await pageFor(m[1].replace(/^nostr:/i, ""))
@@ -102,5 +91,4 @@ const server = http.createServer(async (req, res) => {
 
 if (!process.env.THREAD_PAGE_NO_LISTEN) {
   server.listen(PORT, () => console.log(`thread pages on http://localhost:${PORT}/thread/<nevent>`))
-  if (MESH) photos.warm() // the node's seed handshake is done before the first photo needs it
 }

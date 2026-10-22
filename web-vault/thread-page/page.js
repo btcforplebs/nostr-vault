@@ -2,8 +2,9 @@
 // on the server (thread-page/server.mjs) as plain HTML, so it opens signed out with no haven.wasm, and a chat app that
 // unfurls the link reads its og: tags for the preview card. Its one script, only on a page with a photo its author's
 // 10063 puts on a mesh vault, reads that photo over FIPS when its https server can't serve it (web-relay
-// src/fips/share-photos.js). The shared post's photos get the full path (reader at page open, the server's copy); a
-// reply's photo only falls back to its own author's vault once its https link fails (data-mesh-on="error").
+// src/fips/share-photos.js), in the visitor's browser: the site keeps no copy of anyone's photos. The shared post's
+// photos start the reader at page open; a reply's photo only falls back to its own author's vault once its https link
+// fails (data-mesh-on="error").
 // This file is the pure half: the address, the reply list and the HTML. The relay half is fetch.js.
 import { decode, neventEncode, naddrEncode, npubEncode } from "nostr-tools/nip19"
 import { buildThread, flattenThread, replyRefs } from "../src/net/thread.js"
@@ -136,10 +137,6 @@ export function meshVaults(ev) {
   return out.slice(0, MAX_MESH_VAULTS)
 }
 
-/** The hashes of a post's own photos, the ones its page arms for the mesh (meshAttrs), as many as the page reads
- *  (share-photos.js MAX_PHOTOS): what the server keeps a copy of (photo-cache.js). */
-export const meshPhotoHashes = post => (post.kind === LONG_FORM_KIND ? [] : noteParts(post.content, post.tags).media.map(m => m.x).filter(Boolean).slice(0, 8))
-
 /** Authors whose notes have a photo the mesh could serve (one with a hash), for the 10063 read. */
 export function meshPhotoAuthors(events) {
   return [...new Set(events.filter(ev => ev && ev.kind !== LONG_FORM_KIND && noteParts(ev.content, ev.tags).media.some(m => m.x)).map(ev => ev.pubkey))]
@@ -222,6 +219,9 @@ function inlineHtml(text) {
 // The script that reads a photo over the mesh when its server can't serve it (web-relay src/fips/share-photos.js,
 // built into /relay/ with the relay page).
 export const MESH_PHOTO_SCRIPT = "/relay/share-photos.js"
+/** MESH_PHOTO_SCRIPT?v=<version of the build>: a new build is a new URL, so no browser keeps running an old copy (the
+ *  CDN gives /relay/ files a 4 h browser cache). The CSP's script-src path ignores the query. */
+export const meshPhotoScript = version => (/^[0-9a-f]{1,64}$/.test(version) ? `${MESH_PHOTO_SCRIPT}?v=${version}` : MESH_PHOTO_SCRIPT)
 
 /** `vaults`: the mesh vaults the note author's 10063 names. A photo with a hash carries both, for MESH_PHOTO_SCRIPT;
  *  `fallback` (a reply) marks it as read only after its https link fails. */
@@ -268,8 +268,8 @@ const hasMeshPhoto = (ev, vaults) => ev.kind !== LONG_FORM_KIND && vaults.length
 
 /** The whole page for a found post. `code` is the address it was opened by. `vaults`: the mesh vaults the post
  *  author's 10063 names (fetch.js), for the post's own photos. `replyVaults`: pubkey -> vaults, for each reply's
- *  photos, as a fallback only. */
-export function renderPost({ post, replies, profiles, code, vaults = [], replyVaults = new Map() }) {
+ *  photos, as a fallback only. `scriptVersion`: the share script's build hash (meshPhotoScript). */
+export function renderPost({ post, replies, profiles, code, vaults = [], replyVaults = new Map(), scriptVersion = "" }) {
   const replyMesh = ev => replyVaults.get(ev.pubkey) ?? []
   const url = `${SITE}/thread/${code}`
   const meta = previewMeta(post, profiles, url)
@@ -298,7 +298,7 @@ ${hex ? actionRow(hex) : ""}
   </div>`).join("")}
 </section>`
   const mesh = hasMeshPhoto(post, vaults) || replies.some(({ event }) => hasMeshPhoto(event, replyMesh(event)))
-  return page({ meta, body, script: mesh ? MESH_PHOTO_SCRIPT : null })
+  return page({ meta, body, script: mesh ? meshPhotoScript(scriptVersion) : null })
 }
 
 // The post's buttons, as in the app. Every one opens this post in the web Vault, where the reader signs in and acts:

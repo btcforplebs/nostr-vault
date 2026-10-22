@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs"
 import { PUBLIC_SEEDS } from "../../web-relay/src/fips/node.js"
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
-import { blossomHash, meshPhotoAuthors, meshPhotoHashes, meshVaults, noteParts, renderPost, MESH_PHOTO_SCRIPT } from "../thread-page/page.js"
+import { blossomHash, meshPhotoAuthors, meshPhotoScript, meshVaults, noteParts, renderPost, MESH_PHOTO_SCRIPT } from "../thread-page/page.js"
 import { loadThread, readDeleted, readMeshVaults } from "../thread-page/fetch.js"
 
 const alice = generateSecretKey(), bob = generateSecretKey(), vault = generateSecretKey(), vault2 = generateSecretKey()
@@ -112,12 +112,10 @@ test("a post its author deleted (kind 5) arms no mesh read; someone else's kind 
   assert.deepEqual((await loadThread({ id: post.id, relays: [] }, relaysWith([]))).vaults, [V])
 })
 
-test("the server keeps the post's own image hashes, as many as the page reads; no video, no long-form", () => {
-  const imgs = Array.from({ length: 10 }, (_, i) => `https://media.example/${String(i).repeat(64)}.png`)
-  const post = sign(alice, 1, `${imgs.join(" ")} https://media.example/${OTHER}.mp4`)
-  assert.equal(meshPhotoHashes(post).length, 8)
-  assert.ok(!meshPhotoHashes(post).includes(OTHER))
-  assert.deepEqual(meshPhotoHashes(sign(alice, 30023, PHOTO, [["d", "a"]])), [])
+test("the share script carries its build hash, so a new build is a new URL; anything else is left off", () => {
+  assert.equal(meshPhotoScript("0123456789ab"), `${MESH_PHOTO_SCRIPT}?v=0123456789ab`)
+  assert.equal(meshPhotoScript(""), MESH_PHOTO_SCRIPT)
+  assert.equal(meshPhotoScript('"><script>'), MESH_PHOTO_SCRIPT)
 })
 
 test("the /thread/ CSP: scripts from the share script and its chunks only; connect-src is exactly PUBLIC_SEEDS' hosts", () => {
