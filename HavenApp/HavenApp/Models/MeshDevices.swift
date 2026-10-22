@@ -215,6 +215,19 @@ enum MeshDevicesLogic {
         ]
     }
 
+    /// Start options for an iPhone sharing as a kiosk (home vault): the same
+    /// own-devices engine as the Mac. Only My Devices get answers to their
+    /// offers, so the home's addresses go to no one else, and are dialed at
+    /// start; strangers reach the kiosk through the public seeds, capped,
+    /// and get only Haven's mesh door, which serves blobs public notes name.
+    /// No `max_serve_bytes`: in own-devices mode the engine ignores it (own
+    /// devices are uncapped; strangers have their own fixed caps, strangers.rs).
+    /// Nil with no other device listed: an empty `own_devices` would leave
+    /// the kiosk open to anyone, so it does not start.
+    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int) -> [String: Any]? {
+        macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort)
+    }
+
     /// A finder relay as typed: `wss://` added when missing, trailing
     /// slashes dropped. Nil for anything that is not a websocket host.
     static func normalizedFinderRelay(_ input: String) -> String? {
