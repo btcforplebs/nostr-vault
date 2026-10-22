@@ -48,6 +48,37 @@ extension FeedService {
         loadWotPubkeys()
     }
 
+    /// After this account publishes a follow list, load the web the relay
+    /// rebuilds from it as soon as the file is rewritten (`WotRebuildWatch`).
+    /// Unfollowing everyone who brought someone in takes them out of Global
+    /// then, not at the next mode switch.
+    func watchForRebuiltWeb() {
+        wotRebuildWatchTimer?.invalidate()
+        // Discovery's follows-of-follows tally is an hour-long cache of the
+        // old list; the next Discovery visit counts again.
+        extendedNetworkComputedAt = nil
+        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        let watch = WotRebuildWatch(startedAt: Date(), stampAtStart: Self.modificationDate(of: cacheURL))
+        wotRebuildWatchTimer = Timer.scheduledTimer(withTimeInterval: WotRebuildWatch.interval, repeats: true) { [weak self] timer in
+            Task { @MainActor [weak self] in
+                guard let self, self.wotRebuildWatchTimer === timer else {
+                    timer.invalidate()
+                    return
+                }
+                switch watch.step(stamp: Self.modificationDate(of: cacheURL), now: Date()) {
+                case .wait:
+                    return
+                case .reload:
+                    self.loadWotPubkeys()
+                    fallthrough
+                case .stop:
+                    timer.invalidate()
+                    self.wotRebuildWatchTimer = nil
+                }
+            }
+        }
+    }
+
     private static func modificationDate(of url: URL) -> Date? {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }

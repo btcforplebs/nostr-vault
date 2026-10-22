@@ -290,6 +290,8 @@ class FeedService: ObservableObject {
 
     var curatedGraphPollAttempts = 0
     var curatedGraphPollTimer: Timer?
+    /// Looks for the web the relay rebuilds after a follow list is published.
+    var wotRebuildWatchTimer: Timer?
 
 /// In-memory per-account feed snapshots keyed by `activeAccountNpub`
     /// (empty string for the default/owner account). Captured before each

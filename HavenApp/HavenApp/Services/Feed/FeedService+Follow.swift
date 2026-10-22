@@ -140,6 +140,7 @@ extension FeedService {
                 return
             }
             self.recordOwnContactList(event: event)
+            self.watchForRebuiltWeb()
             NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
                 guard outcome == .refused else { return }
                 Task { @MainActor in fail(event.created_at) }

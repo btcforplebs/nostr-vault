@@ -521,6 +521,7 @@
 		6299766B577696BB8E498D3B /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */; };
 		62A8923B0B54697F2247EAA4 /* FeedView+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BEE38A82AADD2A18C4BE83 /* FeedView+Layout.swift */; };
 		62C721A822B294AB8245A339 /* PopularRankControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD61246C5617D0FAF9A4D5F /* PopularRankControls.swift */; };
+		6372382606A3FF40A02649C3 /* WotRebuildWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */; };
 		639693F76606BDA634926A35 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3192A668A74BAFF6F4B60FC /* AppDelegate.swift */; };
 		63AB0F7FFD42CDDAB01C1839 /* RelayProcessManager+Readiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30FB368C842D044344C828BA /* RelayProcessManager+Readiness.swift */; };
 		64353876FABFAB7F823B12FA /* ZapFlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073E928415EAF56E0DB8924 /* ZapFlightView.swift */; };
@@ -1077,6 +1078,7 @@
 		CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
 		CEBA8A8FAE1C365867C7E9E3 /* VaultDashboardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */; };
 		CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
+		CF4C777AEA457AF1976BAA9D /* WotRebuildWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */; };
 		CF9087EA80B641891843DB01 /* FeedView+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BEE38A82AADD2A18C4BE83 /* FeedView+Layout.swift */; };
 		CFA3FAE3FE9E3F35516F2419 /* MusicBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34514E56570393BEB67F9D54 /* MusicBrowserView.swift */; };
 		CFAC954EF7DFDE57D1667878 /* TrustWebView+MyWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */; };
@@ -1638,6 +1640,7 @@
 		5D7B2365D506330BA6CF87F8 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+Methods.swift"; sourceTree = "<group>"; };
 		5DB298CA7BDB0FE78BDEA42D /* PostEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostEngagement.swift; sourceTree = "<group>"; };
+		5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WotRebuildWatch.swift; sourceTree = "<group>"; };
 		5E31B27EC2F18B0F61C3A10A /* IconFilterButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconFilterButton.swift; sourceTree = "<group>"; };
 		5E6292D77D86100F897D4C79 /* MiniPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerBar.swift; sourceTree = "<group>"; };
 		5E687B37FB00F4ED20723DBB /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
@@ -2891,6 +2894,7 @@
 				FF21CF6914CD51F0FB36D7B3 /* VaultTopics.swift */,
 				0B5E98764373253F27F8526F /* VertexReputation.swift */,
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
+				5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */,
 				83B7AE001906426D0D833C0D /* ZapHistory.swift */,
 			);
 			name = Models;
@@ -4143,6 +4147,7 @@
 				F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */,
 				0146CFF101BF1078CF20FD9E /* WhatsInsideSheet.swift in Sources */,
 				BB1F699C27C0AE79E84F7E74 /* WizardDesignSystem.swift in Sources */,
+				CF4C777AEA457AF1976BAA9D /* WotRebuildWatch.swift in Sources */,
 				2B532EA51C401B6E429E0766 /* WotRefresh.swift in Sources */,
 				876A3213A547A96B0D26E7A9 /* ZapBurstView.swift in Sources */,
 				9311DBEC8D73D7A39BCD6B9A /* ZapFlightView.swift in Sources */,
@@ -4818,6 +4823,7 @@
 				2A158B439B79BA956648F917 /* WelcomeWindowView.swift in Sources */,
 				ACC26F1D0C0082D8CE56EA5F /* WhatsInsideSheet.swift in Sources */,
 				D5DC60999F43DB5C0AAEA4B2 /* WizardDesignSystem.swift in Sources */,
+				6372382606A3FF40A02649C3 /* WotRebuildWatch.swift in Sources */,
 				69B71EAE17A97D74A6FEAFE1 /* WotRefresh.swift in Sources */,
 				067B8021AC2BAF187223891B /* ZapBurstView.swift in Sources */,
 				64353876FABFAB7F823B12FA /* ZapFlightView.swift in Sources */,

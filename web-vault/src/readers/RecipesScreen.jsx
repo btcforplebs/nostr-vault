@@ -12,17 +12,17 @@ import { EmptyState } from "./EmptyState.jsx"
 import { displayTitle, longFormLink, longFormMeta } from "./longform.js"
 import { RECIPE_SCOPES, fetchRecipes, inCategory, loadScope, recipeCategories, saveScope } from "./recipes.js"
 import { SkeletonGrid } from "../components/Loading.jsx"
+import { followsDep, heldResults } from "./held.js"
 
 if (import.meta.env) import("./readers.css")
 
-// Loaded recipes by scope, for this session, so switching feeds and back shows them at once (memory only).
-const held = new Map()
+const held = heldResults()
 
 export function RecipesScreen({ ctx }) {
   const { vault, account } = ctx
   const follows = account.follows
   const [scope, setScope] = useState(loadScope)
-  const [recipes, setRecipes] = useState(() => held.get(loadScope()) ?? null)
+  const [recipes, setRecipes] = useState(() => held.get(loadScope(), follows) ?? null)
   const [category, setCategory] = useState(null)
   const [status, setStatus] = useState("")
   const [failed, setFailed] = useState(false)
@@ -40,13 +40,13 @@ export function RecipesScreen({ ctx }) {
       const got = await fetchRecipes({ scope, me: ctx.session?.pubkey, follows, readRelays: account.relays.read })
       if (n !== seq.current) return
       const list = got?.recipes ?? []
-      held.set(scope, list)
+      held.set(scope, follows, list)
       setRecipes(list)
       setStatus("")
       if (list.length) fetchProfiles(vault, list.map(r => r.pubkey), account.relays.read, { save: false }).catch(() => {})
     } catch { if (n === seq.current) { setStatus(""); setFailed(true); setRecipes(r => r ?? []) } }
   }
-  useEffect(() => { setOpen(null); setCategory(null); setRecipes(held.get(scope) ?? null); if (!held.has(scope)) load() }, [scope, follows.length])
+  useEffect(() => { setOpen(null); setCategory(null); setRecipes(held.get(scope, follows) ?? null); if (!held.has(scope, follows)) load() }, [scope, followsDep(follows)])
 
   if (open) return <ArticleReader event={open} onBack={() => setOpen(null)} ctx={ctx} />
   const pick = s => { saveScope(s); setScope(s) }
