@@ -132,11 +132,19 @@ class FipsMeshViewModel @Inject constructor(
         val change = compute(before) ?: return@queued
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
-        if (change.homeVault != before.homeVaultNpub) {
-            homeVault.setHomeVault(change.homeVault)
-            // This phone lists its home vault in the owner's 10063; a changed one drops the old entry.
-            nostrService.publishServerList(dropMesh = before.homeVaultNpub?.takeIf { it != change.homeVault })
-        }
+        if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
+        republishIfListedChanged(before)
+    }
+
+    /**
+     * This phone lists its home vault and its linked Macs in the owner's 10063 (iOS 8af86b0d): when either
+     * changed, republish, dropping the entries that went.
+     */
+    private fun republishIfListedChanged(before: com.nostrvault.relay.HavenConfig) {
+        val after = configStore.config.value
+        val listedBefore = listOfNotNull(before.homeVaultNpub) + com.nostrvault.service.linkedMacs(before)
+        val listedAfter = listOfNotNull(after.homeVaultNpub) + com.nostrvault.service.linkedMacs(after)
+        if (listedBefore.toSet() != listedAfter.toSet()) nostrService.publishServerList(dropMesh = listedBefore - listedAfter.toSet())
     }
 
     /**

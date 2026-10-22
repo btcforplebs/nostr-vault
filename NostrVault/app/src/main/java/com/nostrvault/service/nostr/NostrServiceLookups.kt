@@ -47,9 +47,27 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 if (known != null && createdAt < known) return@launch
                 serverListCreatedAt[pubkey] = createdAt
                 _serverLists.value = _serverLists.value + (pubkey to servers)
+                ensureLinkedMacsListed(pubkey, servers)
             }
         }
     }
+
+    /**
+     * A Mac without the owner's key cannot list itself, so this phone does (iOS LinkedMacEntry): when
+     * the owner's newest signed 10063 lacks a linked Mac, republish. At most once per Mac every 5 min.
+     */
+    private fun NostrService.ensureLinkedMacsListed(pubkey: String, servers: List<String>) {
+        if (pubkey != ownerHexPubkey) return
+        val missing = com.nostrvault.fips.HomeVaultRules.unlisted(servers, linkedMacs(configStore.config.value))
+        val now = System.currentTimeMillis()
+        val due = missing.filter { now - (linkedMacTries[it] ?: 0L) >= LINKED_MAC_RETRY_MS }
+        if (due.isEmpty()) return
+        due.forEach { linkedMacTries[it] = now }
+        publishServerList()
+    }
+
+    private val linkedMacTries = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val LINKED_MAC_RETRY_MS = 5 * 60_000L
 
     internal fun NostrService.parseMuteListEvent(tags: List<List<String>>) {
         val mutedNpubs = profileRepository.parseMuteListPTags(tags).mapNotNull { hexToNpub(it) }

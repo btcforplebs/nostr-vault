@@ -388,7 +388,7 @@ class NostrService @Inject constructor(
     fun publishBlockedRelayList() { publishBlockedRelayListImpl() }
 
     /** [dropMesh]: the home vault this phone listed before, when it changed. */
-    fun publishServerList(dropMesh: String? = null) { publishServerListImpl(dropMesh) }
+    fun publishServerList(dropMesh: Collection<String> = emptyList()) { publishServerListImpl(dropMesh) }
 
     /** Your own loaded posts that link the blob [referencingBlob]; see [BlobPostDeletion.referencing]. */
     fun ownEvents(referencingBlob: String): List<NostrEvent> =

@@ -195,13 +195,36 @@ object HomeVaultRules {
         newest: List<String>,
         managed: List<String>,
         homeVault: String? = null,
-        dropMesh: String? = null,
-    ): List<String> {
-        // This phone lists its own home vault, so the kiosk needs no key, and
-        // drops the one it listed before when the setting changes.
-        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n != dropMesh } +
-            listOfNotNull(homeVault?.let { "fipsmesh://$it/" })
-        return (managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + mesh).distinct()
+        dropMesh: Collection<String> = emptyList(),
+        macs: List<String> = emptyList(),
+    ): List<String>? {
+        // This phone lists its own home vault and the Macs linked in My Devices (a Mac without the owner's
+        // key cannot sign the 10063 itself; iOS 8af86b0d), and drops the ones it listed before when the
+        // setting changes.
+        val listed = (listOfNotNull(homeVault) + macs).map { "fipsmesh://$it/" }
+        val mesh = newest.filter { val n = FipsMediaRouter.meshNpubIn(it); n != null && n !in dropMesh } + listed
+        val out = (managed.filter { FipsMediaRouter.meshNpubIn(it) == null } + mesh).distinct()
+        // NIP-F1: never a list only the mesh or this home network can open. It reaches no outside reader
+        // and would publish a home address (iOS #999, Tod: a real public server, not just reachable).
+        return out.takeIf { it.any(::isPublicServer) }
+    }
+
+    /** The mesh [npubs] a 10063's [servers] does not list as `fipsmesh://<npub>/`. */
+    fun unlisted(servers: List<String>, npubs: List<String>): List<String> {
+        val listed = servers.mapNotNull { FipsMediaRouter.meshNpubIn(it) }.toSet()
+        return npubs.filter { it !in listed }
+    }
+
+    /**
+     * A server any reader can open: https, not a `.fips` mesh name, not a home network or Tailscale
+     * host. iOS HomeVaultLogic.isPublicServer, plus its isReachableWithoutMesh host checks.
+     */
+    fun isPublicServer(url: String): Boolean {
+        val uri = try { java.net.URI(url.trim()) } catch (_: Exception) { return false }
+        if (!uri.scheme.equals("https", ignoreCase = true)) return false
+        val host = uri.host?.lowercase()?.trimEnd('.')?.takeIf { it.isNotEmpty() } ?: return false
+        if (host == "fips" || host.endsWith(".fips")) return false
+        return !com.nostrvault.relay.DMInbox.isPrivateNetworkHost(host)
     }
 
     /**
