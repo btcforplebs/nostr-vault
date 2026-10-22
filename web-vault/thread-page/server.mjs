@@ -1,15 +1,11 @@
 // The public post page's server: GET /thread/<nevent|note|naddr> -> the post and its replies as HTML (page.js), read
 // from public relays (fetch.js). nginx proxies /thread/ here (website/nginx.conf); run it with `npm run thread`.
 // Pages are kept in memory for a while, so a link pasted into a busy chat costs the relays one read.
-// It keeps no photos: a photo its https server can't serve is read over FIPS by the visitor's browser
-// (web-relay src/fips/share-photos.js), and the page names that script with a hash of its content so a browser
-// never keeps running an old copy.
-import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+// A browser is sent on into the web app (page.js appLink); the page itself is for link previews.
 import http from "node:http"
 import { SimplePool } from "nostr-tools/pool"
 import { parseTarget, renderMissing, renderPost, replyList } from "./page.js"
-import { loadThread } from "./fetch.js"
+import { loadThread, safeRelay } from "./fetch.js"
 
 const PORT = Number(process.env.PORT || 8790)
 const WAIT_MS = Number(process.env.THREAD_WAIT_MS || 3500) // per relay read; chat unfurlers give up after ~5-10 s
@@ -31,13 +27,6 @@ export function closeOnce(Base) {
 
 export const newPool = (Base = globalThis.WebSocket) => new SimplePool({ websocketImplementation: closeOnce(Base) })
 
-/** The first 12 hex of the built share-photos.js's sha256 (the image copies it to MESH_SCRIPT_FILE), for its
- *  ?v=: a new build is a new URL, past any browser's cached copy. "" when the file isn't there (a dev run). */
-export function scriptVersion(file = process.env.MESH_SCRIPT_FILE) {
-  try { return file ? createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 12) : "" } catch { return "" }
-}
-const SCRIPT_VERSION = scriptVersion()
-
 const cache = new Map() // code -> { at, ttl, status, html }
 const inflight = new Map() // code -> Promise
 
@@ -47,9 +36,9 @@ async function build(code) {
   const pool = newPool()
   try {
     const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
-    const { post, events, profiles, vaults, replyVaults } = await loadThread(target, query)
+    const { post, events, profiles } = await loadThread(target, query)
     if (!post) return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL }
-    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults, replyVaults, scriptVersion: SCRIPT_VERSION }), ttl: FOUND_TTL }
+    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, hints: (target.relays ?? []).map(safeRelay).filter(Boolean) }), ttl: FOUND_TTL }
   } finally {
     pool.destroy()
   }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
-import { startVault, forgetThisBrowser, onSignedOutElsewhere } from "./src/haven/vault.js"
+import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } from "./src/haven/vault.js"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { putProfile } from "./src/net/profiles.js"
@@ -13,6 +13,8 @@ import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
+import { GuestApp } from "./src/guest/GuestApp.jsx"
+import { guestTarget } from "./src/guest/guest.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
 import { ProfileScreen } from "./src/screens/ProfileScreen.jsx"
@@ -45,6 +47,11 @@ const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
   return ROUTES.includes(r) && ((r !== "thread" && r !== "dm") || /^[0-9a-f]{64}$/.test(arg)) && (r !== "profile" || !arg || /^[0-9a-f]{64}$/.test(arg)) ? { route: r, arg } : { route: "feed", arg: "" }
 }
+
+// The address the page opened with, before the desktop layout rewrites it: a shared post's link carries its relay
+// hints there (src/guest). Someone signed in starts downloading haven.wasm now; a guest never needs it.
+const bootHash = location.hash
+if (loadSession()) preloadHaven()
 
 // 760px and up is the desktop layout (src/desktop). The address is fixed up for the layout before anything renders:
 // a thread link opens beside the list it came from on a wide window, and a desktop address with a note open goes to
@@ -86,6 +93,8 @@ function App() {
   modeNow.current = mode
   const [{ route, arg }, setRoute] = useState(() => settle(mode))
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
+  // Not signed in and opened on a post (a shared link): the guest view, until they sign in.
+  const [guest] = useState(() => !session && !!guestTarget(location.hash))
 
   useEffect(() => { const f = () => setRoute(settle(modeNow.current)); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
   // Crossing 760px swaps layouts; the address is fixed up for the new one.
@@ -115,7 +124,7 @@ function App() {
   }, [session?.pubkey])
 
   // An approval link the user never tapped (they approved in the bunker app) is done with once sign-in succeeds.
-  const onSignedIn = ({ signer, session }) => { logging = true; clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }) }
+  const onSignedIn = ({ signer, session }) => { logging = true; clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }); registerWorker() }
   const restart = () => location.replace(location.pathname)
 
   // Another tab signed out (or in as someone else): stop this tab's Haven so that tab's deletes can finish, and
@@ -153,7 +162,7 @@ function App() {
   }
 
   if (leaving) return <SignOutScreen {...leaving} onRetry={retryWipe} onDone={restart} />
-  if (!session) return <SignInScreen onSignedIn={onSignedIn} />
+  if (!session) return guest ? <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} /> : <SignInScreen onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
@@ -219,9 +228,15 @@ function SignOutScreen({ busy, failed = [], revoked, error, onRetry, onDone }) {
   )
 }
 
-// Registered once the page has loaded: the worker's install fetches every file index.html links, haven.wasm's preload
-// among them, and by then they're in the HTTP cache instead of downloading a second time beside the page's own.
-const registerWorker = () => navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
-if ("serviceWorker" in navigator) document.readyState === "complete" ? registerWorker() : addEventListener("load", registerWorker, { once: true })
-navigator.storage?.persist?.().then(granted => log("persist", { granted }))
+// Registered once the page has loaded: the worker's install fetches every file index.html links, and by then they're
+// in the HTTP cache instead of downloading a second time beside the page's own. Only for someone signed in (now, or on
+// sign-in): a guest's browser keeps no copy of the app.
+let workerAsked = false
+function registerWorker() {
+  if (workerAsked || !("serviceWorker" in navigator)) return
+  workerAsked = true
+  navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
+}
+if (loadSession()) document.readyState === "complete" ? registerWorker() : addEventListener("load", registerWorker, { once: true })
+if (loadSession()) navigator.storage?.persist?.().then(granted => log("persist", { granted }))
 render(<App />, document.getElementById("app"))
