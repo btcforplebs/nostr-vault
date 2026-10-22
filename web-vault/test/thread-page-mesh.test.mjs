@@ -10,7 +10,7 @@ import { PUBLIC_SEEDS } from "../../web-relay/src/fips/node.js"
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { npubEncode } from "nostr-tools/nip19"
 import { blossomHash, meshPhotoAuthors, meshPhotoHashes, meshVaults, noteParts, renderPost, MESH_PHOTO_SCRIPT } from "../thread-page/page.js"
-import { loadThread, readDeleted, readMeshVaults } from "../thread-page/fetch.js"
+import { loadThread, readDeleted, readDeletedIds, readMeshVaults } from "../thread-page/fetch.js"
 
 const alice = generateSecretKey(), bob = generateSecretKey(), vault = generateSecretKey(), vault2 = generateSecretKey()
 const A = getPublicKey(alice), B = getPublicKey(bob), V = getPublicKey(vault), V2 = getPublicKey(vault2)
@@ -128,4 +128,28 @@ test("the /thread/ CSP: scripts from the share script and its chunks only; conne
   assert.deepEqual(dir("connect-src").sort(), PUBLIC_SEEDS.map(u => `wss://${new URL(u).host}`).sort())
   assert.equal(dir("worker-src"), undefined)
   assert.doesNotMatch(csp, /unsafe-eval|wasm/)
+})
+
+test("the post author's own reply photos are marked kept; a stranger's never are", () => {
+  const post = sign(alice, 1, `look ${PHOTO}`)
+  const own = sign(alice, 1, `again https://media.example/${OTHER}.jpg`, [["e", post.id, "", "root"]])
+  const other = sign(bob, 1, `mine https://media.example/${OTHER}.png`, [["e", post.id, "", "root"]])
+  const html = renderPost({ post, replies: [{ event: own, depth: 1 }, { event: other, depth: 1 }], profiles: new Map(), code: "x",
+    vaults: [V], replyVaults: new Map([[A, [V]], [B, [V2]]]), kept: new Set([own.id]) })
+  assert.match(html, new RegExp(`${OTHER}.jpg"[^>]*data-mesh-on="error" data-kept="1">`))
+  assert.match(html, new RegExp(`${OTHER}.png"[^>]*data-vaults="${V2}" data-mesh-on="error">`), "a stranger's: fallback, no copy")
+})
+
+test("loadThread: keptReplies are the post author's own photo replies they haven't deleted, only while they name a vault", async () => {
+  const post = sign(alice, 1, `look ${PHOTO}`)
+  const own = sign(alice, 1, `again https://media.example/${OTHER}.jpg`, [["e", post.id, "", "root"]])
+  const gone = sign(alice, 1, `gone https://media.example/${"cd".repeat(32)}.jpg`, [["e", post.id, "", "root"]])
+  const text = sign(alice, 1, "no photo", [["e", post.id, "", "root"]])
+  const other = sign(bob, 1, `mine https://media.example/${OTHER}.png`, [["e", post.id, "", "root"]])
+  const relays = lists => async (r, f) => f.ids ? [post] : f["#e"] && f.kinds?.[0] === 1 ? [own, gone, text, other]
+    : f.kinds?.[0] === 10063 ? lists : f.kinds?.[0] === 5 ? [sign(alice, 5, "", [["e", gone.id]])] : []
+  const got = await loadThread({ id: post.id, relays: [] }, relays([list(alice, [mesh(V)]), list(bob, [mesh(V2)])]))
+  assert.deepEqual(got.keptReplies.map(e => e.id), [own.id])
+  assert.deepEqual((await loadThread({ id: post.id, relays: [] }, relays([list(bob, [mesh(V2)])]))).keptReplies, [], "no vault of the author's: nothing kept")
+  assert.deepEqual([...await readDeletedIds([own, gone], relays([]))], [gone.id])
 })

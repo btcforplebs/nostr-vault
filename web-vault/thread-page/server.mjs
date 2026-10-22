@@ -1,7 +1,7 @@
 // The public post page's server: GET /thread/<nevent|note|naddr> -> the post and its replies as HTML (page.js), read
 // from public relays (fetch.js). nginx proxies /thread/ here (website/nginx.conf); run it with `npm run thread`.
 // Pages are kept in memory for a while, so a link pasted into a busy chat costs the relays one read.
-// GET /thread/photo/<sha256> serves the shared post's mesh photo from the server's copy (photo-cache.js), which a warm
+// GET /thread/photo/<sha256> serves the shared post's mesh photo (and its author's own reply photos) from the server's copy (photo-cache.js), which a warm
 // FIPS node fills; THREAD_MESH=off turns that off (no node, every such request 404s).
 import http from "node:http"
 import { SimplePool } from "nostr-tools/pool"
@@ -43,10 +43,13 @@ async function build(code) {
   const pool = newPool()
   try {
     const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
-    const { post, events, profiles, vaults, replyVaults } = await loadThread(target, query)
+    const { post, events, profiles, vaults, replyVaults, keptReplies } = await loadThread(target, query)
     if (!post) { if (target.id) photos.drop(target.id); return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL } }
     if (MESH) photos.sync(post.id, meshPhotoHashes(post), vaults)
-    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults, replyVaults }), ttl: FOUND_TTL }
+    // The post author's own reply photos are kept too, from their own vaults; anyone else's never are.
+    if (MESH) for (const r of keptReplies) photos.sync(r.id, meshPhotoHashes(r), replyVaults.get(post.pubkey) ?? [])
+    const kept = MESH ? new Set(keptReplies.map(r => r.id)) : new Set()
+    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, vaults, replyVaults, kept }), ttl: FOUND_TTL }
   } finally {
     pool.destroy()
   }

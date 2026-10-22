@@ -6,7 +6,8 @@
 // the time the https link fails, and stops once nothing is left to read. A failed post photo asks the page server's
 // copy (PHOTO_CACHE_PATH, which a warm server node keeps for photos it has already read) and the mesh at once, and
 // shows whichever answers first. A reply's photo (data-mesh-on="error") is a fallback only: it starts no reader at
-// page open and asks no server copy, just its own author's vaults once its https link fails.
+// page open and asks no server copy (unless the page server keeps one, data-kept: the post author's own reply), just
+// its own author's vaults once its https link fails.
 const HEX = /^[0-9a-f]{64}$/
 const MAX_VAULTS = 3 // a 10063 can list any number; the page server already keeps the first few
 const READ_TIMEOUT_MS = 45_000 // per vault: a cold mesh route can take a while
@@ -74,7 +75,7 @@ function placeholder(doc, img) {
 export function meshTarget(img) {
   const x = String(img.dataset?.x ?? "").toLowerCase()
   const vaults = [...new Set(String(img.dataset?.vaults ?? "").toLowerCase().split(",").filter(v => HEX.test(v)))].slice(0, MAX_VAULTS)
-  return HEX.test(x) && vaults.length ? { x, vaults, fallback: img.dataset?.meshOn === "error" } : undefined
+  return HEX.test(x) && vaults.length ? { x, vaults, fallback: img.dataset?.meshOn === "error", kept: img.dataset?.kept === "1" } : undefined
 }
 
 /**
@@ -135,7 +136,7 @@ export function wireMeshPhotos(doc, {
 
   async function readOne(img, t) {
     const stop = new AbortController()
-    const fromServer = t.fallback ? Promise.resolve(null) : Promise.resolve().then(() => loadCached(t.x, stop.signal)).catch(() => null)
+    const fromServer = t.fallback && !t.kept ? Promise.resolve(null) : Promise.resolve().then(() => loadCached(t.x, stop.signal)).catch(() => null)
     const url = await firstFound([fromServer, readMesh(t, stop.signal)])
     stop.abort() // the other one stops
     if (!url) return "failed"

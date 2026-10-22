@@ -3,7 +3,8 @@
 // unfurls the link reads its og: tags for the preview card. Its one script, only on a page with a photo its author's
 // 10063 puts on a mesh vault, reads that photo over FIPS when its https server can't serve it (web-relay
 // src/fips/share-photos.js). The shared post's photos get the full path (reader at page open, the server's copy); a
-// reply's photo only falls back to its own author's vault once its https link fails (data-mesh-on="error").
+// reply's photo only falls back to its own author's vault once its https link fails (data-mesh-on="error"), asking
+// the server's copy too when the reply is the post author's own (data-kept).
 // This file is the pure half: the address, the reply list and the HTML. The relay half is fetch.js.
 import { decode, neventEncode, naddrEncode, npubEncode } from "nostr-tools/nip19"
 import { buildThread, flattenThread, replyRefs } from "../src/net/thread.js"
@@ -224,8 +225,9 @@ function inlineHtml(text) {
 export const MESH_PHOTO_SCRIPT = "/relay/share-photos.js"
 
 /** `vaults`: the mesh vaults the note author's 10063 names. A photo with a hash carries both, for MESH_PHOTO_SCRIPT;
- *  `fallback` (a reply) marks it as read only after its https link fails. */
-function noteHtml(ev, profiles, vaults = [], fallback = false) {
+ *  `fallback` (a reply) marks it as read only after its https link fails, `kept` (the post author's own reply) as one
+ *  the server keeps a copy of. */
+function noteHtml(ev, profiles, vaults = [], fallback = false, kept = false) {
   const { parts, media } = noteParts(ev.content, ev.tags)
   const text = parts.map(p => {
     if (p.type === "text") return esc(p.text)
@@ -235,13 +237,13 @@ function noteHtml(ev, profiles, vaults = [], fallback = false) {
   }).join("")
   const mediaHtml = media.map(m => m.type === "video"
     ? `<video src="${esc(m.url)}" controls playsinline preload="metadata"></video>`
-    : `<a href="${esc(m.url)}" rel="nofollow ugc noopener"><img src="${esc(m.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"${meshAttrs(m, vaults, fallback)}></a>`,
+    : `<a href="${esc(m.url)}" rel="nofollow ugc noopener"><img src="${esc(m.url)}" alt="" loading="lazy" referrerpolicy="no-referrer"${meshAttrs(m, vaults, fallback, kept)}></a>`,
   ).join("")
   return `${text ? `<div class="text">${text}</div>` : ""}${mediaHtml ? `<div class="media">${mediaHtml}</div>` : ""}`
 }
 
-const meshAttrs = (m, vs, fallback) =>
-  (m.x && vs?.length ? ` data-x="${esc(m.x)}" data-vaults="${esc(vs.join(","))}"${fallback ? ` data-mesh-on="error"` : ""}` : "")
+const meshAttrs = (m, vs, fallback, kept) =>
+  (m.x && vs?.length ? ` data-x="${esc(m.x)}" data-vaults="${esc(vs.join(","))}"${fallback ? ` data-mesh-on="error"` : ""}${fallback && kept ? ` data-kept="1"` : ""}` : "")
 
 function articleHtml(ev) {
   const meta = longFormMeta(ev)
@@ -268,8 +270,8 @@ const hasMeshPhoto = (ev, vaults) => ev.kind !== LONG_FORM_KIND && vaults.length
 
 /** The whole page for a found post. `code` is the address it was opened by. `vaults`: the mesh vaults the post
  *  author's 10063 names (fetch.js), for the post's own photos. `replyVaults`: pubkey -> vaults, for each reply's
- *  photos, as a fallback only. */
-export function renderPost({ post, replies, profiles, code, vaults = [], replyVaults = new Map() }) {
+ *  photos, as a fallback only. `kept`: ids of replies whose photos the server keeps a copy of (the post author's own). */
+export function renderPost({ post, replies, profiles, code, vaults = [], replyVaults = new Map(), kept = new Set() }) {
   const replyMesh = ev => replyVaults.get(ev.pubkey) ?? []
   const url = `${SITE}/thread/${code}`
   const meta = previewMeta(post, profiles, url)
@@ -294,7 +296,7 @@ ${hex ? actionRow(hex) : ""}
   ${replies.map(({ event, depth }) => `
   <div class="reply" style="--d:${Math.min(depth, MAX_DEPTH) - 1}">
     ${byline(event, profiles, 32)}
-    ${noteHtml(event, profiles, replyMesh(event), true)}
+    ${noteHtml(event, profiles, replyMesh(event), true, kept.has(event.id))}
   </div>`).join("")}
 </section>`
   const mesh = hasMeshPhoto(post, vaults) || replies.some(({ event }) => hasMeshPhoto(event, replyMesh(event)))
