@@ -250,3 +250,29 @@ test("an aborted read resets at once (AbortError, not the timeout); a finished o
     await got.closed
   } finally { await t.stop() }
 })
+
+test("a stream the vault drops before any response byte is opened again; one it keeps dropping fails at the deadline", async () => {
+  const [h, b] = blob(40_000, "image/png")
+  const t = await setup({ blobs: new Map([[h, b]]) })
+  // The vault resets the first stream it accepts, the way a cold page saw it (Safari, nostrvault.app/thread/).
+  const accept = t.vault.tcp.accept.bind(t.vault.tcp)
+  let drops = 1
+  t.vault.tcp.accept = async () => {
+    const id = await accept()
+    if (id === undefined || drops <= 0) return id
+    drops--
+    await t.vault.tcp.abort(id)
+    return accept()
+  }
+  try {
+    const got = await t.client.get(t.vaultKey, h, { timeoutMs: 10_000 })
+    assert.equal(sha(got.bytes), h)
+    assert.equal(t.client.stats.retries, 1, "one reopened stream")
+    drops = Infinity
+    const t0 = Date.now()
+    await assert.rejects(t.client.get(t.vaultKey, h, { timeoutMs: 3_000 }), /vault (closed|refused) the connection/)
+    assert.ok(Date.now() - t0 >= 1_900, "kept retrying until close to the deadline")
+    assert.ok(t.client.stats.retries >= 2)
+  } finally { await t.stop() }
+})
+
