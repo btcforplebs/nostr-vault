@@ -106,6 +106,25 @@ class HomeVaultSenderTest {
         assertEquals(1, HomeVaultQueue(macDir).size)
     }
 
+    /** Tod / Tron #1048 #2: the "already on the vault" check is signed once per blob, local signer only. */
+    @Test
+    fun `the vault check is signed once with a local signer and never with Amber or a bunker`() = runBlocking {
+        for (local in listOf(true, false)) {
+            val signed = mutableListOf<List<List<String>>>()
+            val s = sender().apply {
+                signerIsLocal = { local }
+                signer = { _, _, tags -> signed += tags; "{}" }
+            }
+            s.ensureOnVault("b".repeat(64))  // the mesh is off in a unit test: nothing is reached
+            if (local) {
+                assertEquals(1, signed.size)
+                assertTrue(listOf("t", "get") in signed.single() && listOf("x", "b".repeat(64)) in signed.single())
+            } else {
+                assertEquals("no prompt for a remote signer", 0, signed.size)
+            }
+        }
+    }
+
     @Test
     fun `nothing is offered while another account is active`() = runBlocking {
         val s = sender()
