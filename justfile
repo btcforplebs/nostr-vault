@@ -31,6 +31,8 @@ android-build:
             -o "$JNILIBS/$1/libhaven.so" .
         rm -f "$JNILIBS/$1/libhaven.h"
     done
+    echo "Building libnvfips.so (FIPS mesh)..."
+    {{justfile_directory()}}/NostrVault/build_fips_v2_android.sh
     echo "Building APK..."
     cd {{justfile_directory()}}/NostrVault && ./gradlew assembleRelease
 
