@@ -147,9 +147,10 @@ export function ipv6ShimEndpoint(node, selfKey, { allow = () => false, acceptSyn
     const seg = decodeShim(d.payload, addrOf(d.src), self)
     if (!seg) return onDrop("not a valid TCP segment")
     if (!acceptSyn && seg[13] & SYN && !(seg[13] & ACK)) return onDrop("unsolicited SYN")
-    // A segment belongs to the TCP endpoint on its port at either end: the server's listening port is the
-    // destination of what it receives, a client's remote port the source.
-    const handler = handlers.get((seg[2] << 8) | seg[3]) ?? handlers.get((seg[0] << 8) | seg[1])
+    // A listening endpoint takes what is sent to its port; a client endpoint takes what comes from its remote port.
+    // Never both: a page reading port 80 from a vault while serving its own port 80 runs one of each on this node,
+    // and a segment handed to the wrong stack is answered with an RST that kills the other's stream.
+    const handler = handlers.get(acceptSyn ? (seg[2] << 8) | seg[3] : (seg[0] << 8) | seg[1])
     if (!handler) return onDrop("no endpoint")
     try {
       // @fips/tcp keys connections by the exact peer string. A session the vault opened reports its key with its
