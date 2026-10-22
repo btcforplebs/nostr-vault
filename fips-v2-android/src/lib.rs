@@ -486,8 +486,16 @@ pub fn ingress(npub: &str) -> Result<String, i32> {
                 return Err(ERR_START);
             }
         }
-        // No offer: the session finds the vault through the seeds.
-        IngressRoute::ViaMesh => {}
+        // No offer: the session finds the vault through the seeds. FIPS still
+        // needs the vault's key: the mesh address is a hash prefix, and with
+        // no key a TUN packet gets no-route and a lookup answer is dropped
+        // (Tron, #1030). The probe puts it in the identity cache with no dial.
+        IngressRoute::ViaMesh => {
+            if let Err(e) = seed_identity(&control, npub) {
+                // Too many probes in flight, or a key already cached: try anyway.
+                tracing::warn!("mesh seed identity {npub}: {e:#}");
+            }
+        }
     }
     let mut state = state();
     let Some(run) = state.as_mut() else { return Err(ERR_NOT_RUNNING) };
@@ -555,10 +563,27 @@ fn add_peer(
     control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
     npub: &str,
 ) -> Result<()> {
-    let request = fips::control::protocol::Request {
-        command: "add_peer".into(),
-        params: Some(serde_json::json!({ "npub": npub })),
-    };
+    control_request(control, "add_peer", serde_json::json!({ "npub": npub })).map(|_| ())
+}
+
+/// Put `npub`'s key in the node's identity cache without dialing it: a
+/// FIPS probe seeds the cache first, then does a mesh lookup and a session
+/// through the tree (no Nostr rendezvous, so no traversal offer and no
+/// address), and leaves a session that traffic has used in place.
+fn seed_identity(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    npub: &str,
+) -> Result<()> {
+    control_request(control, "probe_start", serde_json::json!({ "npub": npub })).map(|_| ())
+}
+
+/// One control command, answered by the node's rx loop. Its data on "ok".
+fn control_request(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    command: &str,
+    params: serde_json::Value,
+) -> Result<Option<serde_json::Value>> {
+    let request = fips::control::protocol::Request { command: command.into(), params: Some(params) };
     let (tx, mut rx) = tokio::sync::oneshot::channel();
     let end = Instant::now() + ADD_PEER_TIMEOUT;
     // A full queue is a burst of opens, not a failure: wait for room.
@@ -584,7 +609,7 @@ fn add_peer(
         }
     };
     anyhow::ensure!(response.status == "ok", "{}", response.message.unwrap_or_default());
-    Ok(())
+    Ok(response.data)
 }
 
 /// Stop the node, and the stack with it.
@@ -840,6 +865,49 @@ mod tests {
         assert_eq!(serve_limits(&opts).total_bytes, 5 << 30);
         let own = StartOptions { own_devices: vec![Identity::generate().npub()], max_serve_bytes: 100 << 20, ..Default::default() };
         assert_eq!(serve_limits(&own), stack::ServeLimits::default(), "own devices are not capped");
+    }
+
+    /// A vault read without a dial must have its key in the node's identity
+    /// cache: FIPS cannot recover a key from a mesh address, and a packet to
+    /// an uncached one is answered at once with ICMPv6 no-route (Tron, #1030).
+    /// An offline node (no rendezvous, loopback UDP): send one packet to the
+    /// vault through the node's TUN, before and after seed_identity.
+    #[test]
+    fn seed_identity_caches_the_vault_key_without_a_dial() {
+        let nsec = generate_nsec();
+        let yaml = format!(
+            "node:\n  identity:\n    nsec: \"{nsec}\"\n  leaf_only: true\n  control:\n    enabled: false\n  rendezvous:\n    nostr:\n      enabled: false\ndns:\n  enabled: false\ntransports:\n  udp:\n    bind_addr: \"127.0.0.1:0\"\npeers: []\n"
+        );
+        let config: Config = serde_yaml::from_str(&yaml).expect("test config");
+        let node = node::spawn(config, "fips-test-seed").expect("node");
+        let (to_mesh, from_mesh) = &node.tun;
+        // ICMPv6 destination unreachable back from the node within `wait`.
+        let no_route = |dest: Ipv6Addr, wait: Duration| -> bool {
+            let mut pkt = vec![0u8; 40];
+            pkt[0] = 0x60;
+            pkt[6] = 59; // no next header
+            pkt[7] = 64;
+            pkt[8..24].copy_from_slice(&node.address.octets());
+            pkt[24..40].copy_from_slice(&dest.octets());
+            to_mesh.blocking_send(pkt).expect("tun send");
+            let end = Instant::now() + wait;
+            while let Some(left) = end.checked_duration_since(Instant::now()) {
+                match from_mesh.recv_timeout(left) {
+                    Ok(p) if p.len() > 40 && p[6] == 58 && p[40] == 1 => return true,
+                    Ok(_) => continue,
+                    Err(_) => return false,
+                }
+            }
+            false
+        };
+        let vault = Identity::generate();
+        let vault_addr = vault.address().to_ipv6();
+        // The control: an unseeded key is no-route, immediately.
+        assert!(no_route(vault_addr, Duration::from_secs(2)), "control: an uncached key should be no-route");
+        seed_identity(&node.control, &vault.npub()).unwrap();
+        assert!(!no_route(vault_addr, Duration::from_millis(500)), "seed_identity left the vault's key out of the cache");
+        let _ = node.stop.send(());
+        let _ = node.thread.join();
     }
 
     /// A reading phone answers offers from its own devices only, or from no

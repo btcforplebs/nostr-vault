@@ -128,7 +128,8 @@ final class FipsMeshService: ObservableObject {
         // capped. Never open: with no other device listed, sharing does not start.
         guard let options = MeshDevicesLogic.kioskEngineOptions(
             devices: FipsMeshDevices.current(ConfigService.shared.config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
-            relays: FipsMeshSettings.finderRelays, meshDoorPort: port) else {
+            relays: FipsMeshSettings.finderRelays, meshDoorPort: port,
+            seeds: FipsMeshSettings.middleServer == .publicSeeds) else {
             lastError = "Add your other phone or your Mac under My Devices first: kiosk mode serves your own devices in full, and anyone else only the photos you post."
             return
         }

@@ -2,8 +2,9 @@ import SwiftUI
 
 #if os(iOS)
 /// FIPS Mesh → Advanced: the plumbing. Finder relays carry the offers your
-/// devices use to find each other; the middle server links this phone to a
-/// browser page that can't reach it directly.
+/// devices use to find each other; the middle server is how this phone
+/// reaches vaults outside My Devices, a browser page, and kiosk visitors,
+/// without giving them its address.
 struct FipsMeshAdvancedView: View {
     @State private var relays = FipsMeshSettings.finderRelays
     @State private var middle = FipsMeshSettings.middleServer
@@ -54,7 +55,7 @@ struct FipsMeshAdvancedView: View {
             } header: {
                 Text("Middle Server")
             } footer: {
-                Text("Links this phone to a browser page that can't reach it directly, and sees this phone's IP address. With None, a browser page only connects on the same network.")
+                Text("How this phone reaches anyone outside My Devices: the photos of people you follow, a browser page, and visitors to your kiosk. They never get this phone's address; the middle server does see it. With None, follows' photos load from their web addresses instead, a browser page only connects on the same network, and the kiosk takes no visitors.")
             }
 
             Section {

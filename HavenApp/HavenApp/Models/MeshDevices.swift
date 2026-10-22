@@ -84,7 +84,9 @@ enum MeshPhotoDestination: String, CaseIterable, Identifiable {
 
 /// The server that links two devices that can't reach each other directly.
 enum MeshMiddleServer: String, CaseIterable, Identifiable {
-    /// fips1 and fips2.iris.to, joined when a browser page is set up.
+    /// fips1 and fips2.iris.to: the route to anyone outside My Devices
+    /// (follows' vaults read without a dial, a browser page, kiosk
+    /// visitors). They see this phone's public IP while the mesh runs.
     case publicSeeds = "public"
     case none
 
@@ -225,9 +227,14 @@ enum MeshDevicesLogic {
     /// and 1 MiB/s alone is 3.6 GB an hour (strangers.rs).
     /// Nil with no other device listed: an empty `own_devices` would leave
     /// the kiosk open to anyone, so it does not start.
-    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int) -> [String: Any]? {
+    /// `seeds` false (middle server None): no seeds, so no visitors reach
+    /// the kiosk and follows' vaults are out of reach; own devices still are.
+    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int, seeds: Bool = true) -> [String: Any]? {
         guard var options = macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort) else { return nil }
         options["max_serve_bytes"] = kioskStrangersTotal
+        options["public_seeds"] = seeds
+        // Reading a follow's photos while sharing: without a dial, as a client does.
+        options["read_anyone"] = true
         return options
     }
 

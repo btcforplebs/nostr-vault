@@ -213,6 +213,11 @@ final class MeshDevicesTests: XCTestCase {
         // In own-devices mode the engine applies it to strangers only (#1025):
         // without it strangers had no total on a phone whose data may be metered.
         XCTAssertEqual(opts["max_serve_bytes"] as? Int64, 1 << 30)
+        // While sharing, a follow's photos are read without a dial too (Tron, #1030 F2).
+        XCTAssertEqual(opts["read_anyone"] as? Bool, true)
+        // Middle server None: no seeds while sharing either (#1030 F3).
+        let noSeeds = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: kiosk, relays: [], meshDoorPort: door, seeds: false))
+        XCTAssertEqual(noSeeds["public_seeds"] as? Bool, false)
         XCTAssertNil(opts["peers"])
     }
 

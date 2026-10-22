@@ -32,15 +32,19 @@ class MeshEnginePlanTest {
     }
 
     @Test
-    fun `with no devices the engine stays open and shares the door, as before`() {
+    fun `with no devices the engine is still closed, and strangers still get the door`() {
         val config = HavenConfig(relayPort = 4000)
         val options = MeshEnginePlan.options(config, ownNpub = me, maxServeBytes = 1)
 
         assertEquals(emptyList<String>(), options.ownDevices)
-        assertEquals(0, options.strangersPort)  // the library refuses strangers_port without own_devices
-        // read_anyone would close the engine, and this phone's door with it.
-        assertEquals(false, options.readAnyone)
-        assertEquals(config.meshPort, MeshEnginePlan.sharePort(config, options.ownDevices))
+        // read_anyone keeps own-devices mode on with an empty list: no one's offers are answered,
+        // so the default install no longer gives its address away (Tron, #1030 F4).
+        assertTrue(options.readAnyone)
+        // Strangers reach the door through the seeds, as with devices listed; the relay is no one's.
+        assertEquals(config.meshPort, options.strangersPort)
+        val share = MeshEnginePlan.sharePort(config, options.ownDevices)
+        assertEquals(4000, share)
+        assertNotEquals(options.strangersPort, share)
     }
 
     @Test
