@@ -437,9 +437,11 @@ enum LinkedMacEntry {
 /// lets strangers read photos by hash through the public seeds, capped. Its
 /// npub goes in the owner's 10063.
 enum PhotoNode {
-    /// This Mac's mesh npub while its Mesh switch is on, else nil.
-    static func npub() -> String? {
-        MacFipsMeshService.photoNpub().flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
+    /// This Mac's mesh npub while its Mesh switch is on and the engine runs
+    /// (it starts only with a device added), else nil.
+    @MainActor static func npub() -> String? {
+        HomeVaultLogic.macPhotoNpub(MacFipsMeshService.photoNpub(), engineRunning: MacFipsMeshService.shared.running)
+            .flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
     }
 
     /// Republishes when the owner's kept 10063 lacks the photo node, so the

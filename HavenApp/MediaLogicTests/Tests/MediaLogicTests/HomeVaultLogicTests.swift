@@ -136,6 +136,22 @@ final class ServerListMergeTests: XCTestCase {
                                                       ownMeshNpub: nil, photoNpub: "not an npub"), ["https://a.example/"])
     }
 
+    func testTheMacListsItsPhotoNodeOnlyWhileItsEngineRuns() {
+        // Switch on, but no device added (or the start failed): the engine is not running, nothing is listed.
+        let dead = HomeVaultLogic.macPhotoNpub(third, engineRunning: false)
+        XCTAssertNil(dead)
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
+                                                      previouslyManaged: [], ownMeshNpub: nil, photoNpub: dead),
+                       ["https://a.example/"])
+        XCTAssertFalse(HomeVaultLogic.photoNodeMissing(from: ["https://a.example/"], photoNpub: dead), "no republish for a dead node")
+        // Running with a device: listed.
+        let live = HomeVaultLogic.macPhotoNpub(third, engineRunning: true)
+        XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["https://a.example/"], current: ["https://a.example/"],
+                                                      previouslyManaged: [], ownMeshNpub: nil, photoNpub: live),
+                       ["https://a.example/", mesh(third)])
+        XCTAssertNil(HomeVaultLogic.macPhotoNpub(nil, engineRunning: true), "switch off")
+    }
+
     func testAPhoneKeepsTheMacsPhotoNodeWhenItRepublishes() {
         // The Mac listed its photo node; a phone that knows nothing of it republishes its own servers.
         let macList = ["https://a.example/", mesh(third)]
