@@ -14,7 +14,13 @@ export const MAX_AGE_MS = 24 * 60 * 60_000
 export const READ_TIMEOUT_MS = 45_000 // per vault, as in the browser
 export const MAX_READS = 2
 export const MAX_QUEUED = 20
-export const WAIT_MS = 30_000 // a request for a photo still being read waits this long for it
+// A request for a photo still being read waits this long for it: under nginx's proxy_read_timeout for /thread/ (20 s,
+// website/nginx.conf), so the answer is our 200 or 404, not nginx's 504.
+export const WAIT_MS = 15_000
+
+/** The Content-Type a kept photo is served with: a raster image type as the vault gave it, anything else (SVG
+ *  included: it can carry script) as an opaque download. The /thread/ CSP is not the only guard. */
+export const servedType = type => (/^image\/(png|jpeg|gif|webp|avif)$/i.test(String(type ?? "")) ? String(type).toLowerCase() : "application/octet-stream")
 
 /**
  * `startReader(getPhotoVaults)` starts the photo reader (tests pass a fake); it is started once and kept warm, and

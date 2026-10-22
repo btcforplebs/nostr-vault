@@ -7,7 +7,7 @@ import http from "node:http"
 import { SimplePool } from "nostr-tools/pool"
 import { meshPhotoHashes, parseTarget, renderMissing, renderPost, replyList } from "./page.js"
 import { loadThread } from "./fetch.js"
-import { createPhotoCache } from "./photo-cache.js"
+import { createPhotoCache, servedType } from "./photo-cache.js"
 
 const PORT = Number(process.env.PORT || 8790)
 const WAIT_MS = Number(process.env.THREAD_WAIT_MS || 3500) // per relay read; chat unfurlers give up after ~5-10 s
@@ -71,7 +71,7 @@ async function servePhoto(x, req, res) {
   const got = MESH ? await photos.lookup(x) : undefined
   if (!got) { res.writeHead(404, { "Content-Type": "text/plain", "Cache-Control": "no-store" }); return res.end("not kept") }
   res.writeHead(200, {
-    "Content-Type": /^image\/[a-z0-9.+-]+$/i.test(got.type) ? got.type : "application/octet-stream",
+    "Content-Type": servedType(got.type),
     "Content-Length": got.bytes.length,
     "Cache-Control": "private, max-age=60", // short: a photo whose note was deleted must stop showing soon
   })
