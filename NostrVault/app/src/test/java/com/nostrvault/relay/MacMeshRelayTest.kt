@@ -115,4 +115,56 @@ class MacMeshRelayTest {
         assertNull(RelayConfiguration.meshWebsocketURL("ws://127.0.0.1:1/x"))
         assertNull(RelayConfiguration.meshWebsocketURL("not a url"))
     }
+
+    // Phone → Mac: the dialed Mac is a broadcast relay, so the phone's notes reach it (iOS blastrRelays(config:mesh:)).
+
+    @Test fun aMacOnTheMeshGoesFirstInTheBroadcastList() {
+        val config = HavenConfig(macRelayURL = "fipsmesh://$mac/", fipsMeshEnabled = true, blastrRelays = listOf("wss://relay.damus.io"))
+        val inputs = RelayConfiguration.launchInputs(config, dir, reaches(base))
+        assertEquals(listOf(ws, "wss://relay.damus.io"), inputs.blastrRelays)
+    }
+
+    @Test fun aVaultOnMacDeviceIsABroadcastRelayToo() {
+        val config = HavenConfig(
+            fipsMeshEnabled = true,
+            fipsPeers = listOf(mac),
+            fipsMesh = FipsMeshSettings(devices = listOf(FipsDevice(npub = mac, role = DeviceRole.MAC))),
+            blastrRelays = listOf("wss://relay.damus.io"),
+        )
+        assertEquals(listOf(ws, "wss://relay.damus.io"), RelayConfiguration.launchInputs(config, dir, reaches(base)).blastrRelays)
+    }
+
+    @Test fun noDialedMacLeavesTheBroadcastListAlone() {
+        val list = listOf("wss://relay.damus.io")
+        val failed = HavenConfig(macRelayURL = mac, fipsMeshEnabled = true, blastrRelays = list)
+        assertEquals(list, RelayConfiguration.launchInputs(failed, dir, reaches(null, FipsBridge.ERR_START)).blastrRelays)
+        // Another Mac's address, or a Mac with a URL, never joins it.
+        assertEquals(list, RelayConfiguration.blastrRelays(failed, RelayConfiguration.MacMeshRelay(other, ws)))
+        val byURL = HavenConfig(macRelayURL = "mac.example.com", fipsMeshEnabled = true, blastrRelays = list)
+        assertEquals(list, RelayConfiguration.blastrRelays(byURL, RelayConfiguration.MacMeshRelay(mac, ws)))
+    }
+
+    // A mesh npub in the Mac field is not a host: no wss://npub1… anywhere it is read.
+
+    @Test fun aMeshNpubHasNoPublicMacAddress() {
+        for (typed in listOf(mac, "nostr:$mac", "fipsmesh://$mac/", "  $mac  ")) {
+            val config = HavenConfig(macRelayURL = typed, fipsMeshEnabled = true)
+            assertEquals(typed, "", config.macRelayNormalizedBase)
+            assertEquals(typed, "", config.macRelayWssURL)
+            assertEquals(typed, "", config.macRelayHttpsURL)
+            assertEquals(typed, "", config.ownHavenDMInboxURL)
+            assertEquals(typed, false, config.activeBlastrRelays.any { "npub1" in it })
+            assertEquals(typed, false, config.activeFeedRelays.any { "npub1" in it })
+            assertEquals(typed, false, config.dmInboxRelays.any { "npub1" in it })
+            assertEquals(typed, false, config.activeBlossomMirrors.any { "npub1" in it })
+            assertEquals(typed, false, config.publicRelayListTags.flatten().any { "npub1" in it })
+        }
+    }
+
+    @Test fun aMacWithAURLKeepsItsAddresses() {
+        val config = HavenConfig(macRelayURL = "https://mac.example.com/")
+        assertEquals("wss://mac.example.com", config.macRelayWssURL)
+        assertEquals("https://mac.example.com", config.macRelayHttpsURL)
+        assertEquals("wss://mac.example.com/inbox", config.ownHavenDMInboxURL)
+    }
 }

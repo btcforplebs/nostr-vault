@@ -286,9 +286,21 @@ object RelayConfiguration {
         return LaunchInputs(
             env = generateEnvDictionary(config, relayDataDir),
             importSeedRelays = config.importSeedRelays,
-            blastrRelays = config.blastrRelays,
+            blastrRelays = blastrRelays(config, macMeshRelay),
             dmRelays = config.dmRelays,
         )
+    }
+
+    /**
+     * The broadcast list the relay writes to: a Mac on the mesh goes first,
+     * at its dialed local address, so the phone's notes reach it. A Mac with
+     * a URL is synced through MAC_RELAY_URL as before. Port of iOS
+     * RelayConfiguration.blastrRelays(config:mesh:).
+     */
+    fun blastrRelays(config: HavenConfig, mesh: MacMeshRelay?): List<String> {
+        val npub = MacSync.macMeshNpub(config)
+        if (npub == null || mesh == null || mesh.npub != npub || mesh.url in config.blastrRelays) return config.blastrRelays
+        return listOf(mesh.url) + config.blastrRelays
     }
 
     /**
