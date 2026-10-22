@@ -17,7 +17,28 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.nostrvault.fips.meshAuthor
 import com.nostrvault.ui.theme.*
+
+/**
+ * A profile Media tile's picture, tagged with [author] so a mesh-only blob is
+ * read from their vault, as the feed does (#1011).
+ */
+internal fun profileTileImageModel(context: android.content.Context, url: String, author: String): coil.request.ImageRequest =
+    coil.request.ImageRequest.Builder(context)
+        .data(url)
+        .meshAuthor(author)
+        .apply {
+            // iOS grid tiles hold a GIF still (`shouldAnimate: false`); a grid of
+            // looping GIFs is noise. The first frame comes from the plain decoder.
+            if (isGifUrl(url)) {
+                decoderFactory(coil.decode.BitmapFactoryDecoder.Factory())
+                // Its own cache entry: under the plain URL this still frame
+                // would stand in for the animated GIF in notes and the viewer.
+                memoryCacheKey("$url#still")
+            }
+        }
+        .build()
 
 /**
  * One Media grid tile. Audio has no picture, so it gets iOS's dark tile with
@@ -68,18 +89,7 @@ internal fun ProfileMediaTile(
             ProfileTileBackupBadge(url, Modifier.align(Alignment.BottomEnd))
         }
     } else {
-        // iOS grid tiles hold a GIF still (`shouldAnimate: false`); a grid of
-        // looping GIFs is noise. The first frame comes from the plain decoder.
-        val model = remember(url) {
-            if (!isGifUrl(url)) url
-            else coil.request.ImageRequest.Builder(context)
-                .data(url)
-                .decoderFactory(coil.decode.BitmapFactoryDecoder.Factory())
-                // Its own cache entry: under the plain URL this still frame
-                // would stand in for the animated GIF in notes and the viewer.
-                .memoryCacheKey("$url#still")
-                .build()
-        }
+        val model = remember(url, author) { profileTileImageModel(context, url, author) }
         Box(contentAlignment = Alignment.Center, modifier = tileModifier) {
             AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
             if (isVideo) {
