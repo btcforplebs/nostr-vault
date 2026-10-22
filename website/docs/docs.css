@@ -440,3 +440,8 @@ ol.steps > li::before {
 @media (min-width: 901px) {
     .docs-menu { display: none; }
 }
+
+/* Mac windows: wider than phone shots */
+.shots.mac { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+.shots.mac img { border-radius: 12px; }
