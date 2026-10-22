@@ -172,12 +172,16 @@ final class FipsMeshService: ObservableObject {
     /// Otherwise the owner turned it off. `republish` false: kiosk mode is
     /// starting again at once, so the 10063 keeps its mesh entry.
     func stopKiosk(leavingApp: Bool = false, republish: Bool = true) {
+        let wasRestarting = restartingKiosk
         restartingKiosk = false
         if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
             starting = false
             startGen += 1
+            // Cancelled during a My Devices restart: the 10063 still names
+            // this phone's vault (Tron, #1054 R1).
+            if wasRestarting, republish { publishServerListInBackgroundTask() }
             return
         }
         guard kioskActive else { return }
@@ -204,7 +208,9 @@ final class FipsMeshService: ObservableObject {
         let own = ownMeshNpub ?? Self.meshNpubFromKey()
         // Any engine that may be up, not just clientActive: a dial still in
         // flight has an engine running, or queued, with the old list (Tron, #1054).
-        let client = clientActive || clientOps > 0 || Self.engineRunning()
+        // Not with kiosk mode up or starting: that branch wins anyway, and the
+        // status call would wait on the engine's lock through a start (R2).
+        let client = clientActive || clientOps > 0 || (!(kioskActive || starting) && Self.engineRunning())
         switch MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: own,
                                                          kiosk: kioskActive || starting, client: client) {
         case .keep:
