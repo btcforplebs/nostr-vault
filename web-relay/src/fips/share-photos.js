@@ -12,6 +12,36 @@ export const MAX_PARALLEL = 2
 export const MAX_PHOTO_BYTES = 16 * 1024 * 1024 // a share-page photo, not a 64 MiB blob
 export const MAX_PAGE_BYTES = 48 * 1024 * 1024
 const IDLE_STOP_MS = 15_000 // lazy photos fail one by one: keep the reader (one key, one seed handshake) a while
+export const LOADING_TEXT = "Loading image over FIPS…"
+export const FAILED_TEXT = "Couldn't reach the owner's vault"
+
+/**
+ * While a photo reads over the mesh its dead https <img> (Chrome's broken-image icon) is hidden behind a card that
+ * says so; the card goes when the photo loads and says why when it doesn't. The page styles .mesh-ph.
+ */
+function placeholder(doc, img) {
+  const shown = img.closest?.("a") ?? img // the link too: a tap on the card mustn't open the dead URL
+  const mk = (img.ownerDocument ?? doc)?.createElement?.bind(img.ownerDocument ?? doc)
+  if (!mk || !shown.parentNode) return () => {}
+  const card = mk("div")
+  card.className = "mesh-ph"
+  card.setAttribute("role", "status")
+  const spin = mk("span")
+  spin.className = "spin"
+  spin.setAttribute("aria-hidden", "true")
+  const text = mk("span")
+  text.textContent = LOADING_TEXT
+  card.append(spin, text)
+  card.dataset.state = "loading"
+  shown.parentNode.insertBefore(card, shown)
+  shown.hidden = true
+  return state => {
+    if (state === "loaded") { card.remove(); shown.hidden = false; return }
+    card.dataset.state = "failed"
+    spin.remove()
+    text.textContent = FAILED_TEXT
+  }
+}
 
 /** The hash and vaults the page wrote on an <img>, or undefined when it has none usable. */
 export function meshTarget(img) {
@@ -75,11 +105,12 @@ export function wireMeshPhotos(doc, {
 
   function next() {
     while (active < parallel && waiting.length) {
-      const { img, t, done } = waiting.shift()
+      const { img, t, done, settle } = waiting.shift()
       active++
       clearTimeout(idle)
       readOne(img, t).catch(() => "failed").then(state => {
         img.dataset.mesh = state
+        settle(state)
         active--
         done()
         next()
@@ -96,8 +127,9 @@ export function wireMeshPhotos(doc, {
     if (queued >= photos) { img.dataset.mesh = "skipped"; return }
     queued++
     img.dataset.mesh = "loading"
+    const settle = placeholder(doc, img)
     for (const v of t.vaults) allowed.add(v)
-    return new Promise(done => { waiting.push({ img, t, done }); next() })
+    return new Promise(done => { waiting.push({ img, t, done, settle }); next() })
   }
 
   onLeave(() => {

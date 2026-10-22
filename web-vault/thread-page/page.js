@@ -370,6 +370,9 @@ time{color:var(--dim);font-size:13px}
 .av-none{display:inline-flex;align-items:center;justify-content:center;background:var(--grad);color:#000;font-weight:700}
 .text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:17px}
 .media{display:grid;gap:8px;margin-top:12px}.media img,.media video{width:100%;max-height:640px;object-fit:contain;border-radius:14px;background:#111;display:block}
+.mesh-ph{display:flex;align-items:center;justify-content:center;gap:10px;min-height:220px;padding:20px;border-radius:14px;background:#111;border:1px solid var(--line);color:var(--dim);font-size:14px;text-align:center}
+.mesh-ph .spin{width:18px;height:18px;flex:none;border-radius:50%;border:2px solid rgba(255,140,0,.25);border-top-color:var(--accent);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.mesh-ph .spin{animation:none}}
 .title{font-size:28px;line-height:1.2;letter-spacing:-.02em;margin:4px 0 14px}
 .cover{width:100%;border-radius:14px;margin-bottom:16px}
 .article p,.article blockquote,.article pre{margin:0 0 14px}.article h2,.article h3,.article h4,.article h5,.article h6{margin:22px 0 10px;line-height:1.25}
