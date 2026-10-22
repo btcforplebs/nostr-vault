@@ -1,0 +1,26 @@
+<!--page
+{
+  "title": "Build the mesh into your client",
+  "nav": "NIP-F1 and the mesh",
+  "section": "dev",
+  "order": 1,
+  "eyebrow": "For developers",
+  "description": "How another Nostr client can read photos over the FIPS mesh: the fipsmesh:// address form in kind 10063, plain Blossom GETs, and the NIP-F1 draft.",
+  "aliases": ["#developers"]
+}
+-->
+<p>The mesh address is one new entry form, <code>fipsmesh://&lt;npub&gt;/</code>, in lists you already use:
+    the media server list (<code>kind:10063</code>) and, later, the relay list (<code>kind:10002</code>).
+    No new event kinds. Requests are plain Blossom <code>GET /&lt;sha256&gt;</code>, with the same hash
+    check.</p>
+<p>A client that doesn't know the form skips it and carries on with the other servers in the list. A client that
+    does can ask the device for the photo by its fingerprint, the same way it asks any media server, and throws the
+    photo away if the fingerprint doesn't match.</p>
+<a class="dev-card" href="https://github.com/btcforplebs/nostr-vault/blob/master/docs/NIP-F1.md">
+    <span class="tag tag-test">Draft, not yet submitted</span>
+    <h3>NIP-F1: Nostr over the FIPS Mesh</h3>
+    <p>The address form, transport, safety rules for serving and reading, and where Nostr Vault implements
+        each part.</p>
+    <span class="teaser-cta">Read the draft &rarr;</span>
+</a>
+<p>How it works for people using the app is on <a href="/docs/mesh/">The mesh</a>.</p>

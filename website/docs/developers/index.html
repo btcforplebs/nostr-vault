@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/developers.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build the mesh into your client — Nostr Vault Docs</title>
+    <meta name="description" content="How another Nostr client can read photos over the FIPS mesh: the fipsmesh:// address form in kind 10063, plain Blossom GETs, and the NIP-F1 draft.">
+    <link rel="canonical" href="https://nostrvault.app/docs/developers/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/developers/">
+    <meta property="og:title" content="Build the mesh into your client — Nostr Vault Docs">
+    <meta property="og:description" content="How another Nostr client can read photos over the FIPS mesh: the fipsmesh:// address form in kind 10063, plain Blossom GETs, and the NIP-F1 draft.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/" aria-current="page">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">For developers</p>
+            <h1>Build the mesh into your client</h1>
+
+            <article class="docs-article">
+                <p>The mesh address is one new entry form, <code>fipsmesh://&lt;npub&gt;/</code>, in lists you already use:
+                    the media server list (<code>kind:10063</code>) and, later, the relay list (<code>kind:10002</code>).
+                    No new event kinds. Requests are plain Blossom <code>GET /&lt;sha256&gt;</code>, with the same hash
+                    check.</p>
+                <p>A client that doesn't know the form skips it and carries on with the other servers in the list. A client that
+                    does can ask the device for the photo by its fingerprint, the same way it asks any media server, and throws the
+                    photo away if the fingerprint doesn't match.</p>
+                <a class="dev-card" href="https://github.com/btcforplebs/nostr-vault/blob/master/docs/NIP-F1.md">
+                    <span class="tag tag-test">Draft, not yet submitted</span>
+                    <h3>NIP-F1: Nostr over the FIPS Mesh</h3>
+                    <p>The address form, transport, safety rules for serving and reading, and where Nostr Vault implements
+                        each part.</p>
+                    <span class="teaser-cta">Read the draft &rarr;</span>
+                </a>
+                <p>How it works for people using the app is on <a href="/docs/mesh/">The mesh</a>.</p>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/mesh/"><span>Previous</span>The mesh</a>
+                <span></span>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
