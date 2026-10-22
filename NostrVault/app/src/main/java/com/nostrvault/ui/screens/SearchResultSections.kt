@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.util.findAllOnce
 import com.nostrvault.data.model.FeedNote
 
 /** A link found in a note that matched the search. */
@@ -29,7 +30,7 @@ object SearchResultSections {
         if (needle.isEmpty()) return emptyList()
         val found = HashSet<String>()
         for (note in notes) {
-            for (match in hashtagRegex.findAll(note.content)) {
+            for (match in hashtagRegex.findAllOnce(note.content)) {
                 val tag = match.groupValues[1].lowercase()
                 if (tag.contains(needle)) found.add(tag)
             }
@@ -46,7 +47,7 @@ object SearchResultSections {
         val seen = HashSet<String>()
         val links = ArrayList<SearchLink>()
         for (note in notes) {
-            for (match in urlRegex.findAll(note.content)) {
+            for (match in urlRegex.findAllOnce(note.content)) {
                 val url = match.value
                 if (!seen.add(url)) continue
                 links.add(

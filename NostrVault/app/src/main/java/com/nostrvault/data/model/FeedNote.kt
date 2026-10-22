@@ -1,5 +1,6 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.util.findAllOnce
 import androidx.compose.runtime.Immutable
 import com.nostrvault.relay.HavenQuoteDecoder
 import kotlinx.serialization.Serializable
@@ -418,15 +419,15 @@ data class FeedNote(
 
         internal fun parseMediaURLs(content: String): List<String> {
             val urls = mutableListOf<String>()
-            urls += MEDIA_REGEX.findAll(content).map { it.value }
-            urls += BLOSSOM_REGEX.findAll(content).map { it.value }
+            urls += MEDIA_REGEX.findAllOnce(content).map { it.value }
+            urls += BLOSSOM_REGEX.findAllOnce(content).map { it.value }
             return urls.filter(::isMediaUrl)
         }
 
         /** Every non-media http(s) URL in [content], in order, each once. */
         internal fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
             val seen = mutableSetOf<String>()
-            return HTTP_URL_REGEX.findAll(content)
+            return HTTP_URL_REGEX.findAllOnce(content)
                 .map { it.value }
                 .filter { it !in mediaSet }
                 .filter { seen.add(it) }
