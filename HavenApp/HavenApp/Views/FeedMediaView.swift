@@ -128,16 +128,18 @@ struct FeedMediaView: View {
                     avoidFullDownload: isThumbnail,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoAspectRatio ?? hintAspectRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(isThumbnail ? 1 : videoShapeRatio, contentMode: isThumbnail ? .fill : .fit)
             } else {
                 InlineFeedVideoPlayer(
                     url: url,
                     onTap: openViewer,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoAspectRatio ?? hintAspectRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(isThumbnail ? 1 : videoShapeRatio, contentMode: isThumbnail ? .fill : .fit)
             }
         }
+        // A portrait narrows to stay under the cap whole instead of being cut.
+        .frame(maxWidth: isThumbnail ? .infinity : FeedVideoShape.maxWidth(ratio: videoShapeRatio, heightCap: videoHeightCap))
         .frame(maxWidth: .infinity)
         .frame(maxHeight: isThumbnail ? .infinity : videoHeightCap)
         .mediaFrame(isThumbnail: isThumbnail)
@@ -145,12 +147,15 @@ struct FeedMediaView: View {
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
-    /// Height cap for inline video, mirroring `FeedPhotoView`: portraits get a
-    /// taller cap so they fill the width; defaults to the landscape cap until
-    /// the video's dimensions are known.
+    /// The video's own shape once a frame or the player says so; the note's
+    /// `imeta` `dim` only until then, since some clients publish a portrait
+    /// phone video's stored (landscape) size there.
+    private var videoShapeRatio: CGFloat? { videoAspectRatio ?? hintAspectRatio }
+
+    /// Height cap for inline video: portraits get the taller cap (see
+    /// `FeedVideoShape`); the landscape cap until the shape is known.
     private var videoHeightCap: CGFloat {
-        guard let ratio = videoAspectRatio ?? hintAspectRatio else { return maxHeight }
-        return ratio < 1 ? portraitMaxHeight : maxHeight
+        FeedVideoShape.heightCap(ratio: videoShapeRatio, landscapeCap: maxHeight, portraitCap: portraitMaxHeight)
     }
 
     private var photoView: some View {
