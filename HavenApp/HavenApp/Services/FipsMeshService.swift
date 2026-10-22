@@ -162,8 +162,9 @@ final class FipsMeshService: ObservableObject {
     }
 
     /// `leavingApp`: the app left the screen, so kiosk mode comes back with it.
-    /// Otherwise the owner turned it off.
-    func stopKiosk(leavingApp: Bool = false) {
+    /// Otherwise the owner turned it off. `republish` false: kiosk mode is
+    /// starting again at once, so the 10063 keeps its mesh entry.
+    func stopKiosk(leavingApp: Bool = false, republish: Bool = true) {
         if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
@@ -182,8 +183,41 @@ final class FipsMeshService: ObservableObject {
         resignObserver = nil
         stopEngine()
         status = nil
-        publishServerListInBackgroundTask()
+        if republish { publishServerListInBackgroundTask() }
         if leavingApp { notifyPaused() }
+    }
+
+    /// My Devices changed. A running engine keeps the `own_devices` it started
+    /// with, so a removed (lost or stolen) phone would keep reaching this
+    /// vault: restart it with the new list (NIP-F1 revoke). `before` is the
+    /// list from just before the change.
+    func myDevicesChanged(from before: [MeshDevice]) {
+        let after = FipsMeshDevices.current(ConfigService.shared.config)
+        let own = ownMeshNpub ?? Self.meshNpubFromKey()
+        switch MeshDevicesLogic.engineAfterDevicesChange(before: before, after: after, ownNpub: own,
+                                                         kiosk: kioskActive || starting, client: clientActive) {
+        case .keep:
+            return
+        case .restartKiosk:
+            print("FipsMesh: My Devices changed, kiosk mode starts again with the new list")
+            // No other device left: kiosk mode can't start, so it goes off
+            // and the 10063 drops its entry.
+            let startsAgain = !MeshDevicesLogic.ownDevices(after, ownNpub: own).isEmpty
+            stopKiosk(republish: !startsAgain)
+            if startsAgain { startKiosk() }
+        case .stopClient:
+            print("FipsMesh: My Devices changed, client engine stopped")
+            clientActive = false
+            if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+            clientBackgroundObserver = nil
+            stopEngine()
+            status = nil
+            // The relay dials a Mac set by its mesh address once, at start,
+            // through this engine: restart it so it dials again.
+            if ConfigService.shared.config.macRelayMeshNpub != nil {
+                Task { _ = await RelayProcessManager.shared.gracefulRestart() }
+            }
+        }
     }
 
     private func stopEngine() {

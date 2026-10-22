@@ -197,10 +197,7 @@ enum MeshDevicesLogic {
     /// A follow's vault outside My Devices is read through the seeds without
     /// a dial (`read_anyone`), so it never learns this Mac's address.
     static func macEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int) -> [String: Any]? {
-        var npubs: [String] = []
-        for device in devices where device.npub != ownNpub && !npubs.contains(device.npub) {
-            npubs.append(device.npub)
-        }
+        let npubs = ownDevices(devices, ownNpub: ownNpub)
         guard !npubs.isEmpty else { return nil }
         // Strangers reach the Mac through the public seeds, capped
         // (fips-v2-android strangers.rs), and get only Haven's mesh door:
@@ -250,18 +247,44 @@ enum MeshDevicesLogic {
     /// to None: those vaults are then out of reach and photos load from
     /// their URL, but the engine is still never open.
     static func clientEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], seeds: Bool) -> [String: Any] {
-        var npubs: [String] = []
-        for device in devices where device.npub != ownNpub && !npubs.contains(device.npub) {
-            npubs.append(device.npub)
-        }
         return [
-            "own_devices": npubs,
+            "own_devices": ownDevices(devices, ownNpub: ownNpub),
             "read_anyone": true,
             "relays": relays.isEmpty ? defaultFinderRelays : relays,
             "public_seeds": seeds,
             // LAN candidates go only to My Devices: they alone get answers or dials.
             "lan": true,
         ]
+    }
+
+    /// The engine's `own_devices`: My Devices without this device, each once.
+    static func ownDevices(_ devices: [MeshDevice], ownNpub: String?) -> [String] {
+        var npubs: [String] = []
+        for device in devices where device.npub != ownNpub && !npubs.contains(device.npub) {
+            npubs.append(device.npub)
+        }
+        return npubs
+    }
+
+    enum EngineAfterDevicesChange: Equatable {
+        case keep
+        /// Kiosk mode starts again with the new list: a removed device's
+        /// open session drops, and its next offer gets no answer.
+        case restartKiosk
+        /// The client engine stops; the next dial starts it with the new list.
+        case stopClient
+    }
+
+    /// What a running engine does after My Devices changes (NIP-F1: a lost
+    /// phone's mesh npub must stop reaching the owner's other vaults). The
+    /// engine's `own_devices` is fixed at start, so a changed list means a
+    /// restart, as on the Mac (MacFipsMeshService.sync) and Android.
+    static func engineAfterDevicesChange(before: [MeshDevice], after: [MeshDevice], ownNpub: String?,
+                                         kiosk: Bool, client: Bool) -> EngineAfterDevicesChange {
+        guard ownDevices(before, ownNpub: ownNpub) != ownDevices(after, ownNpub: ownNpub) else { return .keep }
+        if kiosk { return .restartKiosk }
+        if client { return .stopClient }
+        return .keep
     }
 
     /// A finder relay as typed: `wss://` added when missing, trailing
