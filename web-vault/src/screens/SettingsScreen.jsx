@@ -210,7 +210,7 @@ function Backup({ ctx }) {
     <>
       <div class="card">
         <h3>Backup</h3>
-        <p class="muted small">Downloads every event you signed that this browser's relay holds (notes, articles, profile, lists, likes), one per line (.jsonl). Messages and what others sent you aren't included. The phone's Backup makes the same kind of file.</p>
+        <p class="muted small">Downloads every event you signed that this browser's relay holds (notes, articles, profile, lists, likes), one per line (.jsonl). Messages and what others sent you aren't included. The phone's Backup makes a .zip instead; to restore one here, use Import notes in Accounts & Keys › Backup.</p>
         <button class="primary" disabled={out === "Reading…"} onClick={download}>{out === "Reading…" ? "Reading…" : "Download backup"}</button>
         {out && out !== "Reading…" && <p class="muted small" style="margin-top: 10px">{out}</p>}
       </div>
