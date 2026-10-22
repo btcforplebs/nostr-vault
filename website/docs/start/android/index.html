@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Get started on Android — Nostr Vault Docs</title>
-    <meta name="description" content="Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours with Amber or another signer.">
+    <meta name="description" content="Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours, with Amber or another signer.">
     <link rel="canonical" href="https://nostrvault.app/docs/start/android/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/start/android/">
     <meta property="og:title" content="Get started on Android — Nostr Vault Docs">
-    <meta property="og:description" content="Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours with Amber or another signer.">
+    <meta property="og:description" content="Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours, with Amber or another signer.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -125,7 +125,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Get started on Android</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#install">Install</a></li><li><a href="#pick-a-way-in">Pick a way in</a></li><li><a href="#relay">Where should your notes live?</a></li><li><a href="#new">Create an account</a></li><li><a href="#existing">Bring the account you have</a></li><li><a href="#browse">Just look around</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#install">Install</a></li><li><a href="#pick-a-way-in">Pick a way in</a></li><li><a href="#relay">Where should your notes live?</a></li><li><a href="#new">Create an account</a></li><li><a href="#existing">Bring the account you have</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
                 <p>Nostr Vault runs your own Nostr relay inside the app. Your posts, messages and media are kept on your phone, and
@@ -138,14 +138,16 @@
                     Android asks you to allow installs from that app the first time.</p>
 
                 <h2 id="pick-a-way-in">Pick a way in</h2>
-                <p>The first screen has three buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+                <p>The first screen has two buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
                 <ul>
                     <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
                     <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. Your old notes come
                         home to your phone.</li>
-                    <li><span class="ui">Just look around</span> to read with your public key only. You can't post until you add a
-                        key or a signer.</li>
                 </ul>
+
+                <div class="shots">
+                    <figure><img src="/docs/img/android/frontdoor.webp" alt="The first screen on Android" width="900" height="2000" loading="lazy"><figcaption>The first screen on Android</figcaption></figure>
+                </div>
 
                 <h2 id="relay">Where should your notes live?</h2>
                 <p>Every way in asks this first.</p>
@@ -157,6 +159,10 @@
                         <span class="ui">Blossom URL (optional)</span> for media. The built-in relay never starts, and setup skips
                         importing your notes.</li>
                 </ul>
+                <div class="shots">
+                    <figure><img src="/docs/img/android/relay-choice.webp" alt="Where should your notes live?" width="900" height="2000" loading="lazy"><figcaption>Where should your notes live?</figcaption></figure>
+                </div>
+
                 <p>You can change it later in <span class="path">Settings &rarr; Advanced</span>.</p>
 
                 <h2 id="new">Create an account</h2>
@@ -173,6 +179,11 @@
                         that helps you find people. Five follows build your web of trust, which fills your feed and filters out
                         spam.</li>
                 </ol>
+
+                <div class="shots">
+                    <figure><img src="/docs/img/android/your-keys.webp" alt="Your Keys (secret key hidden here)" width="900" height="2000" loading="lazy"><figcaption>Your Keys (secret key hidden here)</figcaption></figure>
+                    <figure><img src="/docs/img/android/protect-key.webp" alt="Protect Your Key" width="900" height="2000" loading="lazy"><figcaption>Protect Your Key</figcaption></figure>
+                </div>
 
                 <h2 id="existing">Bring the account you have</h2>
                 <ol class="steps">
@@ -195,16 +206,9 @@
                         <span class="ui">Keep it running in the background</span> and start using the app.</li>
                 </ol>
 
-                <h2 id="browse">Just look around</h2>
-                <ol class="steps">
-                    <li>Choose where your notes live.</li>
-                    <li><strong>Enter your identity.</strong> Type your npub or name@domain, or scan a QR code, and tap
-                        <span class="ui">Resolve &amp; Continue</span>.</li>
-                    <li><strong>Import Notes.</strong> <span class="ui">Import from Network</span> copies your notes from public relays
-                        to your phone. <span class="ui">Restore from Backup</span> reads a Nostr Vault backup file (.zip). Or skip.</li>
-                    <li><strong>Ready to Browse.</strong> Tap <span class="ui">Launch Nostr Vault</span>.</li>
-                </ol>
-                <p>To post later, add your key or a signer in <a href="/docs/keys/">Accounts &amp; Keys</a>.</p>
+                <div class="shots">
+                    <figure><img src="/docs/img/android/use-nostr.webp" alt="Who are you on Nostr?, with an npub pasted" width="900" height="2000" loading="lazy"><figcaption>Who are you on Nostr?, with an npub pasted</figcaption></figure>
+                </div>
 
                 <h2 id="find-your-way-around">Find your way around</h2>
                 <p>The tab bar along the bottom has <span class="ui">Feed</span>, <span class="ui">Search</span>,
