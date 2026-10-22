@@ -38,4 +38,28 @@ final class DirectBroadcastRelaysTests: XCTestCase {
         let tags = [["relay", "wss://inbox.example.com"]]
         XCTAssertEqual(RelayConfiguration.directBroadcastRelays(kind: 1, tags: tags, blastrRelays: blastr), blastr)
     }
+
+    /// A 10063 goes to every write relay in the owner's 10002 and to
+    /// purplepag.es (2026-10-22: four lists in a row each reached one relay).
+    func testServerListGoesToEveryOwnerWriteRelayAndPurplepages() {
+        let write = ["wss://relay.damus.io", "wss://relay.snort.social/", "wss://relay.primal.net/"]
+        XCTAssertEqual(RelayConfiguration.directBroadcastRelays(kind: 10063, tags: [], blastrRelays: blastr, ownerWriteRelays: write),
+                       blastr + ["wss://relay.damus.io", "wss://relay.snort.social/", "wss://purplepag.es"])
+        XCTAssertEqual(RelayConfiguration.directBroadcastRelays(kind: 10063, tags: [], blastrRelays: blastr),
+                       blastr + ["wss://purplepag.es"], "no 10002 cached yet: purplepag.es still")
+    }
+
+    func testServerListNeverGoesToThisMachineOrPlainWs() {
+        let write = ["ws://127.0.0.1:4869", "wss://localhost/", "ws://relay.example.com", "not a url", "wss://nos.lol"]
+        XCTAssertEqual(RelayConfiguration.directBroadcastRelays(kind: 10063, tags: [], blastrRelays: blastr, ownerWriteRelays: write),
+                       blastr + ["wss://nos.lol", "wss://purplepag.es"])
+    }
+
+    /// Only the 10063 widens: a note still goes where it went before.
+    func testOwnerWriteRelaysDoNotWidenOtherKinds() {
+        for kind in [0, 1, 3, 10002] {
+            XCTAssertEqual(RelayConfiguration.directBroadcastRelays(kind: kind, tags: [], blastrRelays: blastr,
+                                                                    ownerWriteRelays: ["wss://nos.lol"]), blastr, "kind \(kind)")
+        }
+    }
 }

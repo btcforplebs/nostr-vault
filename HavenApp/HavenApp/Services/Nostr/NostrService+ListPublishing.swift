@@ -103,6 +103,12 @@ extension NostrService {
     // ProfileRepository.loadServerLists, so the next signed list wins again.
     static let serverListStampsKey = "serverListStamps.v2"
 
+    /// What this device put in the owner's 10063 last time (its own servers
+    /// and mesh entries), so a removal here removes only those.
+    static func serverListManaged(owner: String) -> [String] {
+        UserDefaults.standard.stringArray(forKey: "serverListManaged.\(owner)") ?? []
+    }
+
     func publishServerList(fipsDetectedNpub: String? = nil) {
         var servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
         let owner = activeHexPubkey
@@ -120,20 +126,26 @@ extension NostrService {
         servers += HomeVaultLogic.phoneMeshEntries(homeVault: HomeVaultSender.shared.homeVault,
                                                    macMeshNpub: ConfigService.shared.config.macRelayMeshNpub,
                                                    ownerHex: owner)
+        // A vault this phone listed before stays listed while it is still in My Devices.
+        for entry in HomeVaultLogic.stillOwnedMeshEntries(previouslyManaged: Self.serverListManaged(owner: owner),
+                                                          myDevices: FipsMeshDevices.current(ConfigService.shared.config).map(\.npub))
+            where !servers.contains(entry) {
+            servers.append(entry)
+        }
         #else
         // The Mac lists its photo node, so a photo post points viewers to the
         // Mac with no setup; phones keep the entry through this same merge.
         photoNpub = PhotoNode.npub()
         #endif
         let managedKey = "serverListManaged.\(owner)"
-        let previouslyManaged = Set(UserDefaults.standard.stringArray(forKey: managedKey) ?? [])
+        let previouslyManaged = Set(Self.serverListManaged(owner: owner))
         let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
 
         Task {
             // Start from the newest list on the relays, not this phone's cache
             // (same rule as Android): the cache only when the relays could not
             // say, and nothing when they all confirmed there is none.
-            let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [])
+            let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [RelayConfiguration.serverListIndexerRelay])
             let existing: [String]
             if let newest = lookup.event {
                 // lookupNewestReplaceable keeps only events whose author and signature it checked.

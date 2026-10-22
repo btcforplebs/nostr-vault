@@ -194,6 +194,15 @@ extension HomeVaultLogic {
         return out
     }
 
+    /// The mesh entries this phone listed last time that are still in My
+    /// Devices. Switching the home vault must not unlist the old one while it
+    /// is still the owner's device (2026-10-22: Mac to Moto dropped the Mac),
+    /// so the phone keeps managing it; removing it from My Devices unlists it.
+    static func stillOwnedMeshEntries(previouslyManaged: [String], myDevices: [String]) -> [String] {
+        let devices = Set(myDevices.compactMap { meshNpub(fromInput: $0) })
+        return previouslyManaged.filter { meshNpub(fromEntry: $0).map(devices.contains) ?? false }
+    }
+
     /// The photo node the Mac lists: its mesh npub only while its engine runs.
     /// The engine starts only with a device in My Devices, so the switch on
     /// with none added (or a start that failed) lists nothing: an entry
