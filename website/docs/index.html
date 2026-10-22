@@ -306,13 +306,15 @@
         <section id="share">
             <p class="eyebrow">Works in any browser</p>
             <h2>Share pages</h2>
-            <p>When you share a post from Nostr Vault, the link opens a page on nostrvault.app that anyone can read in a
-                normal browser, signed out, with nothing to install.</p>
-            <p>If a photo in that post can't be loaded from its usual server, the page fetches it from the author's own
-                device over the mesh. The browser joins the mesh for that one visit with a throwaway key, asks the
-                author's device for the photo by its fingerprint, checks the fingerprint, and shows it.</p>
+            <p>When you share a post from Nostr Vault, the link opens that post in the Nostr Vault web app, in any normal
+                browser. Anyone can read it as a guest, with no account and nothing to install, and sign in from there
+                to reply or like.</p>
+            <p>If a photo in that post or its replies can't be loaded from its usual server, the browser fetches it from
+                that author's own device over the mesh. It joins the mesh for that one visit with a throwaway key, asks
+                the device for the photo by its fingerprint, checks the fingerprint, and shows it.</p>
             <ul>
-                <li>The photo is fetched by the visitor's own browser. nostrvault.app keeps no copy of it.</li>
+                <li>The photo is fetched by the visitor's own browser. nostrvault.app keeps no copy of it, and a guest's
+                    browser keeps nothing once the tab is closed.</li>
                 <li>You may see <code>blob:https://nostrvault.app/&hellip;</code> as the image address. That's just the
                     browser's name for a photo it already has, and it only works in that tab.</li>
                 <li>The first load is slow for now: around 15 seconds for a full photo.</li>
@@ -350,7 +352,7 @@
                     <span class="tag tag-live">Live today</span>
                     <h3>Share pages</h3>
                     <ul>
-                        <li>Mesh photos on nostrvault.app share pages, in any plain browser.</li>
+                        <li>Shared posts open in the web app as a guest, mesh photos included, in any plain browser.</li>
                     </ul>
                 </div>
                 <div class="status-card">
