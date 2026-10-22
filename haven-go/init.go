@@ -745,6 +745,16 @@ func meshBlobHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// HEAD answers from the index alone, so it gets GET's mesh rules here, and
+	// the same 404 as a blob that is not here: no yes/no oracle (mesh_head.go).
+	if r.Method == http.MethodHead && isMeshRequest(r) {
+		sha := strings.ToLower(blossomBlobPathRe.FindStringSubmatch(r.URL.Path)[1])
+		if !meshHeadAllowed(r, sha) {
+			w.Header().Add("X-Reason", "file not found")
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
 	// khatru picks websocket, NIP-11 and NIP-86 by header before looking at
 	// the path, so a blob path alone does not keep a peer off the relay.
 	r.Header.Del("Upgrade")
