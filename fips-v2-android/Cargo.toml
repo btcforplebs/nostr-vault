@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 # iOS (for the browser relay link), offer_allowlist and reserved_npubs. Must be
 # the same rev as web-relay-vault, so the app links one fips. Back to a
 # jmcorgan/fips tag once they land in a release.
-fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "9ad528a7" }
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "72c94b59" }
 # The browser relay protocol (NIP-01 over TCP/FIPS 7447), over this node's
 # datagram API: relay_link.rs.
 web-relay-vault = { path = "../web-relay-vault" }

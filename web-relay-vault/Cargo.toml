@@ -21,4 +21,4 @@ native = ["dep:fips"]
 nvpn-fips-tcp = "=0.2.5"
 serde_json = "1"
 # Same rev as fips-v2-android, so the app links one fips.
-fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "9ad528a7", optional = true }
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "72c94b59", optional = true }
