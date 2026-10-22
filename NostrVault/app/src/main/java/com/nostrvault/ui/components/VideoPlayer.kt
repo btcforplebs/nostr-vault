@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.view.TextureView
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
@@ -17,7 +20,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -35,7 +41,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import com.nostrvault.MainActivity
 import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -398,8 +403,15 @@ private val VideoAudioAttributes: AudioAttributes = AudioAttributes.Builder()
     .build()
 
 /**
- * The bare video picture for [player]: no controller, a spinner while it
- * buffers. [resizeMode] is an [AspectRatioFrameLayout] mode — fit by default.
+ * The bare video picture for [player], whole and at its own shape: [resizeMode] is an
+ * [AspectRatioFrameLayout] mode, fit by default, so a portrait video stands upright with bars at
+ * the sides and a landscape one lies across, and either turns with the phone. A spinner while it
+ * buffers.
+ *
+ * A TextureView, not PlayerView's SurfaceView: the viewer zooms, fades and drags its pages with
+ * Compose graphics layers, which a SurfaceView ignores (it is a hole in the window, drawn apart
+ * from them), so the picture did not follow and could show only black. The feed's inline player
+ * (FeedInlineVideo) is drawn the same way.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
@@ -408,19 +420,56 @@ internal fun VideoSurface(
     modifier: Modifier = Modifier,
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
 ) {
-    AndroidView(
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                useController = false
-                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+    var aspect by remember(player) {
+        mutableFloatStateOf(player.videoSize.let { videoDisplayAspect(it.width, it.height, it.pixelWidthHeightRatio) })
+    }
+    var buffering by remember(player) { mutableStateOf(player.playbackState == Player.STATE_BUFFERING) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                val a = videoDisplayAspect(videoSize.width, videoSize.height, videoSize.pixelWidthHeightRatio)
+                if (a > 0f) aspect = a
             }
-        },
-        update = { view ->
-            if (view.player !== player) view.player = player
-            if (view.resizeMode != resizeMode) view.resizeMode = resizeMode
-        },
-        modifier = modifier,
-    )
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                buffering = playbackState == Player.STATE_BUFFERING
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    Box(modifier) {
+        AndroidView(
+            factory = { ctx ->
+                AspectRatioFrameLayout(ctx).apply {
+                    addView(
+                        TextureView(ctx),
+                        FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+                    )
+                }
+            },
+            update = { frame ->
+                frame.resizeMode = resizeMode
+                if (aspect > 0f) frame.setAspectRatio(aspect)
+                // One view, possibly a new player (a reels page reuses its slot).
+                val texture = frame.getChildAt(0) as TextureView
+                val bound = frame.tag as? ExoPlayer
+                if (bound !== player) {
+                    bound?.clearVideoTextureView(texture)
+                    player.setVideoTextureView(texture)
+                    frame.tag = player
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (buffering) {
+            CircularProgressIndicator(
+                color = Color.White,
+                strokeWidth = 2.dp,
+                modifier = Modifier.align(Alignment.Center).size(36.dp),
+            )
+        }
+    }
 }
 
 private fun formatPlayerTime(ms: Long): String {
