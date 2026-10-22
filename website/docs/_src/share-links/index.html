@@ -1,0 +1,79 @@
+<!--page
+{
+  "title": "Share links",
+  "nav": "Share links",
+  "section": "media",
+  "order": 5,
+  "needs": "3.0",
+  "eyebrow": "Media and sharing",
+  "h1": "Share a post <span>anyone can open</span>.",
+  "lede": "A Nostr Vault share link opens the post in any web browser. The person you send it to needs no account and nothing to install to read it.",
+  "description": "How Nostr Vault share links work: Share and Copy Link make a nostrvault.app/thread/ link that opens the post in any browser as a guest, with a link preview card. Plus sharing photos into the app.",
+  "labels": {
+    "ios": ["Share", "Copy Link", "Link copied", "Add to Blossom upload queue", "Ready to upload to Blossom"],
+    "android": ["Share", "Copy link", "Share Note", "Link copied", "Uploading to Blossom…"],
+    "web": ["Copy link", "Link copied", "Viewing as a guest", "Get the app", "Sign in", "This post was deleted by its author."]
+  }
+}
+-->
+
+<section id="share">
+<p class="eyebrow">Sharing a post</p>
+<h2>Share or copy a link</h2>
+<p>Open the <strong>&hellip;</strong> menu on any post.</p>
+<ul>
+    <li><strong>Share</strong> opens your phone's share sheet, so you can send the link in a message, an email or
+        another app. On Android it's titled <strong>Share Note</strong>.</li>
+    <li><strong>Copy Link</strong> (Android and web: <strong>Copy link</strong>) puts the link on your
+        clipboard and shows <strong>Link copied</strong>.</li>
+</ul>
+<p>The link looks like <code>https://nostrvault.app/thread/nevent1&hellip;</code>. The
+    <code>nevent</code> part names the post and its author, so the link works without any account and doesn't
+    depend on one relay.</p>
+<p>Articles, videos and other posts have a Share button too, and give the same kind of link.</p>
+</section>
+
+<section id="preview">
+<p class="eyebrow">In a chat or a feed</p>
+<h2>The link preview</h2>
+<p>When you paste the link in a chat app or a social site, it shows a preview card: the author's name
+    ("&hellip; on Nostr"), the start of the post, and the photo if the post has one.</p>
+</section>
+
+<section id="guest">
+<p class="eyebrow">What they see</p>
+<h2>Opening a link, with or without an account</h2>
+<p>The link opens the post in the Nostr Vault web app, in any normal browser.</p>
+<ul>
+    <li><strong>No account?</strong> They read the post and its replies as a guest. A bar at the top says
+        <strong>Viewing as a guest</strong>, with <strong>Get the app</strong> and <strong>Sign in</strong>.
+        They can open profiles and hashtags and come back to the post.</li>
+    <li><strong>Want to reply or like?</strong> Liking, replying, reposting and zapping need them to sign in.
+        After signing in, the web app opens on the same post.</li>
+    <li><strong>Already signed in</strong> to the web app in that browser? The post opens in their account.</li>
+</ul>
+<p>A guest visit keeps nothing. Nothing is signed, and nothing is saved in the browser once the tab is closed.</p>
+<p>Photos load from their usual media server. If one can't be loaded there, the browser fetches it from the
+    author's own device over the mesh. See <a class="inline" href="/docs/mesh/">The mesh</a>.</p>
+<div class="note">
+    <p><strong>Deleted posts.</strong> If the author deletes the post, the link says
+        <strong>This post was deleted by its author.</strong> Anyone who already saw it may still have a copy, as
+        with anything you post publicly on Nostr.</p>
+</div>
+</section>
+
+<section id="share-in">
+<p class="eyebrow">The other direction</p>
+<h2>Sharing photos into Nostr Vault</h2>
+<p>You can also send photos and videos from your Photos app or gallery to Nostr Vault, to upload them to your
+    media server (Blossom).</p>
+<ul>
+    <li><strong>iPhone:</strong> pick up to 20 photos and 20 videos, tap Share, choose Nostr Vault, then
+        <strong>Add to Blossom upload queue</strong>. Open Nostr Vault, or tap the
+        <strong>Ready to upload to Blossom</strong> notification, to finish the upload.</li>
+    <li><strong>Android:</strong> share one or more photos or videos to Nostr Vault. The upload starts right
+        away and shows <strong>Uploading to Blossom&hellip;</strong>. Set up your account first.</li>
+</ul>
+<p>Uploading needs a public media server; see <span class="path">Settings &rarr; Relays &rarr; Media
+    Servers</span>.</p>
+</section>

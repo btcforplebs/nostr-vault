@@ -1,0 +1,95 @@
+<!--page
+{
+  "title": "Back up and restore",
+  "nav": "Backup and restore",
+  "section": "vault",
+  "order": 3,
+  "eyebrow": "Your vault",
+  "h1": "Keep a copy <span>you can restore</span>.",
+  "lede": "Save your vault's notes and media as files, roll your follow list back to an earlier version, and bring back a post you deleted by mistake.",
+  "description": "How to back up and restore Nostr Vault: export and import notes and media in Backup & Restore, restore an old follow list from Following Backup, un-delete posts in Recently Deleted, and the web backup.",
+  "labels": {
+    "ios": ["Backup & Restore", "Export Notes", "Import Notes", "Export Media", "Import Media", "Following Backup", "Restore This List", "Scan Relays", "Up to 50 are kept", "Recently Deleted", "Un-delete", "Delete Forever", "Back up media"],
+    "android": ["Backup & Restore", "Notes (JSONL)", "Media (Blossom)", "Export Notes", "Import Notes", "Export Media", "Import Media", "Restore This List", "Un-delete", "Delete Forever"],
+    "mac": ["Backup & Restore", "Save JSONL Backup", "Save Blossom Backup"],
+    "web": ["Export notes", "Import notes", "Download backup", "Choose a backup file", "Restore This List", "Un-delete"]
+  }
+}
+-->
+
+<section id="backup">
+<p class="eyebrow">Notes and media</p>
+<h2>Backup &amp; Restore</h2>
+<p>Open <span class="path">Settings &rarr; Your Vault Relay &rarr; Backup &amp; Restore</span>. It has two
+    parts, and each one is its own file.</p>
+<ul>
+    <li><strong>Notes.</strong> <strong>Export Notes</strong> saves everything in your vault as a .zip: your
+        notes, private notes, messages (still encrypted), the notes that mention you and your feed cache.
+        <strong>Import Notes</strong> puts a notes backup back.</li>
+    <li><strong>Media.</strong> <strong>Export Media</strong> saves the photos and videos in your vault's media
+        server as a .zip. <strong>Import Media</strong> puts them back.</li>
+</ul>
+<p>On iPhone the file goes to the share sheet, so you can save it to Files or send it to your Mac. On the Mac
+    and Android you pick where to save it.</p>
+<p>A restore adds to what's already in the vault. Anything it already has is skipped, and nothing is deleted.
+    The vault pauses for a moment while notes are saved or restored.</p>
+<div class="note">
+    <p><strong>Your keys are not in the backup.</strong> A backup holds notes and media only. Keep your key (or
+        your signer) safe on its own; see Accounts &amp; Keys in the app.</p>
+</div>
+<p>On iPhone and Mac, start the vault before you export media. On iPhone and Android, the Vault tab has the same
+    exports under <strong>Keep it full</strong>: <strong>Export notes</strong> and <strong>Back up media</strong>.</p>
+</section>
+
+<section id="following">
+<p class="eyebrow">Your follow list</p>
+<h2>Following Backup</h2>
+<p>A follow list on Nostr is one list that gets replaced every time it changes. A buggy app can wipe it.
+    Nostr Vault keeps a snapshot each time your list changes, up to 50, on your device.</p>
+<ol>
+    <li>Open <span class="path">Settings &rarr; Following Backup</span>.</li>
+    <li>Pick a snapshot. It shows who you no longer follow and who was added since. You can re-follow one
+        person, or tap <strong>Restore This List</strong> to put the whole list back.</li>
+    <li>Confirm. The restored list replaces your current one and is published to your relays.</li>
+</ol>
+<p>If your list was wiped somewhere else, <strong>Scan Relays</strong> looks for older copies of it on your
+    relays.</p>
+</section>
+
+<section id="deleted">
+<p class="eyebrow">New in 3.0</p>
+<h2>Recently Deleted</h2>
+<p>Posts you delete on a device stay in <span class="path">Settings &rarr; Recently Deleted</span> on that
+    device for 30 days.</p>
+<ul>
+    <li><strong>Un-delete</strong> posts it again as a new post. Likes and replies on the old post don't come
+        back.</li>
+    <li><strong>Delete Forever</strong> removes the copy now.</li>
+</ul>
+<p>Profiles and lists aren't kept here. Recently Deleted is in the 3.0 apps and the web app; the apps you can
+    download today are 2.7.2.</p>
+</section>
+
+<section id="web">
+<p class="eyebrow">In the browser</p>
+<h2>Backups on the web</h2>
+<p>The web app keeps its vault in your browser, so back it up if it holds anything you don't have elsewhere.</p>
+<ul>
+    <li><strong>Accounts &rarr; Backup</strong>: <strong>Export notes</strong> and <strong>Import notes</strong>
+        make and read the same .zip as the phone apps, so either one restores the other. Photos and videos
+        aren't in it.</li>
+    <li><span class="path">Settings &rarr; Backup &amp; Restore</span>: <strong>Download backup</strong> saves
+        only the events you signed (notes, articles, profile, lists, likes) as a .jsonl file. Messages aren't
+        in it. <strong>Choose a backup file&hellip;</strong> reads that .jsonl back. Nothing is published
+        either way.</li>
+</ul>
+<div class="docs-table-wrap">
+<table>
+    <tr><th></th><th>Notes</th><th>Media</th><th>Follow snapshots</th><th>Recently Deleted</th></tr>
+    <tr><td>iPhone</td><td>.zip</td><td>.zip</td><td>Yes</td><td>3.0</td></tr>
+    <tr><td>Android</td><td>.zip</td><td>.zip</td><td>Yes</td><td>3.0</td></tr>
+    <tr><td>Mac</td><td>.zip</td><td>.zip</td><td>Yes</td><td>3.0</td></tr>
+    <tr><td>Web</td><td>.zip or .jsonl</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+</table>
+</div>
+</section>
