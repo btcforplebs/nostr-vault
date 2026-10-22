@@ -214,13 +214,15 @@ class HomeVaultSender @Inject constructor(
 
     private suspend fun confirmOnce(npub: String, sha256: String): Boolean {
         val base = FipsMediaRouter.ingressBase(npub) ?: return false
+        // One signed "get" for both checks below (iOS a652aeb7).
+        val check = checkAuth(sha256)
         val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
         if (item != null) {
-            val outcome = sendBlob(base, item, queue, ensureClient)
+            val outcome = sendBlob(base, item, queue, ensureClient, check)
             record(item, outcome, npub, System.currentTimeMillis(), queue, DeviceRole.HOME_VAULT)
             return outcome == HomeVaultSend.SENT
         }
-        return ensureClient.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
+        return ensureClient.newCall(VaultCheck.request(base, sha256, check)).execute().use { it.isSuccessful }
     }
 
     /**
@@ -529,11 +531,18 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private suspend fun sendBlob(base: String, item: HomeVaultQueue.Item, queue: HomeVaultQueue, http: OkHttpClient = client): HomeVaultSend {
+    private suspend fun sendBlob(
+        base: String,
+        item: HomeVaultQueue.Item,
+        queue: HomeVaultQueue,
+        http: OkHttpClient = client,
+        check: String? = null,
+    ): HomeVaultSend {
         val sha = item.key
         val file = queue.blobFile(sha)
-        // Already there (sent before a crash, or uploaded on the kiosk itself).
-        http.newCall(Request.Builder().url("$base/$sha").head().build()).execute().use {
+        // Already there (sent before a crash, or uploaded on the kiosk itself). Signed, or the door
+        // answers 404 for a blob no posted note names yet and the photo goes again (iOS a652aeb7).
+        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha))).execute().use {
             if (it.isSuccessful) return HomeVaultSend.SENT
         }
         if (!file.exists()) return HomeVaultSend.REJECTED
@@ -566,13 +575,21 @@ class HomeVaultSender @Inject constructor(
             listOf("x", sha256),
             listOf("expiration", expiration.toString()),
         )
+        return signedAuth(tags, content, "upload")
+    }
+
+    /** The owner's "get" for one blob on the vault; null if signing failed (the check then goes unsigned). */
+    private suspend fun checkAuth(sha256: String): String? =
+        signedAuth(VaultCheck.authTags(sha256, System.currentTimeMillis() / 1000), "Check home vault", "check")
+
+    private suspend fun signedAuth(tags: List<List<String>>, content: String, what: String): String? {
         val signed = try {
             // A random suffix keeps two auths for the same blob signed in the
             // same second apart: the vault takes each auth id once, and a
             // repeat id is a 403, which drops the item.
             signer(AUTH_KIND, "$content ${java.util.UUID.randomUUID().toString().take(8)}", tags)
         } catch (e: Exception) {
-            Log.w(TAG, "home vault: upload auth not signed: ${e.message}")
+            Log.w(TAG, "home vault: $what auth not signed: ${e.message}")
             null
         } ?: return null
         return Base64.encodeToString(signed.toByteArray(), Base64.NO_WRAP)

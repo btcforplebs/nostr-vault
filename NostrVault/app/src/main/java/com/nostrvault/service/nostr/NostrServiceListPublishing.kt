@@ -105,7 +105,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         kind: Int,
         author: String,
         forceOwner: Boolean,
-        build: (NostrEvent?) -> Pair<List<List<String>>, String>,
+        build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
         scope.launch(Dispatchers.IO) {
@@ -116,7 +116,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 Log.w(TAG, "kind $kind: no relay answered; not published")
                 return@launch
             }
-            val (tags, content) = build(lookup.event)
+            val (tags, content) = build(lookup.event) ?: run {
+                Log.w(TAG, "kind $kind: nothing that may be published; not published")
+                return@launch
+            }
             signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
         }
     }
@@ -131,7 +134,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         kind: Int,
         name: String,
         local: List<String>,
-        adjust: (List<List<String>>) -> List<List<String>> = { it },
+        adjust: (List<List<String>>) -> List<List<String>>? = { it },
     ) {
         val owner = ownerHexPubkey
         val bases = configStore.config.value.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }
@@ -139,8 +142,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         publishMergedList(kind, owner, forceOwner = true) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
             val tags = ListMerge.tags(name, local, published?.tags.orEmpty()) { base == null || ListMerge.key(it) !in base }
+            // Null: [adjust] refused the list. Nothing goes out, so the base stays what was last published.
+            val adjusted = adjust(tags) ?: return@publishMergedList null
             bases?.put(baseKey, local)
-            adjust(tags) to published?.content.orEmpty()
+            adjusted to published?.content.orEmpty()
         }
     }
 
@@ -189,20 +194,27 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         publishOwnerEntryList(10006, "relay", relays)
     }
 
-    internal fun NostrService.publishServerListImpl(dropMesh: String? = null) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        val home = configStore.config.value.homeVaultNpub
-        // A home vault alone is a list worth publishing: it may be the only host.
-        if (mirrors.isEmpty() && home == null && dropMesh == null) return
+    internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList()) {
+        val config = configStore.config.value
+        val mirrors = config.activeBlossomMirrors
+        val home = config.homeVaultNpub
+        val macs = linkedMacs(config)
+        if (mirrors.isEmpty() && home == null && macs.isEmpty() && dropMesh.isEmpty()) return
         // Every fipsmesh:// entry on the published list is kept (a kiosk put
-        // it there), after the public servers; this phone's home vault is
-        // added and the one it listed before ([dropMesh]) removed.
+        // it there), after the public servers; this phone's home vault and
+        // linked Macs are added and the ones it listed before ([dropMesh])
+        // removed. With no public server nothing is published (NIP-F1).
         publishOwnerEntryList(10063, "server", mirrors) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
-            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(servers, servers, home, dropMesh)
+            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(servers, servers, home, dropMesh, macs)
+                ?: return@publishOwnerEntryList null
             merged.map { listOf("server", it) } + tags.filter { it.isNotEmpty() && it[0] != "server" }
         }
     }
+
+    /** The Macs in My Devices this phone lists in the owner's 10063 (iOS 8af86b0d). */
+    internal fun linkedMacs(config: com.nostrvault.relay.HavenConfig): List<String> =
+        com.nostrvault.fips.MeshSendTargets.of(config).filter { it.role == com.nostrvault.fips.DeviceRole.MAC }.map { it.npub }
 
 /**
  * Merging this device's entries into a list published by any client. NIP-51

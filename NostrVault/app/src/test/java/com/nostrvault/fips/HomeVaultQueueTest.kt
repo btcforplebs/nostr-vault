@@ -122,13 +122,53 @@ class HomeVaultQueueTest {
             HomeVaultRules.mergeServerList(macList, listOf("https://a.example"), homeVault = kiosk))
     }
 
+    /** NIP-F1 (iOS #999): never a 10063 only the mesh or this home network can open. */
+    @Test
+    fun `no list goes out without a real public server`() {
+        val noPublic = listOf(
+            listOf("fipsmesh://$kiosk/"),                       // a home vault alone
+            listOf("http://192.168.1.5:4443", "fipsmesh://$kiosk/"),
+            listOf("https://192.168.1.5:4443/"),
+            listOf("https://box.tail1234.ts.net/"),
+            listOf("https://100.101.102.103/"),
+            listOf("https://mac.local/"),
+            listOf("http://a.example/"),                        // public host, but not https
+            listOf("https://$kiosk.fips/", "https://x.FIPS./"),
+        )
+        for (managed in noPublic) {
+            assertEquals(managed.toString(), null, HomeVaultRules.mergeServerList(emptyList(), managed))
+        }
+        assertEquals(null, HomeVaultRules.mergeServerList(emptyList(), emptyList(), homeVault = kiosk))
+        // Next to a real public server, the home vault and a LAN entry still go out.
+        assertEquals(
+            listOf("https://a.example", "http://192.168.1.5:4443", "fipsmesh://$kiosk/"),
+            HomeVaultRules.mergeServerList(emptyList(), listOf("https://a.example", "http://192.168.1.5:4443"), homeVault = kiosk),
+        )
+        assertTrue(HomeVaultRules.isPublicServer("https://blossom.primal.net"))
+        assertTrue(HomeVaultRules.isPublicServer("https://fips.example.com/"))
+    }
+
+    /** iOS 8af86b0d: a Mac without the owner's key cannot list itself; the phone lists it. */
+    @Test
+    fun `a phone lists its linked Macs and drops one that was unlinked`() {
+        val mac = "npub1" + "m".repeat(58)
+        val gone = "npub1" + "g".repeat(58)
+        val newest = listOf("https://a.example", "fipsmesh://$gone/")
+        assertEquals(
+            listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$mac/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = kiosk, dropMesh = setOf(gone), macs = listOf(mac)),
+        )
+        assertEquals(listOf(mac), HomeVaultRules.unlisted(listOf("https://a.example", "fipsmesh://$kiosk/"), listOf(kiosk, mac)))
+        assertEquals(emptyList<String>(), HomeVaultRules.unlisted(listOf("fipsmesh://$mac/"), listOf(mac)))
+    }
+
     @Test
     fun `a sender lists its home vault and drops the one it replaced`() {
         val other = "npub1" + "z".repeat(58)
         val newest = listOf("https://a.example", "fipsmesh://$kiosk/", "fipsmesh://$self/")
         assertEquals(
             listOf("https://a.example", "fipsmesh://$self/", "fipsmesh://$other/"),
-            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = other, dropMesh = kiosk),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = other, dropMesh = setOf(kiosk)),
         )
         // Already listed: once.
         assertEquals(
