@@ -164,12 +164,28 @@ export class MeshBlobClient {
     const closed = new Promise(r => { closedNow = r })
     try {
       if (signal?.aborted) throw abortError()
-      id = await this.#connect("02" + key, this.clock() + timeoutMs, signal)
+      const connectBy = this.clock() + timeoutMs
+      id = await this.#connect("02" + key, connectBy, signal)
       let deadline = this.clock() + timeoutMs
       const req = `GET /${sha} HTTP/1.1\r\nHost: ${npubEncode(key)}.fips\r\nAccept: */*\r\nConnection: close\r\n\r\n`
       const out = new TextEncoder().encode(req)
       const buf = new Grow()
       let sent = 0, head, result
+      // A stream the vault drops before any response byte is opened again, inside the connect deadline (GET is safe
+      // to resend). A cold reader hits this while its second seed link comes up: Safari almost every time, Chrome
+      // now and then.
+      const retryable = () => !buf.length && this.clock() + RETRY_MS < connectBy
+      const reopen = async why => {
+        await this.tcp.abort(id).catch(() => {})
+        id = undefined
+        this.stats.retries++
+        this.stats.lastError = why
+        await new Promise(r => setTimeout(r, RETRY_MS))
+        if (signal?.aborted) throw abortError()
+        id = await this.#connect("02" + key, connectBy, signal)
+        sent = 0
+        deadline = this.clock() + timeoutMs
+      }
       for (;;) {
         const now = this.clock()
         if (this.stopped) throw new Error("FIPS stopped")
@@ -177,7 +193,12 @@ export class MeshBlobClient {
         if (now > deadline) throw new Error(sent ? "timed out waiting for the vault" : "timed out connecting to the vault")
         await this.tcp.poll(now)
         const st = await this.tcp.state(id)
-        if (st === undefined) throw new Error(sent ? "vault closed the connection" : "vault refused the connection")
+        if (st === undefined) {
+          const why = sent ? "vault closed the connection" : "vault refused the connection"
+          if (!retryable()) throw new Error(why)
+          await reopen(why)
+          continue
+        }
         if (st === "established" && sent < out.length) sent += await this.tcp.write(id, out.subarray(sent), now)
         let fresh = false
         for (let b; (b = await this.tcp.read(id, READ_CHUNK, now)).length; ) {
@@ -194,6 +215,7 @@ export class MeshBlobClient {
           head ??= parseHead(buf.bytes())
           if (head && head.status !== 200) throw new Error(`vault answered ${head.status}`)
           if (head && (result = body(head, buf.bytes(), closed))) break
+          if (closed && retryable()) { await reopen("vault closed the connection before the response"); continue }
           if (closed) throw new Error("vault closed the connection before the response")
         }
         await new Promise(r => setTimeout(r, POLL_MS))
