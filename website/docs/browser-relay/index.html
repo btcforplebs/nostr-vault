@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/browser-relay.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The browser relay — Nostr Vault Docs</title>
+    <meta name="description" content="The Nostr Vault browser relay at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the FIPS mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.">
+    <link rel="canonical" href="https://nostrvault.app/docs/browser-relay/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/browser-relay/">
+    <meta property="og:title" content="The browser relay — Nostr Vault Docs">
+    <meta property="og:description" content="The Nostr Vault browser relay at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the FIPS mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/" aria-current="page">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Mesh and your devices</p>
+            <h1>A small relay in a <span>browser tab</span>.</h1>
+            <p class="docs-lede">nostrvault.app/relay/ turns a browser tab into a small Nostr relay on the FIPS mesh. Your iPhone can send your new notes to it, and only the devices you pair can reach it.</p>
+            <div class="docs-banner" role="note"><strong>3.0 coming soon.</strong> This page is about Nostr Vault 3.0, which is in testing. The apps you can download today are 2.7.2.</div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-the-browser-relay-is">What the browser relay is</a></li><li><a href="#pair-your-iphone-with-the-page">Pair your iPhone with the page</a></li><li><a href="#what-it-keeps-and-serves">What it keeps and serves</a></li><li><a href="#the-screensaver">The screensaver</a></li><li><a href="#when-the-tab-closes">When the tab closes</a></li><li><a href="#in-my-devices">In My Devices</a></li><li><a href="#limits-and-privacy">Limits and privacy</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="what">
+                <p class="eyebrow">The basics</p>
+                <h2 id="what-the-browser-relay-is">What the browser relay is</h2>
+                <p>A relay is a server that stores Nostr notes and hands them out. The browser relay is one that runs inside
+                    a web page, at <code>nostrvault.app/relay/</code>. It stores notes in the browser's own storage on that
+                    device and joins the FIPS mesh, so your own devices can reach it by its key. New to the mesh? Read
+                    <a class="inline" href="/docs/mesh/">The mesh</a> first.</p>
+                <p>The page keeps no Nostr key of yours. Your notes arrive already signed, and the page checks each
+                    signature. A good spot for it is an old phone or tablet on a charger.</p>
+                </section>
+
+                <section id="pair">
+                <p class="eyebrow">Set it up</p>
+                <h2 id="pair-your-iphone-with-the-page">Pair your iPhone with the page</h2>
+                <ol>
+                    <li>On your iPhone, open <strong>FIPS Mesh</strong> and turn the mesh on. Under
+                        <strong>This Device</strong>, tap <strong>Copy</strong>. That's the phone's mesh address.</li>
+                    <li>On the device that will run the page, open <code>nostrvault.app/relay/</code>. Paste the address
+                        into the box under the FIPS heading (one address per line) and tap <strong>Save owners</strong>.
+                        The page reloads.</li>
+                    <li>Tap <strong>Start FIPS</strong>. The status shows the page's own <em>mesh address</em>. Copy it.</li>
+                    <li>On the iPhone, go to <span class="path">My Devices &rarr; Add a device by address</span>, paste the
+                        page's address, and pick <strong>Browser page</strong>.</li>
+                </ol>
+                <p>The phone then connects for the page. If it doesn't, open the page's entry in My Devices and tap
+                    <strong>Connect this phone</strong>. <strong>Copy this phone's mesh address</strong> is there too.</p>
+                <p>A link of the form <code>nostrvault.app/relay/#owner=npub1&hellip;</code> also adds an owner. The page
+                    asks you to confirm each address first, because an owner can write to the page and read everything on it.
+                    Only accept your own.</p>
+                </section>
+
+                <section id="keeps">
+                <p class="eyebrow">What it does</p>
+                <h2 id="what-it-keeps-and-serves">What it keeps and serves</h2>
+                <ul>
+                    <li><strong>Your new notes.</strong> While the iPhone app is open, each new note you post also goes to
+                        the page. <strong>Send my latest notes</strong> sends your 20 most recent notes from the phone. The
+                        result line says how many the page kept. In this testing build, check that number: if it says 0 kept, the page did not take your notes.</li>
+                    <li><strong>Checked notes only.</strong> The page checks each note's signature and turns away notes from
+                        authors it isn't set up for.</li>
+                    <li><strong>Owners only.</strong> The page serves notes on the mesh only to the addresses saved as
+                        owners. Anyone else's connection is dropped without an answer.</li>
+                    <li><strong>Photos, read only.</strong> Under <strong>Show photo</strong>, you can paste a photo's
+                        fingerprint (sha256) or a <code>.fips</code> link and the page fetches it from a paired vault. It shows
+                        the photo only if the fingerprint matches. Photos aren't stored on the page.</li>
+                </ul>
+                <p>The page reaches your phone through the public mesh entry points (seeds). Once both ends are connected
+                    it tries a direct link. On the iPhone, leave the middle server under <strong>Advanced</strong> on its
+                    public setting. With <strong>None</strong>, a browser page only connects on the same network.</p>
+                </section>
+
+                <section id="screensaver">
+                <p class="eyebrow">Keep it awake</p>
+                <h2 id="the-screensaver">The screensaver</h2>
+                <p><strong>Start screensaver</strong> fills the screen with a black "relay running" view: a count, the
+                    uptime, whether the screen is kept awake (the wake lock), and whether the seed is up. Tap anywhere to
+                    leave it. After a reload, start it again.</p>
+                <p>The count on this screen is the page's own test notes, not your notes. <strong>Report</strong> shows
+                    storage, uptime gaps and a signature self-test, if you want the details.</p>
+                </section>
+
+                <section id="closed">
+                <p class="eyebrow">When it stops</p>
+                <h2 id="when-the-tab-closes">When the tab closes</h2>
+                <ul>
+                    <li>The relay only runs while the page is open and the screen is on. Closed, locked or in the
+                        background, nothing reaches it.</li>
+                    <li>Notes the phone sends while the page is down are not queued. Tap <strong>Send my latest notes</strong>
+                        once it's back.</li>
+                    <li>Stored notes stay in the browser and are there when you reopen the page. Tap <strong>Start FIPS</strong>
+                        again; it doesn't start by itself. <strong>Stop FIPS</strong> takes the page off the mesh.</li>
+                    <li>The page's mesh key lives in the browser's site data. Clear that data and the page gets a new
+                        address, so pair it again.</li>
+                </ul>
+                </section>
+
+                <section id="devices">
+                <p class="eyebrow">Your devices list</p>
+                <h2 id="in-my-devices">In My Devices</h2>
+                <p>The page shows up in <strong>My Devices</strong> as a <strong>Browser page</strong>, the role whose job
+                    reads "Gets your new notes while this app is open." You can have one browser page per account; adding a
+                    new one replaces the old.</p>
+                <p>To stop sending, open its entry and tap <strong>Remove from my devices</strong>. Anything already on the
+                    page stays there.</p>
+                <p>Android and Mac also offer <strong>Browser page</strong> under
+                    <span class="path">My Devices &rarr; Add a device by address</span>. In this build, only the iPhone app
+                    sends notes to the page.</p>
+                </section>
+
+                <section id="privacy">
+                <p class="eyebrow">Be candid</p>
+                <h2 id="limits-and-privacy">Limits and privacy</h2>
+                <ul>
+                    <li><strong>The tab must stay open.</strong> A browser can pause or close a page at any time. Not every
+                        browser can hold the screen awake; the screensaver says whether it can.</li>
+                    <li><strong>Storage is the browser's.</strong> The page asks the browser to keep its data, but the
+                        browser decides. Report shows whether it agreed and how much room there is.</li>
+                    <li><strong>Seeds see IPs.</strong> To connect, your phone joins the middle server, which sees its IP
+                        address the way any server does. The same goes for the page's device.</li>
+                    <li><strong>Nothing public.</strong> The page isn't listed in your profile, and its mesh key is its own,
+                        never your Nostr key.</li>
+                </ul>
+                <div class="note">
+                    <p><strong>3.0 is in testing.</strong> The browser relay is early. Treat it as an extra copy of your
+                        notes, not your only one.</p>
+                </div>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/mesh/"><span>Previous</span>The mesh</a>
+                <a class="next" href="/docs/media/"><span>Next</span>Media servers</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

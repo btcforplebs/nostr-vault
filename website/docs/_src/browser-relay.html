@@ -1,0 +1,127 @@
+<!--page
+{
+  "title": "The browser relay",
+  "nav": "Browser relay",
+  "section": "mesh",
+  "order": 8,
+  "needs": "3.0",
+  "eyebrow": "Mesh and your devices",
+  "h1": "A small relay in a <span>browser tab</span>.",
+  "lede": "nostrvault.app/relay/ turns a browser tab into a small Nostr relay on the FIPS mesh. Your iPhone can send your new notes to it, and only the devices you pair can reach it.",
+  "description": "The Nostr Vault browser relay at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the FIPS mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.",
+  "labels": {
+    "web": ["Save owners", "Start FIPS", "Stop FIPS", "Start screensaver", "Show photo", "Report"],
+    "ios": ["FIPS Mesh", "This Device", "Copy", "My Devices", "Add a device by address", "Browser page", "Connect this phone", "Copy this phone's mesh address", "Send my latest notes", "Remove from my devices", "Advanced", "None"],
+    "android": ["My Devices", "Add a device by address", "Browser page"],
+    "mac": ["My Devices", "Add a device by address", "Browser page"]
+  }
+}
+-->
+
+<section id="what">
+<p class="eyebrow">The basics</p>
+<h2>What the browser relay is</h2>
+<p>A relay is a server that stores Nostr notes and hands them out. The browser relay is one that runs inside
+    a web page, at <code>nostrvault.app/relay/</code>. It stores notes in the browser's own storage on that
+    device and joins the FIPS mesh, so your own devices can reach it by its key. New to the mesh? Read
+    <a class="inline" href="/docs/mesh/">The mesh</a> first.</p>
+<p>The page keeps no Nostr key of yours. Your notes arrive already signed, and the page checks each
+    signature. A good spot for it is an old phone or tablet on a charger.</p>
+</section>
+
+<section id="pair">
+<p class="eyebrow">Set it up</p>
+<h2>Pair your iPhone with the page</h2>
+<ol>
+    <li>On your iPhone, open <strong>FIPS Mesh</strong> and turn the mesh on. Under
+        <strong>This Device</strong>, tap <strong>Copy</strong>. That's the phone's mesh address.</li>
+    <li>On the device that will run the page, open <code>nostrvault.app/relay/</code>. Paste the address
+        into the box under the FIPS heading (one address per line) and tap <strong>Save owners</strong>.
+        The page reloads.</li>
+    <li>Tap <strong>Start FIPS</strong>. The status shows the page's own <em>mesh address</em>. Copy it.</li>
+    <li>On the iPhone, go to <span class="path">My Devices &rarr; Add a device by address</span>, paste the
+        page's address, and pick <strong>Browser page</strong>.</li>
+</ol>
+<p>The phone then connects for the page. If it doesn't, open the page's entry in My Devices and tap
+    <strong>Connect this phone</strong>. <strong>Copy this phone's mesh address</strong> is there too.</p>
+<p>A link of the form <code>nostrvault.app/relay/#owner=npub1&hellip;</code> also adds an owner. The page
+    asks you to confirm each address first, because an owner can write to the page and read everything on it.
+    Only accept your own.</p>
+</section>
+
+<section id="keeps">
+<p class="eyebrow">What it does</p>
+<h2>What it keeps and serves</h2>
+<ul>
+    <li><strong>Your new notes.</strong> While the iPhone app is open, each new note you post also goes to
+        the page. <strong>Send my latest notes</strong> sends your 20 most recent notes from the phone. The
+        result line says how many the page kept. In this testing build, check that number: if it says 0 kept, the page did not take your notes.</li>
+    <li><strong>Checked notes only.</strong> The page checks each note's signature and turns away notes from
+        authors it isn't set up for.</li>
+    <li><strong>Owners only.</strong> The page serves notes on the mesh only to the addresses saved as
+        owners. Anyone else's connection is dropped without an answer.</li>
+    <li><strong>Photos, read only.</strong> Under <strong>Show photo</strong>, you can paste a photo's
+        fingerprint (sha256) or a <code>.fips</code> link and the page fetches it from a paired vault. It shows
+        the photo only if the fingerprint matches. Photos aren't stored on the page.</li>
+</ul>
+<p>The page reaches your phone through the public mesh entry points (seeds). Once both ends are connected
+    it tries a direct link. On the iPhone, leave the middle server under <strong>Advanced</strong> on its
+    public setting. With <strong>None</strong>, a browser page only connects on the same network.</p>
+</section>
+
+<section id="screensaver">
+<p class="eyebrow">Keep it awake</p>
+<h2>The screensaver</h2>
+<p><strong>Start screensaver</strong> fills the screen with a black "relay running" view: a count, the
+    uptime, whether the screen is kept awake (the wake lock), and whether the seed is up. Tap anywhere to
+    leave it. After a reload, start it again.</p>
+<p>The count on this screen is the page's own test notes, not your notes. <strong>Report</strong> shows
+    storage, uptime gaps and a signature self-test, if you want the details.</p>
+</section>
+
+<section id="closed">
+<p class="eyebrow">When it stops</p>
+<h2>When the tab closes</h2>
+<ul>
+    <li>The relay only runs while the page is open and the screen is on. Closed, locked or in the
+        background, nothing reaches it.</li>
+    <li>Notes the phone sends while the page is down are not queued. Tap <strong>Send my latest notes</strong>
+        once it's back.</li>
+    <li>Stored notes stay in the browser and are there when you reopen the page. Tap <strong>Start FIPS</strong>
+        again; it doesn't start by itself. <strong>Stop FIPS</strong> takes the page off the mesh.</li>
+    <li>The page's mesh key lives in the browser's site data. Clear that data and the page gets a new
+        address, so pair it again.</li>
+</ul>
+</section>
+
+<section id="devices">
+<p class="eyebrow">Your devices list</p>
+<h2>In My Devices</h2>
+<p>The page shows up in <strong>My Devices</strong> as a <strong>Browser page</strong>, the role whose job
+    reads "Gets your new notes while this app is open." You can have one browser page per account; adding a
+    new one replaces the old.</p>
+<p>To stop sending, open its entry and tap <strong>Remove from my devices</strong>. Anything already on the
+    page stays there.</p>
+<p>Android and Mac also offer <strong>Browser page</strong> under
+    <span class="path">My Devices &rarr; Add a device by address</span>. In this build, only the iPhone app
+    sends notes to the page.</p>
+</section>
+
+<section id="privacy">
+<p class="eyebrow">Be candid</p>
+<h2>Limits and privacy</h2>
+<ul>
+    <li><strong>The tab must stay open.</strong> A browser can pause or close a page at any time. Not every
+        browser can hold the screen awake; the screensaver says whether it can.</li>
+    <li><strong>Storage is the browser's.</strong> The page asks the browser to keep its data, but the
+        browser decides. Report shows whether it agreed and how much room there is.</li>
+    <li><strong>Seeds see IPs.</strong> To connect, your phone joins the middle server, which sees its IP
+        address the way any server does. The same goes for the page's device.</li>
+    <li><strong>Nothing public.</strong> The page isn't listed in your profile, and its mesh key is its own,
+        never your Nostr key.</li>
+</ul>
+<div class="note">
+    <p><strong>3.0 is in testing.</strong> The browser relay is early. Treat it as an extra copy of your
+        notes, not your only one.</p>
+</div>
+</section>

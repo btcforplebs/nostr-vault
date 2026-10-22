@@ -1,0 +1,118 @@
+<!--page
+{
+  "title": "Wallet and zaps",
+  "nav": "Wallet",
+  "section": "keys",
+  "order": 5,
+  "eyebrow": "Keys and accounts",
+  "h1": "Zaps from <span>your own wallet</span>.",
+  "lede": "Nostr Vault doesn't hold your Lightning money. It connects to a wallet you already use, with a Nostr Wallet Connect link, and asks that wallet to pay when you zap.",
+  "description": "How the Nostr Vault wallet works: connect a Lightning wallet with a Nostr Wallet Connect (NWC) link, turn on zap buttons, disconnect, and the on-chain Bitcoin address under Advanced.",
+  "labels": {
+    "ios": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials"],
+    "mac": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet"],
+    "android": ["Account", "Wallet", "Settings", "Nostr Wallet Connect (NWC)", "Default Zap Amount (sats)", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials", "Wallet Connect"],
+    "web": ["Account", "Wallet", "Wallet Connect", "Connect wallet", "Balance", "Default zap", "Disconnect wallet", "Disconnect"]
+  }
+}
+-->
+
+<section id="what">
+<p class="eyebrow">The basics</p>
+<h2>What the wallet is</h2>
+<p>A <strong>zap</strong> is a small bitcoin tip sent over Lightning (bitcoin's fast payment network) to
+    the person who posted. Amounts are in <strong>sats</strong>, the smallest unit of bitcoin.</p>
+<p>Nostr Vault never holds that money. Your sats stay in a Lightning wallet you run somewhere else, such
+    as Alby Hub, Coinos, Primal or Zeus. <strong>Nostr Wallet Connect</strong> (NWC) is a standard way for
+    an app to ask that wallet to pay. Your wallet gives you a link that starts with
+    <code>nostr+walletconnect://</code>, and you paste it into Nostr Vault.</p>
+<div class="note">
+    <p><strong>Treat the link like cash.</strong> Anyone who has it can spend from that wallet. If your
+        wallet lets you, make a connection with a spending limit just for Nostr Vault.</p>
+</div>
+</section>
+
+<section id="connect">
+<p class="eyebrow">Step by step</p>
+<h2>Connect a wallet</h2>
+<ol>
+    <li>In your wallet app, find Nostr Wallet Connect (NWC) and copy the connection link.</li>
+    <li>In Nostr Vault, open <span class="path">Settings &rarr; Account &rarr; Wallet</span>.</li>
+    <li>Paste the link into the <strong>Wallet Connect</strong> box (on Android it's called
+        <strong>Nostr Wallet Connect (NWC)</strong>). On the web, tap <strong>Connect wallet</strong>.</li>
+</ol>
+<p>The app pastes the link only. There is no QR scanner for it. Once a wallet is connected you'll see its
+    <strong>Balance</strong> and can set your <strong>Default Zap</strong> (on Android,
+    <strong>Default Zap Amount (sats)</strong>), the amount one tap sends.</p>
+<p>On iPhone, iPad, Mac and Android you can also start from your own profile. Tap the bolt, labelled
+    <strong>Lightning</strong>. With no wallet
+    yet, it shows <strong>No Wallet Connected</strong> and a <strong>Connect a wallet</strong> button that
+    takes you to the same place. On Android the wallet is on the <strong>Settings</strong> tab of that
+    screen. Once connected, the Lightning screen shows your balance and lets you receive with an invoice,
+    pay an invoice, lightning address or LNURL, and see your history if your wallet shares it.</p>
+</section>
+
+<section id="zaps">
+<p class="eyebrow">Opt in</p>
+<h2>Turning on zap buttons</h2>
+<p>Zap buttons on posts are a choice you make under
+    <span class="path">Settings &rarr; Appearance &rarr; Post buttons</span>. Add &#9889;&#65039; in the
+    <strong>Add &#9889;&#65039;</strong> field to show a zap button, and remove it to hide the button.
+    Zapping someone from their profile is always available.</p>
+<ul>
+    <li><strong>iPhone, iPad and Mac:</strong> the zap button is off until you add &#9889;&#65039;. It then
+        shows on posts, live streams and locked articles.</li>
+    <li><strong>Android:</strong> &#9889;&#65039; is there by default, so posts show a zap button until
+        you remove it.</li>
+    <li><strong>Web:</strong> notes show a zap button. A tap sends your default zap, and holding it lets you
+        pick another amount.</li>
+</ul>
+<p>Each zap goes straight from your wallet to the author. Nostr Vault takes no cut.</p>
+</section>
+
+<section id="account">
+<p class="eyebrow">Phones and Mac</p>
+<h2>Saving the wallet to your Nostr account</h2>
+<p>On iPhone, iPad, Mac and Android, the Wallet page can switch on <strong>Save wallet to my Nostr
+    account</strong>. The link is then stored encrypted to your key on your relays, so Nostr Vault on your
+    other devices (or the Wisp app) can pick it up with <strong>Use saved wallet</strong>. Anyone who has
+    your Nostr key can read it and spend from the wallet. <strong>Remove from my account</strong> takes it
+    off again.</p>
+</section>
+
+<section id="disconnect">
+<p class="eyebrow">Stop using it</p>
+<h2>Disconnecting</h2>
+<ul>
+    <li><strong>iPhone, iPad, Mac and Android:</strong> delete the link from the Wallet Connect box. If
+        you saved it to your account, also tap <strong>Remove from my account</strong>.</li>
+    <li><strong>Web:</strong> tap <strong>Disconnect wallet</strong>, then <strong>Disconnect</strong>.
+        The web app keeps the link only in that browser, and deletes it when you sign out.</li>
+</ul>
+<p>To be sure the app can't spend any more, also revoke the connection in your wallet app.</p>
+</section>
+
+<section id="onchain">
+<p class="eyebrow">Advanced</p>
+<h2>Bitcoin On-Chain</h2>
+<p>Separate from Lightning, the apps can make a regular bitcoin address from your Nostr key. It lives under
+    <span class="path">Settings &rarr; Advanced &rarr; Bitcoin On-Chain</span> on iPhone, iPad, Mac and
+    Android. It isn't in the web app.</p>
+<p>Turn on <strong>Bitcoin Address</strong> to see the address and a QR code, and use
+    <strong>Copy Address</strong> to share it. <strong>Sweep Wallet</strong> sends everything at that
+    address to another address you choose.</p>
+<div class="note">
+    <p><strong>This one is different.</strong> Bitcoin sent to this address is controlled by your Nostr
+        key, so anyone with your key can spend it. Before a sweep, the app warns you not to send to a
+        hardware wallet or an exchange: that would tie your npub to that wallet on the public blockchain,
+        and it can't be undone.</p>
+</div>
+</section>
+
+<section id="help">
+<p class="eyebrow">Learn in the app</p>
+<h2>The Wallet Connect tutorial</h2>
+<p>On iPhone, iPad and Android, <span class="path">Settings &rarr; Help &rarr; Tutorials</span> has a
+    short <strong>Wallet Connect</strong> tour. It points at the empty wallet card, so it only runs while
+    no wallet is linked.</p>
+</section>

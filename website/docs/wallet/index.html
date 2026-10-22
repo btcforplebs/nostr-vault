@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/wallet.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet and zaps — Nostr Vault Docs</title>
+    <meta name="description" content="How the Nostr Vault wallet works: connect a Lightning wallet with a Nostr Wallet Connect (NWC) link, turn on zap buttons, disconnect, and the on-chain Bitcoin address under Advanced.">
+    <link rel="canonical" href="https://nostrvault.app/docs/wallet/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/wallet/">
+    <meta property="og:title" content="Wallet and zaps — Nostr Vault Docs">
+    <meta property="og:description" content="How the Nostr Vault wallet works: connect a Lightning wallet with a Nostr Wallet Connect (NWC) link, turn on zap buttons, disconnect, and the on-chain Bitcoin address under Advanced.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/wallet/" aria-current="page">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Keys and accounts</p>
+            <h1>Zaps from <span>your own wallet</span>.</h1>
+            <p class="docs-lede">Nostr Vault doesn't hold your Lightning money. It connects to a wallet you already use, with a Nostr Wallet Connect link, and asks that wallet to pay when you zap.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-the-wallet-is">What the wallet is</a></li><li><a href="#connect-a-wallet">Connect a wallet</a></li><li><a href="#turning-on-zap-buttons">Turning on zap buttons</a></li><li><a href="#saving-the-wallet-to-your-nostr-account">Saving the wallet to your Nostr account</a></li><li><a href="#disconnecting">Disconnecting</a></li><li><a href="#bitcoin-on-chain">Bitcoin On-Chain</a></li><li><a href="#the-wallet-connect-tutorial">The Wallet Connect tutorial</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="what">
+                <p class="eyebrow">The basics</p>
+                <h2 id="what-the-wallet-is">What the wallet is</h2>
+                <p>A <strong>zap</strong> is a small bitcoin tip sent over Lightning (bitcoin's fast payment network) to
+                    the person who posted. Amounts are in <strong>sats</strong>, the smallest unit of bitcoin.</p>
+                <p>Nostr Vault never holds that money. Your sats stay in a Lightning wallet you run somewhere else, such
+                    as Alby Hub, Coinos, Primal or Zeus. <strong>Nostr Wallet Connect</strong> (NWC) is a standard way for
+                    an app to ask that wallet to pay. Your wallet gives you a link that starts with
+                    <code>nostr+walletconnect://</code>, and you paste it into Nostr Vault.</p>
+                <div class="note">
+                    <p><strong>Treat the link like cash.</strong> Anyone who has it can spend from that wallet. If your
+                        wallet lets you, make a connection with a spending limit just for Nostr Vault.</p>
+                </div>
+                </section>
+
+                <section id="connect">
+                <p class="eyebrow">Step by step</p>
+                <h2 id="connect-a-wallet">Connect a wallet</h2>
+                <ol>
+                    <li>In your wallet app, find Nostr Wallet Connect (NWC) and copy the connection link.</li>
+                    <li>In Nostr Vault, open <span class="path">Settings &rarr; Account &rarr; Wallet</span>.</li>
+                    <li>Paste the link into the <strong>Wallet Connect</strong> box (on Android it's called
+                        <strong>Nostr Wallet Connect (NWC)</strong>). On the web, tap <strong>Connect wallet</strong>.</li>
+                </ol>
+                <p>The app pastes the link only. There is no QR scanner for it. Once a wallet is connected you'll see its
+                    <strong>Balance</strong> and can set your <strong>Default Zap</strong> (on Android,
+                    <strong>Default Zap Amount (sats)</strong>), the amount one tap sends.</p>
+                <p>On iPhone, iPad, Mac and Android you can also start from your own profile. Tap the bolt, labelled
+                    <strong>Lightning</strong>. With no wallet
+                    yet, it shows <strong>No Wallet Connected</strong> and a <strong>Connect a wallet</strong> button that
+                    takes you to the same place. On Android the wallet is on the <strong>Settings</strong> tab of that
+                    screen. Once connected, the Lightning screen shows your balance and lets you receive with an invoice,
+                    pay an invoice, lightning address or LNURL, and see your history if your wallet shares it.</p>
+                </section>
+
+                <section id="zaps">
+                <p class="eyebrow">Opt in</p>
+                <h2 id="turning-on-zap-buttons">Turning on zap buttons</h2>
+                <p>Zap buttons on posts are a choice you make under
+                    <span class="path">Settings &rarr; Appearance &rarr; Post buttons</span>. Add &#9889;&#65039; in the
+                    <strong>Add &#9889;&#65039;</strong> field to show a zap button, and remove it to hide the button.
+                    Zapping someone from their profile is always available.</p>
+                <ul>
+                    <li><strong>iPhone, iPad and Mac:</strong> the zap button is off until you add &#9889;&#65039;. It then
+                        shows on posts, live streams and locked articles.</li>
+                    <li><strong>Android:</strong> &#9889;&#65039; is there by default, so posts show a zap button until
+                        you remove it.</li>
+                    <li><strong>Web:</strong> notes show a zap button. A tap sends your default zap, and holding it lets you
+                        pick another amount.</li>
+                </ul>
+                <p>Each zap goes straight from your wallet to the author. Nostr Vault takes no cut.</p>
+                </section>
+
+                <section id="account">
+                <p class="eyebrow">Phones and Mac</p>
+                <h2 id="saving-the-wallet-to-your-nostr-account">Saving the wallet to your Nostr account</h2>
+                <p>On iPhone, iPad, Mac and Android, the Wallet page can switch on <strong>Save wallet to my Nostr
+                    account</strong>. The link is then stored encrypted to your key on your relays, so Nostr Vault on your
+                    other devices (or the Wisp app) can pick it up with <strong>Use saved wallet</strong>. Anyone who has
+                    your Nostr key can read it and spend from the wallet. <strong>Remove from my account</strong> takes it
+                    off again.</p>
+                </section>
+
+                <section id="disconnect">
+                <p class="eyebrow">Stop using it</p>
+                <h2 id="disconnecting">Disconnecting</h2>
+                <ul>
+                    <li><strong>iPhone, iPad, Mac and Android:</strong> delete the link from the Wallet Connect box. If
+                        you saved it to your account, also tap <strong>Remove from my account</strong>.</li>
+                    <li><strong>Web:</strong> tap <strong>Disconnect wallet</strong>, then <strong>Disconnect</strong>.
+                        The web app keeps the link only in that browser, and deletes it when you sign out.</li>
+                </ul>
+                <p>To be sure the app can't spend any more, also revoke the connection in your wallet app.</p>
+                </section>
+
+                <section id="onchain">
+                <p class="eyebrow">Advanced</p>
+                <h2 id="bitcoin-on-chain">Bitcoin On-Chain</h2>
+                <p>Separate from Lightning, the apps can make a regular bitcoin address from your Nostr key. It lives under
+                    <span class="path">Settings &rarr; Advanced &rarr; Bitcoin On-Chain</span> on iPhone, iPad, Mac and
+                    Android. It isn't in the web app.</p>
+                <p>Turn on <strong>Bitcoin Address</strong> to see the address and a QR code, and use
+                    <strong>Copy Address</strong> to share it. <strong>Sweep Wallet</strong> sends everything at that
+                    address to another address you choose.</p>
+                <div class="note">
+                    <p><strong>This one is different.</strong> Bitcoin sent to this address is controlled by your Nostr
+                        key, so anyone with your key can spend it. Before a sweep, the app warns you not to send to a
+                        hardware wallet or an exchange: that would tie your npub to that wallet on the public blockchain,
+                        and it can't be undone.</p>
+                </div>
+                </section>
+
+                <section id="help">
+                <p class="eyebrow">Learn in the app</p>
+                <h2 id="the-wallet-connect-tutorial">The Wallet Connect tutorial</h2>
+                <p>On iPhone, iPad and Android, <span class="path">Settings &rarr; Help &rarr; Tutorials</span> has a
+                    short <strong>Wallet Connect</strong> tour. It points at the empty wallet card, so it only runs while
+                    no wallet is linked.</p>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <span></span>
+                <a class="next" href="/docs/mesh/"><span>Next</span>The mesh</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
