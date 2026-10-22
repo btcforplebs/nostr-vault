@@ -39,7 +39,7 @@ All are loosenings or clarifications. The current code still conforms.
 - `Range` is allowed (`206` for exactly the asked range). The hash check covers the whole blob before any byte is shown, played, stored or passed on. (Code sends no `Range`; still allowed.)
 - Authentication may be by the peer's mesh npub when the owner has authorized it. This is what `own_devices.rs` does.
 - The browser section names no seed and no app: any way of reaching the mesh, including #2469.
-- The relay open question is closed: `["fipsmesh", "<address>", "write"]` in `kind:10002`. Markers other than `write` are reserved.
+- The relay open question is closed: a separate `["fipsmesh", "<address>", "<marker>"]` tag, markers as in NIP-65. It may appear in any relay or server list (e.g. `kind:10050`).
 - New "Extending this NIP" section: what may change without an edit, and what needs a new scheme.
 
 ## Coming features: does the NIP hold?
@@ -52,6 +52,18 @@ All are loosenings or clarifications. The current code still conforms.
 | Kiosk / own-devices door | No | Authentication by an owner-authorized mesh npub is allowed now. Strangers still get only what the public internet gets. |
 | Uploads / writes to own devices | No | Other Blossom endpoints and owner-signed relay writes are allowed under "Mesh peers are strangers"; the auth-before-body rule covers uploads. |
 | Several devices per user | No | Any number of entries, each standalone; readers may try several in order or at once. |
-| Lost device / key rotation | No | Entries are hints; only the newest list counts; the owner removes the old entry. A stolen device holds only a mesh key, which can't sign notes or alter hashed media. |
-| Video / large files | No | `Range` fetches allowed; caps follow what the client takes from public servers. Playing before the full hash check is not allowed; streaming a partly checked video would need a chunk-hash scheme in a separate NIP. |
-| Browser capability #2469 | No | The browser section is written for any means of reaching the mesh; the `blob:`-is-not-an-address and page-server rules hold for all. |
+| Lost device / key rotation | No | Entries are hints; only the newest list counts. Owner-authorized mesh npubs MUST be revocable and are re-checked on every connection, so a stolen device's key stops working once revoked. |
+| Video / large files | No | `Range` fetches allowed; caps follow what the client takes from public servers. Step 8 already allows early playback under a verification scheme bound to the same sha256 (e.g. a hash tree), so a later chunk-hash NIP plugs in without editing this one. |
+| Own device as DM inbox (`kind:10050`) | No | A `fipsmesh` tag may sit in any relay or server list; its meaning follows the list's kind. |
+| Several services on one node (kiosk door, separate relay/Blossom) | No | The address carries an optional port (default 80). |
+| Browser capability #2469 | No | The browser section is written for any means of reaching the mesh. A client must not hand a `fipsmesh` address to a user agent or media element that skips the hash check. |
+
+## Tron adversarial pass (2026-10-22) and code to check
+
+Reviewer: Tron. All 7 must-fixes and 7 optionals applied in the NIP. These rules are new, and nobody has yet checked the code against them:
+
+- Lowercase-only npub and decoded-key comparison in the address parsers (iOS, Android, Mac, web).
+- Addresses with a port: readers must ignore them (not dial 80) until ports are supported.
+- Mesh upload authorization: `kind:24242` must carry a `server` tag naming this vault's mesh address or npub, and be unexpired.
+- Revoking an own-device mesh npub (`own_devices.rs`), re-checked per connection.
+- Stranger blob index drops blobs whose events were deleted (NIP-09) or replaced.
