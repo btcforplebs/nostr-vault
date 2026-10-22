@@ -29,6 +29,8 @@ export const CLOSE_MS = 10_000
 /** A stream the vault dropped (reset or refused) gets one more turn, after the photo's other vaults: seen on a page
  *  still loading its feed, and the photo box never asks again by itself. A 404 or a timeout is not retried. */
 const DROPPED = /^vault (closed|refused) the connection/
+/** Authors warm() looks at: a thread's post and its first replies. */
+export const WARM_AUTHORS = 5
 /** With no photo reading, the reader is stopped after this long (sockets and timer gone). */
 export const IDLE_STOP_MS = 60_000
 
@@ -241,7 +243,18 @@ export function createFipsMedia({
     return photo(src.vaults, src.sha256, opts)
   }
 
-  return { photo, authorVaults, source, fallback, allowed }
+  /** Start the reader before any photo needs it, when one of `authors` may use the mesh and lists a vault: a shared
+   *  post opened as a guest, so the seed handshake is done by the time its photo's https link fails (as the thread
+   *  page's reader did). The first WARM_AUTHORS are looked at; it idle-stops like any read. */
+  async function warm(authors) {
+    for (const a of uniq((authors ?? []).filter(Boolean)).slice(0, WARM_AUTHORS)) {
+      if (!allow(a) || !(await authorVaults(a)).length) continue
+      try { await getReader() } catch { return }
+      return maybeStop()
+    }
+  }
+
+  return { photo, authorVaults, source, fallback, allowed, warm }
 }
 
 async function defaultReader(opts) {
