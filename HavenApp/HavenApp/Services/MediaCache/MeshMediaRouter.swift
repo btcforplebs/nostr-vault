@@ -43,8 +43,14 @@ actor MeshMediaRouter {
     static let maxBytes = 32 << 20
     /// A failed dial is not retried for this long, so a dead vault costs one wait.
     static let ingressRetry: TimeInterval = 30
-    /// A missing 10063 is asked for again after this long.
-    static let requestRetry: TimeInterval = 5 * 60
+    /// A missing 10063 is asked for again after this long (web LIST_RETRY_MS).
+    static let requestRetry: TimeInterval = 60
+    /// How long one vault may refuse or drop the read before it counts as
+    /// unreachable (web READ_TIMEOUT_MS). Right after the engine starts the
+    /// mesh has no route to the vault yet, so the first connection is reset.
+    static let readPatience: TimeInterval = 45
+    /// The pause between those tries (web blob-get RETRY_MS).
+    static let readRetry: Duration = .seconds(1)
     /// How long a read waits for a 10063 it has just asked for.
     static let listWait: Duration = .seconds(6)
     static let listPoll: Duration = .milliseconds(500)
@@ -152,13 +158,7 @@ actor MeshMediaRouter {
               // list says which are theirs.
               let npub = Self.vault(for: plan, serverList: list)
         else { return nil }
-        guard !distrusted.contains(npub), let base = await ingressBase(npub) else { return nil }
-        guard let reply = await deps.get(base.appendingPathComponent(plan.sha256), Self.maxBytes) else {
-            // The node restarted or the vault went away: dial again, but not
-            // once per photo.
-            ingressCache[npub] = (nil, deps.now())
-            return nil
-        }
+        guard let reply = await patientGet(npub, sha256: plan.sha256) else { return nil }
         // Honestly missing, or honestly too big (a video): the vault keeps its standing.
         guard reply.status == 200, let data = reply.data else { return nil }
         guard Self.hashMatches(data, sha256: plan.sha256) else {
@@ -168,6 +168,27 @@ actor MeshMediaRouter {
             return nil
         }
         return data
+    }
+
+    /// The vault's answer, asking again while it refuses or drops the
+    /// connection, as the web does: the route may still be coming up. Only a
+    /// vault that never answers within `readPatience` is given up on, and
+    /// then not dialled again per photo.
+    private func patientGet(_ npub: String, sha256: String) async -> Reply? {
+        let giveUp = deps.now() + Self.readPatience
+        while !distrusted.contains(npub), let base = await ingressBase(npub) {
+            if let reply = await deps.get(base.appendingPathComponent(sha256), Self.maxBytes) { return reply }
+            // The photo left the screen: its cancelled GET says nothing about the vault.
+            if Task.isCancelled { return nil }
+            // The node may have restarted with a new loopback base: dial again.
+            if ingressCache[npub]?.base == base { ingressCache[npub] = nil }
+            guard deps.now() < giveUp else {
+                ingressCache[npub] = (nil, deps.now())
+                return nil
+            }
+            await deps.sleep(Self.readRetry)
+        }
+        return nil
     }
 
     /// The author's 10063. One never seen is asked for, and a read that just
