@@ -51,6 +51,12 @@ actor MeshMediaRouter {
     static let readPatience: TimeInterval = 45
     /// The pause between those tries (web blob-get RETRY_MS).
     static let readRetry: Duration = .seconds(1)
+    /// Vaults one photo may ask, in the author's order (web MAX_VAULTS): a
+    /// 10063 can list a node that is up but never had the photo.
+    static let maxVaults = 3
+    /// One photo across all its vaults; no new vault is tried past it (web
+    /// PHOTO_TIMEOUT_MS).
+    static let photoPatience: TimeInterval = 90
     /// How long a read waits for a 10063 it has just asked for.
     static let listWait: Duration = .seconds(6)
     static let listPoll: Duration = .milliseconds(500)
@@ -131,12 +137,13 @@ actor MeshMediaRouter {
         return value
     }
 
-    /// The vault a read may dial: the one a `.fips` URL names only when the
-    /// author lists it, else the author's first listed vault.
-    static func vault(for plan: Plan, serverList list: [String]) -> String? {
+    /// The vaults a read may dial, in order: the one a `.fips` URL names only
+    /// when the author lists it, else the author's listed vaults, the first
+    /// `maxVaults` of them.
+    static func vaults(for plan: Plan, serverList list: [String]) -> [String] {
         let listed = HomeVaultLogic.meshEntries(serverList: list, excluding: nil)
-        guard let host = plan.hostNpub else { return listed.first }
-        return listed.contains(host) ? host : nil
+        guard let host = plan.hostNpub else { return Array(listed.prefix(maxVaults)) }
+        return listed.contains(host) ? [host] : []
     }
 
     static func hashMatches(_ data: Data, sha256: String) -> Bool {
@@ -145,37 +152,47 @@ actor MeshMediaRouter {
 
     // MARK: - Reading
 
-    /// The photo's bytes from the author's vault, checked against its hash,
-    /// or nil (not followed, no vault listed, unreachable, wrong bytes).
+    /// The photo's bytes from the first of the author's vaults that has them,
+    /// checked against its hash, or nil (not followed, no vault listed, none
+    /// reachable or holding it, wrong bytes).
     /// `onLookup` runs once the author is known to be one the mesh may be
     /// asked about, before the wait for their list or the dial: the moment a
     /// photo starts "Loading over FIPS…", as on the web.
     func read(plan: Plan, author: String, onLookup: (@Sendable () async -> Void)? = nil) async -> Data? {
         guard await deps.mayDial(author) else { return nil }
         await onLookup?()
-        guard let list = await serverList(of: author),
-              // A `.fips` URL may name any node; only the author's own signed
-              // list says which are theirs.
-              let npub = Self.vault(for: plan, serverList: list)
-        else { return nil }
-        guard let reply = await patientGet(npub, sha256: plan.sha256) else { return nil }
-        // Honestly missing, or honestly too big (a video): the vault keeps its standing.
-        guard reply.status == 200, let data = reply.data else { return nil }
-        guard Self.hashMatches(data, sha256: plan.sha256) else {
-            // Wrong bytes are not a passing fault.
-            distrusted.insert(npub)
-            ingressCache[npub] = nil
-            return nil
+        // A `.fips` URL may name any node; only the author's own signed list
+        // says which are theirs.
+        guard let list = await serverList(of: author) else { return nil }
+        let giveUp = deps.now() + Self.photoPatience
+        for npub in Self.vaults(for: plan, serverList: list) {
+            let left = giveUp.timeIntervalSince(deps.now())
+            guard left > 0 else { return nil }
+            guard let reply = await patientGet(npub, sha256: plan.sha256, patience: min(Self.readPatience, left)) else {
+                // The photo left the screen: no further vault is asked.
+                if Task.isCancelled { return nil }
+                continue
+            }
+            // Honestly missing, or honestly too big (a video): the vault keeps
+            // its standing, and the next one may have it.
+            guard reply.status == 200, let data = reply.data else { continue }
+            guard Self.hashMatches(data, sha256: plan.sha256) else {
+                // Wrong bytes are not a passing fault.
+                distrusted.insert(npub)
+                ingressCache[npub] = nil
+                continue
+            }
+            return data
         }
-        return data
+        return nil
     }
 
     /// The vault's answer, asking again while it refuses or drops the
     /// connection, as the web does: the route may still be coming up. Only a
-    /// vault that never answers within `readPatience` is given up on, and
+    /// vault that never answers within `patience` is given up on, and
     /// then not dialled again per photo.
-    private func patientGet(_ npub: String, sha256: String) async -> Reply? {
-        let giveUp = deps.now() + Self.readPatience
+    private func patientGet(_ npub: String, sha256: String, patience: TimeInterval) async -> Reply? {
+        let giveUp = deps.now() + patience
         while !distrusted.contains(npub), let base = await ingressBase(npub) {
             if let reply = await deps.get(base.appendingPathComponent(sha256), Self.maxBytes) { return reply }
             // The photo left the screen: its cancelled GET says nothing about the vault.
