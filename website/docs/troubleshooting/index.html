@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/troubleshooting.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troubleshooting — Nostr Vault Docs</title>
+    <meta name="description" content="Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, kiosk mode paused.">
+    <link rel="canonical" href="https://nostrvault.app/docs/troubleshooting/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/troubleshooting/">
+    <meta property="og:title" content="Troubleshooting — Nostr Vault Docs">
+    <meta property="og:description" content="Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, kiosk mode paused.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Using the app</p>
+                <ul>
+                    <li><a href="/docs/feeds/">Feeds</a></li>
+                    <li><a href="/docs/messages/">Messages</a></li>
+                    <li><a href="/docs/web-of-trust/">Web of trust</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Your vault</p>
+                <ul>
+                    <li><a href="/docs/vault/">Your vault</a></li>
+                    <li><a href="/docs/vault/who-can-reach-you/">Who Can Reach You</a></li>
+                    <li><a href="/docs/backup/">Backup and restore</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                    <li><a href="/docs/share-links/">Share links <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/troubleshooting/" aria-current="page">Troubleshooting</a></li>
+                    <li><a href="/docs/faq/">FAQ</a></li>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Help</p>
+            <h1>When something <span>isn't working</span></h1>
+            <p class="docs-lede">One heading per problem: what you see, why it happens, and what to tap. Items marked 3.0 are about the mesh, which comes with Nostr Vault 3.0.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#my-feed-is-empty">My feed is empty</a></li><li><a href="#i-can-t-post-like-or-follow">I can't post, like or follow</a></li><li><a href="#my-signer-never-answers">My signer never answers</a></li><li><a href="#my-photo-post-didn-t-send">My photo post didn't send</a></li><li><a href="#a-relay-isn-t-answering">A relay isn't answering</a></li><li><a href="#android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</a></li><li><a href="#a-device-on-my-devices-is-never-in-reach-3-0">A device on My Devices is never in reach 3.0</a></li><li><a href="#check-sync-stops-early-3-0">Check sync stops early 3.0</a></li><li><a href="#someone-s-photos-don-t-load-over-the-mesh-3-0">Someone's photos don't load over the mesh 3.0</a></li><li><a href="#kiosk-mode-paused-3-0">Kiosk mode paused 3.0</a></li><li><a href="#still-stuck">Still stuck?</a></li></ul></div>
+
+            <article class="docs-article">
+                <section id="empty-feed">
+                <h2 id="my-feed-is-empty">My feed is empty</h2>
+                <p>You see "No Following Feed". Nostr has no algorithm, so a new account starts with nothing: you see posts from
+                    people you follow.</p>
+                <p><strong>Fix:</strong> follow a few people. <strong>Fill Your Feed</strong> helps you find them by topic, and
+                    five follows builds your web of trust, which fills Discover and Global too. Replay it from
+                    <span class="path">Settings &rarr; Help &rarr; Tutorials</span>. More on <a class="inline" href="/docs/feeds/#new-account">Feeds</a>.</p>
+                <p>Global and Media also stay empty until your web is built. That's on purpose: they show nothing rather than
+                    everyone.</p>
+                </section>
+
+                <section id="read-only">
+                <h2 id="i-can-t-post-like-or-follow">I can't post, like or follow</h2>
+                <p>You see "Read-only for now", "No private key stored for this account" or "This account is read-only. Add its
+                    key to follow." You signed in with an npub or a name@domain, which lets you look but not sign.</p>
+                <p><strong>Fix:</strong> add the account's key or connect a signer in
+                    <span class="path">Settings &rarr; Accounts &amp; Keys</span>.</p>
+                </section>
+
+                <section id="signer">
+                <h2 id="my-signer-never-answers">My signer never answers</h2>
+                <p>You see "Your signer didn't answer in time", "Clave didn't answer" or, on Android, "Amber signing was cancelled
+                    or timed out". Your signer app has a request waiting that you haven't approved, or it can't reach its relay.</p>
+                <p><strong>Fix:</strong> open the signer app, approve the pending request, then tap Retry in Nostr Vault. If it
+                    says "Couldn't reach your signer's relay", check your connection. "This signer is for a different account"
+                    means the signer holds another key than the account you picked.</p>
+                </section>
+
+                <section id="photo-post">
+                <h2 id="my-photo-post-didn-t-send">My photo post didn't send</h2>
+                <p>You see "Your post wasn't sent: no outside media server is set up". A photo has to sit on a public media
+                    server so other people can see it, even with the mesh.</p>
+                <p><strong>Fix:</strong> add a server in <span class="path">Settings &rarr; Relays &rarr; Media Servers</span>,
+                    then post again. (Android's message says "Settings &rarr; Blossom"; the row is called Media Servers.)</p>
+                <p>If it says your Mac didn't take the photo, check that Nostr Vault is open on your Mac. "Saved on this device"
+                    means the post will send itself as soon as the server answers.</p>
+                </section>
+
+                <section id="relays">
+                <h2 id="a-relay-isn-t-answering">A relay isn't answering</h2>
+                <p>In the relay list you see "<em>relay</em> isn't answering". It didn't answer just now. Relays go down.</p>
+                <p><strong>Fix:</strong> leave it a while. If it stays down, remove it. "No Write relay" means none of your relays
+                    is set to Write, so your posts have nowhere to go: mark at least one as Write.</p>
+                </section>
+
+                <section id="android-update">
+                <h2 id="android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</h2>
+                <p>Installing an update stops the app, and with it your vault relay.</p>
+                <p><strong>Fix:</strong> open the app once after updating. Keep <strong>Start Relay Automatically</strong> on:
+                    newer builds then start the relay again by themselves after an update.</p>
+                </section>
+
+                <section id="dot">
+                <h2 id="a-device-on-my-devices-is-never-in-reach-3-0">A device on My Devices is never in reach <span class="tag tag-next">3.0</span></h2>
+                <p>Under <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh &rarr; My Devices</span> a device stays "Not in
+                    reach" (Android shows when it was last seen). A Mac or a kiosk phone only answers devices that are on its own
+                    My Devices list, and a Mac with an empty list doesn't start the mesh at all.</p>
+                <p><strong>Fix:</strong> add the devices both ways. On each device, copy the address under
+                    <strong>This Device</strong> and add it on the other one; on your phones, add the Mac as
+                    <strong>Vault on Mac</strong>. Check that Mesh is on, on both. See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</p>
+                </section>
+
+                <section id="check-sync">
+                <h2 id="check-sync-stops-early-3-0">Check sync stops early <span class="tag tag-next">3.0</span></h2>
+                <p>On iPhone, <strong>Check sync with Vault on Mac</strong> ends on "Stopped · N still missing", "Copy didn't
+                    finish" with a reason, or "Copy was interrupted". The button is greyed out while a copy is running or when
+                    your vault relay isn't running.</p>
+                <p><strong>Fix:</strong> read the reason line. "Copy was interrupted" means the app closed during the copy; it
+                    picks up again the next time the relay starts. Anything that couldn't be copied is tried again once a day,
+                    and tapping the button starts a new run.</p>
+                </section>
+
+                <section id="mesh-photos">
+                <h2 id="someone-s-photos-don-t-load-over-the-mesh-3-0">Someone's photos don't load over the mesh <span class="tag tag-next">3.0</span></h2>
+                <p>The app only asks the mesh for photos from people you follow, and only if they list their own vault as a
+                    media server. Files over 32 MB always come from the normal web address.</p>
+                <p><strong>Fix:</strong> follow them, and check they have the mesh turned on. Otherwise the photo loads from
+                    its web address as usual.</p>
+                </section>
+
+                <section id="kiosk">
+                <h2 id="kiosk-mode-paused-3-0">Kiosk mode paused <span class="tag tag-next">3.0</span></h2>
+                <p>On iPhone you get "Kiosk mode paused". Leaving the app pauses kiosk mode.</p>
+                <p><strong>Fix:</strong> tap the notification or open the app again; kiosk mode turns back on by itself. If it
+                    won't start, add your other phone or your Mac under My Devices first. If it says you hit the limit for one
+                    session, it starts again next session. See <a class="inline" href="/docs/mesh/#kiosk">Kiosk mode</a>.</p>
+                </section>
+
+                <section id="more">
+                <h2 id="still-stuck">Still stuck?</h2>
+                <p>Ask on Nostr, or open an issue on <a href="https://github.com/btcforplebs/nostr-vault/issues">GitHub</a>
+                    with what you saw, word for word.</p>
+                </section>
+            </article>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/share-links/"><span>Previous</span>Share links</a>
+                <a class="next" href="/docs/faq/"><span>Next</span>FAQ</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

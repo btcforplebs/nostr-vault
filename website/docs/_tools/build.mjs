@@ -33,6 +33,7 @@ const REPO = path.resolve(DOCS, '..', '..');
 const SECTIONS = [
     { key: 'start', title: 'Get started' },
     { key: 'keys', title: 'Keys and accounts' },
+    { key: 'use', title: 'Using the app' },
     { key: 'mesh', title: 'Mesh and your devices' },
     { key: 'vault', title: 'Your vault' },
     { key: 'media', title: 'Media and sharing' },
