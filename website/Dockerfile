@@ -18,6 +18,11 @@ RUN ALLOW_MISSING_WEB_APPS=$ALLOW_MISSING_WEB_APPS website/build-web-apps.sh \
 # The thread service: public post pages at /thread/ (web-vault/thread-page/server.mjs), proxied by nginx.
 FROM node:22-alpine AS thread
 LABEL app.nostrvault.site=1
+# The server's warm FIPS photo reader (web-vault/thread-page/photo-cache.js) is web-relay's photo-reader.js.
+WORKDIR /app/web-relay
+COPY web-relay/package.json web-relay/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+COPY web-relay/src ./src
 WORKDIR /app/web-vault
 COPY web-vault/package.json web-vault/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund

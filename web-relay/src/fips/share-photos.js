@@ -3,7 +3,9 @@
 // The page server checked the 10063 and wrote the photo's hash and those vaults on the <img> (data-x, data-vaults),
 // for the shared post's own photos only (a reply's author can't make visitors join the mesh); this script reads
 // nothing else and asks no one else. The reader (photo-reader.js: a throwaway key, the public seeds only, no WebRTC)
-// loads only when such a photo fails, and stops once nothing is left to read.
+// starts as the page opens when it has such a photo, so the seed handshake is done by the time the https link fails,
+// and stops once nothing is left to read. A failed photo asks the page server's copy (PHOTO_CACHE_PATH, which a warm
+// server node keeps for photos it has already read) and the mesh at once, and shows whichever answers first.
 const HEX = /^[0-9a-f]{64}$/
 const MAX_VAULTS = 3 // a 10063 can list any number; the page server already keeps the first few
 const READ_TIMEOUT_MS = 45_000 // per vault: a cold mesh route can take a while
@@ -14,6 +16,30 @@ export const MAX_PAGE_BYTES = 48 * 1024 * 1024
 const IDLE_STOP_MS = 15_000 // lazy photos fail one by one: keep the reader (one key, one seed handshake) a while
 export const LOADING_TEXT = "Loading image over FIPS…"
 export const FAILED_TEXT = "Couldn't reach the owner's vault"
+/** The page server's copy of a mesh photo, by hash (web-vault/thread-page/photo-cache.js). */
+export const PHOTO_CACHE_PATH = "/thread/photo/"
+
+/** Loads the server's copy of photo `x` in a detached <img>: its URL once it shows, null when there is none. */
+function loadCachedImage(x, signal) {
+  if (typeof Image === "undefined") return Promise.resolve(null)
+  const url = PHOTO_CACHE_PATH + x
+  return new Promise(resolve => {
+    const probe = new Image()
+    probe.onload = () => resolve(probe.naturalWidth > 0 ? url : null)
+    probe.onerror = () => resolve(null)
+    signal.addEventListener("abort", () => { probe.src = ""; resolve(null) }, { once: true })
+    probe.src = url
+  })
+}
+
+/** The first of `ps` to resolve to something; null once all resolved to nothing (or threw). */
+function firstFound(ps) {
+  return new Promise(resolve => {
+    let left = ps.length
+    const miss = () => { if (--left === 0) resolve(null) }
+    for (const p of ps) p.then(v => (v ? resolve(v) : miss()), miss)
+  })
+}
 
 /**
  * While a photo reads over the mesh its dead https <img> (Chrome's broken-image icon) is hidden behind a card that
@@ -51,13 +77,15 @@ export function meshTarget(img) {
 }
 
 /**
- * Wires every mesh-capable photo on `doc`: one that has already failed is read now, the rest on their first error.
- * At most MAX_PHOTOS photos, MAX_PARALLEL at a time, MAX_PHOTO_BYTES each and MAX_PAGE_BYTES in all.
- * `start(getPhotoVaults)` starts the reader (tests pass a fake); `toUrl(bytes, type)` makes the blob: URL;
+ * Wires every mesh-capable photo on `doc`: one that has already failed is read now, the rest on their first error;
+ * the reader starts right away when there is any. At most MAX_PHOTOS photos, MAX_PARALLEL at a time, MAX_PHOTO_BYTES
+ * each and MAX_PAGE_BYTES in all. `start(getPhotoVaults)` starts the reader (tests pass a fake); `loadCached(x, signal)`
+ * resolves the server copy's URL or null; `toUrl(bytes, type)` makes the blob: URL;
  * `onLeave(fn)` runs fn when the page goes away (revokes the URLs, stops the reader).
  */
 export function wireMeshPhotos(doc, {
   start = getPhotoVaults => import("./photo-reader.js").then(m => m.startPhotoReader({ getPhotoVaults })),
+  loadCached = loadCachedImage,
   toUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type })),
   revoke = url => URL.revokeObjectURL(url),
   onLeave = fn => globalThis.addEventListener?.("pagehide", fn, { once: true }),
@@ -77,12 +105,15 @@ export function wireMeshPhotos(doc, {
     r?.then(x => x.stop?.()).catch(() => {})
   }
 
-  async function readOne(img, t) {
+  /** The photo over the mesh, vault by vault: its blob: URL, or null. `stop` aborts it (the server copy won). */
+  async function readMesh(t, stop) {
     try {
       const r = await getReader()
       for (const vault of t.vaults) {
-        if (leaving || used >= pageBytes) break
+        if (leaving || stop.aborted || used >= pageBytes) break
         const ctl = new AbortController()
+        const quit = () => ctl.abort()
+        stop.addEventListener("abort", quit, { once: true })
         let seen = 0
         try {
           const got = await r.getBlob(vault, t.x, {
@@ -91,16 +122,26 @@ export function wireMeshPhotos(doc, {
             onProgress: n => { used += n - seen; seen = n; if (n > photoBytes || used > pageBytes) ctl.abort() },
           })
           if (got.bytes.length > photoBytes) throw new Error("too large")
+          if (stop.aborted) return null
           const url = toUrl(got.bytes, got.type)
           urls.push(url)
-          img.src = url
-          const link = img.closest?.("a")
-          if (link) link.href = url // the tap opens the photo that loaded, not the dead link
-          return "loaded"
-        } catch { /* the next vault */ }
+          return url
+        } catch { /* the next vault */ } finally { stop.removeEventListener("abort", quit) }
       }
     } catch { /* no reader */ }
-    return "failed"
+    return null
+  }
+
+  async function readOne(img, t) {
+    const stop = new AbortController()
+    const fromServer = Promise.resolve().then(() => loadCached(t.x, stop.signal)).catch(() => null)
+    const url = await firstFound([fromServer, readMesh(t, stop.signal)])
+    stop.abort() // the other one stops
+    if (!url) return "failed"
+    img.src = url
+    const link = img.closest?.("a")
+    if (link) link.href = url // the tap opens the photo that loaded, not the dead link
+    return "loaded"
   }
 
   function next() {
@@ -117,8 +158,9 @@ export function wireMeshPhotos(doc, {
       })
     }
     // Nothing left to read: stop after a quiet while; a later failure starts a fresh reader.
-    if (!active && !waiting.length && reader) { clearTimeout(idle); idle = setTimeout(stopReader, idleStopMs); idle?.unref?.() }
+    if (!active && !waiting.length && reader) quietStop()
   }
+  function quietStop() { clearTimeout(idle); idle = setTimeout(stopReader, idleStopMs); idle?.unref?.() }
 
   let queued = 0
   function read(img) {
@@ -140,7 +182,10 @@ export function wireMeshPhotos(doc, {
   })
 
   const reads = []
-  for (const img of doc.querySelectorAll("img[data-x][data-vaults]")) {
+  const marked = [...doc.querySelectorAll("img[data-x][data-vaults]")].filter(img => meshTarget(img))
+  // Start the reader now, while the https links load: when one fails, the seed handshake is already done.
+  if (marked.length) { getReader().catch(() => {}); if (!active && !waiting.length) quietStop() }
+  for (const img of marked) {
     if (img.complete && img.naturalWidth === 0) reads.push(read(img))
     else img.addEventListener("error", () => read(img), { once: true })
   }
