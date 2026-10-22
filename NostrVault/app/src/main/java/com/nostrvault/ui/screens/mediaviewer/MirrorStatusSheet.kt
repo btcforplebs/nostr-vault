@@ -65,7 +65,7 @@ internal fun MirrorStatusSheet(
                 }
                 totalMirrors == 0 -> {
                     Text(
-                        "No mirrors configured. Add Blossom mirrors in Settings.",
+                        "No mirrors configured. Add a server in Settings → Media Servers.",
                         color = SecondaryText,
                         fontSize = 14.sp,
                     )
