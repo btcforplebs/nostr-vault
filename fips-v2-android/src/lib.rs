@@ -489,11 +489,13 @@ pub fn ingress(npub: &str) -> Result<String, i32> {
         // No offer: the session finds the vault through the seeds. FIPS still
         // needs the vault's key: the mesh address is a hash prefix, and with
         // no key a TUN packet gets no-route and a lookup answer is dropped
-        // (Tron, #1030). The probe puts it in the identity cache with no dial.
+        // (Tron, #1030). `cache_identity` puts it in the identity cache with no dial.
+        // Unseeded, the read is no-route: fail like a dial that failed, so the
+        // app falls back to the URL instead of keeping a dead mesh one (Tron, #1030 F5).
         IngressRoute::ViaMesh => {
             if let Err(e) = seed_identity(&control, npub) {
-                // Too many probes in flight, or a key already cached: try anyway.
                 tracing::warn!("mesh seed identity {npub}: {e:#}");
+                return Err(ERR_START);
             }
         }
     }
@@ -566,15 +568,15 @@ fn add_peer(
     control_request(control, "add_peer", serde_json::json!({ "npub": npub })).map(|_| ())
 }
 
-/// Put `npub`'s key in the node's identity cache without dialing it: a
-/// FIPS probe seeds the cache first, then does a mesh lookup and a session
-/// through the tree (no Nostr rendezvous, so no traversal offer and no
-/// address), and leaves a session that traffic has used in place.
+/// Put `npub`'s key in the node's identity cache and do nothing else: no
+/// peer, dial, offer, lookup or session, and no cap (fork `cache_identity`).
+/// The read's own packets then find the vault through the tree, so it never
+/// learns this node's address.
 fn seed_identity(
     control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
     npub: &str,
 ) -> Result<()> {
-    control_request(control, "probe_start", serde_json::json!({ "npub": npub })).map(|_| ())
+    control_request(control, "cache_identity", serde_json::json!({ "npub": npub })).map(|_| ())
 }
 
 /// One control command, answered by the node's rx loop. Its data on "ok".
@@ -906,6 +908,15 @@ mod tests {
         assert!(no_route(vault_addr, Duration::from_secs(2)), "control: an uncached key should be no-route");
         seed_identity(&node.control, &vault.npub()).unwrap();
         assert!(!no_route(vault_addr, Duration::from_millis(500)), "seed_identity left the vault's key out of the cache");
+        // No cap: a feed of many authors seeds them all back to back, where
+        // probe_start refused the 5th inside one probe window (Tron, #1030 F5).
+        let others: Vec<Identity> = (0..8).map(|_| Identity::generate()).collect();
+        for (i, other) in others.iter().enumerate() {
+            seed_identity(&node.control, &other.npub()).unwrap_or_else(|e| panic!("seed {i}: {e:#}"));
+        }
+        for (i, other) in others.iter().enumerate() {
+            assert!(!no_route(other.address().to_ipv6(), Duration::from_millis(500)), "seed {i} left its key out of the cache");
+        }
         let _ = node.stop.send(());
         let _ = node.thread.join();
     }
