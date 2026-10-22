@@ -344,6 +344,12 @@ extension HomeVaultLogic {
          ["expiration", String(Int(now.timeIntervalSince1970 + vaultCheckAuthLifetime))]]
     }
 
+    /// Only a key on this phone signs the check. A remote signer would ask
+    /// the owner to approve a "get" for every photo they post.
+    static func signsVaultCheck(signingMode: String) -> Bool {
+        signingMode != "nip46"
+    }
+
     /// HEAD /<sha256> on the vault, signed when `authBase64` is given.
     static func vaultCheckRequest(sha256: String, base: URL, authBase64: String?) -> URLRequest {
         var request = URLRequest(url: base.appendingPathComponent(sha256))
@@ -353,5 +359,25 @@ extension HomeVaultLogic {
             request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
         }
         return request
+    }
+}
+
+/// The owner's signed "get" per blob, kept while it is still good, so a blob
+/// is signed for once rather than on every check of it.
+struct VaultCheckAuths {
+    /// Signed again this long before expiry, so a check never carries an
+    /// auth that runs out on its way to the vault.
+    static let renewMargin: TimeInterval = 60
+
+    private var byBlob: [String: (auth: String, expires: Date)] = [:]
+
+    func auth(for sha256: String, now: Date = Date()) -> String? {
+        guard let kept = byBlob[sha256], kept.expires.timeIntervalSince(now) > Self.renewMargin else { return nil }
+        return kept.auth
+    }
+
+    mutating func remember(_ auth: String, for sha256: String, now: Date = Date()) {
+        byBlob = byBlob.filter { $0.value.expires > now }
+        byBlob[sha256] = (auth, now.addingTimeInterval(HomeVaultLogic.vaultCheckAuthLifetime))
     }
 }

@@ -32,4 +32,23 @@ final class VaultCheckAuthTests: XCTestCase {
         XCTAssertEqual(exp, 1_800_000_000 + Int(HomeVaultLogic.vaultCheckAuthLifetime))
         XCTAssertGreaterThan(HomeVaultLogic.vaultCheckAuthLifetime, 30)
     }
+
+    /// A remote signer would prompt the owner for every photo's check.
+    func testOnlyAKeyOnThePhoneSignsTheCheck() {
+        XCTAssertTrue(HomeVaultLogic.signsVaultCheck(signingMode: "local"))
+        XCTAssertFalse(HomeVaultLogic.signsVaultCheck(signingMode: "nip46"))
+    }
+
+    /// Once per blob: a second check of the same blob reuses the auth, a
+    /// different blob does not, and one near expiry is signed again.
+    func testOneAuthPerBlobWhileItIsGood() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var auths = VaultCheckAuths()
+        XCTAssertNil(auths.auth(for: sha, now: now))
+        auths.remember("first", for: sha, now: now)
+        XCTAssertEqual(auths.auth(for: sha, now: now.addingTimeInterval(30)), "first")
+        XCTAssertNil(auths.auth(for: String(repeating: "cd", count: 32), now: now))
+        let nearExpiry = now.addingTimeInterval(HomeVaultLogic.vaultCheckAuthLifetime - VaultCheckAuths.renewMargin)
+        XCTAssertNil(auths.auth(for: sha, now: nearExpiry))
+    }
 }
