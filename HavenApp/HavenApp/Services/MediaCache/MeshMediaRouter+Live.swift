@@ -6,8 +6,9 @@ extension MeshMediaRouter {
 }
 
 extension MeshMediaRouter.Dependencies {
-    /// The app's follows, 10063 cache and mesh engine. The Mac app has no
-    /// mesh engine yet, so there every read falls through to the URL.
+    /// The app's follows, 10063 cache and mesh engine. On the Mac the engine
+    /// runs only while its Mesh switch is on; otherwise every read falls
+    /// through to the URL.
     static var live: Self {
         Self(
             mayDial: { author in
@@ -26,7 +27,7 @@ extension MeshMediaRouter.Dependencies {
                 #if os(iOS)
                 return await FipsMeshService.shared.ingressURL(meshNpub: npub)
                 #else
-                return nil
+                return await MacFipsMeshService.shared.ingressURL(meshNpub: npub)
                 #endif
             },
             get: { url, maxBytes in await MeshMediaGet.get(url, maxBytes: maxBytes) }

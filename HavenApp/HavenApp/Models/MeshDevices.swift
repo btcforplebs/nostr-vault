@@ -194,6 +194,8 @@ enum MeshDevicesLogic {
     /// because an empty `own_devices` would open the Mac to anyone; the Mac
     /// then stays off. `ownNpub` (this Mac) is left out. `meshDoorPort` is
     /// Haven's mesh door (HavenConfig.meshPlainPort), where strangers go.
+    /// A follow's vault outside My Devices is read through the seeds without
+    /// a dial (`read_anyone`), so it never learns this Mac's address.
     static func macEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int) -> [String: Any]? {
         var npubs: [String] = []
         for device in devices where device.npub != ownNpub && !npubs.contains(device.npub) {
@@ -213,6 +215,7 @@ enum MeshDevicesLogic {
             "relays": relays.isEmpty ? defaultFinderRelays : relays,
             "public_seeds": true,
             "strangers_port": meshDoorPort,
+            "read_anyone": true,
             "lan": true,
         ]
     }
@@ -233,8 +236,6 @@ enum MeshDevicesLogic {
         guard var options = macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort) else { return nil }
         options["max_serve_bytes"] = kioskStrangersTotal
         options["public_seeds"] = seeds
-        // Reading a follow's photos while sharing: without a dial, as a client does.
-        options["read_anyone"] = true
         return options
     }
 

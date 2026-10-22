@@ -12,7 +12,8 @@ import Security
 /// the public seeds, capped, to Haven's mesh door (meshPlainPort, open while
 /// SetMeshServingC(1)), as the iPhone kiosk's visitors do: blob reads and
 /// owner-signed writes only, never the relay port. With no devices it does
-/// not start, since an empty list would be open to anyone.
+/// not start, since an empty list would be open to anyone. The vaults of
+/// people you follow are read through the seeds with no dial (ingressURL).
 @MainActor
 final class MacFipsMeshService: ObservableObject {
     static let shared = MacFipsMeshService()
@@ -185,6 +186,31 @@ final class MacFipsMeshService: ObservableObject {
         }
         print("FipsMesh: Mac engine live, own devices on relay port \(port), capped strangers on the mesh door")
         return nil
+    }
+
+    // MARK: - Reading another vault
+
+    /// A loopback base, `http://127.0.0.1:<port>/<token>`, whose requests reach
+    /// `meshNpub`'s vault over the mesh, or nil (the photo then loads from its
+    /// URL). Only while the Mesh switch has the engine up: reading never
+    /// starts it. A vault outside My Devices is reached through the seeds with
+    /// no dial (`read_anyone`). Can take ~10 s. Never log it: the path holds
+    /// the ingress token.
+    func ingressURL(meshNpub: String) async -> URL? {
+        guard enabled, runningKey != nil else { return nil }
+        // After a start or restart in flight, not queued behind other reads.
+        let previous = engineOp
+        return await Task.detached(priority: .userInitiated) { () -> URL? in
+            await previous?.value
+            var out: UnsafeMutablePointer<CChar>?
+            let rc = NvFipsIngress(meshNpub, &out)
+            guard rc == 0, let out else {
+                print("FipsMesh: ingress to \(meshNpub.prefix(16)) failed (\(rc))")
+                return nil
+            }
+            defer { NvFipsFreeString(out) }
+            return URL(string: String(cString: out))
+        }.value
     }
 
     // MARK: - Mesh key
