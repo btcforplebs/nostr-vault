@@ -1,6 +1,6 @@
 // The public post page's mesh photo script: a photo the page marked (data-x, data-vaults) is read over FIPS when its
-// https server fails, from the vaults the page named and no others, racing the page server's copy; the reader starts
-// once, as the page opens, and stops after a quiet while.
+// https server fails, from the vaults the page named and no others, in the browser only (the site keeps no copy); the
+// reader starts once, as the page opens, and stops after a quiet while.
 // A tiny fake document; the last test reads through the real photo-only reader over a datagram fabric.
 import { test } from "node:test"
 import assert from "node:assert/strict"
@@ -87,33 +87,15 @@ test("a page whose photos all load over https stops the early reader after the q
   assert.deepEqual([f.calls.starts, f.calls.stops, f.calls.gets.length], [1, 1, 0])
 })
 
-test("the server's copy wins: shown from /thread/photo/<hash>, and the mesh read is stopped", async () => {
-  const f = fakeReader([V1], { delayMs: 30 }), a = img({ failed: true }), asked = []
-  const loadCached = async x => { asked.push(x); return `/thread/photo/${x}` }
-  await wireMeshPhotos(doc([a]), { ...f, loadCached })
-  assert.deepEqual(asked, [HASH])
-  assert.equal(a.src, `/thread/photo/${HASH}`)
-  assert.equal(a.link.href, a.src)
-  assert.equal(a.dataset.mesh, "loaded")
-  await new Promise(r => setTimeout(r, 50))
-  assert.equal(a.src, `/thread/photo/${HASH}`, "a mesh read that ends later doesn't replace it")
-})
-
-test("no server copy: the mesh read shows the photo; a slow server miss doesn't hold it up", async () => {
-  const f = fakeReader([V1]), a = img({ failed: true })
-  let missed = false
-  const loadCached = (x, signal) => new Promise(r => signal.addEventListener("abort", () => { missed = true; r(null) }))
-  await wireMeshPhotos(doc([a]), { ...f, loadCached })
-  assert.equal(a.src, "blob:image/png:3")
-  assert.equal(missed, true, "the server probe is stopped once the mesh answered")
-})
-
-test("the mesh can't reach the vault but the server has a copy: the copy shows", async () => {
-  const f = fakeReader([]), a = img({ failed: true })
-  const loadCached = x => new Promise(r => setTimeout(() => r(`/thread/photo/${x}`), 20))
-  await wireMeshPhotos(doc([a]), { ...f, loadCached })
-  assert.equal(a.dataset.mesh, "loaded")
-  assert.equal(a.src, `/thread/photo/${HASH}`)
+test("the photo is read in the browser only: no request to the site for a copy", async () => {
+  const f = fakeReader([]), a = img({ failed: true }), made = []
+  const saved = globalThis.Image, savedFetch = globalThis.fetch
+  globalThis.Image = class { constructor() { made.push(this) } }
+  globalThis.fetch = async u => { made.push(u); throw new Error("no fetch") }
+  try { await wireMeshPhotos(doc([a]), f) } finally { globalThis.Image = saved; globalThis.fetch = savedFetch }
+  assert.deepEqual(made, [])
+  assert.equal(a.dataset.mesh, "failed")
+  assert.equal(a.link.href, "https://media.example/dead.png", "a photo no vault has keeps its link")
 })
 
 test("one reader for the page; a photo no vault has is marked failed and keeps its link", async () => {
@@ -238,19 +220,18 @@ test("a photo that loads over https never gets a card", async () => {
   assert.equal(card(box), undefined)
 })
 
-test("a reply's photo is a fallback only: no reader at page open, no server copy, its vaults once it fails", async () => {
-  const f = fakeReader([V1]), reply = img({ reply: true }), asked = []
-  await wireMeshPhotos(doc([reply, img({ reply: true })]), { ...f, loadCached: async x => { asked.push(x); return "/thread/photo/" + x } })
+test("a reply's photo is a fallback only: no reader at page open, its vaults once it fails", async () => {
+  const f = fakeReader([V1]), reply = img({ reply: true })
+  await wireMeshPhotos(doc([reply, img({ reply: true })]), f)
   await settle()
   assert.equal(f.calls.starts, 0, "replies whose https photos load open no fips connection")
   reply.fail(); await settle()
   assert.equal(f.calls.starts, 1)
-  assert.deepEqual(asked, [], "no server copy for a reply")
   assert.equal(reply.src, "blob:image/png:3")
 })
 
-test("a reply that already failed when the script ran is read at once, still without the server copy", async () => {
-  const f = fakeReader([V1]), asked = [], reply = img({ reply: true, failed: true })
-  await wireMeshPhotos(doc([reply]), { ...f, loadCached: async x => { asked.push(x); return null } })
-  assert.deepEqual([f.calls.starts, asked.length, reply.dataset.mesh], [1, 0, "loaded"])
+test("a reply that already failed when the script ran is read at once", async () => {
+  const f = fakeReader([V1]), reply = img({ reply: true, failed: true })
+  await wireMeshPhotos(doc([reply]), f)
+  assert.deepEqual([f.calls.starts, reply.dataset.mesh], [1, "loaded"])
 })
