@@ -184,6 +184,8 @@ class HomeVaultSender @Inject constructor(
             return false
         }
         return try {
+            // One signed "get" for this blob, before the retries: it covers every check below.
+            val check = checkAuth(sha256)
             // Right after launch or a network change the mesh link to the
             // vault is still coming up and the first tries are reset: keep
             // trying for a while rather than fall back on the first one.
@@ -191,7 +193,7 @@ class HomeVaultSender @Inject constructor(
             var confirmed: Boolean? = null
             while (confirmed == null) {
                 confirmed = try {
-                    confirmOnce(npub, sha256)
+                    confirmOnce(npub, sha256, check)
                 } catch (e: IOException) {
                     FipsMediaRouter.forget(npub)
                     if (System.currentTimeMillis() + ENSURE_RETRY_MS > deadline) throw e
@@ -212,15 +214,15 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private suspend fun confirmOnce(npub: String, sha256: String): Boolean {
+    private suspend fun confirmOnce(npub: String, sha256: String, check: String?): Boolean {
         val base = FipsMediaRouter.ingressBase(npub) ?: return false
         val item = queue.items().firstOrNull { it.key == sha256 && it.type == HomeVaultQueue.TYPE_BLOB }
         if (item != null) {
-            val outcome = sendBlob(base, item, queue, ensureClient)
+            val outcome = sendBlob(base, item, queue, ensureClient, check)
             record(item, outcome, npub, System.currentTimeMillis(), queue, DeviceRole.HOME_VAULT)
             return outcome == HomeVaultSend.SENT
         }
-        return ensureClient.newCall(Request.Builder().url("$base/$sha256").head().build()).execute().use { it.isSuccessful }
+        return ensureClient.newCall(VaultCheck.request(base, sha256, check)).execute().use { it.isSuccessful }
     }
 
     /**
@@ -529,11 +531,17 @@ class HomeVaultSender @Inject constructor(
         }
     }
 
-    private suspend fun sendBlob(base: String, item: HomeVaultQueue.Item, queue: HomeVaultQueue, http: OkHttpClient = client): HomeVaultSend {
+    private suspend fun sendBlob(
+        base: String,
+        item: HomeVaultQueue.Item,
+        queue: HomeVaultQueue,
+        http: OkHttpClient = client,
+        check: String? = null,
+    ): HomeVaultSend {
         val sha = item.key
         val file = queue.blobFile(sha)
         // Already there (sent before a crash, or uploaded on the kiosk itself).
-        http.newCall(Request.Builder().url("$base/$sha").head().build()).execute().use {
+        http.newCall(VaultCheck.request(base, sha, check ?: checkAuth(sha))).execute().use {
             if (it.isSuccessful) return HomeVaultSend.SENT
         }
         if (!file.exists()) return HomeVaultSend.REJECTED
@@ -566,13 +574,28 @@ class HomeVaultSender @Inject constructor(
             listOf("x", sha256),
             listOf("expiration", expiration.toString()),
         )
+        return signedAuth(tags, content, "upload")
+    }
+
+    /**
+     * The owner's "get" for the "already on the vault" check, or null. Only with a local signer:
+     * Amber or a bunker would be asked once more per blob for a check that, unsigned, still works on
+     * the relay port My Devices reach. Only the mesh door needs it (#1050), for a sender the vault
+     * does not list (Tod, Tron #1048 #2).
+     */
+    private suspend fun checkAuth(sha256: String): String? {
+        if (!signerIsLocal()) return null
+        return signedAuth(VaultCheck.authTags(sha256, System.currentTimeMillis() / 1000), "Check home vault", "check")
+    }
+
+    private suspend fun signedAuth(tags: List<List<String>>, content: String, what: String): String? {
         val signed = try {
             // A random suffix keeps two auths for the same blob signed in the
             // same second apart: the vault takes each auth id once, and a
             // repeat id is a 403, which drops the item.
             signer(AUTH_KIND, "$content ${java.util.UUID.randomUUID().toString().take(8)}", tags)
         } catch (e: Exception) {
-            Log.w(TAG, "home vault: upload auth not signed: ${e.message}")
+            Log.w(TAG, "home vault: $what auth not signed: ${e.message}")
             null
         } ?: return null
         return Base64.encodeToString(signed.toByteArray(), Base64.NO_WRAP)
