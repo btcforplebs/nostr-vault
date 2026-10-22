@@ -2,6 +2,7 @@
 // its NIP-92 imeta urls not already there, each once. NoteText draws them under the text (NoteMedia) and leaves the
 // links out of it, as NostrContentFormatter strips mediaURLs.
 import { mediaType } from "./media.js"
+import { fipsRef } from "./fips-ref.js"
 
 // Nostr web clients serve a page, not a file, at /<64-hex> (SupportedMediaFormats.webPageHosts).
 const WEB_PAGE_HOSTS = new Set([
@@ -38,7 +39,7 @@ export function imetaType(url, mime = "") {
   return isWebPageHost(url) ? "" : "image"
 }
 
-/** The imeta media of a note, by url: { url, type, width?, height? }. */
+/** The imeta media of a note, by url: { url, type, width?, height?, x? } (x: its sha256, for a mesh fallback). */
 export function imetaMedia(tags) {
   const out = new Map()
   for (const t of tags ?? []) {
@@ -48,9 +49,24 @@ export function imetaMedia(tags) {
     const type = imetaType(f.url, f.m)
     if (!type) continue
     const [, w, h] = /^(\d+)x(\d+)$/.exec(f.dim ?? "") ?? []
-    out.set(f.url, w && h ? { url: f.url, type, width: +w, height: +h } : { url: f.url, type })
+    const m = w && h ? { url: f.url, type, width: +w, height: +h } : { url: f.url, type }
+    if (/^[0-9a-f]{64}$/i.test(f.x ?? "")) m.x = f.x.toLowerCase()
+    out.set(f.url, m)
   }
   return out
+}
+
+// A Blossom link names its blob in its path: /<sha256>[.ext] (BUD-01).
+const BLOSSOM_PATH = /\/([0-9a-f]{64})(\.[a-z0-9]{1,8})?$/i
+const pathHash = url => { try { return BLOSSOM_PATH.exec(new URL(url).pathname)?.[1].toLowerCase() } catch { return undefined } }
+
+/** One image link of a note as a MediaImage item, for the places that draw a single picture (Media grid, Compact
+ *  thumbs, reply previews, Vault): its imeta entry when `tags` has one, else the link. With no imeta hash, the hash
+ *  a Blossom path names, so a photo whose server lost it can still come from the author's mesh vault. */
+export function imageItem(url, tags) {
+  const m = imetaMedia(tags).get(url) ?? { url, type: "image" }
+  const x = m.x ?? (fipsRef(url) ? undefined : pathHash(url))
+  return x && !m.x ? { ...m, x } : m
 }
 
 /** The links in a note's text (already trimmed of trailing punctuation) and its tags -> its media, in order, each
@@ -60,7 +76,8 @@ export function noteMedia(links, tags) {
   const meta = imetaMedia(tags), seen = new Set(), out = []
   const add = m => { if (!seen.has(m.url)) { seen.add(m.url); out.push(m) } }
   for (const url of links) {
-    const m = meta.get(url), type = m?.type || mediaType(url)
+    // A NIP-F1 link (http://<npub>.fips/<sha256>) is a photo on a mesh vault, extension or not.
+    const m = meta.get(url), type = m?.type || mediaType(url) || (fipsRef(url) ? "image" : "")
     if (type) add(m ?? { url, type })
   }
   for (const m of meta.values()) add(m)

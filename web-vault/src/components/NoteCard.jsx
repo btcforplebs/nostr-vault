@@ -10,7 +10,7 @@ import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
-import { replyRefs, replyToPubkey, repostedId } from "../net/thread.js"
+import { replyRefs, replyToPubkey, repostInner, repostedId } from "../net/thread.js"
 import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
@@ -51,8 +51,9 @@ export function Undeleted({ ids, children }) {
 function card(event, memoryOnly, showParent) {
   if (event.kind === GENERIC_REPOST_KIND) return genericRepost(event, memoryOnly)
   if (event.kind === 6) {
-    let inner
-    try { inner = JSON.parse(event.content) } catch {}
+    // The embedded note is only as good as whoever reposted it: unsigned or tampered, it is fetched by id instead,
+    // so its pubkey never stands in as the author (whose mesh vault a photo would dial).
+    const inner = repostInner(event)
     const target = actionTarget(event)
     if (target) rememberNote(target)
     const open = inner?.id ?? repostedId(event)
@@ -132,7 +133,7 @@ function NoteBody({ event, memoryOnly, showParent = false }) {
         <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
       </div>
       {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
-      {hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} memoryOnly={memoryOnly} linkCards />}
+      {hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards />}
       {event.kind === 1 && <TranslateButton id={event.id} content={event.content} />}
     </>
   )

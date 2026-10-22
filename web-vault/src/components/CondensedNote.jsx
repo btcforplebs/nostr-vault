@@ -11,6 +11,8 @@ import { repostState } from "../net/blocks.js"
 import { Badges } from "./Badges.jsx"
 import { ago } from "./time.js"
 import { mediaType, mediaUrls, tileNote } from "../net/media.js"
+import { imageItem } from "../net/note-media.js"
+import { MediaImage } from "./MediaImage.jsx"
 import { gateIds } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
 import { replyRefs, repostedId } from "../net/thread.js"
@@ -118,7 +120,7 @@ function Row({ event, note, placeholder, depth = 0, lines, card = false, onOpen 
         {!parts.length && !media.length && !links.length && <p class="condensed-text muted">(no text)</p>}
         {links.length > 0 && <span class="condensed-link"><LinkIcon />{domainOf(links[0])}{links.length > 1 && <b>+{links.length - 1}</b>}</span>}
       </div>
-      {media.length > 0 && <Thumb url={media[0]} more={media.length - 1} big={root} />}
+      {media.length > 0 && <Thumb url={media[0]} note={note} more={media.length - 1} big={root} />}
     </div>
   )
 }
@@ -152,11 +154,12 @@ function label(note, depth) {
   return [depth ? `Reply, level ${depth}` : "Note", plainText(note.content).slice(0, 120)].filter(Boolean).join(": ")
 }
 
-function Thumb({ url, more, big }) {
+// A photo whose server lost it, or a .fips one, comes from the author's mesh vault (MediaImage), as in the note.
+export function Thumb({ url, note, more, big }) {
   const video = mediaType(url) === "video"
   return (
     <span class={`condensed-thumb${big ? " big" : ""}`} aria-hidden="true">
-      {video ? <span class="condensed-play">▶</span> : <img src={url} alt="" loading="lazy" referrerpolicy="no-referrer" onError={e => e.currentTarget.classList.add("failed")} />}
+      {video ? <span class="condensed-play">▶</span> : <MediaImage item={imageItem(url, note.tags)} author={note.pubkey} loading="lazy" onError={e => e.currentTarget.classList.add("failed")} />}
       {more > 0 && <span class="condensed-more">+{more}</span>}
     </span>
   )

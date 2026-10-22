@@ -9,6 +9,7 @@ import { onQuotes, parseRef, quoteSource } from "../net/quotes.js"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { splitHashtags } from "../net/hashtags.js"
 import { mediaType } from "../net/media.js"
+import { meshHost } from "../net/fips-ref.js"
 import { noteMedia } from "../net/note-media.js"
 import { NoteMedia } from "./NoteMedia.jsx"
 import { inlineMarks } from "../net/inline-md.js"
@@ -24,10 +25,10 @@ const MAX_QUOTE_DEPTH = 1
  *  `memoryOnly`: a stranger's note (Global, Hashtag): quotes and @names it loads aren't written to Haven /feed.
  *  `tags`: the note's tags, for its NIP-92 imeta media. Outside a DM, with images on, the note's media (text links
  *  and imeta, noteMedia) go under the text as one picture or a carousel (NoteMedia) and their links leave the text,
- *  as iOS FeedNoteRow does. */
+ *  as iOS FeedNoteRow does. `author`: the note's pubkey, for a photo on the author's mesh vault (MediaImage). */
 /*  `linkCards`: a feed card's links (not media, not nostr:) become up to three link cards under the text and leave it,
  *  as iOS LinkCards does. */
-export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false }) {
+export function NoteText({ content, tags, author, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false }) {
   let parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -44,13 +45,16 @@ export function NoteText({ content, tags, depth = 0, dm = false, memoryOnly = fa
       {parts.map((s, i) => {
         if (i % 2 === 0) return withMarks(s, i)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
+        // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
+        // send the name to DNS.
+        if (meshHost(s)) return <span key={i}>{s}</span>
         const type = mediaType(s)
         if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
         if (type === "video" && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
-      {media.length > 0 && <NoteMedia items={media} />}
+      {media.length > 0 && <NoteMedia items={media} author={author} />}
       {cards.map(url => <LinkCard key={url} url={url} />)}
     </div>
   )
@@ -62,7 +66,7 @@ export function cardLinks(parts) {
   const out = []
   for (let i = 1; i < parts.length; i += 2) {
     const s = parts[i]
-    if (/^https?:\/\//i.test(s) && !mediaType(s) && !out.includes(s)) out.push(s)
+    if (/^https?:\/\//i.test(s) && !mediaType(s) && !meshHost(s) && !out.includes(s)) out.push(s)
   }
   return out.slice(0, MAX_LINK_CARDS)
 }

@@ -7,6 +7,8 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
 import { NoteText } from "../components/NoteText.jsx"
+import { MediaImage } from "../components/MediaImage.jsx"
+import { imageItem } from "../net/note-media.js"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
@@ -224,7 +226,7 @@ function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt,
       if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
       const list = mediaFor(own)
       return list.length
-        ? <div class="vault-grid">{list.map(p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><img src={p.url} alt="" loading="lazy" /></a>)}</div>
+        ? <div class="vault-grid">{list.map(p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><MediaImage item={p.item} author={me} loading="lazy" /></a>)}</div>
         : <Empty text="Pictures from your notes show here." />
     }
     case "likes": return likes.length ? likes.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
@@ -255,7 +257,7 @@ export function ActivityRow({ row, trusted = () => false }) {
       {["reply", "mention", "quote", "article", "highlight"].includes(row.kind)
         ? <NoteText content={row.preview} images={ok} />
         : row.preview ? <div class="repost-line vault-about"><span>{cut(row.preview)}</span></div> : null}
-      {row.images.length > 0 && <div class="vault-thumbs">{row.images.slice(0, 4).map(u => <img key={u} src={u} alt="" loading="lazy" />)}</div>}
+      {row.images.length > 0 && <div class="vault-thumbs">{row.images.slice(0, 4).map(u => <MediaImage key={u} item={imageItem(u)} author={row.imagesBy} loading="lazy" />)}</div>}
     </article>
   )
 }
