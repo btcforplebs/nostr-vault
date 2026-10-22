@@ -41,3 +41,15 @@
   color: #fff; font: var(--t-foot); font-variant-numeric: tabular-nums; pointer-events: none; }
 .lightbox .media-nav { width: 44px; height: 44px; }
 @media (prefers-reduced-motion: reduce) { .media-nav { transition: none; } }
+
+/* A photo on a FIPS vault while it loads, or when it can't be reached (MediaImage). */
+.media-mesh { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 160px; max-height: 400px;
+  padding: 12px; color: var(--text-2); font: var(--t-foot); text-align: center; }
+.media-slide .media-mesh { height: 100%; max-height: none; }
+.lightbox-page .media-mesh { color: #ccc; }
+/* In a small square (Media grid, Compact thumb, Vault) it fills the square; "not reachable" is the tooltip only. */
+.media-tile .media-mesh, .condensed-thumb .media-mesh, .vault-thumb .media-mesh { height: 100%; min-height: 0; }
+.vault-thumbs .media-mesh { width: 72px; height: 72px; min-height: 0; border-radius: 8px; background: var(--s2); }
+.media-mesh-text:is(.media-tile *, .condensed-thumb *, .vault-thumb *, .vault-thumbs *) { position: absolute;
+  width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* spinner alone; text for readers */
+.parent-preview .media-mesh { min-height: 80px; max-height: 150px; margin-top: 4px; }

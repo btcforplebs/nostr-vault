@@ -4,7 +4,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure"
 import { naddrEncode, neventEncode, noteEncode, npubEncode } from "nostr-tools/nip19"
-import { noteParts, parseTarget, previewMeta, renderMissing, renderPost, replyList, threadUrl } from "../thread-page/page.js"
+import { readFileSync } from "node:fs"
+import { appLink, noteParts, parseTarget, previewMeta, renderMissing, renderPost, replyList, threadUrl } from "../thread-page/page.js"
 import { loadThread, relaysFor, safeRelay } from "../thread-page/fetch.js"
 
 const alice = generateSecretKey(), bob = generateSecretKey()
@@ -61,7 +62,7 @@ test("the way in: a note's Reply, Repost, Like and Zap all open it in the web ap
     assert.match(html, new RegExp(`<a class="act" href="/vault/#/thread/${post.id}" aria-label="${label} in the web app">`))
   assert.match(html, new RegExp(`class="btn primary" href="/vault/#/thread/${post.id}">Reply on the web<`))
   assert.match(html, /class="btn" href="nostr:nevent1[a-z0-9]+">Open in the app</)
-  assert.doesNotMatch(html, /<script|<form/)
+  assert.doesNotMatch(html, /<form/)
   const article = sign(alice, 30023, "# hi", [["d", "a"], ["title", "Hi"]])
   const ahtml = renderPost({ post: article, replies: [], profiles: new Map(), code: naddrEncode({ kind: 30023, pubkey: A, identifier: "a" }) })
   assert.doesNotMatch(ahtml, /class="act"/)
@@ -100,6 +101,35 @@ test("replies: a note's reply tree, nested and oldest first; a long-form post's 
   const art = sign(alice, 30023, "body", [["d", "s"]])
   const c1 = sign(bob, 1111, "comment", [["A", `30023:${A}:s`]]), c2 = sign(alice, 1, "note reply", [["a", `30023:${A}:s`]])
   assert.deepEqual(replyList(art, [c2, c1, c1]).map(r => [r.event.content, r.depth]), [["comment", 1], ["note reply", 1]])
+})
+
+test("a browser goes straight into the web app on the post; the og: card stays for link previews", () => {
+  const post = sign(alice, 1, "hello https://blossom.example/a.jpg")
+  const html = renderPost({ post, replies: [], profiles: new Map(), code: neventEncode({ id: post.id }), hints: ["wss://relay.example"] })
+  assert.match(html, new RegExp(`<meta name="nv-open" content="/vault/#/thread/${post.id}\\?r=wss%3A%2F%2Frelay.example">`))
+  assert.equal(html.split("<script").length, 2, "one script")
+  assert.match(html, /<script src="\/open-post.js"><\/script>\n<\/head>/, "the site's own, in the head, before the body draws")
+  assert.match(html, /<meta property="og:image" content="https:\/\/blossom.example\/a.jpg">/)
+  assert.doesNotMatch(html, /share-photos|data-vaults|data-x=/, "no mesh reader on this page any more: the app reads mesh photos")
+  assert.doesNotMatch(renderMissing({ code: "nevent1x", valid: true }), /<script|nv-open/, "a page that isn't a post sends no one anywhere")
+
+  assert.equal(appLink(post), `/vault/#/thread/${post.id}`)
+  assert.equal(appLink(post, ["wss://a.example", "wss://b.example", "wss://c.example", "wss://d.example"]).split("r=").length, 4, "three hints at most")
+  assert.equal(appLink({ id: post.id }, ['wss://x.example/"><script>']), `/vault/#/thread/${post.id}?r=wss%3A%2F%2Fx.example%2F%22%3E%3Cscript%3E`)
+
+  const script = readFileSync(new URL("../../website/open-post.js", import.meta.url), "utf8")
+  assert.match(script, /startsWith\("\/vault\/#\/thread\/"\)/, "open-post.js goes nowhere but a post in the web app")
+  assert.match(script, /location\.replace\(/)
+})
+
+test("the /thread/ CSP: one script, the site's open-post.js; the page connects to nothing", () => {
+  const conf = readFileSync(new URL("../../website/nginx.conf", import.meta.url), "utf8")
+  const csp = /~\^\/thread\/\s+"([^"]+)"/.exec(conf)[1]
+  const dir = name => csp.split(";").map(d => d.trim().split(/\s+/)).find(d => d[0] === name)?.slice(1)
+  assert.deepEqual(dir("script-src"), ["https://nostrvault.app/open-post.js"])
+  assert.deepEqual(dir("default-src"), ["'none'"])
+  assert.equal(dir("connect-src"), undefined, "falls back to default-src 'none'")
+  assert.doesNotMatch(csp, /unsafe-eval|wasm|unsafe-inline'; *script/)
 })
 
 test("not found and not a post: a 404 page that says which, no index", () => {

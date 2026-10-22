@@ -24,7 +24,7 @@ export function KindBody({ event, memoryOnly }) {
   if (event.kind === ARTICLE_KIND) return <ArticleBody event={event} />
   if (event.kind === HIGHLIGHT_KIND) return <HighlightBody event={event} memoryOnly={memoryOnly} />
   const poll = parsePoll(event)
-  return poll ? <PollBody poll={poll} event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} memoryOnly={memoryOnly} />
+  return poll ? <PollBody poll={poll} event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} />
 }
 
 /** Image, title (three lines), "Long-form · N min read" (or Locked), then the summary or the first 200 characters. */

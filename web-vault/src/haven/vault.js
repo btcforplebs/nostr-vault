@@ -19,6 +19,15 @@ const DEVICE_KEY = "nv-device-sk"
 const WASM = new URL("../../../web-relay/public/haven.wasm", import.meta.url)
 // FIPS keys (this browser's mesh key, paired vaults) under VAULT_NS: /relay/ is the same origin and keeps its own.
 const FIPS_ITEMS = ["fips-relay-key", "fips-owners"]
+/** Starts haven.wasm downloading beside the app's own script, before startVault asks for it: a preload with the same
+ *  URL and mode (cors, same-origin credentials) as loadHaven's fetch, so the browser hands that fetch this response.
+ *  Added by main.jsx for someone signed in only, not in index.html, so a guest (src/guest) never downloads it. */
+export function preloadHaven(doc = document) {
+  const link = doc.createElement("link")
+  Object.assign(link, { rel: "preload", as: "fetch", type: "application/wasm", crossOrigin: "anonymous", href: WASM.href })
+  doc.head.append(link)
+}
+
 export const fipsStorage = (storage = localStorage) => pageStorage(storage, VAULT_NS)
 
 /** This browser's own key: answers Haven's AUTH. Not a user key, and it never signs anything public. */

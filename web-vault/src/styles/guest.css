@@ -1,0 +1,8 @@
+/* Guest view (src/guest/GuestApp.jsx): a floating bar where the tab bar would be, with sign-in. */
+.guest-bar { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom)); z-index: 20;
+  max-width: 420px; margin: 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px;
+  border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--hair); }
+.guest-bar .guest-note { flex: 1; font: var(--t-foot); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guest-bar a.button { color: var(--text); }
+.guest-back { max-width: 420px; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 24px 0; }
