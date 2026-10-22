@@ -34,6 +34,9 @@ internal object MeshEnginePlan {
             maxServeBytes = maxServeBytes,
             ownDevices = own,
             strangersPort = if (own.isEmpty()) 0 else config.meshPort,
+            // Reading a follow's vault: through the seeds, no dial, so it never gets this phone's address.
+            // Only with own devices: with none the engine stays open and shares the door, as before.
+            readAnyone = own.isNotEmpty(),
         )
     }
 

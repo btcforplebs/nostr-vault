@@ -65,6 +65,15 @@ pub struct StartOptions {
     /// door is the policy layer for mesh visitors. They find this node
     /// through `public_seeds`. 0: they get silence.
     pub strangers_port: u16,
+    /// Read anyone's vault without giving it this node's address: offers
+    /// are answered for `own_devices` only (for nobody when it is empty), and
+    /// `ingress` to an npub outside it sends no traversal offer. The vault is
+    /// reached over the mesh through the public seeds, on the strangers'
+    /// capped stack, never the owner's. Without `public_seeds` such a vault
+    /// is out of reach (the read fails, the app falls back to the URL), but
+    /// offers still go unanswered: the engine is never open. For a phone that
+    /// reads its follows' photos (client engine).
+    pub read_anyone: bool,
 }
 
 /// What sharing gives the mesh before it stops, unless the app sets its own.
@@ -124,6 +133,9 @@ struct StrangersOut {
 struct Reading {
     npub: String,
     port: u16,
+    /// Read over the strangers' stack, without a dial (read_anyone).
+    #[serde(skip)]
+    via_mesh: bool,
 }
 
 /// Served = friends reading this phone's relay; read = this phone reading
@@ -176,6 +188,8 @@ struct Running {
     strangers: Option<strangers::Strangers>,
     /// Where strangers go while sharing (`StartOptions::strangers_port`).
     strangers_port: u16,
+    /// `StartOptions::read_anyone`.
+    read_anyone: bool,
     stop: tokio::sync::oneshot::Sender<()>,
     node_thread: std::thread::JoinHandle<()>,
 }
@@ -235,10 +249,11 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
         let list: Vec<String> = opts.relays.iter().map(|r| serde_json::Value::from(r.as_str()).to_string()).collect();
         format!("      advert_relays: [{0}]\n      dm_relays: [{0}]\n", list.join(", "))
     };
-    let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
+    let own = own_devices::OwnDevices::parse_for(&opts.own_devices, opts.read_anyone)?;
     // An open node already serves everyone.
     anyhow::ensure!(opts.strangers_port == 0 || own.is_some(), "strangers_port needs own_devices");
-    let allowlist = own.as_ref().map(own_devices::OwnDevices::allowlist_yaml).unwrap_or_default();
+    let me = Identity::from_secret_key(decode_nsec(nsec.as_str()).context("nsec")?).npub();
+    let allowlist = own.as_ref().map(|o| o.allowlist_yaml(&me)).unwrap_or_default();
     let mut dialed: Vec<String> = Vec::new();
     for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
         let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
@@ -302,7 +317,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         return Ok(());
     }
     let yaml = config_yaml(nsec, opts)?;
-    let own = own_devices::OwnDevices::parse(&opts.own_devices)?;
+    let own = own_devices::OwnDevices::parse_for(&opts.own_devices, opts.read_anyone)?;
     let relay_socket = relay_link::socket_path(&opts.relay_socket)?;
     if let Some(path) = &relay_socket {
         // A socket file left by a run that was killed would fail the bind.
@@ -327,7 +342,9 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         None => from_mesh,
         Some(own) => {
             let (to_stack, stack_rx) = std::sync::mpsc::channel();
-            let to_strangers = if opts.strangers_port != 0 {
+            // Strangers' stack: the door while sharing, and the vaults read
+            // without a dial (read_anyone), whose packets are not own devices'.
+            let to_strangers = if opts.strangers_port != 0 || opts.read_anyone {
                 let (tx, rx) = std::sync::mpsc::channel();
                 // The app's limit is the strangers' total: own devices stay uncapped.
                 match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx, opts.max_serve_bytes) {
@@ -386,6 +403,7 @@ pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
         own,
         strangers: stranger_side,
         strangers_port: opts.strangers_port,
+        read_anyone: opts.read_anyone,
         stop: stop_tx,
         node_thread,
     });
@@ -448,35 +466,53 @@ pub fn unexport() -> i32 {
 /// A loopback URL base, `http://127.0.0.1:<port>/<token>`, whose requests
 /// reach `npub`'s shared relay over the mesh: append the path (`/<sha256>`,
 /// or nothing for the relay). The token keeps other apps on the phone out, so
-/// it is never logged or put in `status_json`. The same npub gets the same URL. Any npub works: one the node did
+/// it is never logged or put in `status_json`. The same npub gets the same URL. Any npub works (see `IngressRoute`): one the node did
 /// not start with is added as a peer, found through its Nostr advert.
 /// Waits up to 10 s for the node: call it off the UI thread. At most 32
 /// vaults stay open; opening one more closes the least recently read.
 pub fn ingress(npub: &str) -> Result<String, i32> {
-    let control = match state().as_ref() {
-        Some(run) if run.own.as_ref().is_some_and(|own| !own.contains(npub)) => return Err(ERR_NOT_OWN),
-        Some(run) => run.control.clone(),
+    let (route, control) = match state().as_ref() {
+        Some(run) => (ingress_route(run.own.as_ref(), run.read_anyone, npub), run.control.clone()),
         None => return Err(ERR_NOT_RUNNING),
     };
     let Ok(peer) = PeerIdentity::from_npub(npub) else { return Err(ERR_BAD_NPUB) };
-    // Outside the state lock: the rx loop answers, and never takes that lock.
-    if let Err(e) = add_peer(&control, npub) {
-        tracing::warn!("mesh add peer {npub}: {e:#}");
-        return Err(ERR_START);
+    match route {
+        IngressRoute::Refuse => return Err(ERR_NOT_OWN),
+        // A dial sends this node's address: own devices, or an open node.
+        // Outside the state lock: the rx loop answers, and never takes that lock.
+        IngressRoute::Dial => {
+            if let Err(e) = add_peer(&control, npub) {
+                tracing::warn!("mesh add peer {npub}: {e:#}");
+                return Err(ERR_START);
+            }
+        }
+        // No offer: the session finds the vault through the seeds.
+        IngressRoute::ViaMesh => {}
     }
     let mut state = state();
     let Some(run) = state.as_mut() else { return Err(ERR_NOT_RUNNING) };
-    match run.ctl.connect_port(peer.address().to_ipv6()) {
+    let via_mesh = route == IngressRoute::ViaMesh;
+    let ctl = match (via_mesh, run.strangers.as_ref()) {
+        (false, _) => run.ctl.clone(),
+        (true, Some(s)) => s.ctl.clone(),
+        // read_anyone always starts the strangers' stack.
+        (true, None) => return Err(ERR_START),
+    };
+    match ctl.connect_port(peer.address().to_ipv6()) {
         Ok(reader) => {
             let port = reader.port;
             // Most recently read last; past the cap the stalest listener goes,
             // matching the node's own cap on peers added this way.
             run.reading.retain(|r| r.npub != npub);
-            run.reading.push(Reading { npub: npub.to_string(), port });
+            run.reading.push(Reading { npub: npub.to_string(), port, via_mesh });
             while run.reading.len() > MAX_READING {
                 let old = run.reading.remove(0);
                 if let Ok(id) = PeerIdentity::from_npub(&old.npub) {
-                    run.ctl.close_connect(id.address().to_ipv6());
+                    let ctl = match (old.via_mesh, run.strangers.as_ref()) {
+                        (true, Some(s)) => &s.ctl,
+                        _ => &run.ctl,
+                    };
+                    ctl.close_connect(id.address().to_ipv6());
                 }
             }
             Ok(reader.url())
@@ -485,6 +521,26 @@ pub fn ingress(npub: &str) -> Result<String, i32> {
             tracing::warn!("mesh ingress {npub}: {e:#}");
             Err(ERR_START)
         }
+    }
+}
+
+/// How `ingress` reaches a vault.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum IngressRoute {
+    /// Add it as a peer and dial it: it gets this node's address.
+    Dial,
+    /// Over the mesh through the seeds, no offer: it never learns the address.
+    ViaMesh,
+    /// Outside own devices, and reading anyone is off (ERR_NOT_OWN).
+    Refuse,
+}
+
+fn ingress_route(own: Option<&own_devices::OwnDevices>, read_anyone: bool, npub: &str) -> IngressRoute {
+    match own {
+        None => IngressRoute::Dial,
+        Some(o) if o.contains(npub) => IngressRoute::Dial,
+        Some(_) if read_anyone => IngressRoute::ViaMesh,
+        Some(_) => IngressRoute::Refuse,
     }
 }
 
@@ -572,7 +628,7 @@ pub fn status_json() -> String {
             uptime_s: run.started.elapsed().as_secs(),
             exported: run.exported.filter(|_| !run.cap_reached()).into_iter().collect(),
             peers: Vec::new(),
-            reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port }).collect(),
+            reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port, via_mesh: r.via_mesh }).collect(),
             counters: CountersOut::from(&run.ctl.counters),
             cap_reached: run.cap_reached(),
             max_serve_bytes: run.serve_total(),
@@ -784,6 +840,45 @@ mod tests {
         assert_eq!(serve_limits(&opts).total_bytes, 5 << 30);
         let own = StartOptions { own_devices: vec![Identity::generate().npub()], max_serve_bytes: 100 << 20, ..Default::default() };
         assert_eq!(serve_limits(&own), stack::ServeLimits::default(), "own devices are not capped");
+    }
+
+    /// A reading phone answers offers from its own devices only, or from no
+    /// one: an open node answers anyone who knows its npub, with its public
+    /// and LAN address (Tron, #1023).
+    #[test]
+    fn read_anyone_answers_own_devices_only() {
+        let nsec = generate_nsec();
+        let me = Identity::from_secret_key(decode_nsec(&nsec).unwrap()).npub();
+        let allow = |opts: &StartOptions| -> Vec<String> {
+            let cfg: Config = serde_yaml::from_str(&config_yaml(&nsec, opts).unwrap()).unwrap();
+            cfg.node.rendezvous.nostr.offer_allowlist
+        };
+        // The control: the open client engine of today answers everyone.
+        assert!(allow(&StartOptions { public_seeds: true, lan: true, ..Default::default() }).is_empty());
+        // No devices: only this node itself, so no one else is answered.
+        let none = StartOptions { read_anyone: true, public_seeds: true, lan: true, ..Default::default() };
+        assert_eq!(allow(&none), vec![me.clone()]);
+        let mac = Identity::generate().npub();
+        let mine = StartOptions { own_devices: vec![mac.clone()], read_anyone: true, public_seeds: true, ..Default::default() };
+        assert_eq!(allow(&mine), vec![mac]);
+        // Without the seeds (middle server None) it still answers no one.
+        assert_eq!(allow(&StartOptions { read_anyone: true, ..Default::default() }), vec![me.clone()]);
+    }
+
+    /// Own devices are dialed; anyone else is read through the mesh with no
+    /// offer when read_anyone is on, and refused when it is off.
+    #[test]
+    fn ingress_dials_own_devices_only() {
+        let mac = Identity::generate().npub();
+        let follow = Identity::generate().npub();
+        let own = own_devices::OwnDevices::parse(&[mac.clone()]).unwrap().unwrap();
+        assert_eq!(ingress_route(None, false, &follow), IngressRoute::Dial, "an open node dials, as before");
+        assert_eq!(ingress_route(Some(&own), true, &mac), IngressRoute::Dial);
+        assert_eq!(ingress_route(Some(&own), true, &follow), IngressRoute::ViaMesh);
+        assert_eq!(ingress_route(Some(&own), false, &follow), IngressRoute::Refuse);
+        let empty = own_devices::OwnDevices::parse_for(&[], true).unwrap().unwrap();
+        assert_eq!(ingress_route(Some(&empty), true, &follow), IngressRoute::ViaMesh);
+        assert!(own_devices::OwnDevices::parse_for(&[], false).unwrap().is_none(), "no devices, not reading: open as before");
     }
 
     #[test]

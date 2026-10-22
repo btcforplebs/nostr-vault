@@ -47,13 +47,26 @@ impl OwnDevices {
         Ok(Some(out))
     }
 
+    /// As [`Self::parse`], but `read_anyone` keeps own-devices mode on with
+    /// an empty list: a phone with no other device still answers no one.
+    pub fn parse_for(npubs: &[String], read_anyone: bool) -> Result<Option<Self>> {
+        match Self::parse(npubs)? {
+            None if read_anyone => Ok(Some(Self { npubs: Vec::new(), addresses: HashSet::new() })),
+            own => Ok(own),
+        }
+    }
+
     pub fn contains(&self, npub: &str) -> bool {
         PeerIdentity::from_npub(npub).is_ok_and(|id| self.npubs.contains(&id.npub()))
     }
 
     /// The `rendezvous.nostr` line that answers offers from these npubs only.
-    pub fn allowlist_yaml(&self) -> String {
-        let list: Vec<String> = self.npubs.iter().map(|n| format!("\"{n}\"")).collect();
+    /// `me` is this node: with no devices it is the whole list, since FIPS
+    /// reads an empty allowlist as none and would answer everyone.
+    pub fn allowlist_yaml(&self, me: &str) -> String {
+        let me = [me.to_string()];
+        let npubs = if self.npubs.is_empty() { &me[..] } else { &self.npubs[..] };
+        let list: Vec<String> = npubs.iter().map(|n| format!("\"{n}\"")).collect();
         format!("      offer_allowlist: [{}]\n", list.join(", "))
     }
 }
@@ -189,7 +202,7 @@ mod tests {
         assert!(own.contains(&npub));
         assert!(!own.contains(&Identity::generate().npub()));
         assert!(!own.contains("npub1nope"));
-        assert_eq!(own.allowlist_yaml(), format!("      offer_allowlist: [\"{npub}\", \"{other}\"]\n"));
+        assert_eq!(own.allowlist_yaml("npub1me"), format!("      offer_allowlist: [\"{npub}\", \"{other}\"]\n"));
         // Something that is not an npub never reaches the config.
         let hostile = format!("{npub}\"]\n      policy: open #");
         assert!(OwnDevices::parse(&[hostile]).is_err());

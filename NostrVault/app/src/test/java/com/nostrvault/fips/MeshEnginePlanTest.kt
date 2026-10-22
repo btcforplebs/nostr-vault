@@ -22,6 +22,9 @@ class MeshEnginePlanTest {
 
         assertEquals(listOf(phone, mac, kiosk), options.ownDevices)
         assertEquals(config.meshPort, options.strangersPort)
+        // A follow's vault is read through the seeds, no dial: it never gets this phone's address,
+        // and ingress to it is not refused (ERR_NOT_OWN) as it was with own devices set.
+        assertTrue(options.readAnyone)
         // Own devices reach the relay; the engine refuses the door and the relay being one port.
         val share = MeshEnginePlan.sharePort(config, options.ownDevices)
         assertEquals(4000, share)
@@ -35,6 +38,8 @@ class MeshEnginePlanTest {
 
         assertEquals(emptyList<String>(), options.ownDevices)
         assertEquals(0, options.strangersPort)  // the library refuses strangers_port without own_devices
+        // read_anyone would close the engine, and this phone's door with it.
+        assertEquals(false, options.readAnyone)
         assertEquals(config.meshPort, MeshEnginePlan.sharePort(config, options.ownDevices))
     }
 
@@ -53,6 +58,7 @@ class MeshEnginePlanTest {
 
         assertTrue(json, json.contains("\"own_devices\":[\"$mac\"]"))
         assertTrue(json, json.contains("\"strangers_port\":4001"))
+        assertTrue(json, json.contains("\"read_anyone\":true"))
     }
 
     /**

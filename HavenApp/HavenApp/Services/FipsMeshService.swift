@@ -285,10 +285,11 @@ final class FipsMeshService: ObservableObject {
     func ingressURL(meshNpub: String) async -> URL? {
         guard FipsMeshSettings.enabled else { return nil }
         let sharing = kioskActive || starting
+        let clientOptions = clientOptionsJSON()
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> URL? in
             await previous?.value
-            return Self.startClientAndIngress(meshNpub: meshNpub, closeDoor: !sharing)
+            return Self.startClientAndIngress(meshNpub: meshNpub, closeDoor: !sharing, clientOptions: clientOptions)
         }
         engineOp = Task { _ = await op.value }
         let url = await op.value
@@ -346,6 +347,16 @@ final class FipsMeshService: ObservableObject {
         return json
     }
 
+    /// The client engine's start options, JSON: My Devices only, anyone
+    /// else read without a dial.
+    private func clientOptionsJSON() -> String {
+        Self.startOptions(MeshDevicesLogic.clientEngineOptions(
+            devices: FipsMeshDevices.current(ConfigService.shared.config),
+            ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
+            relays: FipsMeshSettings.finderRelays,
+            seeds: FipsMeshSettings.middleServer == .publicSeeds))
+    }
+
     /// Inside the app's tmp dir: short enough for a socket path (libnvfips
     /// refuses one over 100 bytes; this is about 95).
     nonisolated private static var relaySocketPath: String {
@@ -360,10 +371,11 @@ final class FipsMeshService: ObservableObject {
             return nil
         }
         let sharing = kioskActive || starting
+        let clientOptions = clientOptionsJSON()
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> Bool in
             await previous?.value
-            return Self.startClientWithRelayLink(closeDoor: !sharing)
+            return Self.startClientWithRelayLink(closeDoor: !sharing, clientOptions: clientOptions)
         }
         engineOp = Task { _ = await op.value }
         guard await op.value else {
@@ -381,10 +393,11 @@ final class FipsMeshService: ObservableObject {
     func relayPush(relayNpub: String, eventsJSON: String, timeoutMs: UInt32 = 90_000) async -> Result<String, MeshError> {
         guard FipsMeshSettings.enabled else { return .failure(MeshError(message: Self.offMessage)) }
         let sharing = kioskActive || starting
+        let clientOptions = clientOptionsJSON()
         let previous = engineOp
         let op = Task.detached(priority: .userInitiated) { () -> Result<String, MeshError> in
             await previous?.value
-            guard Self.startClientWithRelayLink(closeDoor: !sharing) else {
+            guard Self.startClientWithRelayLink(closeDoor: !sharing, clientOptions: clientOptions) else {
                 return .failure(MeshError(message: "The mesh did not start"))
             }
             var out: UnsafeMutablePointer<CChar>?
@@ -407,14 +420,15 @@ final class FipsMeshService: ObservableObject {
 
     /// Off the main thread. A running engine without the relay link is
     /// restarted with it, unless kiosk mode owns it.
-    nonisolated private static func startClientWithRelayLink(closeDoor: Bool) -> Bool {
+    nonisolated private static func startClientWithRelayLink(closeDoor: Bool, clientOptions: String) -> Bool {
         guard let nsec = meshNsec() else { return false }
-        guard NvFipsStart(nsec, startOptions(closeDoor ? ["lan": true] : [:])) == 0 else { return false }
+        // While sharing, the kiosk's engine is reused (start keeps a running one).
+        guard NvFipsStart(nsec, clientOptions) == 0 else { return false }
         if closeDoor { SetMeshServingC(0) }
         if closeDoor, !engineHasRelayLink() {
             // Started earlier for the home vault, before a browser relay was set.
             NvFipsStop()
-            guard NvFipsStart(nsec, startOptions(["lan": true])) == 0 else { return false }
+            guard NvFipsStart(nsec, clientOptions) == 0 else { return false }
             SetMeshServingC(0)
         }
         return true
@@ -470,12 +484,13 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
-    nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool) -> URL? {
+    nonisolated private static func startClientAndIngress(meshNpub: String, closeDoor: Bool, clientOptions: String) -> URL? {
         guard let nsec = meshNsec() else { return nil }
         // Idempotent: a running engine (kiosk or an earlier client start) is
-        // reused. A client offers LAN candidates, so two phones on one Wi-Fi
-        // connect (as Android does); kiosk mode restarts without them.
-        guard NvFipsStart(nsec, startOptions(closeDoor ? ["lan": true] : [:])) == 0 else { return nil }
+        // reused. A client answers and dials only My Devices; anyone else's
+        // vault is read through the seeds without learning this phone's
+        // address (MeshDevicesLogic.clientEngineOptions).
+        guard NvFipsStart(nsec, clientOptions) == 0 else { return nil }
         if closeDoor { SetMeshServingC(0) }
         var out: UnsafeMutablePointer<CChar>?
         let rc = NvFipsIngress(meshNpub, &out)
