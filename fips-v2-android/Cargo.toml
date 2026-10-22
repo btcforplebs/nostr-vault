@@ -12,13 +12,12 @@ name = "nvfips"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Our fork, branch nv/v0.5.3-cache-identity (nv/v0.5.3 at cf84766d plus the
-# cache_identity control command): v0.5.3 plus the datagram API built on
-# Android and iOS (for the browser relay link), offer_allowlist and
-# reserved_npubs. Must be
-# the same rev as web-relay-vault, so the app links one fips. Back to a
-# jmcorgan/fips tag once they land in a release.
-fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "2cad66d8" }
+# Our fork, branch nv/v0.5.3: v0.5.3 plus the datagram API built on Android and
+# iOS (for the browser relay link), offer_allowlist, reserved_npubs and the
+# cache_identity control command. Must be the same rev as web-relay-vault, so
+# the app links one fips. Back to a jmcorgan/fips tag once they land in a
+# release.
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "e831d6d5" }
 # The browser relay protocol (NIP-01 over TCP/FIPS 7447), over this node's
 # datagram API: relay_link.rs.
 web-relay-vault = { path = "../web-relay-vault" }
