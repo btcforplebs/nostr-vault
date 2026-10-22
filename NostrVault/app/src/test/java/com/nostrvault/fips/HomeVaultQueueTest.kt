@@ -162,6 +162,25 @@ class HomeVaultQueueTest {
         assertEquals(emptyList<String>(), HomeVaultRules.unlisted(listOf("fipsmesh://$mac/"), listOf(mac)))
     }
 
+    /** Tim 2026-10-22: switching the home vault Mac→Moto dropped the Mac though it was still in My Devices. */
+    @Test
+    fun `a vault that stops being the home vault stays listed while it is in My Devices`() {
+        val mac = "npub1" + "m".repeat(58)
+        val moto = "npub1" + "t".repeat(58)
+        val newest = listOf("https://a.example", "fipsmesh://$mac/")
+        assertEquals(
+            listOf("https://a.example", "fipsmesh://$mac/", "fipsmesh://$moto/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = moto,
+                dropMesh = setOf(mac), myDevices = listOf(mac, moto)),
+        )
+        // Removed from My Devices: it goes.
+        assertEquals(
+            listOf("https://a.example", "fipsmesh://$moto/"),
+            HomeVaultRules.mergeServerList(newest, listOf("https://a.example"), homeVault = moto,
+                dropMesh = setOf(mac), myDevices = listOf(moto)),
+        )
+    }
+
     @Test
     fun `a sender lists its home vault and drops the one it replaced`() {
         val other = "npub1" + "z".repeat(58)
