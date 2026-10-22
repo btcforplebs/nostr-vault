@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/keys/signers.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signers — Nostr Vault Docs</title>
+    <meta name="description" content="Keep your Nostr secret key out of Nostr Vault with a signer: Amber on Android, Clave on iPhone, a bunker link from any signer app, or a browser extension on the web.">
+    <link rel="canonical" href="https://nostrvault.app/docs/keys/signers/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/keys/signers/">
+    <meta property="og:title" content="Signers — Nostr Vault Docs">
+    <meta property="og:description" content="Keep your Nostr secret key out of Nostr Vault with a signer: Amber on Android, Clave on iPhone, a bunker link from any signer app, or a browser extension on the web.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/" aria-current="page">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Keys and accounts</p>
+            <h1>Signers</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#which-signer-where">Which signer, where</a></li><li><a href="#setup">Sign in with a signer during setup</a></li><li><a href="#add">Add a signer to an account you already have</a></li><li><a href="#web">On the web</a></li><li><a href="#tips">Good to know</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>A signer is a separate app that holds your secret key. When Nostr Vault wants to post, like or send a message as
+                    you, it asks the signer, and the signer approves. Your key never enters Nostr Vault, so a problem in Nostr Vault
+                    can't leak it.</p>
+
+                <h2 id="which-signer-where">Which signer, where</h2>
+                <div class="docs-table-wrap"><table>
+                    <tr><th>Device</th><th>Signers</th><th>How it connects</th></tr>
+                    <tr><td>Android</td><td>Amber, or any signer app on the phone</td><td><span class="ui">Use Amber</span>, or
+                        <span class="ui">Use a signer app</span> &rarr; <span class="ui">Sign in with a signer app</span></td></tr>
+                    <tr><td>iPhone and iPad</td><td>Clave</td><td><span class="ui">Use a signer app</span> &rarr;
+                        <span class="ui">Sign in with Clave</span></td></tr>
+                    <tr><td>Mac</td><td>Clave on your iPhone</td><td><span class="ui">Connect with Clave on your iPhone</span> shows a
+                        code to scan</td></tr>
+                    <tr><td>Web</td><td>A Nostr browser extension</td><td><span class="ui">Sign in with extension</span></td></tr>
+                    <tr><td>Everywhere</td><td>Any signer that gives a bunker link (NIP-46), such as nsec.app or your own
+                        bunker</td><td>Paste or scan the <code>bunker://</code> link</td></tr>
+                </table></div>
+
+                <h2 id="setup">Sign in with a signer during setup</h2>
+                <ol class="steps">
+                    <li>Choose <span class="ui">I already use Nostr</span>. On iPhone and Android, the next screen has
+                        <span class="ui">Use a signer app</span> under the box (and <span class="ui">Use Amber</span> on Android when
+                        Amber is installed). On a Mac, choose <strong>Remote Signer</strong>.</li>
+                    <li>The signer opens, or a code shows on screen to scan with a signer on another device.</li>
+                    <li>Approve the connection in the signer, then come back to Nostr Vault. If the signer didn't open, tap
+                        <span class="ui">Open Clave again</span> (Android: <span class="ui">Open signer again</span>), or
+                        <span class="ui">Copy link</span> and open it yourself.</li>
+                </ol>
+                <p>Or paste a <code>bunker://</code> link from any signer app into the same box.</p>
+
+                <h2 id="add">Add a signer to an account you already have</h2>
+                <ol class="steps">
+                    <li>Open <span class="path">Settings &rarr; Accounts &amp; Keys</span> and tap the account.</li>
+                    <li>Tap <span class="ui">Connect Remote Signer</span>.</li>
+                    <li>Paste the bunker link into <span class="ui">Bunker URI</span>, or scan its QR code. On iPhone you can
+                        <span class="ui">Sign in with Clave</span> here too.</li>
+                    <li>Approve the connection in your signer app.</li>
+                </ol>
+                <p>The signer has to hold this account's key. A signer for a different account is refused.</p>
+
+                <h2 id="web">On the web</h2>
+                <p>The web app only signs with a signer: a browser extension, or a bunker link in
+                    <span class="ui">Bunker link (NIP-46)</span> and <span class="ui">Connect bunker</span>. It never asks for your
+                    secret key. A bunker's connection to the browser is stored encrypted, and removing the account or signing out
+                    asks the bunker to drop it.</p>
+
+                <h2 id="tips">Good to know</h2>
+                <ul>
+                    <li>Posts, likes and messages are signed by the signer, which may ask you to approve each one. If nothing happens, open the signer and check
+                        for a pending request.</li>
+                    <li>To stop using a signer, open the account and tap <span class="ui">Disconnect Remote Signer</span>. Revoke the
+                        connection in the signer app too.</li>
+                    <li>Back up your secret key in the signer app. Nostr Vault can't show it to you, because it never has it.</li>
+                </ul>
+            </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41) and the web app.</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/keys/"><span>Previous</span>Keys and accounts</a>
+                <a class="next" href="/docs/wallet/"><span>Next</span>Wallet</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>
