@@ -194,6 +194,14 @@ extension HomeVaultLogic {
         return out
     }
 
+    /// The photo node the Mac lists: its mesh npub only while its engine runs.
+    /// The engine starts only with a device in My Devices, so the switch on
+    /// with none added (or a start that failed) lists nothing: an entry
+    /// there would point readers at a node nobody can reach.
+    static func macPhotoNpub(_ npub: String?, engineRunning: Bool) -> String? {
+        engineRunning ? npub : nil
+    }
+
     /// Whether the owner's kept 10063 still lacks the photo node, so the Mac
     /// should republish. Nil list (none seen yet) or no photo node: no.
     static func photoNodeMissing(from kept: [String]?, photoNpub: String?) -> Bool {
