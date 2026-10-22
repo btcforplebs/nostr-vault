@@ -233,6 +233,22 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: page, relays: [], meshDoorPort: 0))
     }
 
+    /// The kiosk shares the relay with My Devices and the mesh door with
+    /// strangers, as the Mac does. Sharing the mesh door with My Devices too
+    /// made the engine refuse every start: "Could not share the relay (-5)".
+    func testTheKioskSharesTheRelayNotTheStrangersDoor() throws {
+        let config = HavenConfig()
+        let devices = [MeshDevice(npub: mac, name: "", role: .mac)]
+        let start = try XCTUnwrap(MeshDevicesLogic.kioskStart(devices: devices, ownNpub: page, relays: [],
+                                                                relayPort: config.relayPort, meshDoorPort: config.meshPlainPort))
+        XCTAssertEqual(start.sharePort, config.relayPort)
+        XCTAssertEqual(start.options["strangers_port"] as? Int, config.meshPlainPort)
+        XCTAssertNotEqual(start.options["strangers_port"] as? Int, start.sharePort, "share_split refuses one port for both")
+        XCTAssertNil(MeshDevicesLogic.kioskStart(devices: devices, ownNpub: page, relays: [], relayPort: 3356, meshDoorPort: 3356))
+        XCTAssertNil(MeshDevicesLogic.kioskStart(devices: [], ownNpub: page, relays: [],
+                                                 relayPort: config.relayPort, meshDoorPort: config.meshPlainPort))
+    }
+
     // MARK: clientEngineOptions
 
     /// A reading phone answers My Devices only, and reads anyone else's vault

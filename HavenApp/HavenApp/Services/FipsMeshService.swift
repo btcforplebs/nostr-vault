@@ -121,18 +121,19 @@ final class FipsMeshService: ObservableObject {
             lastError = Self.offMessage
             return
         }
-        // The relay's mesh door: plain HTTP, blob reads and owner-signed writes.
-        let port = ConfigService.shared.config.meshPlainPort
+        let config = ConfigService.shared.config
         // Own-devices mode, as on the Mac: only My Devices get answers (the
-        // home IP goes to no one else) and strangers get the mesh door,
-        // capped. Never open: with no other device listed, sharing does not start.
-        guard let options = MeshDevicesLogic.kioskEngineOptions(
-            devices: FipsMeshDevices.current(ConfigService.shared.config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
-            relays: FipsMeshSettings.finderRelays, meshDoorPort: port,
+        // home IP goes to no one else) and reach the relay; strangers get the
+        // mesh door (plain HTTP, blobs public notes name), capped. Never open:
+        // with no other device listed, sharing does not start.
+        guard let start = MeshDevicesLogic.kioskStart(
+            devices: FipsMeshDevices.current(config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
+            relays: FipsMeshSettings.finderRelays, relayPort: config.relayPort, meshDoorPort: config.meshPlainPort,
             seeds: FipsMeshSettings.middleServer == .publicSeeds) else {
             lastError = "Add your other phone or your Mac under My Devices first: kiosk mode serves your own devices in full, and anyone else only the photos you post."
             return
         }
+        let (options, port) = (start.options, start.sharePort)
         // Always a cold start. NvFipsStart keeps a running engine and drops
         // new options, and an open client engine can be up while clientActive
         // is still false (ingressURL sets it only once its dial returns), so

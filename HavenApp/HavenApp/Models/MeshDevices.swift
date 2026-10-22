@@ -239,6 +239,19 @@ enum MeshDevicesLogic {
         return options
     }
 
+    /// Kiosk start options and the port to share (`NvFipsExport`), as on the
+    /// Mac: My Devices reach the relay itself, strangers only the mesh door
+    /// (`strangers_port`). The engine refuses one port for both
+    /// (`share_split`, -5), so sharing the mesh door failed every start.
+    /// Nil when kioskEngineOptions is, or when the two ports are the same.
+    static func kioskStart(devices: [MeshDevice], ownNpub: String?, relays: [String], relayPort: Int, meshDoorPort: Int, seeds: Bool = true) -> (options: [String: Any], sharePort: Int)? {
+        guard relayPort != meshDoorPort, (1...Int(UInt16.max)).contains(relayPort),
+              let options = kioskEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays,
+                                               meshDoorPort: meshDoorPort, seeds: seeds)
+        else { return nil }
+        return (options, relayPort)
+    }
+
     /// Strangers' total per kiosk sharing session.
     static let kioskStrangersTotal: Int64 = 1 << 30
 
