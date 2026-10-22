@@ -135,6 +135,10 @@ export function meshVaults(ev) {
   return out.slice(0, MAX_MESH_VAULTS)
 }
 
+/** The hashes of a post's own photos, the ones its page arms for the mesh (meshAttrs), as many as the page reads
+ *  (share-photos.js MAX_PHOTOS): what the server keeps a copy of (photo-cache.js). */
+export const meshPhotoHashes = post => (post.kind === LONG_FORM_KIND ? [] : noteParts(post.content, post.tags).media.map(m => m.x).filter(Boolean).slice(0, 8))
+
 /** Authors whose notes have a photo the mesh could serve (one with a hash), for the 10063 read. */
 export function meshPhotoAuthors(events) {
   return [...new Set(events.filter(ev => ev && ev.kind !== LONG_FORM_KIND && noteParts(ev.content, ev.tags).media.some(m => m.x)).map(ev => ev.pubkey))]
