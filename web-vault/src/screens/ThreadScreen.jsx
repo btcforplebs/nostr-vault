@@ -30,7 +30,9 @@ export async function threadStart(vault, id) {
 /** Posts other than notes and reposts (an article, a poll, a highlight) start their own thread. */
 const selfRooted = ev => !!ev && ev.kind !== 1 && ev.kind !== 6
 
-export function ThreadScreen({ ctx, id }) {
+/** `onAuthors(pubkeys)`: who wrote the thread (the root first), each time it changes. The guest view uses it for
+ *  whose mesh vaults its photos may load from. */
+export function ThreadScreen({ ctx, id, onAuthors }) {
   const { vault, account } = ctx
   const relays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
   const [rootId, setRootId] = useState(null)
@@ -83,6 +85,7 @@ export function ThreadScreen({ ctx, id }) {
     if (!thread) return
     const authors = [thread.root?.pubkey, ...flattenThread(thread.replies).map(r => r.event.pubkey)]
     fetchProfiles(ctx.vault, authors.filter(Boolean), relays).catch(() => {})
+    onAuthors?.(authors.filter(Boolean))
   }, [thread])
 
   // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back.
