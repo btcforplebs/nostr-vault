@@ -23,9 +23,7 @@ COPY web-vault/package.json web-vault/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY web-vault/src ./src
 COPY web-vault/thread-page ./thread-page
-# Only to hash it: the page names the share script /relay/share-photos.js?v=<hash> (server.mjs scriptVersion).
-COPY --from=build /src/website/relay/share-photos.js /app/share-photos.js
-ENV PORT=8790 MESH_SCRIPT_FILE=/app/share-photos.js
+ENV PORT=8790
 USER node
 CMD ["node", "thread-page/server.mjs"]
 
