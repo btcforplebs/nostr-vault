@@ -1,0 +1,72 @@
+<!--page
+{
+  "title": "Signers",
+  "nav": "Signers",
+  "section": "keys",
+  "order": 2,
+  "description": "Keep your Nostr secret key out of Nostr Vault with a signer: Amber on Android, Clave on iPhone, a bunker link from any signer app, or a browser extension on the web.",
+  "checked": "Nostr Vault 3.0.0 (41) and the web app",
+  "labels": {
+    "ios": ["Use a signer app", "Sign in with Clave", "Open Clave again", "Copy link", "Connect Remote Signer", "Bunker URI", "Scan QR code",
+            "Approve the connection in your signer app", "Disconnect Remote Signer"],
+    "android": ["Use Amber", "Use a signer app", "Sign in with a signer app", "Sign-in QR code", "Open signer again",
+                "Connect Remote Signer", "Scan bunker QR code", "Approve the connection in your signer app", "Disconnect Remote Signer"],
+    "mac": ["Connect with Clave on your iPhone", "Scan this with Clave on your iPhone and approve.", "Or paste a bunker link from any signer app"],
+    "web": ["Sign in with extension", "Bunker link (NIP-46)", "Connect bunker"]
+  }
+}
+-->
+<p>A signer is a separate app that holds your secret key. When Nostr Vault wants to post, like or send a message as
+    you, it asks the signer, and the signer approves. Your key never enters Nostr Vault, so a problem in Nostr Vault
+    can't leak it.</p>
+
+<h2>Which signer, where</h2>
+<div class="docs-table-wrap"><table>
+    <tr><th>Device</th><th>Signers</th><th>How it connects</th></tr>
+    <tr><td>Android</td><td>Amber, or any signer app on the phone</td><td><span class="ui">Use Amber</span>, or
+        <span class="ui">Use a signer app</span> &rarr; <span class="ui">Sign in with a signer app</span></td></tr>
+    <tr><td>iPhone and iPad</td><td>Clave</td><td><span class="ui">Use a signer app</span> &rarr;
+        <span class="ui">Sign in with Clave</span></td></tr>
+    <tr><td>Mac</td><td>Clave on your iPhone</td><td><span class="ui">Connect with Clave on your iPhone</span> shows a
+        code to scan</td></tr>
+    <tr><td>Web</td><td>A Nostr browser extension</td><td><span class="ui">Sign in with extension</span></td></tr>
+    <tr><td>Everywhere</td><td>Any signer that gives a bunker link (NIP-46), such as nsec.app or your own
+        bunker</td><td>Paste or scan the <code>bunker://</code> link</td></tr>
+</table></div>
+
+<h2 id="setup">Sign in with a signer during setup</h2>
+<ol class="steps">
+    <li>Choose <span class="ui">I already use Nostr</span>. On iPhone and Android, the next screen has
+        <span class="ui">Use a signer app</span> under the box (and <span class="ui">Use Amber</span> on Android when
+        Amber is installed). On a Mac, choose <strong>Remote Signer</strong>.</li>
+    <li>The signer opens, or a code shows on screen to scan with a signer on another device.</li>
+    <li>Approve the connection in the signer, then come back to Nostr Vault. If the signer didn't open, tap
+        <span class="ui">Open Clave again</span> (Android: <span class="ui">Open signer again</span>), or
+        <span class="ui">Copy link</span> and open it yourself.</li>
+</ol>
+<p>Or paste a <code>bunker://</code> link from any signer app into the same box.</p>
+
+<h2 id="add">Add a signer to an account you already have</h2>
+<ol class="steps">
+    <li>Open <span class="path">Settings &rarr; Accounts &amp; Keys</span> and tap the account.</li>
+    <li>Tap <span class="ui">Connect Remote Signer</span>.</li>
+    <li>Paste the bunker link into <span class="ui">Bunker URI</span>, or scan its QR code. On iPhone you can
+        <span class="ui">Sign in with Clave</span> here too.</li>
+    <li>Approve the connection in your signer app.</li>
+</ol>
+<p>The signer has to hold this account's key. A signer for a different account is refused.</p>
+
+<h2 id="web">On the web</h2>
+<p>The web app only signs with a signer: a browser extension, or a bunker link in
+    <span class="ui">Bunker link (NIP-46)</span> and <span class="ui">Connect bunker</span>. It never asks for your
+    secret key. A bunker's connection to the browser is stored encrypted, and removing the account or signing out
+    asks the bunker to drop it.</p>
+
+<h2 id="tips">Good to know</h2>
+<ul>
+    <li>Posts, likes and messages are signed by the signer, which may ask you to approve each one. If nothing happens, open the signer and check
+        for a pending request.</li>
+    <li>To stop using a signer, open the account and tap <span class="ui">Disconnect Remote Signer</span>. Revoke the
+        connection in the signer app too.</li>
+    <li>Back up your secret key in the signer app. Nostr Vault can't show it to you, because it never has it.</li>
+</ul>

@@ -45,8 +45,8 @@ const BANNERS = {
 };
 
 const LABEL_SOURCES = {
-    ios: { dirs: ['HavenApp/HavenApp', 'HavenApp/HavenApp-iOS', 'HavenApp/NostrVaultShare'], ext: ['.swift'] },
-    mac: { dirs: ['HavenApp/HavenApp', 'HavenApp/HavenApp-macOS'], ext: ['.swift'] },
+    ios: { dirs: ['HavenApp/HavenApp', 'HavenApp/HavenApp-iOS', 'HavenApp/NostrVaultShare'], ext: ['.swift', '.xcstrings'] },
+    mac: { dirs: ['HavenApp/HavenApp'], ext: ['.swift', '.xcstrings'] },
     android: { dirs: ['NostrVault/app/src/main'], ext: ['.kt', '.xml'] },
     web: { dirs: ['web-vault/src', 'web-relay/src', 'web-relay/index.html'], ext: ['.js', '.jsx', '.html'] },
 };

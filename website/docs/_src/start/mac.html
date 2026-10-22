@@ -1,0 +1,87 @@
+<!--page
+{
+  "title": "Get started on Mac",
+  "nav": "Mac",
+  "section": "start",
+  "order": 3,
+  "description": "Install Nostr Vault on a Mac, set it up from the menu bar, and keep your relay running while the app is open.",
+  "checked": "Nostr Vault 3.0.0 (41) for macOS",
+  "labels": {
+    "mac": ["Welcome to Nostr Vault", "Nostr Vault lives in your menu bar", "Get Started",
+            "Create an account", "I already use Nostr", "Just look around", "What's inside?",
+            "Create My Account", "Your Keys", "I saved my secret key", "Protect Your Key", "Your Profile", "Skip for Now", "Start Exploring",
+            "Enter Your Keys", "Private Key", "Remote Signer", "New to Nostr? Generate Keys", "Connect with Clave on your iPhone",
+            "Or paste a bunker link from any signer app", "Your Personal Relay", "Relay Domain (optional)", "Skip — configure later",
+            "Bring Your Notes Home", "From Network", "From Backup", "Import Notes", "Skip — I'll start fresh",
+            "Mirror Your Media", "Sync Media", "Skip Media", "Lightning (NWC)", "Skip — set up later",
+            "You're All Set", "Launch Nostr Vault", "Enter Your Public Key", "Ready to Browse",
+            "Open Window", "Quit Nostr Vault", "Settings (⌘,)", "Startup", "Launch at Login", "Start Relay Automatically"]
+  }
+}
+-->
+<p>On a Mac, Nostr Vault lives in the menu bar and runs your own Nostr relay while it's open. Leave it running and
+    your Mac becomes the always-on home for your notes and media.</p>
+
+<h2>Install</h2>
+<p>Nostr Vault needs <strong>macOS 14</strong> (Sonoma) or later. Download it from
+    <a href="https://github.com/btcforplebs/nostr-vault/releases/latest">the latest release on GitHub</a> (the
+    <code>NostrVault-macOS-….zip</code> file), unzip it, and drag Nostr Vault into Applications.</p>
+<p>The first time it opens, a <strong>Welcome to Nostr Vault</strong> window says <em>Nostr Vault lives in your menu
+    bar</em>. Click <span class="ui">Get Started</span>. Setup opens next.</p>
+
+<h2>Pick a way in</h2>
+<ul>
+    <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
+    <li><span class="ui">I already use Nostr</span> to bring your account, your notes and your media.</li>
+    <li><span class="ui">Just look around</span> to read with your public key only.</li>
+</ul>
+
+<h2 id="new">Create an account</h2>
+<p>The same steps as on the iPhone: <span class="ui">Create My Account</span>, save your secret key on
+    <strong>Your Keys</strong> and tick <span class="ui">I saved my secret key</span>, choose a password on
+    <strong>Protect Your Key</strong>, then a photo and name on <strong>Your Profile</strong> (or
+    <span class="ui">Skip for Now</span>), and <span class="ui">Start Exploring</span>. The details are on
+    <a href="/docs/start/iphone/#new">Get started on iPhone</a>.</p>
+
+<h2 id="existing">Bring the account you have</h2>
+<ol class="steps">
+    <li><strong>Enter Your Keys.</strong> Pick how you sign:
+        <ul>
+            <li><span class="ui">Private Key</span>: paste your nsec and choose a password. The key is encrypted on
+                this Mac.</li>
+            <li><span class="ui">Remote Signer</span>: <span class="ui">Connect with Clave on your iPhone</span> shows a
+                code to scan with Clave. Or paste a bunker link from any signer app. Your key stays in the signer.</li>
+        </ul>
+        No account yet? <span class="ui">New to Nostr? Generate Keys</span> makes one here.</li>
+    <li><strong>Your Personal Relay.</strong> Your relay runs on this Mac either way. A
+        <span class="ui">Relay Domain (optional)</span> makes it reachable from your other devices.
+        Leave it blank for local only, or tap <span class="ui">Skip — configure later</span>.</li>
+    <li><strong>Bring Your Notes Home.</strong> <span class="ui">From Network</span> copies your notes from public
+        relays to this Mac; <span class="ui">From Backup</span> restores a Nostr Vault backup. Tap
+        <span class="ui">Import Notes</span>, or <span class="ui">Skip — I'll start fresh</span>.</li>
+    <li><strong>Mirror Your Media.</strong> Copies your photos and videos from a Blossom media server, or from a
+        backup, to this Mac. Tap <span class="ui">Sync Media</span> or <span class="ui">Skip Media</span>.</li>
+    <li><strong>Lightning (NWC).</strong> Paste a Nostr Wallet Connect link to send zaps, or
+        <span class="ui">Skip — set up later</span>.</li>
+    <li><strong>You're All Set.</strong> Click <span class="ui">Launch Nostr Vault</span>.</li>
+</ol>
+
+<h2 id="browse">Just look around</h2>
+<p><strong>Enter Your Public Key</strong> (your npub or name@domain), import your notes if you like, and
+    <strong>Ready to Browse</strong> opens the app. Re-run setup later to post, DM and zap.</p>
+
+<h2>Find your way around</h2>
+<ul>
+    <li>Click the Nostr Vault icon in the menu bar. The panel shows your relay's status, your notes and your media.</li>
+    <li><span class="ui">Open Window</span> opens the full window, with the feed.</li>
+    <li>The gear (<span class="ui">Settings (⌘,)</span>) opens Settings.</li>
+    <li>Your relay runs while Nostr Vault is open. <span class="ui">Quit Nostr Vault</span> stops it.</li>
+</ul>
+<p>To keep it running, open <span class="path">Settings &rarr; Startup</span> and turn on
+    <span class="ui">Launch at Login</span> and <span class="ui">Start Relay Automatically</span>.</p>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="/docs/mesh/">The mesh</a>: make your Mac the photo server and vault for your phones (3.0).</li>
+    <li><a href="/docs/keys/">Your keys and accounts</a></li>
+</ul>

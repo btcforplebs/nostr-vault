@@ -1,0 +1,62 @@
+<!--page
+{
+  "title": "Use Nostr Vault in a browser",
+  "nav": "Web browser",
+  "section": "start",
+  "order": 4,
+  "description": "Open the Nostr Vault web app at nostrvault.app/vault/, sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.",
+  "checked": "the web app on nostrvault.app, October 2026",
+  "labels": {
+    "web": ["Sign in with extension", "Bunker link (NIP-46)", "Connect bunker", "Your name, npub1… or you@example.com", "Find me",
+            "Viewing as a guest", "Sign in", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Backup & Restore",
+            "Download backup", "This browser's copy", "Sign out and delete this browser's copy"]
+  }
+}
+-->
+<p>The web app is Nostr Vault in a browser tab, with nothing to install. It's in beta. Open
+    <a href="/vault/">nostrvault.app/vault/</a> in any up-to-date browser, on a computer or a phone.</p>
+<p>Like the apps, it runs your own relay, here inside the browser. Your notes and messages are kept in this browser's
+    storage.</p>
+
+<h2>Sign in</h2>
+<p>The web app never asks for your secret key. Sign in with something that holds the key for you:</p>
+<ul>
+    <li><strong>A browser extension.</strong> If a Nostr signing extension is installed in this browser,
+        <span class="ui">Sign in with extension</span> shows. Click it and approve in the extension.</li>
+    <li><strong>A remote signer.</strong> Paste a bunker:// link from your signer app into
+        <span class="ui">Bunker link (NIP-46)</span>, click <span class="ui">Connect bunker</span>, and approve the
+        connection in your signer. See <a href="/docs/keys/signers/">Signers</a>.</li>
+    <li><strong>Read-only.</strong> Type your name, npub or name@domain and click <span class="ui">Find me</span>. You
+        can read your feed but not post.</li>
+</ul>
+<p>Accounts you've used in this browser are listed at the top next time, so one click signs you back in.</p>
+
+<h2 id="shared">Opening a shared post</h2>
+<p>A post shared from Nostr Vault opens in the web app, and anyone can read it without signing in. The top says
+    <span class="ui">Viewing as a guest</span>. Click <span class="ui">Sign in</span> there to reply, like or zap. A
+    guest's browser keeps nothing once the tab is closed.</p>
+
+<h2>Find your way around</h2>
+<p>The same places as the phone apps: <span class="ui">Feed</span>, <span class="ui">Search</span>,
+    <span class="ui">Profile</span>, <span class="ui">WoT</span> and <span class="ui">Vault</span>. On a phone they're
+    a tab bar at the bottom; in a wide window they're a sidebar, and a post opens next to the list. Settings is the
+    gear on your profile.</p>
+
+<h2 id="backup">Your data in this browser</h2>
+<ul>
+    <li><span class="path">Settings &rarr; Backup &amp; Restore &rarr; Download backup</span> saves every event you
+        signed that this browser holds, one per line (.jsonl). Messages and what others sent you aren't in it.</li>
+    <li>Restore puts a backup file back into this browser. Only events signed by you are taken, and nothing is
+        published.</li>
+    <li>Under <span class="ui">This browser's copy</span>, <span class="ui">Sign out and delete this browser's copy</span>
+        removes everything this browser holds. Your phone's vault is untouched.</li>
+</ul>
+<div class="note"><p>Clearing your browser's site data deletes the web app's copy too. Your posts are still on public
+    relays and in your phone or Mac vault.</p></div>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="/docs/keys/signers/">Signers</a>: which signer to use on which device.</li>
+    <li>For your own always-on vault, get the app for <a href="/docs/start/iphone/">iPhone</a>,
+        <a href="/docs/start/android/">Android</a> or <a href="/docs/start/mac/">Mac</a>.</li>
+</ul>

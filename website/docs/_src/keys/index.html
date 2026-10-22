@@ -1,0 +1,112 @@
+<!--page
+{
+  "title": "Your keys and accounts",
+  "nav": "Keys and accounts",
+  "section": "keys",
+  "order": 1,
+  "description": "What your Nostr keys are, where Nostr Vault keeps them, and how to add accounts, switch between them, back up your secret key and remove a key.",
+  "checked": "Nostr Vault 3.0.0 (41) and the web app",
+  "labels": {
+    "ios": ["Accounts & Keys", "Add Account", "Npub", "Owner", "Remote Signer", "Local Key", "Switch to This Account", "Sign With",
+            "Reveal Key", "Reveal Private Key", "Import Private Key", "Import Key", "Encrypt with Password", "Connect Remote Signer",
+            "Disconnect Remote Signer", "Remove Local Key", "Publish Relay List", "Remove Account", "Tutorials"],
+    "android": ["Accounts & Keys", "Add Account", "Owner", "Remote Signer", "Amber", "Local Key", "Switch to this account", "Signing",
+                "Reveal Private Key", "Import Private Key", "Encrypt with Password", "Connect Remote Signer (NIP-46)", "Connect Remote Signer",
+                "Disconnect Remote Signer", "Remove Local Key", "Publish Relay List (NIP-65)", "Remove Account"],
+    "mac": ["Accounts & Keys", "Add Account", "Switch account"],
+    "web": ["Accounts & Keys", "Add Account", "Switch to This Account", "Sign out", "Remove Account"]
+  }
+}
+-->
+<p>A Nostr account is a pair of keys. Nostr Vault keeps them on your device, or leaves the secret one with a signer
+    app, and never on a server.</p>
+
+<h2>Two keys</h2>
+<ul>
+    <li><strong>Public key</strong> (starts with <code>npub</code>): your name on Nostr. Share it freely. With only
+        this, an app can show your feed but can't post as you.</li>
+    <li><strong>Secret key</strong> (starts with <code>nsec</code>): your password to Nostr. Anyone who has it can post
+        as you, forever. Nobody can reset it or recover it for you, not even us.</li>
+</ul>
+<p>Nostr Vault can sign for you in two ways:</p>
+<ul>
+    <li><strong>A local key.</strong> Your secret key, locked with a password you choose (at least 8 characters), and
+        kept on this device only. A key locked this way starts with <code>ncryptsec</code>.</li>
+    <li><strong>A signer.</strong> A separate app holds your secret key and approves each post. Nostr Vault never sees
+        the key. See <a href="/docs/keys/signers/">Signers</a>.</li>
+</ul>
+
+<h2 id="where">Where to find them</h2>
+<div class="docs-table-wrap"><table>
+    <tr><th>Device</th><th>Open</th></tr>
+    <tr><td>iPhone, iPad, Android</td><td>Profile tab &rarr; gear &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
+    <tr><td>Mac</td><td>Menu bar icon &rarr; gear &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
+    <tr><td>Web</td><td>Settings &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
+</table></div>
+<p>Each account shows how it signs: <span class="ui">Local Key</span>, <span class="ui">Remote Signer</span>,
+    <span class="ui">Amber</span> (Android), or no signing key at all (read-only). The first account you set up is the
+    <span class="ui">Owner</span>: it's the one your vault relay belongs to.</p>
+
+<h2 id="add">Add another account</h2>
+<ol class="steps">
+    <li>In <span class="ui">Accounts &amp; Keys</span>, tap <span class="ui">Add Account</span>.</li>
+    <li>Paste the account's key.
+        <ul>
+            <li><strong>iPhone, iPad and Mac</strong> take its npub. Then open the new account and tap
+                <span class="ui">Import Private Key</span> or <span class="ui">Connect Remote Signer</span> to post with
+                it.</li>
+            <li><strong>Android</strong> takes an npub, an nsec or an ncryptsec, or
+                <span class="ui">Connect Remote Signer (NIP-46)</span>.</li>
+            <li><strong>Web</strong> signs in with the account's own extension or bunker. The account you're using
+                stays signed in.</li>
+        </ul></li>
+</ol>
+
+<h2 id="switch">Switch accounts</h2>
+<ul>
+    <li><strong>iPhone:</strong> hold your picture in the middle of the tab bar and pick an account. It only opens
+        when you have more than one.</li>
+    <li><strong>Mac:</strong> the account button in the menu bar panel.</li>
+    <li><strong>Everywhere:</strong> open the account in <span class="ui">Accounts &amp; Keys</span> and tap
+        <span class="ui">Switch to This Account</span>.</li>
+</ul>
+<p>A post is always sent from the account that was active when you tapped Post.</p>
+
+<h2 id="backup">Back up your secret key</h2>
+<p>Do this once, right after you make an account, and keep the key in a password manager.</p>
+<ol class="steps">
+    <li>Open the account in <span class="ui">Accounts &amp; Keys</span>.</li>
+    <li>Tap <span class="ui">Reveal Key</span> (Android: <span class="ui">Reveal Private Key</span>). The app checks
+        it's you with Face ID, Touch ID or your device passcode, then asks for the key's password.</li>
+    <li>Copy the key into your password manager. Don't paste it into a chat, a note or a screenshot.</li>
+</ol>
+<div class="note"><p>With a signer, there's no key to reveal here. Back it up in the signer app.</p></div>
+
+<h2 id="method">Change how an account signs</h2>
+<ul>
+    <li><span class="ui">Import Private Key</span> adds a local key to an account that only had a public key or a
+        signer. Tick <span class="ui">Encrypt with Password</span> to lock it.</li>
+    <li><span class="ui">Connect Remote Signer</span> adds a signer. It must hold this account's key; a signer for
+        another account is refused.</li>
+    <li>With both, <span class="ui">Sign With</span> (Android: <span class="ui">Signing</span>) picks which one
+        signs.</li>
+</ul>
+
+<h2 id="remove">Remove a key or an account</h2>
+<ul>
+    <li><span class="ui">Remove Local Key</span> deletes the secret key from this device. If it's your only copy, it's
+        gone for good.</li>
+    <li><span class="ui">Disconnect Remote Signer</span> drops the signer's connection. Reconnecting needs a fresh
+        bunker link.</li>
+    <li><span class="ui">Remove Account</span> takes the account, and any key or signer for it, off this device.
+        Nothing on the relays changes, but you need the key again to sign back in.</li>
+</ul>
+
+<h2 id="relay-list">Publish Relay List</h2>
+<p><span class="ui">Publish Relay List</span> tells other Nostr apps which relays you read from and write to, so they
+    can find your posts and reach you. Your own relay is always included.</p>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="/docs/keys/signers/">Signers</a>: Amber, Clave, bunker links and browser extensions.</li>
+</ul>

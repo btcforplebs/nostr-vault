@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/start/web.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Use Nostr Vault in a browser — Nostr Vault Docs</title>
+    <meta name="description" content="Open the Nostr Vault web app at nostrvault.app/vault/, sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.">
+    <link rel="canonical" href="https://nostrvault.app/docs/start/web/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/start/web/">
+    <meta property="og:title" content="Use Nostr Vault in a browser — Nostr Vault Docs">
+    <meta property="og:description" content="Open the Nostr Vault web app at nostrvault.app/vault/, sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/" aria-current="page">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Get started</p>
+            <h1>Use Nostr Vault in a browser</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#sign-in">Sign in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>The web app is Nostr Vault in a browser tab, with nothing to install. It's in beta. Open
+                    <a href="/vault/">nostrvault.app/vault/</a> in any up-to-date browser, on a computer or a phone.</p>
+                <p>Like the apps, it runs your own relay, here inside the browser. Your notes and messages are kept in this browser's
+                    storage.</p>
+
+                <h2 id="sign-in">Sign in</h2>
+                <p>The web app never asks for your secret key. Sign in with something that holds the key for you:</p>
+                <ul>
+                    <li><strong>A browser extension.</strong> If a Nostr signing extension is installed in this browser,
+                        <span class="ui">Sign in with extension</span> shows. Click it and approve in the extension.</li>
+                    <li><strong>A remote signer.</strong> Paste a bunker:// link from your signer app into
+                        <span class="ui">Bunker link (NIP-46)</span>, click <span class="ui">Connect bunker</span>, and approve the
+                        connection in your signer. See <a href="/docs/keys/signers/">Signers</a>.</li>
+                    <li><strong>Read-only.</strong> Type your name, npub or name@domain and click <span class="ui">Find me</span>. You
+                        can read your feed but not post.</li>
+                </ul>
+                <p>Accounts you've used in this browser are listed at the top next time, so one click signs you back in.</p>
+
+                <h2 id="shared">Opening a shared post</h2>
+                <p>A post shared from Nostr Vault opens in the web app, and anyone can read it without signing in. The top says
+                    <span class="ui">Viewing as a guest</span>. Click <span class="ui">Sign in</span> there to reply, like or zap. A
+                    guest's browser keeps nothing once the tab is closed.</p>
+
+                <h2 id="find-your-way-around">Find your way around</h2>
+                <p>The same places as the phone apps: <span class="ui">Feed</span>, <span class="ui">Search</span>,
+                    <span class="ui">Profile</span>, <span class="ui">WoT</span> and <span class="ui">Vault</span>. On a phone they're
+                    a tab bar at the bottom; in a wide window they're a sidebar, and a post opens next to the list. Settings is the
+                    gear on your profile.</p>
+
+                <h2 id="backup">Your data in this browser</h2>
+                <ul>
+                    <li><span class="path">Settings &rarr; Backup &amp; Restore &rarr; Download backup</span> saves every event you
+                        signed that this browser holds, one per line (.jsonl). Messages and what others sent you aren't in it.</li>
+                    <li>Restore puts a backup file back into this browser. Only events signed by you are taken, and nothing is
+                        published.</li>
+                    <li>Under <span class="ui">This browser's copy</span>, <span class="ui">Sign out and delete this browser's copy</span>
+                        removes everything this browser holds. Your phone's vault is untouched.</li>
+                </ul>
+                <div class="note"><p>Clearing your browser's site data deletes the web app's copy too. Your posts are still on public
+                    relays and in your phone or Mac vault.</p></div>
+
+                <h2 id="next">Next</h2>
+                <ul>
+                    <li><a href="/docs/keys/signers/">Signers</a>: which signer to use on which device.</li>
+                    <li>For your own always-on vault, get the app for <a href="/docs/start/iphone/">iPhone</a>,
+                        <a href="/docs/start/android/">Android</a> or <a href="/docs/start/mac/">Mac</a>.</li>
+                </ul>
+            </article>
+            <p class="docs-checked">Checked against the web app on nostrvault.app, October 2026.</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/start/mac/"><span>Previous</span>Mac</a>
+                <a class="next" href="/docs/keys/"><span>Next</span>Keys and accounts</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

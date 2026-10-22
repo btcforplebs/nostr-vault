@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/start/iphone.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Get started on iPhone — Nostr Vault Docs</title>
+    <meta name="description" content="Install Nostr Vault on an iPhone or iPad, create a Nostr account or bring the one you have, and find your way around.">
+    <link rel="canonical" href="https://nostrvault.app/docs/start/iphone/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/start/iphone/">
+    <meta property="og:title" content="Get started on iPhone — Nostr Vault Docs">
+    <meta property="og:description" content="Install Nostr Vault on an iPhone or iPad, create a Nostr account or bring the one you have, and find your way around.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/" aria-current="page">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Get started</p>
+            <h1>Get started on iPhone</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#install">Install</a></li><li><a href="#pick-a-way-in">Pick a way in</a></li><li><a href="#new">Create an account</a></li><li><a href="#existing">Bring the account you have</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#next">Next</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>Nostr Vault runs your own Nostr relay on your phone. Your posts, messages and media are kept on the phone, and
+                    copies go out to public relays so people can see them.</p>
+
+                <h2 id="install">Install</h2>
+                <p>Nostr Vault needs <strong>iOS 17</strong> or later, on an iPhone or an iPad. Join the beta on
+                    <a href="https://testflight.apple.com/join/kN3zE1H1">TestFlight</a>, install it, and open it.</p>
+
+                <h2 id="pick-a-way-in">Pick a way in</h2>
+                <p>The first screen has two buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+                <ul>
+                    <li><span class="ui">Create an account</span> if you're new to Nostr. You get a new key, a password for it and a
+                        profile.</li>
+                    <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. You bring that
+                        account, and your old notes come home to your phone.</li>
+                </ul>
+
+                <h2 id="new">Create an account</h2>
+                <ol class="steps">
+                    <li><strong>Welcome to Nostr.</strong> A short explanation of Nostr and your vault. Tap
+                        <span class="ui">Create My Account</span>.</li>
+                    <li><strong>Your Keys.</strong> Two keys replace a username and password. The <strong>public key</strong> is your
+                        name on Nostr; share it freely. The <strong>secret key</strong> is your password; anyone who has it can post as
+                        you. Tap <span class="ui">Copy</span> next to the secret key and save it in your password manager. Nobody can
+                        recover it for you. Tick <span class="ui">I saved my secret key</span>, then <span class="ui">Continue</span>.</li>
+                    <li><strong>Protect Your Key.</strong> Choose a password of at least 8 characters. It locks your secret key on this
+                        phone. Nobody can reset it, so write it down too.</li>
+                    <li><strong>Your Profile.</strong> Add a photo and a name, or tap <span class="ui">Skip for Now</span>. You can
+                        change both later.</li>
+                    <li><strong>Welcome to Nostr!</strong> Your account is made and your relay is running. Tap
+                        <span class="ui">Start Exploring</span>.</li>
+                    <li><strong>Fill your feed.</strong> Nostr starts empty: no algorithm picks for you. Tap
+                        <span class="ui">Let's fill it</span>, pick a few topics, and follow people whose posts you like. Five follows
+                        build your web of trust, which fills your feed and filters out spam. <span class="ui">Not now</span> skips
+                        it.</li>
+                </ol>
+                <div class="done"><p><strong>You're done when</strong> your Following feed shows posts from the people you
+                    followed.</p></div>
+
+                <h2 id="existing">Bring the account you have</h2>
+                <ol class="steps">
+                    <li>Tap <span class="ui">I already use Nostr</span>. The screen asks <strong>Who are you on Nostr?</strong></li>
+                    <li>Paste one of these into the box, or tap <span class="ui">Scan your key or signer link</span> to scan a QR code.
+                        The app tells you what you'll be able to do:
+                        <div class="docs-table-wrap"><table>
+                            <tr><th>You paste</th><th>The app shows</th><th>What you get</th></tr>
+                            <tr><td>Your npub, or name@domain</td><td><span class="ui">Read-only</span></td><td>Your feed, notes and
+                                follows. Add your secret key later in Settings to post.</td></tr>
+                            <tr><td>Your nsec (secret key)</td><td><span class="ui">You can post</span></td><td>Post, reply, DM and zap.
+                                You choose a password, and the key is saved encrypted on this phone. It's never sent anywhere.</td></tr>
+                            <tr><td>An ncryptsec (a key locked with a password)</td><td><span class="ui">Encrypted key · you can post</span></td>
+                                <td>Enter the password you locked it with.</td></tr>
+                            <tr><td>A bunker:// link from a signer app</td><td><span class="ui">Signer link · you can post</span></td>
+                                <td>Your signer app approves each post. Your key never touches Nostr Vault.</td></tr>
+                        </table></div>
+                        To use a signer app instead, tap <span class="ui">Use a signer app</span>, then
+                        <span class="ui">Sign in with Clave</span>. See <a href="/docs/keys/signers/">Signers</a>.</li>
+                    <li><strong>Checking your relays.</strong> The app looks for your notes on your relays. Tap
+                        <span class="ui">Start import</span>.</li>
+                    <li><strong>Bringing your notes home.</strong> A few cards explain what's happening while your notes are copied to
+                        your phone. A long history takes a while. Wait, or tap
+                        <span class="ui">Keep it running in the background</span> and start using the app; the import carries on.</li>
+                </ol>
+                <div class="note"><p>Pasting a secret key into any app is a risk. A signer keeps the key out of Nostr Vault
+                    altogether. If you do paste it, Nostr Vault keeps it encrypted on this phone only.</p></div>
+
+                <h2 id="find-your-way-around">Find your way around</h2>
+                <p>The tab bar along the bottom:</p>
+                <ul>
+                    <li><span class="ui">Feed</span>: posts from the people you follow. Hold the tab and slide up to switch feeds: Following,
+                        Discover, Global, Media, Articles and more.</li>
+                    <li><span class="ui">Search</span>: people, posts and hashtags.</li>
+                    <li><span class="ui">Profile</span>, in the middle: your profile. The gear at the top opens
+                        <span class="ui">Settings</span>.</li>
+                    <li><span class="ui">WoT</span>: your web of trust, the people you follow and the people they follow, on a
+                        globe.</li>
+                    <li><span class="ui">Vault</span>: everything your relay keeps on this phone, and your messages.</li>
+                </ul>
+                <p>On iPad the same places are in the sidebar, Settings included.</p>
+                <p>Some pages show a short tour the first time you open them. Replay any of them from
+                    <span class="path">Settings &rarr; Help &rarr; Tutorials</span>.</p>
+
+                <h2 id="next">Next</h2>
+                <ul>
+                    <li><a href="/docs/keys/">Your keys and accounts</a>: add another account, back up your key, switch signers.</li>
+                    <li><a href="/docs/mesh/">The mesh</a>: connect your phone to your Mac and your other devices (3.0).</li>
+                </ul>
+            </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41) for iOS.</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <span></span>
+                <a class="next" href="/docs/start/android/"><span>Next</span>Android</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

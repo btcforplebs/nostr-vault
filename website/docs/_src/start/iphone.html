@@ -1,0 +1,104 @@
+<!--page
+{
+  "title": "Get started on iPhone",
+  "nav": "iPhone and iPad",
+  "section": "start",
+  "order": 1,
+  "description": "Install Nostr Vault on an iPhone or iPad, create a Nostr account or bring the one you have, and find your way around.",
+  "checked": "Nostr Vault 3.0.0 (41) for iOS",
+  "labels": {
+    "ios": ["Create an account", "I already use Nostr", "What's inside?", "Welcome to Nostr", "Create My Account", "Your Keys",
+            "I saved my secret key", "Protect Your Key", "Your Profile", "Skip for Now", "Welcome to Nostr!", "Start Exploring",
+            "Let's fill it", "Not now", "Who are you on Nostr?", "Read-only", "You can post", "Encrypted key · you can post",
+            "Signer link · you can post", "Use a signer app", "Sign in with Clave", "Scan your key or signer link",
+            "Checking your relays", "Start import", "Bringing your notes home", "Keep it running in the background",
+            "Feed", "Search", "WoT", "Vault", "Profile", "Settings", "Tutorials"]
+  }
+}
+-->
+<p>Nostr Vault runs your own Nostr relay on your phone. Your posts, messages and media are kept on the phone, and
+    copies go out to public relays so people can see them.</p>
+
+<h2>Install</h2>
+<p>Nostr Vault needs <strong>iOS 17</strong> or later, on an iPhone or an iPad. Join the beta on
+    <a href="https://testflight.apple.com/join/kN3zE1H1">TestFlight</a>, install it, and open it.</p>
+
+<h2>Pick a way in</h2>
+<p>The first screen has two buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+<ul>
+    <li><span class="ui">Create an account</span> if you're new to Nostr. You get a new key, a password for it and a
+        profile.</li>
+    <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. You bring that
+        account, and your old notes come home to your phone.</li>
+</ul>
+
+<h2 id="new">Create an account</h2>
+<ol class="steps">
+    <li><strong>Welcome to Nostr.</strong> A short explanation of Nostr and your vault. Tap
+        <span class="ui">Create My Account</span>.</li>
+    <li><strong>Your Keys.</strong> Two keys replace a username and password. The <strong>public key</strong> is your
+        name on Nostr; share it freely. The <strong>secret key</strong> is your password; anyone who has it can post as
+        you. Tap <span class="ui">Copy</span> next to the secret key and save it in your password manager. Nobody can
+        recover it for you. Tick <span class="ui">I saved my secret key</span>, then <span class="ui">Continue</span>.</li>
+    <li><strong>Protect Your Key.</strong> Choose a password of at least 8 characters. It locks your secret key on this
+        phone. Nobody can reset it, so write it down too.</li>
+    <li><strong>Your Profile.</strong> Add a photo and a name, or tap <span class="ui">Skip for Now</span>. You can
+        change both later.</li>
+    <li><strong>Welcome to Nostr!</strong> Your account is made and your relay is running. Tap
+        <span class="ui">Start Exploring</span>.</li>
+    <li><strong>Fill your feed.</strong> Nostr starts empty: no algorithm picks for you. Tap
+        <span class="ui">Let's fill it</span>, pick a few topics, and follow people whose posts you like. Five follows
+        build your web of trust, which fills your feed and filters out spam. <span class="ui">Not now</span> skips
+        it.</li>
+</ol>
+<div class="done"><p><strong>You're done when</strong> your Following feed shows posts from the people you
+    followed.</p></div>
+
+<h2 id="existing">Bring the account you have</h2>
+<ol class="steps">
+    <li>Tap <span class="ui">I already use Nostr</span>. The screen asks <strong>Who are you on Nostr?</strong></li>
+    <li>Paste one of these into the box, or tap <span class="ui">Scan your key or signer link</span> to scan a QR code.
+        The app tells you what you'll be able to do:
+        <div class="docs-table-wrap"><table>
+            <tr><th>You paste</th><th>The app shows</th><th>What you get</th></tr>
+            <tr><td>Your npub, or name@domain</td><td><span class="ui">Read-only</span></td><td>Your feed, notes and
+                follows. Add your secret key later in Settings to post.</td></tr>
+            <tr><td>Your nsec (secret key)</td><td><span class="ui">You can post</span></td><td>Post, reply, DM and zap.
+                You choose a password, and the key is saved encrypted on this phone. It's never sent anywhere.</td></tr>
+            <tr><td>An ncryptsec (a key locked with a password)</td><td><span class="ui">Encrypted key · you can post</span></td>
+                <td>Enter the password you locked it with.</td></tr>
+            <tr><td>A bunker:// link from a signer app</td><td><span class="ui">Signer link · you can post</span></td>
+                <td>Your signer app approves each post. Your key never touches Nostr Vault.</td></tr>
+        </table></div>
+        To use a signer app instead, tap <span class="ui">Use a signer app</span>, then
+        <span class="ui">Sign in with Clave</span>. See <a href="/docs/keys/signers/">Signers</a>.</li>
+    <li><strong>Checking your relays.</strong> The app looks for your notes on your relays. Tap
+        <span class="ui">Start import</span>.</li>
+    <li><strong>Bringing your notes home.</strong> A few cards explain what's happening while your notes are copied to
+        your phone. A long history takes a while. Wait, or tap
+        <span class="ui">Keep it running in the background</span> and start using the app; the import carries on.</li>
+</ol>
+<div class="note"><p>Pasting a secret key into any app is a risk. A signer keeps the key out of Nostr Vault
+    altogether. If you do paste it, Nostr Vault keeps it encrypted on this phone only.</p></div>
+
+<h2>Find your way around</h2>
+<p>The tab bar along the bottom:</p>
+<ul>
+    <li><span class="ui">Feed</span>: posts from the people you follow. Hold the tab and slide up to switch feeds: Following,
+        Discover, Global, Media, Articles and more.</li>
+    <li><span class="ui">Search</span>: people, posts and hashtags.</li>
+    <li><span class="ui">Profile</span>, in the middle: your profile. The gear at the top opens
+        <span class="ui">Settings</span>.</li>
+    <li><span class="ui">WoT</span>: your web of trust, the people you follow and the people they follow, on a
+        globe.</li>
+    <li><span class="ui">Vault</span>: everything your relay keeps on this phone, and your messages.</li>
+</ul>
+<p>On iPad the same places are in the sidebar, Settings included.</p>
+<p>Some pages show a short tour the first time you open them. Replay any of them from
+    <span class="path">Settings &rarr; Help &rarr; Tutorials</span>.</p>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="/docs/keys/">Your keys and accounts</a>: add another account, back up your key, switch signers.</li>
+    <li><a href="/docs/mesh/">The mesh</a>: connect your phone to your Mac and your other devices (3.0).</li>
+</ul>

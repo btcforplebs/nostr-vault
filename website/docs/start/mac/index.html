@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<!-- Built by website/docs/_tools/build.mjs from website/docs/_src/start/mac.html. Edit the source, then run the build. -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Get started on Mac — Nostr Vault Docs</title>
+    <meta name="description" content="Install Nostr Vault on a Mac, set it up from the menu bar, and keep your relay running while the app is open.">
+    <link rel="canonical" href="https://nostrvault.app/docs/start/mac/">
+    <meta name="theme-color" content="#000000">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Nostr Vault">
+    <meta property="og:url" content="https://nostrvault.app/docs/start/mac/">
+    <meta property="og:title" content="Get started on Mac — Nostr Vault Docs">
+    <meta property="og:description" content="Install Nostr Vault on a Mac, set it up from the menu bar, and keep your relay running while the app is open.">
+    <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" type="image/png" href="/assets/haven_icon.png">
+    <link rel="apple-touch-icon" href="/assets/haven_icon.png">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/docs/docs.css">
+    <script src="/docs/docs.js" defer></script>
+</head>
+
+<body class="docs-body">
+
+    <nav>
+        <a class="logo" href="/" aria-label="Nostr Vault home">
+            <img src="/assets/haven_icon.png" alt="" width="32" height="32">
+            <span>NOSTR VAULT</span>
+        </a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/#web">Web</a>
+            <a href="/#platforms">Download</a>
+            <a href="/docs/" aria-current="page">Docs</a>
+            <a href="/blog-what-is-nostr-vault.html">Blog</a>
+        </div>
+        <div class="actions">
+            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <aside class="docs-side" aria-label="Docs">
+            <button class="docs-menu" type="button" aria-expanded="false" aria-controls="docs-nav" hidden>Docs menu</button>
+            <div class="docs-search" hidden>
+                <input type="search" id="docs-q" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+                <ul class="docs-results" id="docs-results" role="listbox" hidden></ul>
+            </div>
+            <div class="docs-nav" id="docs-nav">
+                <p class="docs-nav-home"><a href="/docs/">Docs home</a></p>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Get started</p>
+                <ul>
+                    <li><a href="/docs/start/iphone/">iPhone and iPad</a></li>
+                    <li><a href="/docs/start/android/">Android</a></li>
+                    <li><a href="/docs/start/mac/" aria-current="page">Mac</a></li>
+                    <li><a href="/docs/start/web/">Web browser</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Keys and accounts</p>
+                <ul>
+                    <li><a href="/docs/keys/">Keys and accounts</a></li>
+                    <li><a href="/docs/keys/signers/">Signers</a></li>
+                    <li><a href="/docs/wallet/">Wallet</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Mesh and your devices</p>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh <span class="docs-nav-tag">3.0</span></a></li>
+                    <li><a href="/docs/browser-relay/">Browser relay <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Media and sharing</p>
+                <ul>
+                    <li><a href="/docs/media/">Media servers</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Help</p>
+                <ul>
+                    <li><a href="/docs/whats-new/">What's new <span class="docs-nav-tag">3.0</span></a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <p class="docs-nav-title">Developers</p>
+                <ul>
+                    <li><a href="/docs/developers/">NIP-F1 and the mesh</a></li>
+                </ul>
+            </div>
+            </div>
+        </aside>
+
+        <main class="docs-main">
+            <p class="eyebrow">Get started</p>
+            <h1>Get started on Mac</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#install">Install</a></li><li><a href="#pick-a-way-in">Pick a way in</a></li><li><a href="#new">Create an account</a></li><li><a href="#existing">Bring the account you have</a></li><li><a href="#browse">Just look around</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#next">Next</a></li></ul></div>
+
+            <article class="docs-article">
+                <p>On a Mac, Nostr Vault lives in the menu bar and runs your own Nostr relay while it's open. Leave it running and
+                    your Mac becomes the always-on home for your notes and media.</p>
+
+                <h2 id="install">Install</h2>
+                <p>Nostr Vault needs <strong>macOS 14</strong> (Sonoma) or later. Download it from
+                    <a href="https://github.com/btcforplebs/nostr-vault/releases/latest">the latest release on GitHub</a> (the
+                    <code>NostrVault-macOS-….zip</code> file), unzip it, and drag Nostr Vault into Applications.</p>
+                <p>The first time it opens, a <strong>Welcome to Nostr Vault</strong> window says <em>Nostr Vault lives in your menu
+                    bar</em>. Click <span class="ui">Get Started</span>. Setup opens next.</p>
+
+                <h2 id="pick-a-way-in">Pick a way in</h2>
+                <ul>
+                    <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
+                    <li><span class="ui">I already use Nostr</span> to bring your account, your notes and your media.</li>
+                    <li><span class="ui">Just look around</span> to read with your public key only.</li>
+                </ul>
+
+                <h2 id="new">Create an account</h2>
+                <p>The same steps as on the iPhone: <span class="ui">Create My Account</span>, save your secret key on
+                    <strong>Your Keys</strong> and tick <span class="ui">I saved my secret key</span>, choose a password on
+                    <strong>Protect Your Key</strong>, then a photo and name on <strong>Your Profile</strong> (or
+                    <span class="ui">Skip for Now</span>), and <span class="ui">Start Exploring</span>. The details are on
+                    <a href="/docs/start/iphone/#new">Get started on iPhone</a>.</p>
+
+                <h2 id="existing">Bring the account you have</h2>
+                <ol class="steps">
+                    <li><strong>Enter Your Keys.</strong> Pick how you sign:
+                        <ul>
+                            <li><span class="ui">Private Key</span>: paste your nsec and choose a password. The key is encrypted on
+                                this Mac.</li>
+                            <li><span class="ui">Remote Signer</span>: <span class="ui">Connect with Clave on your iPhone</span> shows a
+                                code to scan with Clave. Or paste a bunker link from any signer app. Your key stays in the signer.</li>
+                        </ul>
+                        No account yet? <span class="ui">New to Nostr? Generate Keys</span> makes one here.</li>
+                    <li><strong>Your Personal Relay.</strong> Your relay runs on this Mac either way. A
+                        <span class="ui">Relay Domain (optional)</span> makes it reachable from your other devices.
+                        Leave it blank for local only, or tap <span class="ui">Skip — configure later</span>.</li>
+                    <li><strong>Bring Your Notes Home.</strong> <span class="ui">From Network</span> copies your notes from public
+                        relays to this Mac; <span class="ui">From Backup</span> restores a Nostr Vault backup. Tap
+                        <span class="ui">Import Notes</span>, or <span class="ui">Skip — I'll start fresh</span>.</li>
+                    <li><strong>Mirror Your Media.</strong> Copies your photos and videos from a Blossom media server, or from a
+                        backup, to this Mac. Tap <span class="ui">Sync Media</span> or <span class="ui">Skip Media</span>.</li>
+                    <li><strong>Lightning (NWC).</strong> Paste a Nostr Wallet Connect link to send zaps, or
+                        <span class="ui">Skip — set up later</span>.</li>
+                    <li><strong>You're All Set.</strong> Click <span class="ui">Launch Nostr Vault</span>.</li>
+                </ol>
+
+                <h2 id="browse">Just look around</h2>
+                <p><strong>Enter Your Public Key</strong> (your npub or name@domain), import your notes if you like, and
+                    <strong>Ready to Browse</strong> opens the app. Re-run setup later to post, DM and zap.</p>
+
+                <h2 id="find-your-way-around">Find your way around</h2>
+                <ul>
+                    <li>Click the Nostr Vault icon in the menu bar. The panel shows your relay's status, your notes and your media.</li>
+                    <li><span class="ui">Open Window</span> opens the full window, with the feed.</li>
+                    <li>The gear (<span class="ui">Settings (⌘,)</span>) opens Settings.</li>
+                    <li>Your relay runs while Nostr Vault is open. <span class="ui">Quit Nostr Vault</span> stops it.</li>
+                </ul>
+                <p>To keep it running, open <span class="path">Settings &rarr; Startup</span> and turn on
+                    <span class="ui">Launch at Login</span> and <span class="ui">Start Relay Automatically</span>.</p>
+
+                <h2 id="next">Next</h2>
+                <ul>
+                    <li><a href="/docs/mesh/">The mesh</a>: make your Mac the photo server and vault for your phones (3.0).</li>
+                    <li><a href="/docs/keys/">Your keys and accounts</a></li>
+                </ul>
+            </article>
+            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41) for macOS.</p>
+            <div class="docs-pager" role="navigation" aria-label="Next and previous">
+                <a class="prev" href="/docs/start/android/"><span>Previous</span>Android</a>
+                <a class="next" href="/docs/start/web/"><span>Next</span>Web browser</a>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>
+            and <a href="https://github.com/barrydeen/haven">barrydeen</a>.</p>
+        <p class="footer-small">Made by <a href="https://btcforplebs.com">btcforplebs</a> &middot; <a href="/privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/btcforplebs/nostr-vault/blob/master/CHANGELOG.md">Changelog</a></p>
+    </footer>
+
+</body>
+
+</html>

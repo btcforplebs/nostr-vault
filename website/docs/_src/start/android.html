@@ -1,0 +1,111 @@
+<!--page
+{
+  "title": "Get started on Android",
+  "nav": "Android",
+  "section": "start",
+  "order": 2,
+  "description": "Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours with Amber or another signer.",
+  "checked": "Nostr Vault 3.0.0 (41) for Android",
+  "labels": {
+    "android": ["Create an account", "I already use Nostr", "Just look around", "What's inside?",
+                "Where should your notes live?", "Built-in Relay", "A Relay You Already Run", "Relay URL", "Blossom URL (optional)",
+                "Welcome to Nostr", "Create My Account", "Your Keys", "I saved my secret key", "Protect Your Key", "Your Profile",
+                "Skip for Now", "Welcome to Nostr!", "Start Exploring", "Who are you on Nostr?", "Read-only", "You can post",
+                "Encrypted key · you can post", "Signer link · you can post", "Use Amber", "Use a signer app", "Sign in with a signer app",
+                "Scan your key or signer link", "Checking your relays", "Start import", "Bringing your notes home",
+                "Keep it running in the background", "Enter your identity", "Resolve & Continue", "Import from Network",
+                "Restore from Backup", "Ready to Browse", "Launch Nostr Vault",
+                "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Tutorials"]
+  }
+}
+-->
+<p>Nostr Vault runs your own Nostr relay inside the app. Your posts, messages and media are kept on your phone, and
+    copies go out to public relays so people can see them.</p>
+
+<h2>Install</h2>
+<p>Nostr Vault needs <strong>Android 8.0</strong> or later. Get it from
+    <a href="https://zapstore.dev/apps/com.nostrvault.app">Zapstore</a>, or download the APK from the
+    <a href="https://github.com/btcforplebs/nostr-vault/releases/latest">latest release on GitHub</a> and open it.
+    Android asks you to allow installs from that app the first time.</p>
+
+<h2>Pick a way in</h2>
+<p>The first screen has three buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+<ul>
+    <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
+    <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. Your old notes come
+        home to your phone.</li>
+    <li><span class="ui">Just look around</span> to read with your public key only. You can't post until you add a
+        key or a signer.</li>
+</ul>
+
+<h2 id="relay">Where should your notes live?</h2>
+<p>Every way in asks this first.</p>
+<ul>
+    <li><span class="ui">Built-in Relay</span> (recommended): your own relay and media server, inside the app. Pick
+        this unless you know you want the other one.</li>
+    <li><span class="ui">A Relay You Already Run</span>: a relay app on this phone, such as Citrine, or your own relay
+        elsewhere, such as Nostr Vault on your Mac. Fill in <span class="ui">Relay URL</span>, and
+        <span class="ui">Blossom URL (optional)</span> for media. The built-in relay never starts, and setup skips
+        importing your notes.</li>
+</ul>
+<p>You can change it later in <span class="path">Settings &rarr; Advanced</span>.</p>
+
+<h2 id="new">Create an account</h2>
+<ol class="steps">
+    <li><strong>Welcome to Nostr.</strong> Tap <span class="ui">Create My Account</span>.</li>
+    <li><strong>Your Keys.</strong> The <strong>public key</strong> is your name on Nostr; share it freely. The
+        <strong>secret key</strong> is your password; anyone who has it can post as you. Copy it into your password
+        manager. Nobody can recover it for you. Tick <span class="ui">I saved my secret key</span>, then
+        <span class="ui">Continue</span>.</li>
+    <li><strong>Protect Your Key.</strong> Choose a password of at least 8 characters. It locks your secret key on this
+        phone, and nobody can reset it.</li>
+    <li><strong>Your Profile.</strong> Add a photo and a name, or tap <span class="ui">Skip for Now</span>.</li>
+    <li><strong>Welcome to Nostr!</strong> Tap <span class="ui">Start Exploring</span>, then follow the short guide
+        that helps you find people. Five follows build your web of trust, which fills your feed and filters out
+        spam.</li>
+</ol>
+
+<h2 id="existing">Bring the account you have</h2>
+<ol class="steps">
+    <li>Tap <span class="ui">I already use Nostr</span>, choose where your notes live, and the screen asks
+        <strong>Who are you on Nostr?</strong></li>
+    <li>Paste your npub or name@domain (<span class="ui">Read-only</span>), your nsec
+        (<span class="ui">You can post</span>, and you choose a password), an ncryptsec
+        (<span class="ui">Encrypted key · you can post</span>), or a bunker:// link
+        (<span class="ui">Signer link · you can post</span>). <span class="ui">Scan your key or signer link</span>
+        reads a QR code.</li>
+    <li>Or use a signer, so your secret key never enters Nostr Vault:
+        <ul>
+            <li><span class="ui">Use Amber</span> shows when Amber is installed on this phone.</li>
+            <li><span class="ui">Use a signer app</span> then <span class="ui">Sign in with a signer app</span> opens
+                Amber or another signer on this phone, or shows a code to scan with a signer on another device.</li>
+        </ul>
+        See <a href="/docs/keys/signers/">Signers</a>.</li>
+    <li><strong>Checking your relays.</strong> Tap <span class="ui">Start import</span>.</li>
+    <li><strong>Bringing your notes home.</strong> Wait for the import, or tap
+        <span class="ui">Keep it running in the background</span> and start using the app.</li>
+</ol>
+
+<h2 id="browse">Just look around</h2>
+<ol class="steps">
+    <li>Choose where your notes live.</li>
+    <li><strong>Enter your identity.</strong> Type your npub or name@domain, or scan a QR code, and tap
+        <span class="ui">Resolve &amp; Continue</span>.</li>
+    <li><strong>Import Notes.</strong> <span class="ui">Import from Network</span> copies your notes from public relays
+        to your phone. <span class="ui">Restore from Backup</span> reads a Nostr Vault backup file (.zip). Or skip.</li>
+    <li><strong>Ready to Browse.</strong> Tap <span class="ui">Launch Nostr Vault</span>.</li>
+</ol>
+<p>To post later, add your key or a signer in <a href="/docs/keys/">Accounts &amp; Keys</a>.</p>
+
+<h2>Find your way around</h2>
+<p>The tab bar along the bottom has <span class="ui">Feed</span>, <span class="ui">Search</span>,
+    <span class="ui">Profile</span> in the middle, <span class="ui">WoT</span> (your web of trust) and
+    <span class="ui">Vault</span> (everything your relay keeps, and your messages). The gear on your Profile opens
+    <span class="ui">Settings</span>.</p>
+<p>Replay the app's short tours from <span class="path">Settings &rarr; Help &rarr; Tutorials</span>.</p>
+
+<h2>Next</h2>
+<ul>
+    <li><a href="/docs/keys/">Your keys and accounts</a></li>
+    <li><a href="/docs/mesh/">The mesh</a>: connect your phone to your Mac and your other devices (3.0).</li>
+</ul>
