@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { NoteCard } from "../components/NoteCard.jsx"
 import { buildThread, flattenThread, readThread, repostedNote, rootIdOf, syncThread } from "../net/thread.js"
-import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { DEFAULT_RELAYS, pool, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { isBlockedNote, visibleReplies } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
+import { compose } from "../net/actions.js"
+
+if (import.meta.env) import("../styles/thread.css")
 
 const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain still fits a phone
 const LOADING = "Loading replies…"
@@ -95,24 +98,32 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   const syncing = status === LOADING
   // An article opens as the article, with its likes, comments, zaps and highlights, as the iPhone's does.
   if (thread?.root?.kind === 30023 && !rootBlocked) return <main class="screen"><ArticleReader event={thread.root} ctx={ctx} onBack={() => history.back()} /></main>
+  // The note that was opened: the root, or the reply tapped further down (the iPhone's focused note).
+  const focused = thread && (rows.find(r => r.event.id === id)?.event ?? (thread.root && !rootBlocked ? thread.root : null))
+  const readOnly = !!ctx.signer?.readOnly
   return (
-    <main class="screen">
-      <header class="screen-head">
-        <button class="small" onClick={() => history.back()}>Back</button>
-        <h2>Thread</h2>
-        {/* Mirrors Back so the title sits centred */}
-        <button class="small" style={{ visibility: "hidden" }} aria-hidden="true" tabIndex={-1}>Back</button>
+    <main class="screen thread-screen">
+      {/* The iPhone's thread sheet: Done on the left, an action capsule on the right (NoteDetailView toolbar). */}
+      <header class="thread-bar">
+        <button type="button" class="thread-done" onClick={() => history.back()}>Done</button>
+        <div class="thread-capsule">
+          <button type="button" class="thread-capsule-btn" aria-label="Reply" title={readOnly ? "Read-only: sign in with a key to reply" : "Reply"}
+            disabled={!focused || readOnly} onClick={() => focused && compose("reply", focused)}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z" /></svg>
+          </button>
+        </div>
       </header>
-      <div class="status-line">{status || (thread ? `${rows.length} ${rows.length === 1 ? "reply" : "replies"}` : "")}</div>
+      {status && <div class="status-line">{status}</div>}
       {thread === null ? <SkeletonRows count={3} label="Opening the thread…" />
         : <>
             {rootBlocked ? <p class="empty">This note is from someone you blocked.</p>
-              : thread.root ? <NoteCard event={thread.root} />
+              : thread.root ? <Focus on={thread.root.id === focused?.id} scroll={false} summary={<ReactionSummary ctx={ctx} note={thread.root} relays={relays} />}><NoteCard event={thread.root} /></Focus>
               : syncing ? <SkeletonRows count={1} label="Finding the note this thread starts from…" />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
+            {(rows.length > 0 || thread.root) && <h3 class="thread-replies-label">Replies</h3>}
             {rows.map(({ event, depth }) => (
               <div key={event.id} style={{ paddingLeft: `${Math.min(depth - 1, MAX_INDENT) * 16}px` }}>
-                <Focus on={event.id === id}><NoteCard event={event} /></Focus>
+                <Focus on={event.id === focused?.id} summary={<ReactionSummary ctx={ctx} note={event} relays={relays} />}><NoteCard event={event} /></Focus>
               </div>
             ))}
             {!rows.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
@@ -121,9 +132,59 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   )
 }
 
-// The note that was tapped, when it is a reply further down: scrolled into view and marked for screen readers.
-function Focus({ on, children }) {
+// The focused note (the iPhone's orange border and glow, styled as `.note-card.focused` with the note rows), with its
+// reaction summary under it. When it is a reply further down it is scrolled into view; marked for screen readers.
+function Focus({ on, children, summary, scroll = true }) {
   const el = useRef(null)
-  useEffect(() => { if (on) el.current?.scrollIntoView?.({ block: "center" }) }, [on])
-  return on ? <div aria-current="true" ref={el}>{children}</div> : children
+  useEffect(() => { if (on && scroll) el.current?.scrollIntoView?.({ block: "center" }) }, [on])
+  if (!on) return children
+  return <div class="note-card focused" aria-current="true" ref={el}>{children}{summary}</div>
+}
+
+/** The focused note's reactions as chips, as under the iPhone's focused note: each emoji with how many people sent it,
+ *  then reposts. One per person per emoji; "-" is a dislike (NIP-25) and not shown. Pure, for the tests.
+ *  -> { reactions: [{ emoji, count }] most first, reposts } */
+export function reactionSummary(events, noteId) {
+  const byEmoji = new Map(), reposters = new Set(), seen = new Set()
+  for (const ev of events) {
+    if (!ev?.id || seen.has(ev.id) || !Array.isArray(ev.tags)) continue
+    seen.add(ev.id)
+    if (!ev.tags.some(t => t[0] === "e" && t[1] === noteId)) continue // a relay may answer a tag filter loosely
+    if (ev.kind === 6) { reposters.add(ev.pubkey); continue }
+    if (ev.kind !== 7) continue
+    const c = typeof ev.content === "string" ? ev.content.trim() : ""
+    if (c === "-") continue
+    const emoji = c === "" || c === "+" ? "❤️" : c // "+" and empty are a like, as the iPhone shows them
+    if (!byEmoji.has(emoji)) byEmoji.set(emoji, new Set())
+    byEmoji.get(emoji).add(ev.pubkey)
+  }
+  const reactions = [...byEmoji].map(([emoji, who]) => ({ emoji, count: who.size }))
+    .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji))
+  return { reactions, reposts: reposters.size }
+}
+
+/** Read-only: asks the read relays for the note's reactions and reposts once, and draws nothing until some arrive. */
+function ReactionSummary({ ctx, note, relays }) {
+  const [sum, setSum] = useState(null)
+  const { blocked } = useBlocks(ctx)
+  useEffect(() => {
+    let live = true
+    setSum(null)
+    pool.querySync(relays, { kinds: [7, 6], "#e": [note.id], limit: 500 }, { maxWait: 6000 })
+      .then(evs => { if (live) setSum(reactionSummary(evs.filter(ev => !blocked?.has?.(ev.pubkey)), note.id)) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [note.id])
+  if (!sum || (!sum.reactions.length && !sum.reposts)) return null
+  return (
+    <div class="reaction-summary" aria-label="Reactions">
+      {sum.reactions.length > 0 && <span class="reaction-chip">
+        {sum.reactions.slice(0, 6).map(r => <span key={r.emoji} class="reaction-item"><span class="reaction-emoji">{r.emoji}</span> {r.count}</span>)}
+      </span>}
+      {sum.reposts > 0 && <span class="reaction-chip reaction-reposts">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a3 3 0 0 1 3-3h15" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a3 3 0 0 1-3 3H3" /></svg>
+        {sum.reposts}
+      </span>}
+    </div>
+  )
 }

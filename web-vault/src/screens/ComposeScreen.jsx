@@ -14,6 +14,7 @@ import { MentionPicker, mentionAt, mentionedPubkeys, toNostr, uniqueToken } from
 import { getProfile } from "../net/profiles.js"
 import { hashtagTags } from "../net/hashtags.js"
 import { Dialog } from "../components/Moderation.jsx"
+import { Avatar } from "../components/Avatar.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -230,10 +231,17 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
-  const title = !target ? "New note" : target.mode === "reply" ? "Reply" : "Quote"
+  const title = !target ? "New Note" : target.mode === "reply" ? "Reply" : "Quote"
+  const postLabel = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"
+  const postButton = cls => <button class={cls} disabled={!canPost} onClick={post} aria-busy={busy || uploading || undefined}>{postLabel}</button>
   return (
-    <main class={inline ? "screen compose-inline" : "screen"}>
-      {!inline && <header class="screen-head"><h2>{title}</h2></header>}
+    <main class={inline ? "screen compose-inline" : "screen compose-sheet"}>
+      {/* The iPhone's compose sheet: Cancel, the title, and Post at the top right (ComposeView+Chrome). */}
+      {!inline && <header class="compose-bar">
+        <button type="button" class="compose-cancel" onClick={() => history.back()}>Cancel</button>
+        <h2>{title}</h2>
+        {postButton("compose-post")}
+      </header>}
       {waiting && !inline && <p class="status-line">Finding the note…</p>}
       {target && note?.id === target.id && !parent && <p class="error status-line">That note couldn't be found, so there's nothing to {target.mode} to.</p>}
       {parent && !inline && <ComposeTarget mode={target.mode} note={parent} />}
@@ -241,6 +249,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         onDragOver={e => { if ([...(e.dataTransfer?.types ?? [])].includes("Files")) { e.preventDefault(); setDragging(true) } }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
         onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}>
+        {!inline && <span class="compose-avatar" aria-hidden="true"><Avatar pubkey={ctx.session.pubkey} size={40} /></span>}
         <textarea ref={box} class="compose" rows={inline ? 2 : 6} value={text} aria-label={title}
           placeholder={target?.mode === "reply" ? "Write your reply" : target ? "Add your comment" : "What's happening?"}
           aria-autocomplete="list" aria-expanded={!!mention} aria-controls={mention ? "mention-picker" : undefined}
@@ -281,16 +290,17 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         )}
         {photos.filter(p => p.status === "failed").map(p => <p key={p.id} class="error small compose-photo-error">{p.error}</p>)}
         <div class="compose-tools">
-          <button type="button" class="small compose-add-photo" disabled={photos.length >= MAX_PHOTOS} onClick={() => picker.current.click()}>
+          <button type="button" class="small compose-add-photo" disabled={photos.length >= MAX_PHOTOS} onClick={() => picker.current.click()}
+            aria-label="Photo or video" title="Photo or video">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></svg>
-            Photo or video
+            <span class="compose-add-photo-label">Photo or video</span>
           </button>
           <input ref={picker} type="file" accept="image/*,video/*" multiple hidden onChange={e => { addFiles(e.currentTarget.files); e.currentTarget.value = "" }} />
           {photos.length > 0 && <span class="muted small">{photos.length} of {MAX_PHOTOS}</span>}
           {loaded === key && (text.trim() || ready.length > 0) && !result && <span class="muted small compose-draft">Draft saved</span>}
         </div>
       </div>
-      <button class="primary" disabled={!canPost} onClick={post} aria-busy={busy || uploading || undefined}>{busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"}</button>
+      {inline && postButton("primary")}
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}
     </main>
