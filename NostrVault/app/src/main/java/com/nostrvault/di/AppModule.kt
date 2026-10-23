@@ -114,7 +114,8 @@ object AppModule {
         okhttp3.OkHttpClient.Builder()
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+            // A photo whose URL fails may wait up to 90 s for its owner's vault over the mesh (FipsMeshInterceptor).
+            .callTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
             // Blossom media through Morganite when it runs on this phone.
             .addInterceptor(com.nostrvault.service.LocalBlossomCache.interceptor)
             // A friend's vault on the FIPS mesh serves its blobs directly.

@@ -542,6 +542,7 @@ fun ProfileScreen(
                                     onOpen = {
                                         com.nostrvault.ui.components.FullScreenMediaRouter.open(
                                             mediaItems.map { it.first }, idx, copyLink = true,
+                                            authors = mediaItems.map { it.second.pubkey },
                                         )
                                     },
                                     onReport = { gridReportTarget = it },

@@ -212,6 +212,8 @@ fun MediaViewerScreen(
             } else {
                 ZoomableImage(
                     model = item.localFile ?: item.displayUrl,
+                    // The Vault lists the owner's media: read from their own vault when a URL fails.
+                    meshAuthor = com.nostrvault.fips.FipsMediaRouter.ownerHex().takeIf { it.isNotEmpty() },
                     contentDescription = null,
                     onScaleChanged = { newScale ->
                         currentScale = newScale

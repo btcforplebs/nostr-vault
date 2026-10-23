@@ -1,5 +1,7 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.runtime.collectAsState
+import com.nostrvault.fips.meshAuthor
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +31,7 @@ fun RetryableAsyncImage(
     contentDescription: String?,
     contentScale: ContentScale,
     modifier: Modifier = Modifier,
+    meshAuthor: String? = null,
 ) {
     var retryKey by remember { mutableIntStateOf(0) }
     var loadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
@@ -39,6 +42,7 @@ fun RetryableAsyncImage(
             model = ImageRequest.Builder(context)
                 .data(model)
                 .setParameter("retry", retryKey, memoryCacheKey = null)
+                .meshAuthor(meshAuthor)
                 .crossfade(false) // Instant rendering from cache
                 .build(),
             contentDescription = contentDescription,
@@ -47,7 +51,11 @@ fun RetryableAsyncImage(
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (loadState is AsyncImagePainter.State.Error) {
+        val meshPhases by com.nostrvault.fips.MeshMediaStatus.phases.collectAsState()
+        val meshPhase = com.nostrvault.fips.MeshMediaStatus.phaseFor(meshPhases, model as? String)
+        if (meshPhase != null) {
+            MeshMediaStatusOverlay(url = model as? String, compact = true, modifier = Modifier.matchParentSize())
+        } else if (loadState is AsyncImagePainter.State.Error) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,

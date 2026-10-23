@@ -53,8 +53,11 @@ object FipsMediaRouter {
 
     /** How long a failed ingress is not retried, so a dead vault costs one wait. */
     private const val INGRESS_RETRY_MS = 30_000L
-    /** How often a missing 10063 is asked for again. */
-    private const val REQUEST_RETRY_MS = 5 * 60_000L
+    /** How often a missing 10063 is asked for again (iOS requestRetry, web LIST_RETRY_MS). */
+    private const val REQUEST_RETRY_MS = 60_000L
+
+    /** Vaults one photo may ask, in the author's order (iOS maxVaults, web MAX_VAULTS). */
+    const val MAX_VAULTS = 3
 
     private val meshEntryRegex = Regex("""fipsmesh://(npub1[02-9ac-hj-np-z]{58})/""")
     private val meshHostRegex = Regex("""(npub1[02-9ac-hj-np-z]{58})\.fips""")
@@ -73,16 +76,31 @@ object FipsMediaRouter {
     fun meshNpubFor(author: String): String? = listedMeshNpubs(author)?.firstOrNull()
 
     /**
-     * The vault to dial for [author]'s blob at [host] (iOS FipsMeshReader.vault(for:serverList:)). A mesh-only URL's
-     * `<npub>.fips` host is dialled only when the author's own signed 10063 lists that npub: anyone can put any npub
-     * in a URL, and dialling it shows that node the reader's address. A host the list does not name dials nothing.
-     * A URL with no mesh host reads from the first vault the author lists.
+     * The vault to dial first for [author]'s blob at [host]: the head of [vaultsFor].
      */
-    fun vaultFor(author: String, host: String): String? {
+    fun vaultFor(author: String, host: String): String? = vaultsFor(author, host)?.firstOrNull()
+
+    /**
+     * The vaults a read of [author]'s blob at [host] may dial, in order (iOS MeshMediaRouter.vaults(for:serverList:)).
+     * A mesh-only URL's `<npub>.fips` host is dialled only when the author's own signed 10063 lists that npub: anyone
+     * can put any npub in a URL, and dialling it shows that node the reader's address. A host the list does not name
+     * dials nothing. A URL with no mesh host may ask the first [MAX_VAULTS] vaults the author lists: a 10063 can list
+     * a node that is up but never had the photo (#1081). Null while the author's list is not known yet.
+     */
+    fun vaultsFor(author: String, host: String): List<String>? {
         val listed = listedMeshNpubs(author) ?: return null
-        val named = meshNpubInHost(host) ?: return listed.firstOrNull()
-        return named.takeIf { it in listed }
+        return vaultsIn(listed, meshNpubInHost(host))
     }
+
+    /** The pure rule behind [vaultsFor], from the author's listed mesh npubs and the URL's `.fips` host npub. */
+    internal fun vaultsIn(listed: List<String>, hostNpub: String?): List<String> {
+        val distinct = listed.distinct()
+        if (hostNpub == null) return distinct.take(MAX_VAULTS)
+        return if (hostNpub in distinct) listOf(hostNpub) else emptyList()
+    }
+
+    /** Whether the author's 10063 is known, so [vaultsFor] answers without a fetch. */
+    fun hasServerList(author: String): Boolean = serverLists()[author] != null
 
     /** The mesh npubs [author]'s 10063 lists, in order; null (and a background fetch) when it is not known yet. */
     private fun listedMeshNpubs(author: String): List<String>? {
@@ -116,7 +134,7 @@ object FipsMediaRouter {
      * the main thread. A failure is remembered for [INGRESS_RETRY_MS].
      */
     fun ingressBase(npub: String): String? {
-        if (npub in distrusted) return null
+        if (isDistrusted(npub)) return null
         val now = System.currentTimeMillis()
         ingress.get(npub)?.let { cached ->
             if (cached.base != null) return cached.base
@@ -135,6 +153,16 @@ object FipsMediaRouter {
     fun distrust(npub: String) {
         distrusted.add(npub)
         ingress.remove(npub)
+    }
+
+    fun isDistrusted(npub: String): Boolean = npub in distrusted
+
+    /**
+     * Give up on [npub] for [INGRESS_RETRY_MS]: it never answered within a read's patience, so the next photo
+     * does not wait for it again.
+     */
+    fun markUnreachable(npub: String) {
+        ingress.put(npub, Ingress(null, System.currentTimeMillis()))
     }
 
     /** Drop a base that stopped answering (node restarted, vault evicted). */
