@@ -14,7 +14,7 @@ enum CredentialStore {
 
     /// These passwords decrypt the private keys, so they stay on this device:
     /// without `ThisDeviceOnly` an encrypted backup restores them onto another
-    /// phone. The mesh identity (FipsMeshService) is stored the same way.
+    /// phone.
     static let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
 
     /// The app's own keychain group on iOS. The default group is the first
