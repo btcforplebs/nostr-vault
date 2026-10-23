@@ -1,6 +1,7 @@
 package com.nostrvault.fips
 
 import com.nostrvault.di.AppModule
+import com.nostrvault.service.LocalBlossomCache
 import okhttp3.Request
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -30,6 +31,7 @@ class FipsMeshImageClientTest {
     private lateinit var savedLists: () -> Map<String, List<String>>
     private lateinit var savedFollows: Set<String>
     private lateinit var savedDial: (String) -> String?
+    private var savedLocalCache = true
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
@@ -42,6 +44,10 @@ class FipsMeshImageClientTest {
         savedDial = FipsMeshInterceptor.dial
         FipsMediaRouter.follows = setOf(author)
         FipsMediaRouter.serverLists = { mapOf(author to listOf("fipsmesh://$vault/")) }
+        // The phone's local Blossom cache is not part of this read, and its probe of 127.0.0.1 is remembered
+        // across tests: left on, it rewrites the URL here and its cached answer breaks LocalBlossomCacheTest.
+        savedLocalCache = LocalBlossomCache.enabled
+        LocalBlossomCache.enabled = false
         FipsMeshInterceptor.dial = { if (it == vault) server.url("/").toString().trimEnd('/') else null }
     }
 
@@ -49,6 +55,7 @@ class FipsMeshImageClientTest {
         FipsMediaRouter.serverLists = savedLists
         FipsMediaRouter.follows = savedFollows
         FipsMeshInterceptor.dial = savedDial
+        LocalBlossomCache.enabled = savedLocalCache
         server.shutdown()
         MeshMediaStatus.clear(sha)
     }

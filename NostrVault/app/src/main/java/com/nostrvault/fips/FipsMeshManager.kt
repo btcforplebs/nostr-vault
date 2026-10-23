@@ -119,7 +119,16 @@ class FipsMeshManager @Inject constructor(
             return@withContext false
         }
 
-        val nsec = credentialStore.getMeshNsec() ?: FipsBridge.generateNsec()?.also {
+        // A read that failed is not "no key": minting then would change this
+        // device's mesh address for every peer that saved it.
+        val saved = try {
+            credentialStore.readMeshNsec()
+        } catch (e: Exception) {
+            Log.w(TAG, "mesh identity unreadable: ${e.javaClass.simpleName}")
+            _lastError.value = "Could not read the mesh identity."
+            return@withContext false
+        }
+        val nsec = saved ?: FipsBridge.generateNsec()?.also {
             if (!credentialStore.storeMeshNsec(it)) {
                 // Starting anyway would hand out an address that dies with the
                 // process, which is worse than not starting: a peer would save
