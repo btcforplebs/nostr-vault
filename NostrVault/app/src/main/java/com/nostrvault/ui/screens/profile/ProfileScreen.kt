@@ -89,6 +89,10 @@ fun ProfileScreen(
             viewModel.setPubkey(pubkey)
         }
     }
+    // Live while on screen: the stream stays open and new posts come in on
+    // their own, so the page has no pull to refresh (iOS onAppear/onDisappear).
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { viewModel.pauseStream() }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) { viewModel.resumeStream() }
 
     val profile by viewModel.profile.collectAsState()
     // Held here, not in the header item, so scrolling it away does not restart the wait.
