@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
@@ -201,6 +202,17 @@ fun NoteDetailScreen(
 
     val directReplies = remember(replyTargetId, visibleReplies) {
         visibleReplies.filter { it.parentEventId == replyTargetId }.sortedBy { it.createdAt }
+    }
+    // The reply tree, worked out once per reply list rather than per row or
+    // per recomposition: full mode's rows, condensed mode's lines and counts.
+    val replyRows = remember(replyTargetId, visibleReplies, condensedReplies) {
+        if (condensedReplies) emptyList() else ThreadReplyRows.build(replyTargetId, visibleReplies)
+    }
+    val condensedTree = remember(replyTargetId, visibleReplies, condensedReplies) {
+        if (condensedReplies) FeedThreadGrouping.replyTree(replyTargetId, visibleReplies) else emptyList()
+    }
+    val condensedReplyCounts = remember(visibleReplies, condensedReplies) {
+        if (condensedReplies) ThreadReplyRows.replyCounts(visibleReplies) else emptyMap()
     }
 
     // Re-fetch engagement when focus changes; when refocusing inside the
@@ -594,38 +606,31 @@ fun NoteDetailScreen(
                 // Condensed: one card of lines, nested under what they answer;
                 // tap a line and it becomes the note you are reading, full size.
                 if (condensedReplies) {
-                    val tree = FeedThreadGrouping.replyTree(replyTargetId, visibleReplies)
-                    if (tree.isNotEmpty()) {
-                        item(key = "replies_condensed") {
-                            CondensedThreadCard {
-                                for (entry in tree) {
-                                    ThreadCondensedLine(
-                                        note = entry.note,
-                                        depth = entry.depth,
-                                        replyCount = visibleReplies.count { it.parentEventId == entry.note.id },
-                                        viewModel = viewModel,
-                                        profiles = profiles,
-                                        onProfileClick = onProfileClick,
-                                        onTrustWeb = openTrustWeb,
-                                        onTap = { scrollToNote(entry.note.id) },
-                                    )
-                                }
-                            }
+                    itemsIndexed(condensedTree, key = { _, entry -> "condensed_${entry.note.id}" }) { index, entry ->
+                        CondensedThreadCardRow(CardSegment.of(index, condensedTree.size)) {
+                            ThreadCondensedLine(
+                                note = entry.note,
+                                depth = entry.depth,
+                                replyCount = condensedReplyCounts[entry.note.id] ?: 0,
+                                viewModel = viewModel,
+                                profiles = profiles,
+                                onProfileClick = onProfileClick,
+                                onTrustWeb = openTrustWeb,
+                                onTap = { scrollToNote(entry.note.id) },
+                            )
                         }
                     }
-                } else items(directReplies, key = { it.id }) { reply ->
-                    ThreadedReplyNode(
-                        reply = reply,
-                        pool = visibleReplies,
-                        depth = 1,
+                } else items(replyRows, key = { it.id }) { row ->
+                    ThreadReplyRowItem(
+                        row = row,
                         focusedNoteId = focusedNoteId,
                         themeColor = colors.primary,
                         viewModel = viewModel,
                         expandedEngagement = expandedEngagement,
                         perNoteEngagement = perNoteEngagement,
                         profiles = profiles,
+                        quotedNotesCache = quotedNotesCache,
                         onProfileClick = onProfileClick,
-                        onNoteClick = onNoteClick,
                         onArticleClick = onArticleClick,
                         onFocus = { id -> scrollToNote(id) },
                         onReply = onReply,
@@ -642,10 +647,7 @@ fun NoteDetailScreen(
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
                         onEngagementClick = { kind, id -> engagementSheet = EngagementSheetTarget(kind, id) },
-                        // iOS fullRepliesList: 12pt between top-level replies.
-                        modifier = Modifier
-                            .padding(horizontal = ThreadSideInset)
-                            .padding(bottom = 12.dp),
+                        modifier = Modifier.padding(horizontal = ThreadSideInset),
                     )
                 }
 
