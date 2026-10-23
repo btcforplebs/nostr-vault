@@ -44,3 +44,29 @@
 .compose-tools { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .compose-add-photo { display: inline-flex; align-items: center; gap: 6px; }
 .compose-draft { margin-left: auto; }
+
+/* The compose sheet (lane E): the iPhone's ComposeView chrome, a sheet with no tab bar. Cancel and the title on the
+   top bar, Post as a pill at its right; your avatar beside a borderless editor; the tools as icon buttons. Scoped to
+   .compose-sheet: the inline reply composer and Messages keep their look. */
+body:has(.compose-sheet) .tabbar { display: none; }
+.compose-sheet { min-height: 100vh; background: var(--s1); }
+.compose-bar { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 8px; padding: 10px var(--gutter); }
+.compose-bar h2 { margin: 0; font: var(--t-headline); text-align: center; }
+.compose-cancel, .compose-post { min-height: 44px; padding: 0 18px; border-radius: 999px; font: 600 17px/1 var(--font);
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.compose-cancel { justify-self: start; color: var(--accent); }
+.compose-post { justify-self: end; color: #fff; background: var(--accent); border-color: transparent; }
+.compose-post:disabled { background: var(--glass); color: var(--text-3, rgb(255 255 255 / .35)); }
+.compose-sheet .compose-area { display: grid; grid-template-columns: 40px 1fr; column-gap: 12px; margin-top: 6px; }
+.compose-sheet .compose-area > * { grid-column: 2; }
+.compose-sheet .compose-avatar { grid-column: 1; grid-row: 1; padding-top: 4px; }
+.compose-sheet .compose-area .compose { margin: 0; padding: 10px 0; border: 0; background: none; box-shadow: none; resize: none;
+  font: 400 17px/1.4 var(--font); min-height: 40vh; }
+.compose-sheet .compose-area .compose:focus { outline: none; }
+.compose-sheet .compose-area.dragging .compose { border: 1px dashed var(--accent); border-radius: var(--radius); }
+.compose-sheet .compose-tools { grid-column: 1 / -1; margin-top: 10px; }
+.compose-sheet .compose-add-photo { width: 52px; height: 52px; min-height: 0; padding: 0; display: grid; place-items: center;
+  border-radius: 50%; border: 0; background: var(--accent-pale); color: var(--accent); }
+.compose-sheet .compose-add-photo svg { width: 24px; height: 24px; }
+.compose-sheet .compose-add-photo-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

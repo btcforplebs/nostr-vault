@@ -1,0 +1,25 @@
+/* Thread (lane E): the iPhone's thread sheet chrome (NoteDetailView). The focused note's border and glow are the note
+   rows' `.note-card.focused` (lane C); this file owns the bar, the reaction summary and the REPLIES label. */
+.thread-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px var(--gutter); }
+.thread-done, .thread-capsule { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--hair); border-radius: 999px; }
+.thread-done { min-height: 44px; padding: 0 20px; font: 600 17px/1 var(--font); color: var(--text); }
+.thread-capsule { display: flex; align-items: center; gap: 2px; padding: 3px 6px; }
+.thread-capsule-btn { width: 44px; height: 38px; min-height: 0; padding: 0; display: grid; place-items: center;
+  border: 0; background: none; color: var(--text-2); border-radius: 999px; }
+.thread-capsule-btn:not(:disabled):hover { color: var(--text); }
+.thread-capsule-btn:disabled { opacity: .45; }
+
+/* Under the focused note: one chip of emoji counts, then reposts (❤️ 3 👀 1 · ↻ 1). */
+.reaction-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 14px 12px; padding-top: 10px;
+  border-top: 1px solid var(--hair); }
+.reaction-chip { display: inline-flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 10px;
+  background: var(--s2); font: 600 13px/1 var(--font); color: var(--text-2); }
+.reaction-item { display: inline-flex; align-items: center; gap: 4px; }
+.reaction-emoji { font-size: 15px; }
+.reaction-reposts { color: var(--verified); gap: 6px; }
+
+/* The iPhone's plain uppercase section label above the replies. */
+.thread-replies-label { margin: 18px var(--gutter) 10px; font: 600 14px/1.2 var(--font); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-2); }
