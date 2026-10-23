@@ -367,6 +367,33 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The page went off screen (another page on top, or the app in the
+     * background): its sockets close. A phone that sleeps with them open
+     * lets them die, and they could sit in a slow retry for minutes after
+     * the page came back. iOS ProfileFeedLoader.stop() on disappear.
+     */
+    fun pauseStream() {
+        val s = stream ?: return
+        s.close(); stream = null; _streamOpen.value = false
+        // A page of older notes in flight dies with the old stream.
+        pageToken++
+        _isLoadingOlder.value = false
+    }
+
+    /**
+     * The page is on screen again: the same stream opens fresh, in place.
+     * What came out while it was away arrives with the opening page, and
+     * new posts after that arrive live, so nothing needs pulling. iOS
+     * ProfileFeedLoader.start() on appear.
+     */
+    fun resumeStream() {
+        val pk = _pubkey.value
+        if (pk.isEmpty() || stream != null) return
+        mergeNotes(feedService.notes.value.filter { it.pubkey == pk })
+        startStream(pk)
+    }
+
     /** Set once your own follower ledger supplied the FOLLOWERS count. */
     @Volatile private var ownLedgerLoaded = false
 
