@@ -721,6 +721,7 @@
 		8A194029008DF892CC4C47D7 /* FeedMenuEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF46EC38139B1B7E27E8114C /* FeedMenuEditor.swift */; };
 		8A8A672CB3CA7E14FE8B7D6B /* NVWidgetKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */; };
 		8A9903724546906D5D2D829A /* BrowserRelaySender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */; };
+		8AB4B4F6E4E4A9791A6F27B2 /* RevealKeyGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */; };
 		8ABCB3D026E97EDF6A561971 /* FeedView+FeedStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF877C91ACA408A0F738AA31 /* FeedView+FeedStack.swift */; };
 		8ACBECA76626A6B52415A403 /* RelayFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49BC980E7F628F8AB17AA216 /* RelayFrame.swift */; };
 		8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB15AE080BDC0999543399A /* WebSocketClient.swift */; };
@@ -1135,6 +1136,7 @@
 		D722A152307299AF943D15C4 /* NostrService+DeletedPosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3137A6E9972110B05584AE69 /* NostrService+DeletedPosts.swift */; };
 		D737871ABDB562C90F946E12 /* NostrService+EventQueries.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0600FF30DDEB5242A8FB1E0 /* NostrService+EventQueries.swift */; };
 		D7453C908988F0E8DA85D17F /* ImportRunningPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DF387809C5344100031771 /* ImportRunningPill.swift */; };
+		D75679718256CBFD5D490B30 /* RevealKeyGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */; };
 		D77C6C30CC8998E4A0341043 /* ActionToastBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 160DAD117DA05D7B6AF3460D /* ActionToastBanner.swift */; };
 		D78888FE41863CB9D7B18949 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		D78A86476C9F266C9AE64BF4 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
@@ -1498,6 +1500,7 @@
 		251CF8F576FE6FC7D5A2306B /* AccountsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettingsView.swift; sourceTree = "<group>"; };
 		260B4B664CE91A3427693ED5 /* NoteDetailView+ThreadEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+ThreadEngagement.swift"; sourceTree = "<group>"; };
 		26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBroadcastSheet.swift; sourceTree = "<group>"; };
+		26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealKeyGate.swift; sourceTree = "<group>"; };
 		27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletedNotesStore.swift; sourceTree = "<group>"; };
 		279617C6C46FE95602AF2F5B /* MediaGridItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGridItem.swift; sourceTree = "<group>"; };
 		27A87225270090D65AC98D48 /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = build/libhaven.a; sourceTree = SDKROOT; };
@@ -2430,6 +2433,7 @@
 				327390102914F7A1B1AED7A0 /* HavenConfig+RelayRoles.swift */,
 				59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */,
 				8222E11107724B191437998C /* HavenConfig+Signing.swift */,
+				26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -4049,6 +4053,7 @@
 				0DBF9CFA7BA08387251FBA5F /* ReturnPill.swift in Sources */,
 				A387306E9E0D09798B5653E9 /* ReturnPillManager.swift in Sources */,
 				BDA371CA11607DA757613AFB /* ReturnSummary.swift in Sources */,
+				8AB4B4F6E4E4A9791A6F27B2 /* RevealKeyGate.swift in Sources */,
 				4F4D93AAA816BCB69FDC85F2 /* RevealKeySheetView.swift in Sources */,
 				0BDACF2A52FF38A77AFC41F0 /* SceneDelegate.swift in Sources */,
 				326C354948213E62EBB67757 /* ScrollChromeModifier.swift in Sources */,
@@ -4730,6 +4735,7 @@
 				05DB02289CA319832B93C5AB /* ReturnPill.swift in Sources */,
 				146F984FD58E2303528869C8 /* ReturnPillManager.swift in Sources */,
 				BF9EDF30FD72B7B46EDDAFD6 /* ReturnSummary.swift in Sources */,
+				D75679718256CBFD5D490B30 /* RevealKeyGate.swift in Sources */,
 				CA4BFE2386CB5FF5455181A4 /* RevealKeySheetView.swift in Sources */,
 				907267B7941E9E28917646CF /* ScrollChromeModifier.swift in Sources */,
 				E2484116815A3C135A386248 /* SearchFilter.swift in Sources */,
