@@ -7,6 +7,12 @@ services:
       target: thread
     image: nostrvault-thread:${SITE_TAG:-latest}
     restart: unless-stopped
+    # Docker keeps at most 2 x 1 MB of what the container prints (the access log is a file instead: nginx.conf).
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
 
   website:
     # The pages and the built web apps are baked into the image (Dockerfile). Deploy and roll back with ./deploy.sh.
@@ -22,3 +28,9 @@ services:
     ports:
       - "4024:80"
     restart: unless-stopped
+    # Docker keeps at most 2 x 1 MB of what the container prints (the access log is a file instead: nginx.conf).
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
