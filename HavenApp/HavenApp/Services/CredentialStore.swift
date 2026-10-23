@@ -85,9 +85,18 @@ enum CredentialStore {
     /// added first and the old item deleted only once the copy is there, so
     /// a failure (before the first unlock, say) leaves the old item readable
     /// and it moves at the next launch. Returns how many items changed.
+    /// Every keychain service the migration moves: these passwords and the
+    /// NIP-46 client keys.
+    static let migratedServices = [service]
+
     @discardableResult
     static func migrateToThisDeviceOnly(in keychain: CredentialKeychain = SystemKeychain(),
                                         privateGroup: String? = privateGroup) -> Int {
+        migratedServices.reduce(0) { $0 + migrate(service: $1, in: keychain, privateGroup: privateGroup) }
+    }
+
+    private static func migrate(service: String, in keychain: CredentialKeychain,
+                                privateGroup: String?) -> Int {
         var moved = 0
         for item in keychain.items(service: service)
         where item.group != privateGroup || item.accessible != accessible {
@@ -109,6 +118,17 @@ enum CredentialStore {
             }
         }
         return moved
+    }
+
+    /// Where the owner password sits, for one launch log
+    /// line: a device log then shows the migration ran, with no probe app.
+    /// Names groups only, never values.
+    static func locationReport(in keychain: CredentialKeychain = SystemKeychain()) -> String {
+        func place(_ service: String, _ account: String) -> String {
+            let groups = keychain.items(service: service).filter { $0.account == account }.map { $0.group ?? "no group" }
+            return groups.isEmpty ? "none" : groups.joined(separator: " + ")
+        }
+        return "owner password in \(place(service, ownerAccount))"
     }
 
     // MARK: - Any secret, by account name
