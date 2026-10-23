@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.nostrvault.data.music.WavlakeLink
 import com.nostrvault.data.music.WavlakeTrack
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -197,7 +196,7 @@ fun MusicTrackRow(
                     onClick = { menu = false; MusicFeedState.reveal(page) },
                 )
             }
-            DropdownMenuItem(text = { Text("Share to Nostr") }, onClick = { menu = false; actions.onShare(WavlakeLink.shareText(track)) })
+            DropdownMenuItem(text = { Text("Share to Nostr") }, onClick = { menu = false; MusicArtistKey.share(track, actions.onShare) })
             track.artistNpub?.let(actions.npubToHex)?.let { hex ->
                 DropdownMenuItem(text = { Text("${track.artist} on Nostr") }, onClick = { menu = false; actions.onOpenProfile(hex) })
             }
