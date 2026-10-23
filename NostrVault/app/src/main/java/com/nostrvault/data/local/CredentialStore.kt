@@ -47,6 +47,16 @@ object CredentialStore {
     fun init(context: Context) {
         if (::prefs.isInitialized || openFailed) return
         val app = context.applicationContext
+        // A Start fresh the app was killed in the middle of: the old store goes back first.
+        val swap = swap(app)
+        if (swap.recover()) Log.w(TAG, "an unfinished Start fresh was undone; the old store is back")
+        if (swap.pending.exists()) {
+            // The old store couldn't be put back; opening now would silently start an empty one.
+            Log.e(TAG, "an unfinished Start fresh could not be undone; the old store is still at ${swap.pending.name}")
+            openFailed = true
+            _unreadable.value = true
+            return
+        }
         val opened = openRecovering(open = { open(app) })
         if (opened == null) {
             openFailed = true
@@ -70,19 +80,31 @@ object CredentialStore {
     }
 
     /**
-     * The recovery screen's Start fresh, after the person confirmed: the
-     * unreadable store is copied aside (kept on disk, never deleted here) and
-     * an empty one opened. Saved passwords, account keys and the mesh key are
-     * gone from the app after this. True when the fresh store opened.
+     * The recovery screen's Start fresh, after the person confirmed: an empty
+     * store replaces the unreadable one, which is kept on disk (never deleted
+     * here). Saved passwords, account keys and the mesh key are gone from the
+     * app after this. The old store stays the live one until the fresh one
+     * has opened and taken a write ([FreshStoreSwap]); if that fails, or the
+     * app is killed first, the old store is put back. True when the fresh
+     * store is in.
      */
     @Synchronized
     fun startFresh(context: Context): Boolean {
         val app = context.applicationContext
         val opened = try {
-            setAside(app)
-            open(app)
+            swap(app).run(
+                openFresh = {
+                    open(app).takeIf { it.edit().putLong(FRESH_SINCE, System.currentTimeMillis()).commit() }
+                },
+                keepAs = File(storeFile(app).parentFile, "$PREFS_NAME.unreadable-${System.currentTimeMillis()}.xml"),
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open a fresh EncryptedSharedPreferences: ${e.message}")
+            Log.e(TAG, "Start fresh failed: ${e.message}")
+            swap(app).recover()
+            null
+        }
+        if (opened == null) {
+            Log.e(TAG, "Failed to open a fresh EncryptedSharedPreferences; the old store is back")
             return false
         }
         prefs = opened
@@ -90,6 +112,15 @@ object CredentialStore {
         _unreadable.value = false
         return true
     }
+
+    /** When Start fresh put this store in; also its proof that the fresh store takes writes. */
+    private const val FRESH_SINCE = "fresh-store-since"
+
+    private fun storeFile(context: Context) = File(context.filesDir.parentFile, "shared_prefs/$PREFS_NAME.xml")
+
+    /** [Context.deleteSharedPreferences] also drops the copy the process cached (a plain delete would leave it loaded). */
+    private fun swap(context: Context) =
+        FreshStoreSwap(storeFile(context), deleteLive = { context.deleteSharedPreferences(PREFS_NAME) })
 
     private fun open(context: Context): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
@@ -102,19 +133,6 @@ object CredentialStore {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
-    }
-
-    /**
-     * Copies the unreadable file next to itself, then deletes it through
-     * [Context.deleteSharedPreferences], which also drops the copy the
-     * process has cached (a plain rename would leave the bad keyset loaded).
-     */
-    private fun setAside(context: Context) {
-        val file = File(context.filesDir.parentFile, "shared_prefs/$PREFS_NAME.xml")
-        if (file.exists()) {
-            file.copyTo(File(file.parentFile, "$PREFS_NAME.unreadable-${System.currentTimeMillis()}.xml"), overwrite = true)
-        }
-        context.deleteSharedPreferences(PREFS_NAME)
     }
 
     /**
@@ -137,7 +155,7 @@ object CredentialStore {
         return null
     }
 
-    /** Deletes the copies [setAside] kept (factory reset). */
+    /** Deletes the copies [startFresh] kept (factory reset). */
     fun deleteSetAside(context: Context) {
         File(context.filesDir.parentFile, "shared_prefs").listFiles()
             ?.filter { it.name.startsWith("$PREFS_NAME.unreadable-") }
