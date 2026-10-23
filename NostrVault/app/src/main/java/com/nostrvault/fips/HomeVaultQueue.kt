@@ -327,8 +327,11 @@ object HomeVaultRules {
     /** An HTTP status for a Blossom PUT /upload. */
     fun uploadOutcome(code: Int): HomeVaultSend = when (code) {
         in 200..299 -> HomeVaultSend.SENT
-        // Not the owner's key, malformed, or too large: sending again changes nothing.
-        400, 401, 403, 411, 413, 415 -> HomeVaultSend.REJECTED
+        // Not the owner's key, no length, or too large: sending again changes nothing.
+        // 400 is not here: the door answers it for a body cut mid-transfer, and a
+        // kiosk build whose port spoke TLS answered it to every upload (iOS #1135);
+        // both are about this try, not the blob (iOS HomeVaultLogic.uploadResult).
+        401, 403, 411, 413, 415 -> HomeVaultSend.REJECTED
         // 404/405 included: a vault on older code has no upload door on the
         // mesh yet, and keeps what waits until it does.
         else -> HomeVaultSend.RETRY
