@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -96,12 +97,15 @@ fun TrustWebDialog(
                 }
                 val loaded = path
                 if (loaded != null) {
-                    TrustWebContent(
-                        author = author,
-                        path = loaded,
-                        onProfileClick = onProfileClick?.let { open -> { pubkey: String -> onDismiss(); open(pubkey) } },
-                        onDismiss = onDismiss,
-                    )
+                    // Opened over the WOT tab, it starts fresh rather than share the tab's keep.
+                    CompositionLocalProvider(LocalTrustWebKeep provides null) {
+                        TrustWebContent(
+                            author = author,
+                            path = loaded,
+                            onProfileClick = onProfileClick?.let { open -> { pubkey: String -> onDismiss(); open(pubkey) } },
+                            onDismiss = onDismiss,
+                        )
+                    }
                 } else {
                     Column(Modifier.safeDrawingPadding()) {
                         TopBar(title = "Web of Trust", onDone = onDismiss, onList = null)

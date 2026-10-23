@@ -7,9 +7,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.nostrvault.data.model.FollowerSnapshot
@@ -46,9 +44,12 @@ internal data class WotFilterInputs(
 internal class WotFilters(
     private val me: String,
     private val scope: CoroutineScope,
-    val note: FilterNoteState,
+    note: FilterNoteState,
     private val inputs: () -> WotFilterInputs,
 ) {
+    /** The screen's note pill; a kept filter set takes the new screen's on each visit. */
+    var note by mutableStateOf(note)
+        internal set
     /** The filter icons that are on. */
     var on by mutableStateOf(emptySet<TrustMap.Filter>())
         private set
@@ -138,11 +139,12 @@ internal class WotFilters(
 @Composable
 internal fun rememberWotFilters(me: String, inputs: WotFilterInputs): WotFilters {
     val note = rememberFilterNoteState()
-    val scope = rememberCoroutineScope()
-    val latest = rememberUpdatedState(inputs)
-    val filters = remember(me) {
-        WotFilters(me, scope, note) { latest.value }
-    }
+    val screenScope = rememberCoroutineScope()
+    // Kept on the WOT tab with the inputs they read, so filters stay on across tab switches.
+    val latest = keptState("filterInputs") { inputs }.apply { value = inputs }
+    val scope = LocalTrustWebKeep.current?.scope ?: screenScope
+    val filters = rememberKept("filters:$me") { WotFilters(me, scope, note) { latest.value } }
+    filters.note = note
     return filters
 }
 

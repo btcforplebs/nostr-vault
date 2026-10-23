@@ -7,12 +7,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nostrvault.data.model.TrustPath
 import kotlinx.coroutines.flow.first
 
@@ -33,6 +36,8 @@ fun TrustWebTab(
     bottomInset: androidx.compose.ui.unit.Dp,
 ) {
     val trust = rememberTrustPathServices().trustPathService()
+    // The tab's globe and data, kept in its back-stack entry across tab switches.
+    val keep: TrustWebKeep = viewModel()
     val me by trust.meUpdates.collectAsState()
     // The WoT tutorial points into the globe, and starts here the first
     // time the tab shows (after Fill your vault; see TutorialProgress).
@@ -43,7 +48,8 @@ fun TrustWebTab(
     Box(Modifier.fillMaxSize().background(Color.Black).background(SpaceBrush)) {
         // A new account draws a new globe; the globe keeps up with your follows itself.
         if (me.isNotEmpty()) androidx.compose.runtime.key(me) {
-            TrustWebContent(
+            remember(me) { keep.account(me) }
+            CompositionLocalProvider(LocalTrustWebKeep provides keep) { TrustWebContent(
                 author = me,
                 // The path from you to you: no bridges, nothing to look up.
                 path = TrustPath.resolve(me, me, emptySet(), emptySet(), emptyList()),
@@ -53,7 +59,7 @@ fun TrustWebTab(
                 onMessage = onMessage,
                 reselects = reselects,
                 bottomInset = bottomInset,
-            )
+            ) }
         }
     }
 }
