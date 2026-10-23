@@ -22,7 +22,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { resetBrowser, RESET_QUESTION } = await import("../src/screens/SettingsScreen.jsx")
+const { resetBrowser, RESET_QUESTION, RESET_KEY_WARNING } = await import("../src/screens/SettingsScreen.jsx")
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const OTHER_SK = generateSecretKey(), OTHER = getPublicKey(OTHER_SK)
@@ -116,11 +116,14 @@ test("log lines show the time, the type and the rest", () => {
 
 test("Database & Reset asks first, naming what goes; Cancel wipes nothing", () => {
   let wiped = 0, asked = ""
-  const ctx = { signOut: () => wiped++ }
+  const ctx = { signOut: () => wiped++, session: { method: "nip07" } }
   assert.equal(resetBrowser(ctx, q => { asked = q; return false }), false)
   assert.equal(wiped, 0)
   assert.equal(asked, RESET_QUESTION)
   assert.match(RESET_QUESTION, /notes, messages, drafts and paired vaults/)
   assert.equal(resetBrowser(ctx, () => true), true)
   assert.equal(wiped, 1)
+  // A key made in this browser is deleted with it: the question says so.
+  resetBrowser({ ...ctx, session: { method: "local" } }, q => { asked = q; return false })
+  assert.equal(asked, `${RESET_QUESTION} ${RESET_KEY_WARNING}`)
 })

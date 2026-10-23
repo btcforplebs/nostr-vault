@@ -7,8 +7,10 @@ import { decrypt as ncryptsecOpen } from "nostr-tools/nip49"
 import { decode } from "nostr-tools/nip19"
 import { bytesToHex } from "nostr-tools/utils"
 import * as nip44 from "nostr-tools/nip44"
-import { newKey, checkPassword, localSession, localSigner, unlockLocal, LOCKED } from "../src/signer/local.js"
-import { saveSession, loadSession, loadAccounts } from "../src/session.js"
+import { bech32 } from "@scure/base"
+import { newKey, checkPassword, localSession, localSigner, unlockLocal, revealNsec, wellFormed, LOCKED, DAMAGED, WRONG_PASSWORD, CREATING } from "../src/signer/local.js"
+import { insecure } from "../src/signer/keyring.js"
+import { saveSession, loadSession, loadAccounts, rememberAccount } from "../src/session.js"
 import { signerFor } from "../src/signer/index.js"
 import { cryptoFor } from "../src/net/dms.js"
 import { starterPacks, newAccountTemplates, signAll, publishNewAccount, profileContent, NEW_ACCOUNT_RELAYS } from "../src/net/new-account.js"
@@ -91,6 +93,47 @@ test("a lost sealing key locks the signer; the password unlocks it again, a wron
   assert.equal(unlocked.ncryptsec, s.ncryptsec)
   const ev = await localSigner(unlocked, { keyStore: fresh }).signEvent({ kind: 1, created_at: 1, tags: [], content: "" })
   assert.equal(ev.pubkey, k.pubkey)
+})
+
+test("the key is locked at NIP-49's logn 16 unless a test asks for less", async () => {
+  const s = await localSession(newKey().sk, PW, { keyStore: memKeys() })
+  const b = bech32.fromWords(bech32.decode(s.ncryptsec, 5000).words)
+  assert.equal(b[0], 2)
+  assert.equal(b[1], 16)
+})
+
+test("a missing or damaged ncryptsec says so; only a real one answers Wrong password", async () => {
+  const k = newKey()
+  const s = await localSession(k.sk, PW, { keyStore: memKeys(), logn: 4 })
+  assert.equal(wellFormed(s.ncryptsec), true)
+  const broken = [undefined, "", "ncryptsec1", s.ncryptsec.slice(0, -6), s.ncryptsec.slice(0, -1) + (s.ncryptsec.endsWith("q") ? "p" : "q")]
+  for (const ncryptsec of broken) {
+    assert.equal(wellFormed(ncryptsec), false, String(ncryptsec))
+    await assert.rejects(unlockLocal({ ...s, ncryptsec }, PW, { keyStore: memKeys() }), e => e.message === DAMAGED)
+  }
+  // Another account's ncryptsec: the password opens it, but it isn't this account's key.
+  const other = await localSession(newKey().sk, PW, { keyStore: memKeys(), logn: 4 })
+  await assert.rejects(unlockLocal({ ...s, ncryptsec: other.ncryptsec }, PW, { keyStore: memKeys() }), e => e.message === DAMAGED)
+  await assert.rejects(unlockLocal(s, "wrong password", { keyStore: memKeys() }), e => e.message === WRONG_PASSWORD)
+})
+
+test("a local account without an ncryptsec isn't an account", () => {
+  const storage = memStorage()
+  assert.throws(() => rememberAccount({ method: "local", pubkey: newKey().pubkey }, storage), /not an account/)
+  storage.setItem("nv-accounts", JSON.stringify([{ method: "local", pubkey: newKey().pubkey }]))
+  assert.deepEqual(loadAccounts(storage), [])
+})
+
+test("Your Secret Key: the password shows the nsec, a wrong one doesn't", async () => {
+  const k = newKey()
+  const s = await localSession(k.sk, PW, { keyStore: memKeys(), logn: 4 })
+  assert.equal(revealNsec(s, PW), k.nsec)
+  assert.throws(() => revealNsec(s, "wrong password"), e => e.message === WRONG_PASSWORD)
+  assert.throws(() => revealNsec({ ...s, ncryptsec: undefined }, PW), e => e.message === DAMAGED)
+})
+
+test("a plain-http page says Creating an account, not bunker", () => {
+  assert.equal(insecure(CREATING), "Creating an account needs a secure page: open Nostr Vault over https (or on localhost), not plain http.")
 })
 
 test("starter packs: hex pubkeys, bad npubs dropped, Bitcoin starts unpicked and last", () => {

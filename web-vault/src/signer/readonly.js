@@ -56,7 +56,7 @@ export function namesAKey(input) {
 export async function readonlySignIn(input, lookup, accounts = loadAccounts()) {
   const pubkey = await resolvePubkey(input, lookup)
   const saved = accounts.find(a => a.pubkey === pubkey && a.method !== "readonly")
-  if (saved) throw new Error(`This account is already on this browser with ${saved.method === "nip46" ? "a bunker" : "a browser extension"}. Use "Continue as" on the sign-in screen instead.`)
+  if (saved) throw new Error(`This account is already on this browser with ${saved.method === "nip46" ? "a bunker" : saved.method === "local" ? "a key kept in this browser" : "a browser extension"}. Use "Continue as" on the sign-in screen instead.`)
   return { signer: readonlySigner(), session: { method: "readonly", pubkey } }
 }
 

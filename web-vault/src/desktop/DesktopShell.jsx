@@ -13,7 +13,7 @@ import { ThreadScreen } from "../screens/ThreadScreen.jsx"
 import { MessagesScreen } from "../screens/MessagesScreen.jsx"
 import { ConversationScreen } from "../screens/ConversationScreen.jsx"
 import { VaultScreen } from "../screens/VaultScreen.jsx"
-import { SettingsScreen } from "../screens/SettingsScreen.jsx"
+import { SettingsScreen, hasKeyPage } from "../screens/SettingsScreen.jsx"
 import { AccountsScreen } from "../screens/AccountsScreen.jsx"
 import { WalletScreen } from "../screens/WalletScreen.jsx"
 import { WotScreen } from "../screens/WotScreen.jsx"
@@ -102,7 +102,7 @@ export function DesktopShell({ ctx, mode, hash, lastList }) {
     if (dm) detail = <div class="desk-pane"><ConversationScreen key={dm} ctx={ctx} peer={dm} /></div>
   } else if (settingsish) {
     placeholder = "Pick a setting."
-    if (view.route === "settings" && isPage(view.arg)) detail = <div class="desk-pane"><SettingsScreen key={view.arg} ctx={ctx} page={view.arg} /></div>
+    if (view.route === "settings" && (isPage(view.arg) || (view.arg === "key" && hasKeyPage(ctx)))) detail = <div class="desk-pane"><SettingsScreen key={view.arg} ctx={ctx} page={view.arg} /></div>
     if (view.route === "accounts") detail = <div class="desk-pane"><AccountsScreen ctx={ctx} /></div>
     if (view.route === "wallet") detail = <div class="desk-pane"><WalletScreen /></div>
   } else if (note) {

@@ -13,7 +13,8 @@ export function checkedPubkey(pk) {
 }
 
 const METHODS = ["nip07", "nip46", "readonly", "local"]
-const valid = s => !!s && PUBKEY.test(s.pubkey) && METHODS.includes(s.method)
+// A "local" account is its ncryptsec: without one there is nothing to unlock (signer/local.js wellFormed checks more).
+const valid = s => !!s && PUBKEY.test(s.pubkey) && METHODS.includes(s.method) && (s.method !== "local" || /^ncryptsec1/.test(s.ncryptsec ?? ""))
 
 /** How a session signs, as the screens say it: "with a browser extension", "read-only (no signer)". */
 export const signedInWith = method => method === "nip07" ? "with a browser extension" : method === "nip46" ? "with a bunker (NIP-46)" : method === "local" ? "with a key kept in this browser, locked by your password" : "read-only (no signer)"
