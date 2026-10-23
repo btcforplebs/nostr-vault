@@ -11,11 +11,11 @@
 
     const root = document.documentElement;
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
-    const MS = 720;
+    const EASE = 'cubic-bezier(0.45, 0, 0.15, 1)';
+    const MS = 760;
     const RADIUS = '36px';
-    const SHADOW_OFF = '0 0 0 0 rgba(0,0,0,0), 0 0 0 0 #0a0a0a, 0 0 0 0 rgba(255,255,255,0)';
-    const SHADOW_ON = '0 40px 100px -20px rgba(0,0,0,0.9), 0 0 0 6px #0a0a0a, 0 0 0 7px rgba(255,255,255,0.08)';
+    const SHADOW_OFF = '0 0 0 0 #0a0a0a, 0 0 0 0 rgba(255,255,255,0)';
+    const SHADOW_ON = '0 0 0 6px #0a0a0a, 0 0 0 7px rgba(255,255,255,0.08)'; // the phone's bezel
 
     // "#/…" is an address in the app; any other hash is a place on the marketing page.
     const appHash = h => h.startsWith('#/');
@@ -33,6 +33,9 @@
     let mode = 'app';
     let running = null; // the animations in flight
 
+    // The app hides its own "What is Nostr Vault?" while the page is already out (web-vault/src/styles/welcome.css).
+    const tell = () => { try { frame.contentDocument.documentElement.dataset.shell = mode; } catch {} };
+
     // The app's own address shows in this page's, so a reload or a copied link opens the same screen.
     const mirror = () => {
         if (mode !== 'app') return;
@@ -43,6 +46,7 @@
     };
     frame.addEventListener('load', () => {
         try { frame.contentWindow.addEventListener('hashchange', mirror); } catch {}
+        tell();
         mirror();
     });
 
@@ -57,6 +61,8 @@
     };
     new ResizeObserver(place).observe(slot);
     addEventListener('resize', place);
+    addEventListener('load', place); // the copy above can still move the phone once fonts and images are in
+    document.fonts?.ready.then(place);
 
     const setInert = on => {
         site.inert = on;
@@ -84,6 +90,7 @@
         if (mode === 'learn') { if (section) go(section); return; }
         stop();
         mode = 'learn';
+        tell();
         root.classList.remove('shell-app');
         root.classList.add('shell-learn');
         setInert(false);
@@ -108,6 +115,7 @@
         const r = wrap.getBoundingClientRect();
         wrap.classList.remove('framed');
         mode = 'app';
+        tell();
         animate({ rect: box(r), radius: RADIUS, shadow: SHADOW_ON, site: 1 }, { rect: viewport(), radius: '0px', shadow: SHADOW_OFF, site: 0 }, () => {
             root.classList.remove('shell-learn');
             root.classList.add('shell-app');
@@ -151,6 +159,7 @@
     const first = sectionOf(location.hash);
     if (first) {
         mode = 'learn';
+        tell();
         root.classList.add('shell-learn');
         wrap.classList.add('framed');
         requestAnimationFrame(() => { place(); if (first !== 'about') go(first); });

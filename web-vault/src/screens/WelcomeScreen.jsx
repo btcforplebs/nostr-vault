@@ -58,7 +58,7 @@ function Browse() {
       <label class="welcome-search">
         <span class="sr-only">Find anyone on Nostr by name, npub or NIP-05</span>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d={SEARCH} /></svg>
-        <input type="search" value={q} onInput={e => { setQ(e.currentTarget.value); setPeople(null); setErr("") }} placeholder="Find anyone: name, npub or NIP-05"
+        <input type="search" value={q} onInput={e => { setQ(e.currentTarget.value); setPeople(null); setErr("") }} placeholder="Name, npub or NIP-05"
           autocapitalize="off" autocorrect="off" spellcheck={false} enterkeyhint="search" />
         <button type="submit" class="small" disabled={busy || !q.trim()} aria-busy={busy || undefined}>{busy ? "Looking…" : "Go"}</button>
       </label>

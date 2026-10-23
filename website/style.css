@@ -70,6 +70,7 @@ code {
 
 @media (prefers-reduced-motion: reduce) {
     .fade-in-up { opacity: 1; transform: none; transition: none; }
+    .hero::before { animation: none; }
     html { scroll-behavior: auto; }
 }
 
@@ -967,7 +968,7 @@ footer a:hover { color: var(--accent); }
 .live-app.framed {
     z-index: 50;
     border-radius: 36px;
-    box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.9), 0 0 0 6px #0a0a0a, 0 0 0 7px rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 6px #0a0a0a, 0 0 0 7px rgba(255, 255, 255, 0.08);
 }
 
 html.shell-app { overflow: hidden; }
@@ -990,6 +991,7 @@ html.shell .phone-slot img { visibility: hidden; height: 100%; }
 
 .hero-open { display: none; }
 html.shell .hero-open {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1020,12 +1022,23 @@ html.shell .hero-open {
     html.shell .hero-open { grid-column: 2; grid-row: 2; margin-top: 22px; }
 }
 
+/* Narrow windows: the headline, then the live phone in the first screen, then the rest of the copy. */
 @media (max-width: 960px) {
+    html.shell .hero { padding-top: 92px; }
+    html.shell .hero-copy { display: contents; }
+    html.shell .hero .eyebrow { order: 1; margin-bottom: 8px; }
+    html.shell .hero h1 { order: 2; font-size: 2.5rem; letter-spacing: -1px; margin-bottom: 0; }
+    html.shell .hero-phones { order: 3; margin-top: 22px; }
+    html.shell .hero-open { order: 4; margin-top: 20px; }
+    html.shell .hero .lede { order: 5; margin-top: 36px; }
+    html.shell .hero .hero-buttons { order: 6; }
+    html.shell .hero .hero-note { order: 7; }
+    html.shell .actions .pill-web { display: inline-block; }
+    html.shell .actions .pill-light { display: none; }
     html.shell .hero-phones .phone-slot {
-        --phone-h: min(700px, calc(100svh - 150px), calc(min(340px, 86vw) * 1957 / 900));
+        --phone-h: min(640px, calc(100svh - 320px), calc(min(340px, 86vw) * 1957 / 900));
         border-radius: 36px;
     }
-    html.shell .hero-phones { margin-top: 40px; }
 }
 
 /* Legacy nav button used by blog + privacy pages */

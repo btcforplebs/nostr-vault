@@ -9,7 +9,7 @@
 .welcome-line { margin: 0 0 10px; font: var(--t-sub); color: var(--text-2); text-wrap: balance; }
 .welcome-signin { width: 100%; min-height: 50px; font: var(--t-headline); }
 
-.welcome-browse { display: grid; gap: 10px; margin-top: 6px; }
+.welcome-browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 6px; }
 .welcome-or { display: flex; align-items: center; gap: 10px; color: var(--text-3); font: var(--t-foot); }
 .welcome-or::before, .welcome-or::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
 .welcome-search { display: flex; align-items: center; gap: 8px; min-height: 50px; padding: 0 6px 0 14px; border-radius: 999px;
@@ -27,6 +27,7 @@
 .welcome-learn { margin-top: 24px; min-height: 44px; padding: 0 18px; border: 0; background: none; color: var(--text-2);
   font: var(--t-sub); font-weight: 600; }
 .welcome-learn:hover, .welcome-learn:focus-visible { color: var(--text); }
+html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is already out around the phone (src/shell.js) */
 .welcome-arrow { display: inline-block; margin-left: 4px; color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) {
   .welcome-arrow { animation: nv-nudge 2.2s ease-in-out infinite; }
