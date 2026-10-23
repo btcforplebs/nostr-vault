@@ -1,5 +1,5 @@
 services:
-  # Public post pages at /thread/ (web-vault/thread-page/); nginx proxies to it by service name.
+  # Public post pages at /thread/ and profile pages at /p/ (web-vault/thread-page/); nginx proxies to it by service name.
   thread:
     build:
       context: ..
