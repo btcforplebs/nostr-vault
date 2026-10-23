@@ -222,6 +222,14 @@ object CredentialStore {
     fun getMeshNsec(): String? =
         get(MESH_IDENTITY)
 
+    /**
+     * The saved mesh nsec, or null when none is saved. Unlike [getMeshNsec] a
+     * store that is closed or a value that will not decrypt throws, so the
+     * caller can tell "never made" from "could not read" and does not mint a
+     * new mesh address over one it merely failed to read (Mac/iOS, #1122).
+     */
+    fun readMeshNsec(): String? = prefs.getString(MESH_IDENTITY, null)
+
     fun deleteMeshNsec(): Boolean =
         delete(MESH_IDENTITY)
 
