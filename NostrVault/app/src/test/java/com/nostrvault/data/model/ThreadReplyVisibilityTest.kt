@@ -27,15 +27,6 @@ class ThreadReplyVisibilityTest {
     )
 
     @Test
-    fun `outside needs a loaded graph`() {
-        assertFalse(ThreadReplyVisibility.isOutside("stranger", trusted = emptySet(), insiders = emptySet()))
-        assertTrue(ThreadReplyVisibility.isOutside("stranger", trusted = setOf("friend"), insiders = emptySet()))
-        assertFalse(ThreadReplyVisibility.isOutside("friend", trusted = setOf("friend"), insiders = emptySet()))
-        // The opened note's author is never folded, trusted or not.
-        assertFalse(ThreadReplyVisibility.isOutside("op", trusted = setOf("friend"), insiders = setOf("op")))
-    }
-
-    @Test
     fun `descendants reach every depth only`() {
         data class N(val id: String, val parent: String?)
         val notes = listOf(N("a", "root"), N("b", "a"), N("c", "b"), N("x", "other"), N("root", null))
@@ -44,27 +35,31 @@ class ThreadReplyVisibilityTest {
         assertEquals(3, ids.size)
     }
 
+    /**
+     * Logen's report (iOS #1085): a thread showed only the author's own replies. Every reply shows,
+     * strangers' and the newest included, and the author's answer to a stranger stays under it.
+     * Only what `hidden` drops goes.
+     */
     @Test
-    fun `replies drop hidden ones and fold strangers until asked`() {
+    fun `every reply shows except hidden ones`() {
         val pool = listOf(
-            note("focus", null, author = "op"),
-            note("a", "focus", author = "friend"),
-            note("spam", "focus", author = "friend"),
-            note("s", "focus", author = "stranger"),
-            note("op2", "s", author = "op"),
-            note("elsewhere", "other", author = "friend"),
+            note("root", null, author = "op"),
+            note("op-self", "root", author = "op"),
+            note("stranger", "root", author = "stranger"),
+            note("op-answer", "stranger", author = "op"),
+            note("newest", "root", author = "newcomer"),
+            note("blocked", "root", author = "blocked"),
+            note("elsewhere", "other", author = "stranger"),
         )
-        val hidden: (FeedNote) -> Boolean = { it.id == "spam" }
-        val folded = ThreadReplyVisibility.replies(
-            "focus", pool, hidden, trusted = setOf("friend"), insiders = setOf("op"), showOutside = false,
-        )
-        assertEquals(setOf("a", "op2"), folded.visible.map { it.id }.toSet())
-        assertEquals(1, folded.outside)
+        val ids = ThreadReplyVisibility.shown("root", pool) { it.pubkey == "blocked" }.map { it.id }
+        assertEquals(setOf("op-self", "stranger", "op-answer", "newest"), ids.toSet())
+    }
 
-        val shown = ThreadReplyVisibility.replies(
-            "focus", pool, hidden, trusted = setOf("friend"), insiders = setOf("op"), showOutside = true,
-        )
-        assertEquals(setOf("a", "s", "op2"), shown.visible.map { it.id }.toSet())
-        assertEquals(0, shown.outside)
+    /** The thread view uses it, with no "from outside your network" fold left (source-level). */
+    @Test
+    fun `the thread view folds nothing`() {
+        val screen = java.io.File("src/main/java/com/nostrvault/ui/screens/notedetail/NoteDetailScreen.kt").readText()
+        assertTrue(screen.contains("ThreadReplyVisibility.shown("))
+        assertFalse(screen.contains("outside your network"))
     }
 }
