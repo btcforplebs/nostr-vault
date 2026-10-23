@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import {
-  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, relayRows, mediaServerRows, readEverything, backupLines, backupName,
+  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, relayRows, mediaServerRows,
   parseBackup, restoreBackup, logLines,
 } from "../src/net/settings.js"
 
@@ -57,30 +57,6 @@ test("media servers: the account's list when it has one, else the defaults marke
   assert.ok(mediaServerRows(undefined).every(r => !r.listed && /^https:/.test(r.url)))
 })
 
-test("readEverything pages by `until` until a page comes back short, and never repeats an id", async () => {
-  const evs = Array.from({ length: 7 }, (_, i) => ({ id: `e${i}`, pubkey: ME, created_at: 100 - i }))
-  const asked = []
-  const query = async f => {
-    asked.push(f)
-    const page = evs.filter(e => f.until === undefined || e.created_at <= f.until).slice(0, f.limit)
-    return page
-  }
-  const all = await readEverything({}, ME, { page: 3, query })
-  assert.deepEqual(all.map(e => e.id), ["e0", "e1", "e2", "e3", "e4", "e5", "e6"])
-  assert.deepEqual(asked.map(f => f.until), [undefined, 98, 96, 94]) // inclusive `until` overlaps one event per page
-  assert.deepEqual(asked[0].authors, [ME])
-})
-
-test("the backup is one signed event per line with nothing extra, and its name says whose and when", () => {
-  const ev = { ...signed(SK, 1, "hello"), extra: "not in the backup" }
-  const text = backupLines([ev])
-  assert.equal(text.split("\n").length, 2)
-  const back = JSON.parse(text.trim())
-  assert.deepEqual(Object.keys(back).sort(), ["content", "created_at", "id", "kind", "pubkey", "sig", "tags"])
-  assert.equal(backupLines([]), "")
-  assert.equal(backupName(ME, new Date("2026-10-14T20:00:00Z")), `nostr-vault-${ME.slice(0, 8)}-2026-10-14.jsonl`)
-})
-
 test("a restore takes only events that verify and were signed by the user, from JSON lines or an array", () => {
   const good = signed(SK, 1, "mine"), theirs = signed(OTHER_SK, 1, "theirs")
   const forged = { ...signed(SK, 1, "x"), content: "changed" }
@@ -123,4 +99,26 @@ test("Database & Reset asks first, naming what goes; Cancel wipes nothing", () =
   assert.match(RESET_QUESTION, /notes, messages, drafts and paired vaults/)
   assert.equal(resetBrowser(ctx, () => true), true)
   assert.equal(wiped, 1)
+})
+
+// Signing out wipes this browser's copy, so every Sign out asks first: the Relay screen and the sidebar menu through
+// resetBrowser, Accounts with its own Sign out / Cancel row. None calls ctx.signOut straight from a click.
+test("every Sign out button asks before the wipe", () => {
+  const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")
+  for (const f of ["screens/RelayScreen.jsx", "desktop/Sidebar.jsx"]) {
+    assert.match(src(f), /onClick=\{\(\) => resetBrowser\(ctx\)\}>Sign out</, f)
+  }
+  const accounts = src("screens/AccountsScreen.jsx")
+  assert.match(accounts, /onClick=\{\(\) => setConfirm\(true\)\}>Sign out</)
+  for (const f of ["screens/RelayScreen.jsx", "desktop/Sidebar.jsx", "screens/SettingsScreen.jsx", "screens/AccountsScreen.jsx"]) {
+    const direct = (src(f).match(/onClick=\{ctx\.signOut\}/g) ?? []).length
+    assert.equal(direct, f.includes("Accounts") ? 1 : 0, `${f}: the only direct one is Accounts' confirm row`)
+  }
+})
+
+test("a backup file is the phone's .zip by its bytes, anything else an older .jsonl", async () => {
+  const { isZip } = await import("../src/components/BackupCard.jsx")
+  assert.equal(isZip(new Uint8Array([0x50, 0x4b, 3, 4, 20])), true)
+  assert.equal(isZip(new TextEncoder().encode('{"id":"x"}\n')), false)
+  assert.equal(isZip(new Uint8Array([0x50, 0x4b])), false)
 })

@@ -12,7 +12,7 @@
     "ios": ["Backup & Restore", "Export Notes", "Import Notes", "Export Media", "Import Media", "Following Backup", "Restore This List", "Scan Relays", "Up to 50 are kept", "Recently Deleted", "Un-delete", "Delete Forever", "Back up media"],
     "android": ["Backup & Restore", "Notes (JSONL)", "Media (Blossom)", "Export Notes", "Import Notes", "Export Media", "Import Media", "Restore This List", "Un-delete", "Delete Forever"],
     "mac": ["Backup & Restore", "Save JSONL Backup", "Save Blossom Backup"],
-    "web": ["Export notes", "Import notes", "Download backup", "Choose a backup file", "Restore This List", "Un-delete"]
+    "web": ["Backup & Restore", "Export notes", "Import notes", "Restore This List", "Un-delete"]
   }
 }
 -->
@@ -75,13 +75,11 @@
 <h2>Backups on the web</h2>
 <p>The web app keeps its vault in your browser, so back it up if it holds anything you don't have elsewhere.</p>
 <ul>
-    <li><strong>Accounts &rarr; Backup</strong>: <strong>Export notes</strong> and <strong>Import notes</strong>
-        make and read the same .zip as the phone apps, so either one restores the other. Photos and videos
-        aren't in it.</li>
-    <li><span class="path">Settings &rarr; Backup &amp; Restore</span>: <strong>Download backup</strong> saves
-        only the events you signed (notes, articles, profile, lists, likes) as a .jsonl file. Messages aren't
-        in it. <strong>Choose a backup file&hellip;</strong> reads that .jsonl back. Nothing is published
-        either way.</li>
+    <li><span class="path">Settings &rarr; Backup &amp; Restore</span>: <strong>Export notes</strong> saves your
+        notes, private notes, messages and feed cache as the same .zip the phone apps make, so either one
+        restores the other. Photos and videos aren't in it.</li>
+    <li><strong>Import notes</strong> reads that .zip back. It also reads a .jsonl backup from an older web app.
+        Nothing is published either way.</li>
 </ul>
 <div class="docs-table-wrap">
 <table>
@@ -89,7 +87,7 @@
     <tr><td>iPhone</td><td>.zip</td><td>.zip</td><td>Yes</td><td>3.0</td></tr>
     <tr><td>Android</td><td>.zip</td><td>.zip</td><td>Yes</td><td>3.0</td></tr>
     <tr><td>Mac</td><td>.zip</td><td>.zip</td><td>Yes</td><td>3.0</td></tr>
-    <tr><td>Web</td><td>.zip or .jsonl</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Web</td><td>.zip</td><td>No</td><td>Yes</td><td>Yes</td></tr>
 </table>
 </div>
 </section>

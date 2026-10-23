@@ -1,11 +1,10 @@
-// Accounts and backup (iOS Settings › Accounts and Settings › Backup). Each account on this browser has its own relay
+// Accounts (iOS Settings › Accounts); the backup is Settings › Backup & Restore (components/BackupCard.jsx). Each account on this browser has its own relay
 // stores; one is active at a time, and switching reloads into the other. Accounts sign with an extension or a bunker:
 // the web app never holds a secret key, so there is no key import or "Reveal Key" here (the iPhone has both).
 import { useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { loadAccounts, rememberAccount } from "../session.js"
 import { switchAccount, removeAccount } from "../signer/accounts.js"
-import { exportNotes, importNotes } from "../net/backup.js"
 import { pool } from "../net/pool.js"
 import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
@@ -50,7 +49,11 @@ export function AccountsScreen({ ctx }) {
             <button onClick={() => setAdding(false)}>Cancel</button>
           </section>
         : <button class="add-account-button" onClick={() => { setAdding(true); setNote("") }}>+ Add Account</button>}
-      <BackupCard ctx={ctx} />
+      <section class="card">
+        <h3>Backup</h3>
+        <p class="muted small">Your notes backup, the same .zip as the iPhone's, is in Settings › Backup &amp; Restore.</p>
+        <a class="button" href="#/settings/backup">Backup &amp; Restore</a>
+      </section>
       <section class="card">
         <h3>Paired vaults</h3>
         <p class="muted small">Vaults you pair on the Relay screen are paired with this browser, not with one account. A paired vault can reach whichever account is active here, and signing out of any account un-pairs them all.</p>
@@ -113,55 +116,6 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
         {err && <p class="error small">{err}</p>}
       </div>}
     </div>
-  )
-}
-
-const NAMES = { outbox: "your notes", private: "private notes", chat: "messages", inbox: "inbox", feed: "feed cache" }
-const summary = counts => Object.entries(counts).map(([n, c]) => `${NAMES[n] ?? n} ${typeof c === "number" ? c : c.stored}`).join(", ")
-const events = n => n === 1 ? "1 event" : `${n} events`
-
-// iOS Settings › Backup › Notes: the same .zip, so each restores the other's.
-function BackupCard({ ctx }) {
-  const [busy, setBusy] = useState("")
-  const [status, setStatus] = useState("")
-  const [err, setErr] = useState("")
-  const run = (label, fn) => async () => {
-    setBusy(label); setErr(""); setStatus("")
-    try { await fn() } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy("") }
-  }
-  const doExport = run("export", async () => {
-    const { blob, counts } = await exportNotes({ vault: ctx.vault, pubkey: ctx.session.pubkey, onProgress: n => setStatus(`Reading ${NAMES[n] ?? n}…`) })
-    const url = URL.createObjectURL(blob)
-    const a = Object.assign(document.createElement("a"), { href: url, download: `nostrvault-backup-${new Date().toISOString().slice(0, 10)}.zip` })
-    document.body.append(a); a.click(); a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    setStatus(`Saved: ${summary(counts)}.`)
-  })
-  const doImport = e => {
-    const file = e.currentTarget.files?.[0]
-    e.currentTarget.value = ""
-    if (!file) return
-    run("import", async () => {
-      const { counts, skipped, failed } = await importNotes({ vault: ctx.vault, pubkey: ctx.session.pubkey, bytes: new Uint8Array(await file.arrayBuffer()), onProgress: n => setStatus(`Restoring ${NAMES[n] ?? n}…`) })
-      if (!Object.keys(counts).length) throw new Error(failed.length ? failed.join(" ") : "That .zip has no notes in it. Choose a Nostr Vault notes backup.")
-      const refused = Object.values(counts).reduce((n, c) => n + c.refused + c.bad, 0)
-      setStatus(`Restored: ${summary(counts)}.` + (refused ? ` ${events(refused)} not restored: not this account's, or damaged.` : "") + (skipped.length ? ` Skipped ${skipped.join(", ")}.` : "") + (failed.length ? ` ${failed.join(" ")}` : ""))
-    })()
-  }
-  return (
-    <section class="card backup">
-      <h3>Backup</h3>
-      <p class="muted small">Your notes, private notes, messages and feed cache from this browser's relay, as a .zip. It's the same file the iPhone app makes in Settings › Backup, so either one restores the other. Photos and videos aren't in it.</p>
-      <div class="row">
-        <button disabled={!!busy} onClick={doExport} aria-busy={busy === "export" || undefined}>{busy === "export" ? "Exporting…" : "Export notes"}</button>
-        <label class={busy ? "button disabled" : "button"}>
-          {busy === "import" ? "Restoring…" : "Import notes"}
-          <input type="file" accept=".zip,application/zip" disabled={!!busy} onChange={doImport} hidden />
-        </label>
-      </div>
-      {status && <p class="muted small">{status}</p>}
-      {err && <p class="error small">{err}</p>}
-    </section>
   )
 }
 

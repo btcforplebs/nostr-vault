@@ -1,5 +1,5 @@
 // Settings (iPhone SettingsView): the groups and rows the phone shows, trimmed to what the web can do, and the
-// work behind its pages: a backup of everything your relay holds for you as JSON lines, restoring one into Haven,
+// work behind its pages: restoring an older web backup (JSON lines) into Haven,
 // the relay and media-server lists as your account publishes them, and this page's own log. Nothing here signs.
 import { verifyEvent } from "nostr-tools/pure"
 import pkg from "../../package.json" with { type: "json" }
@@ -56,33 +56,8 @@ export const mediaServerRows = ev => serverList(ev).map(url => ({ url, listed: !
 
 // ---- Backup & Restore ----
 
-/** Everything Haven's outbox holds by the user, newest first, read in pages (the route caps one answer). */
-export async function readEverything(vault, me, { page = 500, query = f => vault.outbox.query(f) } = {}) {
-  const all = new Map()
-  let until
-  for (;;) {
-    const evs = await query({ authors: [me], limit: page, ...(until ? { until } : {}) })
-    let oldest = until
-    let fresh = 0
-    for (const ev of evs) {
-      if (!all.has(ev.id)) { all.set(ev.id, ev); fresh++ }
-      if (oldest === undefined || ev.created_at < oldest) oldest = ev.created_at
-    }
-    if (!fresh || evs.length < page) break
-    until = oldest
-  }
-  return [...all.values()].sort((a, b) => b.created_at - a.created_at)
-}
-
-/** The backup text: one signed event per line, the phone's export shape, with nothing added. */
-export const backupLines = events => events.map(ev => JSON.stringify(pick(ev))).join("\n") + (events.length ? "\n" : "")
-const pick = ({ id, pubkey, created_at, kind, tags, content, sig }) => ({ id, pubkey, created_at, kind, tags, content, sig })
-
-/** A backup file's name: nostr-vault-<npub start>-<date>.jsonl */
-export const backupName = (me, at = new Date()) => `nostr-vault-${me.slice(0, 8)}-${at.toISOString().slice(0, 10)}.jsonl`
-
 /**
- * Read a backup: JSON lines or a JSON array. Only events that verify and were signed by `me` are kept; the rest are
+ * Read an older web backup (this app downloaded .jsonl before the .zip): JSON lines or a JSON array. Only events that verify and were signed by `me` are kept; the rest are
  * counted and named so the page can say what it skipped. -> { events, skipped: { unreadable, badSignature, notYours } }
  */
 export function parseBackup(text, me) {
