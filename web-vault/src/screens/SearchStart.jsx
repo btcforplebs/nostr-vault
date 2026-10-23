@@ -101,7 +101,7 @@ function ForYou({ people, topics, notes, onProfile }) {
   return (
     <section class="for-you">
       <div class="section-label for-you-head">
-        <span>For you</span>
+        <span class="for-you-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></svg>For you</span>
         <span class="for-you-src" title="Picked in this browser from your follows' lists and the notes you have. No recommendation server is asked.">Ranked by your relay</span>
       </div>
       {people.length > 0 && <>
