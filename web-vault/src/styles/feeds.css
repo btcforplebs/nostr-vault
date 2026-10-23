@@ -1,9 +1,35 @@
-/* The Feed's picker (FeedScreen FeedPicker): a capsule row of feeds, then the hashtag box when Hashtag is picked. */
-.feed-picker { padding: 0 var(--gutter) 12px; display: grid; gap: 10px; }
-.feed-modes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-.feed-modes button { flex: none; min-height: 34px; padding: 0 14px; border-radius: 999px; font: var(--t-foot); font-weight: 600;
-  background: var(--s1); color: var(--text-2); border: 1px solid var(--hair); }
-.feed-modes button.on { background: var(--accent-pale); color: var(--accent-light); border-color: var(--accent-line); }
+/* The Feed's header (components/FeedPickerMenu.jsx), as on the iPhone: one glass pill on the left that opens the feeds,
+   one glass capsule of icon toggles on the right (FeedPickerMenu.swift, FeedView+Toolbar.swift). */
+.feed-head { gap: 8px; --feed-glass: rgb(72 72 74 / .62); } /* the iPhone's clear glass reads grey over black */
+.feed-mode-menu { position: relative; min-width: 0; }
+.feed-mode-pill { display: flex; align-items: center; gap: 6px; min-height: 44px; max-width: 100%; padding: 0 14px 0 8px; border-radius: 999px;
+  background: var(--feed-glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair);
+  color: var(--text); font: 700 17px/1 var(--font); cursor: pointer; }
+.feed-mode-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; }
+.feed-mode-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-mode-chevron { flex: none; margin-left: 2px; }
+.feed-mode-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; min-width: 230px; max-height: 70vh; overflow-y: auto; padding: 6px;
+  display: flex; flex-direction: column; background: rgb(44 44 46 / .94); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--hair); border-radius: 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .5); }
+.feed-mode-list button { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 12px; background: none; border: 0;
+  border-radius: 10px; color: var(--text); font: var(--t-sub); text-align: left; }
+.feed-mode-list button:hover { background: var(--s2); }
+.feed-mode-list button span:first-of-type { flex: 1; }
+.feed-mode-list .check { width: 14px; color: var(--accent); font-weight: 700; }
+.feed-toolbar { flex: none; display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px; border-radius: 999px;
+  background: var(--feed-glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.feed-tool { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: none;
+  color: var(--text-2); cursor: pointer; }
+.feed-tool.on { color: var(--accent); }
+.feed-tool.on[aria-label="Replies"] svg { fill: currentColor; } /* message.fill, as on the iPhone */
+.feed-tool:hover { background: var(--s2); }
+.feed-tool:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.feed-tool-divider { width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
+/* Phones refresh by pulling or by tapping Feed again, as on the iPhone; Refresh stays for a mouse. */
+@media (pointer: coarse) { .feed-refresh { display: none; } }
+
+/* The tag box, under the header when Hashtag is picked. */
+.feed-tag { padding: 0 var(--gutter) 12px; }
 .feed-tag { display: flex; gap: 8px; }
 .feed-tag input { flex: 1; min-width: 0; font: var(--t-body); min-height: 44px; padding: 0 14px; border-radius: var(--radius);
   border: 1px solid var(--hair); background: var(--s1); color: var(--text); }
@@ -21,8 +47,6 @@
 
 /* Compact and Threaded layouts (CondensedNoteLine, FeedThreadCard): one note per line, avatar, name, a few lines of
    plain text and a thumbnail; replies in a thread card indent 14px per level, four levels at most. */
-.screen-head .layout-button { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
-.screen-head .layout-button + button { margin-left: 8px; }
 .condensed-list { display: flex; flex-direction: column; }
 .condensed { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px 6px calc(8px + var(--indent, 0px)); cursor: pointer; }
 .condensed:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
@@ -90,7 +114,6 @@
 .feed-end { text-align: center; font: var(--t-foot); margin: 12px 0; }
 .more .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--hair); border-top-color: var(--accent); border-radius: 50%; vertical-align: -2px; }
 @media (prefers-reduced-motion: no-preference) { .more .spinner { animation: spin .8s linear infinite; } }
-.screen-head .feed-filter + button { margin-left: 8px; }
 .pull-indicator { display: grid; place-items: center; height: calc(var(--pull) * 44px); overflow: hidden; color: var(--accent); opacity: var(--pull); }
 .pull-indicator svg { transform: rotate(calc(var(--pull) * 270deg)); }
 .condensed-mark.article { color: rgb(230 115 38 / .7); }

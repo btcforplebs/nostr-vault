@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
+import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
@@ -14,9 +15,9 @@ import { fetchPopular } from "../net/popular.js"
 import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
-import { LAYOUT_NAME, hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
+import { hasLayouts, loadLayout, nextLayout, saveLayout } from "../net/feed-layout.js"
 import { applyFilters, loadFilters, newerNotes, saveFilters } from "../net/feed-filters.js"
-import { EmptyFollowing, FilterMenu, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh } from "../components/FeedExtras.jsx"
+import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows, usePullToRefresh } from "../components/FeedExtras.jsx"
 
 if (import.meta.env) import("../styles/feeds.css")
 
@@ -194,16 +195,17 @@ export function FeedScreen({ ctx }) {
   const shown = list && visibleNotes(media ? list : applyFilters(list, filters, { threaded }), blocked)
   const newCount = following && !media ? visibleNotes(applyFilters(pending, filters, { threaded }), blocked).length : 0
   const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
-  const label = FEEDS.find(f => f.id === choice.mode).label
+  // The same toggles the old Feed options menu offered: Auto-load on Following and Media, Replies off on Global and Threaded.
+  const toggles = Reader || !hasLayouts(choice.mode) ? []
+    : [following && "autoLoad", "reposts", choice.mode !== "global" && !threaded && "replies"].filter(Boolean)
   return (
     <main class="screen">
-      <header class="screen-head">
-        <h2>{choice.mode === "hashtag" && choice.tag ? `#${choice.tag}` : label}</h2>
-        {!Reader && hasLayouts(choice.mode) && <LayoutButton layout={layout} onClick={cycleLayout} />}
-        {!Reader && hasLayouts(choice.mode) && <FilterMenu filters={filters} onChange={changeFilters} replies={choice.mode !== "global" && !threaded} autoLoad={following} />}
-        {!Reader && <button class="small" onClick={refresh}>Refresh</button>}
+      <header class="screen-head feed-head">
+        <FeedModeMenu feeds={FEEDS} choice={choice} onPick={pick} />
+        <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}
+          filters={filters} onFilters={changeFilters} toggles={toggles} onRefresh={Reader ? null : refresh} />
       </header>
-      <FeedPicker choice={choice} onPick={pick} />
+      {choice.mode === "hashtag" && <HashtagBox choice={choice} onPick={pick} />}
       <PullIndicator pull={pull} busy={syncing && pull > 0} />
       {Reader ? <Reader ctx={ctx} /> : <>
       {/* Always there, so the list doesn't move when "Syncing…" comes and goes. */}
@@ -246,44 +248,15 @@ export function Media({ tiles, blockedAll, onOlder, olderState }) {
   </>
 }
 
-/** The feeds, and the tag box when Hashtag is picked. */
-function FeedPicker({ choice, onPick }) {
+/** The tag box, under the header when Hashtag is picked. */
+function HashtagBox({ choice, onPick }) {
   const [draft, setDraft] = useState(choice.tag)
   const submit = e => { e.preventDefault(); const tag = normalizeTag(draft); setDraft(tag); onPick({ mode: "hashtag", tag }) }
   return (
-    <div class="feed-picker">
-      <div class="feed-modes" role="tablist" aria-label="Feed">
-        {FEEDS.map(f => (
-          <button key={f.id} type="button" role="tab" aria-selected={choice.mode === f.id} class={choice.mode === f.id ? "on" : ""}
-            onClick={() => onPick({ mode: f.id, tag: choice.tag })}>{f.label}</button>
-        ))}
-      </div>
-      {choice.mode === "hashtag" && (
-        <form class="feed-tag" onSubmit={submit}>
-          <input type="search" value={draft} onInput={e => setDraft(e.currentTarget.value)} placeholder="#bitcoin" aria-label="Hashtag"
-            enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck={false} />
-          <button type="submit" class="small">Show</button>
-        </form>
-      )}
-    </div>
+    <form class="feed-tag" onSubmit={submit}>
+      <input type="search" value={draft} onInput={e => setDraft(e.currentTarget.value)} placeholder="#bitcoin" aria-label="Hashtag"
+        enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck={false} />
+      <button type="submit" class="small">Show</button>
+    </form>
   )
-}
-
-/** One button cycles Expanded -> Compact -> Threaded (FeedLayoutMode.next); it names where it goes next. */
-function LayoutButton({ layout, onClick }) {
-  const next = LAYOUT_NAME[nextLayout(layout)]
-  return (
-    <button type="button" class="small layout-button" onClick={onClick} title={`${LAYOUT_NAME[layout]}. Switch to ${next}`}
-      aria-label={`${LAYOUT_NAME[layout]}. Switch to ${next}`}>
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <path d={LAYOUT_ICON[layout]} />
-      </svg>
-      <span>{LAYOUT_NAME[layout].replace(" View", "")}</span>
-    </button>
-  )
-}
-const LAYOUT_ICON = {
-  expanded: "M4 4h16v7H4zM4 14h16v6H4z",
-  condensed: "M4 5h16M4 10h16M4 15h16M4 20h16",
-  threaded: "M4 5h16M8 10h12M8 15h12M4 20h16",
 }
