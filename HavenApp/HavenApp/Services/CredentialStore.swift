@@ -19,8 +19,9 @@ enum CredentialStore {
 
     /// The app's own keychain group on iOS. The default group is the first
     /// `keychain-access-groups` entry, `NVSharedStore.accessGroup`, which the
-    /// widget carries too and any app on the team's wildcard profile can
-    /// claim; this one only the app can read. nil on the Mac, whose login
+    /// widget carries too; this one the widget and share extension do not.
+    /// Not private from the team: the wildcard profile (`525WQ48Y72.*`) lets
+    /// any app signed by this team claim it. nil on the Mac, whose login
     /// keychain has no access groups.
     static var privateGroup: String? {
         #if os(iOS)
@@ -43,6 +44,12 @@ enum CredentialStore {
 
     static func getOwnerPassword() -> String? {
         get(account: ownerAccount)
+    }
+
+    /// The owner password, or the status of a read that found none:
+    /// `errSecItemNotFound` is the only status that means there is no password.
+    static func lookUpOwnerPassword() -> (password: String?, status: OSStatus) {
+        lookUp(account: ownerAccount)
     }
 
     @discardableResult
@@ -84,17 +91,20 @@ enum CredentialStore {
         var moved = 0
         for item in keychain.items(service: service)
         where item.group != privateGroup || item.accessible != accessible {
-            if let privateGroup, item.group != privateGroup {
-                guard let data = keychain.data(service: service, account: item.account, group: item.group) else { continue }
+            // Every call below names the item's own group. A nil group would
+            // mean any group, and the delete would take the copy just added.
+            guard let group = item.group else { continue }
+            if let privateGroup, group != privateGroup {
+                guard let data = keychain.data(service: service, account: item.account, group: group) else { continue }
                 let status = keychain.add(service: service, account: item.account, data: data,
                                           group: privateGroup, accessible: accessible)
                 // A duplicate is a newer value already stored privately.
                 guard status == errSecSuccess || status == errSecDuplicateItem else { continue }
-                if keychain.delete(service: service, account: item.account, group: item.group) == errSecSuccess {
+                if keychain.delete(service: service, account: item.account, group: group) == errSecSuccess {
                     moved += 1
                 }
             } else if keychain.updateAccessible(service: service, account: item.account,
-                                                group: item.group, to: accessible) == errSecSuccess {
+                                                group: group, to: accessible) == errSecSuccess {
                 moved += 1
             }
         }
@@ -108,16 +118,34 @@ enum CredentialStore {
                       in keychain: CredentialKeychain = SystemKeychain(),
                       privateGroup: String? = privateGroup) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
-        _ = keychain.delete(service: service, account: account, group: nil)
-        var status = keychain.add(service: service, account: account, data: data,
-                                  group: privateGroup, accessible: accessible)
+        // Write first, then drop copies elsewhere: a failed write must leave
+        // the old value, which may be the only way to decrypt a key.
+        var group = privateGroup
+        var status = write(data, account: account, group: group, in: keychain)
         if status == errSecMissingEntitlement, privateGroup != nil {
             // A build without the private group entitled: the default group
             // still beats losing the value.
-            status = keychain.add(service: service, account: account, data: data,
-                                  group: nil, accessible: accessible)
+            group = nil
+            status = write(data, account: account, group: nil, in: keychain)
         }
-        return status == errSecSuccess
+        guard status == errSecSuccess else { return false }
+        if let group {
+            for item in keychain.items(service: service)
+            where item.account == account && item.group != nil && item.group != group {
+                _ = keychain.delete(service: service, account: account, group: item.group)
+            }
+        }
+        return true
+    }
+
+    /// Adds the item, or replaces the value of the one already in `group`.
+    private static func write(_ data: Data, account: String, group: String?,
+                              in keychain: CredentialKeychain) -> OSStatus {
+        let status = keychain.add(service: service, account: account, data: data,
+                                  group: group, accessible: accessible)
+        guard status == errSecDuplicateItem else { return status }
+        return keychain.updateData(service: service, account: account, group: group,
+                                   data: data, accessible: accessible)
     }
 
     /// The private group first; any other group only holds an item the
@@ -125,9 +153,19 @@ enum CredentialStore {
     static func get(account: String,
                     in keychain: CredentialKeychain = SystemKeychain(),
                     privateGroup: String? = privateGroup) -> String? {
-        let data = privateGroup.flatMap { keychain.data(service: service, account: account, group: $0) }
-            ?? keychain.data(service: service, account: account, group: nil)
-        return data.flatMap { String(data: $0, encoding: .utf8) }
+        lookUp(account: account, in: keychain, privateGroup: privateGroup).password
+    }
+
+    static func lookUp(account: String,
+                       in keychain: CredentialKeychain = SystemKeychain(),
+                       privateGroup: String? = privateGroup) -> (password: String?, status: OSStatus) {
+        var read = (data: nil as Data?, status: errSecItemNotFound)
+        if let privateGroup { read = keychain.read(service: service, account: account, group: privateGroup) }
+        if read.data == nil, read.status == errSecItemNotFound {
+            read = keychain.read(service: service, account: account, group: nil)
+        }
+        guard let data = read.data else { return (nil, read.status) }
+        return (String(data: data, encoding: .utf8), errSecSuccess)
     }
 
     @discardableResult
@@ -163,10 +201,17 @@ struct CredentialKeychainItem: Equatable {
 /// update or delete, and the default group for an add.
 protocol CredentialKeychain {
     func items(service: String) -> [CredentialKeychainItem]
-    func data(service: String, account: String, group: String?) -> Data?
+    func read(service: String, account: String, group: String?) -> (data: Data?, status: OSStatus)
     func add(service: String, account: String, data: Data, group: String?, accessible: String) -> OSStatus
+    func updateData(service: String, account: String, group: String?, data: Data, accessible: String) -> OSStatus
     func updateAccessible(service: String, account: String, group: String?, to accessible: String) -> OSStatus
     func delete(service: String, account: String?, group: String?) -> OSStatus
+}
+
+extension CredentialKeychain {
+    func data(service: String, account: String, group: String?) -> Data? {
+        read(service: service, account: account, group: group).data
+    }
 }
 
 struct SystemKeychain: CredentialKeychain {
@@ -195,13 +240,19 @@ struct SystemKeychain: CredentialKeychain {
         }
     }
 
-    func data(service: String, account: String, group: String?) -> Data? {
+    func read(service: String, account: String, group: String?) -> (data: Data?, status: OSStatus) {
         var q = query(service: service, account: account, group: group)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
-        guard SecItemCopyMatching(q as CFDictionary, &result) == errSecSuccess else { return nil }
-        return result as? Data
+        let status = SecItemCopyMatching(q as CFDictionary, &result)
+        return (status == errSecSuccess ? result as? Data : nil, status)
+    }
+
+    func updateData(service: String, account: String, group: String?, data: Data, accessible: String) -> OSStatus {
+        let q = query(service: service, account: account, group: group)
+        let attrs: [String: Any] = [kSecValueData as String: data, kSecAttrAccessible as String: accessible]
+        return SecItemUpdate(q as CFDictionary, attrs as CFDictionary)
     }
 
     func add(service: String, account: String, data: Data, group: String?, accessible: String) -> OSStatus {
