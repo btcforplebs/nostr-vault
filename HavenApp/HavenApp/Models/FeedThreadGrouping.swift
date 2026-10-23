@@ -277,14 +277,17 @@ enum FeedThreadGrouping {
 
 // MARK: - Thread view reply visibility
 
-/// Which replies a thread view folds as "outside your network".
+/// Which replies a thread view shows.
 enum ThreadReplyVisibility {
-    /// Outside: not in your trusted set (Web of Trust plus follows) and not
-    /// one of the thread's insiders (you, and the authors of the opened note
-    /// and the notes above it). An empty trusted set means the graph has not
-    /// loaded, and then nobody counts as outside.
-    static func isOutside(_ pubkey: String, trusted: Set<String>, insiders: Set<String>) -> Bool {
-        !trusted.isEmpty && !trusted.contains(pubkey) && !insiders.contains(pubkey)
+    /// Every reply under `rootId`, at any depth, except the ones `isHidden`
+    /// drops (blocked people, spam). Everyone else shows, whoever they are:
+    /// replies from outside your web used to be folded behind a button, and
+    /// the thread then read as the author talking to themselves, with the
+    /// author's own answers to a folded reply gone with it.
+    static func shown<T>(under rootId: String, in notes: [T],
+                         id: (T) -> String, parentId: (T) -> String?,
+                         isHidden: (T) -> Bool) -> [T] {
+        descendants(of: rootId, in: notes, id: id, parentId: parentId).filter { !isHidden($0) }
     }
 
     /// Every note under `rootId`, at any depth, among `notes`.
