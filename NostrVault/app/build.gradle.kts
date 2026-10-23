@@ -41,7 +41,7 @@ android {
         applicationId = "com.nostrvault.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
+        versionCode = 44
         versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
