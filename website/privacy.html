@@ -74,19 +74,24 @@
         <h2>1. What We Run and What It Keeps</h2>
         <p>The apps have no analytics, crash reporting, advertising or tracking code, and no push notification server:
             notifications are made on your device. We do not build profiles of people, score them or index anyone who
-            doesn't use the app. Two things we run do receive data:</p>
+            doesn't use the app. Two things we run do receive data, and one copy of the website runs elsewhere:</p>
         <ul>
             <li><strong>Our relay, relay.btcforplebs.com.</strong> It is one of the default relays in the apps and the
                 web app. Like any Nostr relay, it receives and stores the notes and other events you publish to it, and
                 it answers the apps' requests for your follows' notes, your inbox and your messages (which arrive
                 encrypted). It sees your IP address and public key when you connect. You can remove it in Settings
                 &rarr; Relays.</li>
-            <li><strong>The website, nostrvault.app.</strong> It is served through Cloudflare, which sees your IP
-                address and the pages you request. Our web server keeps a standard log of each request (IP address,
+            <li><strong>The website, nostrvault.app.</strong> It runs on our own server behind Cloudflare, which
+                sees your IP address and the pages you request. Our web server keeps a standard log of each request (IP address,
                 time, page address, browser and the page you came from). Page addresses include
                 nostrvault.app/thread/ links, so the log shows which shared posts were opened. Each day's log is
                 deleted after 7 days. When someone opens a /thread/ link, our server reads that public post from public
                 Nostr relays and keeps the page in memory for up to 10 minutes.</li>
+            <li><strong>The nsite copy of the website.</strong> Each update is also published on Nostr as an nsite:
+                the same files, stored on Blossom media servers and signed by the site's own key. If you open that
+                copy (for example <a href="https://npub120rlujghxmnfz803syfemlv49zu565fpxjrt88wumwk4zjekwhkslyl4dc.nsite.lol/">through nsite.lol</a>), the gateway you use and the
+                Blossom servers it fetches from see your IP address instead of Cloudflare and our server. Those
+                services have their own policies.</li>
         </ul>
 
         <h2>2. The Nostr Network</h2>
