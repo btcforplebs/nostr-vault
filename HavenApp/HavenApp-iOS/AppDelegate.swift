@@ -78,9 +78,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
         let moved = CredentialStore.migrateToThisDeviceOnly()
         ConfigService.shared.secureOwnerKeyAtRest()
-        // print reaches relay.log, the file pulled off a device: it shows
-        // where the keys ended up without a probe app.
-        print("Keychain: moved \(moved) item(s); \(CredentialStore.locationReport())")
+        // Written straight into relay.log, the file pulled off a device: it
+        // shows where the keys ended up without a probe app.
+        RelayProcessManager.shared.appendLaunchLine(
+            "Keychain: moved \(moved) item(s); \(CredentialStore.locationReport())",
+            in: ConfigService.shared.relayDataDir)
     }
 
     func application(

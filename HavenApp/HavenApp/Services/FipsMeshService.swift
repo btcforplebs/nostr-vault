@@ -728,9 +728,16 @@ final class FipsMeshService: ObservableObject {
         insert[kSecValueData as String] = Data(nsec.utf8)
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         // The app's own group, not the default one the widget shares.
-        if let group = CredentialStore.privateGroup { insert[kSecAttrAccessGroup as String] = group }
+        var grouped = insert
+        if let group = CredentialStore.privateGroup { grouped[kSecAttrAccessGroup as String] = group }
+        var added = SecItemAdd(grouped as CFDictionary, nil)
+        if added == errSecMissingEntitlement {
+            // A build without the group entitled: the default group still
+            // beats having no mesh key at all (CredentialStore.store does the same).
+            added = SecItemAdd(insert as CFDictionary, nil)
+        }
         // Without a stored key the npub would change on every start.
-        guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { return nil }
+        guard added == errSecSuccess else { return nil }
         return nsec
     }
 }
