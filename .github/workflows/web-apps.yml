@@ -1,0 +1,35 @@
+name: Web apps
+
+# web-relay and web-vault tests against a freshly built haven.wasm. website/test-web-apps.sh fails if haven.wasm is
+# missing or any test is skipped, so the "real Haven" tests can't pass by skipping.
+on:
+  pull_request:
+    paths:
+      - "web-relay/**"
+      - "web-vault/**"
+      - "haven-go/**"
+      - "website/test-web-apps.sh"
+      - ".github/workflows/web-apps.yml"
+  push:
+    branches: [master]
+    paths:
+      - "web-relay/**"
+      - "web-vault/**"
+      - "haven-go/**"
+      - "website/test-web-apps.sh"
+      - ".github/workflows/web-apps.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: haven-go/go.mod
+          cache-dependency-path: haven-go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # website/Dockerfile builds the apps on node:22
+      - name: Build haven.wasm, test web-relay and web-vault, fail on any skip
+        run: website/test-web-apps.sh
