@@ -81,6 +81,9 @@ extension Notification.Name {
     /// A `nostr:` link opened from outside the app. `object` is the hex pubkey
     /// (`havenOpenProfile`), or the hex event id / `naddr1…` (`havenOpenNote`).
     static let havenOpenProfile = Notification.Name("com.haven.openProfile")
+    /// A profile link opened before setup is done: the person who told you
+    /// about Nostr Vault (hex pubkey). Setup's referrer step starts on them.
+    static let havenSetupReferrer = Notification.Name("com.haven.setupReferrer")
     static let havenOpenNote = Notification.Name("com.haven.openNote")
 }
 

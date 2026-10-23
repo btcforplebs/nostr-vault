@@ -140,6 +140,35 @@ enum ContactManager {
         return .success((newPTags, newPubkeys))
     }
 
+    /// `prepareFollow` for several people in one list edit, so they go out as
+    /// one kind 3 rather than one per person (several lists signed in the
+    /// same second can lose to each other on a relay). People already
+    /// followed, and repeats, are skipped; nothing new is `.alreadyFollowing`.
+    static func prepareFollowMany(
+        pubkeys: [String],
+        currentPTags: [[String]],
+        currentPubkeys: [String],
+        hasAttemptedLoad: Bool,
+        isLoading: Bool,
+        listConfirmed: Bool,
+        readOnly: Bool
+    ) -> Result<(pTags: [[String]], pubkeys: [String], added: [String]), FollowActionError> {
+        guard !readOnly else { return .failure(.readOnly) }
+        guard hasAttemptedLoad, !isLoading else { return .failure(.contactsNotLoaded) }
+        guard listConfirmed else { return .failure(.listUnavailable) }
+        var newPTags = currentPTags
+        var newPubkeys = currentPubkeys
+        var have = Set(currentPubkeys)
+        var added: [String] = []
+        for pubkey in pubkeys where have.insert(pubkey).inserted {
+            newPTags.append(["p", pubkey])
+            newPubkeys.append(pubkey)
+            added.append(pubkey)
+        }
+        guard !added.isEmpty else { return .failure(.alreadyFollowing) }
+        return .success((newPTags, newPubkeys, added))
+    }
+
     /// Validates and performs an unfollow operation on the tag list.
     /// Returns updated tags/pubkeys on success, or an error.
     static func prepareUnfollow(
