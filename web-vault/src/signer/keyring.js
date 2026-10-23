@@ -55,10 +55,12 @@ export async function seal(hex, ks) {
 export const LOST_KEY = "This browser no longer has the key for your bunker connection (its site data was partly cleared). Sign out of this account (or remove it in Accounts, if it isn't the one you're using), then connect your bunker again."
 // crypto.subtle only exists on https pages and localhost. Bunker sign-in needs it to store the connection encrypted, and
 // refuses rather than storing it in the clear.
-export const INSECURE = "Signing in with a bunker needs a secure page: open Nostr Vault over https (or on localhost), not plain http."
-const subtle = () => { if (!globalThis.crypto?.subtle) throw new Error(INSECURE); return globalThis.crypto.subtle }
-/** Throws INSECURE where nothing can be sealed: checked before a bunker sign-in starts, not after the user approves. */
-export const assertCanSeal = () => { subtle() }
+/** Why nothing can be sealed here, for what the user was doing ("Signing in with a bunker", "Creating an account"). */
+export const insecure = (doing = "Signing in with a bunker") => `${doing} needs a secure page: open Nostr Vault over https (or on localhost), not plain http.`
+export const INSECURE = insecure()
+const subtle = (doing) => { if (!globalThis.crypto?.subtle) throw new Error(insecure(doing)); return globalThis.crypto.subtle }
+/** Throws insecure(doing) where nothing can be sealed: checked before a sign-in starts, not after the user approves. */
+export const assertCanSeal = (doing) => { subtle(doing) }
 
 /** { iv, ct } -> hex secret. Throws LOST_KEY when the wrapping key is gone or doesn't open it. */
 export async function unseal(sealed, ks) {

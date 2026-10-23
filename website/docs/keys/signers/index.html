@@ -178,9 +178,10 @@
                 <p>The signer has to hold this account's key. A signer for a different account is refused.</p>
 
                 <h2 id="web">On the web</h2>
-                <p>The web app only signs with a signer: a browser extension, or a bunker link in
-                    <span class="ui">Bunker link (NIP-46)</span> and <span class="ui">Connect bunker</span>. It never asks for your
-                    secret key. A bunker's connection to the browser is stored encrypted, and removing the account or signing out
+                <p>An account you already have signs on the web with a signer: a browser extension, or a bunker link in
+                    <span class="ui">Bunker link (NIP-46)</span> and <span class="ui">Connect bunker</span>. It never asks for that
+                    account's secret key. (An account made with Create an account on the web keeps its key in that browser, locked
+                    with your password: see <a href="/docs/start/web/#create">Use Nostr Vault in a browser</a>.) A bunker's connection to the browser is stored encrypted, and removing the account or signing out
                     asks the bunker to drop it.</p>
 
                 <h2 id="tips">Good to know</h2>

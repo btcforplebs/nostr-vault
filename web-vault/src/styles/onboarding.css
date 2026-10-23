@@ -1,0 +1,58 @@
+/* Create an account (src/screens/CreateAccount.jsx): one centred column, the iPhone wizard's glass cards, step dots. */
+.onboard { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; box-sizing: border-box;
+  padding: max(16px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  background: radial-gradient(120% 50% at 50% 0%, rgb(230 115 38 / .12), transparent 60%), var(--bg); }
+.onboard-head { width: 100%; max-width: 440px; min-height: 44px; display: flex; align-items: center; gap: 12px; }
+.onboard-dots { display: flex; gap: 6px; margin: 0 0 0 auto; padding: 0; list-style: none; }
+.onboard-dots li { width: 8px; height: 8px; border-radius: 50%; background: var(--s3); }
+.onboard-dots li.done { background: var(--accent-dark); }
+.onboard-dots li.on { width: 22px; border-radius: 4px; background: var(--accent); }
+.onboard-body { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 14px; padding-top: 12px; }
+.onboard-body:focus { outline: none; }
+.onboard-logo { width: 56px; height: 56px; margin: 8px auto 4px; border-radius: 13px; box-shadow: 0 10px 40px -8px rgb(230 115 38 / .55); }
+.onboard-title { margin: 0; font: var(--t-title); text-align: center; letter-spacing: -.01em; }
+.onboard-sub { margin: -6px 0 4px; font: var(--t-sub); color: var(--text-2); text-align: center; text-wrap: balance; }
+
+.onboard-card { padding: 18px; border-radius: 16px; background: var(--s1); border: 1px solid var(--hair); }
+.onboard-card h2 { margin: 0 0 6px; font: var(--t-headline); }
+.onboard-card p { margin: 0; font: var(--t-sub); color: var(--text-2); }
+.onboard-key-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.onboard-key-head h2 { margin: 0; }
+.onboard-key p { margin-top: 4px; }
+.onboard-key.secret { border-color: var(--accent-line); }
+.onboard-key-value { display: block; margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--hair);
+  font: 13px/1.45 var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: all; }
+.onboard-key-value.full { white-space: normal; word-break: break-all; }
+.onboard-warn { margin: 8px 0 0; font: var(--t-foot); color: var(--accent-light); }
+.onboard-warn.box { margin: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--accent-line); background: var(--accent-pale); }
+
+.onboard-tick { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 4px; font: var(--t-body); cursor: pointer; }
+.onboard input[type=checkbox] { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.onboard-main { width: 100%; min-height: 50px; font: var(--t-headline); }
+.onboard-main.sticky { position: sticky; bottom: max(12px, env(safe-area-inset-bottom)); box-shadow: 0 10px 30px rgb(0 0 0 / .6); }
+.onboard-skip { align-self: center; min-height: 44px; border: 0; background: none; color: var(--text-2); font: var(--t-sub); font-weight: 600; }
+.onboard-skip:hover, .onboard-skip:focus-visible { color: var(--text); }
+
+.onboard-form { display: contents; }
+.onboard-form .error:empty { display: none; }
+.onboard-pw { display: flex; gap: 8px; align-items: center; }
+.onboard-pw input { flex: 1; min-width: 0; }
+.onboard-pw button { flex: none; }
+
+.onboard-photo { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--accent); font: var(--t-sub); font-weight: 600; cursor: pointer; }
+.onboard-photo-disc { width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; overflow: hidden;
+  background: var(--s1); border: 1px solid var(--hair); color: var(--text-2); }
+.onboard-photo:focus-within .onboard-photo-disc { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-pale); }
+.onboard-photo-disc img { width: 100%; height: 100%; object-fit: cover; }
+
+.onboard-pack { border-radius: 16px; background: var(--s1); border: 1px solid var(--hair); overflow: hidden; }
+.onboard-pack-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; border-bottom: 1px solid var(--hair); }
+.onboard-pack-head > span { flex: 1; display: grid; gap: 2px; }
+.onboard-pack ul { margin: 0; padding: 0; list-style: none; }
+.onboard-person { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; }
+.onboard-person .avatar { flex: none; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--s3); }
+.onboard-person-names { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.onboard-person-names .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.onboard-summary { margin: 0; padding: 16px 18px 16px 34px; border-radius: 16px; background: var(--s1); border: 1px solid var(--hair);
+  display: grid; gap: 8px; font: var(--t-sub); color: var(--text-2); }

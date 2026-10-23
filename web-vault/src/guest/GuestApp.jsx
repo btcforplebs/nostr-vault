@@ -7,6 +7,7 @@ import { ThreadScreen } from "../screens/ThreadScreen.jsx"
 import { PersonScreen } from "../screens/PersonScreen.jsx"
 import { SignInScreen } from "../screens/SignInScreen.jsx"
 import { WelcomeScreen } from "../screens/WelcomeScreen.jsx"
+import { CreateAccount } from "../screens/CreateAccount.jsx"
 import { learn } from "../shell.js"
 import { setActionContext } from "../net/actions.js"
 import { setQuoteSource } from "../net/quotes.js"
@@ -21,6 +22,7 @@ import "../styles/guest.css"
 export function GuestApp({ bootHash, onSignedIn }) {
   const [hash, setHash] = useState(location.hash)
   const [signingIn, setSigningIn] = useState(false)
+  const [creating, setCreating] = useState(false)
   const ctx = useMemo(() => guestContext(guestRelays(bootHash)), [])
   useEffect(() => {
     setActionContext(ctx)
@@ -54,6 +56,7 @@ export function GuestApp({ bootHash, onSignedIn }) {
   const viewing = id || person
   // Any other app address (Message, a hashtag, an old link) needs an account: sign-in, with a way back.
   const home = !hash || hash === "#" || hash === "#/"
+  if (creating) return <CreateAccount onSignedIn={onSignedIn} onBack={() => setCreating(false)} />
   if (signingIn || (!viewing && !home)) {
     const back = signingIn ? () => setSigningIn(false) : lastId.current ? () => history.back() : () => { location.hash = "#/" }
     return (
@@ -63,7 +66,7 @@ export function GuestApp({ bootHash, onSignedIn }) {
       </>
     )
   }
-  if (!viewing) return <WelcomeScreen onSignIn={() => setSigningIn(true)} />
+  if (!viewing) return <WelcomeScreen onSignIn={() => setSigningIn(true)} onCreate={() => setCreating(true)} />
   return (
     <div class="app guest-app">
       {person ? <PersonScreen key={person} ctx={ctx} pubkey={person} />

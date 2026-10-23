@@ -18,7 +18,7 @@ export function sevenDayErase(nav = globalThis.navigator, standalone = globalThi
   return ""
 }
 
-const KEEP_IT = {
+export const KEEP_IT = {
   ios: "Safari deletes this site's data after 7 days without a visit. To keep it, add Nostr Vault to your Home Screen (Share › Add to Home Screen) and open it from there.",
   mac: "Safari deletes this site's data after 7 days without a visit. To keep it, add Nostr Vault to the Dock (File › Add to Dock) and open it from there.",
 }
