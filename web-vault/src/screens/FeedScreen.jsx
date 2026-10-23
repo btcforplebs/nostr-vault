@@ -12,6 +12,7 @@ import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
+import { globalTrust } from "../readers/trust.js"
 import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
 import { withParam } from "../desktop/routes.js"
@@ -54,6 +55,8 @@ export function FeedScreen({ ctx }) {
   // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
   const Reader = readerFor(choice.mode)?.Screen
   const following = fromHaven(choice.mode), media = choice.mode === "media", popular = choice.mode === "popular"
+  // Global and Popular are both read through your web of trust, so both wait for your follows.
+  const global = choice.mode === "global", needsWeb = popular || global
   const page = media ? MEDIA_PAGE : PAGE
   // A sync started on Following reloads when it ends, maybe after a switch to Media: it reads with the page size
   // and note count of the feed shown then, not of the render that started it.
@@ -150,13 +153,13 @@ export function FeedScreen({ ctx }) {
   const loadStrange = async (c, until) => {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
-    if (c.mode === "popular" && !follows.length) return setStatus("")
+    if ((c.mode === "popular" || c.mode === "global") && !follows.length) return setStatus("")
     if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode).label} needs the network`)
     setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…" : "Loading…")
     try {
       const page = c.mode === "popular"
         ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked })).notes
-        : await fetchStrangerFeed(c, account.relays.read, { until })
+        : await fetchStrangerFeed(c, account.relays.read, { until, trust: c.mode === "global" ? await globalTrust(ctx.session?.pubkey, follows) : null })
       if (n !== seq.current) return
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
       holdNotes(c, all)
@@ -169,7 +172,7 @@ export function FeedScreen({ ctx }) {
   useEffect(() => { if (following) reload().then(sync) }, [follows.length, following])
   // Following and Media share the notes read from /feed; Media reads a bigger page, so switching to it reads again.
   useEffect(() => { if (following && notes) reload() }, [media])
-  useEffect(() => { if (!Reader && !following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), popular && follows.length > 0])
+  useEffect(() => { if (!Reader && !following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), needsWeb && follows.length > 0])
   useEffect(() => {
     if (following && notes?.length) fetchProfiles(vault, noteAuthors(notes), relays).catch(() => {})
   }, [notes, following])
@@ -220,8 +223,9 @@ export function FeedScreen({ ctx }) {
           : <Notes shown={shown} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
+          : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
           : strange === null ? navigator.onLine ? <SkeletonRows /> : <p class="empty">This feed needs the network.</p>
-          : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : "No notes found."}</p>
+          : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
           : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read)}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}

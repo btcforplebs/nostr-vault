@@ -4,6 +4,8 @@
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq } from "./pool.js"
 import { FEED_KINDS } from "./sync.js"
+import { filterGlobal } from "./global-trust.js"
+import { trustedFilters } from "../readers/trust.js"
 
 // The iPhone's FeedMode order (Services/FeedServiceTypes.swift FeedMode). Readers (src/readers) take their place in it.
 export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popular", "media", "reels", "articles", "recipes",
@@ -59,14 +61,20 @@ export function feedFilter({ mode, tag }, { limit = 100, until } = {}) {
   return null
 }
 
-/** One page of a stranger feed from the network, newest first, once each. Nothing is stored. `query` is for tests. */
-export async function fetchStrangerFeed(choice, relays, { limit = 100, until, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+/** One page of a stranger feed from the network, newest first, once each. Nothing is stored. Global takes `trust`
+ *  (readers/trust.js globalTrust): it asks once for trusted authors and once open, as the iPhone does, and keeps only
+ *  what Global shows (global-trust.js); no trust shows nothing. `query` is for tests. */
+export async function fetchStrangerFeed(choice, relays, { limit = 100, until, trust = null, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const filter = feedFilter(choice, { limit, until })
   if (!filter) return []
-  const evs = await query(uniq(relays), filter, { maxWait: 8000 })
+  const global = choice.mode === "global"
+  if (global && !trust?.size) return []
+  const filters = global ? trustedFilters(filter, trust) : [filter]
+  const evs = (await Promise.all(filters.map(f => query(uniq(relays), f, { maxWait: 8000 })))).flat()
   const byId = new Map()
   for (const ev of evs) if (ev?.id && filter.kinds.includes(ev.kind) && !byId.has(ev.id)) byId.set(ev.id, ev)
-  return [...byId.values()].sort((a, b) => b.created_at - a.created_at)
+  const notes = [...byId.values()].sort((a, b) => b.created_at - a.created_at)
+  return global ? filterGlobal(notes, trust) : notes
 }
 
 /** Add a page to what is shown, dropping notes already there. */
