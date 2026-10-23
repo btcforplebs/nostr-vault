@@ -74,10 +74,11 @@ export async function storeNames(pubkey, idb = indexedDB) {
   const listed = idb.databases ? (await idb.databases().catch(() => [])).map(d => d.name).filter(n => mine.test(n ?? "")) : []
   return [...new Set([...known, ...listed])]
 }
-// Everything else this page keeps: the device key, its FIPS key and paired vaults, and the activity log. The bare
+// Everything else this page keeps: the device key, its FIPS key and paired vaults, the activity log, and which
+// accounts the first sign-in's steps screen has filled (net/vault-ready.js READY_KEY). The bare
 // FIPS keys are from before the page prefixes: a vault that paired through its Relay screen left them, and nothing
 // reads them now unless /relay/ is opened again (src/page-storage.js migrateRelayKeys), which would then re-pair.
-const LOCAL_KEYS = [DEVICE_KEY, ...FIPS_ITEMS.map(k => VAULT_NS + k), ...FIPS_ITEMS, "nv-log"]
+const LOCAL_KEYS = [DEVICE_KEY, ...FIPS_ITEMS.map(k => VAULT_NS + k), ...FIPS_ITEMS, "nv-log", "nv-ready"]
 const SESSION_KEY = "nv-session"
 
 /** Sign-out: stop Haven, delete its stores, and drop the session, the device and FIPS keys and the log. -> { failed } */

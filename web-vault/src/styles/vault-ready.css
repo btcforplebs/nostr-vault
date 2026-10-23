@@ -1,0 +1,31 @@
+/* "Getting your vault ready" (components/VaultReady.jsx): the splash's icon and column, a title, one bar for the
+   whole, and the steps as a quiet list. The splash's own picture stays, so the hand-over from index.html is still. */
+.vault-ready { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 14px;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); max-width: 440px; margin: 0 auto; text-align: center; }
+.vault-ready .splash-mark img { display: block; width: 72px; height: 72px; margin: 0; border-radius: 16px; }
+.vault-ready h1 { margin: 4px 0 0; font: var(--t-title2); }
+.vr-lede { margin: 0; color: var(--text-2); font: var(--t-sub); text-wrap: pretty; }
+
+.vr-bar { height: 6px; margin: 6px 0 2px; border-radius: 999px; background: var(--s2); overflow: hidden; }
+.vr-bar > span { display: block; height: 100%; min-width: 6px; border-radius: inherit; background: var(--accent-grad); }
+@media (prefers-reduced-motion: no-preference) { .vr-bar > span { transition: width .4s ease-out; } }
+
+.vr-steps { list-style: none; margin: 0; padding: 6px 0; border-radius: var(--radius); background: var(--s1); text-align: left; }
+.vr-step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; }
+.vr-step + .vr-step { border-top: 1px solid var(--hair); }
+.vr-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
+.vr-title { font: var(--t-sub); color: var(--text-3); }
+.vr-step.is-active .vr-title { color: var(--text); font-weight: 600; }
+.vr-step.is-done .vr-title, .vr-step.is-slow .vr-title, .vr-step.is-failed .vr-title { color: var(--text-2); }
+.vr-detail { font: var(--t-foot); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.vr-step.is-failed .vr-detail { color: var(--booting); }
+
+/* A 20px slot per state, so the titles line up whatever the icon is. */
+.vr-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; }
+.vr-icon .nv-spin { width: 16px; height: 16px; vertical-align: 0; }
+.vr-done { border-radius: 50%; background: var(--accent-pale); color: var(--accent); }
+.vr-wait::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--hair); }
+.vr-later { color: var(--text-2); font-weight: 700; letter-spacing: 1px; }
+
+.vr-open { align-self: center; margin-top: 4px; border: 0; background: none; color: var(--text-2); font: var(--t-foot); font-weight: 600; }
+.vr-open:hover, .vr-open:focus-visible { color: var(--text); }
