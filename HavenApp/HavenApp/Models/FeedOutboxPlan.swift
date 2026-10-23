@@ -64,9 +64,18 @@ enum FeedOutboxPlan {
         var candidates: [String: Set<String>] = [:]   // relay key → follows
         var urlForKey: [String: String] = [:]
         var unlisted = Set<String>()
+        // The same few hundred relay URLs recur across the follows; parse each once.
+        var keyForRaw: [String: String?] = [:]
         for author in Set(follows) {
             let usable = (writeRelays[author] ?? []).compactMap { raw -> String? in
-                guard let key = normalizedKey(raw), !down.contains(key) else { return nil }
+                let parsed: String?
+                if let known = keyForRaw[raw] {
+                    parsed = known
+                } else {
+                    parsed = normalizedKey(raw)
+                    keyForRaw[raw] = parsed
+                }
+                guard let key = parsed, !down.contains(key) else { return nil }
                 urlForKey[key] = urlForKey[key] ?? raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 return key
             }
@@ -78,34 +87,62 @@ enum FeedOutboxPlan {
             for key in usable { candidates[key, default: []].insert(author) }
         }
 
+        // Follows become small ints so a round counts each relay's gain over
+        // a flag array. Allocating `authors.subtracting(covered)` for every
+        // relay every round cost 2.4 s of main thread in 90 s of feed load on
+        // an iPhone 12 mini (2026-10-23): the plan is rebuilt each time a
+        // follow's relay list arrives.
+        var index: [String: Int] = [:]
+        var names: [String] = []
+        var members: [String: [Int]] = candidates.mapValues { authors in
+            authors.map { author in
+                if let i = index[author] { return i }
+                index[author] = names.count
+                names.append(author)
+                return names.count - 1
+            }
+        }
+        var covered = [Bool](repeating: false, count: names.count)
+
         var plan: [String: [String]] = [:]
-        var covered = Set<String>()
         // The fallback first: it takes a slot only when someone needs it.
         if !unlisted.isEmpty, let fallbackRelay, let key = normalizedKey(fallbackRelay),
            !asked.contains(key), !down.contains(key), maxExtraRelays > 0 {
-            plan[fallbackRelay] = unlisted.sorted()
             urlForKey[key] = fallbackRelay
+            var taken = unlisted
             // Listed follows the fallback relay reaches are taken there too.
-            if let reached = candidates.removeValue(forKey: key) {
-                plan[fallbackRelay] = unlisted.union(reached).sorted()
-                covered.formUnion(reached)
+            if let reached = members.removeValue(forKey: key) {
+                for i in reached {
+                    covered[i] = true
+                    taken.insert(names[i])
+                }
             }
+            plan[fallbackRelay] = taken.sorted()
         }
         while plan.count < maxExtraRelays {
             // Most still-uncovered follows wins; ties go to the smaller key so
             // the same inputs always pick the same relays.
             var best: (key: String, gain: Int)?
-            for (key, authors) in candidates {
-                let gain = authors.subtracting(covered).count
-                guard gain > 0 else { continue }
+            var spent: [String] = []
+            for (key, authors) in members {
+                var gain = 0
+                for i in authors where !covered[i] { gain += 1 }
+                guard gain > 0 else {
+                    spent.append(key)   // can only shrink, so never again
+                    continue
+                }
                 if best == nil || gain > best!.gain || (gain == best!.gain && key < best!.key) {
                     best = (key, gain)
                 }
             }
+            for key in spent { members.removeValue(forKey: key) }
             guard let pick = best, let url = urlForKey[pick.key] else { break }
-            let authors = candidates.removeValue(forKey: pick.key) ?? []
-            let newlyCovered = authors.subtracting(covered)
-            covered.formUnion(newlyCovered)
+            let authors = members.removeValue(forKey: pick.key) ?? []
+            var newlyCovered: [String] = []
+            for i in authors where !covered[i] {
+                covered[i] = true
+                newlyCovered.append(names[i])
+            }
             plan[url] = newlyCovered.sorted()
         }
         return plan
