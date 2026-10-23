@@ -6,7 +6,7 @@ set -eu
 cd "$(dirname "$0")/.."
 out="$PWD"
 pkg="${HAVEN_WASM_PKG:-.}"
-(cd ../haven-go && GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o "$out/public/haven.wasm" "$pkg")
+(cd ../haven-go && GOOS=js GOARCH=wasm go build -mod=mod -trimpath -ldflags="-s -w" -o "$out/public/haven.wasm" "$pkg")
 root="$(go env GOROOT)"
 shim="$root/lib/wasm/wasm_exec.js"
 [ -f "$shim" ] || shim="$root/misc/wasm/wasm_exec.js"
