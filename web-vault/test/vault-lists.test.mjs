@@ -7,7 +7,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import {
   MODES, FILTERS, defaultFilter, isMode, imagesOf, previewOf, activityRows, activityFilter, notesFor, articlesFor, isRecipe,
   highlightsFor, highlightSource, mediaFor, likesFor, zapsFor, zapSender, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
-  readOwn, readInbound, fetchOwnExtras, INBOUND_KINDS,
+  readOwn, readInbound, fetchOwnExtras, fetchVault, INBOUND_KINDS,
 } from "../src/net/vault-lists.js"
 
 const keys = new Map()
@@ -227,4 +227,30 @@ test("every filter has a title; the long ones a short pill form", () => {
     if (f.pill !== undefined) assert.ok(f.pill.length < f.title.length)
   }
   assert.equal(typeof fetchOwnExtras, "function")
+})
+
+test("the Vault draws each answer as it lands: inbound shows while zaps given are still being checked", async () => {
+  const seen = []
+  let finishGiven
+  const given = new Promise(r => { finishGiven = r })
+  const fetchers = {
+    fetchInbound: async () => ["reply"],
+    fetchFollowerLists: async () => ["list"],
+    fetchGivenZaps: () => given,
+    fetchOwnExtras: async () => 0,
+  }
+  const done = fetchVault({}, "me", [], { fetchers, on: { inbound: e => seen.push(["inbound", e]), lists: l => seen.push(["lists", l]), given: g => seen.push(["given", g]) } })
+  await new Promise(r => setTimeout(r, 20))
+  assert.deepEqual(seen, [["inbound", ["reply"]], ["lists", ["list"]]], "inbound and followers waited on zaps given")
+  finishGiven(["zap"])
+  assert.equal(await done, null)
+  assert.deepEqual(seen.at(-1), ["given", ["zap"]])
+})
+
+test("a Vault fetch that fails is reported once the rest are in, and does not hold back the others", async () => {
+  const seen = []
+  const fetchers = { fetchInbound: async () => { throw new Error("no relay") }, fetchFollowerLists: async () => ["list"], fetchGivenZaps: async () => [], fetchOwnExtras: async () => 0 }
+  const err = await fetchVault({}, "me", [], { fetchers, on: { lists: l => seen.push(l) } })
+  assert.equal(err?.message, "no relay")
+  assert.deepEqual(seen, [["list"]])
 })

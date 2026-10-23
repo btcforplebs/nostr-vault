@@ -80,13 +80,19 @@ export function FeedScreen({ ctx }) {
     if (!navigator.onLine) return say("Offline: showing your saved feed")
     say("Syncing…")
     setSyncing(true)
-    // Show notes as each chunk of follows lands, not after the last one. Reloads queue so an older read can't
-    // land after a newer one.
-    let shown = Promise.resolve(), seen = 0
+    // Show notes as each chunk of follows lands, not after the last one. One read at a time, so an older read can't
+    // land after a newer one, and at most one waiting: each read is of every follow, and a queue of one per answer
+    // kept a first sync's screen busy ~20 s after the last note was saved.
+    let shown = Promise.resolve(), seen = 0, waiting = false
+    const show = () => {
+      if (waiting) return
+      waiting = true
+      shown = shown.then(() => { waiting = false; return reload() })
+    }
     try {
       const n = await syncFeed(vault, follows, relays, { onProgress: p => {
         say(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
-        if (p.stored > seen) { seen = p.stored; shown = shown.then(reload) }
+        if (p.stored > seen) { seen = p.stored; show() }
       } })
       await shown
       await reload()

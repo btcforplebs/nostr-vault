@@ -257,11 +257,18 @@ export async function readInbound(vault, me) {
   return dedupe(await vault.inbox.query({ kinds: INBOUND_KINDS, "#p": [me], limit: 500 }).catch(() => []))
 }
 
+// 100 writes at a time, not one round trip after another (sync.js storeAll). -> each write's answer
+async function storeEach(route, evs) {
+  const out = []
+  for (let i = 0; i < evs.length; i += 100) out.push(...await Promise.all(evs.slice(i, i + 100).map(ev => route.event(ev).catch(() => ({ ok: false })))))
+  return out
+}
+
 /** Others' events that tag the user from the network, kept in Haven's inbox when it takes them. -> events */
 export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs } = {}) {
   // `trust` drops forged zap receipts (zaps.js trustedReceipts) before Haven keeps them.
   const evs = await trust(await pool.querySync(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...(since ? { since } : {}) }, { maxWait: 8000 }))
-  if (vault.inbox) for (const ev of evs) await vault.inbox.event(ev).catch(() => {})
+  if (vault.inbox) await storeEach(vault.inbox, evs)
   return dedupe(evs)
 }
 
@@ -271,9 +278,7 @@ export async function fetchInbound(vault, me, relays, { limit = 200, since, trus
  */
 export async function fetchOwnExtras(vault, me, relays, { limit = 200 } = {}) {
   const evs = await pool.querySync(relays, { kinds: [7, HIGHLIGHT_KIND], authors: [me], limit }, { maxWait: 8000 })
-  let stored = 0
-  for (const ev of evs) if ((await vault.outbox.event(ev).catch(() => ({ ok: false }))).ok) stored++
-  return stored
+  return (await storeEach(vault.outbox, evs)).filter(r => r.ok).length
 }
 
 /** Kind 3 lists naming the user, from the network. */
@@ -284,6 +289,24 @@ export async function fetchFollowerLists(me, relays, { limit = 500 } = {}) {
 /** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network. Most receipts carry it. */
 export async function fetchGivenZaps(me, relays, { limit = 100 } = {}) {
   return pool.querySync(relays, { kinds: [9735], "#P": [me], limit }, { maxWait: 8000 })
+}
+
+/**
+ * The Vault's network round: inbound, follower lists, zaps given and the user's own likes and highlights, asked at
+ * once. Each one is handed to `on` as it lands, so the list on screen draws from the first answer and never waits on
+ * the slowest: checking zaps given resolves every payee's zap service, ~20 s for 60 payees. -> once all are done,
+ * the first error, or null
+ */
+export async function fetchVault(vault, me, relays, { trust = async evs => evs, on = {}, fetchers = {} } = {}) {
+  const f = { fetchInbound, fetchFollowerLists, fetchGivenZaps, fetchOwnExtras, ...fetchers }
+  const each = (p, apply = () => {}) => p.then(apply)
+  const results = await Promise.allSettled([
+    each(f.fetchInbound(vault, me, relays, { trust }), on.inbound),
+    each(f.fetchFollowerLists(me, relays).catch(() => []), on.lists),
+    each(f.fetchGivenZaps(me, relays).then(trust).catch(() => []), on.given),
+    each(f.fetchOwnExtras(vault, me, relays).catch(() => 0), on.own),
+  ])
+  return results.find(r => r.status === "rejected")?.reason ?? null
 }
 
 export { replyTarget }

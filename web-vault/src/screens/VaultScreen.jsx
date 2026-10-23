@@ -21,7 +21,7 @@ import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from 
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
-  readOwn, readInbound, fetchInbound, fetchOwnExtras, fetchFollowerLists, fetchGivenZaps,
+  readOwn, readInbound, fetchVault,
 } from "../net/vault-lists.js"
 import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
@@ -84,18 +84,18 @@ export function VaultScreen({ ctx, desk = false }) {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
     setOwn(o); setInbound(i); setLoaded(true)
     screen(i) // receipts kept before this check existed
-    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setFetched(true); return }
+    const settled = () => { setFetched(true); setListsFetched(true); setGivenFetched(true); setOwnFetched(true) }
+    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); settled(); return }
     setStatus("Checking your relays…")
-    try {
-      const [fresh, l, g] = await Promise.all([
-        fetchInbound(vault, me, relays, { trust }), fetchFollowerLists(me, relays).catch(() => []), fetchGivenZaps(me, relays).then(trust).catch(() => []),
-        fetchOwnExtras(vault, me, relays).catch(() => 0),
-      ])
-      setInbound(prev => merge(prev, fresh)); setLists(l); setGiven(g)
-      setOwn(await readOwn(vault, me).catch(() => o))
-      setStatus("")
-    } catch (e) { setStatus(`Couldn't reach your relays (${e?.message ?? e})`) }
-    setFetched(true)
+    // Each answer draws as it lands: the list never waits on the slowest (zaps given, net/vault-lists.js fetchVault).
+    const err = await fetchVault(vault, me, relays, { trust, on: {
+      inbound: fresh => { setInbound(prev => merge(prev, fresh)); setFetched(true) },
+      lists: l => { setLists(l); setListsFetched(true) },
+      given: g => { setGiven(g); setGivenFetched(true) },
+      own: async () => { setOwn(await readOwn(vault, me).catch(() => o)); setOwnFetched(true) },
+    } })
+    setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : "")
+    settled()
   }
   useEffect(() => { load() }, [me])
 
@@ -107,6 +107,12 @@ export function VaultScreen({ ctx, desk = false }) {
   // "New" in the mode menu: what others sent since each mode was last open. The mode on screen counts as looked at.
   const [seen, setSeen] = useState(() => readSeen(me))
   const [fetched, setFetched] = useState(false) // the relays were asked: only then is a first look's baseline whole
+  const [listsFetched, setListsFetched] = useState(false) // Followers' own answer
+  const [givenFetched, setGivenFetched] = useState(false) // Zaps given's own answer, after every payee is checked
+  const [ownFetched, setOwnFetched] = useState(false) // your likes and highlights from the relays
+  // Which answer a mode's "nothing here" waits for; until then it shows its skeleton.
+  const ready = mode === "followers" ? listsFetched : mode === "zaps" && filter === "given" ? givenFetched
+    : (mode === "likes" && filter === "given") || mode === "highlights" ? fetched && ownFetched : fetched
   const newest = newestByMode(inbound, me, blocked)
   useEffect(() => {
     if (!loaded || (!seen && !fetched)) return
@@ -159,7 +165,7 @@ export function VaultScreen({ ctx, desk = false }) {
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
-      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={fetched} />}
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} />}
       </>}
     </main>
   )
