@@ -59,8 +59,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
-    /// Keys at rest: the passwords into the app's own keychain group on
-    /// ThisDeviceOnly, the NIP-46 client keys out of config.json (ConfigService
+    /// Keys at rest: the passwords and the FIPS mesh key into the app's own
+    /// keychain group on ThisDeviceOnly, the NIP-46 client keys out of config.json (ConfigService
     /// moves them as it loads), and a plaintext owner key encrypted and
     /// scrubbed from config.json and its copies. Before the first unlock
     /// neither the keychain nor config.json can be read, so it waits for it.
@@ -76,8 +76,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
             return
         }
-        CredentialStore.migrateToThisDeviceOnly()
+        let moved = CredentialStore.migrateToThisDeviceOnly()
         ConfigService.shared.secureOwnerKeyAtRest()
+        // Written straight into relay.log, the file pulled off a device: it
+        // shows where the keys ended up without a probe app.
+        RelayProcessManager.shared.appendLaunchLine(
+            "Keychain: moved \(moved) item(s); \(CredentialStore.locationReport())",
+            in: ConfigService.shared.relayDataDir)
     }
 
     func application(

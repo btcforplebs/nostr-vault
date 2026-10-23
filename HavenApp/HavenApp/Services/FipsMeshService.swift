@@ -713,18 +713,31 @@ final class FipsMeshService: ObservableObject {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data, let nsec = String(data: data, encoding: .utf8) {
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess, let data = item as? Data, let nsec = String(data: data, encoding: .utf8) {
             return nsec
         }
-        guard let raw = NvFipsGenerateNsec() else { return nil }
+        // Only a key that is not there gets replaced. A read that failed
+        // (locked, say) must not mint a second key: now that new keys go to
+        // the app's group, an add would no longer collide with the old one,
+        // and the mesh npub readers dial would change.
+        guard status == errSecItemNotFound, let raw = NvFipsGenerateNsec() else { return nil }
         let nsec = String(cString: raw)
         NvFipsFreeString(raw)
         var insert = keychainQuery
         insert[kSecValueData as String] = Data(nsec.utf8)
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        // The app's own group, not the default one the widget shares.
+        var grouped = insert
+        if let group = CredentialStore.privateGroup { grouped[kSecAttrAccessGroup as String] = group }
+        var added = SecItemAdd(grouped as CFDictionary, nil)
+        if added == errSecMissingEntitlement {
+            // A build without the group entitled: the default group still
+            // beats having no mesh key at all (CredentialStore.store does the same).
+            added = SecItemAdd(insert as CFDictionary, nil)
+        }
         // Without a stored key the npub would change on every start.
-        guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { return nil }
+        guard added == errSecSuccess else { return nil }
         return nsec
     }
 }

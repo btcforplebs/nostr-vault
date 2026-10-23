@@ -3,6 +3,16 @@ import Combine
 import SwiftUI
 
 extension NostrService {
+    nonisolated(unsafe) private static var reportedOwnerSigningFailure = false
+
+    /// A release build used to stop publishing in silence here (a DEBUG print
+    /// only). Once per run, in Settings > Logs: a Mac keychain read denied
+    /// at its prompt, say, is otherwise invisible.
+    private static func reportOwnerSigningFailure(_ reason: String) {
+        guard !reportedOwnerSigningFailure else { return }
+        reportedOwnerSigningFailure = true
+        RelayProcessManager.shared.addLog("Cannot sign as the owner: \(reason)", level: "ERROR")
+    }
     // MARK: - Publishing
 
     /// Signs an event using the stored nsec via the Go backend
@@ -34,15 +44,11 @@ extension NostrService {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
-                        #if DEBUG
-                        print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
-                        #endif
+                        Self.reportOwnerSigningFailure("the stored password did not decrypt the owner key (\(error.localizedDescription))")
                         return nil
                     }
                 } else {
-                    #if DEBUG
-                    print("NostrService: NIP-49 key exists but no password in Keychain")
-                    #endif
+                    Self.reportOwnerSigningFailure("the owner key is encrypted and its password could not be read from the keychain")
                     return nil
                 }
             } else {
@@ -243,15 +249,11 @@ extension NostrService {
                     do {
                         sk = try config.getDecryptedHexKey(password: pwd)
                     } catch {
-                        #if DEBUG
-                        print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
-                        #endif
+                        Self.reportOwnerSigningFailure("the stored password did not decrypt the owner key (\(error.localizedDescription))")
                         return nil
                     }
                 } else {
-                    #if DEBUG
-                    print("NostrService: NIP-49 key exists but no password in Keychain")
-                    #endif
+                    Self.reportOwnerSigningFailure("the owner key is encrypted and its password could not be read from the keychain")
                     return nil
                 }
             } else {

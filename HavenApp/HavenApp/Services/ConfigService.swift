@@ -391,7 +391,7 @@ class ConfigService: ObservableObject {
     /// saves, and, once config.json on disk no longer holds it, scrubs it from
     /// the backup and the unreadable copies. A copy that still holds an older
     /// plaintext of the same key (setting a password clears ownerNsec in
-    /// config.json only) is scrubbed too. Runs at launch on iOS.
+    /// config.json only) is scrubbed too. Runs at launch on iOS and the Mac.
     func secureOwnerKeyAtRest() {
         var secrets: [String] = []
         if !config.ownerNsec.isEmpty {

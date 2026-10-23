@@ -249,11 +249,13 @@ final class MacFipsMeshService: ObservableObject {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data, let nsec = String(data: data, encoding: .utf8) {
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess, let data = item as? Data, let nsec = String(data: data, encoding: .utf8) {
             return nsec
         }
-        guard let raw = NvFipsGenerateNsec() else { return nil }
+        // Only a key that is not there gets replaced: a read that failed
+        // (a denied keychain prompt, say) must not change the mesh npub.
+        guard status == errSecItemNotFound, let raw = NvFipsGenerateNsec() else { return nil }
         let nsec = String(cString: raw)
         NvFipsFreeString(raw)
         var insert = keychainQuery

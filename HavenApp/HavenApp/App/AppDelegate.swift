@@ -36,6 +36,15 @@ class AppDelegate: NSObject, ObservableObject {
         // over connections that are merely re-establishing after wake.
         SleepWakeMonitor.shared.start()
 
+        // A plaintext owner key in config.json is encrypted and scrubbed from
+        // its copies, as on iOS. Less than iOS gets: the login keychain keeps
+        // no ThisDeviceOnly class and has no access groups, and it travels
+        // in Time Machine and Migration Assistant, so the Mac gains an
+        // encrypted key with its password in the keychain, not device binding.
+        ConfigService.shared.secureOwnerKeyAtRest()
+        RelayProcessManager.shared.appendLaunchLine("Keychain: \(CredentialStore.locationReport())",
+                                                    in: ConfigService.shared.relayDataDir)
+
         // Check if setup is complete
         if !ConfigService.shared.config.hasCompletedSetup {
             openWelcomeWindow()

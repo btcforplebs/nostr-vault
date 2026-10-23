@@ -10,8 +10,23 @@ struct RevealKeySheetView: View {
     @State private var revealedNsec: String? = nil
     @State private var errorMessage: String? = nil
     @State private var copied = false
+    /// The password saved on this device for this key, read once when the
+    /// sheet opens (a keychain read per render could prompt on the Mac). A
+    /// key that was plaintext before 3.0.0 was encrypted with one the user
+    /// never saw, so an empty field uses it; the sheet only opens after
+    /// device-owner authentication (AccountDetailView.authenticateAndReveal).
+    @State private var storedPassword: String? = nil
 
     var body: some View {
+        sheetContent.onAppear {
+            storedPassword = npub == configService.config.ownerNpub
+                ? CredentialStore.getOwnerPassword()
+                : CredentialStore.getPassword(forNpub: npub)
+        }
+    }
+
+    @ViewBuilder
+    private var sheetContent: some View {
         #if os(macOS)
         VStack(spacing: 0) {
             HStack {
@@ -35,7 +50,7 @@ struct RevealKeySheetView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.havenPurple)
-                    .disabled(password.isEmpty)
+                    .disabled(password.isEmpty && storedPassword == nil)
                     .keyboardShortcut(.defaultAction)
                 } else {
                     Button("Done") {
@@ -70,10 +85,14 @@ struct RevealKeySheetView: View {
                         revealedKeyContent(nsec: nsec)
                     }
                 } else {
-                    Section("Enter Password") {
+                    Section {
                         SecureField("NIP-49 Password", text: $password)
                             .textContentType(.password)
                             .onSubmit { decryptKey() }
+                    } header: {
+                        Text("Enter Password")
+                    } footer: {
+                        if storedPassword != nil { Text(Self.storedPasswordHint) }
                     }
                     if let error = errorMessage {
                         Text(error).foregroundColor(.red).font(.appCaption)
@@ -88,7 +107,7 @@ struct RevealKeySheetView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if revealedNsec == nil {
                         Button("Unlock") { decryptKey() }
-                            .disabled(password.isEmpty)
+                            .disabled(password.isEmpty && storedPassword == nil)
                     } else {
                         Button("Done") { performDismiss() }
                     }
@@ -110,6 +129,12 @@ struct RevealKeySheetView: View {
                 .textContentType(.password)
                 .font(.appBody)
                 .onSubmit { decryptKey() }
+
+            if storedPassword != nil {
+                Text(Self.storedPasswordHint)
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
+            }
         }
 
         if let error = errorMessage {
@@ -158,8 +183,11 @@ struct RevealKeySheetView: View {
         }
     }
 
+    private static let storedPasswordHint = "Leave it empty to use the password saved on this device."
+
+
     private func decryptKey() {
-        guard !password.isEmpty else { return }
+        guard let password = password.isEmpty ? storedPassword : password else { return }
         errorMessage = nil
 
         let isOwner = (npub == configService.config.ownerNpub)

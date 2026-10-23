@@ -305,6 +305,32 @@ final class KeysAtRestTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), ["notes.txt"])
     }
 
+    /// The FIPS mesh key is a private key too: it leaves the widget's group
+    /// in the same pass, keeping its value, so the mesh npub does not change.
+    func testTheMeshKeyMovesWithThePasswords() {
+        let keychain = FakeKeychain()
+        let mesh = MeshIdentityReset.keychainService
+        keychain.put("owner-key-password", "owner-pw", group: shared, accessible: oldClass)
+        keychain.put("mesh-nsec", "nsec1mesh", group: shared, accessible: CredentialStore.accessible, service: mesh)
+        keychain.put("snapshot.v1", "widget", group: shared, accessible: CredentialStore.accessible, service: "to.nostrvault.widget")
+
+        XCTAssertEqual(CredentialStore.migrateToThisDeviceOnly(in: keychain, privateGroup: mine), 2)
+
+        XCTAssertEqual(keychain.rows.first { $0.service == mesh }?.group, mine)
+        XCTAssertEqual(keychain.data(service: mesh, account: "mesh-nsec", group: mine), Data("nsec1mesh".utf8))
+        XCTAssertEqual(keychain.rows.first { $0.service == "to.nostrvault.widget" }?.group, shared,
+                       "the widget's own snapshot stays where the widget reads it")
+        XCTAssertEqual(CredentialStore.locationReport(in: keychain),
+                       "owner password in \(mine); mesh key in \(mine)")
+    }
+
+    func testTheReportSaysWhenAKeyIsStillShared() {
+        let keychain = FakeKeychain()
+        keychain.put("owner-key-password", "owner-pw", group: shared, accessible: oldClass)
+        XCTAssertEqual(CredentialStore.locationReport(in: keychain), "owner password in \(shared); mesh key in none")
+        XCTAssertFalse(CredentialStore.locationReport(in: keychain).contains("owner-pw"), "groups only, never values")
+    }
+
     func testNewPasswordsGoStraightToTheAppsGroup() {
         let keychain = FakeKeychain()
         keychain.put("owner-key-password", "old-pw", group: shared, accessible: oldClass)
@@ -318,34 +344,35 @@ final class KeysAtRestTests: XCTestCase {
 /// group matches any group for reads and deletes, and an add into a group
 /// that already holds the account is a duplicate.
 final class FakeKeychain: CredentialKeychain {
-    struct Row: Equatable { var account: String; var group: String; var accessible: String; var data: Data }
+    struct Row: Equatable { var account: String; var group: String; var accessible: String; var data: Data; var service = CredentialStore.service }
     var rows: [Row] = []
     var addStatus: OSStatus?
     /// A search whose attributes leave out the access group.
     var listsGroups = true
     let defaultGroup = "525WQ48Y72.nostrvault.shared"
 
-    func put(_ account: String, _ value: String, group: String, accessible: String) {
-        rows.append(Row(account: account, group: group, accessible: accessible, data: Data(value.utf8)))
+    func put(_ account: String, _ value: String, group: String, accessible: String,
+             service: String = CredentialStore.service) {
+        rows.append(Row(account: account, group: group, accessible: accessible, data: Data(value.utf8), service: service))
     }
 
-    private func matches(_ row: Row, _ account: String?, _ group: String?) -> Bool {
-        (account == nil || row.account == account) && (group == nil || row.group == group)
+    private func matches(_ row: Row, _ service: String, _ account: String?, _ group: String?) -> Bool {
+        row.service == service && (account == nil || row.account == account) && (group == nil || row.group == group)
     }
 
     func items(service: String) -> [CredentialKeychainItem] {
-        rows.map { CredentialKeychainItem(account: $0.account, group: listsGroups ? $0.group : nil, accessible: $0.accessible) }
+        rows.filter { $0.service == service }.map { CredentialKeychainItem(account: $0.account, group: listsGroups ? $0.group : nil, accessible: $0.accessible) }
     }
 
     func read(service: String, account: String, group: String?) -> (data: Data?, status: OSStatus) {
-        let data = rows.first { matches($0, account, group) }?.data
+        let data = rows.first { matches($0, service, account, group) }?.data
         return (data, data == nil ? errSecItemNotFound : errSecSuccess)
     }
 
     func updateData(service: String, account: String, group: String?, data: Data, accessible: String) -> OSStatus {
         if let addStatus { return addStatus }
         var hit = false
-        for i in rows.indices where matches(rows[i], account, group) {
+        for i in rows.indices where matches(rows[i], service, account, group) {
             rows[i].data = data; rows[i].accessible = accessible; hit = true
         }
         return hit ? errSecSuccess : errSecItemNotFound
@@ -354,20 +381,20 @@ final class FakeKeychain: CredentialKeychain {
     func add(service: String, account: String, data: Data, group: String?, accessible: String) -> OSStatus {
         if let addStatus { return addStatus }
         let group = group ?? defaultGroup
-        if rows.contains(where: { matches($0, account, group) }) { return errSecDuplicateItem }
-        rows.append(Row(account: account, group: group, accessible: accessible, data: data))
+        if rows.contains(where: { matches($0, service, account, group) }) { return errSecDuplicateItem }
+        rows.append(Row(account: account, group: group, accessible: accessible, data: data, service: service))
         return errSecSuccess
     }
 
     func updateAccessible(service: String, account: String, group: String?, to accessible: String) -> OSStatus {
         var hit = false
-        for i in rows.indices where matches(rows[i], account, group) { rows[i].accessible = accessible; hit = true }
+        for i in rows.indices where matches(rows[i], service, account, group) { rows[i].accessible = accessible; hit = true }
         return hit ? errSecSuccess : errSecItemNotFound
     }
 
     func delete(service: String, account: String?, group: String?) -> OSStatus {
         let before = rows.count
-        rows.removeAll { matches($0, account, group) }
+        rows.removeAll { matches($0, service, account, group) }
         return rows.count < before ? errSecSuccess : errSecItemNotFound
     }
 }

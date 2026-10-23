@@ -7,6 +7,22 @@ import UIKit
 #endif
 
 extension RelayProcessManager {
+    /// Appends one line to relay.log, the file pulled off a device, and to
+    /// Settings > Logs. For lines from before the relay starts: until
+    /// captureOutput redirects stdout, a `print` reaches neither.
+    func appendLaunchLine(_ line: String, in directory: URL) {
+        addLog(line)
+        let url = directory.appendingPathComponent("relay.log")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        handle.seekToEndOfFile()
+        handle.write(Data("\(ISO8601DateFormatter().string(from: Date())) \(line)\n".utf8))
+    }
+
     /// Redirection mechanism for capturing stdout and stderr from C-Shared bindings
     func captureOutput(in directory: URL) {
         if outputPipe == nil {
