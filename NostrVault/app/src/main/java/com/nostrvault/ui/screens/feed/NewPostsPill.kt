@@ -45,9 +45,12 @@ internal fun NewPostsPill(
     // Tapped anywhere in the box, rippled on the capsule.
     val interaction = remember { MutableInteractionSource() }
     val (pillEnter, pillExit) = Motion.pillTransition
-    AnimatedVisibility(visible = !rememberHidesAmbient(), enter = pillEnter, exit = pillExit) {
+    // The caller's modifier (its alignment in the feed's Box) goes on the
+    // outermost node: inside AnimatedVisibility an align is ignored and the
+    // pill sat at the left edge.
+    AnimatedVisibility(visible = !rememberHidesAmbient(), enter = pillEnter, exit = pillExit, modifier = modifier) {
     Box(
-        modifier = modifier
+        modifier = Modifier
             .semantics(mergeDescendants = true) { contentDescription = "$count new posts, tap to load" }
             // The small pill's tap target, without growing the pill.
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
