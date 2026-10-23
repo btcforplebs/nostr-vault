@@ -80,6 +80,10 @@ object DeepLinkRouter {
                 fromAppLink(uri.removePrefix("nostrvault://").removePrefix("NOSTRVAULT://"), decoder)
             uri.startsWith("nostr:", ignoreCase = true) ->
                 fromEntity(uri.substring("nostr:".length), decoder)
+            // A Share profile link (`https://nostrvault.app/p/<npub>`) opened
+            // or scanned on this phone. Any other web address is not ours.
+            uri.startsWith("http://", ignoreCase = true) || uri.startsWith("https://", ignoreCase = true) ->
+                ProfileWebLink.idFrom(uri)?.let { profileRoute(it, decoder) }
             // A bare entity, e.g. text shared from another app.
             else -> fromEntity(uri, decoder)
         }
@@ -107,6 +111,8 @@ object DeepLinkRouter {
             "wallet" -> DeepLinkTarget(Screen.Wallet.route)
             "note" -> segments.getOrNull(1)?.let { noteRoute(it, decoder) }
             "profile" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
+            // The /p/ page's "Open in Nostr Vault" button.
+            "p" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
             else -> null
         }
     }

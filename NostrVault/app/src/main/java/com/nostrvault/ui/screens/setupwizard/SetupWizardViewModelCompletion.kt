@@ -70,6 +70,10 @@ import java.net.URL
             // default so existing installs keep whatever they had.
             configStore.update { it.copy(hasCompletedSetup = true, enablePushNotifications = true) }
 
+            // Who told you about Nostr Vault: follow them, and whoever of
+            // their follows stayed ticked, now that this key is active.
+            ownerHexNow()?.let { followReferrerPicks(it) }
+
             // Advertise where to send us DMs. Setup never did this, so a new
             // account had no kind 10050 at all and was effectively unreachable
             // over NIP-17 — senders fell through to a guessed relay set and

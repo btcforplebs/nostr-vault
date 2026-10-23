@@ -298,6 +298,11 @@ class MainActivity : FragmentActivity() {
 
         if (intent.action != Intent.ACTION_VIEW) return
         val data = intent.data?.toString() ?: return
+        // A Share profile link opened before setup is who told them about
+        // the app: setup's "Who told you" step starts with that person.
+        if (!configStore.config.value.hasCompletedSetup) {
+            com.nostrvault.ui.navigation.ProfileWebLink.idFrom(data)?.let { com.nostrvault.setup.ReferrerFollows.prefill = it }
+        }
         DeepLinkRouter.fromUri(data, BridgeEntityDecoder)?.let {
             intent.data = null
             PendingDeepLink.post(it)

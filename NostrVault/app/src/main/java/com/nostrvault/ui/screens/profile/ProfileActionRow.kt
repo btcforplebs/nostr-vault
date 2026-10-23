@@ -44,6 +44,8 @@ internal fun ProfileActionRow(
     onZapLongPress: () -> Unit,
     onTrustWeb: () -> Unit,
     onCopyNpub: () -> Unit,
+    /** Share profile: the QR code and link sheet. */
+    onShareProfile: () -> Unit = {},
     /** Their page on the web (Brainstorm), to check trust off the device. */
     webLink: com.nostrvault.ui.components.NostrWebLinks.WebLink? = null,
     onOpenWebLink: () -> Unit = {},
@@ -71,6 +73,7 @@ internal fun ProfileActionRow(
                 // Nothing to follow, message or zap; editing is on the tab.
                 ActionChip("Open My Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onOpenMyProfile, modifier = Modifier.weight(1f))
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+                ActionIcon(NostrVaultIcons.Share, "Share profile", colors.primary, tint, onClick = onShareProfile)
             } else if (isOwnProfile) {
                 // Post is the floating button. Pulling the page down opens
                 // Edit Profile too; the button stays for TalkBack and anyone
@@ -79,6 +82,7 @@ internal fun ProfileActionRow(
                     ActionChip("Edit Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
                 }
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
+                ActionIcon(NostrVaultIcons.Share, "Share profile", colors.primary, tint, onClick = onShareProfile)
             } else {
                 ActionChip(
                     if (isFollowing) "Unfollow" else "Follow",
@@ -106,6 +110,11 @@ internal fun ProfileActionRow(
                 Box {
                     ActionIcon(NostrVaultIcons.More, "More", colors.primary, tint, onClick = { menuOpen = true })
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Share profile") },
+                            leadingIcon = { Icon(NostrVaultIcons.Share, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onShareProfile() },
+                        )
                         DropdownMenuItem(
                             text = { Text("Copy npub") },
                             leadingIcon = { Icon(NostrVaultIcons.Copy, contentDescription = null, modifier = Modifier.size(20.dp)) },

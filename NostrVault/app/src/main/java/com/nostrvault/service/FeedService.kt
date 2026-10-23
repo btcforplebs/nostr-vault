@@ -663,6 +663,9 @@ class FeedService @Inject constructor(
 
     fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> = unfollowUserImpl(pubkey, undo)
 
+    /** Follows all of [pubkeys] in one list, for [account] only; [label] names them on the pill. */
+    suspend fun followMany(pubkeys: List<String>, account: String, label: String) = followManyImpl(pubkeys, account, label)
+
     /** Check if a pubkey is in the followed list. */
     fun isFollowing(pubkey: String): Boolean =
         pubkey in followedPubkeySet()
