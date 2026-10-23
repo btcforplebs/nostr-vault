@@ -26,7 +26,7 @@ android-build:
         CGO_ENABLED=1 GOOS=android GOARCH=$2 GOARM=7 \
             CC="${NDK_BIN}/$3" \
             CGO_CFLAGS="-DMDB_USE_ROBUST=0" \
-            go build -buildmode=c-shared -tags cshared -trimpath \
+            go build -mod=mod -buildmode=c-shared -tags "cshared libsecp256k1" -trimpath \
             -ldflags="-s -w" \
             -o "$JNILIBS/$1/libhaven.so" .
         rm -f "$JNILIBS/$1/libhaven.h"

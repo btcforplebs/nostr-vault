@@ -19,7 +19,7 @@
 **What it does**:
 1. Locates Go source at `{PROJECT_DIR}/../haven-go`
 2. Detects architectures from Xcode `$ARCHS` variable (arm64, x86_64, or both)
-3. Builds Go with: `GOARCH={arch} go build -tags cshared -buildmode=c-archive -ldflags="-s -w" -o {output}`
+3. Builds Go with: `GOARCH={arch} go build -tags "cshared libsecp256k1" -buildmode=c-archive -ldflags="-s -w" -o {output}`
 4. For universal builds: builds both slices, combines with `lipo`
 5. Output: `HavenApp/build/libhaven.a` + `HavenApp/build/libhaven.h`
 

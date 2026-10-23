@@ -1,0 +1,21 @@
+name: test every commit
+on:
+  - push
+  - pull_request
+
+jobs:
+  test:
+    # temporary using newest ubuntu instead of ubuntu-latest since
+    #   libsecp256k1-dev does not have secp256k1_schnorrsig_sign32 in jammy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libsecp256k1-dev
+        run: sudo apt-get install libsecp256k1-dev
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ./go.mod
+
+      - run: go test ./... -tags=sonic
