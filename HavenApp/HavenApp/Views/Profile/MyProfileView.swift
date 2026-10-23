@@ -43,6 +43,7 @@ struct MyProfileView: View {
     @State private var showingDMInbox = false
     @State private var showingLightning = false
     @State private var showingTrustWeb = false
+    @State private var showingShare = false
     @State private var showingSell = false
     @State private var scrollToTopToken = 0
     /// Bumped by every save. A refusal only undoes the save it belongs to:
@@ -82,6 +83,7 @@ struct MyProfileView: View {
             shopHeader: { sellButton }
         )
         .trustWebPresentation(isPresented: $showingTrustWeb, author: pubkey)
+        .sheet(isPresented: $showingShare) { ShareProfileSheet(pubkey: pubkey) }
         .modifier(toolbar)
         .sheet(isPresented: $showingEditProfile) { editSheet }
         .sheet(isPresented: $showingSell, onDismiss: { shop.load(pubkey: pubkey, force: true) }) {
@@ -149,6 +151,9 @@ struct MyProfileView: View {
                 ProfileActions.pill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
             }
             ProfileActions.trustWeb(hint: "Shows your web of trust") { showingTrustWeb = true }
+            ProfileActions.icon("qrcode") { showingShare = true }
+                .accessibilityLabel("Share profile")
+                .help("Share profile")
         }
     }
 

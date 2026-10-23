@@ -112,6 +112,19 @@ extension SearchView {
             return
         }
 
+        // A profile link (nostrvault.app/p/…, nostr:npub…) pasted: open the
+        // profile it names, and list it as a bare npub would be.
+        if case .profile(let id) = NostrURI(string: trimmed),
+           let hexKey = QuoteReference.profilePubkey(fromBech32: id) {
+            showDirectProfile(hexKey)
+            #if os(iOS)
+            // The profile covers the field: put the keyboard away with it.
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            #endif
+            showingProfile = hexKey
+            return
+        }
+
         let lower = trimmed.lowercased()
         if lower.hasPrefix("note1") || lower.hasPrefix("nevent1") {
             if let eventId = decodeNostrNoteId(trimmed) {
@@ -131,16 +144,7 @@ extension SearchView {
         if lower.hasPrefix("npub1"),
            let decoded = Bech32.decode(trimmed),
            decoded.hrp == "npub" {
-            let hexKey = decoded.hexString
-            var results = SearchResults()
-            if let profile = nostrService.profiles[hexKey] {
-                results.users[hexKey] = profile
-            } else {
-                results.users[hexKey] = FeedProfile(pubkey: hexKey)
-            }
-            searchResults = results
-            isSearching = false
-            pendingDirectNoteId = nil
+            showDirectProfile(decoded.hexString)
             return
         }
 
@@ -170,6 +174,15 @@ extension SearchView {
             self.globalFinished = snapshot.isFinished
             self.isSearching = false
         }
+    }
+
+    /// One key, looked up directly: its profile as the only result.
+    private func showDirectProfile(_ hexKey: String) {
+        var results = SearchResults()
+        results.users[hexKey] = nostrService.profiles[hexKey] ?? FeedProfile(pubkey: hexKey)
+        searchResults = results
+        isSearching = false
+        pendingDirectNoteId = nil
     }
 
     /// Re-applies the who/when filter to the answer already on hand. Nothing

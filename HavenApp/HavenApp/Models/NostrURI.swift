@@ -1,8 +1,9 @@
 import Foundation
 
 /// A NIP-21 `nostr:` link handed to the app from outside it — Safari, another
-/// client, a QR code. The app registers the `nostr` scheme so these open here,
-/// the way Android's `nostr:` intent filter does.
+/// client, a QR code — or a nostrvault.app/p/ profile address
+/// (`ProfileShareLink`). The app registers the `nostr` scheme so these open
+/// here, the way Android's `nostr:` intent filter does.
 ///
 /// Only names what the link points at; turning the bech32 into a hex id needs
 /// the app's decoder and happens in the router. `nsec1` and anything else this
@@ -20,6 +21,11 @@ enum NostrURI: Equatable {
     }
 
     init?(string raw: String) {
+        // A shared profile address (Share profile's QR code and link).
+        if let id = ProfileShareLink.profileID(from: raw) {
+            self = .profile(id)
+            return
+        }
         var body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard body.lowercased().hasPrefix("nostr:") else { return nil }
         body = String(body.dropFirst("nostr:".count))
