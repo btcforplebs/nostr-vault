@@ -36,6 +36,12 @@ class AppDelegate: NSObject, ObservableObject {
         // over connections that are merely re-establishing after wake.
         SleepWakeMonitor.shared.start()
 
+        // A plaintext owner key in config.json is encrypted and scrubbed from
+        // its copies, as on iOS. The login keychain has no access groups, so
+        // there is nothing to move.
+        ConfigService.shared.secureOwnerKeyAtRest()
+        print("Keychain: \(CredentialStore.locationReport())")
+
         // Check if setup is complete
         if !ConfigService.shared.config.hasCompletedSetup {
             openWelcomeWindow()
