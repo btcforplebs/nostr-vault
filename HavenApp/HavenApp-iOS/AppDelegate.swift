@@ -65,6 +65,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         // Before anything can fetch: URLSession.shared refuses .fips hosts on iOS.
         FipsHostBlocker.install()
+        CredentialStore.migrateToThisDeviceOnly()
 
         // Register the background processing task so the system can wake us
         // when conditions are right (charging + Wi-Fi).
