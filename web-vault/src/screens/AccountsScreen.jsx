@@ -97,13 +97,13 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
         {active
           ? confirm
             ? <>
-                <p class="muted small">Signing out deletes everything this browser keeps for {name}: its relay's notes, messages and files here, and its sign-in.{ctx.session.method === "local" ? " That includes the secret key kept here: save it first from Settings › Your Secret Key, or you can't use this account again." : ""}{others ? " It also un-pairs this browser's paired vaults, for your other accounts too." : ""} Your notes on other relays and on your phone stay.</p>
+                <p class="muted small">Signing out deletes everything this browser keeps for {name}: its relay's notes, messages and files here, and its sign-in.{ctx.session.method === "local" ? " That includes the secret key kept here: save it first from Settings › Your Secret Key, or you can't use this account again (the saved key works in a Nostr browser extension or the Nostr Vault app, not by pasting it here)." : ""}{others ? " It also un-pairs this browser's paired vaults, for your other accounts too." : ""} Your notes on other relays and on your phone stay.</p>
                 <div class="row"><button class="danger" onClick={ctx.signOut}>Sign out</button><button onClick={() => setConfirm(false)}>Cancel</button></div>
               </>
             : <button class="danger" onClick={() => setConfirm(true)}>Sign out</button>
           : confirm
             ? <>
-                <p class="muted small">This removes {name} from Nostr Vault in this browser, along with its relay's copy here{account.method === "nip46" ? " and its bunker connection" : account.method === "local" ? " and the secret key kept here (keep the copy you saved)" : ""}. Nothing on the relays changes, but you will need its signer again to sign back in.</p>
+                <p class="muted small">This removes {name} from Nostr Vault in this browser, along with its relay's copy here{account.method === "nip46" ? " and its bunker connection" : account.method === "local" ? " and the secret key kept here (keep the copy you saved: it works in a Nostr browser extension or the Nostr Vault app)" : ""}. Nothing on the relays changes, but you will need its signer again to sign back in.</p>
                 <div class="row"><button class="danger" disabled={!!busy} onClick={doRemove} aria-busy={busy === "remove" || undefined}>{busy === "remove" ? "Removing…" : "Remove Account"}</button><button disabled={!!busy} onClick={() => setConfirm(false)}>Cancel</button></div>
               </>
             : <div class="row">

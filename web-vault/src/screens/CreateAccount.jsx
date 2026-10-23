@@ -269,7 +269,7 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, saf
         <li>{follows.length ? `You follow ${follows.length} ${follows.length === 1 ? "person" : "people"}, so your feed has posts right away.` : "You follow nobody yet: find people in Search or on the Global feed."}</li>
       </ul>
       {/* Safari's 7-day rule takes the key with the rest of the site's data: said here, before it can happen. */}
-      {KEEP_IT[safari] && <p class="onboard-warn box">{KEEP_IT[safari]} Without it, your saved secret key is the only way back in.</p>}
+      {KEEP_IT[safari] && <p class="onboard-warn box">{KEEP_IT[safari]} Without it, the secret key you saved is the only way back: add it to a Nostr browser extension and choose "I already use Nostr", or import it in the Nostr Vault app.</p>}
       {err && <p class="error small" role="alert">{err}</p>}
       <button type="button" class="primary onboard-main" disabled={!!busy} aria-busy={!!busy || undefined} onClick={start}>{busy || "Start Exploring"}</button>
       {!busy && <button type="button" class="onboard-skip" onClick={onBack}>‹ Back</button>}

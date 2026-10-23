@@ -22,7 +22,9 @@ export const MIN_PASSWORD = 8
 
 export const LOCKED = "This browser can't open your key on its own any more (its site data was partly cleared). Type your password to unlock it."
 /** The stored ncryptsec is missing or isn't one NIP-49 can open: no password will work, so the screens don't ask again. */
-export const DAMAGED = "The key kept in this browser is missing or damaged, so no password can open it. Sign out, then sign back in with the secret key you saved."
+// The web app has no nsec sign-in (signer/readonly.js turns one away), so every line about the saved key says where it works.
+export const SAVED_KEY_USE = 'To use this account again, add the secret key you saved to a Nostr browser extension and choose "I already use Nostr", or import it in the Nostr Vault app.'
+export const DAMAGED = `The key kept in this browser is missing or damaged, so no password can open it. Sign out first. ${SAVED_KEY_USE}`
 export const WRONG_PASSWORD = "Wrong password. Try again."
 
 /** A new keypair -> { sk, pubkey, npub, nsec }. `sk` stays in memory until finish; the nsec is shown once, to be saved. */
@@ -65,14 +67,14 @@ export function revealNsec(session, password) {
 }
 
 /** Whether `ncryptsec` is a NIP-49 key this page can open: bech32 "ncryptsec", version 2, a scrypt cost a browser can
- *  run (logn 1 to 22; this page writes 16, more than 22 is taken as damage) and a 48-byte sealed key. No password is
+ *  run (logn 1 to 20; this page writes 16; above 20 scrypt wants more memory than a tab gets, so it is taken as damage) and a 48-byte sealed key. No password is
  *  tried. */
 export function wellFormed(ncryptsec) {
   if (typeof ncryptsec !== "string") return false
   try {
     const { prefix, words } = bech32.decode(ncryptsec, 5000)
     const b = bech32.fromWords(words)
-    return prefix === "ncryptsec" && b.length === 91 && b[0] === 2 && b[1] >= 1 && b[1] <= 22
+    return prefix === "ncryptsec" && b.length === 91 && b[0] === 2 && b[1] >= 1 && b[1] <= 20
   } catch { return false }
 }
 

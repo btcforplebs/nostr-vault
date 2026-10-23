@@ -16,7 +16,7 @@ export function YourKeyPage({ ctx, safari = sevenDayErase() }) {
   }
   return (
     <>
-      <p class="settings-note muted small">This account's secret key was made in this browser. It is the only way into the account: signing out, removing the account or clearing this site's data deletes it here, and nobody can recover it for you. Keep a copy somewhere safe.</p>
+      <p class="settings-note muted small">This account's secret key was made in this browser. It is the only way into the account: signing out, removing the account or clearing this site's data deletes it here, and nobody can recover it for you. Keep a copy somewhere safe. This web app can't sign in with it: to use the account again, add it to a Nostr browser extension and choose "I already use Nostr", or import it in the Nostr Vault app.</p>
       {KEEP_IT[safari] && <p class="onboard-warn box">{KEEP_IT[safari]}</p>}
       {nsec
         ? <>

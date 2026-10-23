@@ -115,6 +115,9 @@ test("a missing or damaged ncryptsec says so; only a real one answers Wrong pass
   const other = await localSession(newKey().sk, PW, { keyStore: memKeys(), logn: 4 })
   await assert.rejects(unlockLocal({ ...s, ncryptsec: other.ncryptsec }, PW, { keyStore: memKeys() }), e => e.message === DAMAGED)
   await assert.rejects(unlockLocal(s, "wrong password", { keyStore: memKeys() }), e => e.message === WRONG_PASSWORD)
+  // A cost a tab can't run (logn 21 wants about 2 GiB) is damage too, not a password to keep retrying.
+  const b = bech32.fromWords(bech32.decode(s.ncryptsec, 5000).words); b[1] = 21
+  assert.equal(wellFormed(bech32.encode("ncryptsec", bech32.toWords(b), 5000)), false)
 })
 
 test("a local account without an ncryptsec isn't an account", () => {
