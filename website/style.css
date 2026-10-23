@@ -378,6 +378,7 @@ nav {
 
 .film-copy h3 { font-size: 1.6rem; margin-bottom: 14px; letter-spacing: -0.5px; }
 .film-copy p { color: var(--text-secondary); font-size: 1.05rem; line-height: 1.65; }
+.film-solo { max-width: 720px; margin: 40px auto 0; text-align: center; }
 .film-link { display: inline-block; margin-top: 18px; color: var(--accent); font-weight: 600; }
 .film-link:hover { text-decoration: underline; }
 

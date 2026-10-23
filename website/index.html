@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nostr Vault — Your Own Nostr Relay on iPhone, iPad, Mac &amp; Android</title>
+    <title>Nostr Vault — Your Web of Trust, Your Feeds</title>
     <meta name="description"
-        content="Nostr Vault is a native Nostr client with a personal relay built in. Run your own relay on iPhone, iPad, Mac and Android, with NIP-49 encrypted keys, Lightning zaps, Reels, Articles, Live streams and on-chain Bitcoin derived from your nsec. Open source.">
+        content="Nostr Vault is a Nostr client built around your web of trust. See the people your circle can vouch for, and decide exactly what reaches each feed. Your notes live on your own device first. iPhone, iPad, Mac, Android and the web. Open source.">
     <link rel="canonical" href="https://nostrvault.app/">
     <meta name="theme-color" content="#000000">
     <meta name="robots" content="index, follow, max-image-preview:large">
@@ -14,22 +14,22 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/">
-    <meta property="og:title" content="Nostr Vault — Your Own Nostr Relay on iPhone, iPad, Mac &amp; Android">
+    <meta property="og:title" content="Nostr Vault — Your Web of Trust, Your Feeds">
     <meta property="og:description"
-        content="A native Nostr client with a personal relay built in. Encrypted keys, Lightning zaps, Reels, Articles, Live streams and on-chain Bitcoin from your nsec. Open source, on every screen you own.">
+        content="A Nostr client built around your web of trust. See the people your circle can vouch for, and set exactly what reaches each feed. Open source, on every screen you own.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Nostr Vault on iPhone: the Reels, Following and Articles feeds">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Nostr Vault — Your Own Nostr Relay, Native on Every Device">
+    <meta name="twitter:title" content="Nostr Vault — Your Web of Trust, Your Feeds">
     <meta name="twitter:description"
-        content="Run your own Nostr relay on iPhone, iPad, Mac and Android. Encrypted keys, Lightning zaps, on-chain Bitcoin. Open source.">
+        content="Your web of trust decides who you see, and you decide what reaches each feed. iPhone, iPad, Mac, Android and web. Open source.">
     <meta name="twitter:image" content="https://nostrvault.app/assets/og-image.jpg">
 
     <link rel="icon" type="image/png" href="assets/haven_icon.png">
     <link rel="apple-touch-icon" href="assets/haven_icon.png">
-    <link rel="stylesheet" href="style.css?v=20261023c">
+    <link rel="stylesheet" href="style.css?v=20261023d">
 
     <script type="application/ld+json">
     {
@@ -40,7 +40,7 @@
           "name": "Nostr Vault",
           "url": "https://nostrvault.app/",
           "image": "https://nostrvault.app/assets/og-image.jpg",
-          "description": "A native Nostr client with a personal relay built in, for iPhone, iPad, Mac and Android. NIP-49 encrypted keys, NIP-46 remote signing, Lightning zaps via Nostr Wallet Connect, Blossom media hosting, Web of Trust filtering and on-chain Taproot Bitcoin derived from your Nostr key.",
+          "description": "A Nostr client built around your web of trust, for iPhone, iPad, Mac, Android and the web. Every feed shows the people your circle can vouch for, each feed has its own guard, and a personal relay keeps your notes on your own device. NIP-49 encrypted keys and NIP-46 remote signing.",
           "applicationCategory": "SocialNetworkingApplication",
           "operatingSystem": "iOS, iPadOS, macOS, Android, Web",
           "softwareVersion": "2.7.2",
@@ -52,28 +52,27 @@
           "screenshot": [
             "https://nostrvault.app/assets/screens/iphone-feed.webp",
             "https://nostrvault.app/assets/screens/iphone-reels.webp",
-            "https://nostrvault.app/assets/screens/iphone-profile.webp",
+            "https://nostrvault.app/assets/screens/iphone-following.webp",
             "https://nostrvault.app/assets/screens/ipad-articles.webp",
-            "https://nostrvault.app/assets/screens/ipad-profile.webp",
             "https://nostrvault.app/assets/screens/android-relay.webp"
           ],
           "video": {
             "@type": "VideoObject",
             "name": "Nostr Vault — Bring them home",
-            "description": "Your posts live on someone else's server. Nostr Vault brings them home: a personal relay on iPhone, Mac and Android with encrypted keys and Lightning zaps built in.",
+            "description": "Your posts live on someone else's server. Nostr Vault brings them home: a personal relay on iPhone, Mac and Android with encrypted keys built in.",
             "thumbnailUrl": "https://nostrvault.app/assets/video/the-door-poster.jpg",
             "contentUrl": "https://nostrvault.app/assets/video/the-door-720.mp4",
             "uploadDate": "2026-10-03",
             "duration": "PT20S"
           },
           "featureList": [
+            "Web of Trust filtering on every feed",
+            "See how anyone is connected to you, on a web of trust globe",
+            "A separate guard for each feed",
+            "Following, Discover, Global, Hashtags, Popular, Media, Articles, Recipes, Live, Polls and Music feeds",
+            "Report and Block on every post, synced to your Nostr mute list",
             "Personal Nostr relay embedded in the app",
-            "Following, Discover, Global, Hashtags, Popular, Media, diVines, Articles, Recipes, Marketplace, Live, Polls and Music feeds",
             "NIP-49 encrypted private keys and NIP-46 remote signing",
-            "Opt-in Lightning zaps via Nostr Wallet Connect",
-            "On-chain Taproot address and sweep derived from your Nostr key",
-            "Blossom media server",
-            "Web of Trust spam filtering",
             "Home-screen widgets",
             "Split-view iPad layout"
           ],
@@ -90,12 +89,12 @@
             {
               "@type": "Question",
               "name": "What is Nostr Vault?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Nostr Vault is a native Nostr client that ships with its own relay. Your notes, media and contact list live on a relay you run, on your phone, tablet or Mac, instead of only on someone else's server." }
+              "acceptedAnswer": { "@type": "Answer", "text": "Nostr Vault is a Nostr client built around your web of trust. Every feed shows the people your circle can vouch for, and you decide what reaches each one. It ships with its own relay, so your notes, media and contact list live on your own phone, tablet or Mac first." }
             },
             {
               "@type": "Question",
               "name": "Which platforms does Nostr Vault run on?",
-              "acceptedAnswer": { "@type": "Answer", "text": "iPhone and iPad via TestFlight, macOS from the GitHub releases page, and Android as a direct APK download or through Zapstore." }
+              "acceptedAnswer": { "@type": "Answer", "text": "iPhone and iPad via TestFlight, macOS from the GitHub releases page, and Android as a direct APK download. It also runs in any browser at nostrvault.app/vault." }
             },
             {
               "@type": "Question",
@@ -124,8 +123,8 @@
             <span>NOSTR VAULT</span>
         </a>
         <div class="nav-links">
-            <a href="#stories">Watch</a>
             <a href="#trust">Trust</a>
+            <a href="#feeds">Feeds</a>
             <a href="#features">Features</a>
             <a href="#web">Web</a>
             <a href="#platforms">Download</a>
@@ -142,17 +141,17 @@
 
     <header class="hero" id="about">
         <div class="hero-copy">
-            <p class="eyebrow fade-in-up">Version 2.7 &middot; iPhone &middot; iPad &middot; Mac &middot; Android &middot; Web</p>
-            <h1 class="fade-in-up" tabindex="-1">Your Nostr home.<br>In your pocket.</h1>
-            <p class="lede fade-in-up delay-100">Nostr Vault is a native Nostr client with your own relay built in. Your notes,
-                media and follows live on hardware you hold, with encrypted keys, Lightning zaps and on-chain Bitcoin
-                derived straight from your nsec. Open source, so you never have to trust it.</p>
+            <p class="eyebrow fade-in-up">iPhone &middot; iPad &middot; Mac &middot; Android &middot; Web</p>
+            <h1 class="fade-in-up" tabindex="-1">Your web of trust.<br>Your feeds.</h1>
+            <p class="lede fade-in-up delay-100">Nostr Vault is a Nostr client built around the people you trust. Every feed
+                shows accounts your circle can vouch for, and you decide exactly what reaches each one. Your notes and
+                follows live on your own device first. Open source, so you never have to trust it.</p>
             <div class="hero-buttons fade-in-up delay-200">
                 <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
                 <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
                 <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
         </div>
-        <p class="hero-note fade-in-up delay-300">Also on <a href="https://zapstore.dev/apps/com.nostrvault.app">Zapstore</a> for Android. Or skip the download and <a href="/vault/">use it in your browser</a>.</p>
+        <p class="hero-note fade-in-up delay-300">Or skip the download and <a href="/vault/">use it in your browser</a>.</p>
         </div>
 
         <div class="hero-phones" aria-label="Nostr Vault on iPhone">
@@ -174,25 +173,25 @@
 
     <section class="stories" id="stories" aria-label="Three short Nostr Vault films">
         <p class="eyebrow center fade-in-up">Watch &middot; 30 seconds each</p>
-        <h2 class="center fade-in-up">Three things only a vault does.</h2>
+        <h2 class="center fade-in-up">Your circle decides. You decide.</h2>
         <div class="story-row">
-            <button class="story fade-in-up" type="button" data-film="assets/video/spot-general-30s.mp4" data-title="One app for all of Nostr">
-                <span class="story-frame"><video class="story-loop" muted loop playsinline preload="none" poster="assets/video/spot-general-poster.jpg" width="540" height="960" aria-hidden="true">
-                    <source src="assets/video/spot-general-6s.mp4" type="video/mp4">
-                </video></span>
-                <span class="story-meta">
-                    <span class="story-kicker">Every feed</span>
-                    <span class="story-title">One app for all of Nostr.</span>
-                    <span class="story-play">Play with sound</span>
-                </span>
-            </button>
-            <button class="story fade-in-up delay-100" type="button" data-film="assets/video/spot-weboftrust-30s.mp4" data-title="Web of Trust">
+            <button class="story fade-in-up" type="button" data-film="assets/video/spot-weboftrust-30s.mp4" data-title="Web of Trust">
                 <span class="story-frame"><video class="story-loop" muted loop playsinline preload="none" poster="assets/video/spot-weboftrust-poster.jpg" width="540" height="960" aria-hidden="true">
                     <source src="assets/video/spot-weboftrust-6s.mp4" type="video/mp4">
                 </video></span>
                 <span class="story-meta">
                     <span class="story-kicker">Web of Trust</span>
                     <span class="story-title">Spam stays out. Your people stay in.</span>
+                    <span class="story-play">Play with sound</span>
+                </span>
+            </button>
+            <button class="story fade-in-up delay-100" type="button" data-film="assets/video/spot-general-30s.mp4" data-title="One app for all of Nostr">
+                <span class="story-frame"><video class="story-loop" muted loop playsinline preload="none" poster="assets/video/spot-general-poster.jpg" width="540" height="960" aria-hidden="true">
+                    <source src="assets/video/spot-general-6s.mp4" type="video/mp4">
+                </video></span>
+                <span class="story-meta">
+                    <span class="story-kicker">Every feed</span>
+                    <span class="story-title">Every feed, on your terms.</span>
                     <span class="story-play">Play with sound</span>
                 </span>
             </button>
@@ -206,6 +205,46 @@
                     <span class="story-play">Play with sound</span>
                 </span>
             </button>
+        </div>
+    </section>
+
+    <section class="split trust" id="trust">
+        <figure class="spot-frame fade-in-up">
+            <video class="sound-toggle" muted loop playsinline preload="none" poster="assets/video/spot-weboftrust-poster.jpg" width="720" height="1280" aria-label="Thirty second Web of Trust film: a globe of Nostr accounts with orange threads for every follow you trust, re-centering on a face when tapped">
+                <source src="assets/video/spot-weboftrust-30s.mp4" type="video/mp4">
+            </video>
+            <figcaption data-label="Web of Trust &middot; 30 seconds">Web of Trust &middot; 30 seconds &middot; tap for sound</figcaption>
+        </figure>
+        <div class="split-copy">
+            <p class="eyebrow fade-in-up">Web of Trust</p>
+            <h2 class="fade-in-up">See who vouches for anyone.</h2>
+            <p class="fade-in-up delay-100">Every account on Nostr sits somewhere in your follow graph. Nostr Vault draws
+                it as a globe: you at the centre, and an orange thread for every follow you already trust.</p>
+            <ul class="feed-list fade-in-up delay-200">
+                <li><strong>Tap a face</strong> &mdash; the web re-centres on them, so you see who they know that you know.</li>
+                <li><strong>Real counts</strong> &mdash; how many of your follows reach someone, and how many of theirs you follow too.</li>
+                <li><strong>Filtering that fails closed</strong> &mdash; Global and Discover only show people your graph can vouch for. Spam stays out, your people stay in.</li>
+                <li><strong>It moves with you</strong> &mdash; unfollow someone and your web of trust shrinks with you. Open any profile in the globe to explore their circle.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="split" id="feeds">
+        <figure class="phone solo fade-in-up">
+            <img src="assets/screens/iphone-feeds.webp" alt="The Nostr Vault feed menu on iPhone listing Following, Discover, Global, Popular, Media, Reels, Articles, Recipes, Live, Music and Dashboard" width="900" height="1957" loading="lazy">
+        </figure>
+        <div class="split-copy">
+            <p class="eyebrow fade-in-up">Complete control</p>
+            <h2 class="fade-in-up">Every feed follows your rules.</h2>
+            <p class="fade-in-up delay-100">Each feed has its own guard, so nothing from Global slips into a feed where
+                you didn't ask for it. Reorder the feeds, or hide the ones you don't use.</p>
+            <ul class="feed-list fade-in-up delay-200">
+                <li><strong>Following</strong> &mdash; only the people you chose, threaded or condensed, your call.</li>
+                <li><strong>Discover &amp; Popular</strong> &mdash; the second hop of your follow graph, ranked by real people, not reaction spam.</li>
+                <li><strong>Global &amp; Hashtags</strong> &mdash; the whole network, or one topic, behind a Web of Trust filter so it fails closed, not open.</li>
+                <li><strong>Articles, Media, Recipes, Live, Polls &amp; Music</strong> &mdash; each kind of post gets its own feed, with its own guard.</li>
+                <li><strong>Report and Block</strong> &mdash; on every post. Blocks sync to your Nostr mute list, so other Nostr apps respect them too.</li>
+            </ul>
         </div>
     </section>
 
@@ -228,7 +267,7 @@
             </a>
             <a class="platform fade-in-up delay-300" href="https://github.com/btcforplebs/nostr-vault/releases/latest">
                 <span class="platform-name">Android</span>
-                <span class="platform-sub">APK on GitHub or Zapstore &middot; Android 8+</span>
+                <span class="platform-sub">APK on GitHub &middot; Android 8+</span>
                 <span class="platform-cta">Get the APK &rarr;</span>
             </a>
             <a class="platform web fade-in-up delay-300" href="/vault/">
@@ -278,121 +317,70 @@
             </video>
             <figcaption data-label="The Door &middot; 20 seconds">The Door &middot; 20 seconds &middot; tap for sound</figcaption>
         </figure>
-        <div class="film-row">
-            <figure class="film-side fade-in-up">
-                <video controls playsinline preload="none" poster="assets/video/promo-poster.jpg" width="1280" height="720" aria-label="Thirty-four second Nostr Vault promo: a personal relay on every device, encrypted keys, zaps and Bitcoin built in, private by design">
-                    <source src="assets/video/promo-720.mp4" type="video/mp4">
-                </video>
-                <figcaption>The full promo &middot; 34 seconds</figcaption>
-            </figure>
-            <div class="film-copy fade-in-up delay-100">
-                <h3>What if your notes lived with you?</h3>
-                <p>Every note you post today lives on somebody else&rsquo;s relay. Nostr Vault runs one on hardware you
-                    hold, mirrors your outbox, inbox, chats and Blossom media to it, and keeps your key encrypted with
-                    NIP-49 or out of the app entirely with a NIP-46 bunker. Zaps ride Nostr Wallet Connect, and your
-                    on-chain Bitcoin is derived from the same nsec.</p>
-                <a href="#showcase" class="film-link">See the screens &rarr;</a>
-            </div>
+        <div class="film-copy film-solo fade-in-up delay-100">
+            <h3>What if your notes lived with you?</h3>
+            <p>Every note you post today lives on somebody else&rsquo;s relay. Nostr Vault runs one on your own device,
+                keeps your posts, chats and media there first, and keeps your key encrypted with NIP-49 or out of the
+                app entirely with a NIP-46 bunker.</p>
+            <a href="#showcase" class="film-link">See the screens &rarr;</a>
         </div>
     </section>
 
-    <section class="split" id="feeds">
-        <figure class="phone solo fade-in-up">
-            <img src="assets/screens/iphone-feeds.webp" alt="The Nostr Vault feed menu on iPhone listing Following, Discover, Global, Popular, Media, Reels, Articles, Recipes, Live, Music and Dashboard" width="900" height="1957" loading="lazy">
-        </figure>
-        <div class="split-copy">
-            <p class="eyebrow fade-in-up">One app. Thirteen feeds.</p>
-            <h2 class="fade-in-up">Everything Nostr publishes, one tap away.</h2>
-            <p class="fade-in-up delay-100">Nostr is more than short notes. Nostr Vault reads every kind the network
-                speaks and gives each one a home, so you switch between them from a single menu instead of a single
-                firehose.</p>
-            <ul class="feed-list fade-in-up delay-200">
-                <li><strong>Following</strong> &mdash; the people you chose, threaded or condensed, your call.</li>
-                <li><strong>Discover &amp; Popular</strong> &mdash; the second hop of your follow graph, ranked by real people, not reaction spam.</li>
-                <li><strong>Global &amp; Hashtags</strong> &mdash; the whole network, or one topic, behind a Web of Trust filter so it fails closed, not open.</li>
-                <li><strong>diVines</strong> &mdash; a full-screen vertical video feed you can like and reply to while you watch.</li>
-                <li><strong>Articles</strong> &mdash; long-form posts drawn as articles, with a proper reader.</li>
-                <li><strong>Recipes, Marketplace, Live, Polls &amp; Music</strong> &mdash; zapcooking recipes, Nostr marketplace listings, NIP-53 live streams with chat, polls, and trending tracks from Wavlake.</li>
-                <li><strong>Media</strong> &mdash; a grid of every photo, GIF and video from your follows, sorted by date.</li>
-            </ul>
-        </div>
-    </section>
 
-    <section class="split trust" id="trust">
-        <figure class="spot-frame fade-in-up">
-            <video class="sound-toggle" muted loop playsinline preload="none" poster="assets/video/spot-weboftrust-poster.jpg" width="720" height="1280" aria-label="Thirty second Web of Trust film: a globe of Nostr accounts with orange threads for every follow you trust, re-centering on a face when tapped">
-                <source src="assets/video/spot-weboftrust-30s.mp4" type="video/mp4">
-            </video>
-            <figcaption data-label="Web of Trust &middot; 30 seconds">Web of Trust &middot; 30 seconds &middot; tap for sound</figcaption>
-        </figure>
-        <div class="split-copy">
-            <p class="eyebrow fade-in-up">Web of Trust</p>
-            <h2 class="fade-in-up">See who vouches for anyone.</h2>
-            <p class="fade-in-up delay-100">Every account on Nostr sits somewhere in your follow graph. Nostr Vault draws
-                it as a globe: you at the centre, and an orange thread for every follow you already trust.</p>
-            <ul class="feed-list fade-in-up delay-200">
-                <li><strong>Tap a face</strong> &mdash; the web re-centres on them, so you see who they know that you know.</li>
-                <li><strong>Real counts</strong> &mdash; how many of your follows reach someone, and how many of theirs you follow too.</li>
-                <li><strong>Filtering that fails closed</strong> &mdash; Global and Discover only show people your graph can vouch for. Spam stays out, your people stay in.</li>
-            </ul>
-        </div>
-    </section>
 
     <section class="features" id="features">
         <p class="eyebrow center fade-in-up">What&rsquo;s inside</p>
         <h2 class="center fade-in-up">Built like a relay. Feels like an app.</h2>
         <div class="grid">
             <article class="card fade-in-up">
-                <h3>Your relay, in the app</h3>
-                <p>The same battle-tested Go relay that powers the Haven CLI is compiled into the app as a static
-                    library. One process, no helpers, no server to rent. Your notes are stored on your device first and
-                    broadcast outward from there.</p>
-            </article>
-            <article class="card fade-in-up delay-100">
-                <h3>Keys that never sit in plaintext</h3>
-                <p>Your nsec is encrypted with NIP-49 and the password lives in the system Keychain. Prefer to keep
-                    the key off the device entirely? Pair a NIP-46 remote signer by scanning its bunker QR code, on
-                    iPhone and Android.</p>
-            </article>
-            <article class="card fade-in-up delay-200">
-                <h3>Zaps, when you want them</h3>
-                <p>Connect your own Lightning wallet through Nostr Wallet Connect and zap straight from it, with
-                    invoice amounts shown before you pay. Profile zaps are always there. On iPhone and iPad the zap
-                    button on posts and live streams is opt-in: add &#9889;&#65039; under Settings &rarr; Appearance
-                    &rarr; Post buttons.</p>
-            </article>
-            <article class="card fade-in-up">
-                <h3>Your nsec is a Bitcoin wallet</h3>
-                <p>Nostr Vault derives a native Taproot address from your Nostr key and can sweep it on-chain, signed
-                    with Schnorr inside the app and broadcast through Mempool. No external wallet, no extra seed.</p>
-            </article>
-            <article class="card fade-in-up delay-100">
                 <h3>Web of Trust, on by default</h3>
                 <p>Global feeds are filtered by the trust graph of your follows, so you see people your graph can
                     vouch for instead of the raw firehose. Language filters, mute-list sync and per-account block
                     lists round it out.</p>
             </article>
+            <article class="card fade-in-up delay-100">
+                <h3>Report and Block, everywhere</h3>
+                <p>Every post has Report and Block in its menu. A block hides that account in every feed and is added
+                    to your Nostr mute list, so it follows you to other apps.</p>
+            </article>
             <article class="card fade-in-up delay-200">
-                <h3>Blossom media, hosted by you</h3>
-                <p>A built-in Blossom server stores your photos and videos, mirrors them to the servers you choose and
-                    signs each upload once. Paste an image into the composer and it lands on your own storage.</p>
+                <h3>Your relay, in the app</h3>
+                <p>The same battle-tested Go relay that powers the Haven CLI is compiled into the app as a static
+                    library. One process, no helpers, no server to rent. Your notes are stored on your device first and
+                    sent to the relays you choose from there.</p>
             </article>
             <article class="card fade-in-up">
-                <h3>Notifications with no middleman</h3>
-                <p>DMs, mentions, replies, zaps, reactions and reposts are generated on-device from your own relay
-                    stream. No push server, no third party, selectable sounds, and taps that open the right note.</p>
+                <h3>Keys that never sit in plaintext</h3>
+                <p>Your nsec is encrypted with NIP-49 and the password lives in the system Keychain. Prefer to keep
+                    the key off the device entirely? Pair a NIP-46 remote signer by scanning its bunker QR code, on
+                    iPhone and Android.</p>
             </article>
             <article class="card fade-in-up delay-100">
+                <h3>Your media, kept by you</h3>
+                <p>Photos and videos you post are kept in your own media library on the device and copied to the media
+                    servers you choose. Paste an image into the composer and it lands on your own storage.</p>
+            </article>
+            <article class="card fade-in-up delay-200">
+                <h3>Notifications with no middleman</h3>
+                <p>DMs, mentions, replies, reactions and reposts are generated on-device from your own relay
+                    stream. No push server, no third party, selectable sounds, and taps that open the right note.</p>
+            </article>
+            <article class="card fade-in-up">
                 <h3>Widgets and a real iPad layout</h3>
                 <p>Feed Glance, Quick Actions, Mosaic and Lock Screen widgets on iOS and iPadOS,
                     with home-screen widgets on Android too. On iPad the feed and relay become true columns with a
                     draggable divider.</p>
             </article>
-            <article class="card fade-in-up delay-200">
+            <article class="card fade-in-up delay-100">
                 <h3>Native on every platform</h3>
                 <p>SwiftUI on iPhone, iPad and Mac. Jetpack Compose on Android. One motion
                     vocabulary that honours Reduce Motion, a GIF keyboard in the composer, and a menu-bar status panel
                     on the Mac.</p>
+            </article>
+            <article class="card fade-in-up delay-200">
+                <h3>Open source, all of it</h3>
+                <p>Every line of every app is on GitHub. Read how your feeds are filtered, build it yourself, or check
+                    that the build you run is the code you read.</p>
             </article>
         </div>
     </section>
@@ -415,24 +403,8 @@
                 <figcaption>iPhone &middot; Feed dashboard: local relay, feed relays, filters</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-100">
-                <img src="assets/screens/iphone-music.webp" alt="The Music feed in Nostr Vault on iPhone listing trending tracks with zap totals" width="900" height="1957" loading="lazy">
-                <figcaption>iPhone &middot; Trending on Wavlake, with sats</figcaption>
-            </figure>
-            <figure class="shot fade-in-up delay-200">
-                <img src="assets/screens/iphone-profile.webp" alt="Will Casarin's (jb55) profile in Nostr Vault on iPhone with note, media and following counts, a lightning address and his website" width="900" height="1957" loading="lazy">
-                <figcaption>iPhone &middot; Your profile, with lightning address and site</figcaption>
-            </figure>
-            <figure class="shot fade-in-up">
-                <img src="assets/screens/iphone-profile-derek.webp" alt="Derek Ross's profile in Nostr Vault on iPhone listing his projects, 1.3k follows and a reposted note" width="900" height="1957" loading="lazy">
-                <figcaption>iPhone &middot; Another account, one tap away</figcaption>
-            </figure>
-            <figure class="shot fade-in-up delay-100">
                 <img src="assets/screens/iphone-following.webp" alt="The Following feed in Nostr Vault on iPhone showing threaded replies from followed developers" width="900" height="1957" loading="lazy">
                 <figcaption>iPhone &middot; Following, threaded</figcaption>
-            </figure>
-            <figure class="shot wide fade-in-up">
-                <img src="assets/screens/ipad-profile.webp" alt="Vitor Pamplona's profile in Nostr Vault on iPad with his notes on the left and a selected note and its replies, including a chart, open on the right" width="1200" height="1600" loading="lazy">
-                <figcaption>iPad &middot; Profile with a note and its replies open beside it</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-200">
                 <img src="assets/screens/iphone-thread-article.webp" alt="A long French note about Galileo's lunar drawings open as a thread in Nostr Vault on iPhone" width="900" height="1957" loading="lazy">
@@ -446,30 +418,6 @@
                 <img src="assets/screens/android-relay.webp" alt="The Settings screen in Nostr Vault on Android with accounts, theme, feed relays, Blastr, Blossom, import and backup options" width="900" height="2005" loading="lazy">
                 <figcaption>Android &middot; Settings: relays, Blastr, Blossom, backups</figcaption>
             </figure>
-        </div>
-    </section>
-
-    <section class="features bitcoin" id="bitcoin">
-        <p class="eyebrow center fade-in-up">On-chain</p>
-        <h2 class="center fade-in-up">Your nsec is your wallet.</h2>
-        <p class="center lede-sm fade-in-up delay-100">Nostr Vault is the first native Nostr client to derive a real
-            on-chain Bitcoin address directly from your Nostr secp256k1 key, and let you sweep it.</p>
-        <div class="grid">
-            <article class="card fade-in-up">
-                <h3>Taproot from your key</h3>
-                <p>Pure BIP-341 key-path Taproot (P2TR) derivation, computed in Go by <code>btcsuite/btcd</code> inside
-                    the embedded relay. Same private key, a new address, zero external processes.</p>
-            </article>
-            <article class="card fade-in-up delay-100">
-                <h3>Schnorr-signed sweeps</h3>
-                <p>Fetches your UTXOs from a Mempool instance, builds a raw Taproot transaction, signs it with Schnorr
-                    via key-path spending and broadcasts it, all inside the app.</p>
-            </article>
-            <article class="card fade-in-up delay-200">
-                <h3>Your balance before you sign</h3>
-                <p>The pre-sweep screen loads your spendable balance in sats from Mempool and walks you through a
-                    three-step warning. No surprises before you sign.</p>
-            </article>
         </div>
     </section>
 
@@ -495,7 +443,8 @@
                 <h3>Mac + domain &mdash; full relay</h3>
                 <p>Run it 24/7 on a Mac with a real URL like <code>relay.yourdomain.com</code>, and anyone can connect
                     to read your notes: your own phone, your friends, other relays. Set the Mac as a relay in the mobile
-                    app and it syncs your full history once, then keeps you current. Push <em>and</em> pull.</p>
+                    app and it syncs your full history once, then keeps you current. Push <em>and</em> pull. Your own
+                    devices can also reach each other over a private mesh.</p>
             </article>
             <article class="card fade-in-up delay-200">
                 <h3>Back it up &mdash; take it anywhere</h3>
@@ -512,15 +461,15 @@
             <p class="teaser-kicker">Deep dive &nbsp;&middot;&nbsp; May 2026</p>
             <h3>What Is Nostr Vault? The Personal Relay You Actually Control.</h3>
             <p class="teaser-body">A plain-language walkthrough of everything Nostr Vault does: why running your own
-                relay matters, how the four relay types work together, Blossom media hosting, Web of Trust spam
-                protection, Lightning zaps and native on-chain Bitcoin sweeps from your nsec.</p>
+                relay matters, how the four relay types work together, media hosting and Web of Trust spam
+                protection.</p>
             <span class="teaser-cta">Read the full post &rarr;</span>
         </a>
     </section>
 
     <section class="cta-section">
-        <h2 class="fade-in-up">Own your relay. Own your keys.<br>On every screen you own.</h2>
-        <p class="fade-in-up delay-100">Native on iPhone, iPad, Mac and Android, and in any browser. Bitcoin-aware. Encrypted by default.
+        <h2 class="fade-in-up">Your web of trust. Your feeds.<br>On every screen you own.</h2>
+        <p class="fade-in-up delay-100">Native on iPhone, iPad, Mac and Android, and in any browser. Encrypted by default.
             Verifiable from source.</p>
         <div class="hero-buttons fade-in-up delay-200">
             <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
