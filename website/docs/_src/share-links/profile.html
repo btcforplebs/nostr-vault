@@ -1,0 +1,83 @@
+<!--page
+{
+  "title": "Share your profile",
+  "nav": "Share your profile",
+  "section": "media",
+  "order": 6,
+  "needs": "3.0",
+  "eyebrow": "Media and sharing",
+  "h1": "Share your profile <span>with a code or a link</span>.",
+  "lede": "Show a friend a QR code, or send them a link. Either one opens your profile in Nostr Vault, so they can follow you in one tap.",
+  "description": "Share profile in Nostr Vault: a QR code and a nostrvault.app/p/ link for any profile, Copy link and Share, and what happens when someone scans or opens the link.",
+  "labels": {
+    "ios": ["Share profile", "Edit Profile", "Copy link", "Copied", "Share", "Done", "Search", "Who told you about Nostr Vault?", "Scan their profile code", "Skip, nobody told me", "Not them? Try another"],
+    "mac": ["Share profile", "Edit Profile", "Copy link", "Copied", "Share", "Search", "Who told you about Nostr Vault?", "Skip, nobody told me", "Not them? Try another"]
+  }
+}
+-->
+
+<section id="share">
+<p class="eyebrow">Share profile</p>
+<h2>Open the share sheet</h2>
+<ul>
+    <li><strong>Your own profile:</strong> tap the QR code button next to <strong>Edit Profile</strong>.</li>
+    <li><strong>Anyone else's profile:</strong> open the <strong>&hellip;</strong> menu and tap
+        <strong>Share profile</strong>.</li>
+</ul>
+<p>The sheet shows a large QR code with the person's name and picture, and three ways to pass it on:</p>
+<ul>
+    <li><strong>Show the code.</strong> Someone points a phone camera, or the scanner in Nostr Vault, at it.</li>
+    <li><strong>Copy link</strong> puts the link on your clipboard and says <strong>Copied</strong>.</li>
+    <li><strong>Share</strong> opens the system share sheet, so you can send the link in a message, an email or
+        another app.</li>
+</ul>
+<p>The link looks like <code>https://nostrvault.app/p/npub1&hellip;</code>. It carries only the public key, never
+    a secret key.</p>
+</section>
+
+<section id="open">
+<p class="eyebrow">The other side</p>
+<h2>Opening a profile link</h2>
+<ul>
+    <li><strong>Scanned or pasted in Nostr Vault.</strong> The code from the setup scanner, or a link pasted into
+        <strong>Search</strong>, opens the profile straight away. Search also takes a bare npub, an nprofile or a
+        <code>nostr:</code> link.</li>
+    <li><strong>Opened in a browser</strong> (a tapped link, or a code scanned with the phone camera). The page shows
+        the profile's name, picture and bio, with <strong>Open in Nostr Vault</strong> to jump into the app,
+        <strong>Get Nostr Vault</strong> if they don't have it, and <strong>Open in another Nostr app</strong>.</li>
+    <li><strong>New to Nostr Vault?</strong> If they open the link and then install and set up the app, the person
+        who shared it is already filled in on the <strong>Who told you about Nostr Vault?</strong> step. See
+        <a class="inline" href="#who-told-you">below</a>.</li>
+</ul>
+</section>
+
+<section id="who-told-you">
+<p class="eyebrow">During setup</p>
+<h2>Who told you about Nostr Vault?</h2>
+<p>A new account starts with an empty feed. One setup step fixes that with the person who brought you here.</p>
+<ol class="steps">
+    <li>Tap <strong>Scan their profile code</strong>, or paste their profile link or npub and continue. Tap
+        <strong>Skip, nobody told me</strong> to leave the step out.</li>
+    <li>Their profile card shows, so you can check it's them. Tap <strong>Follow</strong> with their name, or
+        <strong>Not them? Try another</strong>.</li>
+    <li>Next come up to 10 people they follow, the ones most followed by their other follows first, all ticked.
+        Untick anyone you'd rather not follow.</li>
+    <li>Tap the button that says how many you'll follow. You follow them and everyone still ticked, as one follow
+        list, once setup finishes.</li>
+</ol>
+<p>The step comes after your profile when you create an account, and after the relay check when you bring an
+    account you can post with. Read-only accounts skip it. Details for each device:
+    <a class="inline" href="/docs/start/iphone/#who-told-you">iPhone</a>,
+    <a class="inline" href="/docs/start/android/#who-told-you">Android</a>,
+    <a class="inline" href="/docs/start/mac/#who-told-you">Mac</a>.</p>
+</section>
+
+<section id="platforms">
+<h2>On each device</h2>
+<ul>
+    <li><strong>iPhone, iPad and Android</strong> have everything on this page. A profile link opened before setup
+        fills in the Who told you step.</li>
+    <li><strong>Mac</strong> has Share profile, and a link pasted into Search opens the profile. Links don't open the
+        Mac app from a browser, so paste the link into the Who told you step yourself.</li>
+</ul>
+</section>

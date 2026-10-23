@@ -9,7 +9,7 @@
   "lede": "Nostr has no algorithm picking for you. Nostr Vault gives you a set of feeds, each a different way to look at Nostr, and you decide which ones you see and in what order.",
   "description": "Nostr Vault feeds: Following, Discover, Global, Popular, Media and the rest; Edit Feeds; the Web of Trust shield; languages; reposts, replies and auto-load; and how a new account fills its feed.",
   "labels": {
-    "ios": ["Following", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "All languages", "Auto-load", "Reposts", "Replies", "Expanded View", "Compact View", "Threaded View", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
+    "ios": ["Following", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Web of Trust", "Everyone", "Everyone is locked", "All languages", "Auto-load", "Reposts", "Replies", "Expanded View", "Compact View", "Threaded View", "Feed & Display", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only", "Report Post", "Block User", "Let's fill it", "Your Feeds", "Fill Your Feed"],
     "android": ["Following", "Discover", "Global", "Hashtags", "Popular", "Media", "diVines", "Articles", "Recipes", "Marketplace", "Live", "Polls", "Music", "Edit Feeds", "Reset to Default", "Everyone", "Sensitive Content Warning", "All languages", "Show Reposts", "Show Replies", "Auto-Load New Posts", "Send Delay", "Reload Feed", "New Posts Pill", "Zaps Only"],
     "web": ["Following", "Global", "Popular", "Media", "Articles", "Recipes", "Marketplace", "Live", "Music"]
   }
@@ -57,6 +57,10 @@
     people you follow and the people they follow. A shield at the top right says <strong>Web of Trust</strong>.</p>
 <p>Tap it to switch to <strong>Everyone</strong>. You'll get a <strong>Sensitive Content Warning</strong> first,
     because Everyone is unfiltered and you should expect spam. It starts on Web of Trust.</p>
+<p id="everyone-lock">From 3.0, Everyone stays locked until you follow at least 5 people. Until then the shield shows a
+    lock, and tapping it explains why: <strong>Everyone is locked</strong>, how many of the 5 you follow, and
+    how many more to go, for example "Follow 3 more people to unlock Everyone". Follow a few people and the switch
+    opens. If you had already turned Everyone on, it stays on.</p>
 <p>If your web isn't built yet, Global and Media stay empty instead of showing everyone.</p>
 </section>
 
