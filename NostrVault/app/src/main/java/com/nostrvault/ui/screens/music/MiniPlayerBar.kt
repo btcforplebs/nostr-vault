@@ -34,6 +34,10 @@ import com.nostrvault.ui.theme.SecondaryText
  * stream's own window back out (video, chat and all). iOS: MiniPlayerBar,
  * PlayerSheet.
  */
+/** The largest rendition the minimized live picture asks for: a 40.dp circle needs no more. */
+private const val MINI_VIDEO_MAX_WIDTH = 426
+private const val MINI_VIDEO_MAX_HEIGHT = 240
+
 @Composable
 fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     val track by MusicPlayer.current.collectAsState()
@@ -49,6 +53,17 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     // While the stream's own window is up it has the picture (and covers this).
     val windowOpen by com.nostrvault.ui.components.LiveStreamRouter.playing.collectAsState()
     val livePlayer = minimizedStream?.takeIf { windowOpen == null }?.let { MusicPlayer.livePlayer(it.address) }
+    // The picture here is 40.dp across, but the player kept decoding the
+    // broadcast's full-size rendition for it, which made the feed
+    // unscrollable on the Moto (Logen, 2026-10-23). Minimized, it takes the
+    // smallest rendition that covers the thumbnail; the stream window lifts
+    // the cap again when it takes the picture back (LiveStreamScreen).
+    LaunchedEffect(livePlayer) {
+        val p = livePlayer ?: return@LaunchedEffect
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(MINI_VIDEO_MAX_WIDTH, MINI_VIDEO_MAX_HEIGHT)
+            .build()
+    }
 
     Box(
         modifier = modifier

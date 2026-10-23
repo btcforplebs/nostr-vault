@@ -132,6 +132,9 @@ fun LiveStreamScreen(
     // broadcast where it is now (LiveRejoinListener in the service).
     LaunchedEffect(sharedPlayer) {
         val p = sharedPlayer ?: return@LaunchedEffect
+        // The mini player capped the picture to its thumbnail (MiniPlayerBar);
+        // the full window wants the broadcast's own size back.
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().clearVideoSizeConstraints().build()
         if (!p.playWhenReady) {
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()
