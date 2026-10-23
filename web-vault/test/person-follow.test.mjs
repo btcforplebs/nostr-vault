@@ -191,6 +191,13 @@ test("a relay's kind 3 with a forged signature and a 'verified' flag is not take
 })
 
 test("askRelay: answered only on the relay's own EOSE, never on a timeout or a dead relay", async t => {
+  // A browser's close() on a failed socket does nothing; Node 22's fires "error" again and nostr-tools closes from
+  // onerror, so on Node 22 the dead relay overflows the stack (see thread-page/server.mjs). Browser behaviour here.
+  process.env.THREAD_PAGE_NO_LISTEN = "1"
+  const { closeOnce } = await import("../thread-page/server.mjs")
+  const real = pool._WebSocket
+  pool._WebSocket = closeOnce(real)
+  t.after(() => { pool._WebSocket = real })
   assert.deepEqual(await askRelay("ws://127.0.0.1:1", { kinds: [3] }, 2000), { events: [], answered: false })
   const ev = contacts([pk()], T0 + 100)
   // As nostr-tools does: a subscription whose eoseTimeout runs out calls oneose too.
