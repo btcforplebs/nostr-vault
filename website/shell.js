@@ -53,11 +53,21 @@
     const viewport = () => ({ top: '0px', left: '0px', width: `${innerWidth}px`, height: `${innerHeight}px` });
     const box = r => ({ top: `${r.top}px`, left: `${r.left}px`, width: `${r.width}px`, height: `${r.height}px` });
 
+    // In the phone the app lays out at least as wide as a small phone and is scaled down to fit, so a narrow
+    // window's small phone shows the app as a phone does, not squeezed to the slot's width.
+    const PHONE_MIN = 360;
+    const full = () => ({ width: `${innerWidth}px`, height: `${innerHeight}px`, transform: 'scale(1)' });
+    const fit = r => {
+        const s = Math.min(1, r.width / PHONE_MIN);
+        return { width: `${r.width / s}px`, height: `${r.height / s}px`, transform: `scale(${s})` };
+    };
+
     // At rest in the phone: placed on the slot in page coordinates, so it scrolls with the page.
     const place = () => {
         if (mode !== 'learn' || running) return;
         const r = slot.getBoundingClientRect();
         Object.assign(wrap.style, { position: 'absolute', ...box({ top: r.top + scrollY, left: r.left + scrollX, width: r.width, height: r.height }) });
+        Object.assign(frame.style, fit(r));
     };
     new ResizeObserver(place).observe(slot);
     addEventListener('resize', place);
@@ -77,9 +87,11 @@
     function animate(from, to, onDone) {
         const ms = reduce.matches ? 0 : MS;
         Object.assign(wrap.style, { position: 'fixed', ...to.rect, borderRadius: to.radius, boxShadow: to.shadow });
+        Object.assign(frame.style, to.frame);
         const opts = { duration: ms, easing: EASE };
         running = [
             wrap.animate([{ ...from.rect, borderRadius: from.radius, boxShadow: from.shadow }, { ...to.rect, borderRadius: to.radius, boxShadow: to.shadow }], opts),
+            frame.animate([from.frame, to.frame], opts),
             site.animate([{ opacity: from.site }, { opacity: to.site }], { ...opts, duration: ms * 0.8 }),
         ];
         Promise.all(running.map(a => a.finished)).then(() => { running = null; onDone(); }, () => {});
@@ -98,7 +110,7 @@
         scrollTo({ top: 0, behavior: 'instant' });
         history.replaceState(null, '', location.pathname + location.search + '#' + (section || 'about'));
         const r = slot.getBoundingClientRect();
-        animate({ rect: viewport(), radius: '0px', shadow: SHADOW_OFF, site: 0 }, { rect: box(r), radius: RADIUS, shadow: SHADOW_ON, site: 1 }, () => {
+        animate({ rect: viewport(), frame: full(), radius: '0px', shadow: SHADOW_OFF, site: 0 }, { rect: box(r), frame: fit(r), radius: RADIUS, shadow: SHADOW_ON, site: 1 }, () => {
             wrap.classList.add('framed');
             wrap.style.boxShadow = '';
             wrap.style.borderRadius = '';
@@ -116,11 +128,12 @@
         wrap.classList.remove('framed');
         mode = 'app';
         tell();
-        animate({ rect: box(r), radius: RADIUS, shadow: SHADOW_ON, site: 1 }, { rect: viewport(), radius: '0px', shadow: SHADOW_OFF, site: 0 }, () => {
+        animate({ rect: box(r), frame: fit(r), radius: RADIUS, shadow: SHADOW_ON, site: 1 }, { rect: viewport(), frame: full(), radius: '0px', shadow: SHADOW_OFF, site: 0 }, () => {
             root.classList.remove('shell-learn');
             root.classList.add('shell-app');
             setInert(true);
             wrap.removeAttribute('style');
+            frame.removeAttribute('style');
             scrollTo({ top: 0, behavior: 'instant' });
             mirror();
             frame.focus();
