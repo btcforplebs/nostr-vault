@@ -32,6 +32,8 @@ internal class FreshStoreSwap(
      */
     fun <T> run(openFresh: () -> T?, keepAs: File): T? {
         recover()
+        // The old store couldn't be put back: don't build over it.
+        if (pending.exists()) return null
         if (live.exists()) {
             live.copyTo(partial, overwrite = true)
             FileOutputStream(partial, true).use { it.fd.sync() }
@@ -60,7 +62,9 @@ internal class FreshStoreSwap(
     /**
      * A swap that didn't finish (failed, or the app was killed) is undone:
      * whatever fresh store it got as far as is dropped and the old one put
-     * back. Runs before every open; a no-op when no swap is pending.
+     * back. Runs before every open; a no-op when no swap is pending. If the
+     * old store can't be renamed back, [pending] is left in place and the
+     * caller must not open the (now empty) live slot.
      */
     fun recover(): Boolean {
         partial.delete()

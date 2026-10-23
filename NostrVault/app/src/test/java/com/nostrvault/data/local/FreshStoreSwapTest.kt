@@ -95,4 +95,17 @@ class FreshStoreSwapTest {
         assertEquals("fresh", swapFor(live).run(openFresh = freshOpen(live), keepAs = keepAs()))
         assertFalse(keepAs().exists())
     }
+
+    @Test fun oldStoreThatCantBePutBackIsNotBuiltOver() {
+        // The live slot can't be cleared or renamed onto (a non-empty folder stands in for the failure).
+        val live = File(tmp.root, "nostrvault_credentials.xml").apply { mkdir(); File(this, "x").writeText("x") }
+        val swap = swapFor(live)
+        swap.pending.writeText(old)
+        assertFalse(swap.recover())
+        assertTrue(swap.pending.exists())
+        var opened = false
+        assertNull(swap.run(openFresh = { opened = true; "fresh" }, keepAs = keepAs()))
+        assertFalse(opened)
+        assertEquals(old, swap.pending.readText())
+    }
 }

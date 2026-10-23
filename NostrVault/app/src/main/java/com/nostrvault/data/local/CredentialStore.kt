@@ -48,7 +48,15 @@ object CredentialStore {
         if (::prefs.isInitialized || openFailed) return
         val app = context.applicationContext
         // A Start fresh the app was killed in the middle of: the old store goes back first.
-        if (swap(app).recover()) Log.w(TAG, "an unfinished Start fresh was undone; the old store is back")
+        val swap = swap(app)
+        if (swap.recover()) Log.w(TAG, "an unfinished Start fresh was undone; the old store is back")
+        if (swap.pending.exists()) {
+            // The old store couldn't be put back; opening now would silently start an empty one.
+            Log.e(TAG, "an unfinished Start fresh could not be undone; the old store is still at ${swap.pending.name}")
+            openFailed = true
+            _unreadable.value = true
+            return
+        }
         val opened = openRecovering(open = { open(app) })
         if (opened == null) {
             openFailed = true
