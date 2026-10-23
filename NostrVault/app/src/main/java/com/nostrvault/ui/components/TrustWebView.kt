@@ -69,60 +69,62 @@ internal fun TrustWebContent(
     val nostrService = services.nostrService()
     val profiles by nostrService.profiles.collectAsState()
     val accent = LocalNostrVaultColors.current.primary
-    val scope = rememberCoroutineScope()
+    val screenScope = rememberCoroutineScope()
+    // The WOT tab's work runs on while you are away; a popup's ends with it.
+    val scope = LocalTrustWebKeep.current?.scope ?: screenScope
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val lite = remember { isLiteGlobe(appContext) }
 
     val me = remember { trust.me }
-    var myFollows by remember { mutableStateOf(trust.myFollows().toSet()) }
-    var crumbs by remember { mutableStateOf(listOf(me)) }
-    var frames by remember { mutableStateOf(mapOf(me to TrustFrame(me, trust.myFollows(), true, path))) }
+    var myFollows by keptState("myFollows") { trust.myFollows().toSet() }
+    var crumbs by keptState("crumbs") { listOf(me) }
+    var frames by keptState("frames") { mapOf(me to TrustFrame(me, trust.myFollows(), true, path)) }
     /** The faint outer shell around you: your web of trust past your follows. */
-    var haze by remember { mutableStateOf(emptyList<String>()) }
+    var haze by keptState("haze") { emptyList<String>() }
     // Per person, so re-centering mid-load neither blocks nor mislabels the
     // next person's globe.
     // No relay answered: offer a retry instead of a final answer.
-    var showingList by remember { mutableStateOf(false) }
-    var myWebOpen by remember { mutableStateOf(false) }
+    var showingList by keptState("showingList") { false }
+    var myWebOpen by keptState("myWebOpen") { false }
     /** Your whole trust graph, for the search's "In your web" tag. */
-    var web by remember { mutableStateOf(emptySet<String>()) }
+    var web by keptState("web") { emptySet<String>() }
     /**
      * How many of your follows follow each person past them (the relay's
      * vouches), and who of the drawn shell is Close. Null on an old cache.
      */
-    var vouches by remember { mutableStateOf<Map<String, Int>?>(null) }
-    var closeHaze by remember { mutableStateOf(emptySet<String>()) }
+    var vouches by keptState<Map<String, Int>?>("vouches") { null }
+    var closeHaze by keptState("closeHaze") { emptySet<String>() }
     /**
      * The WOT tab's Close and Further out faces: the people past your
      * follows worth a profile fetch ([TrustMap.layerFaceCandidates]).
      */
-    var layerCandidates by remember { mutableStateOf(emptyMap<TrustMap.Layer, List<String>>()) }
+    var layerCandidates by keptState("layerCandidates") { emptyMap<TrustMap.Layer, List<String>>() }
     /** Whose wider web is on its way, for the loading pill. */
-    var widerLoading by remember { mutableStateOf(emptySet<String>()) }
+    var widerLoading by keptState("widerLoading") { emptySet<String>() }
     // An empty follow list means "not in yet" until a load has finished.
     val loadingFollows by trust.isLoadingFollows.collectAsState()
     val followsAttempted by trust.followsAttempted.collectAsState()
     // Nothing says when the trust graph has been tried, so its pill gives up
     // after a while rather than spin all session for an empty web.
-    var webWaitOver by remember { mutableStateOf(false) }
+    var webWaitOver by keptState("webWaitOver") { false }
     LaunchedEffect(Unit) { delay(WEB_WAIT_MS); webWaitOver = true }
     /** The refresh button's run; null when idle. */
-    var refreshState by remember { mutableStateOf<RefreshState?>(null) }
+    var refreshState by keptState<RefreshState?>("refreshState") { null }
     /** The WOT tab's layer picker: which part of your web is lit. */
-    var layer by remember { mutableStateOf(TrustMap.Layer.EVERYONE) }
+    var layer by keptState("layer") { TrustMap.Layer.EVERYONE }
     /** The WOT tab's search field is open under the bar. */
-    var searchOpen by remember { mutableStateOf(false) }
+    var searchOpen by keptState("searchOpen") { false }
     /**
      * A relay rebuild seen running from the WOT tab, and the people it has
      * found so far who weren't on the old map, lit as stars while it runs.
      */
-    var liveRebuild by remember { mutableStateOf(false) }
-    var arrivals by remember { mutableStateOf(emptySet<String>()) }
+    var liveRebuild by keptState("liveRebuild") { false }
+    var arrivals by keptState("arrivals") { emptySet<String>() }
     /**
      * The trust card: who was tapped or searched, and how they reach you
      * (null while it's being traced). Live, so Follow on the card shows on it.
      */
-    var card by remember { mutableStateOf<String?>(null) }
+    var card by keptState<String?>("card") { null }
     /** The author's path seen from you, traced again whenever your web changes. */
     val authorPath = rememberLiveTrustPath(author.takeIf { it != me })
     // The author's own card shares it rather than trace them twice.
@@ -215,7 +217,7 @@ internal fun TrustWebContent(
     // the middle there are none, and anyone else in the middle gets faces as
     // you do on your own globe. Who you talk with first, on anyone's globe.
     // Your own globe opened for someone else keeps to the paths to them.
-    var engagement by remember { mutableStateOf(emptyMap<String, Int>()) }
+    var engagement by keptState("engagement") { emptyMap<String, Int>() }
     LaunchedEffect(Unit) { engagement = trust.engagement() }
     val ringCandidates = remember(frame?.center, frame?.ring, engagement) {
         if (frame != null && (frame.center == author || frame.center != me)) {
@@ -227,7 +229,7 @@ internal fun TrustWebContent(
     }
     // Only pictures that loaded become faces ("pubkey url" keys), taken in
     // once a second so the globe settles a few times, not sixteen.
-    var renderedPictures by remember { mutableStateOf(emptySet<String>()) }
+    var renderedPictures by keptState("renderedPictures") { emptySet<String>() }
     suspend fun loadPictures(candidates: List<String>) = coroutineScope {
         val asked = HashSet<String>()
         val loaded = java.util.Collections.synchronizedSet(HashSet<String>())
@@ -374,7 +376,7 @@ internal fun TrustWebContent(
     }
 
     // ── Search (WOT tab only) ──
-    var query by remember { mutableStateOf("") }
+    var query by keptState("query") { "" }
     var searchFocused by remember { mutableStateOf(false) }
     var searchingRelays by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -427,7 +429,7 @@ internal fun TrustWebContent(
     // legend and threads stop saying "outside your web" after a follow.
     // The path this globe opened with is already fresh; only a change to your
     // follows since may replace it, so a trace whose relays timed out can't.
-    val openedWith = remember { myFollows }
+    val openedWith = rememberKept("openedWith") { myFollows }
     LaunchedEffect(authorPath) {
         val live = authorPath ?: return@LaunchedEffect
         if (myFollows == openedWith) return@LaunchedEffect

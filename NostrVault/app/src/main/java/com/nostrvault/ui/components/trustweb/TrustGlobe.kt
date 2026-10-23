@@ -134,7 +134,8 @@ internal fun TrustGlobe(
     onNeedProfiles: (List<String>) -> Unit = {},
 ) {
     val phone = LocalConfiguration.current.smallestScreenWidthDp < 600
-    val scene = remember(phone) { GlobeScene(lite, phone) }
+    // Kept on the WOT tab, so coming back finds the globe as it was left.
+    val scene = rememberKept("scene:$phone") { GlobeScene(lite, phone) }
     val textMeasurer = rememberTextMeasurer(cacheSize = 128)
     val haptic = LocalHapticFeedback.current
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
