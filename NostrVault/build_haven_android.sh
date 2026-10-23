@@ -126,7 +126,7 @@ build_abi() {
       CGO_CFLAGS="-DMDB_USE_ROBUST=0" \
       ${GO_CMD} build \
           -buildmode=c-shared \
-          -tags cshared \
+          -tags "cshared libsecp256k1" \
           -trimpath \
           -ldflags="-s -w" \
           -o "${output_file}" \

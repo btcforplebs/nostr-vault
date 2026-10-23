@@ -10,7 +10,7 @@
 ## Build Tags
 
 - `cshared` tag: enables `cshared.go` (C-exported functions), disables `main()` in `main.go`
-- **Build command** (library): `go build -tags cshared -buildmode=c-archive -ldflags="-s -w" -o libhaven.a`
+- **Build command** (library): `go build -tags "cshared libsecp256k1" -buildmode=c-archive -ldflags="-s -w" -o libhaven.a`
 - **Build command** (standalone): `go build -v -ldflags="-s -w" -o haven`
 
 ## File-by-File Reference

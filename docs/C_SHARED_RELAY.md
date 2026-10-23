@@ -57,7 +57,7 @@ Produces a standalone executable. The Swift app launches it as a child process.
 ### C-shared static library (c-shared-relay)
 
 ```bash
-go build -tags cshared -buildmode=c-archive -ldflags="-s -w" -o libhaven.a
+go build -tags "cshared libsecp256k1" -buildmode=c-archive -ldflags="-s -w" -o libhaven.a
 ```
 
 Produces `libhaven.a` + `libhaven.h`. The Swift app links against the static library via a bridging header. The Xcode build phase (`build_haven.sh`) handles this automatically, including universal (arm64 + x86_64) builds for archive.

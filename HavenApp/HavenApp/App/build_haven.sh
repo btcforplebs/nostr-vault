@@ -87,7 +87,7 @@ build_for_arch() {
     local output=$3
     echo "🛠️ Building for $label (GOARCH=$goarch)..."
     rm -f "$output"
-    GOARCH="$goarch" "$GO_BIN" build -tags cshared -buildmode=c-archive -ldflags="-s -w" -o "$output"
+    GOARCH="$goarch" "$GO_BIN" build -tags "cshared libsecp256k1" -buildmode=c-archive -ldflags="-s -w" -o "$output"
     echo "✅ Built $label slice."
 }
 

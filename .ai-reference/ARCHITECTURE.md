@@ -59,7 +59,7 @@
 ## Two-Layer Design
 
 ### Go Core (`haven-go/`)
-Compiled as `libhaven.a` using `-buildmode=c-archive -tags cshared`. Runs as a **thread inside the Swift app process** (not a child process). Contains:
+Compiled as `libhaven.a` using `-buildmode=c-archive -tags "cshared libsecp256k1"`. Runs as a **thread inside the Swift app process** (not a child process). Contains:
 - 4 khatru relay instances (Private, Chat, Inbox, Outbox)
 - Blossom media server (mounted on outboxRelay)
 - BadgerDB or LMDB event storage (5 databases)

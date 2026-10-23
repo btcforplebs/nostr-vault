@@ -25,7 +25,7 @@ HAVEN for Mac is a native Swift wrapper around the [bitvora/haven](https://githu
 
 Xcode automatically runs `build_haven.sh` during the build phase. This script:
 1.  Navigates to the `haven-go/` directory.
-2.  Builds the Go code as a C-archive (`go build -tags cshared -buildmode=c-archive`).
+2.  Builds the Go code as a C-archive (`go build -tags "cshared libsecp256k1" -buildmode=c-archive`).
 3.  Produces `libhaven.a` + `libhaven.h` which are linked into the app via a bridging header.
 
 For archive builds (universal distribution), the script builds separate arm64 and x86_64 slices and combines them with `lipo`.
