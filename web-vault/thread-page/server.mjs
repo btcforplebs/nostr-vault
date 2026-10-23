@@ -1,11 +1,12 @@
 // The public post page's server: GET /thread/<nevent|note|naddr> -> the post and its replies as HTML (page.js), read
-// from public relays (fetch.js). nginx proxies /thread/ here (website/nginx.conf); run it with `npm run thread`.
+// from public relays (fetch.js). GET /p/<npub> -> the profile page (profile-page.js), from the same relays. nginx proxies /thread/ here (website/nginx.conf); run it with `npm run thread`.
 // Pages are kept in memory for a while, so a link pasted into a busy chat costs the relays one read.
 // A browser is sent on into the web app (page.js appLink); the page itself is for link previews.
 import http from "node:http"
 import { SimplePool } from "nostr-tools/pool"
 import { parseTarget, renderMissing, renderPost, replyList } from "./page.js"
-import { loadThread, safeRelay } from "./fetch.js"
+import { loadProfile, loadThread, safeRelay } from "./fetch.js"
+import { parseProfileTarget, renderProfile, renderProfileMissing } from "./profile-page.js"
 
 const PORT = Number(process.env.PORT || 8790)
 const WAIT_MS = Number(process.env.THREAD_WAIT_MS || 3500) // per relay read; chat unfurlers give up after ~5-10 s
@@ -44,27 +45,44 @@ async function build(code) {
   }
 }
 
-async function pageFor(code) {
-  const hit = cache.get(code)
-  if (hit && Date.now() - hit.at < hit.ttl) return hit
-  if (!inflight.has(code)) {
-    inflight.set(code, build(code).then(r => {
-      cache.delete(code)
-      cache.set(code, { ...r, at: Date.now() })
-      if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value)
-      return cache.get(code)
-    }).finally(() => inflight.delete(code)))
+/** A profile page. One that no relay had a kind 0 for is still a working page (its link opens the app on that key),
+ *  so it is a 200, kept for the shorter time. */
+async function buildProfile(code) {
+  const target = parseProfileTarget(code)
+  if (!target) return { status: 404, html: renderProfileMissing({ code }), ttl: FOUND_TTL }
+  const pool = newPool()
+  try {
+    const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
+    const profile = await loadProfile(target, query)
+    return { status: 200, html: renderProfile({ target, profile }), ttl: profile ? FOUND_TTL : MISSING_TTL }
+  } finally {
+    pool.destroy()
   }
-  return inflight.get(code)
+}
+
+/** `key`: "thread:<code>" or "p:<code>", so a post and a profile never share a cache entry. */
+async function pageFor(key) {
+  const hit = cache.get(key)
+  if (hit && Date.now() - hit.at < hit.ttl) return hit
+  if (!inflight.has(key)) {
+    const [route, code] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)]
+    inflight.set(key, (route === "p" ? buildProfile(code) : build(code)).then(r => {
+      cache.delete(key)
+      cache.set(key, { ...r, at: Date.now() })
+      if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value)
+      return cache.get(key)
+    }).finally(() => inflight.delete(key)))
+  }
+  return inflight.get(key)
 }
 
 const server = http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, "http://x")
-  const m = /^\/thread\/([A-Za-z0-9:]{1,2000})\/?$/.exec(pathname)
+  const m = /^\/(thread|p)\/([A-Za-z0-9:]{1,2000})\/?$/.exec(pathname)
   if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { Allow: "GET, HEAD" }); return res.end() }
   if (!m) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("not found") }
   try {
-    const page = await pageFor(m[1].replace(/^nostr:/i, ""))
+    const page = await pageFor(`${m[1]}:${m[2].replace(/^nostr:/i, "")}`)
     res.writeHead(page.status, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": page.status === 200 ? "public, max-age=300" : "public, max-age=60",
@@ -79,5 +97,5 @@ const server = http.createServer(async (req, res) => {
 })
 
 if (!process.env.THREAD_PAGE_NO_LISTEN) {
-  server.listen(PORT, () => console.log(`thread pages on http://localhost:${PORT}/thread/<nevent>`))
+  server.listen(PORT, () => console.log(`thread pages on http://localhost:${PORT}/thread/<nevent> and /p/<npub>`))
 }
