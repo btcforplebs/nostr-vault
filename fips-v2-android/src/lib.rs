@@ -256,7 +256,14 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
     let allowlist = own.as_ref().map(|o| o.allowlist_yaml(&me)).unwrap_or_default();
     let mut dialed: Vec<String> = Vec::new();
     for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
-        let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
+        // A peer typed by hand into the config must not stop the engine.
+        let npub = match PeerIdentity::from_npub(npub) {
+            Ok(id) => id.npub(),
+            Err(e) => {
+                tracing::warn!("skipping peer {npub:?}: {e:#}");
+                continue;
+            }
+        };
         if !dialed.contains(&npub) {
             dialed.push(npub);
         }
@@ -1024,9 +1031,13 @@ mod tests {
         // Tron's payloads: a second peer with an endpoint, an alias, a node subkey.
         let extra_peer = format!("{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"203.0.113.7:4242\"\n    connect_policy: auto_connect\n  - npub: \"{npub}\" #");
         let alias = format!("{npub}\"\n    alias: \"pwned\" #");
+        // Each is skipped as a bad npub: the start goes on, the payload never lands.
         for peers in [vec![extra_peer], vec![alias]] {
             let opts = StartOptions { peers, ..Default::default() };
-            assert!(config_yaml(&nsec, &opts).is_err());
+            let yaml = config_yaml(&nsec, &opts).unwrap();
+            assert!(!yaml.contains("203.0.113.7") && !yaml.contains("pwned"), "{}", yaml.as_str());
+            let cfg: Config = serde_yaml::from_str(&yaml).expect("parses");
+            assert!(cfg.peers.is_empty());
         }
         let bad_nsec = format!("{nsec}\"\n  limits:\n    max_peers: 9999 #");
         assert!(config_yaml(&bad_nsec, &StartOptions::default()).is_err());
