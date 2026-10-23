@@ -1,5 +1,6 @@
-// Who is signed in, and how: { pubkey, method: "nip07" | "nip46" | "readonly", bunker?, clientSkSealed? }. Never the user's secret
-// key. "nv-session" is the active account; "nv-accounts" every account this browser remembers (Accounts screen), the
+// Who is signed in, and how: { pubkey, method: "nip07" | "nip46" | "readonly" | "local", bunker?, clientSkSealed?, ncryptsec?,
+// skSealed? }. Never the user's secret key in the clear: a "local" key (made here, signer/local.js) is kept as an ncryptsec
+// and sealed. "nv-session" is the active account; "nv-accounts" every account this browser remembers (Accounts screen), the
 // active one included. A bunker account's client key is sealed (signer/keyring.js), never stored as plain hex.
 const KEY = "nv-session"
 const ACCOUNTS = "nv-accounts"
@@ -11,11 +12,11 @@ export function checkedPubkey(pk) {
   throw new Error("Your signer sent back something that isn't a public key. Try again, or use another signer.")
 }
 
-const METHODS = ["nip07", "nip46", "readonly"]
+const METHODS = ["nip07", "nip46", "readonly", "local"]
 const valid = s => !!s && PUBKEY.test(s.pubkey) && METHODS.includes(s.method)
 
 /** How a session signs, as the screens say it: "with a browser extension", "read-only (no signer)". */
-export const signedInWith = method => method === "nip07" ? "with a browser extension" : method === "nip46" ? "with a bunker (NIP-46)" : "read-only (no signer)"
+export const signedInWith = method => method === "nip07" ? "with a browser extension" : method === "nip46" ? "with a bunker (NIP-46)" : method === "local" ? "with a key kept in this browser, locked by your password" : "read-only (no signer)"
 
 export function loadSession(storage = localStorage) {
   try {

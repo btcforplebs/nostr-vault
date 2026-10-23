@@ -15,7 +15,8 @@ import { useProfile } from "../components/useProfile.js"
 import { StorageNote, askToKeep } from "../components/StorageNote.jsx"
 import "../styles/accounts.css"
 
-export function SignInScreen({ onSignedIn }) {
+/** `onCreate`: Create an account (screens/CreateAccount.jsx), for someone new to Nostr. */
+export function SignInScreen({ onSignedIn, onCreate }) {
   const [saved] = useState(loadAccounts)
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState("")
@@ -40,6 +41,7 @@ export function SignInScreen({ onSignedIn }) {
         {saved.map(a => <SavedAccount key={a.pubkey} account={a} busy={busy === a.pubkey} disabled={!!busy} onClick={resume(a)} />)}
         <p class="muted small">Or sign in as someone else:</p>
       </div>}
+      {onCreate && <button class="primary" onClick={onCreate}>New to Nostr? Create an account</button>}
       <SignInOptions onSignedIn={signedIn} />
       <StorageNote />
       <p class="muted small signin-home">New to Nostr Vault? <a href="/">See what it is, and get the apps</a>.</p>
@@ -65,7 +67,7 @@ function SavedAccount({ account, busy, disabled, onClick }) {
 }
 
 export const accountName = (account, profile) => profile?.name || npubEncode(account.pubkey).slice(0, 16) + "…"
-export const methodLabel = account => account.method === "nip46" ? "Remote signer (bunker)" : account.method === "readonly" ? "Read-only" : "Browser extension"
+export const methodLabel = account => account.method === "nip46" ? "Remote signer (bunker)" : account.method === "readonly" ? "Read-only" : account.method === "local" ? "Key in this browser" : "Browser extension"
 
 /** The extension button and the bunker field. onSignedIn({ signer, session }). Also the Accounts screen's "Add". */
 export function SignInOptions({ onSignedIn }) {
