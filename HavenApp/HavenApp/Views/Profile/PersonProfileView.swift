@@ -38,6 +38,7 @@ struct PersonProfileView: View, Equatable {
     @State private var zapSheetContext: ZapSheetContext?
     @State private var zapBurst = false
     @State private var showingTrustWeb = false
+    @State private var showingShare = false
 
     init(pubkey: String, embeddedInNavigation: Bool = false, onDismiss: (() -> Void)? = nil) {
         self.pubkey = pubkey
@@ -73,6 +74,7 @@ struct PersonProfileView: View, Equatable {
             shopHeader: { EmptyView() }
         )
         .trustWebPresentation(isPresented: $showingTrustWeb, author: pubkey)
+        .sheet(isPresented: $showingShare) { ShareProfileSheet(pubkey: pubkey) }
         // "Open in WoT" from a globe over this profile: a profile in a sheet
         // closes with it, so the WOT tab shows.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenWOT)) { _ in
@@ -178,6 +180,8 @@ struct PersonProfileView: View, Equatable {
                     ProfileActions.pill("Open My Profile", icon: "person.crop.circle") { openMyProfile() }
                 }
                 ProfileActions.trustWeb(hint: "Shows your web of trust") { showingTrustWeb = true }
+                ProfileActions.icon("qrcode") { showingShare = true }
+                    .accessibilityLabel("Share profile")
             } else {
                 ProfileActions.pill(isFollowing ? "Unfollow" : "Follow",
                                     icon: isFollowing ? "person.badge.minus" : "person.badge.plus",
@@ -268,6 +272,9 @@ struct PersonProfileView: View, Equatable {
     /// away from Message.
     private var moreMenu: some View {
         Menu {
+            Button { showingShare = true } label: {
+                Label("Share profile", systemImage: "qrcode")
+            }
             Button {
                 if let npub = ProfileFormat.npub(pubkey) { ProfileFormat.copy(npub) }
             } label: {
