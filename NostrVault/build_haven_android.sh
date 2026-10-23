@@ -125,7 +125,7 @@ build_abi() {
       CC="${NDK_BIN}/${cc}" \
       CGO_CFLAGS="-DMDB_USE_ROBUST=0" \
       ${GO_CMD} build \
-          -buildmode=c-shared \
+          -mod=mod -buildmode=c-shared \
           -tags "cshared libsecp256k1" \
           -trimpath \
           -ldflags="-s -w" \

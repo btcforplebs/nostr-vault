@@ -139,7 +139,7 @@ build_for_arch() {
     export CGO_LDFLAGS="-isysroot $SDK_PATH -target $target"
     
     rm -f "$output"
-    GOARCH="$goarch" "$GO_BIN" build -tags "cshared libsecp256k1" -buildmode=c-archive -ldflags="-s -w" -o "$output"
+    GOARCH="$goarch" "$GO_BIN" build -mod=mod -tags "cshared libsecp256k1" -buildmode=c-archive -ldflags="-s -w" -o "$output"
     echo "✅ Built iOS $label slice for target $target."
 }
 
