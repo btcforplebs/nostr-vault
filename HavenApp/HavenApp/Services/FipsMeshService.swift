@@ -327,6 +327,30 @@ final class FipsMeshService: ObservableObject {
 
     // MARK: - Mesh on/off
 
+    /// Kiosk mode, a start in flight and any client engine all stop.
+    /// `republish` false: a factory reset, with no account left to sign a 10063.
+    private func stopAll(republish: Bool = true) {
+        stopKiosk(republish: republish)
+        if starting {
+            starting = false
+            startGen += 1
+        }
+        if clientActive {
+            clientActive = false
+            if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
+            clientBackgroundObserver = nil
+        }
+        stopEngine()
+        status = nil
+    }
+
+    /// Reset Everything: the engine stops with the old key before
+    /// `MeshIdentityReset` deletes it, so nothing keeps the old mesh npub.
+    func stopForReset() {
+        stopAll(republish: false)
+        lastError = nil
+    }
+
     static let offMessage = "The mesh is off. Turn it on in Settings → FIPS Mesh."
 
     /// The Mesh switch. Off stops kiosk mode and any client engine, and every
@@ -336,20 +360,7 @@ final class FipsMeshService: ObservableObject {
         guard on != FipsMeshSettings.enabled else { return }
         FipsMeshSettings.enabled = on
         lastError = nil
-        if !on {
-            stopKiosk()
-            if starting {
-                starting = false
-                startGen += 1
-            }
-            if clientActive {
-                clientActive = false
-                if let clientBackgroundObserver { NotificationCenter.default.removeObserver(clientBackgroundObserver) }
-                clientBackgroundObserver = nil
-            }
-            stopEngine()
-            status = nil
-        }
+        if !on { stopAll() }
         // The relay dials a Mac set by its mesh address once, at start:
         // restart it so it drops that link, or makes it again.
         if ConfigService.shared.config.macRelayMeshNpub != nil {
@@ -693,7 +704,7 @@ final class FipsMeshService: ObservableObject {
     // It is its own key, not the owner's nsec, and never leaves this device.
     nonisolated private static let keychainQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "to.nostrvault.fipsmesh",
+        kSecAttrService as String: MeshIdentityReset.keychainService,
         kSecAttrAccount as String: "mesh-nsec",
     ]
 

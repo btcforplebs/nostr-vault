@@ -1122,6 +1122,7 @@
 		D5B6B2758E4DB429EDC4A717 /* FollowingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */; };
 		D5DC60999F43DB5C0AAEA4B2 /* WizardDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9F8CD3D8E3EA1980551DC1 /* WizardDesignSystem.swift */; };
 		D5EBD36AB8F24C9360A6482E /* FeedNoteRow+Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCC0A5227BD2E582382318E7 /* FeedNoteRow+Formatting.swift */; };
+		D5F589CB24E1407D75DEF741 /* MeshIdentityReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */; };
 		D62C7BC59CDDCA4753A97851 /* FeedView+ToolbarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D2901CEE1478D0AE933B4BC /* FeedView+ToolbarMenu.swift */; };
 		D63FFB1B0B8C7246DA32939B /* MacRelaySyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8152C31E47774D859AE128B /* MacRelaySyncStatusView.swift */; };
 		D6B489ACF9177452BF641CAE /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */; };
@@ -1259,6 +1260,7 @@
 		ED54837C471D65DD0BF8DC2F /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
 		ED6FCAF4DF7249BB3EB94A07 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
 		EDCA08DB3ED399583C55F594 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
+		EDCC11293EC1A7BB105D2DCE /* MeshIdentityReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */; };
 		EDE74CB342AEFD9F004D4EEA /* MarkdownBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9CA2E376AE6090E021D6EB3 /* MarkdownBodyView.swift */; };
 		EDEA6EB9D559B7293786AEFC /* FipsMeshSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83D9254A503D288F4DA7B70 /* FipsMeshSettings.swift */; };
 		EDFAB1E4090AA01EB824A3B2 /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8222A5F6E491EA57892ADC3 /* TrustMap.swift */; };
@@ -1836,6 +1838,7 @@
 		9DB502B6992F3E77F294CA5D /* LightningPayTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightningPayTarget.swift; sourceTree = "<group>"; };
 		9E77ED4BBAC80594F90F2E40 /* ProfileMetadataMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMetadataMerge.swift; sourceTree = "<group>"; };
 		9ECCB260673A3292601A6F39 /* TrustWebView+Breadcrumbs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+Breadcrumbs.swift"; sourceTree = "<group>"; };
+		9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshIdentityReset.swift; sourceTree = "<group>"; };
 		9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardMirrors.swift; sourceTree = "<group>"; };
 		9FEC6DB9D99B45B49569D8A5 /* ProfileContent+Sections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileContent+Sections.swift"; sourceTree = "<group>"; };
 		A0470608431CE649B6E55F7D /* QuotedNoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteView.swift; sourceTree = "<group>"; };
@@ -3115,6 +3118,7 @@
 				8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */,
 				4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */,
 				71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */,
+				9FA16722B2CD63AE6DC314B4 /* MeshIdentityReset.swift */,
 				1B03DACD65D976F80B315E19 /* MirrorService.swift */,
 				CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */,
 				70A6C2A292B935922711F19B /* Motion.swift */,
@@ -3852,6 +3856,7 @@
 				87115DD7372EA9CF7317ADD3 /* MenuBarView+TabBar.swift in Sources */,
 				E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */,
 				8ECF8568B8F80F5213816DF7 /* MeshDevices.swift in Sources */,
+				EDCC11293EC1A7BB105D2DCE /* MeshIdentityReset.swift in Sources */,
 				AB7F8F34512CA3C52285854B /* MeshMediaRouter+Live.swift in Sources */,
 				EC13B7C36B4880936A026AEF /* MeshMediaRouter.swift in Sources */,
 				B62B5AA48745585EDBCA0CFF /* MeshQRCode.swift in Sources */,
@@ -4541,6 +4546,7 @@
 				55657F564136D2FA6CF59EFD /* MenuBarView+TabBar.swift in Sources */,
 				D3ED7A3CC129E99735F99CB6 /* MenuBarView.swift in Sources */,
 				7A1150CE373429DACC50BDC7 /* MeshDevices.swift in Sources */,
+				D5F589CB24E1407D75DEF741 /* MeshIdentityReset.swift in Sources */,
 				A497F168AB85DD029F0035BF /* MeshMediaRouter+Live.swift in Sources */,
 				5A1B91D8416D9D5428D2B6DB /* MeshMediaRouter.swift in Sources */,
 				68B6097E7D0D0D915F2C9FAF /* MeshQRCode.swift in Sources */,

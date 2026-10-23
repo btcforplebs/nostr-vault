@@ -128,6 +128,14 @@ final class MacFipsMeshService: ObservableObject {
         }
     }
 
+    /// Reset Everything: the engine stops with the old key before
+    /// `MeshIdentityReset` deletes it and the switch, so the page shows no npub.
+    func stopForReset() {
+        stopEngine()
+        enabled = false
+        storedNpub = nil
+    }
+
     private func stopEngine() {
         runningKey = nil
         starting = false
@@ -232,7 +240,7 @@ final class MacFipsMeshService: ObservableObject {
     // restarts. It is its own key, not the owner's nsec, and never leaves this Mac.
     nonisolated private static let keychainQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "to.nostrvault.fipsmesh",
+        kSecAttrService as String: MeshIdentityReset.keychainService,
         kSecAttrAccount as String: "mesh-nsec",
     ]
 
