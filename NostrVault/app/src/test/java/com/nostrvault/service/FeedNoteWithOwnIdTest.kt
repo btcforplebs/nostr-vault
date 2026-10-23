@@ -13,23 +13,22 @@ class FeedNoteWithOwnIdTest {
         listOf(listOf("e", original.id), listOf("p", original.pubkey)), 2_000L, 6,
     )
 
-    /** The feed's index, built as noteIndex() does: id, then effectiveEventId, first wins. */
-    private fun index(notes: List<FeedNote>): Map<String, FeedNote> {
-        val map = HashMap<String, FeedNote>()
-        for (n in notes) {
-            map.putIfAbsent(n.id, n)
-            map.putIfAbsent(n.effectiveEventId, n)
-        }
-        return map
-    }
+    /** The feed's real index. */
+    private fun index(notes: List<FeedNote>): Map<String, FeedNote> = buildNoteIndex(notes)
 
     @Test
     fun aNewerRepostAboveItDoesNotHideTheOriginal() {
         val feed = listOf(repost, original)
-        // The repost claims the original's id in the index...
-        assertEquals(repost.id, index(feed)[original.id]?.id)
-        // ...and the original is still found.
+        // Own ids are filed first, so the original keeps its own key...
+        assertEquals(original.id, index(feed)[original.id]?.id)
+        // ...and is found without a scan of the feed.
         assertEquals(original, feedNoteWithOwnId(index(feed), feed, original.id))
+    }
+
+    @Test
+    fun aRepostAloneIsStillFoundUnderTheOriginalIdByTheIndex() {
+        // findNote resolves a thread ancestor through the repost that carries it.
+        assertEquals(repost, index(listOf(repost))[original.id])
     }
 
     @Test
