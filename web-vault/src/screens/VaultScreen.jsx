@@ -39,8 +39,6 @@ const ICONS = {
   dashboard: "M4 4h16v16H4zM4 10h16M10 10v10",
   filter: "M4 6h16M7 12h10M10 18h4",
   envelope: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
-  // The Vault tab's own glyph, as on the phone, where the tab and the Dashboard share one symbol.
-  safe: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 11v2M4 9h3M4 15h3",
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
   search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5",
   // The phone's filter glyphs (VaultToolbar trailingFilters), by filter id.
@@ -196,11 +194,16 @@ export function VaultScreen({ ctx, desk = false }) {
       <div class="status-line keep">{status}</div>
       {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} />}
       </>}
-      {!desk && <a class={`vault-status ${reach || "idle"}`} href="#/relay" aria-label={`Vault Dashboard: ${REACH[reach || "idle"]}`} title={REACH[reach || "idle"]}><Icon d={ICONS.safe} size={17} width={2.2} /><b>Vault</b></a>}
+      {!desk && <a class={`vault-status ${reach || "idle"}`} href="#/relay" aria-label={`Vault Dashboard: ${REACH[reach || "idle"]}`} title={REACH[reach || "idle"]}><LockStack /><b>Vault</b></a>}
     </main>
   )
 }
 
+// The status capsule's lock.rectangle.stack (VaultDashboard.symbol), drawn as the tab bar's Vault glyph (TabBar.jsx).
+const LockStack = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M7.4 3.2h9.2M5.8 5.6h12.4" /><rect x="3.8" y="8" width="16.4" height="13" rx="3.4" />
+  <path d="M10.4 13.6v-1.2a1.6 1.6 0 0 1 3.2 0v1.2" /><rect x="9.4" y="13.4" width="5.2" height="4.2" rx="1" fill="currentColor" stroke="none" />
+</svg>
 const REACH = { idle: "Reading your vault", checking: "Checking your relays", up: "Relays answered", down: "Couldn't reach your relays" }
 
 /** The list's shape while the relay is read: tiles for media, people rows for followers, cards otherwise. */
