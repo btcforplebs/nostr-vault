@@ -22,6 +22,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -101,6 +104,7 @@ object MusicFeedState {
     @OptIn(FlowPreview::class)
     fun init(context: Context) {
         if (prefs != null) return
+        WavlakeApi.init(context.applicationContext)
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs = p
         _recentArtists.value = p.getString(RECENT_KEY, null)
@@ -152,21 +156,119 @@ object MusicFeedState {
     }
 
     /**
+     * What a toolbar choice showed, kept so opening the tab again draws it
+     * at once instead of starting from a spinner. iOS: MusicFeedState.Listing.
+     */
+    data class Listing(
+        val tracks: List<WavlakeTrack> = emptyList(),
+        /** Following: the artists found, shown above their songs. */
+        val artists: List<WavlakeArtist> = emptyList(),
+        val message: String? = null,
+    ) {
+        val isEmpty: Boolean get() = tracks.isEmpty() && artists.isEmpty()
+    }
+
+    private val _listings = MutableStateFlow<Map<String, Listing>>(emptyMap())
+    val listings: StateFlow<Map<String, Listing>> = _listings.asStateFlow()
+
+    /** Names a toolbar choice; changes whenever it picks something else to show. */
+    fun listingKey(scope: MusicScope, window: TrendingWindow): String = when (scope) {
+        MusicScope.Trending -> "trending:${window.days}"
+        is MusicScope.Artist -> "artist:${scope.artist.id}"
+        MusicScope.Following -> "following"
+    }
+
+    private fun setListing(key: String, listing: Listing) {
+        _listings.value = _listings.value + (key to listing)
+    }
+
+    /**
+     * Fills the toolbar choice's listing. What's kept shows first; then
+     * Wavlake is asked only for what has gone stale, so reopening the tab
+     * within minutes asks for nothing. A bad connection leaves kept songs up
+     * rather than swapping them for an error.
+     */
+    suspend fun loadListing(
+        follows: () -> Set<String>,
+        npubToHex: (String) -> String?,
+        blocked: Set<String>,
+    ) {
+        val scope = _scope.value
+        val window = _trendingWindow.value
+        val key = listingKey(scope, window)
+        when (scope) {
+            MusicScope.Trending -> {
+                if (key !in _listings.value) {
+                    WavlakeApi.keptTrending(window.days)?.value?.takeIf { it.isNotEmpty() }
+                        ?.let { setListing(key, Listing(tracks = it)) }
+                }
+                runCatching { WavlakeApi.trending(window.days) }
+                    .onSuccess { setListing(key, Listing(tracks = it, message = if (it.isEmpty()) "Nothing trending right now." else null)) }
+                    .onFailure {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        if (_listings.value[key]?.isEmpty != false) {
+                            setListing(key, Listing(message = "Couldn't reach Wavlake. Tap to try again."))
+                        }
+                    }
+            }
+            // An artist page loads itself.
+            is MusicScope.Artist -> Unit
+            MusicScope.Following -> {
+                val followed = follows()
+                if (followed.isEmpty()) {
+                    setListing(key, Listing(message = "Follow people on Nostr, and the Wavlake artists among them show up here."))
+                    return
+                }
+                if (key !in _listings.value) {
+                    val (artists, songs) = followedArtists(followed, npubToHex, blocked, keptOnly = true)
+                    if (artists.isNotEmpty()) setListing(key, Listing(tracks = songs, artists = artists))
+                }
+                val (artists, songs) = followedArtists(followed, npubToHex, blocked)
+                setListing(
+                    key,
+                    Listing(
+                        tracks = songs, artists = artists,
+                        message = if (artists.isEmpty()) "None of the Wavlake artists checked are people you follow. " +
+                            "Artists show up here once they link their Nostr key on Wavlake." else null,
+                    ),
+                )
+            }
+        }
+    }
+
+    private const val ARTIST_LOOKUPS_AT_ONCE = 6
+
+    /**
      * Wavlake artists whose linked Nostr key you follow, and their ranked
      * songs. Wavlake can't be asked which artists a key follows, and only an
      * artist's own page carries their key, so this checks the artists of the
-     * last 90 days' rankings plus your recent artists.
+     * last 90 days' rankings plus your recent artists. [keptOnly] answers
+     * from what's already kept, without asking Wavlake; artists still
+     * unknown are left out of that answer.
      */
     suspend fun followedArtists(
         follows: Set<String>,
         npubToHex: (String) -> String?,
         blocked: Set<String> = emptySet(),
+        keptOnly: Boolean = false,
     ): Pair<List<WavlakeArtist>, List<WavlakeTrack>> {
-        val ranked = runCatching { WavlakeApi.trending(days = 90) }.getOrDefault(emptyList())
+        val ranked = if (keptOnly) WavlakeApi.keptTrending(days = 90)?.value.orEmpty()
+        else runCatching { WavlakeApi.trending(days = 90) }.getOrDefault(emptyList())
         val ids = (_recentArtists.value.map { it.id } + ranked.mapNotNull { it.artistId }).distinct()
-        val missing = ids.filter { it !in artistCache }
+        // Every artist goes through the cache: a kept one costs no request,
+        // and one gone stale is asked for again. A few at a time: sixty at
+        // once has Wavlake drop a third of them, and holds up every other
+        // request to it behind the ones still waiting.
+        val gate = Semaphore(ARTIST_LOOKUPS_AT_ONCE)
         coroutineScope {
-            missing.map { id -> async { runCatching { WavlakeApi.artist(id) }.getOrNull() } }.awaitAll()
+            ids.map { id ->
+                async {
+                    gate.withPermit {
+                        if (keptOnly) WavlakeApi.keptArtist(id)?.value
+                        else runCatching { WavlakeApi.artist(id) }.getOrNull()
+                    }
+                }
+            }.awaitAll()
         }.filterNotNull().forEach { artistCache[it.id] = it }
         val artists = ids.mapNotNull { artistCache[it] }.filter { a ->
             val key = a.npub?.let(npubToHex)
@@ -267,14 +369,36 @@ object MusicFeedState {
     val showingAlbumId: String?
         get() = if (!isVisible) null else (_path.value.lastOrNull() as? MusicPage.Album)?.album?.id
 
+    /** Songs come from an artist's newest 25 albums; the albums row lists them all. */
+    private const val ARTIST_PAGE_ALBUMS = 25
+
+    /** Re-asks Wavlake for pages gone stale, behind the kept ones already shown. */
+    private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     /**
      * An artist's details, albums (newest first) and the songs on them.
-     * Songs come from the newest 25 albums; the albums row lists them all.
+     * A page kept from an earlier launch shows at once; when it's gone stale
+     * it's asked for again behind it, ready for the next open.
      */
     suspend fun artistPage(id: String): ArtistPage? {
         artistPages[id]?.let { return it }
+        val kept = WavlakeApi.keptArtistPage(id)
+        if (kept != null) {
+            val (artist, albums) = kept.value
+            val tracks = WavlakeApi.keptTracksOnAlbums(albums.take(ARTIST_PAGE_ALBUMS))
+            if (tracks != null && (albums.isEmpty() || tracks.value.isNotEmpty())) {
+                val page = ArtistPage(artist, albums, tracks.value)
+                artistPages[id] = page
+                if (!(kept.isFresh && tracks.isFresh)) refreshScope.launch { fetchArtistPage(id) }
+                return page
+            }
+        }
+        return fetchArtistPage(id)
+    }
+
+    private suspend fun fetchArtistPage(id: String): ArtistPage? {
         val (artist, albums) = runCatching { WavlakeApi.artistPage(id) }.getOrNull() ?: return null
-        val tracks = WavlakeApi.tracksOnAlbums(albums.take(25))
+        val tracks = WavlakeApi.tracksOnAlbums(albums.take(ARTIST_PAGE_ALBUMS))
         val page = ArtistPage(artist, albums, tracks)
         // Every album failing is a bad connection, not an empty artist:
         // show it, but ask again next time.
@@ -283,8 +407,20 @@ object MusicFeedState {
         return page
     }
 
+    /** An album's heading and songs; kept ones first, like [artistPage]. */
     suspend fun albumPage(id: String): AlbumPage? {
         albumPages[id]?.let { return it }
+        val kept = WavlakeApi.keptAlbumPage(id)
+        if (kept != null && kept.value.second.isNotEmpty()) {
+            val page = AlbumPage(kept.value.first, kept.value.second)
+            albumPages[id] = page
+            if (!kept.isFresh) refreshScope.launch { fetchAlbumPage(id) }
+            return page
+        }
+        return fetchAlbumPage(id)
+    }
+
+    private suspend fun fetchAlbumPage(id: String): AlbumPage? {
         val (album, tracks) = runCatching { WavlakeApi.albumPage(id) }.getOrNull() ?: return null
         if (tracks.isEmpty()) return null
         return AlbumPage(album, tracks).also { albumPages[id] = it }
