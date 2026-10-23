@@ -110,7 +110,10 @@ enum HomeVaultLogic {
         // answers 404/405: keep the blob for when it does.
         // 409: the vault already spent this auth (#475 takes each id once);
         // a fresh one may succeed, so it is not a no to the blob.
-        case 404, 405, 408, 409, 429: return .unreachable("HTTP \(status)")
+        // 400: the door could not read this try (a cut body, a bad token),
+        // or Go's answer to plain HTTP on a TLS port (a kiosk build without
+        // the own-devices port): about this attempt, not about the blob.
+        case 400, 404, 405, 408, 409, 429: return .unreachable("HTTP \(status)")
         // The vault answered and said no: 403 not the owner, 411 no length,
         // 413 over the door's 256 MB.
         case 400...499: return .rejected("HTTP \(status)")

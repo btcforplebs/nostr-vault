@@ -7,6 +7,10 @@ struct HavenConfig: Codable, Equatable {
     /// Loopback port the FIPS mesh tunnel forwards to: plain HTTP, blob
     /// GET/HEAD only, so mesh peers never reach the relay itself (NIP-F1).
     var meshPlainPort: Int { relayPort + 1 }
+    /// The relay in full as plain HTTP for the owner's own devices on the
+    /// mesh (iOS only: the relay port there is TLS, and the mesh splices
+    /// plain HTTP). Open only while kiosk mode shares.
+    var meshOwnPort: Int { relayPort + 2 }
     var dbEngine: String = "badger"
     var blossomPath: String = "blossom/"
     var logLevel: String = "INFO"

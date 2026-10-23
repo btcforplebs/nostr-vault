@@ -170,6 +170,12 @@ extension NostrService {
                 #endif
                 return
             }
+            // Nothing changed: no new signed event on the public relays (kiosk
+            // mode republishes on every app switch; readers already hold this).
+            if merged == existing {
+                UserDefaults.standard.set(current, forKey: managedKey)
+                return
+            }
             let tags = merged.map { ["server", $0] }
             if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
                 // Ours is now the newest: merge from it next time, even before it echoes back.
