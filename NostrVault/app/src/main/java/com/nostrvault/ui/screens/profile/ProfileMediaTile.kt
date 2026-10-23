@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -92,6 +93,7 @@ internal fun ProfileMediaTile(
         val model = remember(url, author) { profileTileImageModel(context, url, author) }
         Box(contentAlignment = Alignment.Center, modifier = tileModifier) {
             AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            MeshMediaStatusOverlay(url = url, compact = true, modifier = Modifier.matchParentSize())
             if (isVideo) {
                 // iOS VideoThumbnailView: a 40pt play.circle.fill over the frame.
                 Icon(

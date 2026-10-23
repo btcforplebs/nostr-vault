@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -77,7 +78,7 @@ private fun VisualMediaPreview(
             url = urls.first(),
             tags = tags,
             sourceKey = MediaSourceKey(origin, 0),
-            onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin) },
+            onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin, authors = urls.map { author }) },
             autoplay = autoplay,
             author = author,
             modifier = modifier,
@@ -87,7 +88,7 @@ private fun VisualMediaPreview(
             urls = urls,
             tags = tags,
             origin = origin,
-            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin) },
+            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin, authors = urls.map { author }) },
             autoplay = autoplay,
             author = author,
             modifier = modifier,
@@ -174,6 +175,9 @@ private fun SingleMediaPreview(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
+            if (!loaded) {
+                MeshMediaStatusOverlay(url = feedImageModel(tags, url), video = isVideo, modifier = Modifier.matchParentSize())
+            }
             if (isVideo && autoplay) {
                 InlineFeedVideo(key = sourceKey, url = url, modifier = Modifier.matchParentSize())
             } else if (isVideo) {

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -126,6 +127,7 @@ internal fun MediaGridCell(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+            MeshMediaStatusOverlay(url = item.displayUrl, compact = true, modifier = Modifier.matchParentSize())
         }
 
         if (item.isVideo) {

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -113,6 +114,9 @@ internal fun MediaCarousel(
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
+                if (!loaded) {
+                    MeshMediaStatusOverlay(url = feedImageModel(tags, url), video = isVideoUrl(url), modifier = Modifier.matchParentSize())
+                }
                 if (isVideoUrl(url) && autoplay && page == pagerState.currentPage) {
                     // Only the page in view is a candidate; the others keep a poster.
                     InlineFeedVideo(
