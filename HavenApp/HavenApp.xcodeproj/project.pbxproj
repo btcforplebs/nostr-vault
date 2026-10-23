@@ -178,6 +178,7 @@
 		20ACAB0CCDD35997C75B68B4 /* LiveFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C29A25C6DBE37CB0202A7F /* LiveFeedService.swift */; };
 		20C64DF5C7E38056A044BB8C /* NVWidgetLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */; };
 		2130716A490DF017337B3544 /* FeedService+WebOfTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6532640E58C10C0D8A136047 /* FeedService+WebOfTrust.swift */; };
+		21339D1272627A6EEBAA0225 /* HavenConfig+Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */; };
 		2174A70CAD5EDDA3B412FAA3 /* AvatarThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */; };
 		21B6C85C2B8D68E795CA6815 /* FipsMeshAdvancedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D6D0338C56E23B350F9FCD0 /* FipsMeshAdvancedView.swift */; };
 		21B7CF7CF4861D17CFDB2A1B /* MacRelayDomainSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */; };
@@ -865,6 +866,7 @@
 		A558978CF9CB4165A1C0665D /* DMService+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B4F101243738073676072E /* DMService+Listening.swift */; };
 		A57122F246651B7A435A4283 /* VaultActivityList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CECEAC5DA37BC34F9B495F6 /* VaultActivityList.swift */; };
 		A59BFB091451B1925F912A7D /* NostrService+MessageProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE000450336CCC4829F6DEE1 /* NostrService+MessageProcessing.swift */; };
+		A5ADBD61CA718ECE359FC262 /* HavenConfig+Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */; };
 		A5B06D91684942B06596203F /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F0A09BAA2ED410A3EAD8AB /* QuickActionsWidget.swift */; };
 		A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B2C3C269E23662DF825BFD /* LinkPreviewService.swift */; };
 		A61414C2A90F91F8790B68D6 /* GatedLockCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9065299A41018D52E9DF6512 /* GatedLockCopy.swift */; };
@@ -1629,6 +1631,7 @@
 		57D02908E7A6D2AEA9E7B769 /* TrustPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustPath.swift; sourceTree = "<group>"; };
 		58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerListingsLoader.swift; sourceTree = "<group>"; };
 		5947F392DFBF2A9CC90CEB91 /* MusicArtistPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicArtistPage.swift; sourceTree = "<group>"; };
+		59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+Secrets.swift"; sourceTree = "<group>"; };
 		5A07682D0C53235ABE03E3EF /* DashboardView+ImportSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DashboardView+ImportSections.swift"; sourceTree = "<group>"; };
 		5A45C528A229C534E4FCA016 /* SearchRecommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchRecommendations.swift; sourceTree = "<group>"; };
 		5A748BF7419C4CC72FE97E36 /* TrustWebView+TrustCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+TrustCard.swift"; sourceTree = "<group>"; };
@@ -2425,6 +2428,7 @@
 				3F3EF8E9C5B0D5EB2E673007 /* HavenConfig+OwnerKeys.swift */,
 				A82D2DA5E47C4D49ACEDBF0F /* HavenConfig+ProtocolSelection.swift */,
 				327390102914F7A1B1AED7A0 /* HavenConfig+RelayRoles.swift */,
+				59F6845B323C2C85A306A8D6 /* HavenConfig+Secrets.swift */,
 				8222E11107724B191437998C /* HavenConfig+Signing.swift */,
 			);
 			path = Config;
@@ -3756,6 +3760,7 @@
 				A01AE7A841456CFE286E720B /* HavenConfig+OwnerKeys.swift in Sources */,
 				F99646F54DC239F5F24541F8 /* HavenConfig+ProtocolSelection.swift in Sources */,
 				1DB5825BC2FDFD0432FD9358 /* HavenConfig+RelayRoles.swift in Sources */,
+				21339D1272627A6EEBAA0225 /* HavenConfig+Secrets.swift in Sources */,
 				225093ABEED283C4B64AADFD /* HavenConfig+Signing.swift in Sources */,
 				51ED58D5C396F531FC08B75B /* HavenConfig.swift in Sources */,
 				B6867F1653FCFD96385539FD /* HighlightInlineBody.swift in Sources */,
@@ -4446,6 +4451,7 @@
 				06F2063CF0C9109C87AC1656 /* HavenConfig+OwnerKeys.swift in Sources */,
 				F2AB762E037796F0C4C10CD9 /* HavenConfig+ProtocolSelection.swift in Sources */,
 				BDA363DC95254A47E3D4703E /* HavenConfig+RelayRoles.swift in Sources */,
+				A5ADBD61CA718ECE359FC262 /* HavenConfig+Secrets.swift in Sources */,
 				496ABED3BE646E82CB214CDB /* HavenConfig+Signing.swift in Sources */,
 				83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */,
 				0528D3D2C617FEA7936C6D07 /* HighlightInlineBody.swift in Sources */,
