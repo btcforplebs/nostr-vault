@@ -13,8 +13,10 @@
 	     registering that capability needs an Apple ID in Xcode, and the
 	     wildcard provisioning profile already grants every group under the
 	     525WQ48Y72 prefix. It stays first: it is the default group.
-	     The second is the app's own (CredentialStore.privateGroup): the key
-	     passwords and NIP-46 client keys, which the widget must not read. -->
+	     The second is the app's (CredentialStore.privateGroup): the key
+	     passwords and NIP-46 client keys. The widget and share extension do
+	     not carry it. It is not private from the team: the same wildcard lets
+	     any app signed by 525WQ48Y72 claim it. -->
 	<key>keychain-access-groups</key>
 	<array>
 		<string>525WQ48Y72.nostrvault.shared</string>

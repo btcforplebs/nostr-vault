@@ -359,7 +359,9 @@ class ConfigService: ObservableObject {
     /// Fills in the NIP-46 client keys config.json leaves out, from the
     /// keychain, and notes any the file still held as plaintext.
     private func attachKeychainSecrets() {
-        plaintextNIP46Secrets = Array(config.nip46ClientSecrets.values)
+        // Added to, not replaced: a reload before the save that moves them
+        // must not forget a scrub still owed.
+        plaintextNIP46Secrets = Array(Set(plaintextNIP46Secrets).union(config.nip46ClientSecrets.values))
         var stored: [String: String] = [:]
         config.attachNIP46ClientSecrets { account in
             let value = CredentialStore.get(account: account)
@@ -390,9 +392,16 @@ class ConfigService: ObservableObject {
     func secureOwnerKeyAtRest() {
         var secrets: [String] = []
         if !config.ownerNsec.isEmpty {
+            // Only a read that found no item means there is no password; any
+            // other failure must not mint a new one over a password it hid.
+            let stored = CredentialStore.lookUpOwnerPassword()
+            guard stored.password != nil || stored.status == errSecItemNotFound else {
+                RelayProcessManager.shared.addLog("Owner key left as it was: the keychain could not be read (\(stored.status))", level: "ERROR")
+                return
+            }
             var updated = config
             let outcome = updated.encryptPlaintextOwnerKey(
-                storedPassword: CredentialStore.getOwnerPassword(),
+                storedPassword: stored.password,
                 newPassword: Self.randomPassword,
                 encrypt: { try NIP49Service.encrypt(nsec: $0, password: $1) },
                 decrypt: { try NIP49Service.decrypt(ncryptsec: $0, password: $1) })
@@ -418,8 +427,13 @@ class ConfigService: ObservableObject {
             save()
         }
 
+        // Scrub only on proof that config.json now holds the encrypted key and
+        // not the plaintext: save() can return without writing (a config that
+        // loaded from the backup), and then the backup is the only copy.
         let store = ConfigFileStore(url: configURL)
-        guard let written = try? String(contentsOf: configURL, encoding: .utf8),
+        guard !config.ownerNcryptsec.isEmpty,
+              let written = try? String(contentsOf: configURL, encoding: .utf8),
+              written.contains(config.ownerNcryptsec),
               !secrets.contains(where: { !$0.isEmpty && written.contains($0) }) else {
             if !secrets.isEmpty {
                 RelayProcessManager.shared.addLog("config.json was not rewritten; its copies keep the owner key for now", level: "ERROR")

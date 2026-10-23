@@ -121,9 +121,11 @@ struct ConfigFileStore {
         return rewritten
     }
 
-    /// Factory reset: config.json and its backup both go.
+    /// Factory reset: config.json, its backup and the unreadable copies all
+    /// go; any of them can hold a key.
     func removeAll() {
+        let copies = copyURLs
         try? fileManager.removeItem(at: url)
-        try? fileManager.removeItem(at: backupURL)
+        for copy in copies { try? fileManager.removeItem(at: copy) }
     }
 }

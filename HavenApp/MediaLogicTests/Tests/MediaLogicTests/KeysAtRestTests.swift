@@ -246,6 +246,65 @@ final class KeysAtRestTests: XCTestCase {
         XCTAssertEqual(CredentialStore.get(account: "owner-key-password", in: keychain, privateGroup: mine), "new-pw")
     }
 
+    /// If a search ever leaves the group out, a delete without one would hit
+    /// every group, the new copy included. Such an item is left as it is.
+    func testAnItemListedWithoutItsGroupIsNeverDeleted() {
+        let keychain = FakeKeychain()
+        keychain.put("owner-key-password", "owner-pw", group: shared, accessible: oldClass)
+        keychain.listsGroups = false
+
+        XCTAssertEqual(CredentialStore.migrateToThisDeviceOnly(in: keychain, privateGroup: mine), 0)
+        XCTAssertEqual(CredentialStore.get(account: "owner-key-password", in: keychain, privateGroup: mine), "owner-pw")
+    }
+
+    /// A write that fails must leave the old password: it may be the only
+    /// way to decrypt the key.
+    func testAFailedWriteKeepsTheOldPassword() {
+        let keychain = FakeKeychain()
+        keychain.put("owner-key-password", "old-pw", group: mine, accessible: CredentialStore.accessible)
+        keychain.addStatus = errSecInteractionNotAllowed
+
+        XCTAssertFalse(CredentialStore.store("new-pw", account: "owner-key-password", in: keychain, privateGroup: mine))
+        XCTAssertEqual(CredentialStore.get(account: "owner-key-password", in: keychain, privateGroup: mine), "old-pw")
+    }
+
+    func testStoreReplacesTheValueInTheAppsGroup() {
+        let keychain = FakeKeychain()
+        keychain.put("owner-key-password", "old-pw", group: mine, accessible: CredentialStore.accessible)
+        XCTAssertTrue(CredentialStore.store("new-pw", account: "owner-key-password", in: keychain, privateGroup: mine))
+        XCTAssertEqual(keychain.rows.count, 1)
+        XCTAssertEqual(CredentialStore.get(account: "owner-key-password", in: keychain, privateGroup: mine), "new-pw")
+    }
+
+    /// Only "not found" means there is no password; a locked keychain is not that.
+    func testALockedReadIsNotAMissingPassword() {
+        final class Locked: CredentialKeychain {
+            func items(service: String) -> [CredentialKeychainItem] { [] }
+            func read(service: String, account: String, group: String?) -> (data: Data?, status: OSStatus) { (nil, errSecInteractionNotAllowed) }
+            func add(service: String, account: String, data: Data, group: String?, accessible: String) -> OSStatus { errSecInteractionNotAllowed }
+            func updateData(service: String, account: String, group: String?, data: Data, accessible: String) -> OSStatus { errSecInteractionNotAllowed }
+            func updateAccessible(service: String, account: String, group: String?, to accessible: String) -> OSStatus { errSecInteractionNotAllowed }
+            func delete(service: String, account: String?, group: String?) -> OSStatus { errSecInteractionNotAllowed }
+        }
+        let locked = CredentialStore.lookUp(account: "owner-key-password", in: Locked(), privateGroup: mine)
+        XCTAssertNil(locked.password)
+        XCTAssertEqual(locked.status, errSecInteractionNotAllowed)
+        XCTAssertEqual(CredentialStore.lookUp(account: "owner-key-password", in: FakeKeychain(), privateGroup: mine).status,
+                       errSecItemNotFound)
+    }
+
+    func testFactoryResetTakesTheUnreadableCopiesToo() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("KeysAtRest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ConfigFileStore(url: dir.appendingPathComponent("config.json"))
+        for name in ["config.json", "config.json.bak", "config.json.unreadable-1700000000", "notes.txt"] {
+            try Data("x".utf8).write(to: dir.appendingPathComponent(name))
+        }
+        store.removeAll()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), ["notes.txt"])
+    }
+
     func testNewPasswordsGoStraightToTheAppsGroup() {
         let keychain = FakeKeychain()
         keychain.put("owner-key-password", "old-pw", group: shared, accessible: oldClass)
@@ -262,6 +321,8 @@ final class FakeKeychain: CredentialKeychain {
     struct Row: Equatable { var account: String; var group: String; var accessible: String; var data: Data }
     var rows: [Row] = []
     var addStatus: OSStatus?
+    /// A search whose attributes leave out the access group.
+    var listsGroups = true
     let defaultGroup = "525WQ48Y72.nostrvault.shared"
 
     func put(_ account: String, _ value: String, group: String, accessible: String) {
@@ -273,11 +334,21 @@ final class FakeKeychain: CredentialKeychain {
     }
 
     func items(service: String) -> [CredentialKeychainItem] {
-        rows.map { CredentialKeychainItem(account: $0.account, group: $0.group, accessible: $0.accessible) }
+        rows.map { CredentialKeychainItem(account: $0.account, group: listsGroups ? $0.group : nil, accessible: $0.accessible) }
     }
 
-    func data(service: String, account: String, group: String?) -> Data? {
-        rows.first { matches($0, account, group) }?.data
+    func read(service: String, account: String, group: String?) -> (data: Data?, status: OSStatus) {
+        let data = rows.first { matches($0, account, group) }?.data
+        return (data, data == nil ? errSecItemNotFound : errSecSuccess)
+    }
+
+    func updateData(service: String, account: String, group: String?, data: Data, accessible: String) -> OSStatus {
+        if let addStatus { return addStatus }
+        var hit = false
+        for i in rows.indices where matches(rows[i], account, group) {
+            rows[i].data = data; rows[i].accessible = accessible; hit = true
+        }
+        return hit ? errSecSuccess : errSecItemNotFound
     }
 
     func add(service: String, account: String, data: Data, group: String?, accessible: String) -> OSStatus {
