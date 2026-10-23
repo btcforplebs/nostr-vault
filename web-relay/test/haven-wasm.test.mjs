@@ -103,3 +103,19 @@ test("real Haven: a stream reports buffered() and closes on a line over the Go c
   assert.equal(s.buffered(), 0)
   await h.stop()
 })
+
+// The vault app pushes the owner's notes over the owner's mesh stream, signed with the owner's Nostr account
+// (BrowserRelaySender), while the owner list holds only the vault's mesh address. Haven checks the author.
+test("real Haven: the owner's account notes are kept once the account is saved, refused before", { skip: !built && "public/haven.wasm not built" }, async () => {
+  const { havenAuthors } = await import("../src/fips/owners.js")
+  const mesh = getPublicKey(generateSecretKey()), test = getPublicKey(generateSecretKey()), account = generateSecretKey()
+  const h = await boot()
+  for (const [saved, kept] of [[undefined, false], [getPublicKey(account), true]]) {
+    await h.start({ ...havenAuthors({ owners: new Set([mesh]), account: saved, extra: [test] }), storePrefix: `acct-${kept}` })
+    const c = new HavenClient(h.conn(`acct-${kept}`, { mode: "nip01", route: "/" }))
+    const r = await c.event(note(account, "pushed from the phone"))
+    assert.equal(r.ok, kept, kept ? "account saved: the owner's note is kept" : "no account saved: refused, as before the fix")
+    c.close()
+    await h.stop()
+  }
+})

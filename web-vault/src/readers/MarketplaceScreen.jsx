@@ -11,16 +11,17 @@ import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
 import { MARKET_SCOPES, fetchListings, loadScope, marketCategories, plebeianUrl, priceLabel, saveScope } from "./market.js"
 import { SkeletonGrid } from "../components/Loading.jsx"
+import { followsDep, heldResults } from "./held.js"
 
 if (import.meta.env) import("./readers.css")
 
-const held = new Map() // loaded listings by scope, this session only
+const held = heldResults()
 
 export function MarketplaceScreen({ ctx }) {
   const { vault, account } = ctx
   const follows = account.follows
   const [scope, setScope] = useState(loadScope)
-  const [listings, setListings] = useState(() => held.get(loadScope()) ?? null)
+  const [listings, setListings] = useState(() => held.get(loadScope(), follows) ?? null)
   const [category, setCategory] = useState(null)
   const [status, setStatus] = useState("")
   const [open, setOpen] = useState(null)
@@ -38,13 +39,13 @@ export function MarketplaceScreen({ ctx }) {
       const got = await fetchListings({ scope, me: ctx.session?.pubkey, follows, blocked })
       if (n !== seq.current) return
       const list = got?.listings ?? []
-      held.set(scope, list)
+      held.set(scope, follows, list)
       setListings(list)
       setStatus("")
       if (list?.length) fetchProfiles(vault, list.map(l => l.pubkey), account.relays.read, { save: false }).catch(() => {})
     } catch { if (n === seq.current) { setStatus(""); setFailed(true); setListings(l => l ?? []) } }
   }
-  useEffect(() => { setOpen(null); setCategory(null); setListings(held.get(scope) ?? null); if (!held.has(scope)) load() }, [scope, follows.length])
+  useEffect(() => { setOpen(null); setCategory(null); setListings(held.get(scope, follows) ?? null); if (!held.has(scope, follows)) load() }, [scope, followsDep(follows)])
 
   if (open) return <ListingView ctx={ctx} listing={open} onBack={() => setOpen(null)} />
   const pick = s => { saveScope(s); setScope(s) }
