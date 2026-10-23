@@ -15,7 +15,7 @@ WORKDIR /src
 COPY . .
 RUN ALLOW_MISSING_WEB_APPS=$ALLOW_MISSING_WEB_APPS website/build-web-apps.sh \
  && rm -f website/Dockerfile website/docker-compose.yml website/nginx.conf \
-          website/build-web-apps.sh website/deploy.sh
+          website/build-web-apps.sh website/deploy.sh website/log-prune.sh
 
 # The thread service: public post pages at /thread/ (web-vault/thread-page/server.mjs), proxied by nginx.
 FROM node:22-alpine AS thread
@@ -32,4 +32,7 @@ CMD ["node", "thread-page/server.mjs"]
 FROM nginx:alpine
 LABEL app.nostrvault.site=1
 COPY website/nginx.conf /etc/nginx/conf.d/default.conf
+# The access log's 7-day keep (nginx.conf): nginx's workers write the day files, log-prune.sh deletes old ones.
+RUN install -d -o nginx -g nginx -m 750 /var/log/nginx/site
+COPY --chmod=755 website/log-prune.sh /docker-entrypoint.d/40-nv-log-prune.sh
 COPY --from=build /src/website /usr/share/nginx/html
