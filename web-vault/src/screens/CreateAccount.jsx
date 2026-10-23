@@ -6,12 +6,13 @@
 // account's first events are signed and sent (net/new-account.js). Nothing is stored or sent before that, and the key
 // is never logged.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
-import { newKey, checkPassword, localSession, localSigner, MIN_PASSWORD } from "../signer/local.js"
+import { newKey, checkPassword, localSession, localSigner, MIN_PASSWORD, CREATING } from "../signer/local.js"
 import { assertCanSeal } from "../signer/keyring.js"
 import { starterPacks, newAccountTemplates, signAll, publishNewAccount } from "../net/new-account.js"
 import { uploadPhoto, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { withTimeout } from "../signer/readonly.js"
-import { askToKeep } from "../components/StorageNote.jsx"
+import { askToKeep, sevenDayErase, KEEP_IT } from "../components/StorageNote.jsx"
+import { KeyCard } from "../components/KeyCard.jsx"
 import "../styles/onboarding.css"
 
 const STEPS = ["intro", "keys", "password", "profile", "follows", "done"]
@@ -62,7 +63,7 @@ function Intro({ onCreate }) {
   const [err, setErr] = useState("")
   const create = () => {
     // A page that can't lock the key (plain http) says so now, not after the user wrote it down.
-    try { assertCanSeal() } catch (e) { setErr(String(e?.message ?? e).replace("Signing in with a bunker", "Creating an account")); return }
+    try { assertCanSeal(CREATING) } catch (e) { setErr(String(e?.message ?? e)); return }
     onCreate()
   }
   return (
@@ -97,25 +98,6 @@ function Keys({ keyPair, onContinue }) {
       </label>
       <button type="button" class="primary onboard-main" disabled={!saved} onClick={onContinue}>Continue</button>
     </>
-  )
-}
-
-function KeyCard({ title, caption, value, secret = false }) {
-  const [copied, setCopied] = useState(false)
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
-  }
-  return (
-    <section class={secret ? "onboard-card onboard-key secret" : "onboard-card onboard-key"}>
-      <div class="onboard-key-head">
-        <h2>{title}</h2>
-        <button type="button" class="small" onClick={copy} aria-label={`Copy ${title.toLowerCase()}`}>{copied ? "Copied" : "Copy"}</button>
-      </div>
-      <p>{caption}</p>
-      {/* The npub only needs recognising; the nsec has to be readable in full to write it down. */}
-      <code class={secret ? "onboard-key-value full" : "onboard-key-value"} translate="no" spellcheck={false}>{value}</code>
-      {secret && <p class="onboard-warn">Nobody can recover it for you, not even us.</p>}
-    </section>
   )
 }
 
@@ -247,11 +229,14 @@ function Follows({ packs, picked, setPicked, onContinue }) {
 }
 
 /** The done step: "Welcome to Nostr!", and Start Exploring locks the key, signs the first events and sends them. */
-function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack }) {
+function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, safari = sevenDayErase() }) {
   const [busy, setBusy] = useState("")
   const [err, setErr] = useState("")
+  const asked = useRef(false)
   const start = async () => {
     setErr("")
+    // Asked now, while the click still counts as one (Firefox shows its prompt only then), not after the publish wait.
+    if (!asked.current) { asked.current = true; askToKeep() }
     try {
       setBusy("Locking your key…")
       const session = await localSession(keyPair.sk, password)
@@ -269,7 +254,6 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack }) {
       keyPair.sk.fill(0)
       location.hash = "#/feed"
       onSignedIn({ signer, session, firstEvents: events })
-      askToKeep()
     } catch (e) {
       setErr(String(e?.message ?? e)); setBusy("")
     }
@@ -280,10 +264,12 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack }) {
       <h1 class="onboard-title">Welcome to Nostr!</h1>
       <p class="onboard-sub">Your account is ready. Here's what happens when you start:</p>
       <ul class="onboard-summary">
-        <li>Your secret key is locked with your password and kept in this browser.</li>
+        <li>Your secret key is locked with your password and kept in this browser. Settings › Your Secret Key shows it again.</li>
         {(name.trim() || photo) && <li>Your profile{name.trim() ? `, ${name.trim()},` : ""} goes out to your relays.</li>}
         <li>{follows.length ? `You follow ${follows.length} ${follows.length === 1 ? "person" : "people"}, so your feed has posts right away.` : "You follow nobody yet: find people in Search or on the Global feed."}</li>
       </ul>
+      {/* Safari's 7-day rule takes the key with the rest of the site's data: said here, before it can happen. */}
+      {KEEP_IT[safari] && <p class="onboard-warn box">{KEEP_IT[safari]} Without it, your saved secret key is the only way back in.</p>}
       {err && <p class="error small" role="alert">{err}</p>}
       <button type="button" class="primary onboard-main" disabled={!!busy} aria-busy={!!busy || undefined} onClick={start}>{busy || "Start Exploring"}</button>
       {!busy && <button type="button" class="onboard-skip" onClick={onBack}>‹ Back</button>}

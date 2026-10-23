@@ -5,7 +5,7 @@ import { render } from "preact"
 import { useEffect, useRef, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
-import { unlockLocal } from "./src/signer/local.js"
+import { unlockLocal, wellFormed, DAMAGED } from "./src/signer/local.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } from "./src/haven/vault.js"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
@@ -251,11 +251,23 @@ function UnlockScreen({ session, onUnlocked, onSignOut }) {
   const [pw, setPw] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  // No password opens a missing or damaged key: say so once, and leave only Sign out.
+  const [damaged, setDamaged] = useState(() => !wellFormed(session?.ncryptsec))
   const submit = async e => {
     e.preventDefault()
     setBusy(true); setErr("")
-    try { onUnlocked(await unlockLocal(session, pw)) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+    try { onUnlocked(await unlockLocal(session, pw)) }
+    catch (e) { if (e?.message === DAMAGED) setDamaged(true); else setErr(String(e?.message ?? e)) }
+    finally { setBusy(false) }
   }
+  if (damaged) return (
+    <main class="signin">
+      <img src="./icon.svg" alt="" class="signin-logo" />
+      <h1>Your key can't be opened</h1>
+      <p class="muted" role="alert">{DAMAGED}</p>
+      <button class="danger" onClick={onSignOut}>Sign out</button>
+    </main>
+  )
   return (
     <main class="signin">
       <img src="./icon.svg" alt="" class="signin-logo" />

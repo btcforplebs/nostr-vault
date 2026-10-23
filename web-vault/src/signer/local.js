@@ -9,14 +9,21 @@ import { encrypt as ncryptsecOf, decrypt as ncryptsecOpen } from "nostr-tools/ni
 import * as nip44 from "nostr-tools/nip44"
 import * as nip04 from "nostr-tools/nip04"
 import { nsecEncode, npubEncode } from "nostr-tools/nip19"
+import { bech32 } from "@scure/base"
 import { bytesToHex, hexToBytes } from "nostr-tools/utils"
 import { seal, unseal, assertCanSeal, LOST_KEY } from "./keyring.js"
 import { checkedPubkey } from "../session.js"
+
+/** What the user is doing when a plain-http page can't keep the key (keyring.js insecure). */
+export const CREATING = "Creating an account"
 
 /** The shortest password the key is locked with (KeyPasswordStep: minimum 8 characters). */
 export const MIN_PASSWORD = 8
 
 export const LOCKED = "This browser can't open your key on its own any more (its site data was partly cleared). Type your password to unlock it."
+/** The stored ncryptsec is missing or isn't one NIP-49 can open: no password will work, so the screens don't ask again. */
+export const DAMAGED = "The key kept in this browser is missing or damaged, so no password can open it. Sign out, then sign back in with the secret key you saved."
+export const WRONG_PASSWORD = "Wrong password. Try again."
 
 /** A new keypair -> { sk, pubkey, npub, nsec }. `sk` stays in memory until finish; the nsec is shown once, to be saved. */
 export function newKey(make = generateSecretKey) {
@@ -33,24 +40,50 @@ export function checkPassword(password, confirm) {
 }
 
 /**
- * The session for a new key: { method: "local", pubkey, ncryptsec, skSealed }. Throws (keyring INSECURE) on a page
+ * The session for a new key: { method: "local", pubkey, ncryptsec, skSealed }. Throws (keyring insecure) on a page
  * that can't seal, before anything is stored. `logn`: NIP-49's scrypt cost, 16 as the iPhone uses; tests pass less.
  */
 export async function localSession(sk, password, { keyStore, logn = 16 } = {}) {
-  assertCanSeal()
+  assertCanSeal(CREATING)
   const { ok, problem } = checkPassword(password, password)
   if (!ok) throw new Error(problem)
   const pubkey = checkedPubkey(getPublicKey(sk))
   return { method: "local", pubkey, ncryptsec: ncryptsecOf(sk, password, logn), skSealed: await seal(bytesToHex(sk), keyStore) }
 }
 
-/** The password opens the ncryptsec and the key is sealed again for this browser -> the session to save. A wrong
- *  password throws "Wrong password". */
+/** The password opens the ncryptsec and the key is sealed again for this browser -> the session to save. Throws
+ *  WRONG_PASSWORD for a wrong password and DAMAGED when the stored key can't be opened at all. */
 export async function unlockLocal(session, password, { keyStore } = {}) {
+  const sk = openKey(session, password)
+  try { return { ...session, skSealed: await seal(bytesToHex(sk), keyStore) } } finally { sk.fill(0) }
+}
+
+/** The account's secret key as an nsec, for Settings > Your Secret Key: the password opens the ncryptsec. */
+export function revealNsec(session, password) {
+  const sk = openKey(session, password)
+  try { return nsecEncode(sk) } finally { sk.fill(0) }
+}
+
+/** Whether `ncryptsec` is a NIP-49 key this page can open: bech32 "ncryptsec", version 2, a scrypt cost a browser can
+ *  run (logn 1 to 22; this page writes 16, more than 22 is taken as damage) and a 48-byte sealed key. No password is
+ *  tried. */
+export function wellFormed(ncryptsec) {
+  if (typeof ncryptsec !== "string") return false
+  try {
+    const { prefix, words } = bech32.decode(ncryptsec, 5000)
+    const b = bech32.fromWords(words)
+    return prefix === "ncryptsec" && b.length === 91 && b[0] === 2 && b[1] >= 1 && b[1] <= 22
+  } catch { return false }
+}
+
+/** The ncryptsec opened with `password` -> sk. Throws DAMAGED when no password could open it, WRONG_PASSWORD when
+ *  this one doesn't, and never hands back a key that isn't the account's. */
+function openKey(session, password) {
+  if (!wellFormed(session?.ncryptsec)) throw new Error(DAMAGED)
   let sk
-  try { sk = ncryptsecOpen(session.ncryptsec, password) } catch { throw new Error("Wrong password. Try again.") }
-  if (getPublicKey(sk) !== session.pubkey) throw new Error("That key isn't this account's.")
-  return { ...session, skSealed: await seal(bytesToHex(sk), keyStore) }
+  try { sk = ncryptsecOpen(session.ncryptsec, password) } catch { throw new Error(WRONG_PASSWORD) }
+  if (getPublicKey(sk) !== session.pubkey) { sk.fill(0); throw new Error(DAMAGED) }
+  return sk
 }
 
 /** Signs with the sealed key, unsealed once and kept in memory for this page. `ready()` throws LOCKED when the

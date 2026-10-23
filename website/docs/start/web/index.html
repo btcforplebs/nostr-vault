@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Use Nostr Vault in a browser — Nostr Vault Docs</title>
-    <meta name="description" content="Open the Nostr Vault web app at nostrvault.app/vault/, sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.">
+    <meta name="description" content="Open the Nostr Vault web app at nostrvault.app/vault/, create an account or sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.">
     <link rel="canonical" href="https://nostrvault.app/docs/start/web/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/start/web/">
     <meta property="og:title" content="Use Nostr Vault in a browser — Nostr Vault Docs">
-    <meta property="og:description" content="Open the Nostr Vault web app at nostrvault.app/vault/, sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.">
+    <meta property="og:description" content="Open the Nostr Vault web app at nostrvault.app/vault/, create an account or sign in with a browser extension, a bunker link or read-only, and know what the web app keeps in your browser.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -125,7 +125,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Use Nostr Vault in a browser</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#sign-in">Sign in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#browsers">Browsers</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#create">New to Nostr</a></li><li><a href="#sign-in">Sign in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#browsers">Browsers</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
                 <p>The web app is Nostr Vault in a browser tab, with nothing to install. Open
@@ -133,8 +133,18 @@
                 <p>Like the apps, it runs your own relay, here inside the browser. Your notes and messages are kept in this browser's
                     storage.</p>
 
+                <h2 id="create">New to Nostr</h2>
+                <p>Click <span class="ui">Create an account</span>. The web app makes your keys in this browser and shows both. Save
+                    the secret key somewhere safe, tick <span class="ui">I saved my secret key</span>, and choose a password. Add a
+                    name and photo if you like, pick some people to follow, and click <span class="ui">Start Exploring</span>.</p>
+                <p>The secret key stays in this browser, locked with your password; it is never sent anywhere. To see it again, open
+                    <span class="path">Settings &rarr; Your Secret Key</span> and type your password. Signing out, or the browser
+                    clearing this site's data, deletes it from this browser, and nobody can recover it for you: the copy you saved is
+                    how you sign back in.</p>
+
                 <h2 id="sign-in">Sign in</h2>
-                <p>The web app never asks for your secret key. Sign in with something that holds the key for you:</p>
+                <p>Already use Nostr? Click <span class="ui">I already use Nostr</span>. The web app never asks for the secret key of
+                    an account you already have. Sign in with something that holds the key for you:</p>
                 <ul>
                     <li><strong>A browser extension.</strong> If a Nostr signing extension is installed in this browser,
                         <span class="ui">Sign in with extension</span> shows. Click it and approve in the extension.</li>

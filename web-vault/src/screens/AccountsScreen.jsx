@@ -100,7 +100,7 @@ function AccountRow({ account, active, open, ctx, others, onToggle, onRemoved })
         {active
           ? confirm
             ? <>
-                <p class="muted small">Signing out deletes everything this browser keeps for {name}: its relay's notes, messages and files here, and its sign-in.{ctx.session.method === "local" ? " That includes the secret key kept here: you need the copy you saved to use this account again." : ""}{others ? " It also un-pairs this browser's paired vaults, for your other accounts too." : ""} Your notes on other relays and on your phone stay.</p>
+                <p class="muted small">Signing out deletes everything this browser keeps for {name}: its relay's notes, messages and files here, and its sign-in.{ctx.session.method === "local" ? " That includes the secret key kept here: save it first from Settings › Your Secret Key, or you can't use this account again." : ""}{others ? " It also un-pairs this browser's paired vaults, for your other accounts too." : ""} Your notes on other relays and on your phone stay.</p>
                 <div class="row"><button class="danger" onClick={ctx.signOut}>Sign out</button><button onClick={() => setConfirm(false)}>Cancel</button></div>
               </>
             : <button class="danger" onClick={() => setConfirm(true)}>Sign out</button>
