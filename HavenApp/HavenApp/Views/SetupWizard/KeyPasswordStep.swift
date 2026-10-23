@@ -35,7 +35,7 @@ struct KeyPasswordStep: View {
                     .font(.appSystem(size: 24, weight: .bold))
                     .foregroundColor(WizardColors.textPrimary)
                 if !isTyping {
-                    Text("Choose a password to lock your secret key on this device.")
+                    Text("This password locks the secret key you just saved. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.")
                         .font(.appSystem(size: 15))
                         .foregroundColor(WizardColors.textSecondary)
                         .multilineTextAlignment(.center)
@@ -99,7 +99,7 @@ struct KeyPasswordStep: View {
                     .font(.appSystem(size: 16))
                     .foregroundColor(WizardColors.accentPrimary)
                     .accessibilityHidden(true)
-                Text("Nobody can reset this password or recover your secret key for you, not even us. Write both down.")
+                Text("Write this password down and keep it with your secret key.")
                     .font(.appSystem(size: 13))
                     .foregroundColor(WizardColors.textSecondary)
                     .lineSpacing(2)
