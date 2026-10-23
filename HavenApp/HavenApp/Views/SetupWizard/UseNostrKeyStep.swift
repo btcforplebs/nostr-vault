@@ -222,6 +222,12 @@ struct UseNostrKeyStep: View {
                  : "Choose a password to lock your key on this device")
                 .font(.appSystem(size: 13))
                 .foregroundColor(WizardColors.textSecondary)
+            if !isEncrypted {
+                Text("This password locks your secret key. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, your secret key is your only way back in, so keep a copy somewhere safe.")
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(WizardColors.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             SecureField("Password", text: $password)
                 .submitLabel(.continue)
                 .onSubmit { if canContinue && !isWorking { handleContinue() } }
