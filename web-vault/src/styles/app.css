@@ -50,26 +50,6 @@ button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weig
 .avatar { border-radius: 50%; object-fit: cover; flex: none; display: block; background: var(--s2); }
 .avatar.ring { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent-dark); }
 
-/* Tab bar: floating glass capsule above the home indicator. */
-.tabbar { position: fixed; z-index: 10; left: var(--gutter); right: var(--gutter); bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom));
-  max-width: 420px; margin: 0 auto; height: var(--tabbar-h); display: flex; justify-content: space-around; align-items: center;
-  border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .5); }
-.tab { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  color: var(--text-2); font: 500 10px/1 var(--font); }
-.tab.on { color: var(--accent); font-weight: 600; }
-.tab-avatar { display: block; border-radius: 50%; }
-.tab.on .tab-avatar { box-shadow: 0 0 0 2px var(--accent); }
-/* Unread messages: a red dot at the icon's top right (BottomTabBar NewsDot). */
-.tab-dot { position: absolute; top: 9px; left: calc(50% + 7px); width: 9px; height: 9px; border-radius: 50%;
-  background: var(--danger); box-shadow: 0 0 0 2px var(--bg); }
-
-/* Post: orange capsule one row above the tab bar, bottom-right (iOS FeedView). */
-.post-button { position: fixed; z-index: 10; right: max(var(--gutter), calc(50% - 320px + var(--gutter)));
-  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 12px + env(safe-area-inset-bottom));
-  display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 20px; border: 0;
-  background: var(--accent-grad); color: #fff; font: 700 15px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
-
 /* Compose. */
 .compose { display: block; width: calc(100% - 2 * var(--gutter)); margin: 4px var(--gutter) 12px; min-height: 160px; resize: vertical;
   background: var(--s1); color: var(--text); border: 1px solid var(--hair); border-radius: var(--radius); padding: 14px; font: var(--t-body); }

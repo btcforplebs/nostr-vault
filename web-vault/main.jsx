@@ -205,7 +205,7 @@ function App() {
     <div class={desk ? "app desk-app" : "app"}>
       {desk ? <DesktopShell ctx={ctx} mode={mode} hash={location.hash} lastList={lastList} /> : <PhoneScreens ctx={ctx} route={route} arg={arg} other={other} />}
       <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
-      {!desk && (route === "feed" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
+      {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <AuthPrompt />
     </div>
