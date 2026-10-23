@@ -364,7 +364,7 @@ internal fun MarketListingSheet(
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.Black),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (listing.isAuction) "Bid on Plebeian" else "Buy on Plebeian", fontWeight = FontWeight.SemiBold)
+                Text(if (listing.hasPlebeianPage) "Buy on Plebeian" else "Seller on Plebeian", fontWeight = FontWeight.SemiBold)
             }
             if (onMessageSeller != null) {
                 Spacer(Modifier.height(8.dp))

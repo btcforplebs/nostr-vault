@@ -39,14 +39,19 @@ class MarketListingTest {
         assertEquals("A selection of traditional Christmas cookies", l.summary)
         assertEquals("21000", l.price)
         assertEquals("21,000 sats", l.priceLabel)
-        assertEquals("https://plebeian.market/products/id1", l.plebeianUrl)
+        // The new Plebeian site has no NIP-15 product page: the seller's profile instead.
+        assertFalse(l.hasPlebeianPage)
+        assertEquals("https://plebeian.market/profile/pk1", l.plebeianUrl)
     }
 
-    /** Message seller opens with the listing's name and its Plebeian page. */
+    /** Message seller opens with the listing's name, and its Plebeian page when it has one. */
     @Test fun `message to the seller names the listing and links it`() {
+        val product = listing(30402, "", listOf(listOf("title", "Christmas Baking"), listOf("image", "https://image.nostr.build/ace2.jpg")))!!
+        assertEquals("Hi! I'm interested in “Christmas Baking”.\nhttps://plebeian.market/products/id1", product.messageToSeller)
+        // A NIP-15 listing has no page there; the seller's profile says nothing about which item.
         val content = """{"id":"christmas-baking-j99b2pic5f","name":"Christmas Baking","description":"A selection of traditional Christmas cookies","images":["https://image.nostr.build/ace2.jpg"],"price":21000,"quantity":21,"currency":"SATS"}"""
-        val l = listing(30018, content, listOf(listOf("d", "christmas-baking-j99b2pic5f"), listOf("t", "Baking")))!!
-        assertEquals("Hi! I'm interested in “Christmas Baking”.\nhttps://plebeian.market/products/id1", l.messageToSeller)
+        val nip15 = listing(30018, content, listOf(listOf("d", "christmas-baking-j99b2pic5f")))!!
+        assertEquals("Hi! I'm interested in “Christmas Baking”.", nip15.messageToSeller)
     }
 
     /** Zero stock is as unbuyable as sold; a missing or null count is no limit. */
@@ -78,11 +83,16 @@ class MarketListingTest {
         ))!!
         assertEquals("1000 CAD", classified.priceLabel)
         assertEquals("Long markdown body", classified.summary)
+        // A Gamma 30402 product is the one kind the new Plebeian site shows, by event id.
+        assertTrue(classified.hasPlebeianPage)
+        assertEquals("https://plebeian.market/products/id1", classified.plebeianUrl)
 
         val auction = listing(30020, """{"name":"Rare coin","images":["https://x.example/c.jpg"],"starting_bid":5000}""", emptyList())!!
         assertTrue(auction.isAuction)
         assertEquals("5,000 sats", auction.priceLabel)
-        assertEquals("https://plebeian.market/auction/id1", auction.plebeianUrl)
+        // No auction route on the new site (Tara's check, 2026-10-22): the seller's profile.
+        assertFalse(auction.hasPlebeianPage)
+        assertEquals("https://plebeian.market/profile/pk1", auction.plebeianUrl)
     }
 
     @Test fun `rejects what cannot be shown or bought`() {
