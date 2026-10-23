@@ -172,6 +172,7 @@ button.person-row:hover { border-color: var(--accent-line); }
 .card .storage-note { margin-top: 10px; }
 .storage-note .storage-kept { margin-top: 4px; font-weight: 600; color: var(--text-2); }
 .storage-note .storage-kept.on { color: var(--online); }
+.storage-note .storage-safari { margin-top: 4px; color: var(--text); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .note-text code { font: .9em var(--mono); padding: 1px 4px; border-radius: 4px; background: var(--s2); }

@@ -8,6 +8,7 @@ import { mountFipsPanel } from "../../../web-relay/src/fips/panel.js"
 import { loadRelayIdentity } from "../../../web-relay/src/fips/node.js"
 import { StorageNote } from "../components/StorageNote.jsx"
 import { fipsStorage } from "../haven/vault.js"
+import { resetBrowser } from "./SettingsScreen.jsx"
 
 export function RelayScreen({ ctx, log }) {
   const { vault, session } = ctx
@@ -74,7 +75,7 @@ export function RelayScreen({ ctx, log }) {
       <section class="card">
         <h3>Account</h3>
         <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 20)}… {signedInWith(session.method)}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
-        <button onClick={ctx.signOut}>Sign out</button>
+        <button onClick={() => resetBrowser(ctx)}>Sign out</button>
       </section>
     </main>
   )

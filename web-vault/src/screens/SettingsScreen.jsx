@@ -6,6 +6,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { StorageNote } from "../components/StorageNote.jsx"
+import { BackupCard } from "../components/BackupCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { RelaysPage } from "./RelaysPage.jsx"
 import { MediaServersPage } from "./MediaServersPage.jsx"
@@ -19,7 +20,7 @@ import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
 import {
   SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL,
-  readEverything, backupLines, backupName, parseBackup, restoreBackup, logLines,
+  logLines,
 } from "../net/settings.js"
 
 const ICONS = {
@@ -121,7 +122,7 @@ function Page({ ctx, page }) {
       {page === "relays" && <RelaysPage ctx={ctx} />}
       {page === "media-servers" && <MediaServersPage ctx={ctx} />}
       {page === "import" && <Import ctx={ctx} />}
-      {page === "backup" && <Backup ctx={ctx} />}
+      {page === "backup" && <BackupCard ctx={ctx} />}
       {page === "database" && <Database ctx={ctx} />}
       {page === "logs" && <Logs />}
     </main>
@@ -177,53 +178,6 @@ function Import({ ctx }) {
       <button class="primary" disabled={state === "Importing…"} onClick={run}>{state === "Importing…" ? "Importing…" : "Import from my relays"}</button>
       {state && state !== "Importing…" && <p class="muted small" style="margin-top: 10px">{state}</p>}
     </div>
-  )
-}
-
-/** Backup: download everything this relay holds for you as JSON lines. Restore: put such a file back in. */
-function Backup({ ctx }) {
-  const me = ctx.session.pubkey
-  const [out, setOut] = useState("")
-  const [restore, setRestore] = useState("")
-  const download = async () => {
-    setOut("Reading…")
-    try {
-      const evs = await readEverything(ctx.vault, me)
-      const blob = new Blob([backupLines(evs)], { type: "application/x-ndjson" })
-      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: backupName(me) })
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
-      setOut(`${evs.length} event${evs.length === 1 ? "" : "s"} in ${a.download}.`)
-    } catch (e) { setOut(`Couldn't read your relay (${e?.message ?? e})`) }
-  }
-  const onFile = async e => {
-    const input = e.currentTarget // read before any await: the event's target is gone by then
-    const file = input.files?.[0]
-    if (!file) return
-    setRestore("Checking…")
-    const { events, skipped } = parseBackup(await file.text(), me)
-    const skippedText = Object.entries(skipped).filter(([, n]) => n).map(([k, n]) => `${n} ${{ unreadable: "unreadable", badSignature: "with a bad signature", notYours: "not yours" }[k]}`).join(", ")
-    input.value = "" // cleared first, so the same file can be picked again whichever way this ends
-    if (!events.length) { setRestore(`Nothing to restore${skippedText ? ` (${skippedText})` : ""}.`); return }
-    setRestore(`Restoring ${events.length}…`)
-    const r = await restoreBackup(ctx.vault, events, { onProgress: p => setRestore(`Restoring ${p.done} of ${p.of}…`) })
-    setRestore(`Restored ${r.stored}, already here ${r.duplicate}${r.refused.length ? `, refused ${r.refused.length}` : ""}${skippedText ? `; skipped ${skippedText}` : ""}.`)
-  }
-  return (
-    <>
-      <div class="card">
-        <h3>Backup</h3>
-        <p class="muted small">Downloads every event you signed that this browser's relay holds (notes, articles, profile, lists, likes), one per line (.jsonl). Messages and what others sent you aren't included. The phone's Backup makes a .zip instead; to restore one here, use Import notes in Accounts & Keys › Backup.</p>
-        <button class="primary" disabled={out === "Reading…"} onClick={download}>{out === "Reading…" ? "Reading…" : "Download backup"}</button>
-        {out && out !== "Reading…" && <p class="muted small" style="margin-top: 10px">{out}</p>}
-      </div>
-      <div class="card">
-        <h3>Restore</h3>
-        <p class="muted small">Puts a backup back into this browser's relay. Only events signed by you are taken; nothing is published.</p>
-        <label class="button"><input type="file" accept=".jsonl,.json,.ndjson,text/plain,application/json" hidden onChange={onFile} />Choose a backup file…</label>
-        {restore && <p class="muted small" style="margin-top: 10px">{restore}</p>}
-      </div>
-    </>
   )
 }
 
