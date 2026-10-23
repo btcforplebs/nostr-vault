@@ -111,7 +111,7 @@ function Password({ initial, onContinue }) {
   return (
     <form onSubmit={submit} class="onboard-form">
       <h1 class="onboard-title">Protect Your Key</h1>
-      <p class="onboard-sub">Choose a password to lock your secret key in this browser.</p>
+      <p class="onboard-sub">This password locks the secret key you just saved. It stays in this browser only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.</p>
       {/* A hidden username, so a password manager files the password under this account. */}
       <input type="text" name="username" autocomplete="username" value="Nostr Vault key" hidden readOnly />
       <label class="field">
@@ -129,7 +129,7 @@ function Password({ initial, onContinue }) {
       </label>
       <p class="error small" aria-live="polite">{problem}</p>
       <button type="submit" class="primary onboard-main" disabled={!ok}>Continue</button>
-      <p class="onboard-warn box">Nobody can reset this password or recover your secret key for you, not even us. Write both down.</p>
+      <p class="onboard-warn box">Write this password down and keep it with your secret key.</p>
     </form>
   )
 }
