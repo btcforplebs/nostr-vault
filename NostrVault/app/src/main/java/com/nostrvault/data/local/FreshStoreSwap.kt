@@ -27,8 +27,9 @@ internal class FreshStoreSwap(
      * Runs the swap. [openFresh] opens the empty store and proves it takes a
      * write (throw or null = not done). Once it is in, the old store's copy
      * moves to [keepAs], out of the way of [recover], which would otherwise
-     * put it back over the new one next launch. On any failure the old store
-     * is put back and null returned.
+     * put it back over the new one next launch; if it can't be moved, the
+     * swap is undone. On any failure the old store is put back and null
+     * returned.
      */
     fun <T> run(openFresh: () -> T?, keepAs: File): T? {
         recover()
@@ -52,11 +53,23 @@ internal class FreshStoreSwap(
             recover()
             return null
         }
-        if (pending.exists() && !pending.renameTo(keepAs)) {
-            pending.copyTo(keepAs, overwrite = true)
-            pending.delete()
+        if (!retire(keepAs)) {
+            // [pending] is still there, so the next launch's [recover] would
+            // put the old store back over keys added to the fresh one. Undo
+            // now instead and report Start fresh as not done (Tron, 44).
+            keepAs.delete()
+            recover()
+            return null
         }
         return opened
+    }
+
+    /** Moves [pending] to [keepAs]. False when [pending] is still on disk. */
+    private fun retire(keepAs: File): Boolean {
+        if (!pending.exists() || pending.renameTo(keepAs)) return true
+        // Never drop [pending] without a whole copy at [keepAs].
+        if (runCatching { pending.copyTo(keepAs, overwrite = true) }.isFailure) return false
+        return pending.delete()
     }
 
     /**
