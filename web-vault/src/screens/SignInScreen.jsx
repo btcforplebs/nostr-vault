@@ -13,6 +13,7 @@ import { AuthPrompt } from "../components/AuthPrompt.jsx"
 import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { StorageNote, askToKeep } from "../components/StorageNote.jsx"
+import { learn } from "../shell.js"
 import "../styles/accounts.css"
 
 export function SignInScreen({ onSignedIn }) {
@@ -42,7 +43,7 @@ export function SignInScreen({ onSignedIn }) {
       </div>}
       <SignInOptions onSignedIn={signedIn} />
       <StorageNote />
-      <p class="muted small signin-home">New to Nostr Vault? <a href="/">See what it is, and get the apps</a>.</p>
+      <p class="muted small signin-home">New to Nostr Vault? <a href="/#about" onClick={e => { e.preventDefault(); learn() }}>See what it is, and get the apps</a>.</p>
       {err && <p class="error">{err}</p>}
     </main>
   )

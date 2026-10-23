@@ -1,10 +1,13 @@
 // NIP-07: a browser extension (Alby, nos2x, ...) holds the key and signs.
 import { checkedPubkey } from "../session.js"
+import { shellNostr } from "../shell.js"
 
-/** The extension's window.nostr, waiting briefly because some extensions inject after the page loads. */
+/** The extension's window.nostr, waiting briefly because some extensions inject after the page loads. In the site's
+ *  frame (src/shell.js), the top page's when the extension didn't reach the frame. */
 export async function findExtension(waitMs = 1500) {
-  for (let t = 0; !globalThis.nostr && t < waitMs; t += 100) await new Promise(r => setTimeout(r, 100))
-  return globalThis.nostr
+  const ext = () => globalThis.nostr ?? shellNostr()
+  for (let t = 0; !ext() && t < waitMs; t += 100) await new Promise(r => setTimeout(r, 100))
+  return ext()
 }
 
 export async function extensionSignIn() {

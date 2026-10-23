@@ -116,6 +116,8 @@
 
 <body>
 
+<div id="site">
+
     <nav>
         <a class="logo" href="/" aria-label="Nostr Vault home">
             <img src="assets/haven_icon.png" alt="" width="32" height="32">
@@ -138,29 +140,35 @@
         </div>
     </nav>
 
-    <header class="hero">
-        <p class="eyebrow fade-in-up">Version 2.7 &middot; iPhone &middot; iPad &middot; Mac &middot; Android &middot; Web</p>
-        <h1 class="fade-in-up">Your Nostr home.<br>In your pocket.</h1>
-        <p class="lede fade-in-up delay-100">Nostr Vault is a native Nostr client with your own relay built in. Your notes,
-            media and follows live on hardware you hold, with encrypted keys, Lightning zaps and on-chain Bitcoin
-            derived straight from your nsec. Open source, so you never have to trust it.</p>
-        <div class="hero-buttons fade-in-up delay-200">
-            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
-            <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
-            <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
+    <header class="hero" id="about">
+        <div class="hero-copy">
+            <p class="eyebrow fade-in-up">Version 2.7 &middot; iPhone &middot; iPad &middot; Mac &middot; Android &middot; Web</p>
+            <h1 class="fade-in-up" tabindex="-1">Your Nostr home.<br>In your pocket.</h1>
+            <p class="lede fade-in-up delay-100">Nostr Vault is a native Nostr client with your own relay built in. Your notes,
+                media and follows live on hardware you hold, with encrypted keys, Lightning zaps and on-chain Bitcoin
+                derived straight from your nsec. Open source, so you never have to trust it.</p>
+            <div class="hero-buttons fade-in-up delay-200">
+                <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
+                <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
+                <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
         </div>
         <p class="hero-note fade-in-up delay-300">Also on <a href="https://zapstore.dev/apps/com.nostrvault.app">Zapstore</a> for Android. Or skip the download and <a href="/vault/">try the web beta</a>.</p>
+        </div>
 
-        <div class="hero-phones fade-in-up delay-300" aria-label="Nostr Vault on iPhone">
+        <div class="hero-phones" aria-label="Nostr Vault on iPhone">
             <figure class="phone tilt-left">
                 <img src="assets/screens/iphone-reels.webp" alt="Nostr Vault Reels feed on iPhone playing a vertical video" width="900" height="1957" loading="eager">
             </figure>
-            <figure class="phone center">
+            <figure class="phone center phone-slot">
                 <img src="assets/screens/iphone-feed.webp" alt="Nostr Vault Following feed on iPhone with morning notes and artwork from followed accounts" width="900" height="1957" loading="eager">
             </figure>
             <figure class="phone tilt-right">
                 <img src="assets/screens/iphone-articles.webp" alt="Nostr Vault Articles feed on iPhone showing long-form posts as cards" width="900" height="1957" loading="eager">
             </figure>
+        </div>
+        <div class="hero-open">
+            <button type="button" class="btn btn-primary js-open-app">Open the app</button>
+            <p>That's the real web app in the phone. Try it.</p>
         </div>
     </header>
 
@@ -534,7 +542,10 @@
         <video controls playsinline preload="none" width="720" height="1280"></video>
     </dialog>
 
+</div>
+
     <script src="script.js"></script>
+    <script src="shell.js"></script>
 </body>
 
 </html>

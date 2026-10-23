@@ -1,0 +1,37 @@
+/* The welcome screen (src/screens/WelcomeScreen.jsx): the front door at nostrvault.app. One column that fits the
+   site's phone frame and a full window alike; "What is Nostr Vault?" sits at the bottom edge. */
+.welcome { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center;
+  padding: max(32px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom)); box-sizing: border-box;
+  background: radial-gradient(120% 60% at 50% 0%, rgb(230 115 38 / .14), transparent 60%), var(--bg); }
+.welcome-main { flex: 1; width: 100%; max-width: 400px; display: flex; flex-direction: column; justify-content: center; gap: 14px; text-align: center; }
+.welcome-logo { width: 64px; height: 64px; margin: 0 auto 6px; border-radius: 15px; box-shadow: 0 10px 40px -8px rgb(230 115 38 / .55); }
+.welcome h1 { margin: 0; font: var(--t-title); letter-spacing: -.01em; }
+.welcome-line { margin: 0 0 10px; font: var(--t-sub); color: var(--text-2); text-wrap: balance; }
+.welcome-signin { width: 100%; min-height: 50px; font: var(--t-headline); }
+
+.welcome-browse { display: grid; gap: 10px; margin-top: 6px; }
+.welcome-or { display: flex; align-items: center; gap: 10px; color: var(--text-3); font: var(--t-foot); }
+.welcome-or::before, .welcome-or::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+.welcome-search { display: flex; align-items: center; gap: 8px; min-height: 50px; padding: 0 6px 0 14px; border-radius: 999px;
+  background: var(--s1); border: 1px solid var(--hair); color: var(--text-3); transition: border-color var(--press); }
+.welcome-search:focus-within { border-color: var(--accent-line); }
+.welcome-search input { flex: 1; min-width: 0; height: 46px; padding: 0; border: 0; background: none; color: var(--text); font: var(--t-body); }
+.welcome-search input:focus { outline: none; }
+.welcome-search input::placeholder { color: var(--text-3); }
+.welcome-search input::-webkit-search-cancel-button { display: none; }
+.welcome-search button { flex: none; }
+.welcome-results { display: grid; gap: 8px; text-align: left; }
+.welcome-results .person-row { width: 100%; margin: 0; }
+.welcome-results p { margin: 0; text-align: center; }
+
+.welcome-learn { margin-top: 24px; min-height: 44px; padding: 0 18px; border: 0; background: none; color: var(--text-2);
+  font: var(--t-sub); font-weight: 600; }
+.welcome-learn:hover, .welcome-learn:focus-visible { color: var(--text); }
+.welcome-arrow { display: inline-block; margin-left: 4px; color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-arrow { animation: nv-nudge 2.2s ease-in-out infinite; }
+}
+@keyframes nv-nudge { 0%, 60%, 100% { transform: none } 30% { transform: translateY(4px) } }
+
+/* The guest bar's way back here, beside "Viewing as a guest". */
+.guest-bar .guest-home { flex: none; }

@@ -12,9 +12,7 @@ import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
-import { SignInScreen } from "./src/screens/SignInScreen.jsx"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
-import { guestTarget } from "./src/guest/guest.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
 import { ProfileScreen } from "./src/screens/ProfileScreen.jsx"
@@ -93,8 +91,6 @@ function App() {
   modeNow.current = mode
   const [{ route, arg }, setRoute] = useState(() => settle(mode))
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
-  // Not signed in and opened on a post (a shared link): the guest view, until they sign in.
-  const [guest] = useState(() => !session && !!guestTarget(location.hash))
 
   useEffect(() => { const f = () => setRoute(settle(modeNow.current)); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
   // Crossing 760px swaps layouts; the address is fixed up for the new one.
@@ -162,7 +158,8 @@ function App() {
   }
 
   if (leaving) return <SignOutScreen {...leaving} onRetry={retryWipe} onDone={restart} />
-  if (!session) return guest ? <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} /> : <SignInScreen onSignedIn={onSignedIn} />
+  // Not signed in: the welcome screen, and the posts and people a guest can look at (src/guest), until they sign in.
+  if (!session) return <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 

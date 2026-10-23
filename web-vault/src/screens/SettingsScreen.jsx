@@ -16,6 +16,7 @@ import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { syncOwn } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { learn } from "../shell.js"
 import {
   SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL,
   readEverything, backupLines, backupName, parseBackup, restoreBackup, logLines,
@@ -73,6 +74,8 @@ function Index({ ctx }) {
           <p class="muted small">To report objectionable content or abusive users, contact the developer via Nostr</p>
           <button class="settings-npub" onClick={copy} title="Copy">{SUPPORT_NPUB}</button>
           <div class="muted" style="font-size: 10px">{copied ? "Copied" : "(Tap to copy)"}</div>
+          <hr />
+          <a href="/#about" class="small" onClick={e => { e.preventDefault(); learn() }}>What is Nostr Vault? Learn &amp; docs</a>
           <hr />
           <a href={PRIVACY_URL} target="_blank" rel="noopener" class="small">Privacy Policy</a>
         </div>

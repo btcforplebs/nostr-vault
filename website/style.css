@@ -946,6 +946,88 @@ footer a:hover { color: var(--accent); }
     .cta-section h2 { font-size: 2.2rem; }
 }
 
+/* The app-first shell (shell.js): the web app full screen in a frame over the page, or, on "What is Nostr Vault?",
+   live in the hero's phone with the page around it. Without JavaScript none of this applies. */
+.live-app {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    overflow: hidden;
+    background: #000;
+}
+
+.live-app iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #000;
+}
+
+.live-app.framed {
+    z-index: 50;
+    border-radius: 36px;
+    box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.9), 0 0 0 6px #0a0a0a, 0 0 0 7px rgba(255, 255, 255, 0.08);
+}
+
+html.shell-app { overflow: hidden; }
+html.shell-app #site { visibility: hidden; }
+
+/* The phone the app sits in: the hero's centre phone, its screenshot kept for size only. */
+html.shell .hero-phones { perspective: none; }
+html.shell .hero-phones .tilt-left,
+html.shell .hero-phones .tilt-right { display: none; }
+html.shell .hero-phones .phone-slot {
+    --phone-h: min(760px, calc(100svh - 210px));
+    height: var(--phone-h);
+    width: calc(var(--phone-h) * 900 / 1957);
+    max-width: none;
+    transform: none;
+    box-shadow: none;
+    border-color: transparent;
+}
+html.shell .phone-slot img { visibility: hidden; height: 100%; }
+
+.hero-open { display: none; }
+html.shell .hero-open {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 28px 0 0;
+}
+.hero-open .btn { border: 0; font-family: inherit; }
+.hero-open p { font-size: 0.85rem; color: var(--text-secondary); }
+
+/* Wide windows: the copy on the left, the live phone on the right, both in the first screen. */
+@media (min-width: 961px) {
+    html.shell .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        align-content: center;
+        column-gap: 72px;
+        max-width: var(--max-width);
+        min-height: 100svh;
+        margin: 0 auto;
+        padding: 96px 40px 40px;
+        text-align: left;
+    }
+    html.shell .hero-copy { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+    html.shell .hero h1 { font-size: 4.4rem; }
+    html.shell .hero .hero-buttons { justify-content: flex-start; }
+    html.shell .hero-phones { grid-column: 2; grid-row: 1; margin: 0; width: auto; }
+    html.shell .hero-open { grid-column: 2; grid-row: 2; margin-top: 22px; }
+}
+
+@media (max-width: 960px) {
+    html.shell .hero-phones .phone-slot {
+        --phone-h: min(700px, calc(100svh - 150px), calc(min(340px, 86vw) * 1957 / 900));
+        border-radius: 36px;
+    }
+    html.shell .hero-phones { margin-top: 40px; }
+}
+
 /* Legacy nav button used by blog + privacy pages */
 .actions .btn-download {
     background: #ffffff;
