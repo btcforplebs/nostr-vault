@@ -67,6 +67,7 @@ export function ProfileScreen({ ctx }) {
       {/* The phone's Profile toolbar: the Wallet on the left, Refresh and Settings on the right, over the banner. */}
       <header class="screen-head profile-hud">
         <a class="vault-pill-btn hud-accent" href="#/wallet" aria-label="Wallet" title="Wallet"><Icon d="M13 2L4 14h7l-1 8 9-12h-7z" fill /></a>
+        <span class="hud-title" aria-hidden="true">Profile</span>
         <div class="vault-right">
           <a class="vault-pill-btn" href="#/profile" role="button" aria-label="Refresh" title="Refresh" aria-busy={notes.opening || undefined} onClick={refresh}><Icon d={REFRESH} /></a>
           <a class="vault-pill-btn" href="#/settings" aria-label="Settings" title="Settings"><Icon d={GEAR} /></a>

@@ -1,12 +1,14 @@
 import { useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { Avatar } from "./Avatar.jsx"
+import { Badges } from "./Badges.jsx"
 import { useProfile } from "./useProfile.js"
 
-/** The iOS profile header: banner fading to black, ringed avatar over it, name + YOU / MUTUAL / FOLLOWING / FOLLOWS YOU
- *  badge, bio, chips, counts, then `children` (someone else's profile puts its Follow button there).
- *  No Edit Profile button in M1 (nothing to edit with yet). No verified seal: NIP-05 isn't checked here, and the
- *  seal means verified only. */
+if (import.meta.env) import("../styles/profile.css")
+
+/** The iOS profile header (ProfileContent+Header): banner a third of the width fading to black, a 72 ringed avatar
+ *  half over it, name + the seal (on a NIP-05, as on note rows and the iPhone) with the YOU / MUTUAL / FOLLOWING /
+ *  FOLLOWS YOU badge at the right edge, bio, chips, counts, then `children` (Edit Profile or Follow, and WoT). */
 export function ProfileHeader({ pubkey, follows, you = true, relation = "", children }) {
   const p = useProfile(pubkey)
   const npub = npubEncode(pubkey)
@@ -18,11 +20,12 @@ export function ProfileHeader({ pubkey, follows, you = true, relation = "", chil
     <header class="profile-header">
       <div class="banner">{p?.banner && badBanner !== p.banner && <img src={p.banner} alt="" onError={() => setBadBanner(p.banner)} />}</div>
       <div class="profile-id">
-        <Avatar pubkey={pubkey} size={88} ring />
+        <Avatar pubkey={pubkey} size={72} ring />
         <div class="profile-names">
           <div class="profile-name-row">
             <h1>{p?.display_name || p?.name || npub.slice(0, 16) + "…"}</h1>
-            {you ? <span class="you-badge">YOU</span> : <Relation kind={relation} />}
+            <Badges pubkey={pubkey} />
+            <span class="profile-badge">{you ? <span class="you-badge">YOU</span> : <Relation kind={relation} />}</span>
           </div>
           {p?.nip05 && <div class="profile-nip05">{p.nip05.replace(/^_@/, "")}</div>}
         </div>

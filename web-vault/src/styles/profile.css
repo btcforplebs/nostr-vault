@@ -1,0 +1,30 @@
+/* The profile header and its tabs, as the iPhone's (ProfileContent+Header, ProfileContent+Sections). These sit on top of
+   app.css's older profile rules, which the shell lane owns. */
+
+/* "Profile" over the banner, between the Wallet and the Refresh / Settings buttons. */
+.profile-hud .hud-title { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  font: 600 17px/1 var(--font); color: #fff; text-shadow: 0 1px 4px rgb(0 0 0 / .6); }
+
+/* Banner a third of the width, 110 to 210 tall. */
+.profile-header .banner { height: auto; aspect-ratio: 3 / 1; min-height: 110px; max-height: 210px; }
+
+/* A 72 avatar half over the banner; the name column starts under the banner and runs to the right edge. */
+.profile-id { align-items: flex-start; margin-top: 0; }
+.profile-id > .avatar { margin-top: -36px; }
+.profile-id > .avatar.ring { box-shadow: 0 0 0 3px var(--bg), 0 0 0 4.5px rgb(230 115 38 / .35); }
+.profile-names { flex: 1; padding: 8px 0 0; display: grid; gap: 4px; }
+.profile-name-row { gap: 6px; }
+.profile-name-row h1 { font: 700 20px/1.2 var(--font); }
+.profile-name-row .badge-seal { font-size: 13px; }
+.profile-badge { margin-left: auto; flex: none; display: inline-flex; }
+.profile-nip05 { font: 12px/1.3 var(--font); }
+
+/* Icon tabs with their counts, equal widths, the selected one in the accent over a 2px line. */
+.profile-tabs { padding: 0 16px; margin: 16px 0 12px; border-top: .5px solid var(--hair); border-bottom: 0;
+  container-type: inline-size; }
+.profile-tabs button { flex: 1 1 0; min-width: 0; min-height: 0; padding: 10px 0 8px; display: inline-flex;
+  align-items: center; justify-content: center; gap: 4px; color: var(--text-2); }
+.profile-tabs button.on { color: var(--accent); }
+.profile-tabs .tab-count { font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); }
+/* Too narrow for the counts: icons alone (the iPhone's ViewThatFits). */
+@container (max-width: 320px) { .profile-tabs .tab-count { display: none; } }

@@ -63,10 +63,11 @@ function Profile({ open, older, tagged = { open: async () => [], older: async ()
 test("the tab bar is the iPhone's order, Articles only when there are some", async () => {
   const el = document.createElement("div"), out = {}
   render(h(Profile, { open: async () => [], older: async () => [], out }), el)
-  assert.deepEqual(buttons(el).map(b => b.textContent), ["Notes", "Media", "Replies", "Reposts", "Tagged"])
+  // Icon tabs: the name is the title (the iPhone's accessibility label).
+  assert.deepEqual(buttons(el).map(b => b.attributes.title || b.textContent), ["Notes", "Media", "Replies", "Reposts", "Tagged"])
   const art = finalizeEvent({ kind: 30023, created_at: 1, tags: [["d", "x"], ["title", "T"]], content: "" }, sk)
   render(h(Profile, { open: async () => [], older: async () => [], articles: [art], out }), el)
-  assert.deepEqual(buttons(el).map(b => b.textContent).slice(0, 6), ["Notes", "Media", "Replies", "Reposts", "Tagged", "Articles"])
+  assert.deepEqual(buttons(el).map(b => b.attributes.title || b.textContent).slice(0, 6), ["Notes", "Media", "Replies", "Reposts", "Tagged", "Articles"])
   render(null, el)
 })
 
