@@ -23,34 +23,72 @@ object CredentialStore {
 
     @Volatile private lateinit var prefs: SharedPreferences
     private var openFailed = false
-    private const val HEALTH_PREFS = "nostrvault_credentials_open"
-    private const val FAILED_LAST_LAUNCH = "failed-last-launch"
+
+    private val _unreadable = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    /**
+     * True while the store could not be opened this launch. The app then
+     * shows the recovery screen instead of carrying on as if no key had
+     * ever been saved.
+     */
+    val unreadable: kotlinx.coroutines.flow.StateFlow<Boolean> = _unreadable
 
     /**
      * Opens the store, retrying a few times. A store that still can't be
-     * opened stays closed for this launch: reads find nothing and writes
-     * fail, but the app starts and nothing is deleted. Only if it failed on
-     * the launch before as well (a keyset the keystore no longer has a key
-     * for, as after some OS updates or a restore) is it set aside and opened
-     * fresh. Synchronized: Hilt (main) and ConfigStore (IO) both call it.
+     * opened stays closed: reads find nothing and writes fail, but the app
+     * starts and nothing is deleted, however many launches in a row it fails
+     * (a keyset the keystore lost a key for, as after some OS updates or a
+     * restore). It used to be set aside and opened empty on the second such
+     * launch, which dropped every saved key and the mesh key with it; now
+     * only the person can do that, from the recovery screen ([startFresh]).
+     * Synchronized: Hilt (main) and ConfigStore (IO) both call it.
      */
     @Synchronized
     fun init(context: Context) {
         if (::prefs.isInitialized || openFailed) return
         val app = context.applicationContext
-        val health = app.getSharedPreferences(HEALTH_PREFS, Context.MODE_PRIVATE)
-        val opened = openRecovering(
-            open = { open(app) },
-            setAside = { setAside(app) },
-            failedBefore = health.getBoolean(FAILED_LAST_LAUNCH, false),
-        )
-        health.edit().putBoolean(FAILED_LAST_LAUNCH, opened == null).commit()
+        val opened = openRecovering(open = { open(app) })
         if (opened == null) {
             openFailed = true
+            _unreadable.value = true
             return
         }
         prefs = opened
         repairSwappedKeychainPasswords()
+    }
+
+    /** The recovery screen's Try again: true when the store opened this time. */
+    @Synchronized
+    fun retryOpen(context: Context): Boolean {
+        if (::prefs.isInitialized) return true
+        val opened = openRecovering(open = { open(context.applicationContext) }) ?: return false
+        prefs = opened
+        openFailed = false
+        _unreadable.value = false
+        repairSwappedKeychainPasswords()
+        return true
+    }
+
+    /**
+     * The recovery screen's Start fresh, after the person confirmed: the
+     * unreadable store is copied aside (kept on disk, never deleted here) and
+     * an empty one opened. Saved passwords, account keys and the mesh key are
+     * gone from the app after this. True when the fresh store opened.
+     */
+    @Synchronized
+    fun startFresh(context: Context): Boolean {
+        val app = context.applicationContext
+        val opened = try {
+            setAside(app)
+            open(app)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open a fresh EncryptedSharedPreferences: ${e.message}")
+            return false
+        }
+        prefs = opened
+        openFailed = false
+        _unreadable.value = false
+        return true
     }
 
     private fun open(context: Context): SharedPreferences {
@@ -80,14 +118,11 @@ object CredentialStore {
     }
 
     /**
-     * [open], tried [attempts] times. If every try fails and [failedBefore]
-     * (the last launch couldn't open it either), [setAside] and one fresh
-     * [open]. Null when the store stays closed.
+     * [open], tried [attempts] times. Null when the store stays closed; it is
+     * never set aside here.
      */
     internal fun <T> openRecovering(
         open: () -> T,
-        setAside: () -> Unit,
-        failedBefore: Boolean,
         attempts: Int = 3,
         pause: (Int) -> Unit = { Thread.sleep(150L * it) },
     ): T? {
@@ -99,15 +134,7 @@ object CredentialStore {
             }
             if (attempt < attempts) pause(attempt)
         }
-        if (!failedBefore) return null
-        return try {
-            Log.e(TAG, "Failed on two launches; setting the store aside")
-            setAside()
-            open()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to open a fresh EncryptedSharedPreferences: ${e.message}")
-            null
-        }
+        return null
     }
 
     /** Deletes the copies [setAside] kept (factory reset). */

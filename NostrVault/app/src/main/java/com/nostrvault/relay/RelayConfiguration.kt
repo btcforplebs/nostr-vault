@@ -189,8 +189,33 @@ object RelayConfiguration {
 
             // Loopback port the FIPS mesh forwards to: blob reads only.
             "HAVEN_MESH_PLAIN_PORT" to config.meshPort.toString(),
+
+            // Go's soft memory limit, sized to this phone (see phoneGoMemLimitMB).
+            "GO_MEM_LIMIT_MB" to phoneGoMemLimitMB(totalMemoryBytes()).toString(),
         )
     }
+
+    /**
+     * The Go relay's soft memory limit on a phone, from its RAM: a quarter,
+     * between 256 MiB and 3 GiB (iOS RelayConfiguration.phoneGoMemLimitMB,
+     * #1007). Go's flat 256 MiB phone default (haven-go config.go), and the
+     * 192 MiB this app pinned before, is a limit a populated vault's live heap
+     * reaches, and then the collector runs back to back: on Logen's iPhone
+     * 18 Pro (2026-10-21) 69% of all CPU samples were Go GC mark workers,
+     * ~420% CPU, thermal state Serious.
+     */
+    fun phoneGoMemLimitMB(physicalMemory: Long): Int {
+        val quarter = (physicalMemory.coerceAtLeast(0L) / 4 / (1L shl 20)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return quarter.coerceIn(256, 3072)
+    }
+
+    /** This phone's RAM in bytes (MemTotal in /proc/meminfo), or 0 when it can't be read. */
+    fun totalMemoryBytes(meminfo: File = File("/proc/meminfo")): Long = runCatching {
+        meminfo.useLines { lines ->
+            lines.first { it.startsWith("MemTotal:") }
+                .split(Regex("\\s+"))[1].toLong() * 1024
+        }
+    }.getOrDefault(0L)
 
     /**
      * Kind 0 (profile metadata) never raises a notification, so a list holding
