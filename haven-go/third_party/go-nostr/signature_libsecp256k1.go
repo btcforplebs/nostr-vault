@@ -35,6 +35,15 @@ import (
 )
 
 func (evt Event) CheckSignature() (bool, error) {
+	// haven: hex.Decode into a fixed array panics on longer input and leaves
+	// zero bytes on shorter input, so check the lengths first.
+	if len(evt.PubKey) != 64 {
+		return false, fmt.Errorf("event pubkey must be 64 hex chars, got %d", len(evt.PubKey))
+	}
+	if len(evt.Sig) != 128 {
+		return false, fmt.Errorf("event signature must be 128 hex chars, got %d", len(evt.Sig))
+	}
+
 	var pk [32]byte
 	_, err := hex.Decode(pk[:], []byte(evt.PubKey))
 	if err != nil {
@@ -62,6 +71,10 @@ func (evt *Event) Sign(secretKey string, signOpts ...schnorr.SignOption) error {
 	sk, err := hex.DecodeString(secretKey)
 	if err != nil {
 		return fmt.Errorf("Sign called with invalid secret key '%s': %w", secretKey, err)
+	}
+	// haven: the C code reads 32 bytes from &sk[0].
+	if len(sk) != 32 {
+		return fmt.Errorf("Sign called with a secret key of %d bytes, want 32", len(sk))
 	}
 
 	if evt.Tags == nil {
