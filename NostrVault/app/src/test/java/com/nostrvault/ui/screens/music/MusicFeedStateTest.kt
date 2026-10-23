@@ -65,6 +65,31 @@ class MusicFeedStateTest {
         assertEquals("a1", MusicFeedState.showingArtistId)
     }
 
+    @Test fun aFeedSongOpensItsArtistOnceHighlighted() {
+        assertTrue(MusicFeedState.showSong(track))
+        assertEquals(listOf(MusicPage.artistOf(track)!!), MusicFeedState.path.value)
+        assertTrue(MusicFeedState.revealRequested.value)
+        // Another artist's page doesn't take it.
+        assertNull(MusicFeedState.highlightFor("other"))
+        MusicFeedState.clearHighlight("other")
+        assertEquals("t1", MusicFeedState.highlightFor("a1"))
+        // Cleared once shown: the page shows plain next time.
+        MusicFeedState.clearHighlight("a1")
+        assertNull(MusicFeedState.highlightFor("a1"))
+    }
+
+    @Test fun aSongWithNoArtistOpensNothing() {
+        assertFalse(MusicFeedState.showSong(track.copy(artistId = null)))
+        assertTrue(MusicFeedState.path.value.isEmpty())
+        assertNull(MusicFeedState.highlight.value)
+    }
+
+    @Test fun songRowsSitAfterTheArtistPageHeading() {
+        assertEquals(2, MusicArtistRows.songItemIndex(0, hasSearch = false, hasAlbums = false))
+        assertEquals(3, MusicArtistRows.songItemIndex(0, hasSearch = false, hasAlbums = true))
+        assertEquals(9, MusicArtistRows.songItemIndex(5, hasSearch = true, hasAlbums = true))
+    }
+
     @Test fun counts() {
         assertEquals("1 song", MusicCount.songs(1))
         assertEquals("3 albums", MusicCount.albums(3))
