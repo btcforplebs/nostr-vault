@@ -12,13 +12,8 @@ struct MusicBrowserView: View {
     @ObservedObject private var config = ConfigService.shared
     @State private var sheet: MusicSheet?
     @State private var query = ""
-    /// The songs for the toolbar's current choice.
-    @State private var tracks: [WavlakeTrack] = []
-    /// Following: the artists found, shown above their songs.
-    @State private var followedArtists: [WavlakeArtist] = []
     @State private var results: [WavlakeSearchResult] = []
     @State private var isLoading = false
-    @State private var errorText: String?
     @State private var searchTask: Task<Void, Never>?
     /// Search keeps its own spinner and message, so clearing a search
     /// can't stop the toolbar choice's load, or the other way round.
@@ -58,7 +53,7 @@ struct MusicBrowserView: View {
             .padding(.vertical, 12)
             .onChange(of: feed.path) { _, _ in proxy.scrollTo(Self.topAnchor, anchor: .top) }
         }
-        .task(id: loadKey) { await load() }
+        .task(id: feed.listingKey) { await load() }
         // A toolbar pick replaces whatever search was showing.
         .onChange(of: feed.picks) { _, _ in query = "" }
         .modifier(MusicSheetHost(sheet: $sheet))
@@ -94,9 +89,10 @@ struct MusicBrowserView: View {
     /// The spinner or message under the toolbar's choice or a search.
     @ViewBuilder
     private var status: some View {
-        if isBrowsing ? isLoading : isSearching {
+        // A kept listing stays up while it refreshes, without a spinner.
+        if isBrowsing ? isLoading && listing.isEmpty : isSearching {
             ProgressView().tint(.havenPurple).frame(maxWidth: .infinity).padding(.vertical, 30)
-        } else if let message = isBrowsing ? errorText : searchError {
+        } else if let message = isBrowsing ? listing.message : searchError {
             Text(message)
                 .font(.appSystem(size: 14))
                 .foregroundColor(.secondary)
@@ -114,14 +110,11 @@ struct MusicBrowserView: View {
     /// Showing the toolbar's choice rather than search.
     private var isBrowsing: Bool { query.isEmpty }
 
-    /// Changes whenever the toolbar picks something else to show.
-    private var loadKey: String {
-        switch feed.scope {
-        case .trending: return "trending:\(feed.trendingWindow.rawValue)"
-        case .artist(let artist): return "artist:\(artist.id)"
-        case .following: return "following"
-        }
-    }
+    /// What the toolbar's current choice shows, kept between opens.
+    private var listing: MusicFeedState.Listing { feed.listings[feed.listingKey] ?? .init() }
+
+    /// The songs for the toolbar's current choice.
+    private var tracks: [WavlakeTrack] { listing.tracks }
 
     @ViewBuilder
     private var scopeContent: some View {
@@ -156,7 +149,7 @@ struct MusicBrowserView: View {
             MusicArtistPage(artist: artist, sheet: $sheet) { feed.scope = .trending }
                 .id(artist.id)
         case .following:
-            let artists = visible(followedArtists)
+            let artists = visible(listing.artists)
             let songs = visible(tracks)
             if !artists.isEmpty {
                 header("Artists you follow") { EmptyView() }
@@ -278,40 +271,10 @@ struct MusicBrowserView: View {
     // MARK: - Loading
 
     private func load() async {
-        tracks = []
-        followedArtists = []
         isLoading = true
-        errorText = nil
-        var found: [WavlakeTrack] = []
-        var artists: [WavlakeArtist] = []
-        var message: String?
-        switch feed.scope {
-        case .trending:
-            do {
-                found = try await WavlakeAPI.trending(days: feed.trendingWindow.rawValue)
-                if found.isEmpty { message = "Nothing trending right now." }
-            } catch {
-                message = "Couldn't reach Wavlake. Tap to try again."
-            }
-        case .artist:
-            // MusicArtistPage loads itself.
-            break
-        case .following:
-            let follows = Set(FeedService.shared.followedPubkeys)
-            if follows.isEmpty {
-                message = "Follow people on Nostr, and the Wavlake artists among them show up here."
-            } else {
-                (artists, found) = await feed.followedArtists(follows: follows)
-                if artists.isEmpty {
-                    message = "None of the Wavlake artists checked are people you follow. Artists show up here once they link their Nostr key on Wavlake."
-                }
-            }
-        }
-        // A newer choice took over while this one loaded; it owns the page.
+        await feed.loadListing()
+        // A newer choice took over while this one loaded; it owns the spinner.
         guard !Task.isCancelled else { return }
-        tracks = found
-        followedArtists = artists
-        errorText = message
         isLoading = false
     }
 
