@@ -19,6 +19,8 @@ const ICON = {
   vault: "M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 11v2M4 9h3M4 15h3",
   settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4",
   chevron: "M6 9l6 6 6-6",
+  learn: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z",
+  docs: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",
 }
 export const Icon = ({ d, size = 20 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
@@ -45,9 +47,26 @@ export function Sidebar({ ctx, side, rail }) {
       {row("messages", "Messages", "g m", unread)}
       <hr />
       {SECTIONS.map(([id, label, keys]) => row(id, label, keys))}
+      <hr />
+      <HelpRows rail={rail} />
       <RelayFoot ctx={ctx} rail={rail} />
     </nav>
   )
+}
+
+/** Learn (the marketing page around the app, src/shell.js; the app keeps its place) and Docs (nostrvault.app/docs/,
+ *  in a new tab, since leaving the page would stop the in-page relay). */
+function HelpRows({ rail }) {
+  return (<>
+    <a class="side-row" href="/#about" title={rail ? "Learn" : undefined} aria-label={rail ? "Learn" : undefined}
+      onClick={e => { e.preventDefault(); learn() }}>
+      <span class="side-icon"><Icon d={ICON.learn} /></span><span class="side-label">Learn</span>
+    </a>
+    <a class="side-row" href="/docs/" target="_blank" rel="noopener" title={rail ? "Docs (opens a new tab)" : "Opens a new tab"}
+      aria-label={rail ? "Docs, opens a new tab" : undefined}>
+      <span class="side-icon"><Icon d={ICON.docs} /></span><span class="side-label">Docs</span>
+    </a>
+  </>)
 }
 
 /** Avatar, name and key kind; a click opens Accounts, Wallet and Sign out (Wallet moved here from the Profile banner). */
@@ -78,7 +97,6 @@ function AccountButton({ ctx, rail }) {
         <div class="side-pop" role="menu" onClick={e => { if (e.target.closest("[role=menuitem]")) setOpen(false) }}>
           <a role="menuitem" href="#/accounts">Accounts</a>
           <a role="menuitem" href="#/wallet">Wallet</a>
-          <a role="menuitem" href="/#about" onClick={e => { e.preventDefault(); learn() }}>Learn &amp; docs</a>
           <hr />
           <button role="menuitem" type="button" class="danger" onClick={() => resetBrowser(ctx)}>Sign out</button>
         </div>
