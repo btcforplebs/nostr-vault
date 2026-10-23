@@ -15,7 +15,7 @@ RUN ALLOW_MISSING_WEB_APPS=$ALLOW_MISSING_WEB_APPS website/build-web-apps.sh \
  && rm -f website/Dockerfile website/docker-compose.yml website/nginx.conf \
           website/build-web-apps.sh website/deploy.sh
 
-# The thread service: public post pages at /thread/ (web-vault/thread-page/server.mjs), proxied by nginx.
+# The thread service: public post pages at /thread/ and profile pages at /p/ (web-vault/thread-page/server.mjs), proxied by nginx.
 FROM node:22-alpine AS thread
 LABEL app.nostrvault.site=1
 WORKDIR /app/web-vault

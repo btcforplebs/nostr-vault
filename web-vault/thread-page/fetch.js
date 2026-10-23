@@ -72,3 +72,13 @@ export async function loadThread(target, query) {
   }
   return { post, events, profiles }
 }
+
+/** The profile page's read (profile-page.js): `pubkey`'s newest signature-checked kind 0 from the profile relays, the
+ *  read relays and the link's own hints. -> the event, or null when no relay had one. */
+export async function loadProfile(target, query) {
+  const hints = (target.relays ?? []).map(safeRelay).filter(Boolean).slice(0, MAX_HINTS)
+  const relays = [...new Set([...hints, ...PROFILE_RELAYS, ...READ_RELAYS])]
+  const found = verified(await query(relays, { kinds: [0], authors: [target.pubkey], limit: 5 }))
+    .filter(ev => ev.kind === 0 && ev.pubkey === target.pubkey)
+  return found.sort((a, b) => b.created_at - a.created_at)[0] ?? null
+}
