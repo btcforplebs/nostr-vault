@@ -80,11 +80,6 @@ struct NoteDetailView: View {
     private static let landingAnchor = UnitPoint(x: 0.5, y: 0.12)
     /// Height of the scroll view, for the room left under a short thread.
     @State private var viewportHeight: CGFloat = 0
-    /// Your Web of Trust plus follows, read once when the view appears.
-    /// Empty while the graph isn't loaded, which counts nobody as outside.
-    @State private var trustedPubkeys: Set<String> = []
-    /// Replies from outside your network are folded until asked for.
-    @State var showsOutsideReplies = false
 
     var threadRootId: String {
         NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
@@ -149,38 +144,15 @@ struct NoteDetailView: View {
     }
 
     /// Replies under the opened note, at any depth. `feedService.notes` holds
-    /// every note in memory, Global's firehose included, and none of it was
-    /// filtered here, so blocked people and spam showed up as replies. Replies
-    /// now go through the feed's block rule and spam check, and replies from
-    /// outside your network stay folded until asked for.
-    func threadReplies(in all: [FeedNote]) -> (visible: [FeedNote], outside: Int) {
+    /// every note in memory, Global's firehose included, so replies go
+    /// through the feed's block rule and spam check; everyone else shows.
+    func threadReplies(in all: [FeedNote]) -> [FeedNote] {
         let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let blocked = configService.activeAccountBlockedHexPubkeys
-        let insiders = threadInsiders
-        let replies = ThreadReplyVisibility.descendants(of: replyTargetId, in: all, id: \.id, parentId: \.parentEventId)
-            .filter { n in
-                !FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: { byId[$0]?.pubkey })
-                    && !FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
-            }
-        if showsOutsideReplies { return (replies, 0) }
-        var visible: [FeedNote] = []
-        var outside = 0
-        for n in replies {
-            if ThreadReplyVisibility.isOutside(n.pubkey, trusted: trustedPubkeys, insiders: insiders) {
-                outside += 1
-            } else {
-                visible.append(n)
-            }
+        return ThreadReplyVisibility.shown(under: replyTargetId, in: all, id: \.id, parentId: \.parentEventId) { n in
+            FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: { byId[$0]?.pubkey })
+                || FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
         }
-        return (visible, outside)
-    }
-
-    /// People whose replies are never folded: you, and everyone who wrote
-    /// the opened note or the notes above it.
-    private var threadInsiders: Set<String> {
-        var people = Set([nostrService.activeHexPubkey, note.pubkey, focusedNote.pubkey])
-        people.formUnion(dynamicParents.map(\.pubkey))
-        return people
     }
 
     var replyTargetId: String {
@@ -421,7 +393,6 @@ struct NoteDetailView: View {
             .environmentObject(configService)
         }
         .onAppear {
-            trustedPubkeys = feedService.relayTabTrustedPubkeys()
             expandedEngagement = configService.config.noteDetailExpandedEngagement
             if expandedEngagement {
                 fetchAllThreadEngagement()
