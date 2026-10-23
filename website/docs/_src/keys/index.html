@@ -31,7 +31,8 @@
 <p>Nostr Vault can sign for you in two ways:</p>
 <ul>
     <li><strong>A local key.</strong> Your secret key, locked with a password you choose (at least 8 characters), and
-        kept on this device only. A key locked this way starts with <code>ncryptsec</code>.</li>
+        kept on this device only. A key locked this way starts with <code>ncryptsec</code>. This password locks your secret key.
+        It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, your saved secret key is your only way back in.</li>
     <li><strong>A signer.</strong> A separate app holds your secret key and approves each post. Nostr Vault never sees
         the key. See <a href="/docs/keys/signers/">Signers</a>.</li>
 </ul>
