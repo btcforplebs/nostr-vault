@@ -73,10 +73,14 @@ class GatedArticleService @Inject constructor(
     val activeReader: String get() = nostrService.activeHexPubkey
 
     /**
-     * Whether opening a gated article may ask the signer on its own. A local
-     * key signs silently; a remote signer would prompt on every view.
+     * Whether opening a gated article may ask Fanfares on its own: only when
+     * Settings > Privacy allows it (off by default, since the request is
+     * signed by your key and names the article) and a local key signs
+     * silently; a remote signer would prompt on every view.
      */
-    val canCheckSilently: Boolean get() = configStore.config.value.activeSigningMode() == "local"
+    val canCheckSilently: Boolean get() = configStore.config.value.let {
+        it.fanfaresAutoCheck && it.activeSigningMode() == "local"
+    }
 
     /**
      * Keys already fetched, by reader pubkey and article coordinate. A key

@@ -59,6 +59,8 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setWotRefresh(v: String) = save { it.copy(wotRefreshInterval = v) }
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
     fun setUseLocalBlossomCache(v: Boolean) = save { it.copy(useLocalBlossomCache = v) }
+    fun setVertexLookups(v: Boolean) = save { it.copy(vertexLookups = v) }
+    fun setFanfaresAutoCheck(v: Boolean) = save { it.copy(fanfaresAutoCheck = v) }
 
     fun clearMediaCache() {
         viewModelScope.launch {

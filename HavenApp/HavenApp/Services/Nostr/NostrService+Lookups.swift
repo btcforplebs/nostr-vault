@@ -192,13 +192,15 @@ extension NostrService {
     }
 
     /// `target`'s follower count from Vertex, the source npub.world uses. Nil
-    /// when Vertex can't answer: no local key (a bunker would be asked to sign
-    /// for every profile opened), no credits, or no answer in time. The
-    /// request is signed by the active account and names `target`.
+    /// when Vertex isn't asked or can't answer: Settings > Privacy has it off
+    /// (the default), no local key (a bunker would be asked to sign for every
+    /// profile opened), no credits, or no answer in time. The request is
+    /// signed by the active account and names `target`.
     func fetchVertexFollowerCount(target: String, timeout: TimeInterval = 6) async -> Int? {
         let now = Date()
         if let cached = vertexCache.followers(for: target, now: now) { return cached }
-        guard vertexCache.shouldAsk(now: now),
+        guard ConfigService.shared.config.vertexLookups,
+              vertexCache.shouldAsk(now: now),
               ConfigService.shared.config.activeSigningMode() == "local",
               let url = URL(string: VertexReputation.relayURL),
               let request = signEvent(kind: VertexReputation.requestKind, content: "",

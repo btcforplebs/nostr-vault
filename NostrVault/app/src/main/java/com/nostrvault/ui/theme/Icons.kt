@@ -82,6 +82,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -188,6 +189,7 @@ object NostrVaultIcons {
     val SettingsBackup: ImageVector = Icons.Filled.SdStorage                 // externaldrive.fill
     val SettingsDatabase: ImageVector = Icons.Filled.SettingsSuggest         // gearshape.2
     val SettingsLogs: ImageVector = Icons.AutoMirrored.Filled.ListAlt        // list.bullet.rectangle
+    val SettingsPrivacy: ImageVector = Icons.Filled.PanTool                  // hand.raised
 
     // Actions
     val Zap: ImageVector = Icons.Filled.ElectricBolt       // bolt.fill

@@ -50,6 +50,7 @@ struct SettingsView: View {
         case recentlyDeleted = "Recently Deleted"
         case followingBackup = "Following Backup"
         case wallet = "Wallet"
+        case privacy = "Privacy"
         case feed = "Feed"
         case appearance = "Appearance"
         case media = "Media & Cache"
@@ -89,6 +90,7 @@ struct SettingsView: View {
             case .recentlyDeleted: return "trash"
             case .followingBackup: return "person.crop.circle.badge.clock"
             case .wallet: return "bitcoinsign.circle"
+            case .privacy: return "hand.raised"
             case .feed: return "newspaper"
             case .appearance: return "paintpalette"
             case .media: return "photo.on.rectangle"
@@ -128,7 +130,7 @@ struct SettingsView: View {
         let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup]
         #endif
         return [
-            ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .wallet]),
+            ("Account", [.accounts, .blocked, .recentlyDeleted, .followingBackup, .wallet, .privacy]),
             ("Feed & Display", [.feed, .appearance, .media]),
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
@@ -617,6 +619,7 @@ struct SettingsView: View {
         case .advanced: return .gray
         case .bitcoin: return .orange
         case .wallet: return .orange
+        case .privacy: return .blue
         case .logs: return .secondary
         case .tutorials: return .purple
         }
@@ -658,6 +661,7 @@ struct SettingsView: View {
             case .advanced: AdvancedSettingsView()
             case .bitcoin: BitcoinWalletSettingsView()
             case .wallet: WalletSettingsView()
+            case .privacy: PrivacySettingsView()
             case .logs: LogsView(logStore: relayManager.logStore)
             case .tutorials:
                 // Close Settings (a sheet on iPhone) and go to the page the

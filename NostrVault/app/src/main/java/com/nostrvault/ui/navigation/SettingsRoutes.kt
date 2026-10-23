@@ -15,6 +15,7 @@ import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
 import com.nostrvault.ui.screens.settings.ImportSettingsScreen
 import com.nostrvault.ui.screens.settings.MediaSettingsScreen
+import com.nostrvault.ui.screens.settings.PrivacySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayAccessSettingsScreen
 import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
@@ -83,6 +84,12 @@ internal fun NavGraphBuilder.settingsRoutes(
 
     composable(Screen.MediaSettings.route) {
         MediaSettingsScreen(
+            onBack = { navController.popBackStack() },
+        )
+    }
+
+    composable(Screen.PrivacySettings.route) {
+        PrivacySettingsScreen(
             onBack = { navController.popBackStack() },
         )
     }
