@@ -114,8 +114,14 @@ extension FeedView {
         #endif
         .onAppear {
             feedService.markViewed()
-            rebuildRowDataCache(immediate: true)
-            rebuildThreadsIfNeeded(immediate: true)
+            // The row cache and the thread grouping are kept up to date by
+            // RowDataCacheObservers while this view lives behind another tab
+            // or under a pushed thread, so a return here does not resolve
+            // every row again: that blocked the main thread for the whole
+            // feed on each tab switch back and each thread closed. A fresh
+            // view (empty cache) still builds everything before its first frame.
+            if rowDataCache.isEmpty { rebuildRowDataCache(immediate: true) }
+            if feedThreads.isEmpty { rebuildThreadsIfNeeded(immediate: true) }
             // Resume if previously paused (e.g. view disappeared while in menu bar).
             if feedService.isPaused {
                 feedService.resumeFeed()
