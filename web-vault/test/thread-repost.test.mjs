@@ -134,7 +134,7 @@ globalThis.document = {
 const tick = (ms = 0) => new Promise(r => setTimeout(r, ms))
 const until = async (cond, what) => { for (let i = 0; i < 200; i++) { if (cond()) return; await tick(5) } assert.fail(`timed out waiting for ${what}`) }
 
-test("a late opening read for the previous note doesn't swap in its carried note", async () => {
+test("a late opening read for the previous note doesn't swap in its carried note", async t => {
   Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
   // A reposted note, then a reposted reply whose root is stored: only the carried copy puts that reply in its thread.
   // The first note's opening read is held until the second thread is reading its replies, so the stale run lands
@@ -148,6 +148,10 @@ test("a late opening read for the previous note doesn't swap in its carried note
   let holding = true
   const vault = { feed: { query: f => holding && (isFirstOpen(f) || isSecondReplies(f)) ? hold(f) : feedOf(events).feed.query(f) } }
   const ctx = { vault, account: { relays: { read: [] } } }
+  // The focused note's reaction summary asks relays even offline: answer it empty so nothing reaches the network.
+  const querySync = pool.querySync
+  pool.querySync = async () => []
+  t.after(() => { pool.querySync = querySync })
 
   const el = document.createElement("div")
   render(h(ThreadScreen, { ctx, id: first.id }), el)
@@ -180,13 +184,13 @@ test("a network sync still running for the previous note doesn't take over the n
     const ctx = { vault: { feed: { query: feedOf(events).feed.query, event: async () => ({ ok: true }) } }, account: { relays: { read: [] } } }
 
     render(h(ThreadScreen, { ctx, id: first.id }), el)
-    await until(() => held.some(q => q.f["#e"]?.[0] === first.id), "the first note's sync asking relays for replies")
+    await until(() => held.some(q => q.f["#e"]?.[0] === first.id && !q.f.kinds?.includes(7)), "the first note's sync asking relays for replies")
     render(h(ThreadScreen, { ctx, id: replyToOriginal.id }), el)
     await until(() => /a reposted reply/.test(el.textContent), "the second thread on screen")
 
     // The first sync's relays answer now. Everything it would still do after that (store, setRootId, reload from the
     // in-memory /feed) is promise work, so one timer turn runs all of it; the second turn lets preact render it.
-    held.find(q => q.f["#e"]?.[0] === first.id).answer()
+    held.find(q => q.f["#e"]?.[0] === first.id && !q.f.kinds?.includes(7)).answer()
     await tick()
     await tick()
     assert.match(el.textContent, /the reposted note/)
