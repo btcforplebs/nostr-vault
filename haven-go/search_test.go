@@ -137,6 +137,9 @@ func startHaven(t *testing.T) *havenUnderTest {
 		srv.Close()
 		cancel()
 		CloseDBs()
+		// CloseDBs leaves the globals pointing at closed stores, and a query
+		// on a closed store blocks forever (computePopularNotes in a later test).
+		privateDB, chatDB, outboxDB, inboxDB, blossomDB, feedDB = nil, nil, nil, nil, nil, nil
 		config, fs = prevConfig, prevFs
 		privateDB, chatDB, outboxDB, inboxDB, feedDB, blossomDB = prevDBs[0], prevDBs[1], prevDBs[2], prevDBs[3], prevDBs[4], prevDBs[5]
 	})

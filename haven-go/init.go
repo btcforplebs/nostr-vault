@@ -424,7 +424,11 @@ func initRelays(ctx context.Context) error {
 		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoComplexFilters)
 	}
 
+	outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, meshNoQueries)
+	outboxRelay.RejectCountFilter = append(outboxRelay.RejectCountFilter, meshNoQueries)
+
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
+		meshOwnerEventsOnly,
 		policies.RejectEventsWithBase64Media,
 		whitelistBypassEventRateLimiter(
 			outboxRelayLimits.EventIPLimiterTokensPerInterval,
@@ -436,23 +440,32 @@ func initRelays(ctx context.Context) error {
 	)
 
 	outboxRelay.RejectConnection = append(outboxRelay.RejectConnection,
-		bypassLocalhostConnectionLimiter(policies.ConnectionRateLimiter(
+		meshAwareConnectionLimiter(policies.ConnectionRateLimiter(
 			outboxRelayLimits.ConnectionRateLimiterTokensPerInterval,
 			time.Minute*time.Duration(outboxRelayLimits.ConnectionRateLimiterInterval),
 			outboxRelayLimits.ConnectionRateLimiterMaxTokens,
 		)),
 	)
 
-	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
-		slog.Info("event stored")
-		runsafe.Go("blast", func() { blast(ctx, event) })
-		return nil
+	relayCtx := ctx
+	blastQ := openBlastQueue(blastPendingFile)
+	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx, blastQ) })
+	// Only what the store now holds, and nothing a stranger sent over the
+	// mesh door (mesh_safety.go). The relay's context, not the connection's:
+	// a sender that hangs up right after OK must not cut the blast.
+	blastStored := newBlastStored(outboxHolds, func(event *nostr.Event) {
+		runsafe.Go("blast", func() { blastOrKeep(relayCtx, blastQ, event) })
 	})
+	meshBlobs.reset()
+	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, noteStoredForMeshBlobs, blastStored)
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
 	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
-	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
+	// khatru hands replaceable kinds (0, 3, 10002, 10063, 30023…) to ReplaceEvent,
+	// never StoreEvent, so they are blasted here too: a phone's 10063 sent only
+	// to this relay otherwise never reaches the public relays.
+	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent, noteStoredForMeshBlobs, blastStored)
 
 	mux = outboxRelay.Router()
 
@@ -509,6 +522,8 @@ func initRelays(ctx context.Context) error {
 		return nil
 	})
 	blossomServer.LoadBlob = append(blossomServer.LoadBlob, loadBlob)
+	// Over the mesh, only blobs a public note names (mesh_safety.go).
+	guardMeshBlobs(blossomServer)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
 		return fs.Remove(config.BlossomPath + sha256)
@@ -720,6 +735,34 @@ func blossomContentType(hash string, ext string) string {
 	return ""
 }
 
+// meshBlobHandler is all a FIPS mesh peer gets: GET or HEAD of one blob.
+// Mesh connections arrive from 127.0.0.1, so the full mux would treat every
+// peer as the owner's own app (no auth on /feed, no connection limit, the
+// owner's rate bucket). NIP-F1: a mesh peer is an unknown remote client.
+func meshBlobHandler(w http.ResponseWriter, r *http.Request) {
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead) ||
+		!blossomBlobPathRe.MatchString(r.URL.Path) {
+		http.NotFound(w, r)
+		return
+	}
+	// HEAD answers from the index alone, so it gets GET's mesh rules here, and
+	// the same 404 as a blob that is not here: no yes/no oracle (mesh_head.go).
+	if r.Method == http.MethodHead && isMeshRequest(r) {
+		sha := strings.ToLower(blossomBlobPathRe.FindStringSubmatch(r.URL.Path)[1])
+		if !meshHeadAllowed(r, sha) {
+			w.Header().Add("X-Reason", "file not found")
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+	// khatru picks websocket, NIP-11 and NIP-86 by header before looking at
+	// the path, so a blob path alone does not keep a peer off the relay.
+	r.Header.Del("Upgrade")
+	r.Header.Del("Accept")
+	r.Header.Del("Content-Type")
+	dynamicRelayHandler(w, r)
+}
+
 func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 	var relay *khatru.Relay
 	relayType := r.URL.Path
@@ -750,7 +793,7 @@ func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	normalizeNostrAuthHeader(r)
-	relay.ServeHTTP(w, r)
+	serveWithForward(w, r, relay)
 }
 
 func getLogLevelFromConfig() slog.Level {

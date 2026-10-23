@@ -178,6 +178,75 @@ func refreshIfOnlyOwners(ctx context.Context, instance any) bool {
 	return true
 }
 
+// FollowListCheckInterval is how often RefreshOnFollowListChange looks for a
+// follow list newer than the graph.
+const FollowListCheckInterval = 2 * time.Minute
+
+// FollowListSettle is how long the owners' newest follow list must sit before
+// a rebuild picks it up, so a run of unfollows costs one rebuild, not one each.
+const FollowListSettle = time.Minute
+
+// RefreshOnFollowListChange rebuilds the graph once the owners publish a
+// follow list newer than it. Without it an unfollow waited for the daily
+// refresh: everyone only that follow brought in stayed in the web, and in
+// Global, until then. newest is when the owners' newest stored follow list
+// was made (zero when there is none). An owner-only graph is left to
+// RefreshWhileEmpty.
+func RefreshOnFollowListChange(ctx context.Context, interval time.Duration, newest func() time.Time) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	var due followListDue
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			instance := GetInstance()
+			if !due.check(instance, newest(), now) {
+				continue
+			}
+			if refresher, ok := instance.(Refresher); ok {
+				slog.Info("🔁 Follow list changed, rebuilding WoT")
+				refresher.Refresh(ctx)
+			}
+		}
+	}
+}
+
+type graphAge interface {
+	BuiltAt() time.Time
+}
+
+// followListDue says whether a follow list made at listAt is missing from the
+// graph and has settled. A rebuild that comes back without saving (offline,
+// seed relays down) is tried again for the same list only after
+// EmptyGraphFallback, not every tick: a full depth-3 pass is minutes of work.
+type followListDue struct {
+	tried   time.Time
+	triedAt time.Time
+}
+
+func (d *followListDue) check(instance any, listAt, now time.Time) bool {
+	graph, ok := instance.(graphAge)
+	if !ok || listAt.IsZero() {
+		return false
+	}
+	if empty, ok := instance.(ownersOnly); ok && empty.NamesOnlyOwners() {
+		return false
+	}
+	built := graph.BuiltAt()
+	// Never built: Initialize owns the first build.
+	if built.Unix() <= 0 || listAt.Before(built) || now.Sub(listAt) < FollowListSettle {
+		return false
+	}
+	if listAt.Equal(d.tried) && now.Sub(d.triedAt) < EmptyGraphFallback {
+		return false
+	}
+	d.tried, d.triedAt = listAt, now
+	return true
+}
+
 // PeriodicRefresh re-computes the WoT every interval for as long as the process
 // stays alive. The ticker starts from zero on every call, so on a process that
 // restarts often (a mobile app backgrounded/relaunched constantly, unlike a

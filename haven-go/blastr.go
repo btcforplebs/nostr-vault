@@ -14,7 +14,8 @@ import (
 	"github.com/barrydeen/haven/pkg/runsafe"
 )
 
-func blast(ctx context.Context, ev *nostr.Event) {
+// blast publishes ev to every blastr relay and returns how many accepted it.
+func blast(ctx context.Context, ev *nostr.Event) int {
 	var successCount atomic.Int32
 	var wg sync.WaitGroup
 	timeout := time.Second * time.Duration(config.BlastrTimeoutSeconds)
@@ -36,6 +37,7 @@ func blast(ctx context.Context, ev *nostr.Event) {
 
 	wg.Wait()
 	slog.Info("🔫 blasted event", "id", ev.ID, "kind", ev.Kind, "relays", successCount.Load())
+	return int(successCount.Load())
 }
 
 func publishWithRetry(ctx context.Context, relayURL string, ev *nostr.Event, timeout time.Duration, maxRetries int) bool {

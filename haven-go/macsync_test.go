@@ -320,3 +320,29 @@ func TestMacBackfillIncompleteRetriesDaily(t *testing.T) {
 		t.Fatalf("day-old incomplete copy did not re-run: %+v", st)
 	}
 }
+
+// A check tapped while the startup copy runs is answered by that copy. A second
+// run would overwrite its counts with a pass that finds nothing new.
+func TestMacCheckDuringCopyIsAnsweredByIt(t *testing.T) {
+	mac := newFakeMac(t, true, 0)
+	f := setupMacFixture(t, mac)
+	checks := make(chan struct{}, 1)
+	checks <- struct{}{} // tapped while the copy was running
+	f.fill.runAndSettle(context.Background(), false, checks)
+	st := loadMacSyncStatus()
+	if st.State != "done" || st.Posts == 0 {
+		t.Fatalf("startup copy: %+v", st)
+	}
+	select {
+	case <-checks:
+		t.Fatal("a check answered by the copy that just ran is still queued")
+	default:
+	}
+
+	// No copy ran (already done, not forced): a pending check stays queued.
+	checks <- struct{}{}
+	f.fill.runAndSettle(context.Background(), false, checks)
+	if len(checks) != 1 {
+		t.Fatal("a check was dropped although no copy ran")
+	}
+}

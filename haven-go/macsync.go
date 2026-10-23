@@ -174,18 +174,18 @@ func (b *macBackfiller) slices() [][2]*nostr.Timestamp {
 // is not repeated; an incomplete or failed one is retried on the next launch.
 // force re-runs it regardless (the app's "Check sync with Mac"). Never runs
 // twice at once.
-func (b *macBackfiller) runIfNeeded(ctx context.Context, force bool) {
+func (b *macBackfiller) runIfNeeded(ctx context.Context, force bool) bool {
 	base, inbox := macRelayURLs()
 	if base == "" {
-		return
+		return false
 	}
 	if !b.running.CompareAndSwap(false, true) {
-		return
+		return false
 	}
 	defer b.running.Store(false)
 	prev := loadMacSyncStatus()
 	if !force && prev.MacURL == base && prev.State == "done" {
-		return
+		return false
 	}
 	// A copy that finished cleanly but left a few events the phone won't take
 	// (seen on real phones: one 600 KB, 7,000-entry follow list from a stranger)
@@ -193,25 +193,40 @@ func (b *macBackfiller) runIfNeeded(ctx context.Context, force bool) {
 	// day; a copy that hit errors still retries on every launch.
 	if !force && prev.MacURL == base && prev.State == "incomplete" && prev.Error == "" &&
 		b.now().Sub(time.Unix(prev.FinishedAt, 0)) < 24*time.Hour {
-		return
+		return false
 	}
 	st := b.run(ctx, base, inbox)
 	if ctx.Err() != nil {
-		return // relay stopping mid-copy: the heartbeat goes stale, retry next launch
+		return true // relay stopping mid-copy: the heartbeat goes stale, retry next launch
 	}
 	saveMacSyncStatus(st)
+	return true
 }
 
 // loop runs the copy once after startup, then again on every check request.
 func (b *macBackfiller) loop(ctx context.Context, checks <-chan struct{}) {
-	b.runIfNeeded(ctx, false)
+	b.runAndSettle(ctx, false, checks)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-checks:
-			b.runIfNeeded(ctx, true)
+			b.runAndSettle(ctx, true, checks)
 		}
+	}
+}
+
+// runAndSettle runs the copy, then drops a check asked for while it ran: that
+// copy is the answer. Re-running would overwrite its counts with the zeros of
+// a second pass that finds nothing new, so a tap during the startup copy
+// ended on "0 posts and 0 mentions copied" after 11,476 had been.
+func (b *macBackfiller) runAndSettle(ctx context.Context, force bool, checks <-chan struct{}) {
+	if !b.runIfNeeded(ctx, force) {
+		return
+	}
+	select {
+	case <-checks:
+	default:
 	}
 }
 

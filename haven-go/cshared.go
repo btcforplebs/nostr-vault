@@ -287,6 +287,7 @@ func StartRelayC(importMode bool) {
 				config.WotCachePath,
 				config.WotCacheTTLMinutes,
 			)
+			wotModel.LocalFollowLists = ownerFollowLists
 
 			// Try to load from cache first - instant startup
 			// Only run full network rebuild if cache is missing or expired
@@ -320,6 +321,7 @@ func StartRelayC(importMode bool) {
 			cycle.spawn("periodicCloudBackups", func() { startPeriodicCloudBackups(cycle.ctx) })
 			cycle.spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(cycle.ctx, config.WotRefreshInterval) })
 			cycle.spawn("wot.RefreshWhileEmpty", func() { wot.RefreshWhileEmpty(cycle.ctx, wot.EmptyGraphRefreshInterval, ownerFollowListStamp) })
+			cycle.spawn("wot.RefreshOnFollowListChange", func() { wot.RefreshOnFollowListChange(cycle.ctx, wot.FollowListCheckInterval, ownerFollowListAt) })
 		})
 
 		// Use a fresh ServeMux each cycle so stop/start never panics on
@@ -374,6 +376,11 @@ func StartRelayC(importMode bool) {
 				log.Printf("🚫 relay HTTP server exited: %v", err)
 			}
 		})
+
+		// Sharing was on before this start (relay restart): reopen the mesh port.
+		if meshWanted.Load() {
+			cycle.startMeshServer()
+		}
 
 		// Brief delay to ensure server binds to port before returning
 		time.Sleep(100 * time.Millisecond)
@@ -460,6 +467,10 @@ func StopRelayC() {
 				c.server.Close() // hard close if graceful timed out
 			}
 		}
+		if c.meshServer != nil {
+			// Blob reads only, nothing to drain carefully; close outright.
+			c.meshServer.Close()
+		}
 		// All background goroutines are context-driven, so this normally
 		// returns quickly; if something straggles, closing the DBs after a
 		// bounded wait is still safe — a late write hits Badger's
@@ -535,6 +546,14 @@ func RequestMacSyncCheckC() {
 	// Re-runs the Mac relay full-history copy and its missing-events check;
 	// the result lands in mac_sync_status.json. No-op without a Mac relay.
 	RequestMacSyncCheck()
+}
+
+//export SetMeshServingC
+func SetMeshServingC(on C.int) {
+	// The host turns FIPS sharing on or off. The mesh port only listens
+	// while sharing, so with the mesh off no app on the device can read
+	// blobs from it in plain HTTP.
+	setMeshServing(on != 0)
 }
 
 //export TrimMemoryC
