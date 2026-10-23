@@ -205,7 +205,7 @@ function renderPage(page, sections, flat, aliases) {
             <a href="/blog-what-is-nostr-vault.html">Blog</a>
         </div>
         <div class="actions">
-            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="/vault/" class="pill pill-web">Open web app</a>
             <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
         </div>
     </nav>

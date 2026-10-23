@@ -1,6 +1,6 @@
 {
   "name": "nostr-vault-web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Nostr Vault as a web app, with Haven running in the page as its own relay",
   "scripts": {
     "dev": "vite",

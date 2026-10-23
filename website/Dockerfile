@@ -9,6 +9,8 @@ FROM node:22-alpine AS build
 COPY --from=go /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH
 ARG ALLOW_MISSING_WEB_APPS=0
+# The commit the web app's About shows (web-vault/vite.config.js); deploy.sh passes its build tag.
+ARG NV_COMMIT=
 WORKDIR /src
 COPY . .
 RUN ALLOW_MISSING_WEB_APPS=$ALLOW_MISSING_WEB_APPS website/build-web-apps.sh \

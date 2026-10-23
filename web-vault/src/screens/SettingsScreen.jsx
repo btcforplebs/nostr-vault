@@ -19,7 +19,7 @@ import { syncOwn } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
 import {
-  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, PRIVACY_URL,
+  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL,
   logLines,
 } from "../net/settings.js"
 
@@ -69,7 +69,7 @@ function Index({ ctx }) {
         <div class="section-label">About</div>
         <div class="card settings-about">
           <div class="settings-app">Nostr Vault</div>
-          <div class="muted small">Version {APP_VERSION} (web)</div>
+          <div class="muted small">Version {APP_VERSION} (web){APP_COMMIT && <> · {commitUrl(APP_COMMIT) ? <a href={commitUrl(APP_COMMIT)} class="mono">{APP_COMMIT}</a> : <span class="mono">{APP_COMMIT}</span>}</>}</div>
           <hr />
           <div class="settings-support">Support &amp; Abuse Reporting</div>
           <p class="muted small">To report objectionable content or abusive users, contact the developer via Nostr</p>
