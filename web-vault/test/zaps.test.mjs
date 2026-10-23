@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import {
-  lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts, trustedReceipts,
+  lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts, trustedReceipts, TRUST_PARALLEL,
   zapTotal, wantTotals, lightningAddressOf, ZAP_MESSAGE,
 } from "../src/net/zaps.js"
 
@@ -193,6 +193,24 @@ test("trusted receipts: a payee whose zap service can't be resolved keeps receip
   const stranger = generateSecretKey(), a = note()
   const r = receipt({ target: a.id, sats: 3, by: forger, recipient: pk(stranger) })
   assert.deepEqual((await trustedReceipts([r], async () => null)).map(e => e.id), [r.id])
+})
+
+test("trusted receipts: payees' zap services are asked side by side, not one after another", async () => {
+  // Ten payees nobody has asked yet, each lookup held open until all of them have started.
+  const payees = Array.from({ length: 10 }, () => generateSecretKey())
+  const rs = payees.map(p => receipt({ target: note().id, sats: 1, by: forger, recipient: pk(p) }))
+  let inFlight = 0, most = 0, release
+  const gate = new Promise(r => { release = r })
+  const lnOf = async () => {
+    most = Math.max(most, ++inFlight)
+    if (inFlight >= TRUST_PARALLEL) release()
+    await Promise.race([gate, new Promise(r => setTimeout(r, 200))])
+    inFlight--
+    return null
+  }
+  const kept = await trustedReceipts(rs, lnOf)
+  assert.equal(most, TRUST_PARALLEL, "payees were looked up one at a time")
+  assert.deepEqual(kept.map(e => e.id), rs.map(e => e.id), "order changed")
 })
 
 test("totals are asked in groups of ten, one filter per call, once per note", async () => {

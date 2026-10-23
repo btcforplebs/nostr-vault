@@ -74,22 +74,34 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {} }
   await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
   const top = (await readFeed(vault, follows, { limit: 1 }))[0]
   const since = top ? top.created_at - 600 : now() - 2 * 86400
-  let stored = 0
-  for (let i = 0; i < follows.length; i += 250) {
+  let stored = 0, done = 0
+  const sent = new Set()
+  const chunk = async i => {
     // Each relay's answer is stored as it lands, so the fastest relay's notes show without waiting for the slowest
     // (up to maxWait). A note two relays send is written once: Haven takes one request per id at a time.
     // A relay whose notes Haven refused doesn't stop the others; the sync fails once they have all finished.
-    const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }, sent = new Set()
+    const filter = { kinds: FEED_KINDS, authors: follows.slice(i, i + 250), since, limit: 500 }
     const failed = (await Promise.allSettled(relays.map(async url => {
       const evs = (await pool.querySync([url], filter, { maxWait: 8000 }).catch(() => [])).filter(e => !sent.has(e.id) && sent.add(e.id))
       const n = await storeAll(vault.feed, evs)
-      if (n) onProgress({ done: i, of: follows.length, stored: (stored += n) })
+      if (n) onProgress({ done, of: follows.length, stored: (stored += n) })
     }))).find(r => r.status === "rejected")
     if (failed) throw failed.reason
-    onProgress({ done: Math.min(i + 250, follows.length), of: follows.length, stored })
+    done = Math.min(done + 250, follows.length)
+    onProgress({ done, of: follows.length, stored })
   }
+  // The first 250 follows alone, so the first screen isn't slowed by the rest (asking them too put the first notes
+  // ~2.5 s later), then FEED_CHUNKS_AT_ONCE groups at a time, not one after another: 1,000 follows took ~43 s in turn.
+  await chunk(0)
+  const starts = Array.from({ length: Math.ceil(follows.length / 250) - 1 }, (_, k) => (k + 1) * 250).values()
+  const errors = await Promise.allSettled(Array.from({ length: FEED_CHUNKS_AT_ONCE }, async () => { for (const i of starts) await chunk(i) }))
+  const failed = errors.find(r => r.status === "rejected")
+  if (failed) throw failed.reason
   return stored
 }
+
+/** How many groups of 250 follows syncFeed asks the relays for at once: one REQ each per relay. */
+export const FEED_CHUNKS_AT_ONCE = 3
 
 /** The user's own notes and articles from their write relays into Haven's outbox route. */
 export async function syncOwn(vault, pubkey, relays) {

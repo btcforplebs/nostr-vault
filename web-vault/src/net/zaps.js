@@ -227,17 +227,27 @@ export async function countReceipts(events, ids, me, lnOf, fetchImpl = globalThi
  * service can't be resolved is trusted (fails open) for the author check; the request check never fails open.
  */
 export async function trustedReceipts(events, lnOf, fetchImpl = globalThis.fetch) {
+  const payeeOf = ev => ev.tags.find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))?.[1]
+  // Every payee's zap service at once, a few at a time, not one after another: each is a profile read and an LNURL
+  // request, and 60 payees in turn took ~20 s.
+  const payees = [...new Set(events.filter(ev => ev?.kind === 9735 && zapRequest(ev)).map(payeeOf))]
+  const next = payees.values()
+  await Promise.all(Array.from({ length: Math.min(TRUST_PARALLEL, payees.length) }, async () => {
+    for (const payee of next) await publisherOf(payee, lnOf, fetchImpl)
+  }))
   const out = []
   for (const ev of events) {
     if (ev?.kind !== 9735) { out.push(ev); continue }
     if (!zapRequest(ev)) continue
-    const payee = ev.tags.find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))?.[1]
+    const payee = payeeOf(ev)
     const publisher = await publisherOf(payee, lnOf, fetchImpl)
     if (publisher && publisher !== ev.pubkey) continue
     out.push(ev)
   }
   return out
 }
+/** How many payees' zap services trustedReceipts asks at once. */
+export const TRUST_PARALLEL = 8
 /** trustedReceipts for this account's screens. */
 export const receiptTrust = ctx => evs => trustedReceipts(evs, pk => lightningAddressOf(ctx, pk))
 

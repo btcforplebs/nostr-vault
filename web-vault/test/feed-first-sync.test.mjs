@@ -87,23 +87,24 @@ test("before the follow list arrives the feed doesn't claim to be up to date", a
   render(null, el)
 })
 
-test("notes from the first chunk of follows show while later chunks are still syncing", async () => {
+test("the first chunk of follows is asked alone and its notes show; the other chunks are then asked together", async () => {
   const relays = gatedRelays()
   const m = mount({ follows: [], relays: { read: [] }, loaded: false })
   await tick(20)
   m.rerender({ follows, relays: { read: [] }, loaded: true })
-  await until(() => relays.pending() > 0, "the first chunk's query")
+  await until(() => relays.pending() === 2, "chunk 1 asked of both relays")
+  await tick(20)
+  assert.equal(relays.pending(), 2, "later chunks asked before the first screen's chunk landed")
   assert.match(text(m.el), /Fetching notes from the people you follow…/)
   assert.doesNotMatch(text(m.el), /No notes saved yet\./)
 
   relays.releaseChunk() // chunk 1 of 3 (follows 1-250) lands
-  await until(() => relays.pending() > 0, "the second chunk's query")
   await until(() => /note from/.test(text(m.el)), "chunk 1's notes on screen")
+  // 695 follows: chunks 2 and 3 open together, not one after the other.
+  await until(() => relays.pending() === 4, "chunks 2 and 3 asked together")
   assert.match(text(m.el), /Syncing 250\/695 follows · 3 saved/)
   assert.doesNotMatch(text(m.el), /No notes saved yet\./)
 
-  relays.releaseChunk()
-  await until(() => relays.pending() > 0, "the third chunk's query")
   relays.releaseChunk()
   await until(() => /9 notes saved to your relay/.test(text(m.el)), "the finished sync")
   assert.equal((text(m.el).match(/note from/g) ?? []).length, 9, "a note both relays sent is saved once")
@@ -121,10 +122,36 @@ test("the first relay's notes show while a slower relay is still answering", asy
   assert.equal(relays.pending(), 1, "the slow relay is still being waited on")
   assert.match(text(m.el), /Syncing 0\/695 follows · 3 saved/)
   relays.release()
-  await until(() => relays.pending() > 0, "the second chunk's query")
+  await until(() => relays.pending() > 0, "the next chunks' queries")
   assert.equal((text(m.el).match(/note from/g) ?? []).length, 3, "the slow relay's copies aren't saved twice")
-  for (let k = 0; k < 2; k++) { relays.releaseChunk(); await tick(20) }
+  relays.releaseChunk()
   await until(() => /notes saved to your relay/.test(text(m.el)), "the finished sync")
+  render(null, m.el)
+})
+
+test("answers landing while the feed is being read wait for one more read, not one read each", async () => {
+  const relays = gatedRelays()
+  // Six relays, each with notes of its own: every answer saves something.
+  const gated = pool.querySync
+  let n = 1000
+  pool.querySync = async (urls, f, o) => (await gated(urls, f, o)).map(e => ({ ...e, id: hex(n++) }))
+  const own = ["wss://c", "wss://d", "wss://e", "wss://f"]
+  const m = mount({ follows: [], relays: { read: [] }, loaded: false })
+  // A read of every follow takes a while in Haven; count the reads of more than one note.
+  const query = m.ctx.vault.feed.query.bind(m.ctx.vault.feed)
+  let reads = 0
+  m.ctx.vault.feed.query = async f => { if (f.limit > 1) reads++; await tick(30); return query(f) }
+  await tick(20)
+  m.rerender({ follows, relays: { read: own }, loaded: true })
+  await until(() => relays.pending() === 6, "chunk 1 asked of six relays")
+  relays.releaseChunk()
+  await until(() => relays.pending() === 12, "chunks 2 and 3 asked")
+  await until(() => /Syncing 250\/695/.test(text(m.el)), "chunk 1 shown")
+  await tick(100)
+  const before = reads
+  relays.releaseChunk() // twelve answers, each saving notes, all inside one read
+  await until(() => /54 notes saved to your relay/.test(text(m.el)), "the finished sync")
+  assert.ok(reads - before <= 3, `${reads - before} reads for twelve answers`)
   render(null, m.el)
 })
 
