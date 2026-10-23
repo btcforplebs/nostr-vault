@@ -229,7 +229,7 @@ function Import({ ctx }) {
 export const RESET_QUESTION = "Delete notes, messages, drafts and paired vaults from this browser and sign out? Your phone's vault is untouched."
 
 /** A key made here goes with the rest: the question says so, and where to save it first. */
-export const RESET_KEY_WARNING = "This account's secret key is kept only in this browser, so save it first (Settings › Your Secret Key) or you can't sign back in."
+export const RESET_KEY_WARNING = "This account's secret key is kept only in this browser, so save it first (Settings › Your Secret Key) or you can't use this account again. The web app can't sign in with it: add it to a Nostr browser extension, or import it in the Nostr Vault app."
 
 /** Asks first; nothing is deleted on Cancel. -> whether the wipe was started */
 export function resetBrowser(ctx, ask = q => globalThis.confirm(q)) {
