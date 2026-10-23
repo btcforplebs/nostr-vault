@@ -3,6 +3,10 @@ package com.nostrvault.ui.screens.music
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -163,6 +167,30 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
         }
     }
 
+    // The song a feed card opened this artist's page for: tinted and
+    // scrolled to once the page's songs are in. A card tapped while the
+    // page already shows asks again through the same flow.
+    var highlightedId by remember(page) { mutableStateOf<String?>(null) }
+    val highlightRequest by MusicFeedState.highlight.collectAsState()
+    LaunchedEffect(page, artistPage, highlightRequest) {
+        val artist = (page as? MusicPage.Artist)?.artist ?: return@LaunchedEffect
+        val songs = artistPage?.tracks ?: return@LaunchedEffect
+        val id = MusicFeedState.highlightFor(artist.id) ?: return@LaunchedEffect
+        val index = songs.indexOfFirst { it.id == id }
+        if (index < 0) { MusicFeedState.clearHighlight(artist.id); return@LaunchedEffect }
+        highlightedId = id
+        // After the page's own jump to its top, and once its rows are laid out.
+        withFrameNanos { }
+        val target = MusicArtistRows.songItemIndex(
+            index, hasSearch = pageIsScope, hasAlbums = artistPage?.albums.orEmpty().isNotEmpty(),
+        )
+        listState.scrollToItem(target)
+        // Roughly centred, as iOS does, rather than pinned under the top bar.
+        listState.animateScrollBy(-listState.layoutInfo.viewportSize.height / 3f)
+        // Taken once: going back and returning later shows the page plain.
+        MusicFeedState.clearHighlight(artist.id)
+    }
+
     // Nothing by a blocked artist shows: not their songs, their albums, their
     // artist tiles, nor their search rows. Wavlake keeps it all, so an unblock
     // shows them again.
@@ -241,10 +269,17 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                         if (songs.isNotEmpty()) {
                             item(key = "page-songs") { MusicSectionTitle("Songs") }
                             itemsIndexed(songs, key = { _, t -> "s-${t.id}" }) { index, track ->
-                                MusicTrackRow(
-                                    track = track, isCurrent = current?.id == track.id, isPlaying = playing, actions = actions,
-                                    onTap = { if (current?.id == track.id) MusicPlayer.togglePlayPause() else MusicPlayer.play(songs, index) },
-                                )
+                                val lit = highlightedId == track.id
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(10.dp))
+                                        .background(if (lit) accent.copy(alpha = 0.15f) else Color.Transparent)
+                                        .padding(horizontal = if (lit) 6.dp else 0.dp),
+                                ) {
+                                    MusicTrackRow(
+                                        track = track, isCurrent = current?.id == track.id, isPlaying = playing, actions = actions,
+                                        onTap = { if (current?.id == track.id) MusicPlayer.togglePlayPause() else MusicPlayer.play(songs, index) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -388,6 +423,17 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
             )
         }
     }
+}
+
+/** Where things sit in an artist page's list, for scrolling to a song. */
+object MusicArtistRows {
+    /**
+     * The list index of song [songIndex]: after the search field (when the
+     * toolbar picked the artist), the heading, the albums row (when there
+     * are albums) and the "Songs" title.
+     */
+    fun songItemIndex(songIndex: Int, hasSearch: Boolean, hasAlbums: Boolean): Int =
+        (if (hasSearch) 1 else 0) + 1 + (if (hasAlbums) 1 else 0) + 1 + songIndex
 }
 
 /**

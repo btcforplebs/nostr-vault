@@ -224,6 +224,38 @@ object MusicFeedState {
         _revealRequested.value = false
     }
 
+    /** The song a feed card opened its artist's page for. */
+    data class SongHighlight(val artistId: String, val trackId: String)
+
+    /**
+     * Set by [showSong] just before its artist's page opens; the page takes
+     * it once, so going back and returning later shows the page plain.
+     * iOS: MusicSongHighlight.
+     */
+    private val _highlight = MutableStateFlow<SongHighlight?>(null)
+    val highlight: StateFlow<SongHighlight?> = _highlight.asStateFlow()
+
+    /** A feed card's song: opens its artist's page, scrolled to the song. False when Wavlake names no artist. */
+    fun showSong(track: WavlakeTrack): Boolean {
+        val artistId = track.artistId ?: return false
+        val page = MusicPage.artistOf(track) ?: return false
+        _highlight.value = SongHighlight(artistId, track.id)
+        reveal(page)
+        return true
+    }
+
+    /** The song asked for on [artistId]'s page, if any. */
+    fun highlightFor(artistId: String): String? = _highlight.value?.takeIf { it.artistId == artistId }?.trackId
+
+    /**
+     * Done with [artistId]'s song: the page has shown it. Cleared only once
+     * the scroll is over, since clearing restarts the page's effect that
+     * watches for it.
+     */
+    fun clearHighlight(artistId: String) {
+        if (_highlight.value?.artistId == artistId) _highlight.value = null
+    }
+
     /** The artist page on screen, so a song's "Go to" doesn't offer the page you're on. */
     val showingArtistId: String?
         get() = if (!isVisible) null else when (val last = _path.value.lastOrNull()) {
