@@ -211,8 +211,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * [target]'s follower count from Vertex, the source npub.world uses. Null
-     * when Vertex can't answer: no local key (a bunker or Amber would be asked
-     * to sign for every profile opened), no credits, or no answer in time.
+     * when Vertex isn't asked or can't answer: Settings > Privacy has it off
+     * (the default), no local key (a bunker or Amber would be asked to sign
+     * for every profile opened), no credits, or no answer in time.
      * The request is signed by the active account and names [target].
      * Mirrors iOS NostrService.fetchVertexFollowerCount.
      */
@@ -220,7 +221,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val vertex = com.nostrvault.data.model.VertexReputation
         val now = System.currentTimeMillis()
         vertexCache.followers(target, now)?.let { return it }
-        if (!vertexCache.shouldAsk(now) || configStore.config.value.activeSigningMode() != "local") return null
+        val config = configStore.config.value
+        if (!config.vertexLookups || !vertexCache.shouldAsk(now) || config.activeSigningMode() != "local") return null
         val request = withContext(Dispatchers.IO) {
             runCatching { signLocally(vertex.REQUEST_KIND, "", vertex.requestTags(target), forceOwner = false) }.getOrNull()
         } ?: return null

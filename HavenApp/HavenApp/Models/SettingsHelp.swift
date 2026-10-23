@@ -41,6 +41,10 @@ enum SettingsHelp: String, CaseIterable {
     case mediaCacheTTL = "media.cacheTTL"
     case mediaClearCache = "media.clearCache"
 
+    // Privacy
+    case privacyVertex = "privacy.vertex"
+    case privacyFanfares = "privacy.fanfares"
+
     // Notifications
     case notifyEnable = "notify.enable"
     case notifyFeedNotes = "notify.feedNotes"
@@ -103,6 +107,8 @@ enum SettingsHelp: String, CaseIterable {
         case .mediaPrefetchAvatars: return "Prefetch Profile Pictures"
         case .mediaCacheTTL: return "Cache Lifetime"
         case .mediaClearCache: return "Clear Media Cache"
+        case .privacyVertex: return "Follower Counts from Vertex"
+        case .privacyFanfares: return "Check Fanfares Articles"
         case .notifyEnable: return "Notifications"
         case .notifyFeedNotes: return "New Notes"
         case .notifyPerAccount: return "Alerts per Account"
@@ -159,6 +165,8 @@ enum SettingsHelp: String, CaseIterable {
         case .mediaPrefetchAvatars: return "Loads profile pictures ahead of time for smoother scrolling."
         case .mediaCacheTTL: return "How long downloaded media is kept before it's cleared."
         case .mediaClearCache: return "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched."
+        case .privacyVertex: return "When you open someone's profile, asks Vertex (vertexlab.io) how many followers they have. The request is signed by your key, so Vertex learns whose profiles you open."
+        case .privacyFanfares: return "When a Fanfares article shows, asks Fanfares whether you have bought it. The request is signed by your key and names the article. Off, you check with a tap."
         case .notifyEnable: return "Turns on notifications, made on this device by your relay — no outside push server involved."
         case .notifyFeedNotes: return "Notifies you when new notes appear in your feed."
         case .notifyPerAccount: return "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts, new followers) each account gets."

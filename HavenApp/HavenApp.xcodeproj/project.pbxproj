@@ -835,6 +835,7 @@
 		A5DC568CD5B2B92D554D9D22 /* LinkPreviewService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B2C3C269E23662DF825BFD /* LinkPreviewService.swift */; };
 		A61414C2A90F91F8790B68D6 /* GatedLockCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9065299A41018D52E9DF6512 /* GatedLockCopy.swift */; };
 		A67A3D25AD98B4679381B013 /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
+		A6A152903DA9E199459FBDDB /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */; };
 		A6A2F74BE2379BFD1788AD1A /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA979A3F7ED54EAB8F501F2E /* WalletLightningTab.swift */; };
 		A74B963EE33362EE5336AA5E /* ProfileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBFCD52C53864BA74263D0E7 /* ProfileActions.swift */; };
 		A75075B57433796A3CE1B8B0 /* NVWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DDFCB3C82896EDE259BF03 /* NVWidgetBridge.swift */; };
@@ -1160,6 +1161,7 @@
 		E22FFB37CAC77A587016D695 /* GlobalSearchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */; };
 		E2484116815A3C135A386248 /* SearchFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FCD916FF45FB514C228BAB /* SearchFilter.swift */; };
 		E2575685724FF2B426237058 /* FeedFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */; };
+		E26170178A77A8F2E8D93FF1 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */; };
 		E2B2738EBDA7D5C838F74A5B /* SearchFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FCD916FF45FB514C228BAB /* SearchFilter.swift */; };
 		E2B5D84651A43D0B22490254 /* PollComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5E1DFD8D4BF82783CEDFDD /* PollComposeView.swift */; };
 		E363C397778EDA4BA29B9B7E /* DraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3800D9290BD369F4F26BC5C3 /* DraftService.swift */; };
@@ -1755,6 +1757,7 @@
 		9AD2777B6DB059131373523E /* NostrService+Profiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+Profiles.swift"; sourceTree = "<group>"; };
 		9B105DB51050709A2C0C4A0F /* RelayProcessManager+StopRestart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+StopRestart.swift"; sourceTree = "<group>"; };
 		9B16351ED2F5677D2447FC87 /* BlossomMediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomMediaCache.swift; sourceTree = "<group>"; };
+		9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
 		9B34BEF72503E04EC348EF2B /* FeedService+Relays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+Relays.swift"; sourceTree = "<group>"; };
 		9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeMonitor.swift; sourceTree = "<group>"; };
 		9B53C9E72A1497E724646E97 /* NostrServiceTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrServiceTypes.swift; sourceTree = "<group>"; };
@@ -2523,6 +2526,7 @@
 				B94D10CDC71BCC7F67AC26E1 /* MacRelayDomainSettingsView.swift */,
 				1576DDD7998A44384715676C /* MacRelaySettingsView.swift */,
 				5446B1B39133DA8A4668484D /* MediaSettingsView.swift */,
+				9B276A92BC9E7E7EEBF20724 /* PrivacySettingsView.swift */,
 				4D23AE1DBF82F4B0BE4C6DE8 /* RecentlyDeletedSettingsView.swift */,
 				A881B1453D48D90B2F1242FA /* RelayAccessSettingsView.swift */,
 				DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */,
@@ -3776,6 +3780,7 @@
 				0A01917B3C0DC50066116572 /* PostEngagement.swift in Sources */,
 				B2D799D053929F4DB6071E97 /* PowPreferences.swift in Sources */,
 				6DA4DEC18EB584B409F4955D /* PriceService.swift in Sources */,
+				E26170178A77A8F2E8D93FF1 /* PrivacySettingsView.swift in Sources */,
 				A74B963EE33362EE5336AA5E /* ProfileActions.swift in Sources */,
 				FD903E770481FA264D565C4B /* ProfileContent+Header.swift in Sources */,
 				A3B0613EBDF7D1451A50B6C3 /* ProfileContent+Media.swift in Sources */,
@@ -4428,6 +4433,7 @@
 				92EBD4156406F61914CAE362 /* PostEngagement.swift in Sources */,
 				51100A24E2561C1B68EA7B5E /* PowPreferences.swift in Sources */,
 				D345A3970B0C13CF6C96F080 /* PriceService.swift in Sources */,
+				A6A152903DA9E199459FBDDB /* PrivacySettingsView.swift in Sources */,
 				711BFD75450E7D351ACB2690 /* ProfileActions.swift in Sources */,
 				4588E6C2BB47FACE97191F2E /* ProfileContent+Header.swift in Sources */,
 				91AD0D7C8DB7D526C523DB67 /* ProfileContent+Media.swift in Sources */,

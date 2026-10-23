@@ -218,6 +218,12 @@ data class HavenConfig(
     // Performance
     val prefetchAvatars: Boolean = true,
 
+    // Settings > Privacy (iOS HavenConfig). Both reach a third party with a request signed by your key, so both start off.
+    /** Ask Vertex (relay.vertexlab.io) for follower counts when a profile opens. */
+    val vertexLookups: Boolean = false,
+    /** Ask Fanfares for a gated article's key when it shows, not only on a tap. */
+    val fanfaresAutoCheck: Boolean = false,
+
     // Advanced / media (client-side; not sent to the Go relay)
     val disableMediaCache: Boolean = false,
     val cacheTTLDays: Int = 3, // 0 = never evict

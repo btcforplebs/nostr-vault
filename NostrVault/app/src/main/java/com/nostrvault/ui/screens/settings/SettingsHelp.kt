@@ -148,6 +148,16 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Clear Media Cache",
         "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched.",
     ),
+    PRIVACY_VERTEX(
+        "privacy.vertex",
+        "Follower Counts from Vertex",
+        "When you open someone's profile, asks Vertex (vertexlab.io) how many followers they have. The request is signed by your key, so Vertex learns whose profiles you open.",
+    ),
+    PRIVACY_FANFARES(
+        "privacy.fanfares",
+        "Check Fanfares Articles",
+        "When a Fanfares article shows, asks Fanfares whether you have bought it. The request is signed by your key and names the article. Off, you check with a tap.",
+    ),
     NOTIFY_ENABLE(
         "notify.enable",
         "Notifications",

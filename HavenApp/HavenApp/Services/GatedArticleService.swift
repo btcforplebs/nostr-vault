@@ -77,10 +77,13 @@ final class GatedArticleService {
         return body
     }
 
-    /// Whether opening a gated article may ask the signer on its own. A local
-    /// key signs silently; a remote signer would prompt on every view.
+    /// Whether opening a gated article may ask Fanfares on its own: only when
+    /// Settings > Privacy allows it (off by default, since the request is
+    /// signed by your key and names the article) and a local key signs
+    /// silently; a remote signer would prompt on every view.
     var canCheckSilently: Bool {
-        ConfigService.shared.config.activeSigningMode() == "local"
+        let config = ConfigService.shared.config
+        return config.fanfaresAutoCheck && config.activeSigningMode() == "local"
     }
 
     /// The article's naddr, byte-identical to the one Fanfares' own site uses.
