@@ -6,6 +6,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
+import { learn } from "../shell.js"
 
 const ICON = {
   post: "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z",
@@ -76,6 +77,7 @@ function AccountButton({ ctx, rail }) {
         <div class="side-pop" role="menu" onClick={e => { if (e.target.closest("[role=menuitem]")) setOpen(false) }}>
           <a role="menuitem" href="#/accounts">Accounts</a>
           <a role="menuitem" href="#/wallet">Wallet</a>
+          <a role="menuitem" href="/#about" onClick={e => { e.preventDefault(); learn() }}>Learn &amp; docs</a>
           <hr />
           <button role="menuitem" type="button" class="danger" onClick={ctx.signOut}>Sign out</button>
         </div>

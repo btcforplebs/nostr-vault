@@ -4,7 +4,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { npubEncode } from "nostr-tools/nip19"
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure"
-import { GUEST_ONLY, GUEST_RELAYS, guestContext, guestRelays, guestTarget } from "../src/guest/guest.js"
+import { GUEST_ONLY, GUEST_RELAYS, guestContext, guestPerson, guestRelays, guestTarget } from "../src/guest/guest.js"
 import { memoryStore, memoryVault } from "../src/guest/memory-vault.js"
 import { createFipsMedia, setMeshPeople, meshAllowed } from "../src/net/fips-media.js"
 import { guestPostDeleted, readDeleted } from "../src/guest/deleted.js"
@@ -19,6 +19,14 @@ test("guestTarget: the phone's #/thread/<id> and the desktop's ?note=<id>; anyth
   assert.equal(guestTarget(`#/feed?note=${ID}`), ID, "the desktop layout rewrites a thread link to its list (routes.js)")
   for (const h of ["", "#/feed", `#/thread/${ID.slice(1)}`, `#/thread/${ID.toUpperCase()}`, `#/profile/${ID}`, `#/dm/${ID}`, "#/thread/nevent1qqq"]) {
     assert.equal(guestTarget(h), null, h)
+  }
+})
+
+test("guestPerson: #/profile/<pubkey> opens that person (the welcome screen's search); anything else opens nobody", () => {
+  assert.equal(guestPerson(`#/profile/${ID}`), ID)
+  assert.equal(guestPerson(`#/profile/${ID}?x=1`), ID)
+  for (const h of ["", "#/", "#/profile", `#/profile/${ID.slice(1)}`, `#/profile/${ID.toUpperCase()}`, `#/thread/${ID}`, `#/wot/${ID}`, "#/profile/npub1qqq"]) {
+    assert.equal(guestPerson(h), null, h)
   }
 })
 

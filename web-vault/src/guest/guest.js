@@ -22,6 +22,13 @@ export function guestTarget(hash = "") {
   return note && HEX.test(note) ? note : null
 }
 
+/** The person a guest address opens: "#/profile/<pubkey>" (from the welcome screen's search, or a note's author).
+ *  -> the 64-hex pubkey, or null. */
+export function guestPerson(hash = "") {
+  const [route, arg = ""] = String(hash).replace(/^#\/?/, "").split("?")[0].split("/")
+  return route === "profile" && HEX.test(arg) ? arg : null
+}
+
 /** A link's relay hints ("?r=<wss url>", up to 3), as the thread page passes them: public wss:// hosts only, since
  *  the link chose them and this browser dials them. Read from the address the page opened with. */
 export function guestRelays(hash = "") {
