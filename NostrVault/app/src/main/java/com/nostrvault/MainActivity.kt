@@ -25,7 +25,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
@@ -132,6 +134,9 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             val config by configStore.config.collectAsState()
+            // The saved keys' store would not open: ask, never carry on as if none were saved.
+            val credentialsUnreadable by com.nostrvault.data.local.CredentialStore.unreadable.collectAsState()
+            var continueWithoutCredentials by remember { mutableStateOf(false) }
 
             // Start relay service when setup completes (or on subsequent launches).
             // Both full and browse modes start the relay — browse mode only needs the
@@ -175,6 +180,10 @@ class MainActivity : FragmentActivity() {
                 zapsOnlyMode = config.zapsOnlyMode,
                 feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),
             ) {
+                if (credentialsUnreadable && !continueWithoutCredentials) {
+                    com.nostrvault.ui.screens.recovery.CredentialRecoveryScreen(onContinue = { continueWithoutCredentials = true })
+                    return@NostrVaultTheme
+                }
                 // "Translate post" (Appearance > Translation): one context for
                 // every note card, rebuilt only when the switch or language changes.
                 val noteTranslation = remember(config.showTranslateButton, config.translateTargetLanguage) {
