@@ -25,7 +25,8 @@ internal object MeshEnginePlan {
     fun options(config: HavenConfig, ownNpub: String?, maxServeBytes: Long): FipsStartOptions {
         val own = ownDevices(config, ownNpub)
         return FipsStartOptions(
-            peers = config.fipsPeers,
+            // Valid npubs only: a typo typed by hand into the config used to stop the engine.
+            peers = config.fipsPeers.map { it.trim() }.filter { MyDevicesRules.isMeshNpub(it) }.distinct(),
             // FIPS Mesh → Advanced: the finder relays (the same three as iPhone and Mac by default) and the middle server.
             relays = config.fipsMesh.engineFinderRelays,
             publicSeeds = config.fipsMesh.middleServer == FipsMeshSettings.MIDDLE_PUBLIC,

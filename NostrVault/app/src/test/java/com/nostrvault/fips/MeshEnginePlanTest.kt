@@ -56,6 +56,15 @@ class MeshEnginePlanTest {
     }
 
     @Test
+    fun `a bad npub typed into the config is dropped and the good one starts`() {
+        val config = HavenConfig(fipsPeers = listOf("npub1nope", mac))
+        val options = MeshEnginePlan.options(config, ownNpub = me, maxServeBytes = 1)
+
+        assertEquals(listOf(mac), options.peers)
+        assertEquals(listOf(mac), options.ownDevices)
+    }
+
+    @Test
     fun `the start options carry both fields under the library's names`() {
         val config = HavenConfig(fipsPeers = listOf(mac), relayPort = 4000)
         val json = kotlinx.serialization.json.Json.encodeToString(FipsStartOptions.serializer(), MeshEnginePlan.options(config, null, 1))

@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::net::Ipv6Addr;
 use std::sync::mpsc::{Receiver, Sender};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use fips::identity::PeerIdentity;
 
 /// The owner's devices, as the mesh knows them.
@@ -30,14 +30,22 @@ pub struct OwnDevices {
 
 impl OwnDevices {
     /// `None` for an empty list: the node is open, as before. Each npub is
-    /// decoded and re-encoded, so no input can reach the config as text.
+    /// decoded and re-encoded, so no input can reach the config as text. One
+    /// that does not decode (a hand-edited config) is logged and skipped, so it
+    /// cannot stop the engine; a list of only bad ones stays closed, not open.
     pub fn parse(npubs: &[String]) -> Result<Option<Self>> {
         if npubs.is_empty() {
             return Ok(None);
         }
         let mut out = Self { npubs: Vec::new(), addresses: HashSet::new() };
         for npub in npubs {
-            let id = PeerIdentity::from_npub(npub).with_context(|| format!("own device {npub:?}"))?;
+            let id = match PeerIdentity::from_npub(npub) {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("skipping own device {npub:?}: {e:#}");
+                    continue;
+                }
+            };
             let npub = id.npub();
             if !out.npubs.contains(&npub) {
                 out.addresses.insert(id.address().to_ipv6());
@@ -203,9 +211,19 @@ mod tests {
         assert!(!own.contains(&Identity::generate().npub()));
         assert!(!own.contains("npub1nope"));
         assert_eq!(own.allowlist_yaml("npub1me"), format!("      offer_allowlist: [\"{npub}\", \"{other}\"]\n"));
-        // Something that is not an npub never reaches the config.
+        // Something that is not an npub never reaches the config, and a list
+        // of only those stays closed rather than open.
         let hostile = format!("{npub}\"]\n      policy: open #");
-        assert!(OwnDevices::parse(&[hostile]).is_err());
+        let closed = OwnDevices::parse(&[hostile]).unwrap().expect("still own-devices mode");
+        assert!(closed.npubs.is_empty() && closed.addresses.is_empty());
+    }
+
+    #[test]
+    fn a_bad_npub_is_skipped_and_the_good_one_kept() {
+        let good = Identity::generate().npub();
+        let own = OwnDevices::parse(&["npub1nope".into(), good.clone()]).unwrap().unwrap();
+        assert_eq!(own.npubs, vec![good]);
+        assert_eq!(own.addresses.len(), 1);
     }
 
     #[test]
@@ -229,8 +247,17 @@ mod tests {
         // No list: no allowlist line, as before.
         let open = crate::config_yaml(&nsec, &crate::StartOptions::default()).unwrap();
         assert!(!open.contains("offer_allowlist"));
+        // A bad npub, own device or peer, is skipped rather than failing the start.
+        let opts = crate::StartOptions { own_devices: vec!["npub1nope".into(), phone.clone()], peers: vec!["npub1typo".into()], ..Default::default() };
+        let yaml = crate::config_yaml(&nsec, &opts).unwrap();
+        assert!(!yaml.contains("npub1nope") && !yaml.contains("npub1typo"));
+        let cfg: fips::Config = serde_yaml::from_str(&yaml).expect("parses");
+        assert_eq!(cfg.node.rendezvous.nostr.offer_allowlist, vec![phone.clone()]);
+        assert_eq!(cfg.peers.iter().map(|p| p.npub.clone()).collect::<Vec<_>>(), vec![phone.clone()]);
+        // Only bad ones: closed, answering this node alone, never open.
         let opts = crate::StartOptions { own_devices: vec!["npub1nope".into()], ..Default::default() };
-        assert!(crate::config_yaml(&nsec, &opts).is_err());
+        let yaml = crate::config_yaml(&nsec, &opts).unwrap();
+        assert!(yaml.contains("offer_allowlist"), "{}", yaml.as_str());
         // Strangers are a part of own-devices mode: an open node has no door.
         let open_strangers = crate::StartOptions { strangers_port: 7778, ..Default::default() };
         assert!(crate::config_yaml(&nsec, &open_strangers).is_err());
