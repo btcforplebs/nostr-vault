@@ -81,14 +81,7 @@ class ConfigService: ObservableObject {
         switch ConfigFileStore(url: configURL).load(HavenConfig.self, hasKey: \.hasKeyMaterial) {
         case .loaded(let loaded, let fromBackup):
             config = loaded
-            plaintextNIP46Secrets = Array(loaded.nip46ClientSecrets.values)
-            var stored: [String: String] = [:]
-            config.attachNIP46ClientSecrets { account in
-                let value = CredentialStore.get(account: account)
-                stored[account] = value
-                return value
-            }
-            nip46Sync = NIP46SecretSync(synced: stored)
+            attachKeychainSecrets()
             loadedSuccessfully = true
             loadFailed = fromBackup && FileManager.default.fileExists(atPath: configURL.path)
             savedHasKey = !fromBackup && loaded.hasKeyMaterial
@@ -166,6 +159,9 @@ class ConfigService: ObservableObject {
             do {
                 let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
                 self.config = loaded
+                // Without this a reload drops the client keys from memory and
+                // the next save deletes them from the keychain.
+                attachKeychainSecrets()
                 savedHasKey = loaded.hasKeyMaterial
                 #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
@@ -360,6 +356,19 @@ class ConfigService: ObservableObject {
         #endif
     }
     
+    /// Fills in the NIP-46 client keys config.json leaves out, from the
+    /// keychain, and notes any the file still held as plaintext.
+    private func attachKeychainSecrets() {
+        plaintextNIP46Secrets = Array(config.nip46ClientSecrets.values)
+        var stored: [String: String] = [:]
+        config.attachNIP46ClientSecrets { account in
+            let value = CredentialStore.get(account: account)
+            stored[account] = value
+            return value
+        }
+        nip46Sync = NIP46SecretSync(synced: stored)
+    }
+
     /// Client keys that were plaintext in config.json come out of the backup
     /// copies once the keychain holds them and config.json has been written
     /// without them.
