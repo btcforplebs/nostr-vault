@@ -1,5 +1,5 @@
-// Settings (iPhone SettingsView, the phone's single list): the relay status card first, then the groups of rows,
-// then About. Close goes back to Profile, where the gear opened it (the phone shows Settings as a sheet from there). A row opens its page at "#/settings/<page>"; the Accounts & backup row opens the Accounts screen
+// Settings (iPhone SettingsView, the phone's single list): the relay status card first, then the groups of rows in
+// the phone's order (ORDER), then About. Close goes back to Profile, where the gear opened it (the phone shows Settings as a sheet from there). A row opens its page at "#/settings/<page>"; the Accounts & backup row opens the Accounts screen
 // (#/accounts) and Who Can Reach You the Relay screen's FIPS panel (#/relay).
 import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
@@ -37,6 +37,10 @@ const ICONS = {
   trash: "M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3",
   people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
 }
+// SettingsView.swift iOSBody's sections, top to bottom. The web has no Feed & Display, Mesh or Help rows yet.
+const ORDER = ["Account", "Feed & Display", "Relays", "Your Vault Relay", "Mesh", "Help", "Advanced"]
+const rank = g => { const i = ORDER.indexOf(g.title); return i < 0 ? ORDER.length : i }
+const GROUPS = [...SETTINGS_GROUPS].sort((a, b) => rank(a) - rank(b))
 const Icon = ({ d, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
 export function SettingsScreen({ ctx, page }) {
@@ -51,7 +55,7 @@ function Index({ ctx }) {
     <main class="screen settings">
       <header class="screen-head"><a class="button small" href="#/profile">Close</a><h2>Settings</h2><span style="width: 64px" /></header>
       <RelayStatusCard ctx={ctx} />
-      {SETTINGS_GROUPS.map(g => (
+      {GROUPS.map(g => (
         <section key={g.title} class="settings-group">
           <div class="section-label">{g.title}</div>
           <div class="settings-rows">
@@ -67,7 +71,7 @@ function Index({ ctx }) {
       ))}
       <section class="settings-group">
         <div class="section-label">About</div>
-        <div class="card settings-about">
+        <div class="settings-about">
           <div class="settings-app">Nostr Vault</div>
           <div class="muted small">Version {APP_VERSION} (web){APP_COMMIT && <> · {commitUrl(APP_COMMIT) ? <a href={commitUrl(APP_COMMIT)} class="mono">{APP_COMMIT}</a> : <span class="mono">{APP_COMMIT}</span>}</>}</div>
           <hr />

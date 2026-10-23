@@ -16,6 +16,14 @@ a.settings-row:hover { background: var(--s2); }
 .tag { padding: 3px 8px; border-radius: 999px; background: var(--s2); color: var(--text-2); font: 600 11px/1 var(--font); letter-spacing: .04em; text-transform: uppercase; }
 .settings-note { margin: 0 var(--gutter) 12px; }
 .settings .screen-head .button.small { min-height: 34px; padding: 0 12px; }
+/* The phone's .insetGrouped look: borderless rounded groups, separators inset to the title, Title-case headers. */
+.settings .section-label { padding: 20px calc(var(--gutter) + 16px) 8px; font: 600 15px/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-2); }
+.settings .settings-rows { border: 0; border-radius: 22px; }
+.settings .settings-rows .settings-row { position: relative; min-height: 52px; padding: 8px 16px; gap: 14px; }
+.settings .settings-rows .settings-row + .settings-row { border-top: 0; }
+.settings .settings-rows .settings-row + .settings-row::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; border-top: 1px solid var(--hair); }
+.settings .settings-rows .settings-icon { width: 30px; height: 30px; border-radius: 7px; }
+.settings .settings-row.static { border: 0; border-radius: 22px; }
 
 /* Relay status card (the phone's RelayStatusCard). */
 .relay-card-head { display: flex; align-items: center; gap: 12px; }
@@ -26,7 +34,7 @@ a.settings-row:hover { background: var(--s2); }
 .relay-card-state .dot { width: 8px; height: 8px; }
 
 /* About. */
-.settings-about { text-align: center; display: grid; gap: 4px; justify-items: center; }
+.settings-about { text-align: center; display: grid; gap: 4px; justify-items: center; margin: 0 var(--gutter) 12px; padding: 8px 16px; } /* no card, as the phone's clear row */
 .settings-about hr { width: 100%; border: 0; border-top: 1px solid var(--hair); margin: 8px 0; }
 .settings-app { font: var(--t-headline); }
 .settings-support { font: 600 15px var(--font); }
@@ -56,11 +64,36 @@ a.settings-row:hover { background: var(--s2); }
 .vault-menu-list [role=menuitem]:hover { background: var(--s2); }
 .vault-menu-list [role=menuitem].on { color: var(--accent); font-weight: 600; }
 .vault-menu-list [role=menuitem].on::after { content: "✓"; margin-left: auto; }
+/* The phone's right pill (VaultToolbar trailingPill): envelope | filters as bare icons | search. Buttons narrow on a
+   small phone, where Media's five filters would push the mode pill off. */
+.vault-capsule { flex: none; display: flex; align-items: center; height: 44px; padding: 0 4px; border-radius: 999px;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.vault-capsule-filters { display: flex; }
+.vault-capsule-btn { flex: none; width: 34px; height: 36px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 999px; background: none; color: var(--text-2); }
+.vault-capsule-btn.on { color: var(--accent); }
+.vault-capsule-btn:hover { color: var(--text); }
+.vault-capsule-btn.on:hover { color: var(--accent); }
+.vault-capsule-line { flex: none; width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
+@media (max-width: 400px) { .vault-capsule-btn { width: 30px; } }
+@media (max-width: 350px) { .vault-capsule-btn { width: 26px; } .vault-capsule-line { margin: 0; } }
+/* The floating "Vault" capsule above the tab bar, bottom right (VaultView+Layout), coloured by the relays' answer. */
+.vault-status { position: fixed; z-index: 10; right: max(var(--gutter), calc(50% - 320px + var(--gutter)));
+  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 12px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 18px; border-radius: 999px;
+  --reach: #8e8e93; background: var(--reach); color: #fff; font: 700 14px/1 var(--font-round); text-decoration: none;
+  box-shadow: 0 4px 8px color-mix(in srgb, var(--reach) 35%, transparent); }
+.vault-status.checking { --reach: #ffd60a; }
+.vault-status.up { --reach: #30d158; }
+.vault-status.down { --reach: #ff453a; }
 
 /* Vault lists. */
 .note.tappable { cursor: pointer; }
 .vault-about { margin: 8px 0 0; align-items: baseline; }
 .vault-about > :last-child { min-width: 0; overflow-wrap: anywhere; }
+/* A line with only the note's text: app.css's "first child doesn't shrink" (for the author) kept it on one line, wider
+   than the phone, which widened the page and pushed the tab bar and the status capsule off screen. */
+.note.notification .vault-about > :only-child { flex: 0 1 auto; }
 .vault-thumbs { display: flex; gap: 6px; margin-top: 10px; }
 .vault-thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--s2); }
 .vault-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 0 var(--gutter); }
@@ -130,3 +163,26 @@ a.settings-row:hover { background: var(--s2); }
 /* Settings › Following Backup. */
 .follow-backup-open { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 0; min-height: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
 .mesh-photos-switch { margin-top: 20px; cursor: pointer; }
+
+/* Search's header (iPhone SearchView): an icon pill of result tabs on the left, the filter circle on the right, then
+   the field with its glass. Section headers are Title case, as the phone's. */
+.search-tabs { display: flex; align-items: center; gap: 2px; height: 48px; padding: 0 6px; border-radius: 999px;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
+.search-tabs button { flex: none; width: 40px; height: 36px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 999px; background: none; color: var(--text-2); }
+.search-tabs button.on { color: var(--accent); }
+.search-head .vault-pill-btn { width: 48px; height: 48px; }
+.search-filter-btn.on { color: var(--accent); }
+.search-filter-list { min-width: 260px; padding: 4px 0 10px; }
+.search-filter-list .section-label { padding: 10px 12px 6px; }
+.search-filter-list .vault-search-chips { padding: 0 12px 4px; flex-wrap: wrap; overflow: visible; }
+.search-filter-list > button.small { margin: 8px 12px 0; justify-self: start; }
+.search-field { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border-radius: var(--radius); background: var(--s1); color: var(--text-3); }
+.search-field input { flex: 1; min-width: 0; min-height: 46px; padding: 0; border: 0; background: none; color: var(--text); font: var(--t-body); }
+.search-field input:focus { outline: none; }
+.search-field:focus-within { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.search-field input::placeholder { color: var(--text-3); }
+.search .section-label { font: 600 15px/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-2); }
+.search .for-you-head .for-you-src { font-size: 12px; }
+.for-you-title { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.for-you-title svg { color: var(--accent); }
