@@ -1,0 +1,9 @@
+{
+  "name": "nostrvault-nsite-publish",
+  "private": true,
+  "type": "module",
+  "description": "Publishes the built site as an nsite (NIP-5A): website/publish-nsite.sh",
+  "dependencies": {
+    "nostr-tools": "2.25.2"
+  }
+}

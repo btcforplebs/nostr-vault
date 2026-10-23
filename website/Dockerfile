@@ -15,7 +15,8 @@ WORKDIR /src
 COPY . .
 RUN ALLOW_MISSING_WEB_APPS=$ALLOW_MISSING_WEB_APPS website/build-web-apps.sh \
  && rm -f website/Dockerfile website/docker-compose.yml website/nginx.conf \
-          website/build-web-apps.sh website/deploy.sh website/log-prune.sh
+          website/build-web-apps.sh website/deploy.sh website/log-prune.sh \
+ && rm -rf website/publish-nsite.sh website/nsite
 
 # The thread service: public post pages at /thread/ (web-vault/thread-page/server.mjs), proxied by nginx.
 FROM node:22-alpine AS thread
