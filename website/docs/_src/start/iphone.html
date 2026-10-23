@@ -10,7 +10,7 @@
     "ios": ["Create an account", "I already use Nostr", "What's inside?", "Welcome to Nostr", "Create My Account", "Your Keys",
             "I saved my secret key", "Protect Your Key", "Your Profile", "Skip for Now", "Welcome to Nostr!", "Start Exploring",
             "Let's fill it", "Not now", "Who are you on Nostr?", "Read-only", "You can post", "Encrypted key · you can post",
-            "Signer link · you can post", "Use a signer app", "Sign in with Clave", "Scan your key or signer link",
+            "Signer link · you can post", "Who told you about Nostr Vault?", "Scan their profile code", "Not them? Try another", "Skip, nobody told me", "Use a signer app", "Sign in with Clave", "Scan your key or signer link",
             "Checking your relays", "Start import", "Bringing your notes home", "Keep it running in the background",
             "Feed", "Search", "WoT", "Vault", "Profile", "Settings", "Tutorials"]
   }
@@ -96,6 +96,20 @@
 
 <div class="note"><p>Pasting a secret key into any app is a risk. A signer keeps the key out of Nostr Vault
     altogether. If you do paste it, Nostr Vault keeps it encrypted on this phone only.</p></div>
+
+<h2 id="who-told-you">Who told you about Nostr Vault?</h2>
+<p>If you create an account, or bring one you can post with, setup asks <strong>Who told you about Nostr
+    Vault?</strong> It comes after <strong>Your Profile</strong>, or after <strong>Checking your relays</strong>.
+    Read-only accounts skip it.</p>
+<ol class="steps">
+    <li>Tap <span class="ui">Scan their profile code</span>, or paste their profile link or npub. Their link
+        comes from <strong>Share profile</strong>; see <a href="/docs/share-links/profile/">Share your profile</a>.
+        If you opened their link before setting up, they're already filled in.</li>
+    <li>Check their profile card, and follow them. <span class="ui">Not them? Try another</span> goes back.</li>
+    <li>Up to 10 people they follow come next, the most followed first, all ticked. Untick anyone you don't want,
+        and follow the rest.</li>
+</ol>
+<p>Nobody told you? Tap <span class="ui">Skip, nobody told me</span>.</p>
 
 <h2>Find your way around</h2>
 <p>The tab bar along the bottom:</p>
