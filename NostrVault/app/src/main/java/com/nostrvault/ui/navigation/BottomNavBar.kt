@@ -67,6 +67,7 @@ import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.Motion
+import com.nostrvault.ui.notification.vaultAnchor
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.ZapOrange
@@ -309,7 +310,10 @@ private fun ExpandedNavRow(
                     showBadge = item.screen == Screen.Dashboard && (hasNewRelayActivity || hasUnreadDMs),
                     onClick = onTabClick,
                     holdToPick = if (item.screen == Screen.Feed) onPickFeedMode else null,
-                    modifier = Modifier.weight(1f),
+                    // The return pill's arrow points here.
+                    modifier = Modifier.weight(1f).then(
+                        if (item.screen == Screen.Dashboard) Modifier.vaultAnchor() else Modifier,
+                    ),
                 )
             }
         }

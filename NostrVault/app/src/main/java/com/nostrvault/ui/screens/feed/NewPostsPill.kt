@@ -76,12 +76,14 @@ internal fun NewPostsPill(
                 tint = PillStyle.textColor,
                 modifier = Modifier.size(size.icon),
             )
-            Spacer(Modifier.width(if (compact) 4.dp else PillStyle.innerGap))
+            Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
             Text(
                 text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
                 fontWeight = FontWeight.Bold,
                 fontSize = size.font,
                 color = PillStyle.textColor,
+                // Digits keep their width as the count changes (iOS .monospacedDigit()).
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
             )
         }
     }

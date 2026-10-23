@@ -1,17 +1,28 @@
 package com.nostrvault.ui.notification
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nostrvault.service.InAppBanner
 import com.nostrvault.service.InAppBannerBus
 import com.nostrvault.service.PillEnd
@@ -175,21 +186,44 @@ fun ActivityPill(banner: InAppBanner) {
         "follow", "followers" -> NostrVaultIcons.PersonAdd
         else -> NostrVaultIcons.Notifications
     }
-    val label = if (banner.text.isBlank()) banner.title else "${banner.title} · ${banner.text}"
-    BasePill(
-        icon = icon,
-        label = label,
-        tone = PillTone.ACCENT,
-        onClick = {
-            DeepLinkRouter.fromNotification(
-                banner.type, banner.id, banner.author, banner.npub,
-                // The post itself, as the tray entry carries it: opens with nothing to fetch.
-                event = banner.carried[NotificationNote.EVENT_EXTRA],
-                target = banner.carried[NotificationNote.TARGET_EXTRA],
-            )?.let { PendingDeepLink.post(it) }
-            InAppBannerBus.dismiss(banner.id, PillEnd.TAPPED)
-        },
-    )
+    val spoken = if (banner.text.isBlank()) banner.title else "${banner.title}. ${banner.text}"
+    // The title over a dimmer line of the text, up to 300 dp wide: the icon
+    // says what arrived, the colour is the lane's accent.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .pillCapsule(PillTone.ACCENT, onClick = {
+                DeepLinkRouter.fromNotification(
+                    banner.type, banner.id, banner.author, banner.npub,
+                    // The post itself, as the tray entry carries it: opens with nothing to fetch.
+                    event = banner.carried[NotificationNote.EVENT_EXTRA],
+                    target = banner.carried[NotificationNote.TARGET_EXTRA],
+                )?.let { PendingDeepLink.post(it) }
+                InAppBannerBus.dismiss(banner.id, PillEnd.TAPPED)
+            })
+            .widthIn(max = 300.dp)
+            .fillMaxWidth()
+            .clearAndSetSemantics {
+                role = Role.Button
+                contentDescription = spoken
+            },
+    ) {
+        PillIcon(icon)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            PillText(banner.title)
+            if (banner.text.isNotBlank()) {
+                Text(
+                    text = banner.text,
+                    color = PillStyle.textColor.copy(alpha = 0.85f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
 }
 
 // ── Upload ───────────────────────────────────────────────────────

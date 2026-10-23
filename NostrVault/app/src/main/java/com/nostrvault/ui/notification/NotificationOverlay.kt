@@ -23,9 +23,10 @@ private const val ACTIVITY_VISIBLE_MS = 3_000L
  * Placed in the activity's root Box at Alignment.TopCenter, above the
  * full-screen media viewer so the viewer's own results land here too.
  *
- * Draws, in level order, the manager's pills, then activity that arrived
- * while the app was open ([InAppBannerBus]), then [ambient] pills the app
- * hosts here (the running import). Each goes through a [PillSlot], so the
+ * Draws, in level order, the manager's pills, with the post countdown
+ * ([postAction]) first among the results and activity that arrived while
+ * the app was open ([InAppBannerBus]) after them, then [ambient] pills the
+ * app hosts here (the running import). The same order as iOS `AppBannerStack`. Each goes through a [PillSlot], so the
  * lane shows at most two and hides ambient ones while anything else is up.
  * The pills a screen draws itself (New Posts, the WoT rebuild) read
  * [PillLane.hidesAmbient] instead.
@@ -34,6 +35,7 @@ private const val ACTIVITY_VISIBLE_MS = 3_000L
 fun NotificationOverlay(
     notificationManager: NotificationManager,
     modifier: Modifier = Modifier,
+    postAction: @Composable () -> Unit = {},
     ambient: @Composable () -> Unit = {},
 ) {
     val notifications by notificationManager.notifications.collectAsState()
@@ -56,6 +58,7 @@ fun NotificationOverlay(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         PillLevel.entries.forEach { level ->
+            if (level == PillLevel.RESULT) postAction()
             // Newest first within a level: the manager's list already is.
             notifications.filter { it.level == level }.forEach { notification ->
                 key(notification.id) {
