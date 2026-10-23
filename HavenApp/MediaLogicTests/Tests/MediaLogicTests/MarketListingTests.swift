@@ -37,7 +37,9 @@ final class MarketListingTests: XCTestCase {
         XCTAssertEqual(l.price, "21000")
         XCTAssertEqual(l.priceLabel, "21,000 sats")
         XCTAssertEqual(l.images.count, 1)
-        XCTAssertEqual(l.plebeianURL?.absoluteString, "https://plebeian.market/products/id1")
+        // The new Plebeian site has no NIP-15 product page: the seller's profile instead.
+        XCTAssertFalse(l.hasPlebeianPage)
+        XCTAssertEqual(l.plebeianURL?.absoluteString, "https://plebeian.market/profile/pk1")
     }
 
     /// Conduit puts JSON into 30402 content, images as objects.
@@ -62,7 +64,12 @@ final class MarketListingTests: XCTestCase {
             content: #"{"name":"Rare coin","images":["https://x.example/c.jpg"],"starting_bid":5000}"#, tags: []))
         XCTAssertTrue(auction.isAuction)
         XCTAssertEqual(auction.priceLabel, "5,000 sats")
-        XCTAssertEqual(auction.plebeianURL?.absoluteString, "https://plebeian.market/auction/id1")
+        // No auction route on the new site (Tara's check, 2026-10-22): the seller's profile.
+        XCTAssertFalse(auction.hasPlebeianPage)
+        XCTAssertEqual(auction.plebeianURL?.absoluteString, "https://plebeian.market/profile/pk1")
+        // A Gamma 30402 product is the one kind it shows, by event id.
+        XCTAssertTrue(classified.hasPlebeianPage)
+        XCTAssertEqual(classified.plebeianURL?.absoluteString, "https://plebeian.market/products/id1")
     }
 
     func testRejectsWhatCannotBeShownOrBought() {

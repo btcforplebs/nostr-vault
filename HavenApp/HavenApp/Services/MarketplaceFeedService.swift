@@ -55,6 +55,9 @@ final class MarketplaceFeedService: ObservableObject {
     /// 200-listing page added 170 listings the others lack (439 -> 609).
     /// Most of its listings are throwaway-key test posts; Global's trust
     /// filter keeps those out, Everyone shows them.
+    /// nostr.mom, nos.lol and relay.plebeian.market are where the new
+    /// Plebeian Market posts (Tara's check, 2026-10-22,
+    /// RESEARCH/NV_NOSTR_MARKETPLACES.md); nos.lol is back for that.
     static let relayStrings = [
         "wss://relay.damus.io",
         "wss://relay.snort.social",
@@ -62,6 +65,9 @@ final class MarketplaceFeedService: ObservableObject {
         "wss://nostr.wine",
         "wss://relay.primal.net",
         "wss://relay.conduit.market",
+        "wss://relay.plebeian.market",
+        "wss://nostr.mom",
+        "wss://nos.lol",
     ]
 
     private init() {}

@@ -378,7 +378,8 @@ struct MarketplaceListingSheet: View {
         VStack(spacing: 10) {
             if let url = listing.plebeianURL {
                 Button { openURL(url) } label: {
-                    Label(listing.isAuction ? "Bid on Plebeian" : "Buy on Plebeian", systemImage: listing.isAuction ? "hammer" : "cart")
+                    Label(listing.hasPlebeianPage ? "Buy on Plebeian" : "Seller on Plebeian",
+                          systemImage: listing.hasPlebeianPage ? "cart" : "person.crop.circle")
                         .font(.appSystem(size: 15, weight: .bold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
@@ -412,7 +413,8 @@ struct MarketplaceListingSheet: View {
     private var messageToSeller: String {
         let title = listing.title.isEmpty ? "your listing" : "“\(listing.title)”"
         var text = "Hi! I'm interested in \(title)."
-        if let url = listing.plebeianURL { text += "\n\(url.absoluteString)" }
+        // Only the listing's own page: a seller's profile says nothing about which item.
+        if listing.hasPlebeianPage, let url = listing.plebeianURL { text += "\n\(url.absoluteString)" }
         return text
     }
 }

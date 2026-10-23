@@ -71,8 +71,10 @@ class MarketplaceFeedService @Inject constructor(
          * timed out. nos.lol was dropped on 2026-10-12. relay.conduit.market
          * is Conduit's marketplace relay (2026-10-17): its page added 170
          * listings the others lack; most of its listings are throwaway-key
-         * test posts, which Global's trust filter keeps out. Same list as
-         * the Swift side.
+         * test posts, which Global's trust filter keeps out. nostr.mom,
+         * nos.lol and relay.plebeian.market are where the new Plebeian
+         * Market posts (Tara's check, 2026-10-22); nos.lol is back for that.
+         * Same list as the Swift side.
          */
         val RELAYS = listOf(
             "wss://relay.damus.io",
@@ -81,6 +83,9 @@ class MarketplaceFeedService @Inject constructor(
             "wss://nostr.wine",
             "wss://relay.primal.net",
             "wss://relay.conduit.market",
+            "wss://relay.plebeian.market",
+            "wss://nostr.mom",
+            "wss://nos.lol",
         )
     }
 
