@@ -476,6 +476,7 @@
 		59965C511D2D8F2DCDA83D3C /* BitcoinSweepDisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */; };
 		5A1B91D8416D9D5428D2B6DB /* MeshMediaRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B39AC9891DC2150ED3792D /* MeshMediaRouter.swift */; };
 		5A3E1EA2DFFA4DCC13E17C0C /* MusicAlbumPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60E2FC58F9B9F4CECA67CBB7 /* MusicAlbumPage.swift */; };
+		5AAF45FB129F70A80CDEF3CC /* MarketScopeGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */; };
 		5ACED3DC08D71D9754190597 /* MyProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C0A5C932EB95B83B6288BD1 /* MyProfileView.swift */; };
 		5AEA663D4C925CFBB1E13E82 /* MosaicWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 618885CB514523D351B723B4 /* MosaicWidget.swift */; };
 		5AFD09F5A22D8DD9BB5DEF4B /* FillYourFeedGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 093D54B83D57F902ED44E397 /* FillYourFeedGuide.swift */; };
@@ -612,6 +613,7 @@
 		7542C08754E3CE4E6413EDD4 /* ToolbarContent+SharedBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 164722856D65C2DF9F42D76F /* ToolbarContent+SharedBackground.swift */; };
 		755E700D83BD19E61250FD48 /* SellerListingsLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */; };
 		7570C4E14AA4FF93C3F233E9 /* GlobalSearchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */; };
+		75B917CF28D1115CEC3225F6 /* MarketScopeGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */; };
 		75E785C732866CC95067DE3D /* starter_packs.json in Resources */ = {isa = PBXBuildFile; fileRef = E76B268D327BDC761BB5AC1E /* starter_packs.json */; };
 		75F45827C544ECEAF42D7745 /* ChromeMorphCapsule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B3366EB807139F9BCD79B3 /* ChromeMorphCapsule.swift */; };
 		760D65B08AFEAAEEF8EB6683 /* StatsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0AF323C6A978AA0E08E94A /* StatsCard.swift */; };
@@ -1657,6 +1659,7 @@
 		614245993910AB626DBE345C /* RelayProcessManager+Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RelayProcessManager+Backup.swift"; sourceTree = "<group>"; };
 		618885CB514523D351B723B4 /* MosaicWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicWidget.swift; sourceTree = "<group>"; };
 		621A96E074FD92012D0EEB20 /* MacFipsMeshSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFipsMeshSettingsView.swift; sourceTree = "<group>"; };
+		62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketScopeGate.swift; sourceTree = "<group>"; };
 		64074B113CDD8831C2CD4942 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		649EE87FE3A42105E4EC17E9 /* haven */ = {isa = PBXFileReference; path = haven; sourceTree = "<group>"; };
 		6532640E58C10C0D8A136047 /* FeedService+WebOfTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+WebOfTrust.swift"; sourceTree = "<group>"; };
@@ -2847,6 +2850,7 @@
 				C40FE00243820A6D15633BB8 /* LocalTLSPolicy.swift */,
 				42DB00CA3C4EA172D7C76C2A /* LongFormContent.swift */,
 				A7F7D5B8237EEF6E947F2E02 /* MarketListing.swift */,
+				62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */,
 				FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */,
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
 				CDFEEEE3A5F4A53B832E01EE /* MeshDevices.swift */,
@@ -3805,6 +3809,7 @@
 				977686D6FA85A360A19AF0DF /* MacSyncSettingsPage.swift in Sources */,
 				64D2AF480E978EDB43455605 /* MarkdownBodyView.swift in Sources */,
 				F4DE1594633DA412BFEADFFE /* MarketListing.swift in Sources */,
+				75B917CF28D1115CEC3225F6 /* MarketScopeGate.swift in Sources */,
 				32174E530F51223398BEAAE9 /* MarketplaceFeedService.swift in Sources */,
 				60B57CA574C71ADCEE8194D3 /* MarketplaceFeedViews.swift in Sources */,
 				254FBC3A28AC80DA7B7851F6 /* MarketplaceSellView.swift in Sources */,
@@ -4493,6 +4498,7 @@
 				E5641EAC3823ADC19D08F76E /* MacSyncSettingsPage.swift in Sources */,
 				EDE74CB342AEFD9F004D4EEA /* MarkdownBodyView.swift in Sources */,
 				3B221FE87F958B072139054D /* MarketListing.swift in Sources */,
+				5AAF45FB129F70A80CDEF3CC /* MarketScopeGate.swift in Sources */,
 				D78888FE41863CB9D7B18949 /* MarketplaceFeedService.swift in Sources */,
 				C20F11831AE268F08F8E13BE /* MarketplaceFeedViews.swift in Sources */,
 				F503C421DD7BABE44209ED84 /* MarketplaceSellView.swift in Sources */,

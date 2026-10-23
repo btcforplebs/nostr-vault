@@ -100,6 +100,7 @@ fun FeedScreen(
     val marketCategory by viewModel.marketCategory.collectAsState()
     val marketScope by viewModel.marketScope.collectAsState()
     val marketFollowSetIsEmpty by viewModel.marketFollowSetIsEmpty.collectAsState()
+    val marketGlobalWarning by viewModel.marketGlobalWarning.collectAsState()
     val notes by viewModel.filteredNotes.collectAsState()
     val mediaNotes by viewModel.mediaNotes.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -434,6 +435,9 @@ fun FeedScreen(
                     loadFailed = marketLoadFailed,
                     scopeFollowing = !scopeGlobal,
                     onShowGlobal = { viewModel.setScope(FeedMode.MARKETPLACE, global = true) },
+                    globalWarningPending = marketGlobalWarning,
+                    onConfirmGlobal = viewModel::confirmMarketGlobal,
+                    onCancelGlobal = viewModel::cancelMarketGlobal,
                 )
             } else if (feedMode == FeedMode.LIVE) {
                 LiveGrid(
