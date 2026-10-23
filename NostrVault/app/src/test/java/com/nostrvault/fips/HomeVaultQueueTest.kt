@@ -96,6 +96,7 @@ class HomeVaultQueueTest {
         assertEquals(HomeVaultSend.REJECTED, HomeVaultRules.uploadOutcome(403))
         assertEquals(HomeVaultSend.REJECTED, HomeVaultRules.uploadOutcome(413))
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(404))
+        assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(400)) // a cut body, or plain HTTP on a TLS port: this try, not the blob
         assertEquals(HomeVaultSend.RETRY, HomeVaultRules.uploadOutcome(502))
     }
 
