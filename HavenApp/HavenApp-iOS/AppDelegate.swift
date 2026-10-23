@@ -63,6 +63,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        CredentialStore.migrateToThisDeviceOnly()
+
         // Register the background processing task so the system can wake us
         // when conditions are right (charging + Wi-Fi).
         BGTaskScheduler.shared.register(

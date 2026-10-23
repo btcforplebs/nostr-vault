@@ -12,6 +12,11 @@ enum CredentialStore {
     private static let service = "com.havenapp.nip49"
     private static let ownerAccount = "owner-key-password"
 
+    /// These passwords decrypt the private keys, so they stay on this device:
+    /// without `ThisDeviceOnly` an encrypted backup restores them onto another
+    /// phone. The mesh identity (FipsMeshService) is stored the same way.
+    private static let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
     private static func accountId(forNpub npub: String) -> String {
         "account-key-password-\(npub)"
     }
@@ -52,6 +57,21 @@ enum CredentialStore {
         delete(account: accountId(forNpub: npub))
     }
 
+    /// Moves passwords saved before 3.0.0 (41) onto `ThisDeviceOnly`, in
+    /// place, so nobody has to sign in again. Runs at every launch: it only
+    /// touches items still on the old class, and before the first unlock it
+    /// fails and tries again next time.
+    @discardableResult
+    static func migrateToThisDeviceOnly() -> OSStatus {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+        let update: [String: Any] = [kSecAttrAccessible as String: accessible]
+        return SecItemUpdate(query as CFDictionary, update as CFDictionary)
+    }
+
     // MARK: - Private helpers
 
     private static func store(_ password: String, account: String) -> Bool {
@@ -69,7 +89,7 @@ enum CredentialStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: accessible,
         ]
         return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
     }
