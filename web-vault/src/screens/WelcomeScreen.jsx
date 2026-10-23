@@ -16,7 +16,7 @@ export function WelcomeScreen({ onSignIn }) {
     <main class="welcome">
       <div class="welcome-main">
         <img src="./icon.svg" alt="" class="welcome-logo" width="64" height="64" />
-        <h1>Nostr Vault <span class="beta">Beta</span></h1>
+        <h1>Nostr Vault</h1>
         <p class="welcome-line">A Nostr app with your own relay inside, so your notes and media live on devices you hold.</p>
         <button class="primary welcome-signin" onClick={onSignIn}>Sign in</button>
         <Browse />

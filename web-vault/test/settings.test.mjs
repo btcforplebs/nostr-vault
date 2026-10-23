@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import {
-  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, relayRows, mediaServerRows,
+  SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, SUPPORT_NPUB, relayRows, mediaServerRows, APP_COMMIT, commitUrl,
   parseBackup, restoreBackup, logLines,
 } from "../src/net/settings.js"
 
@@ -43,6 +43,14 @@ test("groups are the phone's, each row with a page or a screen to go to; every s
   assert.ok(isPage("backup") && !isPage("accounts") && !isPage("") && !isPage(undefined) && !isPage("constructor"))
   assert.match(APP_VERSION, /^\d+\.\d+\.\d+/)
   assert.match(SUPPORT_NPUB, /^npub1/)
+})
+
+test("About's commit: none in Node, linked only when it's a clean commit id", () => {
+  assert.equal(APP_COMMIT, "")
+  assert.equal(commitUrl("63059b4702c2"), "https://github.com/btcforplebs/nostr-vault/commit/63059b4702c2")
+  assert.equal(commitUrl("63059b4702c2-dirty"), "")
+  assert.equal(commitUrl("latest"), "")
+  assert.equal(commitUrl(""), "")
 })
 
 test("relay rows carry each relay's read and write marks; no list means no rows", () => {

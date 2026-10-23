@@ -9,11 +9,11 @@
   "labels": {
     "web": ["Sign in with extension", "Bunker link (NIP-46)", "Connect bunker", "Your name, npub1… or you@example.com", "Find me",
             "Viewing as a guest", "Sign in", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Backup & Restore",
-            "Export notes", "Import notes", "This browser's copy", "Sign out and delete this browser's copy"]
+            "Export notes", "Import notes", "Kept on this browser", "This browser may clear it", "This browser's copy", "Sign out and delete this browser's copy"]
   }
 }
 -->
-<p>The web app is Nostr Vault in a browser tab, with nothing to install. It's in beta. Open
+<p>The web app is Nostr Vault in a browser tab, with nothing to install. Open
     <a href="/vault/">nostrvault.app/vault/</a> in any up-to-date browser, on a computer or a phone.</p>
 <p>Like the apps, it runs your own relay, here inside the browser. Your notes and messages are kept in this browser's
     storage.</p>
@@ -46,7 +46,21 @@
     a tab bar at the bottom; in a wide window they're a sidebar, and a post opens next to the list. Settings is the
     gear on your profile.</p>
 
+<h2 id="browsers">Browsers</h2>
+<p>The web app runs in Chrome, Edge, Firefox and Safari. On iPhone and iPad it needs <strong>iOS 16.4</strong> or
+    later, and on a Mac <strong>Safari 16.4</strong> or later; keep other browsers up to date. An older browser shows a
+    blank page.</p>
+<ul>
+    <li>It needs WebAssembly and site storage (IndexedDB). <strong>Lockdown Mode</strong> on iPhone, iPad or Mac turns
+        WebAssembly off, so the app says <span class="ui">Your relay didn't start</span>. Turn Lockdown Mode off for
+        nostrvault.app in its web browsing settings.</li>
+    <li>A private or incognito window deletes everything when it closes.</li>
+</ul>
+
 <h2 id="backup">Your data in this browser</h2>
+<p>Your relay, notes, messages and drafts live in this browser's storage on this device, not on our server. After you
+    sign in the app asks the browser to keep them. The Relay screen shows how much space they take and the browser's
+    answer: <span class="ui">Kept on this browser</span> or <span class="ui">This browser may clear it</span>.</p>
 <ul>
     <li><span class="path">Settings &rarr; Backup &amp; Restore &rarr; Export notes</span> saves your notes,
         private notes, messages and feed cache as a .zip, the same file the phone apps make. Photos and videos

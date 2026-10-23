@@ -7,6 +7,10 @@ import { relayLists } from "./pool.js"
 import { serverList } from "./upload.js"
 
 export const APP_VERSION = pkg.version
+/** The commit this build came from (vite.config.js), "" when unknown, as in Node tests. */
+export const APP_COMMIT = typeof __NV_COMMIT__ === "string" ? __NV_COMMIT__ : ""
+/** About's line: "Version 1.0.0 (web) · 63059b4702c2", the commit linked when it's a clean one. */
+export const commitUrl = c => /^[0-9a-f]{7,40}$/.test(c) ? `https://github.com/btcforplebs/nostr-vault/commit/${c}` : ""
 /** The developer's npub for support and abuse reports, as the phone's About section shows it. */
 export const SUPPORT_NPUB = "npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx"
 export const PRIVACY_URL = "https://nostrvault.app/privacy.html"

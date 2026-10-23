@@ -38,7 +38,7 @@
             <a href="/blog-what-is-nostr-vault.html">Blog</a>
         </div>
         <div class="actions">
-            <a href="/vault/" class="pill pill-web">Open web app <span class="beta">Beta</span></a>
+            <a href="/vault/" class="pill pill-web">Open web app</a>
             <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
         </div>
     </nav>
@@ -125,10 +125,10 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Use Nostr Vault in a browser</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#sign-in">Sign in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#sign-in">Sign in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#browsers">Browsers</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
-                <p>The web app is Nostr Vault in a browser tab, with nothing to install. It's in beta. Open
+                <p>The web app is Nostr Vault in a browser tab, with nothing to install. Open
                     <a href="/vault/">nostrvault.app/vault/</a> in any up-to-date browser, on a computer or a phone.</p>
                 <p>Like the apps, it runs your own relay, here inside the browser. Your notes and messages are kept in this browser's
                     storage.</p>
@@ -161,7 +161,21 @@
                     a tab bar at the bottom; in a wide window they're a sidebar, and a post opens next to the list. Settings is the
                     gear on your profile.</p>
 
+                <h2 id="browsers">Browsers</h2>
+                <p>The web app runs in Chrome, Edge, Firefox and Safari. On iPhone and iPad it needs <strong>iOS 16.4</strong> or
+                    later, and on a Mac <strong>Safari 16.4</strong> or later; keep other browsers up to date. An older browser shows a
+                    blank page.</p>
+                <ul>
+                    <li>It needs WebAssembly and site storage (IndexedDB). <strong>Lockdown Mode</strong> on iPhone, iPad or Mac turns
+                        WebAssembly off, so the app says <span class="ui">Your relay didn't start</span>. Turn Lockdown Mode off for
+                        nostrvault.app in its web browsing settings.</li>
+                    <li>A private or incognito window deletes everything when it closes.</li>
+                </ul>
+
                 <h2 id="backup">Your data in this browser</h2>
+                <p>Your relay, notes, messages and drafts live in this browser's storage on this device, not on our server. After you
+                    sign in the app asks the browser to keep them. The Relay screen shows how much space they take and the browser's
+                    answer: <span class="ui">Kept on this browser</span> or <span class="ui">This browser may clear it</span>.</p>
                 <ul>
                     <li><span class="path">Settings &rarr; Backup &amp; Restore &rarr; Export notes</span> saves your notes,
                         private notes, messages and feed cache as a .zip, the same file the phone apps make. Photos and videos
