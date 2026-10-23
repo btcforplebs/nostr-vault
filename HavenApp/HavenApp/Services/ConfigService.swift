@@ -1,6 +1,7 @@
 import SwiftUI
 import Foundation
 import Combine
+import Security
 #if canImport(ServiceManagement)
 import ServiceManagement
 #endif
@@ -25,6 +26,13 @@ class ConfigService: ObservableObject {
     /// False after a failed load or a load from the backup, so a recovery
     /// save never deletes config.json.bak.
     private var savedHasKey = false
+    /// The NIP-46 client keys the keychain holds; see HavenConfig+Secrets.
+    private var nip46Sync = NIP46SecretSync()
+    /// Accounts whose client key the keychain holds now, left out of config.json.
+    private var nip46InKeychain: Set<String> = []
+    /// Client keys config.json held as plaintext when it loaded. Once the
+    /// keychain holds them they are scrubbed from the backup copies too.
+    private var plaintextNIP46Secrets: [String] = []
     /// Explicit @Published hex pubkey for the active account. Computed properties
     /// on ObservableObject don't reliably trigger SwiftUI re-renders in all
     /// hosting contexts (e.g. macOS MenuBarExtra). This property is updated
@@ -73,6 +81,7 @@ class ConfigService: ObservableObject {
         switch ConfigFileStore(url: configURL).load(HavenConfig.self, hasKey: \.hasKeyMaterial) {
         case .loaded(let loaded, let fromBackup):
             config = loaded
+            attachKeychainSecrets()
             loadedSuccessfully = true
             loadFailed = fromBackup && FileManager.default.fileExists(atPath: configURL.path)
             savedHasKey = !fromBackup && loaded.hasKeyMaterial
@@ -150,6 +159,9 @@ class ConfigService: ObservableObject {
             do {
                 let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
                 self.config = loaded
+                // Without this a reload drops the client keys from memory and
+                // the next save deletes them from the keychain.
+                attachKeychainSecrets()
                 savedHasKey = loaded.hasKeyMaterial
                 #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
@@ -248,12 +260,17 @@ class ConfigService: ObservableObject {
             }
         }
 
+        nip46InKeychain = nip46Sync.sync(config.nip46ClientSecrets,
+                                         store: { CredentialStore.store($0, account: $1) },
+                                         delete: { CredentialStore.delete(account: $0) })
+
         do {
-            let data = try JSONEncoder().encode(config)
+            let data = try JSONEncoder().encode(config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain))
             try store.write(data)
             store.forgetBackupIfKeyRemoved(hadKey: savedHasKey, hasKey: config.hasKeyMaterial,
                                            setupDone: config.hasCompletedSetup)
             savedHasKey = config.hasKeyMaterial
+            scrubPlaintextNIP46Secrets(store)
 
             #if DEBUG
             print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
@@ -291,7 +308,7 @@ class ConfigService: ObservableObject {
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(config) {
+        if let data = try? encoder.encode(config.withoutNIP46ClientSecrets(inKeychain: nip46InKeychain)) {
             try? ConfigFileStore(url: configURL).write(data) // Save main config again just in case
         }
         
@@ -342,6 +359,123 @@ class ConfigService: ObservableObject {
         #endif
     }
     
+    /// Fills in the NIP-46 client keys config.json leaves out, from the
+    /// keychain, and notes any the file still held as plaintext.
+    private func attachKeychainSecrets() {
+        // Added to, not replaced: a reload before the save that moves them
+        // must not forget a scrub still owed.
+        plaintextNIP46Secrets = Array(Set(plaintextNIP46Secrets).union(config.nip46ClientSecrets.values))
+        var stored: [String: String] = [:]
+        config.attachNIP46ClientSecrets { account in
+            let value = CredentialStore.get(account: account)
+            stored[account] = value
+            return value
+        }
+        nip46Sync = NIP46SecretSync(synced: stored)
+    }
+
+    /// Client keys that were plaintext in config.json come out of the backup
+    /// copies once the keychain holds them and config.json has been written
+    /// without them.
+    private func scrubPlaintextNIP46Secrets(_ store: ConfigFileStore) {
+        guard !plaintextNIP46Secrets.isEmpty else { return }
+        let held = Set(nip46InKeychain.compactMap { nip46Sync.synced[$0] })
+        let done = plaintextNIP46Secrets.filter { held.contains($0) }
+        guard !done.isEmpty else { return }
+        store.scrub(done)
+        plaintextNIP46Secrets.removeAll { held.contains($0) }
+    }
+
+    /// Takes a plaintext owner key out of config.json and every copy beside
+    /// it: encrypts it into ownerNcryptsec (HavenConfig.encryptPlaintextOwnerKey),
+    /// saves, and, once config.json on disk no longer holds it, scrubs it from
+    /// the backup and the unreadable copies. A copy that still holds an older
+    /// plaintext of the same key (setting a password clears ownerNsec in
+    /// config.json only) is scrubbed too. Runs at launch on iOS.
+    func secureOwnerKeyAtRest() {
+        var secrets: [String] = []
+        if !config.ownerNsec.isEmpty {
+            // Only a read that found no item means there is no password; any
+            // other failure must not mint a new one over a password it hid.
+            let stored = CredentialStore.lookUpOwnerPassword()
+            guard stored.password != nil || stored.status == errSecItemNotFound else {
+                RelayProcessManager.shared.addLog("Owner key left as it was: the keychain could not be read (\(stored.status))", level: "ERROR")
+                return
+            }
+            var updated = config
+            let outcome = updated.encryptPlaintextOwnerKey(
+                storedPassword: stored.password,
+                newPassword: Self.randomPassword,
+                encrypt: { try NIP49Service.encrypt(nsec: $0, password: $1) },
+                decrypt: { try NIP49Service.decrypt(ncryptsec: $0, password: $1) })
+            switch outcome {
+            case .encrypted(let newPassword):
+                if let newPassword {
+                    guard CredentialStore.storeOwnerPassword(newPassword),
+                          CredentialStore.getOwnerPassword() == newPassword else {
+                        RelayProcessManager.shared.addLog("Owner key left as it was: the keychain did not take its new password", level: "ERROR")
+                        return
+                    }
+                }
+            case .cleared:
+                break
+            case .nothingToDo:
+                return
+            case .keptUnverified, .failed:
+                RelayProcessManager.shared.addLog("Plaintext owner key left in config.json (\(outcome))", level: "ERROR")
+                return
+            }
+            secrets = [config.ownerNsec.trimmingCharacters(in: .whitespacesAndNewlines), config.ownerHexKey ?? ""]
+            config = updated
+            save()
+        }
+
+        // Scrub only on proof that config.json now holds the encrypted key and
+        // not the plaintext: save() can return without writing (a config that
+        // loaded from the backup), and then the backup is the only copy.
+        let store = ConfigFileStore(url: configURL)
+        guard !config.ownerNcryptsec.isEmpty,
+              let written = try? String(contentsOf: configURL, encoding: .utf8),
+              written.contains(config.ownerNcryptsec),
+              !secrets.contains(where: { !$0.isEmpty && written.contains($0) }) else {
+            if !secrets.isEmpty {
+                RelayProcessManager.shared.addLog("config.json was not rewritten; its copies keep the owner key for now", level: "ERROR")
+            }
+            return
+        }
+        secrets += olderPlaintextOwnerKeys(in: store)
+        if !store.scrub(secrets).isEmpty {
+            RelayProcessManager.shared.addLog("Removed a plaintext owner key from config.json's copies", level: "INFO")
+        }
+    }
+
+    /// Plaintext `ownerNsec` values in the copies beside config.json that the
+    /// stored password shows are the key ownerNcryptsec holds now.
+    private func olderPlaintextOwnerKeys(in store: ConfigFileStore) -> [String] {
+        let olds = store.copyURLs.compactMap { file -> String? in
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let old = (json["ownerNsec"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !old.isEmpty else { return nil }
+            return old
+        }
+        // The decrypt (scrypt) runs only when a copy holds a plaintext key.
+        guard !olds.isEmpty,
+              let password = CredentialStore.getOwnerPassword(),
+              !config.ownerNcryptsec.isEmpty,
+              let nsec = try? NIP49Service.decrypt(ncryptsec: config.ownerNcryptsec, password: password),
+              let current = HavenConfig.hexKey(fromNsec: nsec) else { return [] }
+        return olds.filter { HavenConfig.hexKey(fromNsec: $0) == current }
+    }
+
+    private static func randomPassword() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            return UUID().uuidString + UUID().uuidString
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Perform a factory reset: delete data and config using FileManager
     func resetApp() {
         let fileManager = FileManager.default
@@ -356,6 +490,9 @@ class ConfigService: ObservableObject {
         ConfigFileStore(url: configURL).removeAll()
         loadFailed = false
         savedHasKey = false
+        nip46Sync = NIP46SecretSync()
+        nip46InKeychain = []
+        plaintextNIP46Secrets = []
 
         // 3. Keychain passwords, notifications and widget data
         ResetLeftovers.clear()
