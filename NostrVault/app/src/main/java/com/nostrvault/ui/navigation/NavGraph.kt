@@ -29,8 +29,6 @@ import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AccountInfo
 import com.nostrvault.ui.components.buildAccountInfos
-import com.nostrvault.service.PendingPostManager
-import com.nostrvault.ui.components.PendingPostBanner
 import com.nostrvault.ui.components.AccountSwitcherSheet
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -95,7 +93,6 @@ fun NostrVaultNavHost(
     logStore: LogStore,
     dmUnreadCount: StateFlow<Int>,
     hasNewRelayActivity: StateFlow<Boolean>,
-    pendingPostManager: PendingPostManager,
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -352,14 +349,6 @@ fun NostrVaultNavHost(
         // it was opened with, and a route argument would mean re-resolving a
         // replaceable event that may already be gone.
         com.nostrvault.ui.components.LiveStreamHost()
-
-        // Pending post countdown banner
-        PendingPostBanner(
-            pendingPostManager = pendingPostManager,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = if (showBottomBar) 80.dp else 0.dp),
-        )
 
         // Hold-the-Feed-tab list: over everything, the bar included.
         if (showBottomBar) {

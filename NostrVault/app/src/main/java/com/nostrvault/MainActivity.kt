@@ -220,7 +220,6 @@ class MainActivity : FragmentActivity() {
                                     logStore = logStore,
                                     dmUnreadCount = dmService.totalUnreadCountFlow,
                                     hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                                    pendingPostManager = pendingPostManager,
                                 )
                             }
                             // Full-screen media viewer overlay — lives in the activity window
@@ -233,6 +232,8 @@ class MainActivity : FragmentActivity() {
                             NotificationOverlay(
                                 notificationManager = notificationManager,
                                 modifier = Modifier.align(Alignment.TopCenter),
+                                // The post countdown, then Posting… / Posted.
+                                postAction = { com.nostrvault.ui.components.PendingPostBanner(pendingPostManager) },
                             ) {
                                 com.nostrvault.setup.ImportRunningPill(
                                     isImporting = relayImportService.isImporting,

@@ -1,51 +1,74 @@
 package com.nostrvault.ui.components
 
-import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.navigation.DeepLinkTarget
 import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.navigation.Screen
-import com.nostrvault.ui.theme.*
+import com.nostrvault.ui.notification.PillButton
+import com.nostrvault.ui.notification.PillIcon
+import com.nostrvault.ui.notification.PillLevel
+import com.nostrvault.ui.notification.PillSize
+import com.nostrvault.ui.notification.PillSlot
+import com.nostrvault.ui.notification.PillStyle
+import com.nostrvault.ui.notification.PillText
+import com.nostrvault.ui.notification.PillTone
+import com.nostrvault.ui.notification.pillCapsule
+import com.nostrvault.ui.theme.Motion
+import com.nostrvault.ui.theme.NostrVaultIcons
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Animated bottom banner showing a countdown before a post is published.
- * Provides Cancel and Edit buttons during the countdown.
+ * The post countdown and what follows it, as level-2 pills in the lane
+ * (`docs/pills.md`): "Posting in 3s" with Edit and Undo, then "Posting…"
+ * until a relay takes it, then "Posted". Drawn inside
+ * [com.nostrvault.ui.notification.NotificationOverlay].
+ * iOS `PostActionNotificationBanner`.
  */
 @Composable
-fun PendingPostBanner(
-    pendingPostManager: PendingPostManager,
-    modifier: Modifier = Modifier,
-) {
+fun PendingPostBanner(pendingPostManager: PendingPostManager) {
     // Edit reopens the composer on the post's draft, over whatever is open.
-    // The banner sits above the nav host, so it hands the route to the one
+    // The lane sits above the nav host, so it hands the route to the one
     // place that navigates (iOS: SceneDelegate presents ComposeView).
     LaunchedEffect(pendingPostManager) {
         pendingPostManager.editRequest.collect { request ->
@@ -58,176 +81,156 @@ fun PendingPostBanner(
     val timeRemaining by pendingPostManager.timeRemaining.collectAsState()
     val totalSeconds by pendingPostManager.totalSeconds.collectAsState()
     val confirmation by pendingPostManager.confirmation.collectAsState()
-    val colors = LocalNostrVaultColors.current
 
-    Box(modifier = modifier, contentAlignment = Alignment.BottomCenter) {
-        // After the countdown: "Posting…" until a relay takes it, then "Posted".
-        // Keeps the last value while animating out so the pill doesn't blank.
-        var lastConfirmation by remember { mutableStateOf(confirmation) }
-        confirmation?.let { lastConfirmation = it }
-        AnimatedVisibility(
-            visible = !isShowing && confirmation != null,
-            enter = slideInVertically(initialOffsetY = { it }, animationSpec = Motion.bannerIn()) +
-                fadeIn(Motion.bannerIn()),
-            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = Motion.bannerOut()) +
-                fadeOut(Motion.bannerOut()),
-        ) {
-            lastConfirmation?.let { PostConfirmationPill(it) }
+    val type = actionType
+    val confirmed = confirmation
+    if (isShowing && type != null) {
+        PillSlot("postAction", PillLevel.RESULT) {
+            PostActionPill(
+                actionType = type,
+                timeRemaining = timeRemaining,
+                totalSeconds = totalSeconds,
+                onUndo = pendingPostManager::cancel,
+                onEdit = if (type.canEdit) pendingPostManager::requestEdit else null,
+                onDismiss = pendingPostManager::dismissBanner,
+            )
         }
-
-        AnimatedVisibility(
-            visible = isShowing,
-            enter = slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = Motion.bannerIn(),
-            ) + fadeIn(Motion.bannerIn()),
-            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = Motion.bannerOut()) +
-                fadeOut(Motion.bannerOut()),
-        ) {
-            // Swipe the banner away to get on with things — the post still goes out.
-            // Accepts either direction: iOS's pill sits at the top so "swipe up" is
-            // the natural gesture there, but this banner is anchored BottomCenter,
-            // where swiping down is what reads as dismissal. Rather than force one
-            // to match the other, both work.
-            val dragOffset = remember { Animatable(0f) }
-            val scope = rememberCoroutineScope()
-            val dismissThresholdPx = with(LocalDensity.current) { 28.dp.toPx() }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .offset { IntOffset(0, dragOffset.value.roundToInt()) }
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta ->
-                            scope.launch { dragOffset.snapTo(dragOffset.value + delta) }
-                        },
-                        onDragStopped = {
-                            if (abs(dragOffset.value) > dismissThresholdPx) {
-                                pendingPostManager.dismissBanner()
-                            }
-                            dragOffset.animateTo(0f, Motion.snapBack())
-                        },
-                    )
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(SecondaryGroupedBg)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                // Progress arc via LinearProgressIndicator
-                val progress = timeRemaining / totalSeconds.coerceAtLeast(0.1f)
-                CircularProgressIndicator(
-                    progress = { progress },
-                    color = colors.primary,
-                    trackColor = TertiaryGroupedBg,
-                    strokeWidth = 3.dp,
-                    modifier = Modifier.size(28.dp),
-                )
-
-                Spacer(Modifier.width(12.dp))
-
-                // Action label
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = actionType?.label ?: "Pending",
-                        color = PrimaryText,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = String.format("%.1fs", timeRemaining),
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                    )
-                }
-
-                // Edit button (only for editable types)
-                if (actionType?.canEdit == true) {
-                    TextButton(onClick = { pendingPostManager.requestEdit() }) {
-                        Text(
-                            text = "Edit",
-                            color = colors.primary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-
-                // Cancel button
-                TextButton(onClick = { pendingPostManager.cancel() }) {
-                    Text(
-                        text = "Cancel",
-                        color = SecondaryText,
-                        fontSize = 14.sp,
-                    )
-                }
+    } else if (confirmed != null) {
+        key(confirmed.id) {
+            PillSlot("postConfirmation-${confirmed.id}", PillLevel.RESULT) {
+                PostConfirmationPill(confirmed)
             }
         }
+    }
+}
+
+/** The icon for each action (iOS `ActionType.icon`). */
+private val PendingPostManager.ActionType.icon: ImageVector
+    get() = when (this) {
+        PendingPostManager.ActionType.NEW_POST -> NostrVaultIcons.Send
+        PendingPostManager.ActionType.REPLY -> NostrVaultIcons.Reply
+        PendingPostManager.ActionType.QUOTE -> NostrVaultIcons.Quote
+        PendingPostManager.ActionType.REPOST -> NostrVaultIcons.Repost
+        PendingPostManager.ActionType.DELETE -> NostrVaultIcons.Delete
+    }
+
+/** Swipe up past this to hide the pill (iOS `dismissThreshold`). */
+private val DismissThreshold = 32.dp
+
+/**
+ * "Posting in 3s", a short progress bar, Edit and Undo: an accent capsule
+ * whose 44 dp buttons set its height. Swipe it up to hide it; the post
+ * still goes out on time. iOS `PostActionPill`.
+ */
+@Composable
+private fun PostActionPill(
+    actionType: PendingPostManager.ActionType,
+    timeRemaining: Float,
+    totalSeconds: Float,
+    onUndo: () -> Unit,
+    onEdit: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    // Follows the finger on the way up so the gesture feels attached.
+    val dragOffset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val dismissPx = with(density) { DismissThreshold.toPx() }
+    val fadePx = with(density) { 80.dp.toPx() }
+    val seconds = max(1, ceil(timeRemaining).toInt())
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .offset { IntOffset(0, dragOffset.value.roundToInt()) }
+            .alpha(1f - min(1f, abs(dragOffset.value) / fadePx) * 0.6f)
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta ->
+                    // Upward only; a downward pull doesn't detach the pill.
+                    scope.launch { dragOffset.snapTo(min(0f, dragOffset.value + delta)) }
+                },
+                onDragStopped = {
+                    if (dragOffset.value < -dismissPx) onDismiss()
+                    dragOffset.animateTo(0f, Motion.panel())
+                },
+            )
+            // The buttons set the height.
+            .pillCapsule(PillTone.ACCENT, vertical = 0.dp)
+            .semantics {
+                contentDescription = "${actionType.label} in $seconds seconds"
+                customActions = listOf(CustomAccessibilityAction("Hide") { onDismiss(); true })
+            },
+    ) {
+        PillIcon(actionType.icon)
+        Text(
+            text = "${actionType.label} in ${seconds}s",
+            color = PillStyle.textColor,
+            fontSize = PillSize.REGULAR.font,
+            fontWeight = PillSize.REGULAR.weight,
+            maxLines = 1,
+            // Digits keep their width as they count down (iOS .monospacedDigit()).
+            style = TextStyle(fontFeatureSettings = "tnum"),
+        )
+        CountdownBar(fraction = timeRemaining / totalSeconds.coerceAtLeast(0.1f))
+        if (onEdit != null) PillButton("Edit", onClick = onEdit)
+        PillButton("Undo", onClick = onUndo)
+    }
+}
+
+/** 60 × 4 dp: white on a 30 % white track, emptying as the time runs out. */
+@Composable
+private fun CountdownBar(fraction: Float) {
+    Box(
+        Modifier
+            .size(width = 60.dp, height = 4.dp)
+            .background(PillStyle.textColor.copy(alpha = 0.3f), CircleShape),
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .background(PillStyle.textColor, CircleShape),
+        )
     }
 }
 
 /**
  * After the countdown: "Posting…" until a relay takes it, then a green
  * "Posted". If no relay confirms after the retries, a grey note instead of a
- * red error. Port of PostConfirmationPill in ZapNotificationBanner.swift.
+ * red error. iOS `PostConfirmationPill`.
  */
 @Composable
 private fun PostConfirmationPill(confirmation: PendingPostManager.Confirmation) {
-    val colors = LocalNostrVaultColors.current
     val state = confirmation.state
     val label = when (state) {
         PendingPostManager.Confirmation.State.SENDING -> "${confirmation.actionType.label}…"
         PendingPostManager.Confirmation.State.CONFIRMED -> confirmation.actionType.doneLabel
         PendingPostManager.Confirmation.State.UNCONFIRMED -> "Sent. No relay has confirmed it yet"
     }
-    val background = when (state) {
-        PendingPostManager.Confirmation.State.SENDING -> when (confirmation.actionType) {
-            PendingPostManager.ActionType.REPLY -> Color(0xFF3885F2)
-            PendingPostManager.ActionType.QUOTE -> Color(0xFF1FB399)
-            PendingPostManager.ActionType.DELETE -> ErrorRed
-            else -> colors.primary
-        }
-        // Same green as iOS's "Followed".
-        PendingPostManager.Confirmation.State.CONFIRMED -> Color(0xFF33CC99)
-        PendingPostManager.Confirmation.State.UNCONFIRMED -> Color(0xFF595959)
+    val tone = when (state) {
+        PendingPostManager.Confirmation.State.SENDING -> PillTone.ACCENT
+        PendingPostManager.Confirmation.State.CONFIRMED -> PillTone.SUCCESS
+        PendingPostManager.Confirmation.State.UNCONFIRMED -> PillTone.NEUTRAL
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PillStyle.innerGap),
         modifier = Modifier
-            .padding(vertical = 8.dp)
-            .shadow(8.dp, CircleShape)
-            .clip(CircleShape)
-            .background(background)
-            .padding(horizontal = 20.dp, vertical = 10.dp)
+            .pillCapsule(tone)
             .semantics(mergeDescendants = true) { contentDescription = label },
     ) {
-        if (state == PendingPostManager.Confirmation.State.SENDING) {
-            CircularProgressIndicator(
-                color = Color.White,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(12.dp),
+        when (state) {
+            PendingPostManager.Confirmation.State.SENDING -> CircularProgressIndicator(
+                color = PillStyle.textColor,
+                strokeWidth = 1.5.dp,
+                modifier = Modifier.size(PillSize.REGULAR.icon),
             )
-        } else {
-            Icon(
-                imageVector = if (state == PendingPostManager.Confirmation.State.CONFIRMED) {
-                    Icons.Default.Check
-                } else {
-                    Icons.Default.Schedule
-                },
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(14.dp),
-            )
+            PendingPostManager.Confirmation.State.CONFIRMED -> PillIcon(NostrVaultIcons.Check)
+            PendingPostManager.Confirmation.State.UNCONFIRMED -> PillIcon(Icons.Filled.Schedule)
         }
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
+        PillText(label)
     }
 }
 

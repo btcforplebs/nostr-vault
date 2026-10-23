@@ -45,9 +45,12 @@ internal fun NewPostsPill(
     // Tapped anywhere in the box, rippled on the capsule.
     val interaction = remember { MutableInteractionSource() }
     val (pillEnter, pillExit) = Motion.pillTransition
-    AnimatedVisibility(visible = !rememberHidesAmbient(), enter = pillEnter, exit = pillExit) {
+    // The caller's modifier (its alignment in the feed's Box) goes on the
+    // outermost node: inside AnimatedVisibility an align is ignored and the
+    // pill sat at the left edge.
+    AnimatedVisibility(visible = !rememberHidesAmbient(), enter = pillEnter, exit = pillExit, modifier = modifier) {
     Box(
-        modifier = modifier
+        modifier = Modifier
             .semantics(mergeDescendants = true) { contentDescription = "$count new posts, tap to load" }
             // The small pill's tap target, without growing the pill.
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -76,12 +79,14 @@ internal fun NewPostsPill(
                 tint = PillStyle.textColor,
                 modifier = Modifier.size(size.icon),
             )
-            Spacer(Modifier.width(if (compact) 4.dp else PillStyle.innerGap))
+            Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
             Text(
                 text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
                 fontWeight = FontWeight.Bold,
                 fontSize = size.font,
                 color = PillStyle.textColor,
+                // Digits keep their width as the count changes (iOS .monospacedDigit()).
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
             )
         }
     }
