@@ -29,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nostrvault.data.music.WavlakeLink
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.service.music.MusicRepeatMode
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -51,6 +50,17 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
     var scrub by remember { mutableStateOf<Float?>(null) }
     var showingQueue by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
+    val zapModel: MusicZapViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val profiles by zapModel.profiles.collectAsState()
+    // The playing song's artist on Nostr, once known; Zap needs it (iOS #1084).
+    var artistHex by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(track?.wavlake?.id) {
+        artistHex = null
+        val song = track?.wavlake ?: return@LaunchedEffect
+        val hex = MusicArtistKey.npub(song)?.let(zapModel::hex) ?: return@LaunchedEffect
+        zapModel.loadProfile(hex)
+        artistHex = hex
+    }
     val t = track
     LaunchedEffect(t) { if (t == null) onDismiss() }
     if (t == null) return
@@ -144,8 +154,18 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                         AssistChip(onClick = { go(page) }, label = { Text("Album") },
                             leadingIcon = { Icon(Icons.Filled.Album, null) })
                     }
-                    AssistChip(onClick = { onDismiss(); actions.onShare(WavlakeLink.shareText(song)) }, label = { Text("Share") },
+                    // The artist mentioned (nostr:npub, a p tag) whenever they have a key (iOS #1084).
+                    AssistChip(onClick = { onDismiss(); MusicArtistKey.share(song, actions.onShare) }, label = { Text("Share") },
                         leadingIcon = { Icon(Icons.Filled.Share, null) })
+                    // Zap the artist, once their key is known and their profile takes zaps.
+                    artistHex?.takeIf { takesZaps(profiles[it]) }?.let { hex ->
+                        AssistChip(
+                            onClick = { zapModel.zap(hex) },
+                            label = { Text("Zap ${zapModel.defaultZapSats}") },
+                            leadingIcon = { Icon(Icons.Filled.Bolt, null, tint = Color(0xFFFF9800)) },
+                            modifier = Modifier.semantics { contentDescription = "Zap ${song.artist} ${zapModel.defaultZapSats} sats" },
+                        )
+                    }
                     song.artistNpub?.let(actions.npubToHex)?.let { hex ->
                         AssistChip(onClick = { onDismiss(); actions.onOpenProfile(hex) }, label = { Text("On Nostr") },
                             leadingIcon = { Icon(Icons.Filled.Person, null) })
