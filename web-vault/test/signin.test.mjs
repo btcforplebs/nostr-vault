@@ -46,7 +46,7 @@ test("sign-out stops Haven and deletes the session, keys, paired vaults, log and
   const pk = "b".repeat(64)
   const storage = memStorage()
   saveSession({ method: "nip07", pubkey: pk }, storage)
-  for (const k of ["nv-device-sk", "nv-vault:fips-relay-key", "nv-vault:fips-owners", "fips-relay-key", "fips-owners", "nv-log"]) storage.setItem(k, "x")
+  for (const k of ["nv-device-sk", "nv-vault:fips-relay-key", "nv-vault:fips-owners", "fips-relay-key", "fips-owners", "nv-log", "nv-ready"]) storage.setItem(k, "x")
   storage.setItem("unrelated", "keep")
   let stopped = false
   const vault = { haven: { stop: async () => { stopped = true } } }

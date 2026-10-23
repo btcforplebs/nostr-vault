@@ -32,6 +32,8 @@ import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { tabOf } from "./src/components/tabs.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import { Splash } from "./src/components/Loading.jsx"
+import { VaultReady } from "./src/components/VaultReady.jsx"
+import { hasLocalData, markPrepared, prepareVault, wasPrepared } from "./src/net/vault-ready.js"
 import { DesktopShell } from "./src/desktop/DesktopShell.jsx"
 import { deskModeFor, deskRedirect, phoneRedirect, isListHash } from "./src/desktop/routes.js"
 import "./src/styles/app.css"
@@ -91,6 +93,9 @@ function App() {
   modeNow.current = mode
   const [{ route, arg }, setRoute] = useState(() => settle(mode))
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
+  // First sign-in on this browser: { [step]: { state, done, of, count } } while Haven fills (net/vault-ready.js).
+  const [prep, setPrep] = useState(null)
+  const openNow = useRef(null)
 
   useEffect(() => { const f = () => setRoute(settle(modeNow.current)); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
   // Crossing 760px swaps layouts; the address is fixed up for the new one.
@@ -101,6 +106,14 @@ function App() {
     let live = true
     // The account's relays are asked while haven.wasm downloads (seconds on a first visit), not after Haven is up.
     const early = navigator.onLine ? fetchAccount(session.pubkey, uniq([...DEFAULT_RELAYS, ...PROFILE_RELAYS])) : null
+    // An account this browser hasn't prepared gets the steps screen from the start, not the splash, so starting the
+    // relay is its first step. A later sign-in keeps the splash and opens as soon as Haven is up.
+    const step = (id, s) => setPrep(p => p && { ...p, [id]: { ...p[id], ...s } })
+    const firstTime = navigator.onLine && !wasPrepared(session.pubkey)
+    if (firstTime) setPrep({ relay: { state: "active" } })
+    // Open now: the app opens on what Haven has (as soon as Haven is up), and the steps carry on in the background.
+    let opened = !firstTime, shown = null
+    openNow.current = () => { if (opened) return; opened = true; setPrep(null); if (shown) setAccount(shown) }
     ;(async () => {
       const v = await startVault({ pubkey: session.pubkey, log })
       if (!live) return
@@ -109,7 +122,23 @@ function App() {
       const local = await readAccount(v, session.pubkey)
       putProfile(local.profileEvent)
       setQuoteSource({ vault: v, relays: uniq([...local.relays.read, ...DEFAULT_RELAYS]) }) // quoted notes and mention names (NoteText)
-      setAccount({ ...local, loaded: !!local.contacts })
+      shown = { ...local, loaded: !!local.contacts }
+      if (firstTime && !opened && !(await hasLocalData(v, local))) {
+        step("relay", { state: "done" })
+        const { account: ready, fresh } = await prepareVault({ vault: v, pubkey: session.pubkey, local, early, log, onStep: step })
+        if (!live) return
+        if (fresh) {
+          putProfile(ready.profileEvent)
+          setAccount({ ...ready, loaded: true })
+          setPrep(null)
+          log("account", { follows: ready.follows.length, cachedFollows: local.follows.length, prepared: true })
+          return
+        }
+        // The account step was too slow: open on what Haven has and let the refresh below finish it.
+      }
+      if (firstTime) markPrepared(session.pubkey)
+      setPrep(null)
+      setAccount(shown)
       if (!navigator.onLine) return
       const fresh = await refreshAccount(v, session.pubkey, uniq([...local.relays.read, ...local.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { log, early })
       putProfile(fresh.profileEvent)
@@ -161,6 +190,7 @@ function App() {
   // Not signed in: the welcome screen, and the posts and people a guest can look at (src/guest), until they sign in.
   if (!session) return <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
+  if (prep) return <VaultReady steps={prep} onOpen={() => openNow.current ? openNow.current() : setPrep(null)} />
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
   // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.
