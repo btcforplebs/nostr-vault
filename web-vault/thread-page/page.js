@@ -51,7 +51,7 @@ export function nameFor(pubkey, profiles) {
   try { const n = npubEncode(pubkey); return `${n.slice(0, 10)}…${n.slice(-4)}` } catch { return "someone" }
 }
 
-function httpsUrl(s) {
+export function httpsUrl(s) {
   try { const u = new URL(String(s ?? "").trim()); return u.protocol === "https:" ? u.href : null } catch { return null }
 }
 
@@ -125,7 +125,7 @@ export function replyList(post, events) {
 
 // --- The page
 
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))
+export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))
 
 /** The preview a chat app shows for the link: { title, description, image, imageIsMedia, url, type }. */
 export function previewMeta(post, profiles, url) {
@@ -267,8 +267,9 @@ ${valid ? `<div class="open"><a class="btn primary" href="nostr:${esc(code)}">Op
   return page({ meta: { title: "Post not found · Nostr Vault", description: "A post on Nostr, shared from Nostr Vault.", image: `${SITE}/assets/og-image.jpg`, url: `${SITE}/thread/${code}`, type: "website" }, body, noindex: true })
 }
 
-/** `open`: where open-post.js sends a browser (appLink); none for a page that isn't a post. */
-function page({ meta, body, noindex = false, open = null }) {
+/** `open`: where open-post.js sends a browser (appLink); none for a page that isn't a post. Also draws the profile page
+ *  (profile-page.js), which passes no `open` and adds its own `css`. */
+export function page({ meta, body, noindex = false, open = null, css = "" }) {
   const card = meta.imageIsMedia ? "summary_large_image" : "summary"
   return `<!DOCTYPE html>
 <html lang="en">
@@ -291,7 +292,7 @@ ${noindex ? `<meta name="robots" content="noindex">` : ""}
 <meta name="twitter:image" content="${esc(meta.image)}">
 <link rel="icon" type="image/png" href="/assets/haven_icon.png">
 <link rel="apple-touch-icon" href="/assets/haven_icon.png">
-<style>${CSS}</style>
+<style>${CSS}${css}</style>
 ${open ? `<meta name="nv-open" content="${esc(open)}">\n<script src="/open-post.js"></script>` : ""}
 </head>
 <body>
