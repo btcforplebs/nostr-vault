@@ -18,13 +18,14 @@ failed=""
 for app in web-relay web-vault; do
   echo "== $app"
   [ -d "$app/node_modules" ] && [ "${CI:-}" != true ] || (cd "$app" && npm ci --ignore-scripts --no-audit --no-fund)
-  # spec to the log, tap to a file for the counts.
+  # spec to the log, tap to a file for the counts. A glob, not test/: Node 22 (CI, the Dockerfile) won't take a directory.
   (cd "$app" && node --test --test-reporter=spec --test-reporter-destination=stdout \
-    --test-reporter=tap --test-reporter-destination="$tap" test/) || failed="$failed $app"
+    --test-reporter=tap --test-reporter-destination="$tap" 'test/**/*.test.mjs') || failed="$failed $app"
   skip=$(sed -n 's/^# skipped \([0-9]*\)$/\1/p' "$tap" | tail -n 1)
   todo=$(sed -n 's/^# todo \([0-9]*\)$/\1/p' "$tap" | tail -n 1)
   pass=$(sed -n 's/^# pass \([0-9]*\)$/\1/p' "$tap" | tail -n 1)
   echo "$app: pass ${pass:-?}, skip ${skip:-?}, todo ${todo:-?}"
+  [ "${pass:-0}" -gt 0 ] || { echo "test-web-apps: $app ran no tests" >&2; failed="$failed $app(none-ran)"; }
   if [ "${skip:-x}" != 0 ] || [ "${todo:-x}" != 0 ]; then
     echo "test-web-apps: $app skipped tests (or no counts were read):" >&2
     grep -E '^ *(not )?ok .*# (SKIP|TODO)' "$tap" >&2 || true
