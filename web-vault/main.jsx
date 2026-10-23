@@ -1,9 +1,11 @@
-// Nostr Vault on the web. Boot: sign-in (NIP-07 / NIP-46) -> the in-page Haven owned by that npub -> the app.
+// Nostr Vault on the web. Boot: sign-in (NIP-07 / NIP-46, or a key made in Create an account) -> the in-page Haven
+// owned by that npub -> the app.
 // Every screen reads from Haven; the network only fills Haven. See PLANS/NV_WEB_CLIENT.md.
 import { render } from "preact"
 import { useEffect, useRef, useState } from "preact/hooks"
 import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
+import { unlockLocal, wellFormed, DAMAGED } from "./src/signer/local.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } from "./src/haven/vault.js"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
@@ -13,6 +15,7 @@ import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
 import { SignInScreen } from "./src/screens/SignInScreen.jsx"
+import { CreateAccount } from "./src/screens/CreateAccount.jsx"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { guestTarget } from "./src/guest/guest.js"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
@@ -74,6 +77,9 @@ const logLines = JSON.parse(localStorage.getItem("nv-log") || "[]")
 // Only while someone is signed in: off once sign-out has deleted the log, so nothing still running writes it back,
 // and off on the sign-in screen that sign-out reloads into, so nothing written at boot brings it back either.
 let logging = !!loadSession()
+// A new account's first events (net/new-account.js), signed in Create an account: written into Haven's outbox as it
+// starts, so the first feed has its follows before any relay answers.
+let firstEvents = null
 function log(type, data = {}) {
   if (!logging) return
   logLines.push({ t: new Date().toISOString(), type, ...data })
@@ -95,6 +101,11 @@ function App() {
   const [leaving, setLeaving] = useState(null) // sign-out in progress: { busy } | { failed, revoked }
   // Not signed in and opened on a post (a shared link): the guest view, until they sign in.
   const [guest] = useState(() => !session && !!guestTarget(location.hash))
+  // A key made here whose sealed copy this browser can't open any more: the password opens its ncryptsec again.
+  const [locked, setLocked] = useState(false)
+  useEffect(() => { if (session?.method === "local") signer?.ready?.().catch(() => setLocked(true)) }, [signer])
+  // Create an account (screens/CreateAccount.jsx), opened from the sign-in screen.
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => { const f = () => setRoute(settle(modeNow.current)); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
   // Crossing 760px swaps layouts; the address is fixed up for the new one.
@@ -110,6 +121,10 @@ function App() {
       if (!live) return
       log("boot", { loadMs: v.loadMs, startMs: v.startMs, method: session.method })
       setVault(v)
+      if (firstEvents) {
+        for (const ev of firstEvents) await v.outbox.event(ev).catch(e => log("first-event-error", { kind: ev.kind, err: String(e) }))
+        firstEvents = null
+      }
       const local = await readAccount(v, session.pubkey)
       putProfile(local.profileEvent)
       setQuoteSource({ vault: v, relays: uniq([...local.relays.read, ...DEFAULT_RELAYS]) }) // quoted notes and mention names (NoteText)
@@ -124,7 +139,7 @@ function App() {
   }, [session?.pubkey])
 
   // An approval link the user never tapped (they approved in the bunker app) is done with once sign-in succeeds.
-  const onSignedIn = ({ signer, session }) => { logging = true; clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }); registerWorker() }
+  const onSignedIn = ({ signer, session, firstEvents: first }) => { firstEvents = first ?? null; logging = true; clearAuthUrl(); saveSession(session); setSigner(signer); setSession(session); log("signed-in", { method: session.method }); registerWorker() }
   const restart = () => location.replace(location.pathname)
 
   // Another tab signed out (or in as someone else): stop this tab's Haven so that tab's deletes can finish, and
@@ -162,7 +177,9 @@ function App() {
   }
 
   if (leaving) return <SignOutScreen {...leaving} onRetry={retryWipe} onDone={restart} />
-  if (!session) return guest ? <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} /> : <SignInScreen onSignedIn={onSignedIn} />
+  if (locked) return <UnlockScreen session={session} onUnlocked={s => { saveSession(s); setSigner(signerFor(s, pool)); setSession(s); setLocked(false) }} onSignOut={signOut} />
+  if (!session && creating) return <CreateAccount onSignedIn={onSignedIn} onBack={() => setCreating(false)} />
+  if (!session) return guest ? <GuestApp bootHash={bootHash} onSignedIn={onSignedIn} /> : <SignInScreen onSignedIn={onSignedIn} onCreate={() => setCreating(true)} />
   if (error) return <main class="screen"><p class="error">Your relay didn't start: {error}</p><button onClick={() => location.reload()}>Try again</button></main>
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
@@ -203,6 +220,45 @@ function PhoneScreens({ ctx, route, arg, other }) {
       {route === "accounts" && <AccountsScreen ctx={ctx} />}
       {route === "wallet" && <WalletScreen />}
     </>
+  )
+}
+
+/** A key made in Create an account, locked: its password opens the ncryptsec (signer/local.js unlockLocal). */
+function UnlockScreen({ session, onUnlocked, onSignOut }) {
+  const [pw, setPw] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+  // No password opens a missing or damaged key: say so once, and leave only Sign out.
+  const [damaged, setDamaged] = useState(() => !wellFormed(session?.ncryptsec))
+  const submit = async e => {
+    e.preventDefault()
+    setBusy(true); setErr("")
+    try { onUnlocked(await unlockLocal(session, pw)) }
+    catch (e) { if (e?.message === DAMAGED) setDamaged(true); else setErr(String(e?.message ?? e)) }
+    finally { setBusy(false) }
+  }
+  if (damaged) return (
+    <main class="signin">
+      <img src="./icon.svg" alt="" class="signin-logo" />
+      <h1>Your key can't be opened</h1>
+      <p class="muted" role="alert">{DAMAGED}</p>
+      <button class="danger" onClick={onSignOut}>Sign out</button>
+    </main>
+  )
+  return (
+    <main class="signin">
+      <img src="./icon.svg" alt="" class="signin-logo" />
+      <h1>Unlock your key</h1>
+      <p class="muted">This browser can't open your key on its own any more (its site data was partly cleared). Type the password you chose when you made the account.</p>
+      <form onSubmit={submit} style="display: contents">
+        <input type="text" name="username" autocomplete="username" value="Nostr Vault key" hidden readOnly />
+        <label class="field"><span>Password</span>
+          <input type="password" value={pw} onInput={e => setPw(e.currentTarget.value)} autocomplete="current-password" required /></label>
+        <button type="submit" class="primary" disabled={busy || !pw} aria-busy={busy || undefined}>{busy ? "Unlocking…" : "Unlock"}</button>
+      </form>
+      {err && <p class="error">{err}</p>}
+      <button class="danger" onClick={onSignOut}>Sign out instead</button>
+    </main>
   )
 }
 

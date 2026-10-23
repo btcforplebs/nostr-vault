@@ -17,6 +17,7 @@ import "../styles/guest.css"
 export function GuestApp({ bootHash, onSignedIn }) {
   const [hash, setHash] = useState(location.hash)
   const [signingIn, setSigningIn] = useState(false)
+  const [creating, setCreating] = useState(false)
   const ctx = useMemo(() => guestContext(guestRelays(bootHash)), [])
   useEffect(() => {
     setActionContext(ctx)

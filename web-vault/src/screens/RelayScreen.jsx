@@ -73,7 +73,7 @@ export function RelayScreen({ ctx, log }) {
       </section>
       <section class="card">
         <h3>Account</h3>
-        <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 20)}… {signedInWith(session.method)}. Your secret key isn't stored here. Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
+        <div class="muted small">Signed in as {npubEncode(session.pubkey).slice(0, 20)}… {signedInWith(session.method)}.{session.method === "local" ? " Signing out deletes that key here too, so save it first (Settings › Your Secret Key)." : " Your secret key isn't stored here."} Signing out deletes this browser's copy of your relay, its keys and paired vaults.</div>
         <button onClick={ctx.signOut}>Sign out</button>
       </section>
     </main>
