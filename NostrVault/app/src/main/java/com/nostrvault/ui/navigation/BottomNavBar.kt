@@ -129,7 +129,8 @@ fun BottomNavBar(
     /** Spoken name of the folded bar's action (iOS collapsedFABLabel). */
     condensedActionLabel: String = "Compose new post",
     condensedActionTint: Color? = null,
-    onCondensedAction: () -> Unit = {},
+    /** Null hides the action: compose for a read-only sign-in. */
+    onCondensedAction: (() -> Unit)? = {},
     onExpand: () -> Unit = {},
     /** Left of the avatar in the folded bar: music's now-playing disc (iOS CollapsedNowPlayingButton). */
     nowPlaying: @Composable () -> Unit = {},
@@ -333,7 +334,7 @@ private fun CondensedNavCluster(
     actionIcon: ImageVector,
     actionLabel: String,
     actionTint: Color,
-    onAction: () -> Unit,
+    onAction: (() -> Unit)?,
     onExpand: () -> Unit,
     onAccountSwitcher: () -> Unit,
     nowPlaying: @Composable () -> Unit,
@@ -387,20 +388,22 @@ private fun CondensedNavCluster(
 
         // Contextual action — compose, or the Vault Dashboard on the Vault
         // tab (icon + tint supplied by the caller).
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(actionTint.copy(alpha = 0.15f))
-                .combinedClickableCompat(onClick = onAction),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = actionIcon,
-                contentDescription = actionLabel,
-                tint = actionTint,
-                modifier = Modifier.size(18.dp),
-            )
+        if (onAction != null) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(actionTint.copy(alpha = 0.15f))
+                    .combinedClickableCompat(onClick = onAction),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = actionIcon,
+                    contentDescription = actionLabel,
+                    tint = actionTint,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

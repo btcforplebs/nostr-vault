@@ -112,26 +112,29 @@ extension MenuBarView {
 
                             // New Post (macOS only: showingCompose is macOS-gated)
                             #if os(macOS)
-                            Button(action: { showingCompose = true }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "square.and.pencil")
-                                        .font(.appSystem(size: 13, weight: .bold))
-                                    Text("New Post")
-                                        .font(.appSystem(size: 13, weight: .semibold))
-                                    Spacer()
+                            // None for a read-only sign-in: it can't sign a post.
+                            if configService.activeAccountCanSign {
+                                Button(action: { showingCompose = true }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "square.and.pencil")
+                                            .font(.appSystem(size: 13, weight: .bold))
+                                        Text("New Post")
+                                            .font(.appSystem(size: 13, weight: .semibold))
+                                        Spacer()
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 9)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.havenPurple)
+                                    )
                                 }
-                                .foregroundColor(.white)
+                                .buttonStyle(.plain)
+                                .help("New Post (⌘N)")
                                 .padding(.horizontal, 12)
-                                .padding(.vertical, 9)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.havenPurple)
-                                )
+                                .padding(.bottom, 12)
                             }
-                            .buttonStyle(.plain)
-                            .help("New Post (⌘N)")
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 12)
                             #endif
 
                             // Sidebar Tabs

@@ -241,14 +241,14 @@ extension FeedView {
             onOpenNote: { openNoteDetail($0) },
             onLike: { feedActionsValue.likeNote($0) },
             onShowGlobal: { reelsService.setScope(.global) },
-            onPost: { modeComposer = .divine },
+            onPost: configService.activeAccountCanSign ? { modeComposer = .divine } : nil,
             isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
                 || showingMediaUrl != nil || showingDashboard
         )
         // feedList is not on screen in diVines, so the collapsed tab bar's
         // compose button is answered here.
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
-            guard (note.object as? Int) == 0 else { return }
+            guard (note.object as? Int) == 0, configService.activeAccountCanSign else { return }
             modeComposer = .divine
         }
     }

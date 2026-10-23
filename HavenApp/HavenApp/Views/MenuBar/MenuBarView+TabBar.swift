@@ -23,15 +23,18 @@ extension MenuBarView {
                             HStack(spacing: 6) {
                                 // New Post (macOS only: showingCompose is macOS-gated)
                                 #if os(macOS)
-                                Button(action: { showingCompose = true }) {
-                                    Image(systemName: "square.and.pencil")
-                                        .font(.appSystem(size: 16, weight: .medium))
-                                        .foregroundColor(.havenPurple)
-                                        .frame(width: 28, height: 28)
-                                        .contentShape(Rectangle())
+                                // None for a read-only sign-in: it can't sign a post.
+                                if configService.activeAccountCanSign {
+                                    Button(action: { showingCompose = true }) {
+                                        Image(systemName: "square.and.pencil")
+                                            .font(.appSystem(size: 16, weight: .medium))
+                                            .foregroundColor(.havenPurple)
+                                            .frame(width: 28, height: 28)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("New Post (⌘N)")
                                 }
-                                .buttonStyle(.plain)
-                                .help("New Post (⌘N)")
                                 #endif
 
                                 // Restart/start relay icon button

@@ -114,8 +114,8 @@ internal fun ReelsFeed(
     onProfile: (String) -> Unit,
     onReply: (FeedNote) -> Unit,
     onOpenNote: (FeedNote) -> Unit,
-    /** Opens the diVine composer. */
-    onPost: () -> Unit,
+    /** Opens the diVine composer. Null for a read-only sign-in: no Post. */
+    onPost: (() -> Unit)?,
     onShowGlobal: () -> Unit,
 ) {
     val reels by viewModel.reels.collectAsState()
@@ -264,7 +264,7 @@ private fun ReelPage(
     onOpenNote: () -> Unit,
     onLike: () -> Unit,
     onShare: () -> Unit,
-    onPost: () -> Unit,
+    onPost: (() -> Unit)?,
 ) {
     val context = LocalContext.current
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -488,8 +488,10 @@ private fun ReelPage(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        RailPostButton(onClick = onPost)
-                        Spacer(Modifier.height(6.dp))
+                        if (onPost != null) {
+                            RailPostButton(onClick = onPost)
+                            Spacer(Modifier.height(6.dp))
+                        }
                         RailButton(
                             icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
                             tint = if (isLiked) Color(0xFFFF3B30) else Color.White,
@@ -666,7 +668,7 @@ private fun ReelsEmptyState(
     scope: ReelsScope,
     onShowGlobal: () -> Unit,
     onRetry: () -> Unit,
-    onPost: () -> Unit,
+    onPost: (() -> Unit)?,
 ) {
     val following = scope == ReelsScope.FOLLOWING
     val title = when {
@@ -696,14 +698,16 @@ private fun ReelsEmptyState(
         )
         Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Text(message, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, textAlign = TextAlign.Center)
-        Button(
-            onClick = onPost,
-            colors = ButtonDefaults.buttonColors(containerColor = LocalNostrVaultColors.current.primary),
-            modifier = Modifier.padding(top = 8.dp),
-        ) {
-            Icon(NostrVaultIcons.Create, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Post a diVine", color = Color.White, fontWeight = FontWeight.Bold)
+        if (onPost != null) {
+            Button(
+                onClick = onPost,
+                colors = ButtonDefaults.buttonColors(containerColor = LocalNostrVaultColors.current.primary),
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
+                Icon(NostrVaultIcons.Create, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Post a diVine", color = Color.White, fontWeight = FontWeight.Bold)
+            }
         }
         TextButton(onClick = if (offerGlobal) onShowGlobal else onRetry) {
             Text(
