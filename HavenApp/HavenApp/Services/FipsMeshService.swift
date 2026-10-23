@@ -128,11 +128,13 @@ final class FipsMeshService: ObservableObject {
             lastError = Self.offMessage
             return
         }
-        // Own devices get the relay port in full, as on the Mac; strangers get
-        // the relay's mesh door (plain HTTP, blob reads and owner-signed
-        // writes). They must differ: the engine refuses to share the strangers'
-        // door as the relay port (share_split, -5).
-        let port = ConfigService.shared.config.relayPort
+        // Own devices get the relay in full, as on the Mac, but on its plain
+        // loopback port: the iPhone relay port is TLS, and the mesh splices
+        // plain HTTP (a sender hitting the TLS port got Go's 400 and dropped
+        // the photo). Strangers get the relay's mesh door (blob reads and
+        // owner-signed writes). They must differ: the engine refuses to share
+        // the strangers' door as the relay port (share_split, -5).
+        let port = ConfigService.shared.config.meshOwnPort
         let door = ConfigService.shared.config.meshPlainPort
         // Own-devices mode, as on the Mac: only My Devices get answers (the
         // home IP goes to no one else) and strangers get the mesh door,

@@ -417,6 +417,9 @@ enum RelayConfiguration {
             "HAVEN_MESH_PLAIN_PORT": meshPlainPort,
         ]
         #if os(iOS)
+        // The relay port is TLS here; own devices on the mesh send plain
+        // HTTP, so kiosk mode hands them this port instead (open while sharing).
+        env["HAVEN_MESH_OWN_PORT"] = String(config.meshOwnPort)
         env["GO_MEM_LIMIT_MB"] = String(phoneGoMemLimitMB(physicalMemory: ProcessInfo.processInfo.physicalMemory))
         #endif
         return env
