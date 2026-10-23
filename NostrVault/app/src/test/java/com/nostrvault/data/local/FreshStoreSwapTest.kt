@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -107,5 +108,28 @@ class FreshStoreSwapTest {
         assertNull(swap.run(openFresh = { opened = true; "fresh" }, keepAs = keepAs()))
         assertFalse(opened)
         assertEquals(old, swap.pending.readText())
+    }
+
+    @Test fun oldStoreThatCanBeNeitherMovedAsideNorDeletedUndoesTheSwap() {
+        // The store's folder turns read-only once the fresh store is in, so both renameTo(keepAs) and the fallback
+        // pending.delete() fail. Reporting success here left the pending copy behind, and the next launch put the old
+        // store back over the keys the person had added since (Tron, 44 pre-flight).
+        val dir = File(tmp.root, "shared_prefs").apply { mkdir() }
+        val live = File(dir, "nostrvault_credentials.xml").apply { writeText(old) }
+        val swap = swapFor(live)
+        try {
+            val opened = swap.run(openFresh = freshOpen(live) {
+                dir.setWritable(false)
+                assumeTrue("needs a folder this user can't write to", runCatching { File(dir, "probe").createNewFile() }.isFailure)
+            }, keepAs = keepAs())
+            assertNull("Start fresh must not say it worked", opened)
+            assertFalse(keepAs().exists())
+        } finally {
+            dir.setWritable(true)
+        }
+        // Next launch: the old store is back, matching the "Nothing was changed" the person was shown.
+        assertTrue(swapFor(live).recover())
+        assertEquals(old, live.readText())
+        assertFalse(swapFor(live).pending.exists())
     }
 }
