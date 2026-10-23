@@ -66,7 +66,7 @@ function SavedAccount({ account, busy, disabled, onClick }) {
 }
 
 export const accountName = (account, profile) => profile?.name || npubEncode(account.pubkey).slice(0, 16) + "…"
-export const methodLabel = account => account.method === "nip46" ? "Remote signer (bunker)" : account.method === "readonly" ? "Read-only" : "Browser extension"
+export const methodLabel = account => account.method === "nip46" ? "Remote signer (bunker)" : account.method === "readonly" ? "Read-only" : account.method === "local" ? "Key in this browser" : "Browser extension"
 
 /** The extension button and the bunker field. onSignedIn({ signer, session }). Also the Accounts screen's "Add". */
 export function SignInOptions({ onSignedIn }) {

@@ -31,12 +31,13 @@ export const isNip04 = s => /\?iv=/.test(s)
  * extension if it offers the matching scheme. `ext` is for tests.
  */
 export async function decrypterFor(session, { ext, signer } = {}) {
-  if (session?.method !== "nip07" && session?.method !== "nip46") return { reason: "this sign-in can't decrypt" }
+  if (session?.method !== "nip07" && session?.method !== "nip46" && session?.method !== "local") return { reason: "this sign-in can't decrypt" }
   if (!ext && signer?.crypto) {
     const c = signer.crypto
     return { decrypt: ct => (isNip04(ct) ? c.decrypt04(session.pubkey, ct) : c.decrypt(session.pubkey, ct)) }
   }
   if (session.method === "nip46") return { reason: "your bunker isn't connected" }
+  if (session.method === "local") return { reason: "your key isn't unlocked" }
   const nostr = ext ?? (await findExtension())
   if (!nostr) return { reason: "your Nostr extension isn't there" }
   return {

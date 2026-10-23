@@ -23,13 +23,13 @@ const now = () => Math.floor(Date.now() / 1000)
 const randomPast = () => now() - Math.floor(Math.random() * 2 * 86400)
 const pTag = (tags, not) => (tags ?? []).find(t => t[0] === "p" && HEX64.test(t[1] ?? "") && t[1] !== not)?.[1] ?? null
 
-/** How this session reads and writes message text: the signer's crypto (extension or bunker), or { reason } when
- *  there is none. `ext` is for tests. */
+/** How this session reads and writes message text: the signer's crypto (extension, bunker or a key made in this
+ *  browser), or { reason } when there is none. `ext` is for tests. */
 export function cryptoFor(session, { ext, signer } = {}) {
-  if (session?.method !== "nip07" && session?.method !== "nip46") return { reason: "this sign-in can't decrypt" }
+  if (session?.method !== "nip07" && session?.method !== "nip46" && session?.method !== "local") return { reason: "this sign-in can't decrypt" }
   if (ext) return ext
   if (signer?.crypto) return signer.crypto
-  return session.method === "nip07" ? extensionCrypto() : { reason: "your bunker isn't connected" }
+  return session.method === "nip07" ? extensionCrypto() : session.method === "local" ? { reason: "your key isn't unlocked" } : { reason: "your bunker isn't connected" }
 }
 
 /** The kind 14 the other person reads: unsigned, its id computed like any event's. */

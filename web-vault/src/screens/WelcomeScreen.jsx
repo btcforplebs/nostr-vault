@@ -1,5 +1,6 @@
-// The front door, what nostrvault.app opens on for someone not signed in: one line on what Nostr Vault is, Sign in,
-// and a search to look at anyone without an account (their profile opens in the guest view, src/guest/GuestApp.jsx).
+// The front door, what nostrvault.app opens on for someone not signed in: one line on what Nostr Vault is, Create an
+// account (screens/CreateAccount.jsx, the iPhone's New to Nostr), I already use Nostr (sign-in), and a search to look at
+// anyone without an account (their profile opens in the guest view, src/guest/GuestApp.jsx).
 // "What is Nostr Vault?" shrinks the app into a phone on the marketing page (src/shell.js).
 import { useRef, useState } from "preact/hooks"
 import { namesAKey, resolvePubkey } from "../signer/readonly.js"
@@ -11,14 +12,15 @@ import "../styles/welcome.css"
 
 const SEARCH = "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"
 
-export function WelcomeScreen({ onSignIn }) {
+export function WelcomeScreen({ onSignIn, onCreate }) {
   return (
     <main class="welcome">
       <div class="welcome-main">
         <img src="./icon.svg" alt="" class="welcome-logo" width="64" height="64" />
         <h1>Nostr Vault</h1>
         <p class="welcome-line">A Nostr app with your own relay inside, so your notes and media live on devices you hold.</p>
-        <button class="primary welcome-signin" onClick={onSignIn}>Sign in</button>
+        <button class="primary welcome-signin" onClick={onCreate}>Create an account</button>
+        <button class="welcome-existing" onClick={onSignIn}>I already use Nostr</button>
         <Browse />
       </div>
       <button type="button" class="welcome-learn" onClick={() => learn()}>
