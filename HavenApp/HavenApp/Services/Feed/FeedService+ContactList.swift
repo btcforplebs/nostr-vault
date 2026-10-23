@@ -19,8 +19,21 @@ extension FeedService {
                                                   listConfirmed: contactListConfirmed),
               !pendingFollowActions.isEmpty else { return }
         let account = currentSnapshotKey()
-        let actions = pendingFollowActions.filter { $0.account == account }
+        var actions = pendingFollowActions.filter { $0.account == account }
         pendingFollowActions.removeAll()
+        // Several queued follows go out as one list edit (followUsers), not
+        // one kind 3 each: lists signed in the same second can lose to each
+        // other on a relay. Their pills resolve as a single follow's would.
+        let follows = actions.filter(\.follow).map(\.pubkey)
+        if follows.count > 1 {
+            actions.removeAll(where: \.follow)
+            let before = Set(followedPubkeys)
+            followUsers(follows, onPublishFailed: FollowActions.publishFailed("\(follows.count) people", follow: true))
+            for pubkey in follows where !pendingFollowActions.contains(where: { $0.pubkey == pubkey }) {
+                FollowNotificationManager.shared.resolvePending(
+                    pubkey: pubkey, kind: before.contains(pubkey) || followedPubkeys.contains(pubkey) ? .followed : nil)
+            }
+        }
         for action in actions {
             let name = NostrService.shared.profiles[action.pubkey]?.bestName ?? "npub…" + String(action.pubkey.suffix(6))
             let failed = FollowActions.publishFailed(name, follow: action.follow)
