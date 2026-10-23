@@ -261,6 +261,9 @@ extension FeedView {
             Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
         }
         .onChange(of: configService.config.globalShowsEveryone) { _, _ in reloadForTrustScope() }
+        .sheet(isPresented: $showingTrustLock) {
+            TrustScopeLockSheet(followCount: feedService.trustLockFollowCount)
+        }
         .sheet(item: $selectedListing) { listing in
             MarketplaceListingSheet(listing: listing, onOpenProfile: { showingProfileKey = IdentifiableString(id: $0) })
                 .environmentObject(nostrService)
