@@ -21,7 +21,7 @@ import { AvatarMenu } from "./AuthorQuickMenu.jsx"
 import { ReactionButton } from "./ReactionButton.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
-if (import.meta.env) import("../styles/note-actions.css")
+if (import.meta.env) { import("../styles/note-actions.css"); import("../styles/note-card.css") }
 
 export function AuthorName({ pubkey }) {
   const p = useProfile(pubkey)
@@ -58,7 +58,7 @@ function card(event, memoryOnly, showParent) {
     if (target) rememberNote(target)
     const open = inner?.id ?? repostedId(event)
     return (
-      <article class="note" data-note-id={target?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
+      <article class="note note-card" data-note-id={target?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
         {repostLine(event)}
         {inner?.pubkey ? <NoteBody event={inner} memoryOnly={memoryOnly} />
           : repostedId(event) ? <FetchedRepost q={{ type: "note", id: repostedId(event), relays: [] }} memoryOnly={memoryOnly} />
@@ -68,7 +68,7 @@ function card(event, memoryOnly, showParent) {
     )
   }
   rememberNote(event)
-  return <article class="note" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} /><NoteActions note={event} /></article>
+  return <article class="note note-card" data-note-id={event.id} onClick={openThread(event.id)} onAuxClick={openThread(event.id)}><NoteBody event={event} memoryOnly={memoryOnly} showParent={showParent} /><NoteActions note={event} /></article>
 }
 
 // Tapping a card opens its thread; a tap on a link, a button or a playing video stays with it. A ⌘/Ctrl-click or a
@@ -95,7 +95,7 @@ function genericRepost(event, memoryOnly) {
   if (inner) rememberNote(inner)
   const open = inner?.id ?? (ref?.type === "note" ? ref.id : null)
   return (
-    <article class="note" data-note-id={inner?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
+    <article class="note note-card" data-note-id={inner?.id} onClick={open && openThread(open)} onAuxClick={open && openThread(open)}>
       {repostLine(event)}
       {inner ? <><NoteBody event={inner} memoryOnly={memoryOnly} /><NoteActions note={inner} /></>
         : ref ? <FetchedRepost q={ref} memoryOnly={memoryOnly} kinds={SHOWN_REPOST_KINDS} />
@@ -126,21 +126,33 @@ function NoteBody({ event, memoryOnly, showParent = false }) {
       {parent && <ParentPreview id={parent} relay={/^wss?:\/\//.test(hint ?? "") ? hint : null} memoryOnly={memoryOnly} />}
       <div class="note-head">
         <AvatarMenu pubkey={event.pubkey} />
-        <a class="author-link" href={profileHref(event.pubkey)}>
-          <AuthorName pubkey={event.pubkey} />
-        </a>
-        <Badges pubkey={event.pubkey} note={event} />
-        <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
+        <div class="note-byline">
+          <div class="note-nameline">
+            <a class="author-link" href={profileHref(event.pubkey)}>
+              <AuthorName pubkey={event.pubkey} />
+            </a>
+            <Badges pubkey={event.pubkey} note={event} />
+            <time class="note-time" datetime={new Date(event.created_at * 1000).toISOString()} title={new Date(event.created_at * 1000).toLocaleString()}>{ago(event.created_at)}</time>
+            <NoteMore note={event} />
+          </div>
+          {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
+        </div>
       </div>
-      {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
       {hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards />}
       {event.kind === 1 && <TranslateButton id={event.id} content={event.content} />}
     </>
   )
 }
 
-/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody), then ⋯ (report, block) at the
- *  far end. Not shown before the app is up. */
+/** ⋯ (share, copy, report, block) at the end of the name row, as on the iPhone (FeedNoteRow+Layout moreMenu). Not
+ *  shown before the app is up, nor to a read-only sign-in. */
+function NoteMore({ note }) {
+  const ctx = actionContext()
+  if (!ctx || ctx.signer?.readOnly) return null
+  return <MoreMenu note={note} className="note-more" />
+}
+
+/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up. */
 function NoteActions({ note }) {
   const ctx = actionContext()
   const [s, setS] = useState(() => actionState(note.id))
@@ -160,7 +172,6 @@ function NoteActions({ note }) {
       <ReactionButton ctx={ctx} note={note} state={s.like} off={off} />
       <ZapButton note={note} />
       <EventInfoButton event={note} account={ctx.account} />
-      {!off && <span class="note-actions-end"><MoreMenu note={note} className="note-action" /></span>}
     </div>
   )
 }

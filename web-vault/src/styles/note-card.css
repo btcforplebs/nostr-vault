@@ -1,0 +1,29 @@
+/* The feed note row as on the iPhone (FeedNoteRow+Layout, .wide): the avatar beside a byline of name, badges,
+   monospaced time and ⋯, with the quiet "reply to" line under it; the body runs full width below. Scoped to
+   .note-card so the Vault and Notifications rows that share .note-head keep their look. */
+.note-card .note-head { align-items: flex-start; gap: 12px; }
+.note-card .note-byline { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+.note-card .note-nameline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.note-card .note-nameline .author-link { gap: 6px; }
+.note-card .note-nameline .author-name { font: 600 14px/1.3 var(--font); color: #fff; }
+.note-card .note-time { margin-left: auto; color: var(--text-2); font: 400 11px/1.3 var(--mono); letter-spacing: .2px; }
+
+/* ⋯: a bare 28×20 glyph in secondary, a 44 px tap target around it. */
+.note-card .note-more { position: relative; display: inline-grid; place-items: center; width: 28px; min-width: 28px; height: 20px;
+  min-height: 20px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--text-2); }
+.note-card .note-more::before { content: ""; position: absolute; inset: -12px -8px; }
+.note-card .note-more:hover { color: var(--text); }
+.note-card .note-more svg { width: 16px; height: 16px; }
+/* Near the top of the card: the menu opens downward. */
+.note-card .note-nameline .more-menu { bottom: auto; top: calc(100% + 6px); }
+
+/* "reply to name": 10 pt mono in secondary at 70%, the arrow accent at 60%. */
+.note-card .reply-to { margin: 0; gap: 3px; color: rgb(255 255 255 / .42); font: 400 10px/1.3 var(--mono); letter-spacing: .1px; }
+.note-card .reply-to svg { width: 9px; height: 9px; }
+.note-card .reply-to .mention { color: inherit; font: inherit; }
+
+/* The parent preview's time in secondary, as the row's own. */
+.note-card .parent-head time { color: var(--text-2); }
+
+/* The thread's focused note (NoteDetail, isFocused): a 2 pt accent border and a soft accent glow. */
+.note-card.focused { border: 2px solid var(--accent); box-shadow: 0 0 16px rgb(230 115 38 / .35); }
