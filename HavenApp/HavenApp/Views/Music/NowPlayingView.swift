@@ -232,42 +232,44 @@ struct NowPlayingView: View {
 
     /// Where a song leads: its artist and album pages, Share, and Zap for
     /// an artist on Nostr. A live stream offers its video and host. When the
-    /// words don't fit (Zap joins, or large text), the others go icon-only.
+    /// words don't fit (Zap joins, or large text), the buttons tighten,
+    /// then the others go icon-only.
     private func pageButtons(_ track: PlayerTrack) -> some View {
         ViewThatFits(in: .horizontal) {
-            pageButtonRow(track, showsWords: true)
-            pageButtonRow(track, showsWords: false)
+            pageButtonRow(track, showsWords: true, inset: 14)
+            pageButtonRow(track, showsWords: true, inset: 10)
+            pageButtonRow(track, showsWords: false, inset: 14)
         }
         .padding(.horizontal, 16)
     }
 
     @ViewBuilder
-    private func pageButtonRow(_ track: PlayerTrack, showsWords: Bool) -> some View {
-        HStack(spacing: 10) {
+    private func pageButtonRow(_ track: PlayerTrack, showsWords: Bool, inset: CGFloat) -> some View {
+        HStack(spacing: inset < 14 ? 8 : 10) {
             if let song = track.wavlake {
                 if let page = MusicFeedState.artistPage(of: song) {
-                    actionButton("Artist", icon: "music.mic", showsWord: showsWords) { go(page) }
+                    actionButton("Artist", icon: "music.mic", showsWord: showsWords, inset: inset) { go(page) }
                 }
                 if let page = MusicFeedState.albumPage(of: song) {
-                    actionButton("Album", icon: "square.stack", showsWord: showsWords) { go(page) }
+                    actionButton("Album", icon: "square.stack", showsWord: showsWords, inset: inset) { go(page) }
                 }
-                actionButton("Share", icon: "square.and.arrow.up", showsWord: showsWords) {
+                actionButton("Share", icon: "square.and.arrow.up", showsWord: showsWords, inset: inset) {
                     MusicArtistKey.share(song, into: $sheet)
                 }
                 if let artistHex {
-                    ArtistZapPill(pubkey: artistHex, artist: song.artist)
+                    ArtistZapPill(pubkey: artistHex, artist: song.artist, inset: inset)
                 }
             } else if let host = track.hostPubkey {
                 if let stream = player.liveStream {
-                    actionButton("Watch", icon: "play.rectangle", showsWord: showsWords) { sheet = .live(stream) }
+                    actionButton("Watch", icon: "play.rectangle", showsWord: showsWords, inset: inset) { sheet = .live(stream) }
                 }
-                actionButton("Host", icon: "person.crop.circle", showsWord: showsWords) { sheet = .profile(host) }
+                actionButton("Host", icon: "person.crop.circle", showsWord: showsWords, inset: inset) { sheet = .profile(host) }
             }
         }
         .fixedSize()
     }
 
-    private func actionButton(_ title: String, icon: String, showsWord: Bool = true,
+    private func actionButton(_ title: String, icon: String, showsWord: Bool = true, inset: CGFloat = 14,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
@@ -278,7 +280,7 @@ struct NowPlayingView: View {
                 }
             }
             .font(.appSystem(size: 14, weight: .semibold))
-            .padding(.horizontal, 14)
+            .padding(.horizontal, inset)
             .padding(.vertical, 8)
             .background(Capsule().fill(Color.secondary.opacity(0.15)))
         }
@@ -390,6 +392,7 @@ struct NowPlayingView: View {
 private struct ArtistZapPill: View {
     let pubkey: String
     let artist: String
+    var inset: CGFloat = 14
     @EnvironmentObject private var nostrService: NostrService
     @EnvironmentObject private var configService: ConfigService
     @State private var picker: ZapSheetContext?
@@ -414,7 +417,7 @@ private struct ArtistZapPill: View {
             }
             .font(.appSystem(size: 14, weight: .semibold))
             .foregroundColor(.orange)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, inset)
             .padding(.vertical, 8)
             .background(Capsule().fill(Color.orange.opacity(0.15)))
             .overlay { ZapBurstView(isAnimating: $burst) }
