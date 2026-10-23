@@ -33,6 +33,8 @@ const ICONS = {
   logs: "M4 5h16M4 10h16M4 15h10M4 20h7",
   bolt: "M13 2 4.5 13.5H11L10 22l8.5-11.5H12z",
   trash: "M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3",
+  learn: "M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z",
+  docs: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",
   people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
 }
 const Icon = ({ d, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
@@ -49,6 +51,23 @@ function Index({ ctx }) {
     <main class="screen settings">
       <header class="screen-head"><a class="button small" href="#/profile">Close</a><h2>Settings</h2><span style="width: 64px" /></header>
       <RelayStatusCard ctx={ctx} />
+      <section class="settings-group">
+        <div class="section-label">Learn</div>
+        <div class="settings-rows">
+          <a class="settings-row" href="/#about">
+            <span class="settings-icon" style={{ background: "var(--accent)" }}><Icon d={ICONS.learn} /></span>
+            <span class="settings-title">Learn about Nostr Vault</span>
+            <Chevron />
+          </a>
+          {/* A new tab: leaving this page would stop the relay running in it. */}
+          <a class="settings-row" href="/docs/" target="_blank" rel="noopener">
+            <span class="settings-icon" style={{ background: "#0a84ff" }}><Icon d={ICONS.docs} /></span>
+            <span class="settings-title">Docs</span>
+            <span class="muted small">New tab</span>
+            <Chevron />
+          </a>
+        </div>
+      </section>
       {SETTINGS_GROUPS.map(g => (
         <section key={g.title} class="settings-group">
           <div class="section-label">{g.title}</div>
