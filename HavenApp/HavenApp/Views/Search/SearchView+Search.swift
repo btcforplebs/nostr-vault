@@ -117,6 +117,10 @@ extension SearchView {
         if case .profile(let id) = NostrURI(string: trimmed),
            let hexKey = QuoteReference.profilePubkey(fromBech32: id) {
             showDirectProfile(hexKey)
+            #if os(iOS)
+            // The profile covers the field: put the keyboard away with it.
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            #endif
             showingProfile = hexKey
             return
         }
