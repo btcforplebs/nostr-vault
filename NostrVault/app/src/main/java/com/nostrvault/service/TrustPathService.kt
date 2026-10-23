@@ -194,6 +194,21 @@ class TrustPathService @Inject constructor(
     }
 
     /**
+     * Setup's "Who told you" ranking read: the newest follow list of each of
+     * [authors] (the first [ReferrerFollows.LISTS_TO_READ] of them), in one
+     * request to damus, primal and purplepag.es, the same reads as iOS
+     * `ReferralLookup.suggestions`. Empty when no relay answered.
+     */
+    suspend fun referralLists(authors: List<String>): Map<String, List<String>> {
+        val readers = authors.distinct().take(com.nostrvault.setup.ReferrerFollows.LISTS_TO_READ)
+        if (readers.isEmpty()) return emptyMap()
+        val filters = readers.chunked(WIDER_CHUNK).map { FollowListFilter(authors = it, tagged = null, limit = it.size) }
+        val lists = query(filters, REFERRAL_RELAYS, WIDER_TIMEOUT_MS)
+        return lists.filter { it.kind == 3 }.sortedBy { it.createdAt }
+            .associate { it.pubkey to com.nostrvault.setup.ReferrerFollows.follows(it.tags) } // newest wins
+    }
+
+    /**
      * Where one person's follow list is asked for, all at once: the first
      * feed relays, the index relays, and the relays they publish to. The
      * feed relays alone missed lists the profile page found: by default
@@ -331,5 +346,7 @@ class TrustPathService @Inject constructor(
         const val WIDER_TIMEOUT_MS = 10_000L
         /** The follow-list index, asked beside the first feed relay. */
         const val WIDER_INDEX_RELAY = "wss://purplepag.es"
+        /** Where setup reads the referrer's follows' lists. */
+        val REFERRAL_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net", "wss://purplepag.es")
     }
 }

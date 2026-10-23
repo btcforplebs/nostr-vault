@@ -209,6 +209,7 @@ fun ProfileScreen(
     // form lives in the view model, so after process death the sheet would
     // come back empty.
     var editingProfile by remember { mutableStateOf(false) }
+    var sharingProfile by remember { mutableStateOf(false) }
     val openEditor = { editViewModel.open(); editingProfile = true }
     // A read-only sign-in can't sign a post or a kind 0: no Post, no Edit
     // Profile, no pull to edit (iOS and the web hide both too).
@@ -375,6 +376,7 @@ fun ProfileScreen(
                         copyNpub()
                         if (android.os.Build.VERSION.SDK_INT < 33) lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
                     },
+                    onShareProfile = { sharingProfile = true },
                     webLink = brainstormLink,
                     onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
                     onOpenMyProfile = if (isTab) null else onOpenMyProfile,
@@ -624,6 +626,10 @@ fun ProfileScreen(
 
     if (editingProfile) {
         ProfileEditSheet(viewModel = editViewModel, onClose = { editingProfile = false })
+    }
+
+    if (sharingProfile) {
+        npub?.let { ShareProfileSheet(npub = it, name = profile?.bestName, onDismiss = { sharingProfile = false }) }
     }
 
     openListing?.let { listing ->

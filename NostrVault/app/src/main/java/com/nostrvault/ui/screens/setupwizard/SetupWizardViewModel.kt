@@ -55,7 +55,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, REFERRER, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
@@ -290,12 +290,16 @@ class SetupWizardViewModel @Inject constructor(
      */
     val activeSteps: List<WizardStep>
         get() {
-            val steps = when (_setupPath.value) {
-                SetupPath.BROWSE -> browseSteps
-                SetupPath.NEW_TO_NOSTR -> newUserSteps
-                SetupPath.USE_NOSTR -> useNostrSteps
-                else -> fullSteps
-            }
+            val steps = withReferrerStep(
+                when (_setupPath.value) {
+                    SetupPath.BROWSE -> browseSteps
+                    SetupPath.NEW_TO_NOSTR -> newUserSteps
+                    SetupPath.USE_NOSTR -> useNostrSteps
+                    else -> fullSteps
+                },
+                _setupPath.value,
+                readOnly = configStore.config.value.setupMode == "browse",
+            )
             return if (_useExternalRelay.value) {
                 // No import here, so "I already use Nostr" ends on the done screen.
                 val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA -
@@ -337,6 +341,7 @@ class SetupWizardViewModel @Inject constructor(
         _useNostrPassword.value = ""
         _useNostrConfirm.value = ""
         _error.value = null
+        com.nostrvault.setup.ReferrerFollows.clear()
         _setupPath.value = path
         _step.value = WizardStep.RELAY_CHOICE
     }
