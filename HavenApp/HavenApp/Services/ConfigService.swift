@@ -574,6 +574,10 @@ class ConfigService: ObservableObject {
     }
 
     /// Returns whether a signing credential is stored for the given npub.
+    /// The active account can sign here: a key, or a bunker. A read-only
+    /// sign-in gets no Post or Edit Profile, as on the web.
+    var activeAccountCanSign: Bool { !FeedService.activeAccountIsReadOnly }
+
     func hasCredential(forNpub npub: String) -> Bool {
         guard let stored = config.accountCredentials[npub] else { return false }
         return !stored.isEmpty

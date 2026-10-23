@@ -206,6 +206,9 @@ fun ProfileScreen(
     // come back empty.
     var editingProfile by remember { mutableStateOf(false) }
     val openEditor = { editViewModel.open(); editingProfile = true }
+    // A read-only sign-in can't sign a post or a kind 0: no Post, no Edit
+    // Profile, no pull to edit (iOS and the web hide both too).
+    val canSign = com.nostrvault.ui.components.rememberCanSign()
     val copyNpub = {
         npub?.let { clipboard.setText(AnnotatedString(it)) }
         Unit
@@ -262,7 +265,7 @@ fun ProfileScreen(
             }
         },
         // iOS has the Post capsule on the Profile tab only (MyProfileView.postButton).
-        floatingActionButton = { if (isTab) ProfilePostCapsule(onPost = onCompose) },
+        floatingActionButton = { if (isTab && canSign) ProfilePostCapsule(onPost = onCompose) },
     ) { padding ->
         // Items before the section tabs: header, bio (when there is one),
         // links, follow counts and actions.
@@ -355,7 +358,7 @@ fun ProfileScreen(
                     isBlocked = isBlocked,
                     canZap = canZap,
                     zapSats = viewModel.defaultZapSats,
-                    onEditProfile = openEditor,
+                    onEditProfile = openEditor.takeIf { canSign },
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
@@ -607,7 +610,7 @@ fun ProfileScreen(
         }
         // Your own profile has nothing that needs pulling fresh, so the pull
         // opens the editor instead (iOS #456). Editing lives on the tab.
-        if (isMyTab) {
+        if (isMyTab && canSign) {
             PullToEditBox(labelTop = padding.calculateTopPadding(), onTrigger = openEditor) { list() }
         } else {
             list()

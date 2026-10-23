@@ -62,6 +62,10 @@ struct MyProfileView: View {
 
     private var profile: FeedProfile? { nostrService.profiles[pubkey] }
 
+    /// A read-only sign-in can't sign a post or a kind 0, so it gets no Post
+    /// and no Edit Profile, as on the web.
+    private var canSign: Bool { configService.activeAccountCanSign }
+
     var body: some View {
         ProfileContent(
             pubkey: pubkey,
@@ -96,9 +100,9 @@ struct MyProfileView: View {
         #endif
         #if os(iOS)
         .sheet(isPresented: $showingSettings) { settingsSheet }
-        .overlay(alignment: .bottomTrailing) { postButton }
+        .overlay(alignment: .bottomTrailing) { if canSign { postButton } }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
-            guard (note.object as? Int) == 2 else { return }
+            guard (note.object as? Int) == 2, canSign else { return }
             showingCompose = true
         }
         // ⌘R on an iPad keyboard. The Mac binds it to its refresh button.
@@ -138,10 +142,12 @@ struct MyProfileView: View {
 
     private var actionButtons: some View {
         HStack(spacing: 8) {
-            #if os(macOS)
-            ProfileActions.pill("Post", icon: "pencil", filled: true) { showingCompose = true }
-            #endif
-            ProfileActions.pill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
+            if canSign {
+                #if os(macOS)
+                ProfileActions.pill("Post", icon: "pencil", filled: true) { showingCompose = true }
+                #endif
+                ProfileActions.pill("Edit Profile", icon: "person.crop.circle") { showingEditProfile = true }
+            }
             ProfileActions.trustWeb(hint: "Shows your web of trust") { showingTrustWeb = true }
         }
     }

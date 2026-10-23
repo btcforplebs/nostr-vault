@@ -35,7 +35,8 @@ internal fun ProfileActionRow(
     isBlocked: Boolean,
     canZap: Boolean,
     zapSats: Int,
-    onEditProfile: () -> Unit,
+    /** Null for a read-only sign-in: it can't sign a kind 0, so no Edit Profile. */
+    onEditProfile: (() -> Unit)?,
     onFollow: () -> Unit,
     onMessage: () -> Unit,
     onBlock: () -> Unit,
@@ -74,7 +75,9 @@ internal fun ProfileActionRow(
                 // Post is the floating button. Pulling the page down opens
                 // Edit Profile too; the button stays for TalkBack and anyone
                 // who has not found the pull.
-                ActionChip("Edit Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
+                if (onEditProfile != null) {
+                    ActionChip("Edit Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
+                }
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
             } else {
                 ActionChip(

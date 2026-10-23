@@ -236,10 +236,14 @@ fun NostrVaultNavHost(
             val opensVaultDashboard = currentRoute == Screen.Dashboard.route
             val condensedActionIcon = if (opensVaultDashboard) NostrVaultIcons.TabVault else NostrVaultIcons.Compose
             val condensedActionTint = if (opensVaultDashboard) relayStatusColor(relayStatus) else colors.primary
-            val onCondensedAction: () -> Unit = if (opensVaultDashboard) {
+            // A read-only sign-in can't sign a post: no compose action.
+            val canSign = com.nostrvault.ui.components.rememberCanSign()
+            val onCondensedAction: (() -> Unit)? = if (opensVaultDashboard) {
                 { feedService.requestRelayDashboard() }
-            } else {
+            } else if (canSign) {
                 { navController.navigate(Screen.ComposeNote.createRoute()) }
+            } else {
+                null
             }
 
             val density = LocalDensity.current

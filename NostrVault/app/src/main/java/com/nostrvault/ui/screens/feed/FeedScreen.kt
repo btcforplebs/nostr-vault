@@ -93,6 +93,7 @@ fun FeedScreen(
         else -> null
     }
     val postAction: () -> Unit = { modeComposer?.let(onComposeMode) ?: onCompose() }
+    val canSign = com.nostrvault.ui.components.rememberCanSign()
     val liveStreams by viewModel.liveStreams.collectAsState()
     val liveLoading by viewModel.liveLoading.collectAsState()
     val marketListings by viewModel.marketListings.collectAsState()
@@ -361,7 +362,8 @@ fun FeedScreen(
             )
         },
         floatingActionButton = {
-            FeedPostButton(feedMode = feedMode, modeComposer = modeComposer, meterLift = meterLift, onPost = postAction)
+            // A read-only sign-in can't sign a post, so it gets no Post.
+            if (canSign) FeedPostButton(feedMode = feedMode, modeComposer = modeComposer, meterLift = meterLift, onPost = postAction)
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {
@@ -387,7 +389,7 @@ fun FeedScreen(
                         viewModel.cacheNote(note)
                         onNoteClick(note.id)
                     },
-                    onPost = { onComposeMode(com.nostrvault.ui.screens.ModeComposerKind.DIVINE) },
+                    onPost = if (canSign) ({ onComposeMode(com.nostrvault.ui.screens.ModeComposerKind.DIVINE) }) else null,
                     onShowGlobal = { viewModel.setScope(FeedMode.REELS, global = true) },
                 )
             } else if (feedMode == FeedMode.MUSIC) {

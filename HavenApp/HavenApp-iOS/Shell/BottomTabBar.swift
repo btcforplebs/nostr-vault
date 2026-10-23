@@ -149,6 +149,10 @@ struct BottomTabBar: View {
         opensVaultDashboard ? VaultDashboard.symbol : opensMyWeb ? TrustMap.Layer.everyone.symbolName : "square.and.pencil"
     }
 
+    private var showsCollapsedFAB: Bool {
+        opensVaultDashboard || opensMyWeb || configService.activeAccountCanSign
+    }
+
     private var collapsedFABColor: Color {
         opensVaultDashboard ? relayStatusColor : Color.havenPurple
     }
@@ -180,27 +184,30 @@ struct BottomTabBar: View {
             }
             .accessibilityValue(vaultHasNews ? "New activity" : "")
 
-            // Contextual FAB icon — triggers compose or relay dashboard
-            Button {
-                if opensVaultDashboard {
-                    NotificationCenter.default.post(name: .openRelayDashboard, object: selectedTab)
-                } else {
-                    NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
+            // Contextual FAB icon — triggers compose or relay dashboard.
+            // A read-only sign-in can't sign a post: no compose button.
+            if showsCollapsedFAB {
+                Button {
+                    if opensVaultDashboard {
+                        NotificationCenter.default.post(name: .openRelayDashboard, object: selectedTab)
+                    } else {
+                        NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(collapsedFABColor.opacity(0.15))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: collapsedFABIcon)
+                            .font(.appSystem(size: 15, weight: .bold))
+                            .foregroundStyle(collapsedFABColor)
+                            .symbolRenderingMode(.monochrome)
+                    }
                 }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(collapsedFABColor.opacity(0.15))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: collapsedFABIcon)
-                        .font(.appSystem(size: 15, weight: .bold))
-                        .foregroundStyle(collapsedFABColor)
-                        .symbolRenderingMode(.monochrome)
-                }
+                .buttonStyle(.plain)
+                .tint(collapsedFABColor)
+                .accessibilityLabel(collapsedFABLabel)
             }
-            .buttonStyle(.plain)
-            .tint(collapsedFABColor)
-            .accessibilityLabel(collapsedFABLabel)
         }
     }
 

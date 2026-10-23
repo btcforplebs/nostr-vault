@@ -50,6 +50,7 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val query by viewModel.query.collectAsState()
+    val canSign = com.nostrvault.ui.components.rememberCanSign()
     val results by viewModel.results.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val resultFilter by viewModel.resultFilter.collectAsState()
@@ -200,8 +201,9 @@ fun SearchScreen(
         },
         floatingActionButton = {
             // The same gradient "Post" capsule as the feed, folding with the bars.
+            // None for a read-only sign-in: it can't sign a post.
             val folded by rememberChromeFolded()
-            Box(Modifier.chromeFab().blockedWhen(folded)) {
+            if (canSign) Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
                     onClick = onCompose,
                     shape = RoundedCornerShape(50),
