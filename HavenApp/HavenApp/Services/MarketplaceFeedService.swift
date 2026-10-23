@@ -21,10 +21,13 @@ final class MarketplaceFeedService: ObservableObject {
     private var relayAnswered = false
     /// Selected category chip, or nil for "All".
     @Published var selectedCategory: MarketCategory?
-    /// Global by default, unlike Recipes: a marketplace is for finding sellers
-    /// you do not follow yet, and almost nobody's follows sell anything, so a
-    /// Following default would open on an empty screen.
-    @Published private(set) var scope: RecipeScope = .global
+    /// Following by default (Logen 2026-10-22): Global shows sellers from
+    /// anywhere on Nostr and is reached through the global warning
+    /// (MarketScopeGate). An empty Following grid offers the switch.
+    @Published private(set) var scope: RecipeScope = MarketScopeGate.opensOnGlobal ? .global : .following
+    /// Set when Global was asked for: the feed shows the global warning, and
+    /// Proceed calls confirmGlobal().
+    @Published var globalWarningPending = false
     /// True when Following is selected and the owner follows nobody.
     @Published private(set) var followSetIsEmpty = false
 
@@ -100,6 +103,20 @@ final class MarketplaceFeedService: ObservableObject {
     /// Switches scope and reloads. Global is filtered by the Web of Trust
     /// shield, so it needs no warning; Everyone has its own.
     func setScope(_ newScope: RecipeScope) {
+        switch MarketScopeGate.request(toGlobal: newScope == .global, currentlyGlobal: scope == .global) {
+        case .none: return
+        case .warn: globalWarningPending = true
+        case .switchScope: switchScope(to: newScope)
+        }
+    }
+
+    /// Proceed on the global warning.
+    func confirmGlobal() {
+        globalWarningPending = false
+        switchScope(to: .global)
+    }
+
+    private func switchScope(to newScope: RecipeScope) {
         guard newScope != scope else { return }
         scope = newScope
         listings = []
