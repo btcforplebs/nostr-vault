@@ -30,8 +30,14 @@ object FloatingButtonRow {
     /** Every floating button and the mini player: one height, so the two read as one row (iOS buttonHeight). */
     val buttonHeight: Dp = 48.dp
     val miniPlayerHeight: Dp = buttonHeight
-    /** The clear space the bottom bar keeps above its pill (its vertical padding). */
-    private val barTopPadding: Dp = 12.dp
+    /**
+     * The clear space the bottom bar keeps above its pill: BottomNavBar's top
+     * padding. It was left at 12.dp when the bar went to 4.dp (193607e73),
+     * which put the row's bottom edge 2.dp under the pill's top instead of
+     * [aboveBar] over it: Post, My Web, the Vault button and the mini player
+     * all sat on the bar (Logen, 2026-10-23).
+     */
+    private val barTopPadding: Dp = 4.dp
     /** The row sits this far above the bar's pill (iOS: the inset's 6pt spacing). */
     val aboveBar: Dp = 6.dp
     /** Before the bar has been measured. */
