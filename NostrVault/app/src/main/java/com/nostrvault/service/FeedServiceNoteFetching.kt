@@ -406,9 +406,9 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             // to it, quoting it or opening its thread resolves it here.
             ?: _feedThreadReplies.value[id]
             // Quoted addressable events are keyed by coordinate, so a lookup by
-            // id has to scan them — without this, opening a quoted article
-            // refetches an event already in memory.
-            ?: _quotedAddressCache.value.values.firstOrNull { it.id == id }
+            // id goes through an id index — without this, opening a quoted
+            // article refetches an event already in memory.
+            ?: quotedAddressById()[id]
     }
 
     /**

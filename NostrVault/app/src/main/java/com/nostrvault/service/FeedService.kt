@@ -229,6 +229,9 @@ class FeedService @Inject constructor(
      */
     val quotedNotes: StateFlow<Map<String, FeedNote>> =
         combine(_parentNotesCache, _quotedAddressCache) { byId, byAddress -> byId + byAddress }
+            // The merge copies the whole cache; off Main, so a parent landing
+            // mid-scroll does not spend the frame on it.
+            .flowOn(Dispatchers.Default)
             .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     internal val _followedPubkeys = MutableStateFlow<List<String>>(emptyList())
@@ -721,9 +724,10 @@ class FeedService @Inject constructor(
 
     // Thread grouping resolves every missing ancestor through findNote, so a
     // scan of the whole feed per lookup kept the UI thread busy for seconds.
-    // Rebuilt once per notes list; the first note matching by id or
-    // effectiveEventId wins, as the scan did.
+    // Rebuilt once per notes list; the first note with the id as its own wins,
+    // then the first repost carrying it.
     @Volatile internal var noteIndex: Pair<List<FeedNote>, Map<String, FeedNote>>? = null
+    @Volatile internal var quotedAddressIdIndex: Pair<Map<String, FeedNote>, Map<String, FeedNote>>? = null
 
     /**
      * Builds the note index for the current list, so the next lookup on Main
