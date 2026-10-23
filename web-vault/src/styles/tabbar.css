@@ -1,0 +1,25 @@
+/* The phone layout's tab bar and floating Post button (components/TabBar.jsx), as the iPhone draws them
+   (BottomTabBar.swift, FloatingButtonRow.swift): a glass capsule 16px in from each side, inactive tabs white, the
+   current one orange, 10px labels, and Post in the row just above the bar, 20px from the right. */
+.tabbar { position: fixed; z-index: 10; left: var(--gutter); right: var(--gutter); bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom));
+  max-width: 420px; margin: 0 auto; height: var(--tabbar-h); padding: 0 8px; display: flex; justify-content: space-around; align-items: center;
+  border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .5); }
+.tab { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  color: var(--text); font: 400 10px/1.2 var(--font); }
+.tab.on { color: var(--accent); font-weight: 600; }
+/* Every icon in a 24px-tall slot, so the labels line up whatever the glyph (the globe is drawn at 26). */
+.tab-icon { display: flex; align-items: center; justify-content: center; height: 24px; }
+.tab.on .tab-icon svg { stroke-width: 2; }
+.tab-avatar { display: block; height: 24px; border-radius: 50%; box-shadow: 0 0 0 1px rgb(255 255 255 / .5); }
+.tab.on .tab-avatar { box-shadow: 0 0 0 2px var(--accent); }
+/* Unread messages: a red dot at the icon's top right (BottomTabBar NewsDot). */
+.tab-dot { position: absolute; top: 9px; left: calc(50% + 7px); width: 9px; height: 9px; border-radius: 50%;
+  background: var(--danger); box-shadow: 0 0 0 2px var(--bg); }
+
+/* Post: orange capsule 6px above the tab bar, 20px from the right edge (FloatingButtonSlot), on wide windows from the
+   640px column's edge. a.post-button outranks app.css's shared button rule, which loads after this file. */
+a.post-button { position: fixed; z-index: 10; right: max(20px, calc(50% - 320px + 20px));
+  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 6px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 18px; border: 0;
+  background: var(--accent-grad); color: #fff; font: 700 14px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
