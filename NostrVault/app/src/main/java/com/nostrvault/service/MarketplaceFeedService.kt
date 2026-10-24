@@ -185,7 +185,7 @@ class MarketplaceFeedService @Inject constructor(
                 _followSetIsEmpty.value = true
                 return
             }
-            authors = follows.toList()
+            authors = feedService.feedAuthors()
         }
 
         val blocked = configStore.config.value.blockedForActiveAccount()

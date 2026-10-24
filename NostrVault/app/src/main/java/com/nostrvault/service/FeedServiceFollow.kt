@@ -219,9 +219,7 @@ import com.nostrvault.ui.notification.FollowKind
     }
 
     internal fun FeedService.restoreContactListImpl(pTags: List<List<String>>, content: String) {
-        val ownerHex = nostrService.activeHexPubkey
-        val whitelistedNpubs = configStore.config.value.whitelistedNpubs ?: emptyList()
-        val contactResult = contactManager.parseContactList(pTags, ownerHex, whitelistedNpubs)
+        val contactResult = contactManager.parseContactList(pTags)
         _followedPubkeys.value = contactResult.pubkeys
         contactListContent = content
         // The backup's own tags, plus the current list's non-follow tags it

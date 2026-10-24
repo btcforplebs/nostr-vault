@@ -173,7 +173,7 @@ class LiveFeedService @Inject constructor(
         // Following: streams a follow hosts. Global: the Web of Trust, or
         // everyone with the shield off. Either way judged on the hosts.
         val admitted: Set<String>? = when (_scope.value) {
-            ReelsScope.FOLLOWING -> feedService.followedPubkeys.value.toSet()
+            ReelsScope.FOLLOWING -> feedService.feedAuthorSet()
             ReelsScope.GLOBAL -> {
                 // trust first: reading it loads the graph that hasNoWebOfTrustYet checks.
                 val trust = feedService.globalTrustSet()
