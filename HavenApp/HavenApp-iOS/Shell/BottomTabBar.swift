@@ -15,6 +15,8 @@ struct BottomTabBar: View {
     @ObservedObject var nostrService: NostrService
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService
+    // Rebuilds the account menu once each account's picture is cached.
+    @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -334,6 +336,9 @@ struct BottomTabBar: View {
             // it for a menu opening upward from the bottom bar, so the owner
             // would jump between top and bottom depending on where it opened.
             .menuOrder(.fixed)
+            .task(id: AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles)) {
+                accountAvatars.prefetch(AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles))
+            }
         } else {
             Button(action: primary, label: label)
                 .buttonStyle(.plain)
@@ -345,16 +350,15 @@ struct BottomTabBar: View {
         let currentNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         let isCurrent = currentNpub.isEmpty ? isOwner : npub == currentNpub
         let hex = Bech32.decode(npub)?.hexString ?? ""
-        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+        let profile = nostrService.profiles[hex]
 
-        return Button {
+        return AccountMenuItem(
+            npub: npub,
+            name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
+            pictureURL: profile?.pictureURL,
+            isActive: isCurrent
+        ) {
             configService.switchActiveAccount(to: npub)
-        } label: {
-            if isCurrent {
-                Label(name, systemImage: "checkmark")
-            } else {
-                Text(name)
-            }
         }
     }
 }

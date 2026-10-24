@@ -58,7 +58,7 @@ struct AccountSwitcherView: View {
         let isActive = npub == activeNpub
         let hex = Bech32.decode(npub)?.hexString ?? ""
         let profile = nostrService.profiles[hex]
-        let displayName = profile?.bestName ?? String(npub.prefix(16)) + "..."
+        let displayName = profile?.bestName ?? AccountSwitcherIdentity.shortNpub(npub)
         let hasKey = isOwner || configService.hasCredential(forNpub: npub)
 
         Button(action: {
@@ -99,7 +99,8 @@ struct AccountSwitcherView: View {
                         }
                     }
 
-                    Text(npub.prefix(20) + "...")
+                    // The key, not the name, is what tells two accounts apart.
+                    Text(AccountSwitcherIdentity.shortNpub(npub))
                         .font(.appSystem(size: 10, design: .monospaced))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -277,5 +278,119 @@ struct AccountSwitcherView: View {
         importConfirm = ""
         importError = nil
         importSuccess = false
+    }
+}
+
+// MARK: - Telling accounts apart
+
+/// What every account switcher shows next to a name. Profile names are free
+/// text, so two accounts can share one; the key cannot. Each row carries the
+/// account's own picture and a short npub, and rows are keyed by npub.
+enum AccountSwitcherIdentity {
+    /// "npub1abc…wxyz": the prefix with the first three key characters, then
+    /// the last four.
+    static func shortNpub(_ npub: String) -> String {
+        guard npub.count > 12 else { return npub }
+        return "\(npub.prefix(8))…\(npub.suffix(4))"
+    }
+
+    /// The account's picture as a round menu icon, or nil until it is cached.
+    /// System menus draw an image at its own size and drop SwiftUI modifiers,
+    /// so the size and the circle are baked into the bitmap.
+    static func menuIcon(pictureURL: URL?) -> PlatformImage? {
+        guard let url = pictureURL,
+              let image = AvatarImageCache.shared.image(for: url) else { return nil }
+        #if os(macOS)
+        let side: CGFloat = 18
+        let size = NSSize(width: side, height: side)
+        return NSImage(size: size, flipped: false) { rect in
+            NSBezierPath(ovalIn: rect).addClip()
+            image.draw(in: aspectFill(image.size, in: rect))
+            return true
+        }
+        #else
+        let side: CGFloat = 24
+        let rect = CGRect(x: 0, y: 0, width: side, height: side)
+        let rendered = UIGraphicsImageRenderer(size: rect.size).image { _ in
+            UIBezierPath(ovalIn: rect).addClip()
+            image.draw(in: aspectFill(image.size, in: rect))
+        }
+        return rendered.withRenderingMode(.alwaysOriginal)
+        #endif
+    }
+
+    private static func aspectFill(_ size: CGSize, in rect: CGRect) -> CGRect {
+        guard size.width > 0, size.height > 0 else { return rect }
+        let scale = max(rect.width / size.width, rect.height / size.height)
+        let w = size.width * scale, h = size.height * scale
+        return CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+    }
+}
+
+/// Starts loading every account's picture so a switcher menu has them when it
+/// opens. A menu builds its items from what is cached, and the cache is not
+/// observable, so this publishes once a picture lands and the menu rebuilds.
+final class AccountMenuAvatars: ObservableObject {
+    static let shared = AccountMenuAvatars()
+    @Published private(set) var loaded: Set<URL> = []
+
+    func prefetch(_ urls: [URL]) {
+        for url in urls where !loaded.contains(url) {
+            AvatarImageCache.shared.load(url: url) { [weak self] image in
+                guard image != nil else { return }
+                self?.loaded.insert(url)
+            }
+        }
+    }
+
+    static func pictureURLs(npubs: [String], profiles: [String: FeedProfile]) -> [URL] {
+        npubs.compactMap { npub in
+            Bech32.decode(npub).flatMap { profiles[$0.hexString]?.pictureURL }
+        }
+    }
+}
+
+/// One account in a system menu: picture, name, short npub, and a checkmark
+/// on the active account. A Toggle so the checkmark and the picture both show;
+/// a Label's icon slot only holds one.
+struct AccountMenuItem: View {
+    let npub: String
+    let name: String
+    let pictureURL: URL?
+    let isActive: Bool
+    let select: () -> Void
+
+    var body: some View {
+        let short = AccountSwitcherIdentity.shortNpub(npub)
+        Toggle(isOn: Binding(get: { isActive }, set: { _ in select() })) {
+            #if os(macOS)
+            Label {
+                // A macOS menu item keeps one line of text.
+                Text("\(name)  \(short)")
+            } icon: {
+                icon
+            }
+            #else
+            // An iOS menu reads a second Text as the subtitle only when the
+            // texts and the image sit directly in the label; inside a Label
+            // the subtitle is dropped.
+            Text(name)
+            Text(short)
+            icon
+            #endif
+        }
+        .accessibilityLabel("\(name), \(short)")
+    }
+
+    @ViewBuilder private var icon: some View {
+        if let icon = AccountSwitcherIdentity.menuIcon(pictureURL: pictureURL) {
+            #if os(macOS)
+            Image(nsImage: icon)
+            #else
+            Image(uiImage: icon)
+            #endif
+        } else {
+            Image(systemName: "person.crop.circle")
+        }
     }
 }
