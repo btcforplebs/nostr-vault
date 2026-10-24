@@ -56,3 +56,34 @@ struct ReplaceableLookup<Event> {
 
     var confirmedNone: Bool { event == nil && asked > 0 && answered >= asked }
 }
+
+/// Edit Profile publishes a kind 0, which replaces the whole profile of the
+/// key that signs it. On a phone with several accounts, a save that ran as
+/// whichever account was active when it finished (not the one the form was
+/// opened for) put one account's profile over another's. A kind 0 goes out
+/// only when the form, the active account and the signed event all name the
+/// same pubkey.
+enum ProfileSaveGuard {
+    /// Before signing: the profile being edited, the account the form was
+    /// loaded from, and the account that would sign are one and the same.
+    static func maySign(profilePubkey: String, formLoadedFor: String, activePubkey: String) -> Bool {
+        let profile = normalized(profilePubkey)
+        return !profile.isEmpty
+            && profile == normalized(formLoadedFor)
+            && profile == normalized(activePubkey)
+    }
+
+    /// After signing: the event is a kind 0 signed by the key of the profile
+    /// being edited, by an account the form was loaded from.
+    static func mayPublish(kind: Int, signedPubkey: String, profilePubkey: String, formLoadedFor: String) -> Bool {
+        let profile = normalized(profilePubkey)
+        return kind == 0
+            && !profile.isEmpty
+            && profile == normalized(signedPubkey)
+            && profile == normalized(formLoadedFor)
+    }
+
+    private static func normalized(_ hex: String) -> String {
+        hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}

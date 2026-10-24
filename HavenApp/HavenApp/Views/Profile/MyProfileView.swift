@@ -35,8 +35,7 @@ struct MyProfileView: View {
     #endif
 
     @State private var showingEditProfile = false
-    /// Fields from an autosave that did not reach the relays; the next edit
-    /// opens with them.
+    /// Fields from a save no relay accepted; the next edit opens with them.
     @State private var unsavedDraft: [String: String]?
     @State private var showingCompose = false
     @State private var showingSettings = false
@@ -278,15 +277,6 @@ struct MyProfileView: View {
     @ViewBuilder
     private var editSheet: some View {
         let existing = profile ?? FeedProfile(pubkey: pubkey)
-        #if os(iOS)
-        ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, draft: unsavedDraft,
-                        onSave: applyProfileUpdate,
-                        onAutosave: { initial, edited in autosaveProfile(existing, initial: initial, edited: edited) },
-                        onDiscard: { unsavedDraft = nil })
-        .environmentObject(nostrService)
-        .environmentObject(configService)
-        .presentationDragIndicator(.visible)
-        #else
         let generation = saveGeneration + 1
         ProfileEditView(onDismiss: { showingEditProfile = false }, existing: existing, draft: unsavedDraft,
                         onSave: { saveGeneration = generation; applyProfileUpdate($0) },
@@ -295,6 +285,8 @@ struct MyProfileView: View {
                         })
         .environmentObject(nostrService)
         .environmentObject(configService)
+        #if os(iOS)
+        .presentationDragIndicator(.visible)
         #endif
     }
 
@@ -312,32 +304,6 @@ struct MyProfileView: View {
         nostrService.profiles[pubkey] = shownBefore
         unsavedDraft = edited
         ErrorNotificationManager.shared.show("Profile not saved: no relay accepted it. Edit Profile still has your changes.")
-    }
-
-    /// The edit sheet was swiped away with changes. They show at once and are
-    /// published behind; if that fails, or no relay accepts the new profile,
-    /// the page goes back to what it showed and keeps the changes for the
-    /// next edit.
-    private func autosaveProfile(_ existing: FeedProfile, initial: [String: String], edited: [String: String]) {
-        let shownBefore = nostrService.profiles[pubkey]
-        saveGeneration += 1
-        let generation = saveGeneration
-        unsavedDraft = nil
-        applyProfileUpdate(ProfileEditView.preview(existing, initial: initial, edited: edited))
-        Task {
-            let result = await ProfileEditView.publish(
-                nostrService: nostrService, existing: existing, initial: initial, edited: edited,
-                onRefused: { profileRefused(generation: generation, shownBefore: shownBefore, edited: edited) })
-            switch result {
-            case .success(let updated):
-                applyProfileUpdate(updated)
-            case .failure:
-                guard generation == saveGeneration else { return }
-                nostrService.profiles[pubkey] = shownBefore
-                unsavedDraft = edited
-                ErrorNotificationManager.shared.show("Profile not saved. Tap Edit Profile to try again.")
-            }
-        }
     }
 }
 
