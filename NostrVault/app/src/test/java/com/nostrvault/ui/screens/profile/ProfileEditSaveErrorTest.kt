@@ -58,7 +58,7 @@ class ProfileEditSaveErrorTest {
     private fun save(vm: ProfileEditViewModel, name: String) {
         vm.open()
         vm.setName(name)
-        vm.close(discard = false)
+        vm.save()
         scope.advanceUntilIdle()
     }
 

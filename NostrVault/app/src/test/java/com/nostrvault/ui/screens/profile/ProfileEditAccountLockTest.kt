@@ -57,7 +57,7 @@ class ProfileEditAccountLockTest {
         val vm = ProfileEditViewModel(nostr, config, mockk<NotificationManager>(relaxed = true), scope, mockk(relaxed = true))
         vm.open()
         vm.setName("a2")
-        vm.close(discard = false)
+        vm.save()
 
         // The lock is taken at Save, before the lookup can finish.
         verify(exactly = 1) { nostr.lockPostingAccount() }
@@ -94,7 +94,7 @@ class ProfileEditAccountLockTest {
         val vm = ProfileEditViewModel(nostr, config, mockk<NotificationManager>(relaxed = true), scope, mockk(relaxed = true))
         vm.open()
         vm.setName("a-edited")
-        vm.close(discard = false)
+        vm.save()
         active.value = "hex-b"
         scope.advanceUntilIdle()
 
@@ -129,7 +129,7 @@ class ProfileEditAccountLockTest {
         vm.open()
         vm.setName("alice-edited")
         active.value = "hex-b"
-        vm.close(discard = false)
+        vm.save()
         scope.advanceUntilIdle()
 
         coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) }
