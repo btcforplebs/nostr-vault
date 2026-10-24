@@ -100,7 +100,17 @@ extension FeedService {
     func followAuthors(forRelayKey key: String) -> [String] {
         // Older-page clients are keyed `page-<url>`.
         let url = key.hasPrefix("page-") ? String(key.dropFirst(5)) : key
-        return outboxPlan[url] ?? followedPubkeys
+        return outboxPlan[url] ?? followSetFeedAuthors
+    }
+
+    /// The follow set plus your own key, for the feed's REQs only. Your own
+    /// notes belong in Following, but your contact list need not follow you:
+    /// this set is never published. Empty while the follow set is empty, so
+    /// the no-follows guards still hold.
+    var followSetFeedAuthors: [String] {
+        let me = NostrService.shared.activeHexPubkey
+        guard !followedPubkeys.isEmpty, !me.isEmpty, !followedPubkeySet.contains(me) else { return followedPubkeys }
+        return followedPubkeys + [me]
     }
 
     /// Used for de-duping relay URLs across the floor + outbox set.
