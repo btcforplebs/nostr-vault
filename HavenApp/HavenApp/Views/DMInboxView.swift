@@ -319,6 +319,8 @@ struct DMRequestsView: View {
                 }
             } footer: {
                 Text("These people are outside your Web of Trust, so their messages never notify you. Reply to move a conversation to your inbox.")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(.secondary)
             }
         }
         .listStyle(.plain)
