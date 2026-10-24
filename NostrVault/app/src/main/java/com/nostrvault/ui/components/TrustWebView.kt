@@ -452,8 +452,9 @@ internal fun TrustWebContent(
     }
 
     if (isWOTTab) {
-        // "Open in WoT" from a profile's or a post's globe: back to you, then
-        // onto them, with anything open on the tab put away.
+        // "Open in WoT" from a profile's or a post's globe: back to you, with
+        // them picked out and your paths to them lit, anything open on the tab
+        // put away. Their card's "See their web" moves the globe (Logen, 10/23).
         LaunchedEffect(Unit) {
             WotOpenRequest.pending.collect {
                 val pubkey = WotOpenRequest.take() ?: return@collect
@@ -463,7 +464,7 @@ internal fun TrustWebContent(
                 closeCard()
                 myWebOpen = false
                 jump(0)
-                if (pubkey != me) center(pubkey)
+                if (pubkey != me) openCard(pubkey)
             }
         }
     }

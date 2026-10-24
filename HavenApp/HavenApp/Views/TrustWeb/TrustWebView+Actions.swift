@@ -27,8 +27,10 @@ extension TrustWebView {
         }
     }
 
-    /// "Open in WoT" from another globe: back to you, then onto them, with
-    /// anything open on the tab put away.
+    /// "Open in WoT" from another globe: back to you, with them picked out on
+    /// your globe and your paths to them lit, and anything open on the tab
+    /// put away. You stay in the middle; their card's "See their web" moves
+    /// the globe (Logen, 10/23).
     func openRequested() {
         guard frames[me] != nil, let pubkey = WOTOpenRequest.shared.take() else { return }
         clearSearch()
@@ -38,7 +40,7 @@ extension TrustWebView {
         profilePubkey = nil
         messagePubkey = nil
         jump(to: 0)
-        if pubkey != me { center(on: pubkey) }
+        if pubkey != me { openCard(pubkey) }
     }
 
     /// Your follow list changed: redraw your own globe in place, so you stay
