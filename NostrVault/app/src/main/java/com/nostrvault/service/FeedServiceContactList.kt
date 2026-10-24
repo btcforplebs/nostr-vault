@@ -133,7 +133,12 @@ import java.util.concurrent.ConcurrentHashMap
                         _isLoadingContacts.value = false
                         // Not over a relay copy more than twice its size: the
                         // local list may be an old cached one, not a fresh edit.
-                        val local = _followedPubkeys.value
+                        // A cached list from before the parse fix can hold you and
+                        // your other accounts, added by the app, not by you.
+                        val local = ContactManager.withoutAddedAccounts(
+                            _followedPubkeys.value, result.pubkeys, deviceAccountHexes(),
+                        )
+                        _followedPubkeys.value = local
                         if (ContactManager.mayRepublish(local.size, relaySize = result.pubkeys.size)) {
                             publishContactList(local)
                         } else {
@@ -244,12 +249,10 @@ import java.util.concurrent.ConcurrentHashMap
                                         } ?: emptyList()
                                         val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                                        val ownerHex = nostrService.activeHexPubkey
-                                        val whitelistedNpubs = configStore.config.value.whitelistedNpubs ?: emptyList()
-                                        val contactResult = contactManager.parseContactList(tags, ownerHex, whitelistedNpubs)
-                                        val pubkeys = contactResult.pubkeys
+                                        val pubkeys = contactManager.parseContactList(tags).pubkeys
                                         if (BuildConfig.DEBUG) Log.d(TAG, "fetchContactList: kind:3 from $relayUrl tags=${tags.size} parsed=${pubkeys.size} created_at=$createdAt")
-                                        if (pubkeys.isNotEmpty()) {
+                                        // A list that follows nobody is still the real list.
+                                        run {
                                             lock.withLock {
                                                 if (best == null || createdAt > best!!.createdAt) {
                                                     best = ContactListCopy(pubkeys, content, createdAt, tags)
@@ -312,7 +315,6 @@ internal fun isOwnSignedContactList(event: JsonObject, ownerHex: String, verify:
         }.distinct().take(6)
         if (relayUrls.isEmpty() || ownerHex.isEmpty()) return emptyList()
 
-        val whitelistedNpubs = config.whitelistedNpubs ?: emptyList()
         val collected = ConcurrentHashMap<String, Kind3Event>() // keyed by event id
 
         coroutineScope {
@@ -342,7 +344,7 @@ internal fun isOwnSignedContactList(event: JsonObject, ownerHex: String, verify:
                                     } ?: emptyList()
                                     val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
                                     val pTags = tags.filter { it.firstOrNull() == "p" }
-                                    val pubkeys = contactManager.parseContactList(tags, ownerHex, whitelistedNpubs).pubkeys
+                                    val pubkeys = contactManager.parseContactList(tags).pubkeys
                                     if (pubkeys.isNotEmpty()) {
                                         collected[id] = Kind3Event(id, createdAt, pubkeys, pTags, content)
                                     }
