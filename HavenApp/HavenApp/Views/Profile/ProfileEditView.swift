@@ -16,13 +16,7 @@ struct ProfileEditView: View {
     /// `existing` when the form opens so nothing typed is lost.
     var draft: [String: String]? = nil
     let onSave: (FeedProfile) -> Void
-    /// iOS: called when the sheet goes away, swiped down or Done, with what
-    /// the form showed when opened and what it holds now (by kind-0 key). The
-    /// profile page publishes them; nil keeps the Cancel and Save buttons.
-    var onAutosave: ((_ initial: [String: String], _ edited: [String: String]) -> Void)? = nil
-    /// Discard was tapped: whatever `draft` held is thrown away too.
-    var onDiscard: (() -> Void)? = nil
-    /// Save (the Mac) closes the sheet once the profile is signed and sent;
+    /// Save closes the sheet once the profile is signed and sent;
     /// this runs if no relay then accepts it, with what the page showed
     /// before and what was typed.
     var onRefused: ((_ shownBefore: FeedProfile?, _ edited: [String: String]) -> Void)? = nil
@@ -48,8 +42,9 @@ struct ProfileEditView: View {
     @State private var errorMessage: String?
     /// What the form showed when opened, by kind-0 key: a save applies only fields changed from it.
     @State private var initialFields: [String: String] = [:]
-    /// Set by Discard, so closing the sheet afterwards does not save.
-    @State private var discarded = false
+    /// The account that was active when the form loaded. Save refuses to
+    /// publish if that is not `existing.pubkey` or no longer the active one.
+    @State private var loadedForPubkey = ""
 
     private var hasChanges: Bool {
         ProfileEditView.hasChanges(initial: initialFields, edited: formFields())
@@ -58,7 +53,7 @@ struct ProfileEditView: View {
     var body: some View {
         platformContainer {
             VStack(spacing: 0) {
-                editHeader
+                saveHeader
 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -118,15 +113,12 @@ struct ProfileEditView: View {
         }
         .onAppear { loadFromExisting() }
         #if os(iOS)
-        // Swiping away mid-upload would save without the new picture.
-        .interactiveDismissDisabled(uploading != nil)
+        // Only Save publishes. A swipe down would close the sheet and drop
+        // what was typed, so it is held while there is anything to lose.
+        .interactiveDismissDisabled(hasChanges || isSaving || uploading != nil)
         .onChange(of: pickedPicture) { _, item in upload(item, to: .picture) }
         .onChange(of: pickedBanner) { _, item in upload(item, to: .banner) }
         #endif
-        .onDisappear {
-            guard let onAutosave, !discarded, hasChanges else { return }
-            onAutosave(initialFields, formFields())
-        }
     }
 
     @ViewBuilder
@@ -139,60 +131,6 @@ struct ProfileEditView: View {
         content()
             .background(Color.platformWindowBackground.ignoresSafeArea())
         #endif
-    }
-
-    @ViewBuilder
-    private var editHeader: some View {
-        if onAutosave != nil {
-            autosaveHeader
-        } else {
-            saveHeader
-        }
-    }
-
-    /// No Save button: swiping the sheet down, or Done, saves. Discard is the
-    /// way out without saving, and only does anything once a field changed.
-    private var autosaveHeader: some View {
-        HStack {
-            Button("Discard") {
-                discarded = true
-                onDiscard?()
-                performDismiss()
-            }
-            .foregroundColor(hasChanges && uploading == nil ? .red : .secondary)
-            // Closing mid-upload would save without the new picture.
-            .disabled(!hasChanges || uploading != nil)
-
-            Spacer()
-
-            VStack(spacing: 1) {
-                Text("Edit Profile")
-                    .font(.appSystem(size: 15, weight: .semibold))
-                Text(hasChanges ? "Swipe down to save" : "Swipe down to close")
-                    .font(.appSystem(size: 11))
-                    .foregroundColor(.secondary)
-                    .contentTransition(.opacity)
-            }
-
-            Spacer()
-
-            Button(action: performDismiss) {
-                Text("Done")
-                    .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(uploading == nil ? .havenPurple : .secondary)
-            }
-            .disabled(uploading != nil)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
-        .background(Color.platformControlBackground)
-        .overlay(
-            Rectangle()
-                .fill(Color.platformSeparator.opacity(0.5))
-                .frame(height: 0.5),
-            alignment: .bottom
-        )
     }
 
     private var saveHeader: some View {
@@ -219,7 +157,7 @@ struct ProfileEditView: View {
                         .foregroundColor(.havenPurple)
                 }
             }
-            .disabled(isSaving)
+            .disabled(isSaving || uploading != nil)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -372,6 +310,7 @@ struct ProfileEditView: View {
         lud16 = existing.lud16 ?? ""
         website = existing.website ?? ""
         initialFields = formFields()
+        loadedForPubkey = nostrService.activeHexPubkey
         if let draft { applyFields(draft) }
     }
 
@@ -411,9 +350,11 @@ struct ProfileEditView: View {
         let initial = initialFields
         let shownBefore = nostrService.profiles[existing.pubkey]
         let onRefused = onRefused
+        let loadedFor = loadedForPubkey
 
         Task {
             switch await ProfileEditView.publish(nostrService: nostrService, existing: existing,
+                                                 formLoadedFor: loadedFor,
                                                  initial: initial, edited: edited,
                                                  onRefused: { onRefused?(shownBefore, edited) }) {
             case .success(let updated):
@@ -445,17 +386,25 @@ struct ProfileEditView: View {
         return profile(existing, from: ProfileMetadataMerge.merge(base: shown, initial: initial, edited: edited))
     }
 
-    /// Publishes the changed fields as a new kind 0 and returns the profile it
-    /// describes. Success means signed and sent; `onRefused` runs later, on
-    /// the main thread, if every relay then turns it down or never answers.
-    static func publish(nostrService: NostrService, existing: FeedProfile,
+    /// Publishes the changed fields as `existing`'s new kind 0 and returns the
+    /// profile it describes. Success means signed and sent; `onRefused` runs
+    /// later, on the main thread, if every relay then turns it down or never
+    /// answers. `formLoadedFor` is the account active when the form opened.
+    static func publish(nostrService: NostrService, existing: FeedProfile, formLoadedFor: String,
                         initial: [String: String], edited: [String: String],
                         onRefused: (@MainActor () -> Void)? = nil) async -> Result<FeedProfile, SaveFailure> {
+        // The profile being edited, never whichever account is active now:
+        // the active one can change while this waits on the relays.
+        let pubkey = existing.pubkey
+        let wrongAccount = SaveFailure(message: "The active account changed since Edit Profile opened. Nothing was published; open Edit Profile again from this account.")
+        guard ProfileSaveGuard.maySign(profilePubkey: pubkey, formLoadedFor: formLoadedFor,
+                                       activePubkey: nostrService.activeHexPubkey) else {
+            return .failure(wrongAccount)
+        }
         // A kind 0 replaces the whole profile. Start from the newest one on
         // the relays so lud06 and every key this form doesn't show
         // survive; if it can't be fetched, publishing would wipe them, so
         // don't (same rule as the follow list).
-        let pubkey = nostrService.activeHexPubkey
         let alsoAsk = (nostrService.outboxRelays[pubkey] ?? []) + (nostrService.relayLists[pubkey] ?? [])
         let lookup = await nostrService.lookupNewestReplaceable(kind: 0, for: pubkey, alsoAsk: alsoAsk)
         guard lookup.event != nil || lookup.confirmedNone else {
@@ -467,10 +416,22 @@ struct ProfileEditView: View {
             return .failure(SaveFailure(message: "Could not encode profile."))
         }
 
+        // Checked again after the relay wait, right before signing.
+        guard ProfileSaveGuard.maySign(profilePubkey: pubkey, formLoadedFor: formLoadedFor,
+                                       activePubkey: nostrService.activeHexPubkey) else {
+            return .failure(wrongAccount)
+        }
         // The tags go too: NIP-39 `i` identities and NIP-30 emoji set in
         // other clients would be dropped by an empty list.
         guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: lookup.event?.tags ?? []) else {
             return .failure(SaveFailure(message: "Could not sign event. Check that your key is available."))
+        }
+        // Whatever signed it, a kind 0 from any key but this profile's own
+        // would replace that other account's profile.
+        guard ProfileSaveGuard.mayPublish(kind: signed.kind, signedPubkey: signed.pubkey,
+                                          profilePubkey: pubkey, formLoadedFor: formLoadedFor) else {
+            RelayProcessManager.shared.addLog("Edit Profile: kind 0 signed as \(signed.pubkey.prefix(8))…, editing \(pubkey.prefix(8))… — not published", level: "ERROR")
+            return .failure(wrongAccount)
         }
 
         nostrService.postEvent(signed, onBroadcastOutcome: { outcome in
