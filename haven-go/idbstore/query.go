@@ -74,6 +74,8 @@ func (b *IDBBackend) query(store js.Value, filter nostr.Filter, limit int) ([]*n
 	keyRangeCls := js.Global().Get("IDBKeyRange")
 	top := &newest{limit: limit}
 	seen := make(map[string]struct{})
+	authors := setOf(filter.Authors)
+	kinds := setOf(filter.Kinds)
 
 	for _, r := range plan(filter) {
 		lower := since
@@ -100,8 +102,9 @@ func (b *IDBBackend) query(store js.Value, filter nostr.Filter, limit int) ([]*n
 		var walkErr error
 		err = cursorWalk(req, func(cursor js.Value) bool {
 			id := cursor.Get("primaryKey").String()
+			rec := cursor.Get("value")
 			if top.full() {
-				ca := int64(cursor.Get("value").Get("ca").Int())
+				ca := int64(rec.Get("ca").Int())
 				o := top.oldest()
 				// Records come newest first (ties by id descending), so once
 				// one can't beat the oldest kept event, none after it can.
@@ -112,7 +115,19 @@ func (b *IDBBackend) query(store js.Value, filter nostr.Filter, limit int) ([]*n
 			if _, ok := seen[id]; ok {
 				return true
 			}
-			evt, err := decode(cursor.Get("value"))
+			// A range that doesn't pin the author or kind (see plan) walks
+			// records of other authors or kinds; skip them before decoding.
+			if authors != nil {
+				if _, ok := authors[rec.Get("pk").String()]; !ok {
+					return true
+				}
+			}
+			if kinds != nil {
+				if _, ok := kinds[rec.Get("k").Int()]; !ok {
+					return true
+				}
+			}
+			evt, err := decode(rec)
 			if err != nil {
 				walkErr = err
 				return false
@@ -135,27 +150,42 @@ func (b *IDBBackend) query(store js.Value, filter nostr.Filter, limit int) ([]*n
 	return top.sorted(), nil
 }
 
+// maxRanges caps how many index ranges one filter opens. Every range is its
+// own cursor, opened from Go one after another, so a follows feed (1,000
+// authors x 8 kinds = 8,000 ranges) spent seconds just opening cursors.
+const maxRanges = 64
+
 // plan turns a filter into one index range per combination of its values.
 // Whatever a range doesn't pin down is checked by filter.Matches.
+//
+// When the combinations pass maxRanges, plan walks only the smaller side's
+// index (or created_at, when both sides are too big) and leaves the other side
+// to the author and kind checks in query. The walks still run newest first and
+// stop at limit, so a feed read visits roughly limit records.
 func plan(filter nostr.Filter) []keyRange {
 	authors := dedup(filter.Authors)
 	kinds := dedup(filter.Kinds)
 
-	switch {
-	case len(authors) > 0 && len(kinds) > 0:
-		out := make([]keyRange, 0, len(authors)*len(kinds))
-		for _, a := range authors {
-			for _, k := range kinds {
-				out = append(out, keyRange{idxAuthorKind, []any{a, k}})
+	if len(authors) > 0 && len(kinds) > 0 {
+		switch {
+		case len(authors)*len(kinds) <= maxRanges:
+			out := make([]keyRange, 0, len(authors)*len(kinds))
+			for _, a := range authors {
+				for _, k := range kinds {
+					out = append(out, keyRange{idxAuthorKind, []any{a, k}})
+				}
 			}
+			return out
+		case len(kinds) <= len(authors) && len(kinds) <= maxRanges:
+			return kindRanges(kinds)
+		case len(authors) <= maxRanges:
+			return authorRanges(authors)
 		}
-		return out
-	case len(authors) > 0:
-		out := make([]keyRange, 0, len(authors))
-		for _, a := range authors {
-			out = append(out, keyRange{idxAuthor, []any{a}})
-		}
-		return out
+		return []keyRange{{idxCreatedAt, nil}}
+	}
+
+	if len(authors) > 0 && len(authors) <= maxRanges {
+		return authorRanges(authors)
 	}
 
 	if name, values, ok := narrowestTag(filter.Tags); ok {
@@ -167,14 +197,26 @@ func plan(filter nostr.Filter) []keyRange {
 	}
 
 	if len(kinds) > 0 {
-		out := make([]keyRange, 0, len(kinds))
-		for _, k := range kinds {
-			out = append(out, keyRange{idxKind, []any{k}})
-		}
-		return out
+		return kindRanges(kinds)
 	}
 
 	return []keyRange{{idxCreatedAt, nil}}
+}
+
+func authorRanges(authors []string) []keyRange {
+	out := make([]keyRange, 0, len(authors))
+	for _, a := range authors {
+		out = append(out, keyRange{idxAuthor, []any{a}})
+	}
+	return out
+}
+
+func kindRanges(kinds []int) []keyRange {
+	out := make([]keyRange, 0, len(kinds))
+	for _, k := range kinds {
+		out = append(out, keyRange{idxKind, []any{k}})
+	}
+	return out
 }
 
 // narrowestTag picks the tag with the fewest values to drive the index.
@@ -192,6 +234,18 @@ func narrowestTag(tags nostr.TagMap) (string, []string, bool) {
 		}
 	}
 	return name, dedup(values), found
+}
+
+// setOf returns the values as a set, or nil when there are none (no constraint).
+func setOf[T comparable](in []T) map[T]struct{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[T]struct{}, len(in))
+	for _, v := range in {
+		out[v] = struct{}{}
+	}
+	return out
 }
 
 func dedup[T comparable](in []T) []T {

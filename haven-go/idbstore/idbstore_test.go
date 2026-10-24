@@ -49,6 +49,9 @@ func TestIDBDuplicateFilterValues(t *testing.T) {
 
 func TestIDBLimits(t *testing.T)  { runLimits(t, &idbstore.IDBBackend{Name: "limits"}) }
 func TestIDBReplace(t *testing.T) { runReplace(t, &idbstore.IDBBackend{Name: "replace"}) }
+func TestIDBManyAuthors(t *testing.T) {
+	runManyAuthors(t, &idbstore.IDBBackend{Name: "manyauthors"})
+}
 
 const persistCount = 500
 
