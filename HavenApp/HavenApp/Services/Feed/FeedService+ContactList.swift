@@ -221,11 +221,7 @@ extension FeedService {
 
             if let best = best, Int64(best.createdAt) >= self.ownContactListCreatedAt,
                Int64(best.createdAt) != self.refusedContactListCreatedAt {
-                let parsed = ContactManager.parseContactList(
-                    pTags: best.pTags,
-                    ownerHex: ownerHex,
-                    whitelistedNpubs: ConfigService.shared.config.whitelistedNpubs
-                )
+                let parsed = ContactManager.parseContactList(pTags: best.pTags)
                 #if DEBUG
                 print("FeedService: [contact] commit newest created_at=\(best.createdAt) parsed=\(parsed.pubkeys.count) (was followedPubkeys=\(self.followedPubkeys.count))")
                 #endif

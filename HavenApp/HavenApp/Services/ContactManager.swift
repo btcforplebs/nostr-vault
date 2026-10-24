@@ -21,44 +21,22 @@ enum ContactManager {
 
     // MARK: - Contact List Parsing
 
-    /// Parses a kind-3 contact list event's p-tags into the canonical follow set.
-    /// Ensures the owner and whitelisted accounts are included.
+    /// Parses a kind-3 contact list event's p-tags into the follow set,
+    /// exactly as the relay holds them.
     ///
-    /// - Parameters:
-    ///   - pTags: Pre-filtered "p" tags from the kind-3 event (e.g. ["p", hex, relay?, petname?]).
-    ///   - ownerHex: Hex pubkey of the current account owner.
-    ///   - whitelistedNpubs: Npub strings of accounts to auto-follow.
-    /// - Returns: Tuple of (finalPTags, followedPubkeys, relayPTagCount) where
-    ///   relayPTagCount is the count from the relay before owner/whitelist additions.
+    /// Nothing is added. This list is what the next Follow/Unfollow signs and
+    /// publishes, so anything put in here is published as a follow: adding the
+    /// account itself and every other account on the device made each edit
+    /// follow your own key and your other accounts. Your own notes are let
+    /// into the Following feed by the feed filter instead.
+    ///
+    /// - Parameter pTags: Pre-filtered "p" tags from the kind-3 event (e.g. ["p", hex, relay?, petname?]).
+    /// - Returns: Tuple of (pTags, followedPubkeys, relayPTagCount).
     static func parseContactList(
-        pTags: [[String]],
-        ownerHex: String,
-        whitelistedNpubs: [String]
+        pTags: [[String]]
     ) -> (pTags: [[String]], pubkeys: [String], relayPTagCount: Int) {
-        let relayCount = pTags.count
-        var finalPTags = pTags
-        let existingPubkeys = Set(pTags.compactMap { $0.count >= 2 ? $0[1] : nil })
-
-        // Ensure owner is in the list
-        if !existingPubkeys.contains(ownerHex) {
-            finalPTags.append(["p", ownerHex])
-        }
-
-        // Auto-follow whitelisted accounts.
-        //
-        // Checksum-validating rather than Bech32.decode: these p-tags are
-        // published in a signed kind-3 event, so a malformed npub does not fail
-        // quietly here, it becomes part of the user's contact list on relays.
-        // The lenient decoder returns 32 plausible bytes for a typo'd npub and
-        // 3 bytes for one containing a stray "1", and both would go in as-is.
-        for npub in whitelistedNpubs {
-            if let hex = NpubValidation.hexPubkey(fromNpub: npub), !existingPubkeys.contains(hex) {
-                finalPTags.append(["p", hex])
-            }
-        }
-
-        let pubkeys = finalPTags.compactMap { $0.count >= 2 ? $0[1] : nil }
-        return (finalPTags, pubkeys, relayCount)
+        let pubkeys = pTags.compactMap { $0.count >= 2 ? $0[1] : nil }
+        return (pTags, pubkeys, pTags.count)
     }
 
     // MARK: - New Account
