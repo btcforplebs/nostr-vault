@@ -19,6 +19,8 @@ struct MenuBarView: View {
     var isPoppedOut: Bool = false
     
     @ObservedObject var nostrService = NostrService.shared
+    // Rebuilds the account menu once each account's picture is cached.
+    @ObservedObject var accountAvatars = AccountMenuAvatars.shared
     @State var statusPulse = false
     @State private var showingOwnProfile = false
     @State var showingAccountSwitcher = false
@@ -86,6 +88,9 @@ struct MenuBarView: View {
         }
         .overlay { ZapFlightStage() }
         .hashtagLinks()
+        .task(id: AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles)) {
+            accountAvatars.prefetch(AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles))
+        }
         #if os(macOS)
         .environment(\.noteDetailSelection, noteSelection)
         .sheet(isPresented: Binding(

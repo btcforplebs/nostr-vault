@@ -25,6 +25,8 @@ struct MenuBarStatusView: View {
     @ObservedObject var relayManager: RelayProcessManager
     @ObservedObject private var nostrService = NostrService.shared
     @ObservedObject private var statsService = StatsService.shared
+    // Shows pictures the window already cached; this panel starts no loads.
+    @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -329,17 +331,15 @@ struct MenuBarStatusView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let isActive = activeNpub.isEmpty ? rowIsOwner : npub == activeNpub
         let hex = Bech32.decode(npub)?.hexString ?? ""
-        let name = nostrService.profiles[hex]?.bestName
-            ?? (rowIsOwner ? "Owner" : String(npub.prefix(8)))
-
-        Button {
+        let profile = nostrService.profiles[hex]
+        AccountMenuItem(
+            npub: npub,
+            name: profile?.bestName
+                ?? (rowIsOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
+            pictureURL: profile?.pictureURL,
+            isActive: isActive
+        ) {
             configService.switchActiveAccount(to: npub)
-        } label: {
-            if isActive {
-                Label(name, systemImage: "checkmark")
-            } else {
-                Text(name)
-            }
         }
     }
 

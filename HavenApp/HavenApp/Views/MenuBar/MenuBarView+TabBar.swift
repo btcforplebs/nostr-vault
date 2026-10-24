@@ -323,18 +323,15 @@ extension MenuBarView {
                                     ForEach(configService.allAccountNpubs, id: \.self) { npub in
                                         let activeNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
                                         let isOwner = npub == configService.config.ownerNpub
-                                        let isActive = activeNpub.isEmpty ? isOwner : npub == activeNpub
                                         let hex = Bech32.decode(npub)?.hexString ?? ""
-                                        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
-                                        
-                                        Button {
+                                        let profile = nostrService.profiles[hex]
+                                        AccountMenuItem(
+                                            npub: npub,
+                                            name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
+                                            pictureURL: profile?.pictureURL,
+                                            isActive: activeNpub.isEmpty ? isOwner : npub == activeNpub
+                                        ) {
                                             configService.switchActiveAccount(to: npub)
-                                        } label: {
-                                            if isActive {
-                                                Label(name, systemImage: "checkmark")
-                                            } else {
-                                                Text(name)
-                                            }
                                         }
                                     }
                                 }
