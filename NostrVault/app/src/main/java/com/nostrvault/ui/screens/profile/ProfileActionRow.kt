@@ -71,9 +71,7 @@ internal fun ProfileActionRow(
                 ActionChip("Open My Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onOpenMyProfile, modifier = Modifier.weight(1f))
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
             } else if (isOwnProfile) {
-                // Post is the floating button. Pulling the page down opens
-                // Edit Profile too; the button stays for TalkBack and anyone
-                // who has not found the pull.
+                // Post is the floating button; this is the only way into Edit Profile.
                 ActionChip("Edit Profile", NostrVaultIcons.AccountCircle, colors.primary, tint, onClick = onEditProfile, modifier = Modifier.weight(1f))
                 ActionIcon(NostrVaultIcons.WebOfTrust, "Web of Trust", colors.primary, tint, onClick = onTrustWeb)
             } else {

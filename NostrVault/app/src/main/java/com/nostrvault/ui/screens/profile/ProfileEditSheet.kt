@@ -40,9 +40,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 
 /**
- * Edit Profile, opened over your own profile as a sheet (pull the page down,
- * or the Edit Profile button). There is no Save button: swiping the sheet
- * away, Back or Done saves; Discard closes without saving (iOS #456).
+ * Edit Profile, opened over your own profile as a sheet by the Edit Profile
+ * button. Only Save publishes; Discard, Back, a swipe or a tap outside close
+ * without saving, and while something changed the sheet can't be swiped or
+ * backed away at all. Swipe-to-save published over the wrong account's
+ * profile on a phone with two accounts (2026-10-24).
  *
  * Scoped to the profile page, so an edit that failed to publish is still
  * here when the sheet next opens. The publish itself runs app-wide.
@@ -89,16 +91,22 @@ class ProfileEditViewModel @Inject constructor(
     private val _uploadError = MutableStateFlow<String?>(null)
     val uploadError = _uploadError.asStateFlow()
 
-    /** Whose profile this is, for the preview's placeholder avatar. */
+    /** The active account, whose profile [open] fills the form from. */
     val pubkey: String get() = configStore.activeAccountHexPubkey.value
+
+    /** The account the form was filled from at [open]; only it may sign the save. */
+    private var formAccount: String = ""
 
     /** What the form showed when opened, by kind-0 key: a save applies only fields changed from it. */
     private var initialFields: Map<String, String> = emptyMap()
     /** The profile the form was filled from. */
     private var existing: FeedProfile? = null
-    /** Fields from a save that did not reach the relays; the next open lays them over the form. */
-    private var unsavedDraft: Map<String, String>? = null
-    /** Between [open] and [close], so a second dismiss callback does not save twice. */
+    /**
+     * Fields from a save that did not reach the relays, and whose they are;
+     * the next open lays them over that account's form only.
+     */
+    private var unsavedDraft: Pair<String, Map<String, String>>? = null
+    /** Between [open] and [save] or [close], so a second callback does not save twice. */
     private var isOpen = false
     /** Counts saves, so a late answer for an older one can't undo a newer one. */
     private var saveGeneration = 0
@@ -108,6 +116,7 @@ class ProfileEditViewModel @Inject constructor(
         val pubkey = pubkey
         val profile = nostrService.profiles.value[pubkey] ?: FeedProfile(pubkey = pubkey)
         existing = profile
+        formAccount = pubkey
         _displayName.value = profile.displayName ?: ""
         _name.value = profile.name ?: ""
         _about.value = profile.about ?: ""
@@ -117,7 +126,7 @@ class ProfileEditViewModel @Inject constructor(
         _lud16.value = profile.lud16 ?: ""
         _website.value = profile.website ?: ""
         initialFields = formFields()
-        unsavedDraft?.let(::applyFields)
+        unsavedDraft?.let { (account, fields) -> if (account == pubkey) applyFields(fields) }
         _uploadError.value = null
         isOpen = true
     }
@@ -184,23 +193,27 @@ class ProfileEditViewModel @Inject constructor(
         }
     }
 
-    /**
-     * The sheet went away. Unless [discard], changed fields show on the page
-     * at once and publish behind; if that fails the page goes back to what it
-     * showed and the next open restores the changes.
-     */
-    fun close(discard: Boolean) {
+    /** Discard, Back, a swipe or a tap outside: closes without saving. */
+    fun close() {
         if (!isOpen) return
         isOpen = false
-        if (discard) {
-            unsavedDraft = null
-            return
-        }
+        unsavedDraft = null
+    }
+
+    /**
+     * The Save button. Changed fields show on the page at once and publish
+     * behind; if that fails the page goes back to what it showed and the
+     * next open as the same account restores the changes.
+     */
+    fun save() {
+        if (!isOpen) return
+        isOpen = false
         val initial = initialFields
         val edited = formFields()
         val existing = existing ?: return
         if (!ProfileMetadataMerge.hasChanges(initial, edited)) return
         val pubkey = existing.pubkey
+        val formAccount = formAccount
         unsavedDraft = null
         // Taken now: the publish runs after the sheet is gone, behind a
         // lookup of up to 6 s, and a switch in that window must not sign
@@ -209,7 +222,7 @@ class ProfileEditViewModel @Inject constructor(
         // The form was filled from [existing]'s profile. If the account
         // changed while the sheet was open, signing it as the one active now
         // would publish that profile as theirs, so nothing is saved.
-        if (lock.hex != pubkey) {
+        if (!ProfileEditGuard.maySign(signer = lock.hex, editedProfile = pubkey, formAccount = formAccount)) {
             notificationManager.showError(PostingAccount.MESSAGE)
             return
         }
@@ -224,7 +237,7 @@ class ProfileEditViewModel @Inject constructor(
             // Kept for the next open only while it is still this
             // account's form; after a switch it would fill the other
             // account's profile with these fields.
-            if (nostrService.lockPostingAccount() == lock) unsavedDraft = edited
+            if (nostrService.lockPostingAccount() == lock) unsavedDraft = pubkey to edited
             notificationManager.showError(message)
         }
         appScope.launch(Dispatchers.Main) {
@@ -276,6 +289,9 @@ class ProfileEditViewModel @Inject constructor(
         } catch (e: Exception) {
             null
         } ?: return null
+        // The signer's word is not taken for whose key it used: a kind 0
+        // under any other key would replace that account's profile.
+        if (!ProfileEditGuard.maySign(signer = event.pubkey, editedProfile = pubkey, formAccount = lock.hex)) return null
         nostrService.postEvent(event) { outcome ->
             if (outcome == BroadcastTally.Outcome.REFUSED) onRefused()
         }
@@ -310,38 +326,47 @@ fun ProfileEditSheet(
     val hasChanges = remember(displayName, name, about, pictureUrl, bannerUrl, nip05, lud16, website) {
         viewModel.hasChanges()
     }
-    // While a photo uploads the sheet stays open, as iOS: closing would save
-    // the other edits and the photo would land in a form that is gone.
+    // A swipe, Back or a tap outside never saves. While something changed
+    // or a photo uploads they are held, so typed edits can't be lost by
+    // accident either: Save or Discard decides.
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
-        confirmValueChange = { it != SheetValue.Hidden || viewModel.uploading.value == null },
+        confirmValueChange = {
+            it != SheetValue.Hidden ||
+                ProfileEditGuard.closesOnSwipe(viewModel.hasChanges(), viewModel.uploading.value != null)
+        },
     )
     val scope = rememberCoroutineScope()
-    // Done and Discard slide the sheet away first; a swipe or Back has
+    val closesOnSwipe = ProfileEditGuard.closesOnSwipe(hasChanges, uploading != null)
+    // Save and Discard slide the sheet away first; a swipe or Back has
     // already moved it by the time onDismissRequest runs.
-    fun dismiss(discard: Boolean) {
+    fun dismiss(save: Boolean) {
         if (viewModel.uploading.value != null) return
-        viewModel.close(discard)
+        if (save) viewModel.save() else viewModel.close()
         scope.launch { sheetState.hide() }.invokeOnCompletion { onClose() }
     }
 
     ModalBottomSheet(
         onDismissRequest = {
-            if (viewModel.uploading.value == null) {
-                viewModel.close(discard = false)
+            if (ProfileEditGuard.closesOnSwipe(viewModel.hasChanges(), viewModel.uploading.value != null)) {
+                viewModel.close()
                 onClose()
+            } else {
+                // Back hides the sheet without asking confirmValueChange;
+                // bring it back, or it stays up invisible over the page.
+                scope.launch { sheetState.show() }
             }
         },
         sheetState = sheetState,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = uploading == null),
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = closesOnSwipe),
         containerColor = WindowBackground,
         dragHandle = { BottomSheetDefaults.DragHandle(color = SecondaryText) },
     ) {
         EditSheetHeader(
             hasChanges = hasChanges,
             uploading = uploading != null,
-            onDiscard = { dismiss(discard = true) },
-            onDone = { dismiss(discard = false) },
+            onDiscard = { dismiss(save = false) },
+            onSave = { dismiss(save = true) },
         )
         Column(
             modifier = Modifier
@@ -390,11 +415,11 @@ fun ProfileEditSheet(
 }
 
 /**
- * Discard (red, only once something changed), the title with what a swipe
- * will do, and Done. iOS ProfileEditView.autosaveHeader.
+ * Discard (red, only once something changed), the title, and Save (Done
+ * while nothing changed: it only closes). Nothing else saves.
  */
 @Composable
-private fun EditSheetHeader(hasChanges: Boolean, uploading: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
+private fun EditSheetHeader(hasChanges: Boolean, uploading: Boolean, onDiscard: () -> Unit, onSave: () -> Unit) {
     val colors = LocalNostrVaultColors.current
     Column {
         Row(
@@ -416,7 +441,7 @@ private fun EditSheetHeader(hasChanges: Boolean, uploading: Boolean, onDiscard: 
                     Text(
                         when {
                             busy -> "Uploading photo…"
-                            changed -> "Swipe down to save"
+                            changed -> "Tap Save to keep your changes"
                             else -> "Swipe down to close"
                         },
                         color = SecondaryText,
@@ -424,8 +449,8 @@ private fun EditSheetHeader(hasChanges: Boolean, uploading: Boolean, onDiscard: 
                     )
                 }
             }
-            TextButton(onClick = onDone, enabled = !uploading) {
-                Text("Done", color = if (uploading) SecondaryText else colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            TextButton(onClick = onSave, enabled = !uploading) {
+                Text(if (hasChanges) "Save" else "Done", color = if (uploading) SecondaryText else colors.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), thickness = 0.5.dp)

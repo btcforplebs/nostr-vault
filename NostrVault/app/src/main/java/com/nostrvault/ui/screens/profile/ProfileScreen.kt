@@ -44,8 +44,7 @@ import com.nostrvault.ui.theme.*
 /**
  * User profile screen — ports iOS ProfileView: header + status badge, bio,
  * link chips, follow counts, action row, section tabs with counts, infinite
- * scroll, a media grid, and a full-screen media viewer. On your own profile,
- * pulling the page down opens Edit Profile (iOS #456).
+ * scroll, a media grid, and a full-screen media viewer.
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -201,7 +200,7 @@ fun ProfileScreen(
     var gridDelete by remember { mutableStateOf<Pair<String, com.nostrvault.ui.screens.DeleteScope>?>(null) }
     // Long-press on a profile zap button: choose the amount (iOS ZapSheetContext).
     var zapSheetOpen by remember { mutableStateOf(false) }
-    // Edit Profile, over this page; swiping it away saves. Not saveable: the
+    // Edit Profile, over this page; only its Save button saves. Not saveable: the
     // form lives in the view model, so after process death the sheet would
     // come back empty.
     var editingProfile by remember { mutableStateOf(false) }
@@ -605,13 +604,8 @@ fun ProfileScreen(
             }
         }
         }
-        // Your own profile has nothing that needs pulling fresh, so the pull
-        // opens the editor instead (iOS #456). Editing lives on the tab.
-        if (isMyTab) {
-            PullToEditBox(labelTop = padding.calculateTopPadding(), onTrigger = openEditor) { list() }
-        } else {
-            list()
-        }
+        // No pull to edit: Edit Profile opens from its button only (2026-10-24).
+        list()
     }
 
     if (editingProfile) {
