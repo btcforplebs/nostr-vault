@@ -81,6 +81,40 @@ final class ProfileSaveGuardTests: XCTestCase {
         XCTAssertTrue(mayPublish.upperBound < post.lowerBound)
     }
 
+    /// Every place the iOS and Mac apps sign a kind 0, and each checks the
+    /// signed pubkey before posting. A new kind-0 signer fails here until it
+    /// is guarded and added to the list.
+    func testEveryKindZeroSignerIsGuarded() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let signsKindZero = try NSRegularExpression(pattern: #"[sS]ign\w*\(kind: *0\b"#)
+        var signers: [String] = []
+        for dir in ["HavenApp", "HavenApp-iOS", "SilentPaymentsKit", "NostrVaultShare", "NostrVaultWidgets"] {
+            let base = root.appendingPathComponent(dir)
+            guard let walk = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil) else { continue }
+            for case let url as URL in walk where url.pathExtension == "swift" {
+                let src = try String(contentsOf: url, encoding: .utf8)
+                let range = NSRange(src.startIndex..., in: src)
+                guard signsKindZero.firstMatch(in: src, range: range) != nil else { continue }
+                signers.append(String(url.path.dropFirst(root.path.count + 1)))
+                XCTAssertTrue(src.contains("ProfileSaveGuard.mayPublish("), "\(url.lastPathComponent) signs a kind 0 unguarded")
+            }
+        }
+        XCTAssertEqual(signers.sorted(), [
+            "HavenApp/Views/Profile/ProfileEditView.swift",
+            "HavenApp/Views/SetupWizard/SetupWizardView.swift",
+        ])
+    }
+
+    /// A new account's profile and relay list are signed as the new key by
+    /// name, never as whichever account is active when the upload finishes.
+    func testNewAccountSignsAsItsOwnKey() throws {
+        let src = try source("HavenApp/Views/SetupWizard/SetupWizardView.swift")
+        XCTAssertTrue(src.contains("signEventAsync(kind: 0, content: content, tags: [], signAsNpub: ownerNpub)"))
+        XCTAssertTrue(src.contains("signEventAsync(kind: 10002, content: \"\", tags: relayTags, signAsNpub: ownerNpub)"))
+    }
+
     /// Only the Save button publishes: no swipe-down autosave on any platform.
     func testNoSwipeDownSave() throws {
         let edit = try source("HavenApp/Views/Profile/ProfileEditView.swift")

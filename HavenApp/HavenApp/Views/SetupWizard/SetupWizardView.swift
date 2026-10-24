@@ -491,8 +491,13 @@ struct SetupWizardView: View {
     /// `saveAndComplete` has stored the key, because each event has to be
     /// signed by it. Only for the New to Nostr path, whose key was generated
     /// in this run — a key that cannot have any of these events yet.
+    /// Both are signed as that key by name, not as whichever account is
+    /// active when the photo upload (up to 30 s) finishes, and are dropped
+    /// unless the signed pubkey is the new key's: a kind 0 or 10002 signed
+    /// by another account would replace that account's own.
     private func publishNewAccount() {
-        guard let ownerHex = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
+        let ownerNpub = configService.config.ownerNpub
+        guard let ownerHex = NpubValidation.hexPubkey(fromNpub: ownerNpub) else { return }
         FeedService.shared.markFreshAccount(ownerHex)
         // Straight into Fill your feed: this key follows nobody and can't
         // yet, so there is nothing to wait for (the follow-list check can
@@ -512,7 +517,8 @@ struct SetupWizardView: View {
                 )
             )
             if !relayTags.isEmpty,
-               let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags) {
+               let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags, signAsNpub: ownerNpub),
+               relayList.pubkey.lowercased() == ownerHex.lowercased() {
                 nostr.postEvent(relayList)
             }
 
@@ -535,7 +541,9 @@ struct SetupWizardView: View {
             }
             guard !profile.isEmpty,
                   let content = ProfileMetadataMerge.encode(profile),
-                  let metadata = await nostr.signEventAsync(kind: 0, content: content, tags: []) else { return }
+                  let metadata = await nostr.signEventAsync(kind: 0, content: content, tags: [], signAsNpub: ownerNpub),
+                  ProfileSaveGuard.mayPublish(kind: metadata.kind, signedPubkey: metadata.pubkey,
+                                              profilePubkey: ownerHex, formLoadedFor: ownerHex) else { return }
             nostr.postEvent(metadata)
         }
     }
