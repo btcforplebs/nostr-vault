@@ -67,8 +67,8 @@ extension Notification.Name {
     static let havenOpenMedia = Notification.Name("com.haven.openMedia")
     /// The WOT tab was tapped while showing: its globe goes back to you.
     static let wotTabReselected = Notification.Name("com.haven.wotTabReselected")
-    /// "Open in WoT" from a profile's or a post's globe: the WOT tab, on the
-    /// person in `WOTOpenRequest` (iOS; the Mac has no WOT tab).
+    /// "Open in WoT" from a profile's or a post's globe: the WOT tab, with the
+    /// person in `WOTOpenRequest` picked out (iOS; the Mac has no WOT tab).
     static let havenOpenWOT = Notification.Name("com.haven.openWOT")
     /// Run the Media tab's Magic Paste. Posted after `havenOpenMedia` when the
     /// Mosaic widget's wand is tapped, so one tap gets the same result as
