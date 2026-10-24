@@ -351,6 +351,10 @@ fun ProfileEditSheet(
             if (ProfileEditGuard.closesOnSwipe(viewModel.hasChanges(), viewModel.uploading.value != null)) {
                 viewModel.close()
                 onClose()
+            } else {
+                // Back hides the sheet without asking confirmValueChange;
+                // bring it back, or it stays up invisible over the page.
+                scope.launch { sheetState.show() }
             }
         },
         sheetState = sheetState,
