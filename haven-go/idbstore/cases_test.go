@@ -258,3 +258,83 @@ func runManyAuthors(t *testing.T, db eventstore.Store) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// runSparseAuthors: a many-authors filter whose authors are rare in a big
+// store. The single-index walk runs out of budget part way and the rest is
+// walked per combination; results must not change. visits, when set, reports
+// records visited so far (the browser store), to check the walk stays bounded.
+func runSparseAuthors(t *testing.T, db eventstore.Store, visits func() int) {
+	require.NoError(t, db.Init())
+	defer db.Close()
+
+	sk := func(i int) string { return fmt.Sprintf("%064x", 0x100+i) }
+	var follows, absent []string
+	for i := 0; i < 100; i++ {
+		follows = append(follows, pub(sk(i)))
+		absent = append(absent, pub(sk(1000+i)))
+	}
+
+	var all []*nostr.Event
+	ts := 1000
+	for i := 0; i < 5; i++ { // the follows' few notes, older than everything else
+		for _, kind := range []int{1, 7, 3} {
+			all = append(all, mk(t, sk(i*17), kind, ts))
+			ts++
+		}
+	}
+	for i := 0; i < 2000; i++ { // strangers
+		all = append(all, mk(t, sk(200+i%7), []int{1, 7}[i%2], ts))
+		ts++
+	}
+	all = append(all, mk(t, sk(34), 1, ts)) // one follow note newer than the strangers
+	save(t, db, all...)
+
+	expect := func(f nostr.Filter) []*nostr.Event {
+		var out []*nostr.Event
+		for _, e := range all {
+			if f.Matches(e) {
+				out = append(out, e)
+			}
+		}
+		slices.SortFunc(out, nostr.CompareEventPtrReverse)
+		if f.Limit > 0 && len(out) > f.Limit {
+			out = out[:f.Limit]
+		}
+		return out
+	}
+	kinds := make([]int, 70)
+	for i := range kinds {
+		kinds[i] = i + 1
+	}
+
+	for _, c := range []struct {
+		name string
+		f    nostr.Filter
+	}{
+		{"100 authors x 2 kinds", nostr.Filter{Authors: follows, Kinds: []int{1, 7}}},
+		{"100 authors x 2 kinds, limit 3", nostr.Filter{Authors: follows, Kinds: []int{1, 7}, Limit: 3}},
+		{"100 authors x 2 kinds, until", nostr.Filter{Authors: follows, Kinds: []int{1, 7}, Until: ptr(nostr.Timestamp(2500))}},
+		{"3 authors x 70 kinds", nostr.Filter{Authors: []string{follows[0], follows[17], follows[34]}, Kinds: kinds}},
+		{"100 authors x 70 kinds, limit 4", nostr.Filter{Authors: follows, Kinds: kinds, Limit: 4}},
+		{"100 authors", nostr.Filter{Authors: follows}},
+	} {
+		want := expect(c.f)
+		require.NotEmpty(t, want, c.name)
+		require.Equal(t, want, query(t, db, c.f), c.name)
+	}
+
+	for _, f := range []nostr.Filter{
+		{Authors: absent[:65], Kinds: []int{1}},
+		{Authors: absent[:65]},
+		{Authors: absent[:33], Kinds: []int{1, 7}},
+	} {
+		before := 0
+		if visits != nil {
+			before = visits()
+		}
+		require.Empty(t, query(t, db, f), "absent authors")
+		if visits != nil {
+			require.LessOrEqual(t, visits()-before, 1100, "absent authors: walk stays within its budget, not the whole index")
+		}
+	}
+}

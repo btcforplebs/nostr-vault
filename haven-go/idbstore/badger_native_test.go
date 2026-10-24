@@ -21,10 +21,11 @@ func badgerAt(t *testing.T) eventstore.Store {
 	return &badger.BadgerBackend{Path: dir}
 }
 
-func TestBadgerCombinations(t *testing.T) { runCombinations(t, badgerAt(t)) }
-func TestBadgerLimits(t *testing.T)       { runLimits(t, badgerAt(t)) }
-func TestBadgerReplace(t *testing.T)      { runReplace(t, badgerAt(t)) }
-func TestBadgerManyAuthors(t *testing.T)  { runManyAuthors(t, badgerAt(t)) }
+func TestBadgerCombinations(t *testing.T)  { runCombinations(t, badgerAt(t)) }
+func TestBadgerLimits(t *testing.T)        { runLimits(t, badgerAt(t)) }
+func TestBadgerReplace(t *testing.T)       { runReplace(t, badgerAt(t)) }
+func TestBadgerManyAuthors(t *testing.T)   { runManyAuthors(t, badgerAt(t)) }
+func TestBadgerSparseAuthors(t *testing.T) { runSparseAuthors(t, badgerAt(t), nil) }
 
 // Records the badger quirk the browser store deliberately does not copy.
 func TestBadgerDuplicateFilterValues(t *testing.T) {

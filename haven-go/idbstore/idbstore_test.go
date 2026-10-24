@@ -52,6 +52,9 @@ func TestIDBReplace(t *testing.T) { runReplace(t, &idbstore.IDBBackend{Name: "re
 func TestIDBManyAuthors(t *testing.T) {
 	runManyAuthors(t, &idbstore.IDBBackend{Name: "manyauthors"})
 }
+func TestIDBSparseAuthors(t *testing.T) {
+	runSparseAuthors(t, &idbstore.IDBBackend{Name: "sparseauthors"}, idbstore.CursorVisits)
+}
 
 const persistCount = 500
 

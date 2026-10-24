@@ -17,7 +17,9 @@
 // is kept, so multi-key filters match every combination and nothing more.
 // Past 64 combinations (a follows feed: 1,000 authors x 8 kinds), only the
 // smaller side's index is walked, or created_at when both sides are big, and
-// records of other authors or kinds are dropped before they are decoded.
+// records of other authors or kinds are dropped before they are decoded. That
+// walk has a record budget; when the wanted authors are sparse and it runs
+// out, the rest is walked per combination, below the last record visited.
 //
 // Limits follow eventstore/badger, which is what Haven runs on the phones: a
 // limit above MaxLimit is not clamped down to MaxLimit, it falls back to
