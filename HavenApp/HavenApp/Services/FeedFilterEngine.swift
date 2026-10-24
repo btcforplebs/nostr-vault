@@ -62,6 +62,7 @@ enum FeedFilterEngine {
         showReposts: Bool,
         showReplies: Bool,
         followedPubkeys: [String],
+        ownPubkey: String = "",
         wotPubkeys: Set<String>,
         popularFilter: PopularFilter,
         popularNoteScores: [String: Double],
@@ -87,7 +88,7 @@ enum FeedFilterEngine {
                 if articlesGlobal {
                     return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
                 }
-                return followedPubkeys.contains(note.pubkey)
+                return note.pubkey == ownPubkey || followedPubkeys.contains(note.pubkey)
             }
             return dedupeAddressable(longForm)
         }
@@ -100,7 +101,7 @@ enum FeedFilterEngine {
                 if pollsGlobal {
                     return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
                 }
-                return followedPubkeys.contains(note.pubkey)
+                return note.pubkey == ownPubkey || followedPubkeys.contains(note.pubkey)
             }
         }
 
@@ -131,12 +132,12 @@ enum FeedFilterEngine {
             }
             if mode == .following {
                 // For reposts, membership is judged by the reposter (the follow
-                // who boosted it), not the original author. The owner's own
-                // pubkey is always in followedPubkeys (added by parseContactList),
-                // so own posts remain visible. Excluding non-follows here makes an
-                // unfollowed author's notes vanish the moment the set changes.
+                // who boosted it), not the original author. Your own notes stay
+                // although your list need not follow you. Excluding non-follows
+                // here makes an unfollowed author's notes vanish the moment the
+                // set changes.
                 let author = note.repostedBy ?? note.pubkey
-                if !followedPubkeys.contains(author) { return false }
+                if author != ownPubkey && !followedPubkeys.contains(author) { return false }
             }
             return showReplies || !note.isReply
         }

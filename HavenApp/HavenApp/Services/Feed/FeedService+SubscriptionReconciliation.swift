@@ -42,10 +42,10 @@ extension FeedService {
     /// carry. Empty means "no valid primary sub" for author-filtered modes.
     private func desiredPrimaryAuthorsForMode() -> [String] {
         switch feedMode {
-        case .following: return followedPubkeys
-        case .articles: return articlesFeedMode == .following ? followedPubkeys : []
-        case .polls: return pollsFeedMode == .following ? followedPubkeys : []
-        case .media: return mediaFeedMode == .following ? followedPubkeys : []
+        case .following: return followSetFeedAuthors
+        case .articles: return articlesFeedMode == .following ? followSetFeedAuthors : []
+        case .polls: return pollsFeedMode == .following ? followSetFeedAuthors : []
+        case .media: return mediaFeedMode == .following ? followSetFeedAuthors : []
         case .discovery: return extendedNetworkPubkeys
         case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
         }
