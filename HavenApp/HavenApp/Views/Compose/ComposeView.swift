@@ -30,6 +30,8 @@ struct ComposeView: View {
     var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
+    // Rebuilds the account menu once each account's picture is cached.
+    @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
     @EnvironmentObject var relayManager: RelayProcessManager
 
     @State var content: String = ""
@@ -167,23 +169,23 @@ struct ComposeView: View {
                                 ForEach(configService.allAccountNpubs, id: \.self) { npub in
                                     let isOwner = npub == configService.config.ownerNpub
                                     let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let isActive = activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
                                     let hex = Bech32.decode(npub)?.hexString ?? ""
-                                    let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
-
-                                    Button {
+                                    let profile = nostrService.profiles[hex]
+                                    AccountMenuItem(
+                                        npub: npub,
+                                        name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
+                                        pictureURL: profile?.pictureURL,
+                                        isActive: activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
+                                    ) {
                                         configService.switchActiveAccount(to: npub)
-                                    } label: {
-                                        if isActive {
-                                            Label(name, systemImage: "checkmark")
-                                        } else {
-                                            Text(name)
-                                        }
                                     }
                                 }
                             } else {
                                 Text("No other accounts")
                             }
+                        }
+                        .task(id: AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles)) {
+                            accountAvatars.prefetch(AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles))
                         }
 
                         ZStack(alignment: .topLeading) {
