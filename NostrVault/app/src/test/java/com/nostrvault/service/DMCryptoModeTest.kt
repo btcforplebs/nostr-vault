@@ -58,6 +58,7 @@ class DMCryptoModeTest {
             credentialStore = CredentialStore,
             nostrService = nostrService,
             amberSignerService = mockk(relaxed = true),
+            feedService = stubFeedService(),
         )
     }
 

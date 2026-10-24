@@ -40,6 +40,8 @@ test("a cold thread link, or one from WoT, opens beside the Feed", () => {
 
 test("a conversation link opens beside Messages; anything else is kept", () => {
   assert.equal(deskRedirect(`#/dm/${A}`, "#/feed"), `#/messages?dm=${A}`)
+  assert.equal(deskRedirect(`#/dm/${A}`, `#/messages/requests?dm=${B}`), `#/messages/requests?dm=${A}`)
+  assert.equal(deskRedirect(`#/dm/${A}`, `#/messages?dm=${B}`), `#/messages?dm=${A}`)
   assert.equal(deskRedirect("#/thread/nothex", "#/feed"), null)
   assert.equal(deskRedirect("#/feed", null), null)
   assert.equal(deskRedirect(`#/feed?note=${A}`, null), null)

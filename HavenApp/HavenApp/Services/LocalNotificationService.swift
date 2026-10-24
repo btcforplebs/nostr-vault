@@ -363,6 +363,8 @@ final class LocalNotificationService {
             if let opened {
                 if opened.message.isFromMe { return }
                 if BlockedPeople.isBlocked(opened.message.senderPubkey, in: blocked) { return }
+                // A stranger outside your Web of Trust waits under Requests, silently.
+                if !DMService.shared.isInboxConversation(opened.conversationId) { return }
                 // The conversation is already on screen.
                 if appInForeground, DMService.shared.visibleConversation == opened.conversationId { return }
             }

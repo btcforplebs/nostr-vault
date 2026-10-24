@@ -59,7 +59,14 @@ class DMInboxViewModel @Inject constructor(
     savedState: SavedStateHandle,
 ) : ViewModel() {
 
-    val conversations: StateFlow<List<DMConversation>> = dmService.conversations
+    /** The inbox: your Web of Trust and anyone you wrote to (DMTrust). */
+    val conversations: StateFlow<List<DMConversation>> = dmService.inboxConversations
+    /** Everyone else, behind the Requests row. */
+    val requests: StateFlow<List<DMConversation>> = dmService.requestConversations
+
+    private val _showingRequests = MutableStateFlow(false)
+    val showingRequests: StateFlow<Boolean> = _showingRequests.asStateFlow()
+    fun showRequests(show: Boolean) { _showingRequests.value = show }
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
 
     /** Number of inbound DMs still awaiting (Amber) decryption. */
@@ -88,7 +95,7 @@ class DMInboxViewModel @Inject constructor(
             _isLoading.value = false
 
             // Fetch profiles for all conversation participants
-            val pubkeys = conversations.value.map { it.id }.distinct()
+            val pubkeys = (conversations.value + requests.value).map { it.id }.distinct()
             nostrService.fetchMissingProfiles(pubkeys)
         }
         // Switching back to an account doesn't reopen what it had open.
@@ -132,7 +139,7 @@ class DMInboxViewModel @Inject constructor(
             dmService.refresh()
             kotlinx.coroutines.delay(800)
             // Re-fetch profiles for any newly surfaced conversations.
-            nostrService.fetchMissingProfiles(conversations.value.map { it.id }.distinct())
+            nostrService.fetchMissingProfiles((conversations.value + requests.value).map { it.id }.distinct())
             _isRefreshing.value = false
         }
     }
@@ -187,7 +194,12 @@ private fun DMInboxList(
     showChevrons: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val conversations by viewModel.conversations.collectAsState()
+    val inbox by viewModel.conversations.collectAsState()
+    val requests by viewModel.requests.collectAsState()
+    val showingRequests by viewModel.showingRequests.collectAsState()
+    // Back out of Requests once the last one has been answered or blocked.
+    val inRequests = showingRequests && requests.isNotEmpty()
+    val conversations = if (inRequests) requests else inbox
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val pendingDecrypt by viewModel.pendingDecryptCount.collectAsState()
     val decryptBlocked by viewModel.decryptBlocked.collectAsState()
@@ -243,17 +255,22 @@ private fun DMInboxList(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 val blocked = dmUnavailable
-                if (blocked != null && conversations.isEmpty()) {
+                if (blocked != null && conversations.isEmpty() && requests.isEmpty()) {
                     // A watch-only account has no key here, so the inbox can
                     // only ever be empty: say that instead of "no messages yet".
                     DMUnavailableNotice(blocked)
-                } else if (conversations.isEmpty()) {
+                } else if (conversations.isEmpty() && requests.isEmpty()) {
                     DMInboxEmptyState()
                 } else {
                     // iOS: one grouped surface, no separators between rows.
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                     ) {
+                        if (inRequests) {
+                            item(key = "requests-header") { DMRequestsHeader { viewModel.showRequests(false) } }
+                        } else if (requests.isNotEmpty()) {
+                            item(key = "requests-row") { DMRequestsRow(requests.size) { viewModel.showRequests(true) } }
+                        }
                         items(
                             items = conversations,
                             key = { it.id },
