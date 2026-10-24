@@ -253,7 +253,7 @@ class ReelsFeedService @Inject constructor(
                 _followSetIsEmpty.value = true
                 return
             }
-            follows
+            feedService.feedAuthors()
         } else {
             // Global follows the app-wide shield: the Web of Trust (asked for
             // directly, capped at 500 like Media), or everyone.

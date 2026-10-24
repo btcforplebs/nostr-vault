@@ -70,6 +70,17 @@ class FollowListViewModel @Inject constructor(
     val viewer: String = configStore.activeAccountHexPubkey.value
     val isOwn: Boolean = subject == viewer
 
+    /**
+     * True once another account is active. Everything here was read for
+     * [viewer], but the follow buttons act on the active account's list: left
+     * open across a switch, your Following list showed the new account's
+     * follows and each tap edited and published that account's list. The
+     * screen closes instead.
+     */
+    val accountChanged: StateFlow<Boolean> = configStore.activeAccountHexPubkey
+        .map { it != viewer }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
     val followed: StateFlow<List<String>> = feedService.followedPubkeys
 
@@ -166,6 +177,8 @@ class FollowListViewModel @Inject constructor(
      * does nothing rather than flip the follow again.
      */
     private fun set(pubkey: String, follow: Boolean, offerUndo: Boolean) {
+        // Never for an account this screen was not opened as (see accountChanged).
+        if (configStore.activeAccountHexPubkey.value != viewer) return
         if (feedService.isFollowing(pubkey) == follow) return
         val undo: (() -> Unit)? = if (offerUndo) { { set(pubkey, follow = !follow, offerUndo = false) } } else null
         val result = if (follow) feedService.followUser(pubkey, undo) else feedService.unfollowUser(pubkey, undo)

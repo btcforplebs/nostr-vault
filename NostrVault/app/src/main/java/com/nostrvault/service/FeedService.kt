@@ -239,6 +239,34 @@ class FeedService @Inject constructor(
     /** [followedPubkeys] as a Set, rebuilt only when the list changes. iOS `followedPubkeySet`. */
     internal fun followedPubkeySet(): Set<String> = followSet.of(_followedPubkeys.value)
 
+    /**
+     * Whose notes Following shows: your follows plus you. [followedPubkeys]
+     * is exactly the published list and no longer holds you, so feeds and
+     * trust sets that want your own posts read this.
+     */
+    internal fun feedAuthorSet(): Set<String> {
+        val me = nostrService.activeHexPubkey
+        val follows = followedPubkeySet()
+        return if (me.isEmpty() || me in follows) follows else follows + me
+    }
+
+    /** [feedAuthorSet] in contact-list order, you last; for author filters. */
+    fun feedAuthors(): List<String> {
+        val me = nostrService.activeHexPubkey
+        val follows = _followedPubkeys.value
+        return if (me.isEmpty() || me in followedPubkeySet()) follows else follows + me
+    }
+
+    /** You and every account on this device, hex: what older builds added to each follow list. */
+    internal fun deviceAccountHexes(): Set<String> {
+        val config = configStore.config.value
+        return buildSet {
+            nostrService.activeHexPubkey.takeIf { it.isNotEmpty() }?.let(::add)
+            (config.allAccountNpubs() + config.whitelistedNpubs.orEmpty())
+                .forEach { npub -> HavenBridge.decodeNpub(npub.trim())?.let(::add) }
+        }
+    }
+
     internal val _extendedNetworkPubkeys = MutableStateFlow<List<String>>(emptyList())
     val extendedNetworkPubkeys: StateFlow<List<String>> = _extendedNetworkPubkeys.asStateFlow()
 

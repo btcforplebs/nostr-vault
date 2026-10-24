@@ -84,6 +84,8 @@ fun FollowListScreen(
     val queued by viewModel.queued.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val followed = remember(followedList) { followedList.toHashSet() }
+    val accountChanged by viewModel.accountChanged.collectAsState()
+    LaunchedEffect(accountChanged) { if (accountChanged) onBack() }
 
     var tab by rememberSaveable { mutableStateOf(viewModel.startTab) }
     var query by rememberSaveable { mutableStateOf("") }
