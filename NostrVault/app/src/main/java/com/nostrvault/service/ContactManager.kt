@@ -1,7 +1,5 @@
 package com.nostrvault.service
 
-import com.nostrvault.relay.HavenBridge
-
 /**
  * Port of ContactManager.swift -- pure contact list management logic.
  * No networking, no UI. Operates on tag lists and pubkey sets.
@@ -32,40 +30,31 @@ object ContactManager {
     )
 
     /**
-     * Parse a kind-3 contact list event's p-tags into the canonical follow set.
-     * Ensures the owner and whitelisted accounts are included.
+     * Parse a kind-3 contact list event's p-tags into the follow set: exactly
+     * the 64-hex `p` tags the list holds, nothing added. This used to add the
+     * owner and every device-wide whitelisted account, so the next follow or
+     * unfollow on any account published a list that followed your other
+     * accounts too. Feeds that should show your own posts read
+     * [FeedService.feedAuthorSet], not this.
      */
-    fun parseContactList(
-        pTags: List<List<String>>,
-        ownerHex: String,
-        whitelistedNpubs: List<String>,
-    ): ContactListResult {
+    fun parseContactList(pTags: List<List<String>>): ContactListResult {
         // Only `p` tags naming a 64-hex key are follows. A kind 3 can also
         // carry `t`, `a` and other tags (Amethyst writes hashtag follows);
         // reading element [1] of those made "bitcoin" a followed "pubkey".
         val followTags = pTags.filter { isFollowTag(it) }
-        val relayCount = followTags.size
-        val finalPTags = followTags.toMutableList()
-        val existingPubkeys = followTags.map { it[1] }.toSet()
+        val pubkeys = followTags.map { it[1] }.distinct()
+        return ContactListResult(followTags, pubkeys, followTags.size)
+    }
 
-        // Ensure owner is in the list
-        if (ownerHex !in existingPubkeys) {
-            finalPTags.add(listOf("p", ownerHex))
-        }
-
-        // Auto-follow whitelisted accounts. These are stored as npubs and the
-        // follow set is hex, so each one has to be decoded — this loop used to
-        // do nothing at all, which meant a whitelisted account was never
-        // actually added to the contact list it was whitelisted for.
-        for (npub in whitelistedNpubs) {
-            val hex = HavenBridge.decodeNpub(npub.trim()) ?: continue
-            if (hex !in existingPubkeys && finalPTags.none { it.size >= 2 && it[1] == hex }) {
-                finalPTags.add(listOf("p", hex))
-            }
-        }
-
-        val pubkeys = finalPTags.mapNotNull { if (it.size >= 2) it[1] else null }
-        return ContactListResult(finalPTags, pubkeys, relayCount)
+    /**
+     * [local] without the entries an older build added on its own: [added]
+     * (you and your other device accounts) unless the relay copy
+     * [relayPubkeys] really follows them. Used before re-publishing a cached
+     * list, which can predate the parse fix.
+     */
+    fun withoutAddedAccounts(local: List<String>, relayPubkeys: Collection<String>, added: Set<String>): List<String> {
+        val onRelay = relayPubkeys.toHashSet()
+        return local.filter { it !in added || it in onRelay }
     }
 
     private val hexKey = Regex("^[0-9a-f]{64}$")

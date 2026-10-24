@@ -33,14 +33,14 @@ import java.io.File
      */
     internal fun FeedService.relayTabTrustedPubkeysImpl(): Set<String> {
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
-        return TrustMap.web(_wotPubkeys.value, followedPubkeySet())
+        return TrustMap.web(_wotPubkeys.value, feedAuthorSet())
     }
 
     internal fun FeedService.globalTrustSetImpl(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
         // Your follows too, so someone you just followed passes right away.
-        return TrustMap.web(_wotPubkeys.value, followedPubkeySet())
+        return TrustMap.web(_wotPubkeys.value, feedAuthorSet())
     }
 
     @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.

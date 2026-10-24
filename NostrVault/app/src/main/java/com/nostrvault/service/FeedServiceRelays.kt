@@ -63,7 +63,7 @@ import kotlinx.serialization.json.*
      * was picked for, every other relay for all of them.
      */
     internal fun FeedService.followAuthors(relayUrl: String): List<String> =
-        outboxPlan[relayUrl] ?: _followedPubkeys.value
+        outboxPlan[relayUrl] ?: feedAuthors()
 
     /**
      * Brings the follows' own relays in line with a fresh plan: drops the ones

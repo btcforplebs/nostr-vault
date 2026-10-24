@@ -11,7 +11,6 @@ class FollowListTagsTest {
     private val alice = "a".repeat(64)
     private val bob = "b".repeat(64)
     private val carol = "c".repeat(64)
-    private val me = "e".repeat(64)
 
     @Test fun onlyHexPTagsAreFollows() {
         val tags = listOf(
@@ -22,8 +21,8 @@ class FollowListTagsTest {
             listOf("p", "B".repeat(64)),
             listOf("p"),
         )
-        val result = ContactManager.parseContactList(tags, me, emptyList())
-        assertEquals(listOf(alice, me), result.pubkeys)
+        val result = ContactManager.parseContactList(tags)
+        assertEquals(listOf(alice), result.pubkeys)
         assertEquals(1, result.relayPTagCount)
     }
 
