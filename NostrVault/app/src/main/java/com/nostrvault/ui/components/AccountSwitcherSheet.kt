@@ -88,6 +88,13 @@ fun buildAccountInfos(
     }
 }
 
+/**
+ * npub1abc…wxyz: head and tail, so two accounts with the same name still read
+ * differently in the switcher.
+ */
+internal fun switcherShortNpub(npub: String): String =
+    if (npub.length <= 12) npub else npub.take(8) + "…" + npub.takeLast(4)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSwitcherSheet(
@@ -207,7 +214,7 @@ private fun AccountRow(
                 }
             }
             Text(
-                text = account.npub.take(20) + "...",
+                text = switcherShortNpub(account.npub),
                 fontSize = 11.sp,
                 color = SecondaryText,
                 maxLines = 1,
