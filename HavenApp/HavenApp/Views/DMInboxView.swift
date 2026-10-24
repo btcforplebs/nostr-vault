@@ -187,7 +187,7 @@ struct DMInboxView: View {
 
     @ViewBuilder
     private var dmContentList: some View {
-        if dmService.visibleConversations.isEmpty {
+        if dmService.visibleConversations.isEmpty && dmService.requestConversations.isEmpty {
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 20) {
@@ -245,6 +245,16 @@ struct DMInboxView: View {
                     .listRowBackground(Color.platformSecondaryGroupedBackground)
                     .listRowSeparator(.hidden)
                 }
+                if !dmService.requestConversations.isEmpty {
+                    NavigationLink(destination: DMRequestsView()
+                        .environmentObject(nostrService)
+                        .environmentObject(configService)) {
+                        DMRequestsRow(count: dmService.requestConversations.count)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.platformSecondaryGroupedBackground)
+                    .listRowSeparator(.hidden)
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -253,6 +263,68 @@ struct DMInboxView: View {
                 dmService.refresh()
             }
         }
+    }
+}
+
+// MARK: - Requests
+
+/// The one row that leads to messages from people outside your Web of Trust.
+/// Their messages are kept, never notified, never in the unread badge.
+struct DMRequestsRow: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.appSystem(size: 18))
+                .foregroundColor(.secondary)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(Color.secondary.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Requests")
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                Text("From people outside your Web of Trust")
+                    .font(.appSystem(size: 13))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Text("\(count)")
+                .font(.appSystem(size: 14, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Conversations from strangers. Answering one moves it to the inbox.
+struct DMRequestsView: View {
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
+    @StateObject private var dmService = DMService.shared
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(dmService.requestConversations) { conversation in
+                    NavigationLink(destination: DMThreadView(counterpartyPubkey: conversation.id)
+                        .environmentObject(nostrService)
+                        .environmentObject(configService)) {
+                        ConversationRow(conversation: conversation, nostrService: nostrService)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.platformSecondaryGroupedBackground)
+                    .listRowSeparator(.hidden)
+                }
+            } footer: {
+                Text("These people are outside your Web of Trust, so their messages never notify you. Reply to move a conversation to your inbox.")
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.platformWindowBackground.ignoresSafeArea())
+        .navigationTitle("Requests")
     }
 }
 
@@ -275,6 +347,20 @@ extension DMInboxView {
                         .tag(conversation.id)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .listRowSeparator(.hidden)
+                }
+                if !dmService.requestConversations.isEmpty {
+                    DisclosureGroup {
+                        ForEach(dmService.requestConversations) { conversation in
+                            ConversationRow(conversation: conversation, nostrService: nostrService)
+                                .tag(conversation.id)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                .listRowSeparator(.hidden)
+                        }
+                    } label: {
+                        DMRequestsRow(count: dmService.requestConversations.count)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)

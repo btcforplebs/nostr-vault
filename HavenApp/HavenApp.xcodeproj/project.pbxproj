@@ -54,6 +54,7 @@
 		07ADE3CF27334924FD12F5D0 /* FeedNoteRow+Formatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCC0A5227BD2E582382318E7 /* FeedNoteRow+Formatting.swift */; };
 		07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
 		086F056B5209B2DBDFD9A3C7 /* libnvfips.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AE5C3CB89D22373BCC0664 /* libnvfips.a */; };
+		08C9F56AA4BB111B5D79DE34 /* DMTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1682A24F97C40C3570CB32C1 /* DMTrust.swift */; };
 		08D829326282C7FA1A602BF0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C0E613F40504E1442770B4AB /* PrivacyInfo.xcprivacy */; };
 		08D9A388C6C2B4D4591E8ADB /* FeedService+NoteFetching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9852A8A522D03AE3C54D2C57 /* FeedService+NoteFetching.swift */; };
 		090916803D10991F913A0536 /* FeedService+NoteOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D83DCFAA64AE6EE183AAB63 /* FeedService+NoteOperations.swift */; };
@@ -603,6 +604,7 @@
 		72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
 		72EA2C8FEED5BD112DF6E461 /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3B509A58DD49AE937F1A6F /* AdvancedSettingsView.swift */; };
 		73336EC96D2D9392A2825DD0 /* ProfileContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E9FD98954DE731EAA50FFEB /* ProfileContent.swift */; };
+		734590DDC74F5F7DB7A12EFD /* DMTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1682A24F97C40C3570CB32C1 /* DMTrust.swift */; };
 		734DE40CDD82756ED3875A94 /* VaultSearchResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = C195BA5D2C81A999B4CB28B5 /* VaultSearchResults.swift */; };
 		736F311939E76AB45624D46A /* FeedView+MacHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BF0AAC36338F0945CC5920C /* FeedView+MacHeader.swift */; };
 		739D9DE2D6F84B968A4B88F8 /* NoteDetailView+EngagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7018F50A59F15809E36371C9 /* NoteDetailView+EngagementPanel.swift */; };
@@ -1494,6 +1496,7 @@
 		15E148493559966A697AB361 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		160DAD117DA05D7B6AF3460D /* ActionToastBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionToastBanner.swift; sourceTree = "<group>"; };
 		164722856D65C2DF9F42D76F /* ToolbarContent+SharedBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ToolbarContent+SharedBackground.swift"; sourceTree = "<group>"; };
+		1682A24F97C40C3570CB32C1 /* DMTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMTrust.swift; sourceTree = "<group>"; };
 		16D3572447C348FFE5B9A499 /* CStringArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CStringArguments.swift; sourceTree = "<group>"; };
 		17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleEngagement.swift; sourceTree = "<group>"; };
 		17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultNoteScope.swift; sourceTree = "<group>"; };
@@ -2857,6 +2860,7 @@
 				27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */,
 				6F46900B31B7943F8CBF7892 /* DeletedPost.swift */,
 				155D5690C7C6EF350165A21F /* DMAttachment.swift */,
+				1682A24F97C40C3570CB32C1 /* DMTrust.swift */,
 				2D72FDD1119ACE2C1EADE758 /* FeedHighlight.swift */,
 				AE2E558FEC2B0ED374B04E74 /* FeedLanguage.swift */,
 				1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */,
@@ -3656,6 +3660,7 @@
 				8FBA9847BECCEC77C835E371 /* DMService+Sending.swift in Sources */,
 				D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */,
 				15393DD23237B42966817286 /* DMThreadView.swift in Sources */,
+				734590DDC74F5F7DB7A12EFD /* DMTrust.swift in Sources */,
 				82260876404FFEC615922E6E /* DashboardBreakdowns.swift in Sources */,
 				7E1A5CA08F04AA8FA6158758 /* DashboardHelpers.swift in Sources */,
 				930D56184C661E35EEA0505B /* DashboardRelayRow.swift in Sources */,
@@ -4359,6 +4364,7 @@
 				EE564FD8E0ABB41D221F9393 /* DMService+Sending.swift in Sources */,
 				73AE59BA2106FFA1751992DB /* DMService.swift in Sources */,
 				19BDF752BAF456473D9AD1D9 /* DMThreadView.swift in Sources */,
+				08C9F56AA4BB111B5D79DE34 /* DMTrust.swift in Sources */,
 				C31925F3587C9BC08C895DFA /* DashboardBreakdowns.swift in Sources */,
 				4E6FA86296F8D1B4C7144D4D /* DashboardHelpers.swift in Sources */,
 				15D25B08DF9BA8B3C49F13CC /* DashboardRelayRow.swift in Sources */,
