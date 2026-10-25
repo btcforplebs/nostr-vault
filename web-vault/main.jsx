@@ -318,4 +318,8 @@ function registerWorker() {
 }
 if (loadSession()) document.readyState === "complete" ? registerWorker() : addEventListener("load", registerWorker, { once: true })
 if (loadSession()) navigator.storage?.persist?.().then(granted => log("persist", { granted }))
+// A newer build in another tab opened Haven's stores at a higher version: haven-go/idbstore closed them here so that
+// tab isn't blocked, and this one reloads onto the new build. Sign-out deletes the stores too, but drops the session
+// first; onSignedOutElsewhere handles that.
+addEventListener("idbstore-versionchange", () => { if (loadSession()) location.reload() }, { once: true })
 render(<App />, document.getElementById("app"))

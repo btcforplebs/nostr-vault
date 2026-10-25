@@ -3,7 +3,7 @@
 // reload works without a network.
 const C = "nv-web-vault-v2"
 self.addEventListener("install", e => e.waitUntil(precache().then(() => self.skipWaiting())))
-self.addEventListener("activate", e => e.waitUntil(migrate().then(() => self.clients.claim())))
+self.addEventListener("activate", e => e.waitUntil(migrate().then(prune).then(() => self.clients.claim())))
 // The first visit's page and scripts were fetched before this worker existed, so nothing above would have stored
 // them: a reload offline right after the first visit fails. Stores the app shell now: index.html (served at the
 // scope root) and every same-origin file it links (the hashed script and stylesheet, manifest, icons).
@@ -41,6 +41,28 @@ async function migrate() {
     await caches.delete(k)
   }
 }
+// Drops the hashed build files (assets/<name>-<hash>.js|css|wasm) the current index no longer reaches: every deploy
+// left its scripts and styles here before (+1.2 MB a build, never pruned). Kept: what index.html links, and every
+// hashed name those scripts mention (lazy chunks such as hls-*.js, the per-screen CSS, haven-*.wasm), followed
+// through the cached scripts. Run on activate, after install stored the new index.
+async function prune() {
+  const c = await caches.open(C), base = new URL("./", location), index = await c.match(base.href)
+  if (!index) return
+  const keep = new Set(), queue = [await index.text()]
+  while (queue.length) {
+    for (const [name] of queue.pop().matchAll(BUILD_FILE)) {
+      if (keep.has(name)) continue
+      keep.add(name)
+      if (name.endsWith(".js")) { const r = await c.match(new URL(`assets/${name}`, base).href, { ignoreSearch: true }); if (r) queue.push(await r.text()) }
+    }
+  }
+  for (const k of await c.keys()) {
+    const p = new URL(k.url).pathname, name = p.slice(p.lastIndexOf("/") + 1)
+    if (p.includes("/assets/") && BUILD_NAME.test(name) && !keep.has(name)) await c.delete(k)
+  }
+}
+const BUILD_FILE = /[\w-]+-[\w-]{8}\.(?:js|css|wasm)/g, BUILD_NAME = new RegExp(`^${BUILD_FILE.source}$`)
+
 self.addEventListener("fetch", e => {
   const u = new URL(e.request.url)
   if (e.request.method !== "GET" || u.origin !== location.origin) return

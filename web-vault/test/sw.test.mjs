@@ -161,3 +161,25 @@ test("hashed assets are cache first: a second request does not hit the network",
   assert.equal(await res.text(), "js")
   assert.equal(w.fetched.length, before, "served from the cache")
 })
+
+test("activate drops an older build's scripts and styles, and keeps what the new index reaches", async () => {
+  // The new build: its script names a lazy chunk (./hls-…), a CSS file (assets/…) and the wasm (/vault/assets/…), as
+  // Vite writes them; the lazy chunk names another chunk.
+  const files = {
+    ...site,
+    "/vault/assets/index-Ab12Cd34.js": { body: 'import("./hls-Hh11Ii22.js");"assets/feeds-Ff00Gg11.css";"/vault/assets/haven-Ww99Xx88.wasm"', type: "text/javascript" },
+  }
+  const w = worker({ files })
+  const c = await w.caches.open("nv-web-vault-v2")
+  const put = (p, body) => c.put(new Request(`${ORIGIN}${p}`), new Response(body, { headers: { "Content-Type": "text/javascript" } }))
+  for (const p of ["/vault/assets/index-Old00Js0.js", "/vault/assets/index-Old00Css.css", "/vault/assets/hls-Old00Hls.js", "/vault/assets/haven-Old00Wsm.wasm"]) await put(p, "old")
+  await put("/vault/assets/hls-Hh11Ii22.js", 'import("./photo-reader-Pp33Qq44.js")')
+  for (const p of ["/vault/assets/photo-reader-Pp33Qq44.js", "/vault/assets/feeds-Ff00Gg11.css", "/vault/assets/haven-Ww99Xx88.wasm", "/vault/assets/font.woff2"]) await put(p, "new")
+  await w.fire("install")
+  await w.fire("activate")
+  const left = (await c.keys()).map(r => new URL(r.url).pathname).filter(p => p.includes("/assets/")).sort()
+  assert.deepEqual(left, [
+    "/vault/assets/feeds-Ff00Gg11.css", "/vault/assets/font.woff2", "/vault/assets/haven-Ww99Xx88.wasm", "/vault/assets/hls-Hh11Ii22.js",
+    "/vault/assets/index-Ab12Cd34.js", "/vault/assets/index-Ef56Gh78.css", "/vault/assets/photo-reader-Pp33Qq44.js",
+  ])
+})
