@@ -13,6 +13,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { followsOf, relation, setFollow } from "../net/follows.js"
 import { fetchPersonArticles, fetchPersonLists, fetchTagged, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { fetchShop } from "../net/profile-tabs.js"
 import "../styles/person.css"
 
 const WOT = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 10V3.5M13.7 13l5.6 3.5M10.3 13l-5.6 3.5"
@@ -28,6 +29,7 @@ export function PersonScreen({ ctx, pubkey }) {
   const { vault, account, session } = ctx
   const [lists, setLists] = useState(null) // { relays, contacts } once their lists came back
   const [articles, setArticles] = useState(null)
+  const [shop, setShop] = useState(null)
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
@@ -44,12 +46,15 @@ export function PersonScreen({ ctx, pubkey }) {
 
   useEffect(() => {
     let live = true
+    setShop(null)
     fetchProfiles(vault, [pubkey], uniq([...hints, ...PROFILE_RELAYS])).catch(() => {})
     listsP.then(l => {
       if (!live) return
       setLists(l)
       // As the iPhone's ProfileExtrasLoader: fetched at once, so the Articles tab shows only if they have any.
       if (navigator.onLine) fetchPersonArticles(pubkey, l.relays.write).catch(() => []).then(a => live && setArticles(a))
+      // Their listings (SellerListingsLoader): the Shop tab shows only if they sell something.
+      if (navigator.onLine) fetchShop(pubkey, l.relays.write).catch(() => []).then(s => live && setShop(s))
     })
     return () => { live = false }
   }, [pubkey])
@@ -124,7 +129,7 @@ export function PersonScreen({ ctx, pubkey }) {
         </div>
       )}
       {status && !isBlocked && <div class="status-line">{status}</div>}
-      {!isBlocked && <ProfileTabs notes={notes} tagged={tagged} articles={articles} pubkey={pubkey} blocked={blocked} />}
+      {!isBlocked && <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} pubkey={pubkey} blocked={blocked} />}
     </main>
   )
 }

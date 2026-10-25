@@ -2,9 +2,13 @@
 // profile, then Articles only once this person has some (ProfileContent+Sections visibleSections). Notes and Replies
 // are one pile of kind 1s split by NIP-10 (net/thread.js replyRefs); Media is their own notes and replies with an
 // image or video (net/media.js); Reposts are their kind 6s; Tagged is other people's notes that tag them; Articles are
-// kind 30023. Pure: the screens fetch, this only sorts what they have and says what an empty tab reads.
+// kind 30023. Shop (ProfileContent+Sections shopSection) is their NIP-15 and NIP-99 listings (readers/market.js): last,
+// on your own profile always, on someone else's only once they have some. Pure but for fetchShop: the screens fetch,
+// this only sorts what they have and says what an empty tab reads.
 import { replyRefs } from "./thread.js"
 import { mediaTiles } from "./media.js"
+import { MARKET_KINDS, MARKET_RELAYS, book } from "../readers/market.js"
+import { pool, uniq } from "./pool.js"
 
 export const PROFILE_TABS = [
   { id: "notes", label: "Notes" },
@@ -13,13 +17,26 @@ export const PROFILE_TABS = [
   { id: "reposts", label: "Reposts" },
   { id: "tagged", label: "Tagged" },
   { id: "articles", label: "Articles", late: true },
+  { id: "shop", label: "Shop", late: true },
 ]
 
 /** The tabs filled from the profile's note streams (ProfileSection.isNoteTab); Tagged pages its own stream. */
-export const isNoteTab = id => id !== "articles"
+export const isNoteTab = id => id !== "articles" && id !== "shop"
 
-/** The tabs on show: the late ones (Articles) only when the profile has some. */
-export const visibleTabs = articles => PROFILE_TABS.filter(t => !t.late || (articles?.length ?? 0) > 0)
+/** The tabs on show: the late ones (Articles, Shop) only when the profile has some; Shop always on your own
+ *  (`shopAlways`), as the iPhone's MyProfileView. */
+export const visibleTabs = (articles, listings, shopAlways = false) => PROFILE_TABS.filter(t =>
+  !t.late || (t.id === "shop" ? shopAlways || (listings?.length ?? 0) > 0 : (articles?.length ?? 0) > 0))
+
+/** What an empty Shop says: still loading, or nothing listed (yours or theirs). */
+export const shopEmptyText = ({ loading, own }) => (loading ? "Loading…" : own ? "You haven't listed anything yet" : "Nothing for sale")
+
+/** One seller's listings (SellerListingsLoader): the marketplace relays and their own write relays, theirs only,
+ *  the newest event per address (a sold re-publish takes it down). `query` is for tests. -> listings, newest first */
+export async function fetchShop(pubkey, writeRelays = [], { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const evs = await query(uniq([...MARKET_RELAYS, ...writeRelays]), { kinds: MARKET_KINDS, authors: [pubkey], limit: 100 }, { maxWait: 10000 })
+  return book(evs.filter(e => e?.pubkey === pubkey))
+}
 
 /** A kind 1 that answers another note. A note that only quotes (mention markers) isn't one. */
 export const isReply = ev => !!replyRefs(ev).parent

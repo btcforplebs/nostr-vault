@@ -13,7 +13,7 @@ const note = (content, at, tags = []) => finalizeEvent({ kind: 1, created_at: at
 const article = (d, at, title) => finalizeEvent({ kind: 30023, created_at: at, tags: [["d", d], ["title", title]], content: "body" }, sk)
 
 test("the tabs are the iPhone's, in its order; Articles only once the profile has some", () => {
-  assert.deepEqual(PROFILE_TABS.map(t => t.label), ["Notes", "Media", "Replies", "Reposts", "Tagged", "Articles"])
+  assert.deepEqual(PROFILE_TABS.map(t => t.label), ["Notes", "Media", "Replies", "Reposts", "Tagged", "Articles", "Shop"])
   assert.deepEqual(visibleTabs([]).map(t => t.id), ["notes", "media", "replies", "reposts", "tagged"])
   assert.deepEqual(visibleTabs(null).map(t => t.id), ["notes", "media", "replies", "reposts", "tagged"])
   assert.deepEqual(visibleTabs([article("a", 1, "t")]).map(t => t.id).at(-1), "articles")
@@ -146,4 +146,28 @@ test("Brainstorm opens their nprofile page, as NostrWebLink.profile", async () =
   const url = brainstormLink(pk)
   assert.ok(url.startsWith("https://brainstorm.world/p/nprofile1"))
   assert.equal(decode(url.split("/p/")[1]).data.pubkey, pk)
+})
+
+test("Shop goes last, on your own profile always and on someone else's only with listings; counts and empty wording", async () => {
+  const { fetchShop, shopEmptyText, isNoteTab } = await import("../src/net/profile-tabs.js")
+  assert.deepEqual(PROFILE_TABS.map(t => t.label).at(-1), "Shop")
+  assert.equal(isNoteTab("shop"), false)
+  const listing = { id: ID }
+  assert.deepEqual(visibleTabs([], []).map(t => t.id), ["notes", "media", "replies", "reposts", "tagged"])
+  assert.deepEqual(visibleTabs([], null, true).map(t => t.id).at(-1), "shop")
+  assert.deepEqual(visibleTabs([article("a", 1, "t")], [listing]).map(t => t.id).slice(-2), ["articles", "shop"])
+  assert.equal(shopEmptyText({ loading: true, own: true }), "Loading…")
+  assert.equal(shopEmptyText({ loading: false, own: true }), "You haven't listed anything yet")
+  assert.equal(shopEmptyText({ loading: false, own: false }), "Nothing for sale")
+
+  const other = generateSecretKey()
+  const product = (d, at, extra = {}, key = sk) => finalizeEvent({ kind: 30018, created_at: at, tags: [["d", d]],
+    content: JSON.stringify({ name: `Item ${d}`, images: ["https://x.example/p.jpg"], price: 21000, currency: "sat", ...extra }) }, key)
+  const asked = []
+  const evs = [product("a", 10), product("b", 20), product("a", 30, { quantity: 0 }), product("c", 40, {}, other)]
+  const got = await fetchShop(pk, ["wss://theirs.example"], { query: async (relays, filter) => { asked.push({ relays, filter }); return evs } })
+  assert.deepEqual(got.map(l => l.title), ["Item b"], "a sold-out re-publish takes the item down; someone else's stays out")
+  assert.ok(asked[0].relays.includes("wss://theirs.example") && asked[0].relays.includes("wss://relay.conduit.market"))
+  assert.deepEqual(asked[0].filter.authors, [pk])
+  assert.deepEqual(asked[0].filter.kinds, [30018, 30020, 30402])
 })
