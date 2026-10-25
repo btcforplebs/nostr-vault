@@ -48,7 +48,7 @@ export function RelayScreen({ ctx, log }) {
 
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Relay</h2></header>
+      <header class="screen-head"><h2>Your Vault Relay</h2></header>
       <section class="card">
         <div class="relay-state"><span class="dot on" />Your vault is running in this browser</div>
         <div class="stats">

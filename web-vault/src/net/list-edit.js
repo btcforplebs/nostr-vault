@@ -14,19 +14,24 @@ const listRelays = ctx => uniq([...ctx.account.relays.read, ...ctx.account.relay
 /**
  * The newest `kind` list the account signed. -> { event, checked }; `checked` is false when the relays weren't
  * asked (offline), so the page can say its copy may be old. A newer copy from the relays is kept in Haven.
+ * Each relay is asked on its own: `on({ event })` gets Haven's copy at once and each newer one as a relay sends it, so
+ * a page can draw before the slowest relay answers. The promise still waits for every relay (or its 5 s), because an
+ * edit must start from the newest copy anywhere.
  */
-export async function latestList(ctx, kind, { query = (r, f, o) => pool.querySync(r, f, o), online = globalThis.navigator?.onLine !== false } = {}) {
+export async function latestList(ctx, kind, { query = (r, f, o) => pool.querySync(r, f, o), online = globalThis.navigator?.onLine !== false, on } = {}) {
   const me = ctx.session.pubkey
   const filter = { kinds: [kind], authors: [me] }
   const mine = evs => evs.filter(e => e?.kind === kind && e.pubkey === me)
   const local = newest(mine(await ctx.vault.outbox.query(filter).catch(() => [])))
   if (!online) return { event: local, checked: false }
-  const remote = newest(mine(await query(listRelays(ctx), filter, { maxWait: 5000 }).catch(() => [])))
-  if (remote && (!local || remote.created_at > local.created_at)) {
-    await ctx.vault.outbox.event(remote).catch(() => {})
-    return { event: remote, checked: true }
-  }
-  return { event: local, checked: true }
+  if (local) on?.({ event: local })
+  let best = local
+  await Promise.all(listRelays(ctx).map(relay => query([relay], filter, { maxWait: 5000 }).then(evs => {
+    const ev = newest(mine(evs))
+    if (ev && (!best || ev.created_at > best.created_at)) { best = ev; on?.({ event: ev }) }
+  }).catch(() => {})))
+  if (best && best !== local) await ctx.vault.outbox.event(best).catch(() => {})
+  return { event: best, checked: true }
 }
 
 /**
