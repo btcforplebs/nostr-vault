@@ -50,12 +50,38 @@ export async function startVault({ pubkey, log = () => {} }) {
     // One set of stores per account, so a second account on this browser never opens the first one's data.
     storePrefix: pubkey,
   })
-  const open = route => new HavenClient(haven.conn(`ui${route.replace("/", "-")}`, { mode: "nip01", route, owner: true }), {
-    auth: challenge => finalizeEvent(makeAuthEvent(`wss://${RELAY_HOST}${route}`, challenge), sk),
-  })
+  const open = route => routeClient(haven, route, sk)
   // /inbox holds what others sent the user (replies, likes, zaps…): the Vault tab reads it and fills it from the relays.
   return { haven, owners, outbox: open("/"), feed: open("/feed"), inbox: open("/inbox"), loadMs, startMs: Date.now() - t0 - loadMs }
 }
+
+/** One route's client for the page: event, query and count like a HavenClient. Its stream can close under it (Safari
+ *  in the background, a locked phone), so a call that finds it closed opens a new one, under a new id since Haven
+ *  refuses one still open, and a call cut off by "haven stream closed" is sent once more on the new stream. An event
+ *  sent twice is the same event (same id), and a read is safe to repeat. `name`: the stream id, "ui-feed" for /feed. */
+export function routeClient(haven, route, sk, name = `ui${route.replace("/", "-")}`) {
+  const auth = challenge => finalizeEvent(makeAuthEvent(`wss://${RELAY_HOST}${route}`, challenge), sk)
+  let n = 0, client
+  const live = () => {
+    if (!client || client.closed) client = new HavenClient(haven.conn(n++ ? `${name}-${n}` : name, { mode: "nip01", route, owner: true }), { auth })
+    return client
+  }
+  const call = async (method, arg) => {
+    try {
+      return await live()[method](arg)
+    } catch (e) {
+      if (!streamClosed(e)) throw e
+      return live()[method](arg)
+    }
+  }
+  return {
+    event: ev => call("event", ev),
+    query: filters => call("query", filters),
+    count: filters => call("count", filters),
+    close: () => client?.close(),
+  }
+}
+export const streamClosed = e => e?.message === "haven stream closed"
 
 // Haven's route databases (haven-go/store_wasm.go) for this account: "haven:<pubkey>:<route>" (storePrefix).
 // Sign-out deletes every database the browser lists under that prefix, so a route added in Go is wiped too, and

@@ -8,10 +8,8 @@
 // nip44_encrypt / nip44_decrypt / nip04_decrypt (signer/nip46.js bunkerCrypto). The user's key stays with the signer.
 import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, verifyEvent } from "nostr-tools/pure"
 import * as nip44 from "nostr-tools/nip44"
-import { makeAuthEvent } from "nostr-tools/nip42"
 import { normalizeURL } from "nostr-tools/utils"
-import { HavenClient } from "../../../web-relay/src/haven/client.js"
-import { deviceKey } from "../haven/vault.js"
+import { deviceKey, routeClient } from "../haven/vault.js"
 import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
 import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
@@ -113,14 +111,13 @@ export function extraRelays(storage = globalThis.localStorage) {
   return (storage?.getItem("nv-dm-relays") ?? "").split(",").map(s => s.trim()).filter(u => /^wss?:\/\//.test(u))
 }
 
-// Haven's /chat route, opened once per vault like vault.js opens /feed: the iPhone keeps its wraps there.
-const RELAY_HOST = "vault.local"
+// Haven's /chat route, opened once per vault like vault.js opens /feed (and reopened like it): the iPhone keeps its
+// wraps there.
 const chats = new WeakMap()
 export function chatStore(vault) {
   if (vault.chat) return vault.chat
   if (!chats.has(vault)) {
-    const conn = vault.haven.conn("ui-chat", { mode: "nip01", route: "/chat", owner: true })
-    chats.set(vault, new HavenClient(conn, { auth: challenge => finalizeEvent(makeAuthEvent(`wss://${RELAY_HOST}/chat`, challenge), deviceKey()) }))
+    chats.set(vault, routeClient(vault.haven, "/chat", deviceKey()))
   }
   return chats.get(vault)
 }
