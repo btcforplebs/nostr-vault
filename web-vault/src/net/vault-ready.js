@@ -1,9 +1,12 @@
 // First sign-in on this browser: Haven starts empty, so the app would open on half-empty screens while the network
 // fills it. prepareVault fills it first, step by step, for the "Getting your vault ready" screen
-// (components/VaultReady.jsx). A later sign-in skips it: this browser has done it once for the account, or Haven
+// (components/VaultReady.jsx), and lets the app open once the first page of the feed and those authors' names are
+// in: the rest of the fill carries on behind it (backgroundFill), as waiting for all of it took 20 s and more for
+// 1,000 follows. A later sign-in skips it: this browser has done it once for the account, or Haven
 // already holds the account's follow list and some of their notes.
 import { readFeed, refreshAccount, syncFeed, syncOwn } from "./sync.js"
-import { fetchProfiles } from "./profiles.js"
+import { fetchProfiles, namesIn } from "./profiles.js"
+import { noteAuthors } from "./feeds.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
 
 /** The steps, in the order the screen lists them. */
@@ -15,10 +18,19 @@ export const STEPS = [
   { id: "profiles", title: "Loading names and pictures" },
 ]
 
-// How long a step may hold the screen. A slow one carries on in the background and the app opens anyway: the
-// Feed's own sync and each screen's profile reads pick up whatever it hadn't stored yet.
+// How long a step may hold the screen (feed's is also how long the first page and its names may). A slow one carries
+// on in the background and the app opens anyway: the Feed's own sync and each screen's profile reads pick up whatever
+// it hadn't stored yet.
 export const STEP_LIMIT_MS = { account: 12_000, notes: 12_000, feed: 25_000, profiles: 15_000 }
-const PROFILE_CHUNK = 200 // fetchProfiles' own batch, asked one at a time so the screen can count them
+const PROFILE_CHUNK = 200 // fetchProfiles' own batch, asked in turn per lane so the screen can count them
+const PROFILES_AT_ONCE = 2
+/** The first page: as many notes as the Feed reads at once (FeedScreen PAGE). */
+export const FIRST_PAGE = 100
+
+// The feed fill a first sign-in leaves running once the app opens. The Feed's sync joins it, redrawing as it stores,
+// rather than starting a second one.
+let filling = null
+export const backgroundFill = () => filling
 
 // Accounts this browser has prepared once, so their next sign-in opens straight away. Sign-out removes it
 // (haven/vault.js LOCAL_KEYS).
@@ -46,7 +58,9 @@ function within(p, ms) {
 /**
  * Fill Haven for a first sign-in: the account (kind 0, 3, 10002), then the user's own notes, their follows' notes
  * and their follows' profiles at once. `onStep(id, { state, done, of, count })` reports each step: state is
- * "active", "done", "slow" (still going in the background) or "failed". -> the account as refreshAccount read it back
+ * "active", "done", "slow" (still going in the background) or "failed". Returns once the first page of the feed and
+ * its authors' names are stored (or the feed step's limit passes); the steps carry on after it and keep reporting.
+ * -> { account as refreshAccount read it back, fresh, filled: settles once every step has ended }
  */
 export async function prepareVault({ vault, pubkey, local, early, log = () => {}, onStep = () => {}, limits = STEP_LIMIT_MS }) {
   // A step that has reported its end stays ended: a slow sync still counting in the background doesn't reopen it.
@@ -74,20 +88,52 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
 
   const follows = account.follows
   const notes = run("notes", syncOwn(vault, pubkey, writeRelays).then(n => say("notes", { state: "active", count: n })))
-  const feed = follows.length
-    ? run("feed", syncFeed(vault, follows, readRelays, { onProgress: p => say("feed", { state: "active", done: p.done, of: p.of, count: p.stored }) }))
-    : (say("feed", { state: "done", count: 0 }), Promise.resolve())
-  const profiles = follows.length
-    ? run("profiles", (async () => {
-        for (let i = 0; i < follows.length; i += PROFILE_CHUNK) {
-          await fetchProfiles(vault, follows.slice(i, i + PROFILE_CHUNK), readRelays)
-          say("profiles", { state: "active", done: Math.min(i + PROFILE_CHUNK, follows.length), of: follows.length })
-        }
-      })())
-    : (say("profiles", { state: "done" }), Promise.resolve())
-  await Promise.all([notes, feed, profiles])
+  if (!follows.length) {
+    say("feed", { state: "done", count: 0 })
+    say("profiles", { state: "done" })
+    await notes
+    markPrepared(pubkey)
+    return { account, fresh: accountState === "done", filled: notes }
+  }
+
+  // The first page is in once a page of notes is stored or the first group of follows has answered, whichever is first.
+  let firstPage
+  const firstStored = new Promise(r => { firstPage = r })
+  const joined = new Set()
+  const feedWork = syncFeed(vault, follows, readRelays, {
+    onFirstPage: () => firstPage(),
+    onProgress: p => {
+      if (p.stored >= FIRST_PAGE) firstPage()
+      say("feed", { state: "active", done: p.done, of: p.of, count: p.stored })
+      for (const cb of joined) cb(p)
+    },
+  })
+  feedWork.then(firstPage, firstPage)
+  const fill = { join: cb => { joined.add(cb); return feedWork.finally(() => joined.delete(cb)) } }
+  filling = fill
+  feedWork.catch(() => {}).finally(() => { if (filling === fill) filling = null })
+  const feed = run("feed", feedWork)
+
+  // Names for the first page's authors (and the people their reposts are of) go out before the rest of the follows'.
+  const firstNames = firstStored.then(async () => {
+    const authors = uniq(noteAuthors(await readFeed(vault, follows, { limit: FIRST_PAGE })))
+    await namesIn(authors, fetchProfiles(vault, authors, readRelays))
+  })
+  // Then everyone else's, PROFILES_AT_ONCE groups at a time (one after another took ~6 s per group of 200).
+  const starts = Array.from({ length: Math.ceil(follows.length / PROFILE_CHUNK) }, (_, k) => k * PROFILE_CHUNK).values()
+  let named = 0
+  const profiles = run("profiles", within(firstNames, limits.feed).then(() => Promise.all(Array.from({ length: PROFILES_AT_ONCE }, async () => {
+    for (const i of starts) {
+      await fetchProfiles(vault, follows.slice(i, i + PROFILE_CHUNK), readRelays)
+      named = Math.min(named + PROFILE_CHUNK, follows.length)
+      say("profiles", { state: "active", done: named, of: follows.length })
+    }
+  }))))
+
+  const opening = await within(firstNames, limits.feed)
+  log("prepare", { step: "open", state: opening })
   markPrepared(pubkey)
-  return { account, fresh: accountState === "done" }
+  return { account, fresh: accountState === "done", filled: Promise.all([notes, feed, profiles]) }
 }
 
 /** 0..1 across every step, for the progress bar: a step with a count moves within its share. */

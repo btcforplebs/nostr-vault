@@ -65,8 +65,11 @@ export async function readFeed(vault, follows, { limit = 100, until } = {}) {
   return evs.sort((a, b) => b.created_at - a.created_at)
 }
 
-/** Pull follows' notes since the newest one cached (or the last two days) into Haven /feed. -> notes stored */
-export async function syncFeed(vault, follows, relays, { onProgress = () => {} } = {}) {
+/**
+ * Pull follows' notes since the newest one cached (or the last two days) into Haven /feed. `onFirstPage` runs once
+ * the first group of follows is stored, before the rest are asked. -> notes stored
+ */
+export async function syncFeed(vault, follows, relays, { onProgress = () => {}, onFirstPage = () => {} } = {}) {
   if (!follows.length) return 0
   // querySync treats a relay it can't reach as an empty answer, so check that at least one relay is up first. The
   // first one up is enough: the rest join the query as they connect, rather than the slowest connect (up to 5 s for
@@ -93,6 +96,7 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {} }
   // The first 250 follows alone, so the first screen isn't slowed by the rest (asking them too put the first notes
   // ~2.5 s later), then FEED_CHUNKS_AT_ONCE groups at a time, not one after another: 1,000 follows took ~43 s in turn.
   await chunk(0)
+  onFirstPage()
   const starts = Array.from({ length: Math.ceil(follows.length / 250) - 1 }, (_, k) => (k + 1) * 250).values()
   const errors = await Promise.allSettled(Array.from({ length: FEED_CHUNKS_AT_ONCE }, async () => { for (const i of starts) await chunk(i) }))
   const failed = errors.find(r => r.status === "rejected")
@@ -173,7 +177,7 @@ export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_STAR
  * ~1 s in turn. Haven takes one request per id at a time, so a note another sync (Refresh, the background tick)
  * is writing right now counts as a duplicate here. -> how many were stored
  */
-async function storeAll(route, evs) {
+export async function storeAll(route, evs) {
   let stored = 0
   for (let i = 0; i < evs.length; i += 100) {
     const rs = await Promise.all(evs.slice(i, i + 100).map(ev => route.event(ev).catch(e => {

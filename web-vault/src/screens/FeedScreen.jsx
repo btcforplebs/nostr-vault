@@ -8,6 +8,7 @@ import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
+import { backgroundFill } from "../net/vault-ready.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
@@ -94,10 +95,13 @@ export function FeedScreen({ ctx }) {
       shown = shown.then(() => { waiting = false; return reload() })
     }
     try {
-      const n = await syncFeed(vault, follows, relays, { onProgress: p => {
+      const onProgress = p => {
         say(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
         if (p.stored > seen) { seen = p.stored; show() }
-      } })
+      }
+      // A first sign-in opens on the first page while its fill carries on: draw from that one, don't start another.
+      const fill = backgroundFill()
+      const n = await (fill ? fill.join(onProgress) : syncFeed(vault, follows, relays, { onProgress }))
       await shown
       await reload()
       say(n ? `${n} notes saved to your relay` : "Up to date")
@@ -226,7 +230,7 @@ export function FeedScreen({ ctx }) {
           : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
           : strange === null ? navigator.onLine ? <SkeletonRows /> : <p class="empty">This feed needs the network.</p>
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
-          : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read)}
+          : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
       </>}
     </main>
