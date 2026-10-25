@@ -1,5 +1,6 @@
-// The iPhone's send countdown + Undo on the web composer (PendingPostManager / PostActionPill): the same 0/5/10 s,
-// default 5, the same wording, and Undo leaves nothing signed or sent. The real ComposeScreen is rendered with a
+// The web composer against the iPhone's: the send countdown + Undo (PendingPostManager / PostActionPill: the same
+// 0/5/10 s, default 5, the same wording; Undo leaves nothing signed or sent), Cancel's "Save this note as a draft?",
+// and the compact "Replying to" strip. The real ComposeScreen is rendered with a
 // counting signer and a stubbed pool; the clock is node's mock timers. Throwaway keys only: nothing is published.
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
@@ -108,6 +109,8 @@ globalThis.document = {
   createTextNode: data => Object.assign(new Node(3, "#text"), { data: String(data) }),
 }
 globalThis.location = { hash: "#/compose", hostname: "nostrvault.app" }
+let backs = 0
+globalThis.history = { back: () => { backs++ } }
 const local = new Map()
 globalThis.localStorage = store(local)
 // An in-memory IndexedDB, just what idbDrafts asks of it.
@@ -129,7 +132,7 @@ globalThis.indexedDB = {
     return req
   },
 }
-const { ComposeScreen } = await import("../src/screens/ComposeScreen.jsx")
+const { ComposeScreen, replySnippet } = await import("../src/screens/ComposeScreen.jsx")
 // Preact runs effects after a paint timer (~35 ms without requestAnimationFrame); setTimeout isn't mocked.
 const flush = async () => { for (let i = 0; i < 3; i++) { await new Promise(r => setTimeout(r, 50)); await new Promise(r => setImmediate(r)) } }
 
@@ -226,4 +229,58 @@ test("Send Delay Off: posts at once with no pill; 10 s: 'Posting in 10s'", async
   assert.match(d.text(), /Posting in 10s/)
   d.button("Undo").click(); await flush()
   d.unmount()
+})
+
+test("Cancel on an empty box just closes; with a note it asks 'Save this note as a draft?'", async () => {
+  local.clear(); backs = 0
+  const c = await composer()
+  c.button("Cancel").click(); await flush()
+  assert.equal(backs, 1)
+  assert.doesNotMatch(c.text(), /Save this note as a draft\?/)
+  await c.type("ted cancel probe")
+  c.button("Cancel").click(); await flush()
+  assert.equal(backs, 1, "not closed yet: it asks first")
+  assert.match(c.text(), /Save this note as a draft\?/)
+  assert.ok(c.button("Save Draft") && c.button("Discard"))
+  c.unmount()
+})
+
+test("Save Draft closes and keeps the draft; Discard deletes it and closes", async () => {
+  local.clear(); backs = 0
+  const c = await composer()
+  await c.type("ted keep probe")
+  c.button("Cancel").click(); await flush()
+  c.button("Save Draft").click(); await flush()
+  assert.equal(backs, 1)
+  const drafts = [...dbs.values()].at(-1)
+  assert.equal(drafts.get("new")?.text, "ted keep probe")
+  c.unmount()
+
+  const d = await composer()
+  await d.type("ted discard probe")
+  d.button("Cancel").click(); await flush()
+  d.button("Discard").click(); await flush()
+  assert.equal(backs, 2)
+  assert.equal([...dbs.values()].at(-1).has("new"), false, "the draft is gone")
+  assert.equal(d.box.value, "")
+  d.unmount()
+})
+
+test("Cancel during the countdown stops it: nothing is signed or sent", async t => {
+  mock.timers.enable({ apis: ["setInterval", "Date"] })
+  t.after(() => mock.timers.reset())
+  local.clear()
+  const c = await composer()
+  await c.type("ted cancel-countdown probe")
+  c.button("Post").click(); await flush()
+  c.button("Cancel").click(); await flush()
+  mock.timers.tick(20000); await flush()
+  assert.equal(c.signed.length, 0)
+  assert.equal(c.published.length, 0)
+  c.unmount()
+})
+
+test("the reply strip's text drops media links and nostr: references, on one line", () => {
+  assert.equal(replySnippet("Look at this\nhttps://x.example/a.jpg\nnostr:nevent1abc and more"), "Look at this and more")
+  assert.equal(replySnippet("https://x.example/a.jpg"), "")
 })

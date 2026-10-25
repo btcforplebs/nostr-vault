@@ -15,6 +15,8 @@ import { getProfile } from "../net/profiles.js"
 import { hashtagTags } from "../net/hashtags.js"
 import { Dialog } from "../components/Moderation.jsx"
 import { Avatar } from "../components/Avatar.jsx"
+import { fetchProfiles } from "../net/profiles.js"
+import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -58,6 +60,20 @@ function SendPill({ pending, onUndo }) {
 
 // The note being replied to or quoted, under a label saying which.
 function ComposeTarget({ mode, note }) {
+  // A reply gets the iPhone's compact strip (ComposeView+Chrome): their picture, "Replying to Name", a few lines of
+  // the text and no media. A quote keeps the whole note, since it is part of what you post.
+  if (mode === "reply") {
+    const snippet = replySnippet(note.content)
+    return (
+      <div class="compose-target compose-replying">
+        <Avatar pubkey={note.pubkey} size={32} />
+        <div class="compose-replying-text">
+          <div class="compose-label">Replying to <AuthorName pubkey={note.pubkey} /></div>
+          {snippet && <p class="compose-replying-snippet">{snippet}</p>}
+        </div>
+      </div>
+    )
+  }
   return (
     <div class="compose-target">
       <div class="compose-label">{mode === "reply" ? "Replying to" : "Quoting"} <AuthorName pubkey={note.pubkey} /></div>
@@ -65,6 +81,9 @@ function ComposeTarget({ mode, note }) {
     </div>
   )
 }
+
+/** The text of the note being replied to, without its media links and nostr: references, on one line. */
+export const replySnippet = content => content.replace(/https?:\/\/\S+|nostr:\S+/g, " ").replace(/\s+/g, " ").trim()
 
 // Drafts: one per account and per target (a new note, or a reply or quote to one note), in an IndexedDB database named
 // like Haven's own, "haven:<pubkey>:drafts", so sign-out's wipe (vault.js storeNames) deletes it with the rest.
@@ -154,6 +173,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
   const [pending, setPending] = useState(null)
   const countdown = useRef(null)
   const [undone, setUndone] = useState(false)
+  const [leaving, setLeaving] = useState(false) // the iPhone's "Save this note as a draft?" on Cancel
   // Leaving the composer mid-countdown is an Undo: the note stays as a draft, nothing is signed.
   useEffect(() => () => countdown.current?.cancel(), [])
   // Read on every render: going from a reply to the Post button keeps this screen mounted and only changes the hash.
@@ -161,7 +181,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
   const [note, setNote] = useState(null) // { id, event } once looked up; event null when not found
 
   useEffect(() => {
-    setNote(null); setResult(null); setErr("")
+    setNote(null); setResult(null); setErr(""); setUndone(false)
     if (!target) return
     let live = true
     findNote(ctx, target.id).catch(() => null).then(event => { if (live) setNote({ id: target.id, event }) })
@@ -169,6 +189,9 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
   }, [target?.mode, target?.id])
 
   const parent = target && note?.id === target.id ? note.event : null
+  useEffect(() => {
+    if (parent) fetchProfiles(ctx.vault, [parent.pubkey], uniq([...(ctx.account?.relays?.read ?? []), ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {})
+  }, [parent?.pubkey])
   const waiting = target && note?.id !== target.id
 
   // The draft for this target: loaded when the target changes, saved on every change after that.
@@ -254,6 +277,20 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
       onDone: () => { countdown.current = null; setPending(null); send(built) },
     })
   }
+  // Cancel: an empty box just closes; one with a note asks, as the iPhone does. The draft is already saved, so Save
+  // Draft only closes; Discard deletes it first. A countdown running is stopped either way.
+  const cancel = () => {
+    undo()
+    if (text.trim() || ready.length) setLeaving(true)
+    else history.back()
+  }
+  const discard = async () => {
+    await saving.current
+    await drafts.current.delete(key).catch(() => {})
+    setLoaded(null) // so the cleared box isn't saved back over it
+    setText(""); setMentions({}); setPhotos([]); setLeaving(false)
+    history.back()
+  }
   const undo = () => { if (countdown.current?.cancel()) { countdown.current = null; setPending(null); setUndone(true); box.current?.focus() } }
   const send = async ({ content, tags }) => {
     setBusy(true)
@@ -271,7 +308,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
       {pending && <SendPill pending={pending} onUndo={undo} />}
       {/* The iPhone's compose sheet: Cancel, the title, and Post at the top right (ComposeView+Chrome). */}
       {!inline && <header class="compose-bar">
-        <button type="button" class="compose-cancel" onClick={() => history.back()}>Cancel</button>
+        <button type="button" class="compose-cancel" onClick={cancel}>Cancel</button>
         <h2>{title}</h2>
         {postButton("compose-post")}
       </header>}
@@ -334,6 +371,15 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         </div>
       </div>
       {inline && postButton("primary")}
+      {leaving && (
+        <Dialog label="Save this note as a draft?" onClose={() => setLeaving(false)}>
+          <h3>Save this note as a draft?</h3>
+          <div class="mod-row compose-leave">
+            <button type="button" class="primary" onClick={() => { setLeaving(false); history.back() }}>Save Draft</button>
+            <button type="button" class="danger" onClick={discard}>Discard</button>
+          </div>
+        </Dialog>
+      )}
       {undone && !pending && !result && <p class="muted small compose-undone" role="status">Not sent. Nothing was signed, and your note is still here.</p>}
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}

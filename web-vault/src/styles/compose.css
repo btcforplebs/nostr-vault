@@ -81,3 +81,10 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .send-pill .send-pill-undo { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .22);
   color: #fff; font: 600 15px/1 var(--font); }
 .compose-undone { margin: 0 var(--gutter) 10px; }
+
+/* Replying: the iPhone's compact strip, picture beside "Replying to Name" and a few lines of their text. */
+.compose-target.compose-replying { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; }
+.compose-replying-text { min-width: 0; flex: 1; }
+.compose-replying-snippet { margin: 4px 0 0; color: var(--text-2); font: var(--t-foot); display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.compose-leave { justify-content: center; }
