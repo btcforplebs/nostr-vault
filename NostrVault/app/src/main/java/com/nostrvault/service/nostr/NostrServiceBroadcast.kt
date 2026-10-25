@@ -51,38 +51,6 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         return decided.await()
     }
 
-    /**
-     * Broadcast raw event JSON to all configured Blastr relays.
-     */
-    fun NostrService.broadcastRawEvent(
-        eventJson: String,
-        onRelayResult: ((String, Boolean) -> Unit)? = null,
-    ) {
-        val blastrRelays = configStore.config.value.activeBlastrRelays
-        for (relayUrl in blastrRelays) {
-            if (!isValidRelayUrl(relayUrl)) continue
-            scope.launch(Dispatchers.IO) {
-                tempClientSemaphore.withPermit {
-                    try {
-                        val client = WebSocketClient(url = relayUrl, scope = scope)
-                        tempClientsLock.withLock { temporaryClients.add(client) }
-
-                        client.connect()
-                        client.send("[\"EVENT\",$eventJson]")
-                        onRelayResult?.invoke(relayUrl, true)
-
-                        delay(300) // Allow flush
-                        client.disconnect()
-                        tempClientsLock.withLock { temporaryClients.remove(client) }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Broadcast to $relayUrl failed: ${e.message}")
-                        onRelayResult?.invoke(relayUrl, false)
-                    }
-                }
-            }
-        }
-    }
-
     /** `["OK", <eventId>, <accepted>, <message>]` for [eventId], else null. */
     internal fun NostrService.okReply(message: String, eventId: String): Pair<Boolean, String>? = runCatching {
         val parsed = Json.parseToJsonElement(message).jsonArray
@@ -92,21 +60,25 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
     }.getOrNull()
 
-    internal fun NostrService.fireAndForgetPublish(eventJson: String, relayUrl: String) {
+    /**
+     * Sends [event] to [relayUrl] in the background, without the caller
+     * waiting. The socket stays open until the relay answers: nos.lol,
+     * relay.primal.net, nostr.mom and relay.nostr.net drop an event whose
+     * socket closes right after it (measured 2026-10-25: 0 of 4 kept it
+     * when closed straight after sending, 4 of 4 when the OK was awaited).
+     */
+    internal fun NostrService.fireAndForgetPublish(event: NostrEvent, relayUrl: String) {
         if (!isValidRelayUrl(relayUrl)) return
         scope.launch(Dispatchers.IO) {
             tempClientSemaphore.withPermit {
-                try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope)
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-                    client.connect()
-                    client.send("[\"EVENT\",$eventJson]")
-                    delay(300)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
+                val (ok, message) = try {
+                    publishAwaitingOk(event, relayUrl, timeoutMs = 10_000)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "Fire-and-forget to $relayUrl failed: ${e.message}")
+                    false to (e.message ?: "connection failed")
                 }
+                if (!ok) Log.w(TAG, "Send to $relayUrl not accepted: $message")
             }
         }
     }
@@ -130,13 +102,16 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             }
         }
 
-        // 2. Smart broadcast based on event kind and target
-        val toBlastr: () -> Unit = if (onBroadcastOutcome == null) {
-            { broadcastRawEvent(eventJson) }
-        } else {
-            {
+        // 2. Smart broadcast based on event kind and target. The author's own
+        // write relays (kind 10002) decide "Posted"; see PublishTargets.
+        val toBlastr: suspend () -> Unit = {
+            val plan = PublishTargets.plan(authorWriteRelays(event), configStore.config.value.activeBlastrRelays)
+            if (onBroadcastOutcome == null) {
+                plan.all.forEach { fireAndForgetPublish(event, it) }
+            } else {
+                plan.alsoSend.forEach { fireAndForgetPublish(event, it) }
                 scope.launch {
-                    val outcome = broadcastConfirmed(event, configStore.config.value.activeBlastrRelays)
+                    val outcome = broadcastConfirmed(event, plan.confirmed)
                     withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
                 }
             }
@@ -154,7 +129,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                         val targetRelays = _relayLists.value[targetPubkey]
                         if (targetRelays != null) {
                             for (relayUrl in targetRelays.filter { !it.contains("blastr") }) {
-                                fireAndForgetPublish(eventJson, relayUrl)
+                                fireAndForgetPublish(event, relayUrl)
                             }
                         }
                     }
@@ -165,10 +140,31 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                     // names, where senders look for it (iOS #224).
                     DMInbox.extraBroadcastRelays(event.kind, event.tags, configStore.config.value.activeBlastrRelays)
                         .filter { !isLoopbackRelay(it) }
-                        .forEach { fireAndForgetPublish(eventJson, it) }
+                        .forEach { fireAndForgetPublish(event, it) }
                 }
             }
         }
+    }
+
+    /**
+     * The write relays in [event]'s author's kind 10002, or null when none is
+     * known. A relay list being posted names its own. Not loaded yet (a fresh
+     * install, or an account made in another app): looked up first, briefly,
+     * so the note doesn't go only to the app's relays.
+     */
+    internal suspend fun NostrService.authorWriteRelays(event: NostrEvent): List<String>? {
+        if (event.kind == 10002) return profileRepository.parseRelayListTags(event.tags).second
+        _outboxRelays.value[event.pubkey]?.let { return it }
+        val list = try {
+            fetchNewestReplaceable(kind = 10002, pubkey = event.pubkey, alsoAsk = NostrService.PROFILE_RELAYS, timeoutMs = 4_000)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Own relay list lookup failed: ${e.message}")
+            null
+        } ?: return null
+        parseRelayListEvent(list.pubkey, list.tags, list.createdAt)
+        return profileRepository.parseRelayListTags(list.tags).second
     }
 
     /**
@@ -217,7 +213,6 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * relays a poll names for its votes (iOS broadcastRawEvent extraRelays).
      */
     internal fun NostrService.publishFireAndForgetImpl(event: NostrEvent, relays: List<String>) {
-        val eventJson = serializeEvent(event)
         relays.filter { isValidRelayUrl(it) && !isLoopbackRelay(it) }
-            .forEach { fireAndForgetPublish(eventJson, it) }
+            .forEach { fireAndForgetPublish(event, it) }
     }

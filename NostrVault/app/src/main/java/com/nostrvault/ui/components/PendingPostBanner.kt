@@ -169,8 +169,10 @@ fun PendingPostBanner(
 
 /**
  * After the countdown: "Posting…" until a relay takes it, then a green
- * "Posted". If no relay confirms after the retries, a grey note instead of a
- * red error. Port of PostConfirmationPill in ZapNotificationBanner.swift.
+ * "Posted". If none of the author's write relays takes it after the retries
+ * (see PublishTargets), a red "Not posted": a green pill from some other
+ * relay is how a reply went missing on 2026-10-25. Based on
+ * PostConfirmationPill in ZapNotificationBanner.swift.
  */
 @Composable
 private fun PostConfirmationPill(confirmation: PendingPostManager.Confirmation) {
@@ -179,7 +181,7 @@ private fun PostConfirmationPill(confirmation: PendingPostManager.Confirmation) 
     val label = when (state) {
         PendingPostManager.Confirmation.State.SENDING -> "${confirmation.actionType.label}…"
         PendingPostManager.Confirmation.State.CONFIRMED -> confirmation.actionType.doneLabel
-        PendingPostManager.Confirmation.State.UNCONFIRMED -> "Sent. No relay has confirmed it yet"
+        PendingPostManager.Confirmation.State.UNCONFIRMED -> "Not posted. None of your relays took it"
     }
     val background = when (state) {
         PendingPostManager.Confirmation.State.SENDING -> when (confirmation.actionType) {
@@ -190,7 +192,7 @@ private fun PostConfirmationPill(confirmation: PendingPostManager.Confirmation) 
         }
         // Same green as iOS's "Followed".
         PendingPostManager.Confirmation.State.CONFIRMED -> Color(0xFF33CC99)
-        PendingPostManager.Confirmation.State.UNCONFIRMED -> Color(0xFF595959)
+        PendingPostManager.Confirmation.State.UNCONFIRMED -> ErrorRed
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
