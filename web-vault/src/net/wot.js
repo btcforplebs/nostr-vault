@@ -26,14 +26,20 @@ export const RETRY_MS = 60_000
 const newCache = me => ({ me, lists: new Map(), tried: new Map(), inflight: new Map() })
 const caches = { home: newCache(""), visit: newCache("") }
 
+/** Follows per request, and requests open at once: small enough that the first lists land in about a second and
+ *  the globe can start filling, few enough at once to stay under a relay's subscription limit (strfry's is 20). */
+export const CHUNK = 100
+export const IN_FLIGHT = 8
+
 /**
  * The newest contact list of each follow, from the profile relay (purplepag.es keeps them; asking every read relay
- * multiplied a 20-50 KB-per-list download by the number of relays), in chunks of 250 that go out together. Asked for:
- * follows with no list yet, unless one was asked for less than `retryMs` ago (0 asks again now) or is on its way.
- * `slot` is "home" (the user's follows) or "visit" (someone else's, for See their web). `query` and `now` are for tests.
+ * multiplied a 20-50 KB-per-list download by the number of relays), CHUNK follows per request, IN_FLIGHT at a time.
+ * Asked for: follows with no list yet, unless one was asked for less than `retryMs` ago (0 asks again now) or is on
+ * its way. `slot` is "home" (the user's follows) or "visit" (someone else's, for See their web). `on(map)` gets the
+ * lists so far each time a request comes back, so the globe can fill in as they land. `query` and `now` are for tests.
  * -> Map(follow pubkey -> kind 3), only the follows whose list has come back
  */
-export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home" } = {}) {
+export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home", on } = {}) {
   if (caches[slot].me !== me) caches[slot] = newCache(me)
   const { lists, tried, inflight } = caches[slot]
   const t = now()
@@ -45,21 +51,26 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
     if (tried.has(pk) && t - tried.get(pk) < retryMs) continue
     want.push(pk)
   }
-  for (let i = 0; i < want.length; i += 250) {
-    const chunk = want.slice(i, i + 250), wanted = new Set(chunk)
-    const job = query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })
+  const mine = () => { const m = new Map(); for (const pk of follows) if (lists.has(pk)) m.set(pk, lists.get(pk)); return m }
+  let open = 0
+  const queue = []
+  const slot_ = () => open < IN_FLIGHT ? (open++, Promise.resolve()) : new Promise(r => queue.push(r))
+  const free = () => { const next = queue.shift(); next ? next() : open-- }
+  for (let i = 0; i < want.length; i += CHUNK) {
+    const chunk = want.slice(i, i + CHUNK), wanted = new Set(chunk)
+    const job = slot_()
+      .then(() => query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 }))
       .catch(() => [])
       .then(evs => {
+        free()
         for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) lists.set(ev.pubkey, ev)
         for (const pk of chunk) { tried.set(pk, t); inflight.delete(pk) }
       })
     for (const pk of chunk) inflight.set(pk, job)
     waits.add(job)
   }
-  await Promise.all(waits)
-  const mine = new Map()
-  for (const pk of follows) if (lists.has(pk)) mine.set(pk, lists.get(pk))
-  return mine
+  await Promise.all([...waits].map(w => w.then(() => on?.(mine()))))
+  return mine()
 }
 
 /** How many of these follows' lists haven't come back (the Web tab says so, and offers to ask again). */
