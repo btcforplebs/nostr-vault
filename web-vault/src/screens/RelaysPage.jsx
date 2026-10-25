@@ -1,5 +1,6 @@
 // Settings › Relays (iPhone RelayMatrixView, Read and Write columns): the account's relay list (NIP-65, kind 10002)
-// with read and write switches per relay, Remove, and Add. Saving signs and publishes the new list.
+// with read and write switches per relay, Remove, and Add. Saving signs and publishes the new list. The list draws
+// from Haven's copy or the first relay to answer; editing waits until every relay has been asked (`pending`).
 import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { isDead } from "../net/pool.js"
@@ -9,19 +10,21 @@ import { SkeletonList } from "../components/Loading.jsx"
 
 export function RelaysPage({ ctx }) {
   const readOnly = !!ctx.signer?.readOnly
-  const [loaded, setLoaded] = useState(null) // { event, checked }
+  const [loaded, setLoaded] = useState(null) // { event, checked, pending }
   const [rows, setRows] = useState([])
   const [typed, setTyped] = useState("")
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [err, setErr] = useState("")
 
-  const load = () => latestList(ctx, 10002).then(r => { setLoaded(r); setRows(relayEntries(r.event)) }).catch(e => { setLoaded({ event: undefined, checked: false }); setErr(String(e?.message ?? e)) })
+  const early = ({ event }) => { setLoaded({ event, checked: false, pending: true }); setRows(relayEntries(event)) }
+  const load = () => latestList(ctx, 10002, { on: early }).then(r => { setLoaded(r); setRows(relayEntries(r.event)) }).catch(e => { setLoaded({ event: undefined, checked: false }); setErr(String(e?.message ?? e)) })
   useEffect(() => { load() }, [])
 
   const saved = relayEntries(loaded?.event)
   const dirty = !sameRows(rows, saved)
   const problem = relayProblem(rows)
+  const locked = readOnly || busy || !!loaded?.pending
 
   const add = e => {
     e.preventDefault()
@@ -38,18 +41,19 @@ export function RelaysPage({ ctx }) {
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
-  if (!loaded) return <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your relays…" />
   return (
     <>
-      {!loaded.checked && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
+      {!loaded ? <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your relays…" /> : <>
+      {loaded.pending && <p class="settings-note muted small" role="status">Checking your relays for a newer list…</p>}
+      {!loaded.checked && !loaded.pending && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
       {!loaded.event && loaded.checked && <p class="settings-note muted small">No relays yet. Add one below.</p>}
       {rows.map(r => (
         <div key={r.url} class="settings-row static relay-edit-row">
           <span class="settings-title mono" title={r.url}>{host(r.url)}{isDead(r.url) && <span class="tag">not answering</span>}</span>
           <span class="settings-tags">
-            <Job on={r.read} label="Read" disabled={readOnly || busy} onClick={() => setRows(setJob(rows, r.url, "read", !r.read))} />
-            <Job on={r.write} label="Write" disabled={readOnly || busy} onClick={() => setRows(setJob(rows, r.url, "write", !r.write))} />
-            {!readOnly && <button type="button" class="small relay-remove" disabled={busy} aria-label={`Remove ${r.url}`} onClick={() => setRows(removeRelay(rows, r.url))}>Remove</button>}
+            <Job on={r.read} label="Read" disabled={locked} onClick={() => setRows(setJob(rows, r.url, "read", !r.read))} />
+            <Job on={r.write} label="Write" disabled={locked} onClick={() => setRows(setJob(rows, r.url, "write", !r.write))} />
+            {!readOnly && <button type="button" class="small relay-remove" disabled={locked} aria-label={`Remove ${r.url}`} onClick={() => setRows(removeRelay(rows, r.url))}>Remove</button>}
           </span>
         </div>
       ))}
@@ -57,8 +61,8 @@ export function RelaysPage({ ctx }) {
       {readOnly ? <p class="settings-note muted small">{READ_ONLY}</p> : (
         <>
           <form class="settings-row static relay-add" onSubmit={add}>
-            <input type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck={false} placeholder="relay.example.com" aria-label="Relay address" value={typed} onInput={e => setTyped(e.currentTarget.value)} disabled={busy} />
-            <button type="submit" class="small" disabled={busy || !typed.trim()}>Add</button>
+            <input type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck={false} placeholder="relay.example.com" aria-label="Relay address" value={typed} onInput={e => setTyped(e.currentTarget.value)} disabled={locked} />
+            <button type="submit" class="small" disabled={locked || !typed.trim()}>Add</button>
           </form>
           {dirty && (
             <div class="settings-note row">
@@ -71,11 +75,12 @@ export function RelaysPage({ ctx }) {
       )}
       {status && <p class="settings-note muted small">{status}</p>}
       {err && <p class="settings-note small error">{err}</p>}
+      </>}
       <RelayUrlList ctx={ctx} kind={10050} title="DMs" needsOne
         note="Your DM inbox (10050): where people send you private messages. Messages here read from these relays too."
         empty="No messages list of yours was found, so people send to your Read relays." />
-      <RelayUrlList ctx={ctx} kind={10006} title="Never Connect"
-        note="Relays your apps should never connect to (NIP-51, kind 10006). Your phone skips them; this list goes with your account."
+      <RelayUrlList ctx={ctx} kind={10006} title="Never Connect" removeLabel="Unblock"
+        note="The app won't open a connection to these, even when someone you follow uses them. Published as your blocked relay list (10006)."
         empty="No relays are on your never-connect list." />
     </>
   )

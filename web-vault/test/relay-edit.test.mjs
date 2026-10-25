@@ -68,13 +68,34 @@ test("an edit starts from the newest copy: the relays' newer one wins and is kep
   const old = list(SK, 100, [["r", "wss://old.example"]])
   const fresh = list(SK, 200, [["r", "wss://new.example"]])
   const ctx = fakeCtx({ outbox: [old] })
-  let asked
-  const r = await latestList(ctx, 10002, { online: true, query: async (relays, filter) => { asked = { relays, filter }; return [fresh, list(OTHER_SK, 999, [])] } })
+  const asked = []
+  const r = await latestList(ctx, 10002, { online: true, query: async (relays, filter) => { asked.push({ relays, filter }); return [fresh, list(OTHER_SK, 999, [])] } })
   assert.equal(r.event.id, fresh.id)
   assert.equal(r.checked, true)
-  assert.deepEqual(asked.filter, { kinds: [10002], authors: [ME] })
-  assert.ok(asked.relays.includes("wss://r.example") && asked.relays.includes("wss://w.example") && asked.relays.includes("wss://purplepag.es"))
+  assert.deepEqual(asked[0].filter, { kinds: [10002], authors: [ME] })
+  assert.ok(asked.every(a => a.relays.length === 1), "each relay is asked on its own")
+  const all = asked.flatMap(a => a.relays)
+  assert.ok(all.includes("wss://r.example") && all.includes("wss://w.example") && all.includes("wss://purplepag.es"))
   assert.deepEqual(ctx.stored.map(e => e.id), [fresh.id])
+})
+
+test("the page can draw Haven's copy at once and each newer copy as it lands; the answer waits for every relay", async () => {
+  const mine = list(SK, 100, [["r", "wss://mine.example"]])
+  const newer = list(SK, 200, [["r", "wss://newer.example"]])
+  const ctx = fakeCtx({ outbox: [mine] })
+  let release
+  const slow = new Promise(r => { release = r })
+  const seen = []
+  let done = false
+  const p = latestList(ctx, 10002, { online: true, on: x => seen.push(x.event.created_at), query: async ([relay]) => relay === "wss://w.example" ? (await slow, [list(SK, 150, [])]) : relay === "wss://r.example" ? [newer] : [] })
+  p.then(() => { done = true })
+  await new Promise(r => setTimeout(r, 10))
+  assert.deepEqual(seen, [100, 200], "Haven's copy, then the newer one, before the slow relay answers")
+  assert.equal(done, false, "not checked until every relay has answered")
+  release()
+  const r = await p
+  assert.deepEqual([r.event.id, r.checked], [newer.id, true])
+  assert.deepEqual(seen, [100, 200], "an older copy from the slow relay doesn't redraw")
 })
 
 test("Haven's copy stands when it's newer or the relays have none; offline it isn't checked", async () => {
@@ -121,4 +142,21 @@ test("plain relay lists (10050, 10006): relay tags in order, each once, other ta
   assert.deepEqual(urls, ["wss://a.example", "wss://b.example"])
   assert.deepEqual(urlTags(removeUrl(addUrl(urls, "wss://c.example"), "wss://a.example"), ev), [["alt", "x"], ["relay", "wss://b.example"], ["relay", "wss://c.example"]])
   assert.deepEqual(urlEntries(undefined), [])
+})
+
+// Settings › Relays: the three lists load side by side, draw from the first copy, and can't be edited until every
+// relay has been asked (an edit must start from the newest copy). Never Connect uses the phone's words.
+test("the Relays page draws early, locks editing while it checks, and loads its three lists at once", async () => {
+  const { readFileSync } = await import("node:fs")
+  const page = readFileSync(new URL("../src/screens/RelaysPage.jsx", import.meta.url), "utf8")
+  const list = readFileSync(new URL("../src/screens/RelayUrlList.jsx", import.meta.url), "utf8")
+  assert.match(page, /latestList\(ctx, 10002, \{ on: early \}\)/)
+  assert.match(list, /latestList\(ctx, kind, \{ on: /)
+  assert.match(page, /const locked = readOnly \|\| busy \|\| !!loaded\?\.pending/)
+  for (const job of ["Read", "Write"]) assert.match(page, new RegExp(`label="${job}" disabled=\\{locked\\}`))
+  assert.match(list, /const locked = busy \|\| !!loaded\?\.pending/)
+  // The DMs and Never Connect lists aren't behind the main list's skeleton.
+  assert.ok(page.indexOf("<RelayUrlList") > page.indexOf("</>}"), "RelayUrlList renders outside the loaded gate")
+  assert.ok(!/if \(!loaded\) return/.test(page))
+  assert.match(page, /title="Never Connect" removeLabel="Unblock"/)
 })
