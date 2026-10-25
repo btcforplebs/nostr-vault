@@ -125,7 +125,9 @@ async function card(nav) {
   const text = () => root.textContent
   const button = label => root.all(n => n.localName === "button" && n.textContent === label)[0]
   const tap = async label => { button(label).click(); await tick(20) }
-  return { text, button, tap }
+  // Export reads every route before it says Ready; on a busy machine that is longer than one tap's wait.
+  const until = async (re, ms = 3000) => { for (const t0 = Date.now(); !re.test(text()) && Date.now() - t0 < ms;) await tick(10) }
+  return { text, button, tap, until }
 }
 
 test("Export only prepares the file: no share, no download, no 'Saved' until Save backup file is tapped", async () => {
@@ -134,6 +136,7 @@ test("Export only prepares the file: no share, no download, no 'Saved' until Sav
   const c = await card(nav)
   assert.equal(c.button("Save backup file"), undefined)
   await c.tap("Export notes")
+  await c.until(/Ready:/)
   assert.match(c.text(), /Ready: your notes 0, private notes 0, messages 0, inbox 0, feed cache 0\. Tap Save backup file/)
   assert.doesNotMatch(c.text(), /Saved/)
   assert.equal(nav.shared.length, 0)
@@ -149,6 +152,7 @@ test("a closed share sheet says 'Not saved yet' and keeps the button for another
   const nav = fakeNav({ shareThrows: "AbortError" })
   const c = await card(nav)
   await c.tap("Export notes")
+  await c.until(/Ready:/)
   await c.tap("Save backup file")
   assert.match(c.text(), /Not saved yet/)
   assert.doesNotMatch(c.text(), /Saved:/)
@@ -159,6 +163,7 @@ test("on a desktop the Save backup file tap downloads the zip", async () => {
   downloads.length = 0
   const c = await card(fakeNav({ touch: 0 }))
   await c.tap("Export notes")
+  await c.until(/Ready:/)
   assert.equal(downloads.length, 0)
   await c.tap("Save backup file")
   assert.equal(downloads.length, 1)
