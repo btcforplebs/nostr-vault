@@ -1,6 +1,6 @@
 /* Search's For you (SearchRecommendationsSection): label with its source, then side-scrolling rails. */
 .for-you-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.for-you-src { font: 400 10px/1.2 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-3); }
+.for-you-src { display: inline-flex; align-items: center; gap: 4px; font: 400 10px/1.2 var(--font); letter-spacing: 0; text-transform: none; color: var(--text-3); }
 .for-you-sub { padding: 4px var(--gutter) 8px; font: var(--t-foot); color: var(--text-2); }
 .for-you-rail { display: flex; gap: 10px; overflow-x: auto; padding: 2px var(--gutter) 14px; scrollbar-width: none; }
 .for-you-rail::-webkit-scrollbar { display: none; }
@@ -11,3 +11,17 @@
 .for-you-card b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-foot); font-weight: 600; }
 .for-you-card span { font: 400 10px/1.2 var(--font); color: var(--text-2); white-space: nowrap; }
 .for-you-card:hover { border-color: var(--accent-line); }
+
+/* Global search's source strip (globalSourceStrip): one chip per source, side-scrolling under the field. */
+.src-strip { display: flex; gap: 6px; overflow-x: auto; padding: 0 var(--gutter) 10px; scrollbar-width: none; }
+.src-strip::-webkit-scrollbar { display: none; }
+.src-chip { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 12px;
+  background: var(--s2); font: 400 11px/1.3 var(--font); color: var(--text-2); white-space: nowrap; }
+.src-chip b { font-weight: 600; color: var(--text); }
+.src-chip.hit span, .src-chip.hit svg { color: var(--online); }
+.src-chip.failed span, .src-chip.failed svg { color: #ff9f0a; }
+.src-chip .nv-spin { width: 10px; height: 10px; }
+.see-all { display: block; min-height: 32px; margin: 0 var(--gutter) 6px; padding: 0; border: 0; background: none; cursor: pointer; font: var(--t-foot); font-weight: 600; color: var(--accent); }
+/* Recent wears the iPhone's clock.arrow.circlepath; Trending is tinted like a topic, as SearchView+EmptyState draws them. */
+.search .chip.recent svg { color: var(--text-2); }
+.search .chips .chip.topic { background: var(--accent-pale); color: var(--accent); border-color: transparent; font-weight: 600; }
