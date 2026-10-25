@@ -11,6 +11,7 @@ import { hasKindBody } from "./FeedKinds.jsx"
 import { buildThreads } from "../net/feed-layout.js"
 import { tileNote } from "../net/media.js"
 import { fetchNotes } from "../net/notifications.js"
+import { fetchProfiles } from "../net/profiles.js"
 import { replyRefs } from "../net/thread.js"
 
 export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots }) {
@@ -49,5 +50,13 @@ function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpen
     rootUnavailable={!t.root && fetched.has(t.rootId)} />)
 }
 
-/** Fetch thread roots for the Feed: Haven's outbox, then the read relays; nothing is written anywhere. */
-export const rootFetcher = (vault, relays) => ids => fetchNotes(vault, ids, relays)
+/**
+ * Fetch thread roots for the Feed: Haven's outbox, then the read relays; nothing is written anywhere. The roots'
+ * authors are often not followed, so their names are fetched too: `save: false` keeps those in memory (Global, Popular).
+ */
+export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles } = {}) => async ids => {
+  const found = await fetchNotes(vault, ids, relays)
+  const authors = [...found.values()].map(ev => ev.pubkey)
+  if (authors.length) names(vault, authors, relays, { save }).catch(() => {})
+  return found
+}
