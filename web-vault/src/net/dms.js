@@ -238,6 +238,10 @@ export function openMore({ session, signer }, { crypto } = {}) {
 /** Back in front after this long, Messages looks at the relays again (DMService.syncOnForeground's 5 minutes). */
 export const RESYNC_AFTER = 5 * 60_000
 let lastLoad = -Infinity
+let lastLoaded = -Infinity
+/** A load for this account finished in the last `within`: a screen opening (the list, then a conversation, then
+ *  back) shows what's held and keeps listening instead of asking every relay again. Refresh still asks. */
+export const loadedRecently = (pubkey, { clock = Date.now, within = 60_000 } = {}) => state.pubkey === pubkey && state.loaded && clock() - lastLoaded < within
 /** Coming back: true (and the look counted as begun) when no load began in the last `after`; false otherwise, so
  *  two screens coming back together look once. `clock` is for tests. */
 export function claimResync({ clock = Date.now, after = RESYNC_AFTER } = {}) {
@@ -247,7 +251,8 @@ export function claimResync({ clock = Date.now, after = RESYNC_AFTER } = {}) {
 }
 
 /**
- * Load the user's messages: Haven's /chat first (offline), then the relays, storing new wraps in /chat.
+ * Load the user's messages: Haven's /chat first (offline), then the relays, storing new wraps in /chat. `relays` may
+ * be a promise (the inbox lookup): Haven's copies open while it is still out.
  * With a signer that can't decrypt, nothing is opened and `note` says why. `query`, `crypto`, `chat` are for tests.
  * -> { stored } wraps newly kept in Haven
  */
@@ -268,6 +273,9 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   const store = chat ?? chatStore(vault)
   let budget = openLimit(session)
   budget -= (await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me, { limit: budget })).asked
+  // What Haven held is on screen: no skeleton while the relays are asked.
+  if (state.messages.size && !state.loaded) { state = { ...state, loaded: true }; changed() }
+  relays = await Promise.resolve(relays).catch(() => [])
   let stored = 0
   if (globalThis.navigator?.onLine !== false && relays.length) {
     const urls = uniq(relays)
@@ -282,6 +290,7 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
     await take([...wraps, ...legacyTo, ...legacyFrom], c, me, { limit: Math.max(0, budget) })
   }
   state = { ...state, loaded: true }; changed()
+  lastLoaded = clock()
   return { stored }
 }
 
@@ -382,44 +391,106 @@ const resyncListeners = new Set()
 /** `cb(urls)` when relays were dropped and the live subscription needs opening again. -> off() */
 export function onResyncNeeded(cb) { resyncListeners.add(cb); return () => resyncListeners.delete(cb) }
 
-export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts), drop = dropRelay, wait } = {}) {
+// A send shows at once as a "pending:<n>" bubble (the iPhone's optimistic append, DMService sendNIP17DM), becomes the
+// real message once one of their relays took it, and stays as a failed bubble (`failed`: our sentence) when none did,
+// with `resend` to try it again. Pending and failed bubbles live in memory only, like every message here.
+let pendingSeq = 0
+const putMessage = (me, id, m) => { if (state.pubkey !== me) return; if (m) state.messages.set(id, m); else state.messages.delete(id); state = { ...state }; changed() }
+/** Take a failed bubble away (its "Remove", or before its "Try again" sends it anew). */
+export const dropFailed = id => { const m = state.messages.get(id); if (m?.failed) putMessage(state.pubkey, id, null) }
+
+// DM relay lookups, kept for a while per person: every send looked both people up again, and a lookup waits for its
+// slowest relay (up to 6 s). Opening a conversation looks them up ahead (warmDmRelays), so Send rarely waits at all.
+export const RELAY_CACHE_MS = 10 * 60_000
+const relayCache = new Map() // pubkey|fallback -> { at, list: Promise<string[]> }
+export function cachedDmRelays(pubkey, lookupRelays, opts = {}, clock = Date.now) {
+  const key = `${pubkey}|${(opts.fallback ?? DEFAULT_RELAYS).join()}` // the inbox's lookup has no fallback, a send's has
+  const hit = relayCache.get(key)
+  if (hit && clock() - hit.at < RELAY_CACHE_MS) return hit.list
+  const list = dmRelaysFor(pubkey, lookupRelays, opts)
+  relayCache.set(key, { at: clock(), list })
+  list.catch(() => { if (relayCache.get(key)?.list === list) relayCache.delete(key) })
+  return list
+}
+export const forgetDmRelays = () => relayCache.clear()
+const lookupFor = ctx => uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...DEFAULT_RELAYS])
+/** A conversation opened: look both people's DM relays up now, so its first Send doesn't wait on them. */
+export function warmDmRelays(ctx, peer) {
+  const lookup = lookupFor(ctx), fallback = ctx.account.relays.write
+  for (const pk of uniq([peer, ctx.session.pubkey])) cachedDmRelays(pk, lookup, { fallback }).catch(() => {})
+}
+
+/** The first of `promises` to fulfil; rejects only once all of them have. */
+const firstOk = promises => new Promise((ok, no) => {
+  let left = promises.length
+  if (!left) return no(new Error("no relays"))
+  for (const p of promises) p.then(ok, () => { if (--left === 0) no(new Error("none took it")) })
+})
+
+export async function sendMessage(ctx, peer, text, { crypto, query, chat, publish = (urls, ev, opts) => pool.publish(urls, ev, opts), drop = dropRelay, wait, prepare, preview } = {}) {
   const me = ctx.session.pubkey
   const c = crypto ?? cryptoFor(ctx.session, { signer: ctx.signer })
   if (c.reason) throw sendError(`Can't send: ${c.reason}`)
+  const pid = `pending:${++pendingSeq}`
+  const at = now()
+  const shown = { id: pid, from: me, peer, content: preview ?? text, at, legacy: false, pending: true }
+  putMessage(me, pid, shown)
+  // `again`: a photo that never uploaded is uploaded again on Try again; once it has, the message with its link is resent.
+  const fail = (err, content, again = {}) => {
+    const failed = sendFailure(err)
+    putMessage(me, pid, { ...shown, content: again.preview ?? content, pending: false, failed, resend: () => { dropFailed(pid); return sendMessage(ctx, peer, content, { crypto, query, chat, publish, drop, wait, ...again }) } })
+    throw err?.fixed ? err : sendError(failed)
+  }
+  let content = text
+  // A photo goes up first (prepare -> the message with its link): a message naming a link no server holds would
+  // reach them dead. Its failure is the screen's own sentence.
+  if (prepare) { try { content = await prepare() } catch (e) { return fail(sendError(e?.fixed ? e.message : "The photo didn't upload, so nothing was sent."), text, { prepare, preview }) } }
   const env = { signer: ctx.signer, crypto: c, me }
-  const rumor = rumorFor(me, peer, text)
-  const lookup = uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...DEFAULT_RELAYS])
-  const [theirs, mine] = await Promise.all([
-    dmRelaysFor(peer, lookup, { query, fallback: ctx.account.relays.write }),
-    dmRelaysFor(me, lookup, { query, fallback: ctx.account.relays.write }),
-  ]).catch(() => { throw sendError(SEND_FAILED.other) })
+  const rumor = rumorFor(me, peer, content, at)
+  const lookup = lookupFor(ctx)
+  // Tests hand in `query`: those look up afresh; the app uses the kept lookups.
+  const relaysOf = pk => query ? dmRelaysFor(pk, lookup, { query, fallback: ctx.account.relays.write }) : cachedDmRelays(pk, lookup, { fallback: ctx.account.relays.write })
   const self = peer === me
-  let toMe, toThem
+  let theirs, mine, toMe, toThem
   try {
-    toMe = await wrapFor(rumor, env, me)
-    toThem = self ? toMe : await wrapFor(rumor, env, peer)
-  } catch (e) { throw sendError(e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer) }
-  const send = async (urls, ev, to) => {
+    ;[theirs, mine] = await Promise.all([relaysOf(peer), relaysOf(me)])
+  } catch { return fail(sendError(SEND_FAILED.other), content) }
+  try {
+    // Both seals at once, as the iPhone makes both wraps concurrently.
+    ;[toMe, toThem] = await Promise.all([wrapFor(rumor, env, me), self ? null : wrapFor(rumor, env, peer)])
+    if (self) toThem = toMe
+  } catch (e) { return fail(sendError(e?.unreachable ? SEND_FAILED.unreachable : SEND_FAILED.signer), content) }
+  const send = (urls, ev, to) => {
     const ms = wait ?? (ctx.session.method === "nip46" ? PUBLISH_WAIT.nip46 : PUBLISH_WAIT.other)
     const asked = new Set() // relays that asked for AUTH on this send
     const onauthFor = url => { const sign = authFor(ctx, url); return t => { asked.add(url); return sign(t) } }
-    const results = await Promise.allSettled(urls.map(url => Promise.race([publish([url], ev, { onauth: onauthFor(url) })[0], timeout(ms)])))
-    const stuck = urls.filter((url, i) => results[i].status === "rejected" && asked.has(url))
-    if (stuck.length) {
-      try { drop(stuck) } catch {}
-      for (const cb of resyncListeners) { try { cb(stuck) } catch {} }
-    }
-    return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
+    const each = urls.map(url => Promise.race([publish([url], ev, { onauth: onauthFor(url) })[0], timeout(ms)]))
+    const all = Promise.allSettled(each).then(results => {
+      const stuck = urls.filter((url, i) => results[i].status === "rejected" && asked.has(url))
+      if (stuck.length) {
+        try { drop(stuck) } catch {}
+        for (const cb of resyncListeners) { try { cb(stuck) } catch {} }
+      }
+      return results.map((r, i) => ({ url: urls[i], to, ok: r.status === "fulfilled", message: r.status === "fulfilled" ? String(r.value ?? "") : String(r.reason?.message ?? r.reason) }))
+    })
+    return { first: firstOk(each), all }
   }
   // Their wrap first: the self-copy goes out only once a recipient relay took theirs, so a refused message never
-  // comes back from my own relay looking sent.
+  // comes back from my own relay looking sent. It goes the moment the first one does, not after the slowest.
   const mineUrls = uniq([...mine, ...extraRelays()])
-  const theirSends = await send(self ? mineUrls : uniq(theirs), toThem, "them")
-  if (!theirSends.some(r => r.ok)) throw sendError(`Not delivered: none of their ${theirSends.length} relay${theirSends.length === 1 ? "" : "s"} took it.`)
-  const relays = [...theirSends, ...(self ? [] : await send(mineUrls, toMe, "me"))]
-  await (chat ?? chatStore(ctx.vault)).event(toMe).catch(() => {})
+  const toThemSend = send(self ? mineUrls : uniq(theirs), toThem, "them")
+  const delivered = await toThemSend.first.then(() => true, () => false)
+  if (!delivered) {
+    const n = (await toThemSend.all).length
+    return fail(sendError(`Not delivered: none of their ${n} relay${n === 1 ? "" : "s"} took it.`), content)
+  }
+  // Delivered: the bubble is the real message now; the rest (other relays, the self-copy, Haven) finishes behind it.
   opened.add(toMe.id); opened.add(toThem.id)
-  if (state.pubkey === me) { state.messages.set(toMe.id, { id: toMe.id, from: me, peer, content: text, at: rumor.created_at, legacy: false }); state = { ...state }; changed() }
+  if (state.pubkey === me) { state.messages.delete(pid); state.messages.set(toMe.id, { id: toMe.id, from: me, peer, content, at, legacy: false }); state = { ...state }; changed() }
+  const mineSend = self ? null : send(mineUrls, toMe, "me")
+  const stored = (chat ?? chatStore(ctx.vault)).event(toMe).catch(() => {})
+  const relays = [...(await toThemSend.all), ...(mineSend ? await mineSend.all : [])]
+  await stored
   return { relays }
 }
 
