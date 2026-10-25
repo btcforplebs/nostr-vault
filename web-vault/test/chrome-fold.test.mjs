@@ -127,6 +127,8 @@ test("the desktop layout is untouched: every feed-bar rule needs html[data-fold]
   // With no --fold every derived value is the unfolded one.
   assert.match(css, /var\(--fold, 0\)/)
   assert.doesNotMatch(css, /var\(--fold\)/)
+  // The folded toolbar slides right by its own width; the header clips it so the page stays as wide as the screen.
+  assert.match(css, /html\[data-fold\] \.feed-head \{ overflow-x: clip; \}/)
   const main = readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
   assert.match(main, /mode === "phone" && session \? startChromeFold\(\)/)
 })
