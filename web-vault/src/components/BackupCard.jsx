@@ -3,6 +3,7 @@
 import { useState } from "preact/hooks"
 import { exportNotes, importNotes } from "../net/backup.js"
 import { parseBackup, restoreBackup } from "../net/settings.js"
+import { saveFile } from "../net/save-file.js"
 
 const NAMES = { outbox: "your notes", private: "private notes", chat: "messages", inbox: "inbox", feed: "feed cache" }
 const summary = counts => Object.entries(counts).map(([n, c]) => `${NAMES[n] ?? n} ${typeof c === "number" ? c : c.stored}`).join(", ")
@@ -16,22 +17,30 @@ export function BackupCard({ ctx }) {
   const [busy, setBusy] = useState("")
   const [status, setStatus] = useState("")
   const [err, setErr] = useState("")
+  // The exported .zip, waiting for its own tap: the share sheet needs a fresh one, and the export can outlast the first.
+  const [ready, setReady] = useState(null)
   const run = (label, fn) => async () => {
     setBusy(label); setErr(""); setStatus("")
     try { await fn() } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy("") }
   }
   const doExport = run("export", async () => {
+    setReady(null)
     const { blob, counts } = await exportNotes({ vault: ctx.vault, pubkey: ctx.session.pubkey, onProgress: n => setStatus(`Reading ${NAMES[n] ?? n}…`) })
-    const url = URL.createObjectURL(blob)
-    const a = Object.assign(document.createElement("a"), { href: url, download: `nostrvault-backup-${new Date().toISOString().slice(0, 10)}.zip` })
-    document.body.append(a); a.click(); a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    setStatus(`Saved: ${summary(counts)}.`)
+    setReady({ blob, counts, name: `nostrvault-backup-${new Date().toISOString().slice(0, 10)}.zip` })
+    setStatus(`Ready: ${summary(counts)}. Tap Save backup file to keep it.`)
+  })
+  // "Saved" only once the file has gone somewhere: the share sheet finished or the download started.
+  const doSave = run("save", async () => {
+    const how = await saveFile(ready.blob, ready.name)
+    if (how === "cancelled") return setStatus(`Not saved yet: ${summary(ready.counts)}. Tap Save backup file to keep it.`)
+    setStatus(`Saved: ${summary(ready.counts)}.`)
+    setReady(null)
   })
   const doImport = e => {
     const file = e.currentTarget.files?.[0]
     e.currentTarget.value = ""
     if (!file) return
+    setReady(null)
     run("import", async () => {
       const bytes = new Uint8Array(await file.arrayBuffer())
       if (!isZip(bytes)) return restoreLines(new TextDecoder().decode(bytes))
@@ -55,6 +64,7 @@ export function BackupCard({ ctx }) {
       <p class="muted small">Your notes, private notes, messages and feed cache from this browser's relay, as a .zip. It's the same file the iPhone app makes in Settings › Backup, so either one restores the other. Photos and videos aren't in it. Restoring publishes nothing.</p>
       <div class="row">
         <button disabled={!!busy} onClick={doExport} aria-busy={busy === "export" || undefined}>{busy === "export" ? "Exporting…" : "Export notes"}</button>
+        {ready && <button class="primary" disabled={!!busy} onClick={doSave} aria-busy={busy === "save" || undefined}>Save backup file</button>}
         <label class={busy ? "button disabled" : "button"}>
           {busy === "import" ? "Restoring…" : "Import notes"}
           <input type="file" accept=".zip,application/zip,.jsonl,.ndjson,.json" disabled={!!busy} onChange={doImport} hidden />
