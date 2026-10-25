@@ -289,6 +289,24 @@ test("when no relay takes it, Haven isn't changed and the error says so", async 
   assert.deepEqual(vault.outbox.evs, [base])
 })
 
+test("follow is done once one relay took it, while the others are still out; they all still get it", async () => {
+  const base = contacts([pk()], T0 + 100)
+  const vault = fakeVault([base])
+  let release, sentTo
+  const slow = new Promise((_, reject) => { release = () => reject(new Error("publish timed out")) })
+  const t = pk()
+  const r = await run({ vault, target: t, follow: true, writeRelays: ["wss://slow.example", "wss://quick.example"],
+    publish: (urls, ev) => { sentTo = urls; return urls.map(u => (u === "wss://quick.example" ? Promise.resolve("") : slow)) } })
+  assert.ok(followsOf(r.event).includes(t))
+  assert.ok(sentTo.includes("wss://slow.example") && sentTo.includes("wss://quick.example"), "sent to every write relay")
+  assert.equal(r.taken, "wss://quick.example")
+  assert.equal(vault.outbox.evs.at(-1).id, r.event.id, "kept in Haven without waiting for the slow relay")
+  release()
+  const relays = await r.settled
+  assert.deepEqual(relays.filter(x => x.ok).map(x => x.url), ["wss://quick.example"])
+  assert.equal(relays.length, sentTo.length)
+})
+
 test("a signer that signs as another account is refused before anything is sent", async () => {
   const other = generateSecretKey()
   let sent = false

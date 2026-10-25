@@ -5,6 +5,7 @@
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
+import { firstTaken } from "./actions.js"
 
 const HEX = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -135,7 +136,7 @@ export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0,
 /**
  * Follow or unfollow `target`: find the newest list, edit it, guard it, sign it, send it to the write relays, then
  * store it in Haven's outbox. Throws (and publishes nothing) when the guard refuses.
- * -> { event, follows, relays: [{url, ok, message, local}] }
+ * -> { event, follows, taken: the first network relay's URL, settled: Promise<[{url, ok, message, local}]> }
  */
 export async function setFollow({ vault, signer, pubkey, target, follow, readRelays, writeRelays, known, appCount = 0, ask, publish = (urls, ev) => pool.publish(urls, ev) }) {
   if (!HEX.test(target ?? "")) throw new Error("That isn't a profile that can be followed.")
@@ -152,12 +153,15 @@ export async function setFollow({ vault, signer, pubkey, target, follow, readRel
   // nowhere is never shown as done (iOS rolls those back).
   const { network, local: own } = publishRelays(writeRelays)
   const urls = [...network, ...own]
-  const results = await Promise.allSettled(publish(urls, event))
-  const relays = results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason), local: i >= network.length }))
-  if (!relays.some(r => r.ok && !r.local)) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
+  // Done once one network relay took it, not at the slowest relay's answer (one that never answers held Follow for
+  // 5 s); the other sends carry on in the background, and `settled` says how each went.
+  const sends = publish(urls, event)
+  const settled = Promise.allSettled(sends).then(results => results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason), local: i >= network.length })))
+  const first = await firstTaken(sends.slice(0, network.length))
+  if (first < 0) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
   const stored = await vault.outbox.event(event)
   if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the follow list: ${stored.message}`)
-  return { event, follows: followsOf(event), relays }
+  return { event, follows: followsOf(event), taken: urls[first], settled }
 }
 
 /** The badge next to someone's name: "mutual", "following", "follows-you" or "". */
