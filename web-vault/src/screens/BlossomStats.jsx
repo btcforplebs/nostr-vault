@@ -35,24 +35,25 @@ const S = {
   host: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 }
 
-/** Healthy, Offline (no answer at all), or Refused with the server's reason: it answered, but not with a list. */
-export const health = st => (st === "ok" ? "Healthy" : !st || st === "didn't answer" || /fetch|network/i.test(st) ? "Offline" : `Refused · ${st}`)
+/** Healthy, Offline (no answer at all), or Refused with the server's reason: it answered, but not with a list. Checking
+ *  while the gallery is still asking it (`pending`). */
+export const health = (st, pending = false) => (st === "ok" ? "Healthy" : !st && pending ? "Checking…" : !st || st === "didn't answer" || /fetch|network/i.test(st) ? "Offline" : `Refused · ${st}`)
 
-export function BlossomStats({ blobs, servers, status }) {
+export function BlossomStats({ blobs, servers, status, pending = false }) {
   const s = galleryStats(blobs, servers, status)
-  const tiles = [["Total Files", s.totalFiles.toLocaleString()], ["Storage Used", formatBytes(s.size)], ["Active Mirrors", `${s.answering}/${s.mirrors}`], ["Backed Up", s.percent == null ? "?" : `${s.percent}%`]]
+  const tiles = [["Total Files", s.totalFiles.toLocaleString()], ["Storage Used", formatBytes(s.size)], ["Active Mirrors", `${s.answering}/${s.mirrors}`], ["Backed Up", pending ? "…" : s.percent == null ? "?" : `${s.percent}%`]]
   return (
     <section class="blossom-stats" aria-label="Media servers" style={S.wrap}>
       <div class="blossom-stat-grid" style={S.grid}>{tiles.map(([t, v]) => <div key={t} class="blossom-stat" style={S.stat}><span class="muted small">{t}</span><strong style={S.value}>{v}</strong></div>)}</div>
       {servers.length > 0 && (
         <details class="blossom-mirrors" style={S.mirrors}>
-          <summary class="small">{servers.length} configured{s.percent == null ? ` · ${s.mirrors - s.answering} didn't list your files, so Backed Up can't be told`
+          <summary class="small">{servers.length} configured{pending ? "" : s.percent == null ? ` · ${s.mirrors - s.answering} didn't list your files, so Backed Up can't be told`
             : s.backedUp < s.totalFiles ? ` · ${(s.totalFiles - s.backedUp).toLocaleString()} not on every server` : ""}</summary>
           {servers.map(sv => (
             <div key={sv} class="blossom-mirror small" style={S.row}>
               <span class={`blossom-dot ${status[sv] === "ok" ? "ok" : "down"}`} style={S.dot(status[sv] === "ok")} aria-hidden="true" />
               <span class="mono" style={S.host}>{hostOf(sv)}</span>
-              <span class={status[sv] === "ok" ? "ok" : "muted"}>{health(status[sv])}</span>
+              <span class={status[sv] === "ok" ? "ok" : "muted"}>{health(status[sv], pending)}</span>
             </div>
           ))}
         </details>

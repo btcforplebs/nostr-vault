@@ -27,3 +27,16 @@ test("add goes last and only once; remove; an empty list can't be saved", () => 
   assert.equal(serverProblem(urls), "")
   assert.match(serverProblem([]), /at least one/)
 })
+
+test("each saved server is tested as the page opens, and its line says when (the phone's statusLine)", async () => {
+  const { readFileSync } = await import("node:fs")
+  const src = readFileSync(new URL("../src/screens/MediaServersPage.jsx", import.meta.url), "utf8")
+  assert.match(src, /setUrls\(start\(r\.event\)\); start\(r\.event\)\.forEach\(test\)/)
+  assert.match(src, / · checked \{checkedAgo\(h\.at\)\}/)
+  // checkedAgo is plain JS after the component; evaluate just it.
+  const fn = src.slice(src.indexOf("export function checkedAgo")).replace("export ", "")
+  const checkedAgo = new Function(`${fn}; return checkedAgo`)()
+  assert.equal(checkedAgo(1000, 30_000), "just now")
+  assert.equal(checkedAgo(0, 5 * 60_000, "en-US"), "5 minutes ago")
+  assert.equal(checkedAgo(0, 2 * 3600_000, "en-US"), "2 hours ago")
+})
