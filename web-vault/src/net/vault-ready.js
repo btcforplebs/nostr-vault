@@ -18,8 +18,9 @@ export const STEPS = [
   { id: "profiles", title: "Loading names and pictures" },
 ]
 
-// How long a step may hold the screen. A slow one carries on in the background and the app opens anyway: the
-// Feed's own sync and each screen's profile reads pick up whatever it hadn't stored yet.
+// How long a step may hold the screen (feed's is also how long the first page and its names may). A slow one carries
+// on in the background and the app opens anyway: the Feed's own sync and each screen's profile reads pick up whatever
+// it hadn't stored yet.
 export const STEP_LIMIT_MS = { account: 12_000, notes: 12_000, feed: 25_000, profiles: 15_000 }
 const PROFILE_CHUNK = 200 // fetchProfiles' own batch, asked in turn per lane so the screen can count them
 const PROFILES_AT_ONCE = 2

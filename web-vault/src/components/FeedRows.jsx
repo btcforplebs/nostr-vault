@@ -51,8 +51,8 @@ function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpen
 }
 
 /**
- * Fetch thread roots for the Feed: Haven's outbox, then the read relays; nothing is written anywhere. The roots'
- * authors are often not followed, so their names are fetched too: `save: false` keeps those in memory (Global, Popular).
+ * Fetch thread roots for the Feed: Haven's outbox, then the read relays; the roots are written nowhere. Their authors
+ * are often not followed, so their names are fetched too: `save: false` keeps those in memory (Global, Popular).
  */
 export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles } = {}) => async ids => {
   const found = await fetchNotes(vault, ids, relays)
