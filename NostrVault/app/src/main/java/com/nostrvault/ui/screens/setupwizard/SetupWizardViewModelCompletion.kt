@@ -99,7 +99,10 @@ import java.net.URL
         val photo = _profilePhotoJpeg.value
         val generated = generatedPkHex ?: return
         // Each event is signed by whichever account is active, so check it
-        // is still the generated key right before signing.
+        // is still the generated key right before signing, and drop anything
+        // signed by another key: the photo upload can take 30 s, and a kind 0
+        // or 10002 signed by another account would replace that account's own
+        // (iOS 5cd4b5e9).
         fun stillGenerated() = nostrService.activeHexPubkey == generated &&
             HavenBridge.decodeNpub(configStore.config.value.ownerNpub) == generated
 
@@ -108,7 +111,7 @@ import java.net.URL
             val relayTags = RelayConfiguration.newAccountRelayListTags(configStore.config.value.activeBlastrRelays)
             if (relayTags.isNotEmpty()) {
                 runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
-                    .getOrNull()?.let { nostrService.postEvent(it) }
+                    .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
             }
 
             val profile = JSONObject()
@@ -125,6 +128,10 @@ import java.net.URL
             }
             if (profile.length() == 0 || !stillGenerated()) return@launch
             runCatching { nostrService.signEventAsync(kind = 0, content = profile.toString(), tags = emptyList()) }
-                .getOrNull()?.let { nostrService.postEvent(it) }
+                .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
         }
     }
+
+/** A new account's relay list or profile goes out only if the new key signed it. */
+internal fun signedByNewKey(signedPubkey: String?, generatedHex: String): Boolean =
+    signedPubkey != null && signedPubkey.equals(generatedHex, ignoreCase = true)

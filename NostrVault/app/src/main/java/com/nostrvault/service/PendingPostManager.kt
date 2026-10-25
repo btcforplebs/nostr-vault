@@ -67,9 +67,9 @@ class PendingPostManager @Inject constructor(
     }
 
     /**
-     * What happened after the countdown: sending, then either a relay took it
-     * (green) or none confirmed it after the retries (grey, not red: it was
-     * sent, and a slow relay is not a failed post).
+     * What happened after the countdown: sending, then either one of the
+     * author's write relays took it (green) or none did after the retries
+     * (red: its followers won't see it; see PublishTargets).
      */
     data class Confirmation(val id: Long, val actionType: ActionType, val state: State) {
         enum class State { SENDING, CONFIRMED, UNCONFIRMED }
@@ -231,7 +231,7 @@ class PendingPostManager @Inject constructor(
             state = if (accepted) Confirmation.State.CONFIRMED else Confirmation.State.UNCONFIRMED,
         )
         scope.launch {
-            delay(if (accepted) 2_500L else 4_000L)
+            delay(if (accepted) 2_500L else 8_000L)
             if (_confirmation.value?.id == id) _confirmation.value = null
         }
     }
