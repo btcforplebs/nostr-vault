@@ -18,8 +18,8 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { pool } = await import("../src/net/pool.js")
-const { STEPS, prepareVault, hasLocalData, wasPrepared, markPrepared, progressOf, READY_KEY } = await import("../src/net/vault-ready.js")
+const { pool, DEFAULT_RELAYS } = await import("../src/net/pool.js")
+const { STEPS, prepareVault, hasLocalData, wasPrepared, markPrepared, progressOf, READY_KEY, FIRST_PAGE, backgroundFill } = await import("../src/net/vault-ready.js")
 const { VaultReady, stepDetail } = await import("../src/components/VaultReady.jsx")
 
 Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true })
@@ -71,7 +71,8 @@ test("prepareVault fills the account, own notes, follows' notes and profiles, re
   relays(t)
   const v = vault(), steps = {}, order = []
   const onStep = (id, s) => { steps[id] = { ...steps[id], ...s }; order.push(`${id}:${s.state}`) }
-  const { account, fresh } = await prepareVault({ vault: v, pubkey: ME, local: empty, onStep })
+  const { account, fresh, filled } = await prepareVault({ vault: v, pubkey: ME, local: empty, onStep })
+  await filled
   assert.ok(fresh)
   assert.equal(account.follows.length, 300)
   assert.equal(order[0], "account:active")
@@ -93,7 +94,7 @@ test("a step that is too slow lets go, says so, and the others still finish", as
   const steps = {}
   const onStep = (id, s) => { steps[id] = { ...steps[id], ...s } }
   const limits = { account: 200, notes: 200, feed: 50, profiles: 200 }
-  await prepareVault({ vault: vault(), pubkey: ME, local: empty, onStep, limits })
+  await (await prepareVault({ vault: vault(), pubkey: ME, local: empty, onStep, limits })).filled
   assert.equal(steps.feed.state, "slow")
   assert.equal(steps.notes.state, "done")
   assert.equal(steps.profiles.state, "done")
@@ -104,11 +105,75 @@ test("an account step that is too slow goes on with what Haven has, and says it 
   localStorage.m.clear()
   relays(t, { slow: new Set(["account"]) })
   const steps = {}
-  const { account, fresh } = await prepareVault({ vault: vault(), pubkey: ME, local: empty, onStep: (id, s) => { steps[id] = s }, limits: { account: 30, notes: 200, feed: 200, profiles: 200 } })
+  const { account, fresh, filled } = await prepareVault({ vault: vault(), pubkey: ME, local: empty, onStep: (id, s) => { steps[id] = s }, limits: { account: 30, notes: 200, feed: 200, profiles: 200 } })
+  await filled
   assert.equal(fresh, false)
   assert.equal(account, empty)
   assert.equal(steps.account.state, "slow")
   assert.equal(steps.feed.state, "done", "no follows known yet: nothing to fetch")
+})
+
+// Logen's 1,047 follows waited 21 s on this screen for all ~14k notes and every profile (RESEARCH/NV_WEB_VAULT_LIGHT_PLAN.md).
+test("the screen lets go once the first page and its authors' names are stored; the rest fills behind it", async t => {
+  localStorage.m.clear()
+  const FOLLOWS2 = Array.from({ length: 1000 }, (_, i) => hex(i + 50_000)) // not named by the tests above (profiles.js keeps them)
+  let releaseRest
+  const rest = new Promise(r => { releaseRest = r })
+  const asked = []
+  t.mock.method(pool, "ensureRelay", async () => ({}))
+  t.mock.method(pool, "querySync", async (_urls, f) => {
+    const k = f.kinds.join()
+    if (k === "0,3,10002") return [ev(0, ME), ev(3, ME, FOLLOWS2.map(p => ["p", p]))]
+    if (k === "1" || k === "30023") return []
+    if (k === "0") {
+      asked.push(f.authors)
+      // Names of the first page's authors answer; the 1,000-follow sweep is still out when the screen lets go.
+      return f.authors.length <= 10 ? f.authors.map(p => ev(0, p)) : rest.then(() => f.authors.map(p => ev(0, p)))
+    }
+    // The first 250 follows answer at once; the other groups are still out.
+    if (f.authors[0] === FOLLOWS2[0]) return f.authors.slice(0, 3).map(p => ev(1, p))
+    return rest.then(() => f.authors.slice(0, 2).map(p => ev(1, p)))
+  })
+  const v = vault(), steps = {}
+  const { filled } = await prepareVault({ vault: v, pubkey: ME, local: empty, onStep: (id, s) => { steps[id] = { ...steps[id], ...s } } })
+  const { getProfile } = await import("../src/net/profiles.js")
+  for (const pk of FOLLOWS2.slice(0, 3)) assert.ok(getProfile(pk)?.name, "the first page's authors are named")
+  const R = DEFAULT_RELAYS.length // each read relay sends its own copy (fresh ids here)
+  assert.equal(v.feed.evs.filter(e => e.kind === 1).length, 3 * R, "only the first group is in yet")
+  assert.equal(steps.feed.state, "active", "the feed keeps filling")
+  assert.equal(backgroundFill() !== null, true, "the Feed can join the fill")
+  assert.ok(wasPrepared(ME))
+  assert.ok(asked.some(a => a.length === 3), "the first page's authors are asked on their own, before the rest")
+  const seen = []
+  const joined = backgroundFill().join(p => seen.push(p.stored))
+  releaseRest()
+  await filled
+  await joined
+  assert.equal(v.feed.evs.filter(e => e.kind === 1).length, (3 + 3 * 2) * R, "the other three groups landed behind it")
+  assert.ok(seen.length > 0, "a joined Feed hears each store")
+  assert.equal(backgroundFill(), null, "a finished fill is gone")
+  for (const id of ["notes", "feed", "profiles"]) assert.equal(steps[id].state, "done", id)
+  assert.equal(v.feed.evs.filter(e => e.kind === 0).length, 1000)
+})
+
+test("the first page counts as in once a page of notes is stored, without waiting for the slowest relay", async t => {
+  localStorage.m.clear()
+  t.mock.method(pool, "ensureRelay", async () => ({}))
+  t.mock.method(pool, "querySync", async (urls, f) => {
+    const k = f.kinds.join()
+    if (k === "0,3,10002") return [ev(0, ME), ev(3, ME, FOLLOWS.map(p => ["p", p]))]
+    if (k === "1" || k === "30023") return []
+    if (k === "0") return f.authors.map(p => ev(0, p))
+    // One relay sends a full page at once; every other relay never answers.
+    return urls[0] === "wss://relay.damus.io" ? f.authors.slice(0, FIRST_PAGE).map(p => ev(1, p)) : new Promise(() => {})
+  })
+  const v = vault()
+  const opened = await Promise.race([
+    prepareVault({ vault: v, pubkey: ME, local: { ...empty, relays: { read: ["wss://relay.damus.io"], write: [] } }, limits: { account: 200, notes: 200, feed: 5_000, profiles: 200 } }).then(() => "opened"),
+    new Promise(r => setTimeout(() => r("held"), 1_000)),
+  ])
+  assert.equal(opened, "opened")
+  assert.equal(v.feed.evs.filter(e => e.kind === 1).length, FIRST_PAGE)
 })
 
 test("Haven already holding the follow list and their notes counts as ready", async () => {

@@ -90,9 +90,14 @@ export function statusGate(seq, set) {
   return text => { if (n === seq.current) set(text) }
 }
 
-/** Everyone a page of notes shows: authors, and the author inside each repost. */
+/** Everyone a page of notes shows: authors, and the author inside each repost (a bare repost names them in its p tag). */
 export function noteAuthors(notes) {
-  return notes.flatMap(n => { if (n.kind !== 6 && n.kind !== 16) return [n.pubkey]; try { return [n.pubkey, JSON.parse(n.content).pubkey] } catch { return [n.pubkey] } }).filter(Boolean)
+  return notes.flatMap(n => {
+    if (n.kind !== 6 && n.kind !== 16) return [n.pubkey]
+    let inner
+    try { inner = JSON.parse(n.content)?.pubkey } catch {}
+    return [n.pubkey, inner ?? (n.tags ?? []).find(t => t[0] === "p")?.[1]]
+  }).filter(pk => /^[0-9a-f]{64}$/.test(pk ?? ""))
 }
 
 // Stranger feeds already loaded this session, by feed, so switching back shows them at once. Memory only.
