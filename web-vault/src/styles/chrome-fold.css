@@ -30,3 +30,5 @@ html[data-fold] .feed-mode-pill { clip-path: inset(0 calc((100% - 44px) * var(--
 html[data-fold] .feed-mode-name, html[data-fold] .feed-mode-chevron { opacity: var(--fold-out); scale: calc(.85 + .15 * var(--fold-out)); transform-origin: 0 50%; }
 html[data-fold] .feed-toolbar { clip-path: inset(0 calc((100% - 44px) * var(--fold, 0)) 0 0 round 22px); translate: calc((100% - 44px) * var(--fold, 0)) 0; }
 html[data-fold] .feed-toolbar > :not(:first-child) { opacity: var(--fold-out); }
+/* The toolbar's translate moves its box past the screen edge; without this the page widens and the phone zooms out. */
+html[data-fold] .feed-head { overflow-x: clip; }
