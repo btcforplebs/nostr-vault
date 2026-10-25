@@ -133,8 +133,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 null
             } ?: return@launch
             postEvent(event)
-            val json = serializeEvent(event)
-            extra.forEach { fireAndForgetPublish(json, it) }
+            extra.forEach { fireAndForgetPublish(event, it) }
         }
     }
 
