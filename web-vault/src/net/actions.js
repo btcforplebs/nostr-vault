@@ -67,18 +67,31 @@ export function actionTarget(event) {
 
 /**
  * Sign `template`, send it to the relays publishRelays picks, and once one took it, keep it in Haven's outbox.
- * -> { event, relays: [{ url, ok, message }] }; throws when signing fails or no relay took it.
+ * Done at the first network relay's OK, as the iPhone fills the heart at once: waiting for every relay held it to the
+ * slowest one's timeout (5 s). The rest finish in the background; `settled` has every relay's answer.
+ * -> { event, relay: url, settled: Promise<[{ url, ok, message }]> }; throws when signing fails or no relay took it.
  */
 export async function publishAction(ctx, template) {
   const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const { network, local } = publishRelays(ctx.account.relays.write)
   const urls = [...network, ...local]
-  const results = await Promise.allSettled(pool.publish(urls, event))
-  const relays = results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) }))
-  if (!relays.some((r, i) => r.ok && i < network.length)) throw new Error(`No relay took it (0 of ${network.length})`)
+  const sends = pool.publish(urls, event)
+  const settled = Promise.allSettled(sends).then(results =>
+    results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) })))
+  const first = await firstTaken(sends.slice(0, network.length))
+  if (first < 0) throw new Error(`No relay took it (0 of ${network.length})`)
   // Kept in Haven only once it went out: this copy is what shows it as sent after a reload.
   await ctx.vault.outbox.event(event).catch(() => {})
-  return { event, relays }
+  return { event, relay: urls[first], settled }
+}
+
+/** The index of the first of these sends to succeed, or -1 once every one has failed (or there are none). */
+export function firstTaken(sends) {
+  return new Promise(resolve => {
+    let left = sends.length
+    if (!left) return resolve(-1)
+    sends.forEach((p, i) => p.then(() => resolve(i), () => { if (--left === 0) resolve(-1) }))
+  })
 }
 
 /** NIP-09 deletion request for one of the account's events. A reaction carries ["k", "7"], as the iPhone's retract;

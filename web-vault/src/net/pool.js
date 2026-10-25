@@ -1,6 +1,7 @@
 // The network side: nostr-tools SimplePool to the user's relays. The UI never renders from here directly;
 // what comes in is written to the in-page Haven and read back from it.
 import { SimplePool } from "nostr-tools/pool"
+import { normalizeURL } from "nostr-tools/utils"
 
 // Hosts the iPhone app strips from saved lists because they stopped answering (HavenConfig.deadRelayHosts).
 export const DEAD_RELAY_HOSTS = new Set(["nos.lol", "nostr.mom", "offchain.pub"])
@@ -10,9 +11,15 @@ export const isDead = url => DEAD_RELAY_HOSTS.has(hostOf(url))
 
 // Every read, query and publish opens its relays through ensureRelay, so a dead host is refused here and its
 // subscription closes at once instead of holding querySync to its timeout (primal alone 541 ms, + nos.lol 5,002 ms).
+// A signer's own relay is the exception: the user's bunker answers only there, so a bunker on nos.lol must still
+// connect (it failed in 11 ms as "check your connection" while nos.lol was up).
 class LivePool extends SimplePool {
+  signerRelays = new Set()
+  /** Relays a signer (a bunker link) named: the dead list never refuses these. */
+  keepForSigner(urls) { for (const u of urls ?? []) try { this.signerRelays.add(normalizeURL(u)) } catch {} }
   ensureRelay(url, params) {
-    return isDead(url) ? Promise.reject(new Error(`dead relay skipped: ${url}`)) : super.ensureRelay(url, params)
+    if (!isDead(url) || this.signerRelays.has(normalizeURL(url))) return super.ensureRelay(url, params)
+    return Promise.reject(new Error(`dead relay skipped: ${url}`))
   }
 }
 

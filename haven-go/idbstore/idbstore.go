@@ -35,9 +35,16 @@ type IDBBackend struct {
 	MaxLimit           int
 	MaxLimitNegentropy int
 
-	db     js.Value
-	serial atomic.Uint32
+	db              js.Value
+	onVersionChange js.Func
+	serial          atomic.Uint32
 }
+
+// VersionChangeEvent is dispatched on the global scope when another tab opens
+// this database at a newer version (a build that bumped dbVersion). The
+// database is closed first, so that tab's open is not left blocked behind this
+// one; Haven here can no longer read or write and the page should reload.
+const VersionChangeEvent = "idbstore-versionchange"
 
 func (b *IDBBackend) Init() error {
 	if b.Name == "" {
@@ -79,11 +86,21 @@ func (b *IDBBackend) Init() error {
 		return err
 	}
 	b.db = db
+	b.onVersionChange = js.FuncOf(func(js.Value, []js.Value) any {
+		b.Close()
+		ev := js.Global().Get("Event")
+		if !ev.IsUndefined() && js.Global().Get("dispatchEvent").Type() == js.TypeFunction {
+			js.Global().Call("dispatchEvent", ev.New(VersionChangeEvent))
+		}
+		return nil
+	})
+	db.Set("onversionchange", b.onVersionChange)
 	return nil
 }
 
 func (b *IDBBackend) Close() {
 	if !b.db.IsUndefined() && !b.db.IsNull() {
+		b.db.Set("onversionchange", js.Null())
 		b.db.Call("close")
 	}
 	b.db = js.Undefined()

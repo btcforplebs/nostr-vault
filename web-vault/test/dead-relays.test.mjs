@@ -31,3 +31,13 @@ test("a direct ensureRelay on a dead host is refused before any connection", asy
   await assert.rejects(pool.ensureRelay("wss://nos.lol", { connectionTimeout: 5000 }), /dead relay/)
   assert.equal(pool.relays.has("wss://nos.lol/"), false)
 })
+
+test("a bunker's own relay is never refused, even on a dead host; other reads there still are", async t => {
+  const base = Object.getPrototypeOf(Object.getPrototypeOf(pool)) // SimplePool's ensureRelay: no real connection here
+  t.mock.method(base, "ensureRelay", async url => ({ url }))
+  await assert.rejects(pool.ensureRelay("wss://nostr.mom"), /dead relay/)
+  pool.keepForSigner(["wss://nostr.mom/"])
+  assert.deepEqual(await pool.ensureRelay("wss://nostr.mom"), { url: "wss://nostr.mom" })
+  await assert.rejects(pool.ensureRelay("wss://offchain.pub"), /dead relay/)
+  t.after(() => pool.signerRelays.clear())
+})

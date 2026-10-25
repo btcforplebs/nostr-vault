@@ -261,6 +261,24 @@ test("Share and Copy link point at the public nostrvault.app thread page for the
   assert.equal(decode(link.split("/thread/")[1]).data.id, n.id)
 })
 
+test("a like is sent at the first relay's OK, not held to the slowest relay", async t => {
+  // One relay answers, the rest never do (a relay that times out, one that bans this IP).
+  const sent = relaysSay(t, (url, i) => i === 1 ? Promise.resolve("") : new Promise(() => {}))
+  const c = ctxFor(), n = note()
+  const out = await publishAction(c, reactionTemplate(n))
+  assert.equal(out.relay, sent[0].urls[1])
+  assert.deepEqual(c.kept.map(e => e.id), [out.event.id])
+  await act(c, "like", note())
+  assert.equal(sent.length, 2)
+})
+
+test("a like fails only once every network relay has failed", async t => {
+  relaysSay(t, (url, i) => i === 2 ? new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 20)) : Promise.reject(new Error("down")))
+  const c = ctxFor(), n = note()
+  await assert.rejects(publishAction(c, reactionTemplate(n)), /No relay took it \(0 of \d\)/)
+  assert.equal(c.kept.length, 0)
+})
+
 test("no relay took it: the action shows the error and can be tried again", async t => {
   relaysSay(t, () => Promise.reject(new Error("connection failed")))
   const c = ctxFor(), n = note()

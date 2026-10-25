@@ -46,11 +46,18 @@ test("newestList picks the newest of the user's own kind 3s and ignores anyone e
   assert.equal(newestList([old, other, nu], mePk), nu)
 })
 
-test("guard: no list found means nothing is published", async () => {
-  assert.match(wipeGuard({ base: undefined, tags: [["p", pk()]], target: pk(), follow: true, answered: 1, asked: 1 }), /wasn't found/)
-  let signed = false
-  await assert.rejects(run({ target: pk(), follow: true, signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /wasn't found/)
-  assert.equal(signed, false, "the signer is never asked")
+test("guard: no list anywhere -> a first list of one follow once every relay answered (iOS loadConfirmsList)", async () => {
+  const first = over => wipeGuard({ base: undefined, tags: [["p", pk()]], target: pk(), follow: true, answered: 3, asked: 3, ...over })
+  assert.equal(first(), "")
+  assert.match(first({ answered: 2 }), /2 of your 3 relays answered/, "the majority isn't enough with no base to guard")
+  assert.match(first({ follow: false, tags: [] }), /wasn't found/, "an unfollow needs a list")
+  assert.match(first({ appCount: 12 }), /wasn't found/, "the app shows follows: a list exists somewhere")
+  assert.match(first({ ahead: true }), /wasn't found/, "a future-dated list exists")
+  const t = pk()
+  const { event, follows } = await run({ target: t, follow: true })
+  assert.deepEqual(follows, [t])
+  assert.deepEqual(event.tags, [["p", t]])
+  assert.equal(event.content, "")
 })
 
 test("guard: relays all down and only an old vault copy -> nothing is signed or sent (Tron's 40 -> 5 case)", async () => {
@@ -146,8 +153,8 @@ test("guard: with 2 of 3 answering, the old wipe cases still refuse", async () =
   const twoOfThree = async url => ({ events: [], answered: url !== "wss://a.example" })
   let signed = false
   const signer = { signEvent: async t => { signed = true; return finalizeEvent(t, me) } }
-  // No list anywhere: never replaced by a one-follow list.
-  await assert.rejects(run({ ...relays, target: pk(), follow: true, ask: twoOfThree, signer }), /wasn't found/)
+  // No list anywhere and one relay silent: it may hold the real list, so no one-follow list.
+  await assert.rejects(run({ ...relays, target: pk(), follow: true, ask: twoOfThree, signer }), /2 of your 3 relays answered/)
   // Only a day-old 4-follow copy while the app showed 40: the size rule refuses.
   const old = contacts(many.slice(0, 4), nowS() - 86400)
   await assert.rejects(run({ vault: fakeVault([old]), ...relays, target: pk(), follow: true, known: old, appCount: 40, ask: twoOfThree, signer }), /had 40/)
