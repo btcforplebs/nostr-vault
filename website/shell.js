@@ -3,8 +3,24 @@
 // the marketing page comes in around it. The app keeps running in the phone; "Open the app" grows it back.
 // The app reaches this page as window.nvShell (web-vault/src/shell.js). Without JavaScript the page is the plain
 // marketing page, and its /vault/ links open the app on its own.
+// On a phone the app is not framed: it opens as /vault/ itself, so the page that scrolls is the app's and Safari's
+// toolbar shrinks as on any site. Only the marketing page (#about, #features, …) is shown here, with the app live in
+// its phone, and "Open the app" goes to /vault/. The app's "What is Nostr Vault?" comes back here (/#about).
 (() => {
     if (window.top !== window) return; // never a shell inside a frame
+
+    // "#/…" is an address in the app; any other hash is a place on the marketing page.
+    const appHash = h => h.startsWith('#/');
+    const sectionOf = h => (h && h !== '#' && !appHash(h) ? h.slice(1) : '');
+
+    // A phone: the app's own phone layout (under 760px, web-vault/src/desktop/routes.js) on a touch screen. An iPad or
+    // a narrow desktop window keeps the frame.
+    const phone = window.matchMedia('(max-width: 759px) and (pointer: coarse)').matches;
+    const appUrl = h => '/vault/' + (appHash(h) ? h : '');
+    // nostrvault.app or a deep link to an app address: replaced, so Back doesn't land on a page that forwards again,
+    // and a refresh reloads the same /vault/ address.
+    if (phone && !sectionOf(location.hash)) { location.replace(appUrl(location.hash)); return; }
+
     const slot = document.querySelector('.phone-slot');
     const site = document.getElementById('site');
     if (!slot || !site) return;
@@ -16,10 +32,6 @@
     const RADIUS = '36px';
     const SHADOW_OFF = '0 0 0 0 #0a0a0a, 0 0 0 0 rgba(255,255,255,0)';
     const SHADOW_ON = '0 0 0 6px #0a0a0a, 0 0 0 7px rgba(255,255,255,0.08)'; // the phone's bezel
-
-    // "#/…" is an address in the app; any other hash is a place on the marketing page.
-    const appHash = h => h.startsWith('#/');
-    const sectionOf = h => (h && h !== '#' && !appHash(h) ? h.slice(1) : '');
 
     const wrap = document.createElement('div');
     wrap.className = 'live-app';
@@ -120,8 +132,9 @@
         });
     }
 
-    /** Phone -> the app full screen. */
+    /** Phone -> the app full screen. On a phone, the app's own page: a new entry, so Back returns to this section. */
     function open() {
+        if (phone) { let h = ''; try { h = frame.contentWindow.location.hash; } catch {} location.assign(appUrl(h)); return; }
         if (mode === 'app') return;
         stop();
         const r = wrap.getBoundingClientRect();
@@ -154,6 +167,7 @@
         const url = new URL(a.href, location.href);
         if (url.origin !== location.origin) return;
         if (url.pathname === '/vault/' || url.pathname === '/vault/index.html') {
+            if (phone) return; // the link itself goes there
             e.preventDefault();
             if (appHash(url.hash)) frame.contentWindow.location.hash = url.hash;
             open();
@@ -165,7 +179,11 @@
     addEventListener('hashchange', () => {
         const s = sectionOf(location.hash);
         if (s) learn(s);
-        else if (appHash(location.hash)) { try { frame.contentWindow.location.hash = location.hash; } catch {} open(); }
+        else if (appHash(location.hash)) {
+            if (phone) return location.replace(appUrl(location.hash));
+            try { frame.contentWindow.location.hash = location.hash; } catch {}
+            open();
+        }
     });
 
     // The first frame: the app, or (opened on #features, #about, …) the marketing page with the phone already in place.
