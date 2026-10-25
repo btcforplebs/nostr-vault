@@ -5,7 +5,6 @@ import com.nostrvault.data.remote.WebSocketClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
-import com.nostrvault.service.DMService.Companion.FIRE_AND_FORGET_FLUSH_MS
 import com.nostrvault.service.DMService.Companion.TAG
 
     // ══════════════════════════════════════════════════════════════════
@@ -146,17 +145,47 @@ import com.nostrvault.service.DMService.Companion.TAG
         }
     }
 
+    /**
+     * Sends [eventJson] to [relayUrl] without the caller waiting. The socket
+     * stays open until the relay's OK (10 s cap): nos.lol, primal, nostr.mom
+     * and relay.nostr.net drop an event whose socket closes right after it
+     * (measured 2026-10-25: 0 of 4 kept it, 4 of 4 when the OK was awaited).
+     */
     internal fun DMService.fireAndForgetPublish(eventJson: String, relayUrl: String) {
+        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() ?: return
         scope.launch(Dispatchers.IO) {
-            try {
-                val client = WebSocketClient(url = relayUrl, scope = scope)
-                client.connect()
-                client.send("[\"EVENT\",$eventJson]")
-                delay(FIRE_AND_FORGET_FLUSH_MS)
-                client.disconnect()
+            val client = WebSocketClient(url = relayUrl, scope = this, autoReconnect = false)
+            val result = try {
+                withTimeoutOrNull(10_000) {
+                    coroutineScope {
+                        // Listen before connecting; the flow does not replay.
+                        val answer = async(start = CoroutineStart.UNDISPATCHED) {
+                            client.messages.mapNotNull { msg ->
+                                val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull()
+                                if (arr?.getOrNull(0)?.jsonPrimitive?.contentOrNull == "OK" &&
+                                    arr.getOrNull(1)?.jsonPrimitive?.contentOrNull == eventId
+                                ) {
+                                    val ok = arr.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
+                                    if (ok) "accepted" else "rejected: ${arr.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: ""}"
+                                } else null
+                            }.first()
+                        }
+                        launch {
+                            client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                            client.send("[\"EVENT\",$eventJson]")
+                        }
+                        client.connect()
+                        answer.await()
+                    }
+                } ?: "timed out"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Fire-and-forget to $relayUrl failed: ${e.message}")
+                "failed: ${e.message}"
+            } finally {
+                client.disconnect()
             }
+            if (result != "accepted") Log.w(TAG, "DM send ${eventId.take(8)} -> $relayUrl: $result")
         }
     }
 

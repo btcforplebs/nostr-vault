@@ -43,7 +43,6 @@ class DMService @Inject constructor(
         internal const val EXTERNAL_FETCH_MAX_RELAYS = 15
         internal const val LIVE_EXTERNAL_MAX_RELAYS = 8
         internal const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
-        internal const val FIRE_AND_FORGET_FLUSH_MS = 300L
         private const val FIRE_AND_FORGET_TIMEOUT_MS = 3_000L
         private const val AUTH_TIMEOUT_MS = 5_000L
         internal const val EXTERNAL_FETCH_OVERLAP_MS = 60 * 60 * 1000L // 1 hour overlap
