@@ -30,6 +30,7 @@ export async function bunkerSignIn(input, pool) {
   if (!bp) throw new Error("That isn't a bunker:// link or a NIP-05 with a bunker")
   if (!bp.relays.length) throw new Error("The bunker link has no relay")
   const clientSk = generateSecretKey()
+  pool.keepForSigner?.(bp.relays)
   const signer = BunkerSigner.fromBunker(clientSk, bp, { pool, onauth: openAuthUrl })
   // On any failure close the signer, so a timed-out sign-in doesn't leave its subscription and grant open.
   let pubkey
@@ -57,6 +58,7 @@ export function bunkerSigner(session, pool, storage = globalThis.localStorage) {
     let hex = session.clientSk
     if (hex) await resealSession(session, storage).catch(() => {}) // next boot tries again; signing still works
     else hex = await unseal(session.clientSkSealed, keyStore)
+    pool.keepForSigner?.(session.bunker.relays)
     return BunkerSigner.fromBunker(hexToBytes(hex), session.bunker, { pool, onauth: openAuthUrl })
   })()
   ready.catch(() => {}) // reported by whatever signs next, not as an unhandled rejection at boot
