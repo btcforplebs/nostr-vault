@@ -82,12 +82,15 @@ test("strangers' profiles go to memory, not Haven, once each, in one batch", asy
   const writes = [], asked = []
   const vault = { feed: { query: async () => [], event: async ev => writes.push(ev) } }
   const kind0 = (p, name) => ({ kind: 0, pubkey: p, created_at: 1, content: JSON.stringify({ name }) })
-  const query = async (r, f) => { asked.push(f.authors); await new Promise(r => setTimeout(r, 5)); return [kind0(pk, "Stranger"), kind0(pk2, "Other")] }
+  const query = async (r, f) => { asked.push([r.join(), f.authors]); await new Promise(r => setTimeout(r, 5)); return [kind0(pk, "Stranger"), kind0(pk2, "Other")] }
   // Two loads at once (a page re-render): the second finds the first in flight and doesn't ask again.
   await Promise.all([fetchProfiles(vault, [pk, pk2, pk], ["wss://r"], { save: false, query }), fetchProfiles(vault, [pk], ["wss://r"], { save: false, query })])
   assert.equal(getProfile(pk).name, "Stranger")
   assert.equal(getProfile(pk2).name, "Other")
-  assert.deepEqual(asked, [[pk, pk2]])
+  // Each relay is asked on its own (its answer is drawn as it lands), once, for both.
+  assert.ok(asked.length > 0)
+  for (const [, authors] of asked) assert.deepEqual(authors, [pk, pk2])
+  assert.equal(new Set(asked.map(([url]) => url)).size, asked.length, "no relay asked twice")
   assert.deepEqual(writes, [], "nothing written to Haven /feed")
   await fetchProfiles(vault, [pk], ["wss://r"], { save: false, query: async () => assert.fail("already known") })
 })
