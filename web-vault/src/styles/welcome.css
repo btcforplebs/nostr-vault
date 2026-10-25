@@ -1,17 +1,38 @@
-/* The welcome screen (src/screens/WelcomeScreen.jsx): the front door at nostrvault.app. One column that fits the
-   site's phone frame and a full window alike; "What is Nostr Vault?" sits at the bottom edge. */
+/* The welcome screen (src/screens/WelcomeScreen.jsx): the front door at nostrvault.app, as the iPhone's first screen
+   (WelcomeStepView): the hero centred in the space above, the ways in pinned at the bottom. One column that fits the
+   site's phone frame and a full window alike. */
 .welcome { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center;
-  padding: max(32px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom)); box-sizing: border-box;
-  background: radial-gradient(120% 60% at 50% 0%, rgb(230 115 38 / .14), transparent 60%), var(--bg); }
-.welcome-main { flex: 1; width: 100%; max-width: 400px; display: flex; flex-direction: column; justify-content: center; gap: 14px; text-align: center; }
-.welcome-logo { width: 64px; height: 64px; margin: 0 auto 6px; border-radius: 15px; box-shadow: 0 10px 40px -8px rgb(230 115 38 / .55); }
-.welcome h1 { margin: 0; font: var(--t-title); letter-spacing: -.01em; }
-.welcome-line { margin: 0 0 10px; font: var(--t-sub); color: var(--text-2); text-wrap: balance; }
-.welcome-signin, .welcome-existing { width: 100%; min-height: 50px; font: var(--t-headline); }
+  padding: max(16px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom)); box-sizing: border-box; background: var(--bg); }
+.welcome-hero { flex: 1; width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 16px 0; text-align: center; }
+/* The icon with its orange glow (vaultMark): 112 on a tall phone, 92 on a short one. */
+.welcome-mark { --mark: 112px; position: relative; display: block; width: var(--mark); height: var(--mark); }
+.welcome-mark::before { content: ""; position: absolute; inset: calc(var(--mark) * -.3); border-radius: 50%; background: rgb(230 115 38 / .35);
+  filter: blur(56px); }
+.welcome-mark img { position: relative; display: block; width: 100%; height: 100%; border-radius: 22.37%; box-shadow: 0 0 0 1px rgb(255 255 255 / .08); }
+@media (max-height: 800px) { .welcome-mark { --mark: 92px; } }
+.welcome h1 { margin: 24px 0 0; font: 700 34px/1.2 var(--font); letter-spacing: .01em; }
+.welcome-line { margin: 8px 0 0; font: 400 17px/1.35 var(--font); color: var(--text-2); }
+.welcome-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 24px 0 0; padding: 0; list-style: none; }
+.welcome-chips li { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px;
+  background: var(--s1); border: 1px solid var(--hair); font: 500 13px/1 var(--font); white-space: nowrap; }
+.welcome-chips svg { flex: none; color: var(--accent); }
+.welcome-learn { margin-top: 12px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--accent);
+  font: 500 13px/1 var(--font); }
+.welcome-learn:hover, .welcome-learn:focus-visible { color: var(--accent-light); }
+html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is already out around the phone (src/shell.js) */
 
-.welcome-browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 6px; }
-.welcome-or { display: flex; align-items: center; gap: 10px; color: var(--text-3); font: var(--t-foot); }
-.welcome-or::before, .welcome-or::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+/* The ways in (FrontDoorButtonStyle): 52 tall, corner 14, the orange gradient for the first. */
+.welcome-actions { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+.welcome .welcome-door { width: 100%; min-height: 52px; border-radius: 14px; background: var(--s1); border: 1px solid var(--hair);
+  font: 600 17px/1 var(--font); }
+.welcome .welcome-door.primary { background: var(--accent-grad); border-color: transparent; box-shadow: 0 2px 8px rgb(230 115 38 / .35); }
+.welcome-door:active { transform: scale(.97); }
+/* Looking around without an account: a small link, the search once it's tapped. */
+.welcome-look { align-self: center; min-height: 44px; padding: 0 16px; border: 0; background: none; color: var(--text-2); font: 500 15px/1 var(--font); }
+.welcome-look:hover, .welcome-look:focus-visible { color: var(--text); }
+
+.welcome-browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .welcome-search { display: flex; align-items: center; gap: 8px; min-height: 50px; padding: 0 6px 0 14px; border-radius: 999px;
   background: var(--s1); border: 1px solid var(--hair); color: var(--text-3); transition: border-color var(--press); }
 .welcome-search:focus-within { border-color: var(--accent-line); }
@@ -23,16 +44,6 @@
 .welcome-results { display: grid; gap: 8px; text-align: left; }
 .welcome-results .person-row { width: 100%; margin: 0; }
 .welcome-results p { margin: 0; text-align: center; }
-
-.welcome-learn { margin-top: 24px; min-height: 44px; padding: 0 18px; border: 0; background: none; color: var(--text-2);
-  font: var(--t-sub); font-weight: 600; }
-.welcome-learn:hover, .welcome-learn:focus-visible { color: var(--text); }
-html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is already out around the phone (src/shell.js) */
-.welcome-arrow { display: inline-block; margin-left: 4px; color: var(--accent); }
-@media (prefers-reduced-motion: no-preference) {
-  .welcome-arrow { animation: nv-nudge 2.2s ease-in-out infinite; }
-}
-@keyframes nv-nudge { 0%, 60%, 100% { transform: none } 30% { transform: translateY(4px) } }
 
 /* The guest bar's way back here, beside "Viewing as a guest". */
 .guest-bar .guest-home { flex: none; }
