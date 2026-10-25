@@ -25,6 +25,8 @@ import {
 } from "../net/settings.js"
 
 const ICONS = {
+  // A key on its own (key.fill), not Accounts & Keys' person with a key.
+  secretKey: "M10.5 13.5L20 4M17 7l3 3M15 9l2 2M11 16a4 4 0 1 1-8 0 4 4 0 0 1 8 0z",
   key: "M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM3 21a8 8 0 0 1 11-7.4M16 14l4 4-2 2-1-1-1 1-1-1 1-1-1-1 1-1",
   block: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8",
   relays: "M5 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6.5 6.5L17.5 6.5M6 7l5 10M18 7l-5 10",
@@ -83,7 +85,7 @@ function Index({ ctx }) {
         <div class="section-label">Your Key</div>
         <div class="settings-rows">
           <a class="settings-row" href="#/settings/key">
-            <span class="settings-icon" style={{ background: "#ff9f0a" }}><Icon d={ICONS.key} /></span>
+            <span class="settings-icon" style={{ background: "#ff9f0a" }}><Icon d={ICONS.secretKey} /></span>
             <span class="settings-title">Your Secret Key</span>
             <Chevron />
           </a>

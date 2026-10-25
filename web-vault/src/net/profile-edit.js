@@ -7,6 +7,7 @@ import { pool, publishRelays, uniq, DEFAULT_RELAYS, PROFILE_RELAYS } from "./poo
 import { checkSigned } from "./sync.js"
 import { askRelay, MAX_SKEW, MAX_LOCAL_AGE } from "./follows.js"
 import { putProfile } from "./profiles.js"
+import { firstTaken } from "./actions.js"
 
 /** The kind-0 keys the form shows, in its order. */
 export const FIELDS = ["display_name", "name", "nip05", "about", "picture", "banner", "website", "lud16"]
@@ -112,7 +113,8 @@ export function profileGuard({ event, asked, answered, netFound, future }, at = 
 
 /**
  * Save the edit: the changed fields merged onto the newest kind 0, signed with its tags, dated after it, sent to
- * the write relays and purplepag.es, kept in Haven's outbox and shown at once. -> { event, relays };
+ * the write relays and purplepag.es, kept in Haven's outbox and shown at once once one relay took it.
+ * -> { event, taken: the first relay's URL, settled: Promise<[{ url, ok, message }]> };
  * throws when the newest copy can't be found, signing fails, or no relay took it. `lookup` and `publish` are for tests.
  */
 export async function saveProfile(ctx, initial, edited, { lookup = latestProfile, publish = (urls, ev) => pool.publish(urls, ev) } = {}) {
@@ -128,10 +130,13 @@ export async function saveProfile(ctx, initial, edited, { lookup = latestProfile
   }
   const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const urls = uniq([...publishRelays(ctx.account.relays.write).network, ...PROFILE_RELAYS])
-  const results = await Promise.allSettled(publish(urls, event))
-  const relays = results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) }))
-  if (!relays.some(r => r.ok)) throw new Error(`No relay took it (0 of ${urls.length})`)
+  // Done once one relay took it, not at the slowest relay's answer (a relay that never answers held Save for 5 s);
+  // the other sends carry on in the background, and `settled` says how each went.
+  const sends = publish(urls, event)
+  const settled = Promise.allSettled(sends).then(results => results.map((r, i) => ({ url: urls[i], ok: r.status === "fulfilled", message: r.status === "fulfilled" ? r.value : String(r.reason?.message ?? r.reason) })))
+  const first = await firstTaken(sends)
+  if (first < 0) throw new Error(`No relay took it (0 of ${urls.length})`)
   await ctx.vault.outbox.event(event).catch(() => {}) // the relays have it; Haven's copy only speeds the next open
   putProfile(event)
-  return { event, relays }
+  return { event, taken: urls[first], settled }
 }

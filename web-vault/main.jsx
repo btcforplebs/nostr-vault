@@ -7,6 +7,7 @@ import { loadSession, saveSession } from "./src/session.js"
 import { signerFor } from "./src/signer/index.js"
 import { unlockLocal, wellFormed, DAMAGED } from "./src/signer/local.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
+import { painted } from "./src/components/KeyCard.jsx"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } from "./src/haven/vault.js"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
@@ -259,6 +260,7 @@ function UnlockScreen({ session, onUnlocked, onSignOut }) {
   const submit = async e => {
     e.preventDefault()
     setBusy(true); setErr("")
+    await painted() // opening the key is scrypt, which holds the page for a moment: show "Unlocking…" first
     try { onUnlocked(await unlockLocal(session, pw)) }
     catch (e) { if (e?.message === DAMAGED) setDamaged(true); else setErr(String(e?.message ?? e)) }
     finally { setBusy(false) }

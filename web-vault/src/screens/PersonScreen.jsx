@@ -59,10 +59,15 @@ export function PersonScreen({ ctx, pubkey }) {
     show(cached)
     if (!navigator.onLine) { setStatus(cached.length ? "Offline: showing saved notes" : "Offline"); return cached }
     try {
+      // The default relays are asked at once, not after their relay list, and shown as they come; then their own
+      // write relays that the defaults didn't cover.
+      const limit = () => Math.max(PERSON_PAGE, cached.length)
+      const early = syncPersonNotes(vault, pubkey, []).catch(() => 0).then(async () => show(await readPersonNotes(vault, pubkey, { limit: limit() })))
       const l = await listsP
-      await syncPersonNotes(vault, pubkey, l.relays.write).catch(() => 0)
+      const theirs = l.relays.write.filter(u => !DEFAULT_RELAYS.includes(u))
+      await Promise.all([early, theirs.length && syncPersonNotes(vault, pubkey, theirs, { defaults: false }).catch(() => 0)])
       setStatus("")
-      return await readPersonNotes(vault, pubkey, { limit: Math.max(PERSON_PAGE, cached.length) })
+      return await readPersonNotes(vault, pubkey, { limit: limit() })
     } catch (e) { setStatus(`Couldn't load notes: ${e?.message ?? e}`); return cached }
   }, async until => {
     // Haven first; their relays only when Haven runs short, as the Following feed does.

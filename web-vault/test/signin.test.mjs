@@ -2,7 +2,7 @@
 // sign-out leaves behind on this browser.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { safeAuthUrl } from "../src/signer/nip46.js"
+import { safeAuthUrl, bunkerInputError } from "../src/signer/nip46.js"
 import { checkedPubkey, saveSession, loadSession } from "../src/session.js"
 import { forgetThisBrowser, storeNames, onSignedOutElsewhere } from "../src/haven/vault.js"
 import { RELAY_NS, pageStorage } from "../../web-relay/src/page-storage.js"
@@ -15,6 +15,19 @@ test("only http and https auth URLs are opened", () => {
   assert.equal(safeAuthUrl("http://localhost:3000/auth"), "http://localhost:3000/auth")
   for (const bad of ["javascript:alert(1)", " JavaScript:alert(1)", "data:text/html,<script>1</script>", "file:///etc/passwd", "nostr:npub1x", "", "not a url", null])
     assert.equal(safeAuthUrl(bad), null, String(bad))
+})
+
+test("a bunker address that doesn't resolve is named in the error", () => {
+  const pk = "a".repeat(64)
+  assert.match(bunkerInputError("alice@nsec.example", null), /^Couldn't find a bunker at alice@nsec\.example\./)
+  // Resolved, but the name isn't in its nostr.json.
+  assert.match(bunkerInputError("alice@nsec.example", { pubkey: undefined, relays: [], secret: null }), /^Couldn't find a bunker at alice@nsec\.example\./)
+  assert.match(bunkerInputError("_@nsec.example", null), /at nsec\.example\./)
+  assert.match(bunkerInputError("alice@nsec.example", { pubkey: pk, relays: [], secret: null }), /^alice@nsec\.example has no bunker relay set up/)
+  assert.equal(bunkerInputError("not a link", null), "That isn't a bunker:// link or a name@domain address")
+  assert.equal(bunkerInputError(`bunker://${pk}`, { pubkey: pk, relays: [], secret: null }), "The bunker link has no relay")
+  assert.equal(bunkerInputError(`bunker://${pk}?relay=wss://r.example`, { pubkey: pk, relays: ["wss://r.example"], secret: null }), "")
+  assert.equal(bunkerInputError("alice@nsec.example", { pubkey: pk, relays: ["wss://r.example"], secret: null }), "")
 })
 
 test("a signer's pubkey must be 64 lowercase hex characters", () => {

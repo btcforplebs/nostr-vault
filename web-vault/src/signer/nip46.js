@@ -24,11 +24,23 @@ export let lastAuthUrl = ""
 export const clearAuthUrl = () => { lastAuthUrl = "" } // once tapped, a later prompt shouldn't show it again
 const openAuthUrl = url => { const safe = safeAuthUrl(url); if (safe) { lastAuthUrl = safe; authUrls.dispatchEvent(new CustomEvent("url", { detail: safe })) } }
 
+// nostr-tools' NIP05_REGEX: what parseBunkerInput looks up as an address.
+const NIP05 = /^(?:([\w.+-]+)@)?([\w_-]+(\.[\w_-]+)+)$/
+/** Why `parseBunkerInput`'s answer for `input` can't be signed in with, or "". A NIP-05 that doesn't resolve, or
+ *  resolves with no bunker, is named, so the user knows it was the address, not the format. */
+export function bunkerInputError(input, bp) {
+  const nip05 = NIP05.test(input) ? input.replace(/^_@/, "") : ""
+  if (!bp || (nip05 && !bp.pubkey)) return nip05 ? `Couldn't find a bunker at ${nip05}. Check the address, or paste the bunker:// link from your signer app.` : "That isn't a bunker:// link or a name@domain address"
+  if (!bp.relays.length) return nip05 ? `${nip05} has no bunker relay set up. Paste the bunker:// link from your signer app instead.` : "The bunker link has no relay"
+  return ""
+}
+
 export async function bunkerSignIn(input, pool) {
   assertCanSeal()
-  const bp = await parseBunkerInput(String(input).trim())
-  if (!bp) throw new Error("That isn't a bunker:// link or a NIP-05 with a bunker")
-  if (!bp.relays.length) throw new Error("The bunker link has no relay")
+  const text = String(input).trim()
+  const bp = await parseBunkerInput(text)
+  const refused = bunkerInputError(text, bp)
+  if (refused) throw new Error(refused)
   const clientSk = generateSecretKey()
   pool.keepForSigner?.(bp.relays)
   const signer = BunkerSigner.fromBunker(clientSk, bp, { pool, onauth: openAuthUrl })
