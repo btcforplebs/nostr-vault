@@ -16,7 +16,7 @@ import { YourKeyPage } from "./YourKeyPage.jsx"
 import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
-import { syncOwn } from "../net/sync.js"
+import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
 import {
@@ -207,23 +207,39 @@ function BlockedRow({ ctx, pubkey, isPrivate }) {
   )
 }
 
-/** Pull the user's own notes and articles from their relays into this browser's relay (what the phone's Import does). */
+/**
+ * Pull everything the user wrote from their relays into this browser's relay, back to a start date, with the phone's
+ * progress lines (RelayLogParser: "Looking through notes from …", "Found notes from …", "Import Complete!").
+ */
 function Import({ ctx }) {
+  const [startDate, setStartDate] = useState(IMPORT_START_DATE)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [state, setState] = useState("")
   const run = async () => {
     if (!navigator.onLine) { setState("You're offline."); return }
-    setState("Importing…")
+    setBusy(true); setProgress(0); setState("Connecting to relays...")
     try {
-      const n = await syncOwn(ctx.vault, ctx.session.pubkey, uniq([...ctx.account.relays.write, ...ctx.account.relays.read, ...DEFAULT_RELAYS]))
-      setState(`Done: ${n} new event${n === 1 ? "" : "s"} stored.`)
+      const relays = uniq([...ctx.account.relays.write, ...ctx.account.relays.read, ...DEFAULT_RELAYS])
+      const { found, stored } = await importOwn(ctx.vault, ctx.session.pubkey, relays, {
+        startDate,
+        onProgress: p => { setProgress(p.progress); setState(`${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)`) },
+      })
+      setProgress(1)
+      setState(`Import Complete! ${found} found, ${stored} new.`)
     } catch (e) { setState(`Couldn't import (${e?.message ?? e})`) }
+    setBusy(false)
   }
+  const pct = Math.round(progress * 100)
   return (
     <div class="card">
       <h3>Import your notes</h3>
-      <p class="muted small">Fetches your notes and articles from your relays and keeps them in this browser's relay, so they're here offline and in the Vault tab.</p>
-      <button class="primary" disabled={state === "Importing…"} onClick={run}>{state === "Importing…" ? "Importing…" : "Import from my relays"}</button>
-      {state && state !== "Importing…" && <p class="muted small" style="margin-top: 10px">{state}</p>}
+      <p class="muted small">Fetches everything you've posted since the start date from your relays and keeps it in this browser's relay, so it's here offline and in the Vault tab.</p>
+      <label class="small">Start date <input type="date" value={startDate} max={new Date().toISOString().slice(0, 10)} disabled={busy}
+        onInput={e => e.currentTarget.value && setStartDate(e.currentTarget.value)} /></label>
+      <p><button class="primary" disabled={busy} onClick={run}>{busy ? "Importing…" : "Import from my relays"}</button></p>
+      {busy && <p class="small"><progress max="100" value={pct} aria-label="Import progress" /> {pct}%</p>}
+      {state && <p class="muted small" style="margin-top: 10px">{state}</p>}
     </div>
   )
 }

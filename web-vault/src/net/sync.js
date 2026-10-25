@@ -113,6 +113,61 @@ export async function syncOwn(vault, pubkey, relays) {
   return storeAll(vault.outbox, [...notes, ...articles])
 }
 
+/** The phone's Import window and default start date: haven-go/import.go importOwnerNotes, HavenConfig.importStartDate. */
+export const IMPORT_WINDOW = 10 * 86400
+export const IMPORT_START_DATE = "2023-01-01"
+/** How many ten-day windows importOwn asks the relays for at once. */
+export const IMPORT_WINDOWS_AT_ONCE = 4
+const day = t => new Date(t * 1000).toISOString().slice(0, 10)
+
+/**
+ * The phone's Import: everything the account wrote (no kinds in the filter, as on the phone), from now back to
+ * `startDate` (yyyy-mm-dd, UTC), ten days at a time. A relay that caps its answer (its own limit) is asked again
+ * below the oldest event it sent, until it reaches the window's start, so a busy window comes back whole.
+ * onProgress({ progress 0..1, from: "yyyy-mm-dd", found, stored, empty }) after each window. -> { found, stored }
+ */
+export async function importOwn(vault, pubkey, relays, { startDate = IMPORT_START_DATE, onProgress = () => {}, maxWait = 8000 } = {}) {
+  const start = Date.parse(`${startDate}T00:00:00Z`) / 1000
+  if (!Number.isFinite(start)) throw new Error(`not a date: ${startDate}`)
+  await Promise.any(relays.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 }))).catch(() => { throw new Error("no relay reachable") })
+  const end = now()
+  const windows = []
+  for (let until = end; until > start; until -= IMPORT_WINDOW) windows.push({ since: Math.max(start, until - IMPORT_WINDOW), until })
+  const seen = new Set()
+  let found = 0, stored = 0
+  // Each relay is paged on its own: paging on all the relays' answers together stopped as soon as one relay with a
+  // high cap reached the window's start, and a lower-capped relay's older notes in that window were never asked for.
+  const fetchWindow = async ({ since, until }) => (await Promise.all(relays.map(async url => {
+    let n = 0
+    for (let u = until; ;) {
+      const page = await pool.querySync([url], { authors: [pubkey], since, until: u }, { maxWait }).catch(() => [])
+      const evs = page.filter(e => e.pubkey === pubkey && !seen.has(e.id) && seen.add(e.id))
+      n += evs.length
+      found += evs.length
+      const s = await storeAll(vault.outbox, evs)
+      stored += s // not `stored += await`: that reads stored before the await and drops the other windows' counts
+      const oldest = page.reduce((m, e) => Math.min(m, e.created_at), u)
+      if (!page.length || oldest >= u || oldest <= since) break
+      u = oldest
+    }
+    return n
+  }))).reduce((a, b) => a + b, 0)
+  // IMPORT_WINDOWS_AT_ONCE windows in flight (one after another took ~10 min back to 2023 for a busy account), with
+  // progress reported in order, newest window first, so the date line only walks back.
+  const counts = []
+  let next = 0, reported = 0
+  const report = () => {
+    for (; reported < windows.length && counts[reported] !== undefined; reported++) {
+      const { since } = windows[reported]
+      onProgress({ progress: Math.min(1, (end - since) / (end - start)), from: day(since), found, stored, empty: !counts[reported] })
+    }
+  }
+  await Promise.all(Array.from({ length: IMPORT_WINDOWS_AT_ONCE }, async () => {
+    while (next < windows.length) { const i = next++; counts[i] = await fetchWindow(windows[i]); report() }
+  }))
+  return { found, stored }
+}
+
 /**
  * Writes events into a Haven route 100 at a time, not one round trip after another: a first sync's 500 notes took
  * ~1 s in turn. Haven takes one request per id at a time, so a note another sync (Refresh, the background tick)
