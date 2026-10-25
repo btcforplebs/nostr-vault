@@ -2,6 +2,11 @@
 import { useState } from "preact/hooks"
 if (import.meta.env) import("../styles/onboarding.css")
 
+/** Resolves once the next frame is drawn. Locking or opening a key (NIP-49 scrypt) holds this thread for a moment, so
+ *  both screens set their busy label, wait for it to be on screen, then do the work. A hidden tab draws no frames,
+ *  so it never waits more than 100 ms. */
+export const painted = () => new Promise(r => { requestAnimationFrame(() => setTimeout(r)); setTimeout(r, 100) })
+
 export function KeyCard({ title, caption, value, secret = false }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {

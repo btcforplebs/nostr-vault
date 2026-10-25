@@ -34,8 +34,9 @@ export function SignInScreen({ onSignedIn }) {
   return (
     <main class="signin">
       <img src="./icon.svg" alt="" class="signin-logo" />
-      <h1>Nostr Vault</h1>
-      <p class="muted">Your posts, messages and media, kept in this browser. Sign in with your own signer: your secret key stays with it.</p>
+      {/* The iPhone's UseNostrKeyStep heading. */}
+      <h1>Who are you on Nostr?</h1>
+      <p class="muted">Sign in with your own signer, a browser extension or a bunker link: your secret key stays with it. Or just look, read-only.</p>
       {cameForPost() && <p class="signin-for-post">Sign in to reply, like or zap the post you opened. Just looking works too.</p>}
       {saved.length > 0 && <div class="saved-accounts">
         {saved.map(a => <SavedAccount key={a.pubkey} account={a} busy={busy === a.pubkey} disabled={!!busy} onClick={resume(a)} />)}
