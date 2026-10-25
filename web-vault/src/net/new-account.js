@@ -6,6 +6,7 @@
 import { decode } from "nostr-tools/nip19"
 import { DEFAULT_RELAYS, BROADCAST_RELAYS, pool, publishRelays, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
+import { firstTaken } from "./actions.js"
 import packsData from "./starter-packs.js"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -56,12 +57,15 @@ export async function signAll(signer, pubkey, templates) {
   return out
 }
 
-/** Send the events to the network relays; -> how many relays took each. The page's own relay gets them as the app
- *  starts (main.jsx writes them into Haven's outbox first). */
+/** Send the events to the network relays. Done once one relay took each (or every relay refused it), not at the
+ *  slowest relay's answer, which held Start Exploring for 5 s; the other sends carry on in the background while the
+ *  page is open. The page's own relay gets them as the app starts (main.jsx writes them into Haven's outbox; the web
+ *  Haven has no blastr relays, so it doesn't send them on). -> [{ kind, taken, of, settled: Promise<how many took it> }] */
 export async function publishNewAccount(events, { publish = (urls, ev) => pool.publish(urls, ev), relays = NEW_ACCOUNT_RELAYS } = {}) {
   const { network } = publishRelays(relays)
   return Promise.all(events.map(async ev => {
-    const results = await Promise.allSettled(publish(network, ev))
-    return { kind: ev.kind, ok: results.filter(r => r.status === "fulfilled").length, of: network.length }
+    const sends = publish(network, ev)
+    const settled = Promise.allSettled(sends).then(results => results.filter(r => r.status === "fulfilled").length)
+    return { kind: ev.kind, taken: (await firstTaken(sends)) >= 0, of: network.length, settled }
   }))
 }

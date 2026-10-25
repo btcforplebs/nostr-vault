@@ -12,7 +12,7 @@ import { starterPacks, newAccountTemplates, signAll, publishNewAccount } from ".
 import { uploadPhoto, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { withTimeout } from "../signer/readonly.js"
 import { askToKeep, sevenDayErase, KEEP_IT } from "../components/StorageNote.jsx"
-import { KeyCard } from "../components/KeyCard.jsx"
+import { KeyCard, painted } from "../components/KeyCard.jsx"
 import "../styles/onboarding.css"
 
 const STEPS = ["intro", "keys", "password", "profile", "follows", "done"]
@@ -239,6 +239,7 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, saf
     if (!asked.current) { asked.current = true; askToKeep() }
     try {
       setBusy("Locking your key…")
+      await painted() // the lock is scrypt, which holds the page for a moment: show the label first
       const session = await localSession(keyPair.sk, password)
       const signer = localSigner(session)
       let picture = null
@@ -250,7 +251,8 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, saf
       }
       setBusy("Publishing your profile…")
       const events = await signAll(signer, session.pubkey, newAccountTemplates({ name, picture, follows }))
-      await withTimeout(publishNewAccount(events), PUBLISH_WAIT_MS, "slow").catch(() => {}) // the outbox has them; Haven sends them on
+      // Done at the first relay that took each event; the rest carry on in the background.
+      await withTimeout(publishNewAccount(events), PUBLISH_WAIT_MS, "slow").catch(() => {})
       keyPair.sk.fill(0)
       location.hash = "#/feed"
       onSignedIn({ signer, session, firstEvents: events })

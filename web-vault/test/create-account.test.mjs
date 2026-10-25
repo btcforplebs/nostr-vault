@@ -174,3 +174,22 @@ test("first events: relay list, DM relays, profile only with something in it, fo
   assert.deepEqual(res.map(r => r.kind), [10002, 10050, 0, 3])
   assert.ok(sent.every(([urls]) => urls.length > 0 && urls.every(u => /^wss:\/\//.test(u))))
 })
+
+test("the first events count as sent at the first relay's OK, not the slowest relay's answer", async () => {
+  const k = newKey()
+  const ks = memKeys()
+  const s = await localSession(k.sk, PW, { keyStore: ks, logn: 4 })
+  const events = await signAll(localSigner(s, { keyStore: ks }), s.pubkey, newAccountTemplates({ name: "Ada", picture: null, follows: [] }))
+  let release
+  const slow = new Promise(r => { release = r })
+  // Each event: the first relay refuses, the second takes it, the rest have not answered.
+  const publish = urls => urls.map((_, i) => i === 0 ? Promise.reject(new Error("blocked")) : i === 1 ? Promise.resolve("ok") : slow.then(() => "ok"))
+  const res = await publishNewAccount(events, { publish })
+  assert.deepEqual(res.map(r => r.taken), events.map(() => true))
+  release()
+  const counts = await Promise.all(res.map(r => r.settled))
+  assert.deepEqual(counts, res.map(r => r.of - 1))
+
+  const none = await publishNewAccount(events, { publish: urls => urls.map(() => Promise.reject(new Error("down"))) })
+  assert.deepEqual(none.map(r => r.taken), events.map(() => false))
+})

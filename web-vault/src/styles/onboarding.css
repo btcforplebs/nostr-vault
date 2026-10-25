@@ -56,3 +56,10 @@
 
 .onboard-summary { margin: 0; padding: 16px 18px 16px 34px; border-radius: 16px; background: var(--s1); border: 1px solid var(--hair);
   display: grid; gap: 8px; font: var(--t-sub); color: var(--text-2); }
+
+/* Settings > Your Secret Key (screens/YourKeyPage.jsx): the note, the password card and the key cards in one column,
+   inside the settings page's gutter. */
+.your-key { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 0 var(--gutter) 12px; }
+.your-key > p { margin: 0; }
+.your-key > .card { margin: 0; }
+.your-key-hide { justify-self: start; }
