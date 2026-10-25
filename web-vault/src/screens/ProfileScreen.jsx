@@ -9,6 +9,7 @@ import { WotButton } from "./PersonScreen.jsx"
 import { EditProfile } from "./EditProfile.jsx"
 import { readOwn, syncOwn } from "../net/sync.js"
 import { NOTE_KINDS, fetchTagged, ownOlder, syncOwnPage } from "../net/person.js"
+import { fetchShop } from "../net/profile-tabs.js"
 import { parseHash } from "../desktop/routes.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import "../styles/person.css"
@@ -24,6 +25,7 @@ export function ProfileScreen({ ctx }) {
   const { vault, account, session } = ctx
   const me = session.pubkey
   const [articles, setArticles] = useState(null)
+  const [shop, setShop] = useState(null)
   const [round, setRound] = useState(0) // bumped by a refresh: the streams and articles load again
   const [editing, setEditing] = useState(false)
   const { blocked } = useBlocks(ctx)
@@ -43,6 +45,13 @@ export function ProfileScreen({ ctx }) {
     async until => (navigator.onLine ? fetchTagged(me, uniq([...account.relays.read, ...DEFAULT_RELAYS]), { until }) : []), [round])
 
   useEffect(() => { readOwn(vault, me, [30023], 50).then(setArticles).catch(() => {}) }, [])
+  // Your listings, from the marketplace relays and your own: the Shop tab is always there, empty until you sell.
+  useEffect(() => {
+    let live = true
+    setShop(null)
+    ;(navigator.onLine ? fetchShop(me, writeRelays) : Promise.resolve([])).catch(() => []).then(l => live && setShop(l))
+    return () => { live = false }
+  }, [round])
   const refresh = e => { e?.preventDefault(); setRound(r => r + 1) }
 
   // Profile tapped again while on it, from the tab bar or the sidebar: back to the top, and from the top, fetched
@@ -80,7 +89,7 @@ export function ProfileScreen({ ctx }) {
           <WotButton hint="Shows your web of trust" />
         </div>
       </ProfileHeader>
-      <ProfileTabs notes={notes} tagged={tagged} articles={articles} pubkey={me} blocked={blocked} />
+      <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} own pubkey={me} blocked={blocked} />
     </main>
   )
 }
