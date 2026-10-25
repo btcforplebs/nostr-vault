@@ -247,13 +247,51 @@ test("unread: a first visit marks nothing new; the next shows what came since; l
 
 // Paging past the first 100, notes from outside the network, and the emoji a folded like row shows
 // (VaultActivityList.loadMoreActivity, ContentFilter.isOutside, reactionEmojiSummary).
-test("next page: starts at the oldest time, inclusive; a page with nothing new is the end", async () => {
-  const { nextPage } = await import("../src/net/notifications.js")
-  const page = [ev(1, ALICE, [["p", ME]], "", 500), ev(1, BOB, [["p", ME]], "", 300), ev(7, BOB, [["p", ME]], "+", 400)]
-  assert.deepEqual(nextPage(page, new Set()), { until: 300, done: false })
-  assert.deepEqual(nextPage(page, new Set(page.map(e => e.id))), { until: null, done: true }, "all seen already")
-  assert.deepEqual(nextPage([], new Set()), { until: null, done: true }, "empty page")
-  assert.deepEqual(nextPage(page, new Set([page[0].id])), { until: 300, done: false }, "one new is enough")
+test("next page: each relay's own oldest note, the newest of those, inclusive; no relay moving is the end", async () => {
+  const { pageAfter } = await import("../src/net/notifications.js")
+  const at = (...ts) => ts.map(t => ev(1, ALICE, [["p", ME]], "", t))
+  // A busy relay's 100 reach back to 900; a quiet one's reach back to 100. Starting at 100 would skip 100..900 on the
+  // busy one (the bug: the combined oldest), so the next page starts at 900.
+  assert.deepEqual(pageAfter([at(1000, 950, 900), at(800, 100)]), { until: 900, done: false })
+  assert.deepEqual(pageAfter([at(500, 300)], 400), { until: 300, done: false }, "moved past until")
+  assert.deepEqual(pageAfter([at(400, 400)], 400), { until: null, done: true }, "only notes at until itself: no more")
+  assert.deepEqual(pageAfter([at(400), at(300)], 400), { until: 300, done: false }, "one relay moving is enough")
+  assert.deepEqual(pageAfter([[], []]), { until: null, done: true }, "empty pages")
+})
+
+test("fetch: each relay is asked on its own and the list shows once half have answered, not after the slowest", async () => {
+  const { fetchNotificationEvents } = await import("../src/net/notifications.js")
+  const a = ev(1, ALICE, [["p", ME]], "", 900), b = ev(7, BOB, [["p", ME]], "+", 800), c = ev(1, BOB, [["p", ME]], "", 700)
+  let release
+  const slow = new Promise(r => { release = r })
+  const asked = []
+  const query = async (relays, filter) => {
+    asked.push([relays, filter])
+    if (relays[0] === "wss://slow") { await slow; return [c] }
+    return relays[0] === "wss://a" ? [a, b] : [b]
+  }
+  const shows = []
+  const done = fetchNotificationEvents(ME, ["wss://a", "wss://b", "wss://slow", "wss://a"], { limit: 2, query, onEvents: evs => shows.push(evs.map(e => e.id)) })
+  await new Promise(r => setTimeout(r, 20))
+  assert.deepEqual(asked.map(([r]) => r), [["wss://a"], ["wss://b"], ["wss://slow"]], "one relay per ask, each once")
+  assert.deepEqual(asked[0][1], { kinds: [1, 3, 6, 7, 16, 9802, 9735, 30023], "#p": [ME], limit: 2 }, "one filter object")
+  assert.deepEqual(shows, [[a.id, b.id]], "shown with two of three in, the slow relay still out")
+  release()
+  const page = await done
+  assert.deepEqual(page.events.map(e => e.id), [a.id, b.id, c.id])
+  assert.deepEqual(shows.at(-1), [a.id, b.id, c.id], "the late relay's notes are shown when they come")
+  assert.deepEqual([page.until, page.done], [800, false], "next page from the newest per-relay oldest")
+})
+
+test("fetch: with one fast relay of several slow ones, the list shows after firstMs; a forged receipt is dropped", async () => {
+  const { fetchNotificationEvents } = await import("../src/net/notifications.js")
+  const a = ev(1, ALICE, [["p", ME]], "", 900), forged = ev(9735, BOB, [["p", ME]], "", 850)
+  const never = new Promise(() => {})
+  const query = async relays => relays[0] === "wss://fast" ? [a, forged] : never
+  const shows = []
+  fetchNotificationEvents(ME, ["wss://fast", "wss://s1", "wss://s2"], { query, firstMs: 10, trust: async evs => evs.filter(e => e.kind !== 9735), onEvents: evs => shows.push(evs.map(e => e.id)) })
+  await new Promise(r => setTimeout(r, 40))
+  assert.deepEqual(shows, [[a.id]])
 })
 
 test("outside: not you, not whitelisted, not trusted; an empty trusted set counts nobody as outside", async () => {
@@ -283,6 +321,27 @@ test("inside rows: a stranger's reply, mention, quote, article or highlight drop
   assert.equal(kept.filter(r => r.who[0] === BOB).length, types.length)
   assert.equal(insideRows(rows, ME).length, rows.length, "no graph: nobody is outside")
   assert.equal(insideRows(rows, ME, { trusted: new Set([BOB]), whitelist: new Set([ALICE]) }).length, rows.length, "whitelisted")
+})
+
+test("inside rows before the graph is in: a follow's notes show, a stranger's wait, and likes, zaps and follows never wait", async () => {
+  const { insideRows } = await import("../src/net/notifications.js")
+  const types = ["reply", "mention", "quote", "article", "highlight", "reaction", "repost", "zap", "follow"]
+  const rows = types.flatMap(type => [ALICE, BOB, ME].map(who => ({ id: `${type}-${who}`, type, who: [who] })))
+  const kept = insideRows(rows, ME, { trusted: null, follows: [BOB] })
+  assert.deepEqual(kept.filter(r => r.who[0] === ALICE).map(r => r.type), ["reaction", "repost", "zap", "follow"])
+  assert.equal(kept.filter(r => r.who[0] === BOB).length, types.length)
+  assert.equal(kept.filter(r => r.who[0] === ME).length, types.length, "the user's own")
+})
+
+test("about preview: @people stay, links to notes go, pictures become thumbnails, whitespace collapses", async () => {
+  const { aboutPreview } = await import("../src/net/notifications.js")
+  const { npubEncode, noteEncode } = await import("nostr-tools/nip19")
+  const content = `gm  nostr:${npubEncode(ALICE)}, see\n nostr:${noteEncode(N1)} https://x.example/a.png https://x.example/a.png https://p.fips/b.jpg https://x.example/page`
+  const { parts, images } = aboutPreview({ kind: 1, content, tags: [] })
+  assert.deepEqual(parts, ["gm ", { pubkey: ALICE }, ", see https://x.example/page"])
+  assert.deepEqual(images, ["https://x.example/a.png"], "once each, and no .fips name")
+  assert.deepEqual(aboutPreview({ kind: 30023, content: "long body", tags: [["title", "My article"]] }), { parts: ["My article"], images: [] })
+  assert.deepEqual(aboutPreview({ kind: 1, content: "https://x.example/only.jpg", tags: [] }), { parts: [], images: ["https://x.example/only.jpg"] })
 })
 
 test("reaction display: likes are a heart, dislikes a thumbs down, else the first emoji, text and shortcodes a heart", async () => {

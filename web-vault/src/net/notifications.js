@@ -5,6 +5,9 @@
 // (the user's own notes live there) and only then from the network.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool } from "./pool.js"
+import { parseRef } from "./quotes.js"
+import { mediaType } from "./media.js"
+import { meshHost } from "./fips-ref.js"
 
 /** Notes, contact lists (a follow), reposts, reactions, generic reposts, highlights, zaps, long-form articles. */
 export const NOTIFICATION_KINDS = [1, 3, 6, 7, 16, 9802, 9735, 30023]
@@ -12,26 +15,52 @@ const HEX64 = /^[0-9a-f]{64}$/
 
 /** Fetch events of the notification kinds that tag `pubkey`, newest first, the user's own left out. */
 export async function fetchNotifications(pubkey, relays, opts = {}) {
-  return groupNotifications(await fetchNotificationEvents(pubkey, relays, opts), pubkey)
-}
-
-/** One page of the raw events behind the rows, at or before `until`. The screen keeps every page's events and groups
- *  them together, so a note's likes fold into one row across pages. */
-export async function fetchNotificationEvents(pubkey, relays, { limit = 100, since, until, trust = async evs => evs } = {}) {
-  const filter = { kinds: NOTIFICATION_KINDS, "#p": [pubkey], limit, ...(since ? { since } : {}), ...(until ? { until } : {}) }
-  const evs = await pool.querySync(relays, filter, { maxWait: 8000 })
-  return trust(evs) // `trust`: zaps.js trustedReceipts, dropping forged receipts
+  return groupNotifications((await fetchNotificationEvents(pubkey, relays, opts)).events, pubkey)
 }
 
 /**
- * Where the next page starts (VaultActivityList.loadMoreActivity): the oldest time in this page, inclusive, so notes
- * sharing that second aren't skipped. `known` holds the ids already shown; a page with nothing new means the relays
- * have no more. -> { until, done }
+ * One page of the raw events behind the rows, at or before `until`, asked of each relay on its own. The screen keeps
+ * every page's events and groups them together, so a note's likes fold into one row across pages.
+ * `onEvents(events)`: everything so far, once half the relays have answered (or `firstMs` after the first did), then
+ * again as each other relay answers, so the list never waits on the slowest relay (it waited up to 8 s).
+ * `trust`: zaps.js trustedReceipts, dropping forged receipts. -> { events, until, done }, `until`/`done` as pageAfter.
  */
-export function nextPage(page, known) {
-  const fresh = page.filter(ev => ev?.id && !known.has(ev.id))
-  if (!fresh.length) return { until: null, done: true }
-  return { until: Math.min(...page.map(ev => ev.created_at)), done: false }
+export async function fetchNotificationEvents(pubkey, relays, { limit = 100, since, until, trust = async evs => evs, onEvents = () => {},
+  firstMs = 700, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const filter = { kinds: NOTIFICATION_KINDS, "#p": [pubkey], limit, ...(since ? { since } : {}), ...(until ? { until } : {}) }
+  const urls = [...new Set(relays)]
+  const byId = new Map(), answers = []
+  let open = false, timer = null
+  const emit = () => onEvents([...byId.values()])
+  await Promise.all(urls.map(async url => {
+    const evs = await query([url], filter, { maxWait: 8000 }).catch(() => [])
+    const kept = await trust(evs).catch(() => [])
+    for (const ev of kept) if (ev?.id && !byId.has(ev.id)) byId.set(ev.id, ev)
+    answers.push(evs)
+    if (open) return emit()
+    if (answers.length * 2 >= urls.length) { open = true; clearTimeout(timer); return emit() }
+    timer ??= setTimeout(() => { open = true; emit() }, firstMs)
+  }))
+  clearTimeout(timer)
+  return { events: [...byId.values()], ...pageAfter(answers, until) }
+}
+
+/**
+ * Where the next page starts (VaultActivityList.loadMoreActivity), from each relay's own answer: a relay that sent
+ * notes older than `until` may have more, and the next page starts at the newest of those relays' oldest notes, so a
+ * busy relay's older notes aren't skipped because a quiet one reached further back. Inclusive, so notes sharing that
+ * second aren't skipped. No relay moved: the relays have no more. -> { until, done }
+ */
+export function pageAfter(answers, until) {
+  let next = null
+  for (const evs of answers) {
+    const times = evs.map(ev => ev?.created_at).filter(Number.isFinite)
+    if (!times.length) continue
+    const oldest = Math.min(...times)
+    if (until != null && oldest >= until) continue
+    next = next == null ? oldest : Math.max(next, oldest)
+  }
+  return next == null ? { until: null, done: true } : { until: next, done: false }
 }
 
 /**
@@ -103,8 +132,14 @@ export function trustedWeb(follows, lists) {
 }
 
 /** The rows left once notes from outside the network are dropped. The web has no whitelist of other people's keys
- *  (Haven's only whitelists this browser's device key), so `whitelist` is empty unless a caller has one. */
-export function insideRows(rows, owner, { whitelist = new Set(), trusted = new Set() } = {}) {
+ *  (Haven's only whitelists this browser's device key), so `whitelist` is empty unless a caller has one.
+ *  `trusted` null: the graph isn't in yet, so a note shows only when `follows` (or the user) wrote it. The rest wait
+ *  rather than show and then go, and likes, zaps and follows never wait. */
+export function insideRows(rows, owner, { whitelist = new Set(), trusted = new Set(), follows = [] } = {}) {
+  if (trusted === null) {
+    const known = new Set([owner, ...follows, ...whitelist])
+    return rows.filter(r => !NOTE_TYPES.has(r.type) || known.has(r.who[0]))
+  }
   return rows.filter(r => !(NOTE_TYPES.has(r.type) && isOutside(r.who[0], owner, whitelist, trusted)))
 }
 
@@ -284,4 +319,34 @@ export async function fetchNotes(vault, ids, relays) {
     }
   }
   return notes
+}
+
+/**
+ * The user's note as a row quotes it under a like (VaultActivity.preview + VaultActivityRow.readablePreview): an
+ * article's title or summary, else its words with whitespace runs collapsed, `nostr:` people as { pubkey } (drawn
+ * as @names), links to notes left out (a short preview can't show them), and picture links taken out into `images`
+ * (thumbnails). A .fips picture stays out of both, as its name would go to DNS. -> { parts: [string | { pubkey }], images }
+ */
+export function aboutPreview(note) {
+  if (note?.kind === 30023) {
+    const t = tagValue(note.tags ?? [], "title") || tagValue(note.tags ?? [], "summary")
+    if (t) return { parts: [t], images: [] }
+  }
+  const parts = [], images = []
+  for (const word of String(note?.content ?? "").split(/\s+/).filter(Boolean)) {
+    if (/^https?:\/\//i.test(word) && mediaType(word) === "image") {
+      if (!meshHost(word) && !images.includes(word)) images.push(word)
+      continue
+    }
+    const [, bech, tail = ""] = /^nostr:([a-z0-9]+)(.*)$/i.exec(word) ?? []
+    const ref = bech ? parseRef(bech) : null
+    if (bech && ref?.type !== "profile") continue
+    if (parts.length) parts.push(" ")
+    if (ref) parts.push({ pubkey: ref.pubkey }, tail)
+    else parts.push(word)
+  }
+  // Neighbouring words as one string, so the row is a few text nodes rather than one per word.
+  const joined = []
+  for (const p of parts) typeof p === "string" && typeof joined.at(-1) === "string" ? joined[joined.length - 1] += p : joined.push(p)
+  return { parts: joined, images }
 }

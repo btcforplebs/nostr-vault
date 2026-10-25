@@ -10,6 +10,7 @@ import { transformSync } from "rolldown/utils"
 
 registerHooks({
   load(url, context, next) {
+    if (url.endsWith(".css")) return { format: "module", source: "", shortCircuit: true } // styles are the browser's
     if (!url.endsWith(".jsx")) return next(url, context)
     const path = fileURLToPath(url)
     const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
@@ -94,12 +95,12 @@ test("who: one name, two names, then the first name and N others", () => {
 test("a like shows the user's note as quiet text, without a name; their reply shows their words and no note line", () => {
   const note = { id: NOTE, pubkey: ME, content: "my  note\n text", tags: [] }
   const like = Row({ row: row("reaction", { noteId: NOTE, emojis: ["+"] }), note, me: ME })
-  const quiet = find(like, n => /vault-about/.test(n.props?.class ?? ""))
+  const quiet = find(like, n => /notif-about/.test(n.props?.class ?? ""))
   assert.equal(quiet.length, 1)
   assert.equal(text(quiet[0]), "my note text")
   assert.equal(find(like, n => n.type === AuthorName).length, 1, "only the liker is named")
-  assert.equal(find(Row({ row: row("reaction", { noteId: NOTE }), me: ME }), n => /vault-about/.test(n.props?.class ?? "")).length, 0, "nothing while the note loads")
+  assert.equal(find(Row({ row: row("reaction", { noteId: NOTE }), me: ME }), n => /notif-about/.test(n.props?.class ?? "")).length, 0, "nothing while the note loads")
   const reply = Row({ row: row("reply", { noteId: NOTE }), note, me: ME })
-  assert.equal(find(reply, n => /vault-about/.test(n.props?.class ?? "")).length, 0)
+  assert.equal(find(reply, n => /notif-about/.test(n.props?.class ?? "")).length, 0)
   assert.equal(find(reply, n => n.type === NoteText)[0].props.content, "their words")
 })
