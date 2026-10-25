@@ -1,10 +1,12 @@
 /* The phone layout's tab bar and floating Post button (components/TabBar.jsx), as the iPhone draws them
    (BottomTabBar.swift, FloatingButtonRow.swift): a glass capsule 16px in from each side, inactive tabs white, the
    current one orange, 10px labels, and Post in the row just above the bar, 20px from the right. */
-.tabbar { position: fixed; z-index: 10; left: var(--gutter); right: var(--gutter); bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom));
-  max-width: 420px; margin: 0 auto; height: var(--tabbar-h); padding: 0 8px; display: flex; justify-content: space-around; align-items: center;
+.tabbar { position: fixed; z-index: 10; left: 0; right: 0; bottom: calc(var(--tabbar-gap) + env(safe-area-inset-bottom));
+  margin: 0 auto; width: var(--tabbar-w); height: var(--tabbar-h); overflow: hidden;
   border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   border: 1px solid var(--hair); box-shadow: 0 8px 24px rgb(0 0 0 / .5); }
+.tabs-full { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: var(--tabbar-full); height: var(--tabbar-h); padding: 0 8px;
+  display: flex; justify-content: space-around; align-items: center; }
 .tab { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   color: var(--text); font: 400 10px/1.2 var(--font); }
 .tab.on { color: var(--accent); font-weight: 600; }

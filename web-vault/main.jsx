@@ -32,6 +32,7 @@ import { WalletScreen } from "./src/screens/WalletScreen.jsx"
 import { WotScreen } from "./src/screens/WotScreen.jsx"
 import { TabBar, PostButton } from "./src/components/TabBar.jsx"
 import { tabOf } from "./src/components/tabs.js"
+import { startChromeFold } from "./src/components/chrome-fold.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import { Splash } from "./src/components/Loading.jsx"
 import { VaultReady } from "./src/components/VaultReady.jsx"
@@ -108,6 +109,8 @@ function App() {
   useEffect(() => { const f = () => setRoute(settle(modeNow.current)); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
   // Crossing 760px swaps layouts; the address is fixed up for the new one.
   useEffect(() => { setRoute(settle(mode)) }, [mode === "phone"])
+  // The phone's bars fold as you scroll, as on the iPhone (chrome-fold.js); the desktop layout has none.
+  useEffect(() => mode === "phone" && session ? startChromeFold() : undefined, [mode === "phone", !!session])
 
   useEffect(() => {
     if (!session) return

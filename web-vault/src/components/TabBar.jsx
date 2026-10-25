@@ -1,6 +1,9 @@
 import { Avatar } from "./Avatar.jsx"
 import { useUnreadTotal } from "./useUnreadTotal.js"
+import { useEffect, useState } from "preact/hooks"
+import { isFolded, onFoldedChange, unfold } from "./chrome-fold.js"
 import "../styles/tabbar.css"
+import "../styles/chrome-fold.css"
 
 // The phone's five tabs, in its order: Feed · Search · Profile · WoT · Vault (iPhone BottomTabBar). Everything else
 // is reached the way the phone reaches it, from a floating button at the top of a tab: Messages and the Vault
@@ -31,20 +34,48 @@ const TABS = [["feed", "Feed"], ["search", "Search"], ["profile", "Profile"], ["
  *  tab wears a red dot while a message is unread, as the iPhone's does (BottomTabBar vaultHasNews). */
 export function TabBar({ ctx, route, pubkey }) {
   const unread = useUnreadTotal(ctx)
+  const folded = useFolded()
   return (
     <nav class="tabbar" aria-label="Sections">
-      {TABS.map(([id, label]) => (
-        <a key={id} href={`#/${id}`} class={route === id ? "tab on" : "tab"} aria-current={route === id ? "page" : undefined}
-          aria-label={id === "vault" && unread ? `${label}, ${unread} unread` : undefined} onClick={id === "feed" && route === "feed" ? retapFeed : undefined}>
-          {id === "profile" && pubkey
-            ? <span class="tab-avatar"><Avatar pubkey={pubkey} size={24} /></span>
-            : <span class="tab-icon">{ICONS[id] ?? line(<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0" />)}</span>}
-          {id === "vault" && unread > 0 && <span class="tab-dot" aria-hidden="true" />}
-          <span>{label}</span>
-        </a>
-      ))}
+      <div class="tabs-full" inert={folded || undefined}>
+        {TABS.map(([id, label]) => (
+          <a key={id} href={`#/${id}`} class={route === id ? "tab on" : "tab"} aria-current={route === id ? "page" : undefined}
+            aria-label={id === "vault" && unread ? `${label}, ${unread} unread` : undefined} onClick={id === "feed" && route === "feed" ? retapFeed : undefined}>
+            {id === "profile" && pubkey
+              ? <span class="tab-avatar"><Avatar pubkey={pubkey} size={24} /></span>
+              : <span class="tab-icon">{ICONS[id] ?? line(<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0" />)}</span>}
+            {id === "vault" && unread > 0 && <span class="tab-dot" aria-hidden="true" />}
+            <span>{label}</span>
+          </a>
+        ))}
+      </div>
+      <FoldedBar route={route} pubkey={pubkey} unread={unread} canPost={!ctx.signer?.readOnly} inert={!folded} />
     </nav>
   )
+}
+
+/** Scrolled down, the bar folds to this (chrome-fold.js, BottomTabBar collapsedContent): the avatar, which opens the bar
+ *  again, and one round button, Compose, or on the Vault tab the Vault Dashboard. */
+function FoldedBar({ route, pubkey, unread, canPost, inert }) {
+  const vault = route === "vault"
+  return (
+    <div class="tabs-fold" inert={inert || undefined}>
+      <button type="button" class="fold-avatar" aria-label={unread ? `Show the tab bar, ${unread} unread` : "Show the tab bar"} onClick={unfold}>
+        <Avatar pubkey={pubkey} size={36} />
+        {unread > 0 && <span class="tab-dot" aria-hidden="true" />}
+      </button>
+      {(vault || canPost) && <a class={vault ? "fold-action vault" : "fold-action"} href={vault ? "#/relay" : "#/compose"} aria-label={vault ? "Vault Dashboard" : "Compose new post"}>
+        {vault ? ICONS.vault : <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={PENCIL} /></svg>}
+      </a>}
+    </div>
+  )
+}
+
+/** Re-renders only when the fold crosses halfway, not every frame. */
+function useFolded() {
+  const [folded, setFolded] = useState(isFolded)
+  useEffect(() => onFoldedChange(setFolded), [])
+  return folded
 }
 
 /** Feed tapped while on the Feed, as on the iPhone: back to the top, and from the top, a refresh (FeedScreen listens). */
@@ -54,12 +85,14 @@ function retapFeed(e) {
   else dispatchEvent(new Event("nv:feed-refresh"))
 }
 
+const PENCIL = "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"
+
 /** The orange floating Post button (iOS FeedView, SearchView, MyProfileView postButton), in the row just above the tab
  *  bar at the right. Opens #/compose. */
 export function PostButton() {
   return (
     <a class="post-button" href="#/compose">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={PENCIL} /></svg>
       Post
     </a>
   )

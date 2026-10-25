@@ -1,0 +1,32 @@
+/* The scroll-linked fold (components/chrome-fold.js), as the iPhone draws it: --fold on <html> goes 0 -> 1 as you scroll
+   down. The full tab bar shrinks and fades out by 60% (ChromeCollapse.fadeOut), the folded capsule fades in from 40%
+   (fadeIn), so the two never read as stacked; the capsule's width and height follow the finger between the two sizes
+   (BottomTabBar). The Post button fades and shrinks toward its corner (ChromeFold), and the Feed's top bar pills narrow
+   to circles on their outer edges (ChromeMorphCapsule): the feed icon on the left, the layout button on the right.
+   With no --fold (the desktop layout, or before the app starts it) everything sits at 0, as before. */
+:root { --fold-out: max(0, 1 - var(--fold, 0) / .6); --fold-in: max(0, (var(--fold, 0) - .4) / .6); }
+
+.tabbar { --tabbar-full: min(420px, 100vw - 2 * var(--gutter)); --tabbar-fold-w: 48px; --tabbar-fold-h: 48px;
+  --tabbar-w: calc(var(--tabbar-full) + (var(--tabbar-fold-w) - var(--tabbar-full)) * var(--fold, 0));
+  height: calc(var(--tabbar-h) + (var(--tabbar-fold-h) - var(--tabbar-h)) * var(--fold, 0)); }
+.tabbar:has(.fold-action) { --tabbar-fold-w: 100px; } /* 6 + avatar 36 + 16 + button 36 + 6 */
+/* Shrinks with the capsule rather than being clipped by it (scale = folded width / full width, ~100/358 on a phone). */
+.tabs-full { opacity: var(--fold-out); scale: calc(1 - .72 * var(--fold, 0)); }
+.tabs-fold { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: flex; align-items: center; gap: 16px; padding: 6px;
+  opacity: var(--fold-in); scale: calc(.85 + .15 * var(--fold, 0)); }
+.tabbar .fold-avatar { position: relative; flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: none; box-shadow: 0 0 0 2px rgb(230 115 38 / .6); }
+.fold-avatar .avatar { display: block; border-radius: 50%; }
+.fold-avatar .tab-dot { top: -3px; left: auto; right: -3px; width: 11px; height: 11px; }
+.fold-action { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%;
+  background: rgb(230 115 38 / .15); color: var(--accent); }
+.fold-action svg { stroke-width: 2.2; }
+
+a.post-button { opacity: var(--fold-out); scale: calc(.85 + .15 * var(--fold-out)); transform-origin: 100% 100%; }
+html[data-fold="folded"] a.post-button { pointer-events: none; }
+
+/* Feed top bar. clip-path also clips taps, so only the circle opens the menu once folded. */
+html[data-fold] .feed-mode-pill { clip-path: inset(0 calc((100% - 44px) * var(--fold, 0)) 0 0 round 22px); }
+html[data-fold] .feed-mode-name, html[data-fold] .feed-mode-chevron { opacity: var(--fold-out); scale: calc(.85 + .15 * var(--fold-out)); transform-origin: 0 50%; }
+html[data-fold] .feed-toolbar { clip-path: inset(0 calc((100% - 44px) * var(--fold, 0)) 0 0 round 22px); translate: calc((100% - 44px) * var(--fold, 0)) 0; }
+html[data-fold] .feed-toolbar > :not(:first-child) { opacity: var(--fold-out); }
