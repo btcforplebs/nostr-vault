@@ -22,7 +22,7 @@ import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from 
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
-  readOwn, readInbound, readOlder, fetchVault, READ_PAGE,
+  readOwn, readInbound, readOlder, fetchVault, READ_PAGE, keepVault, keptVault, sinceKept,
 } from "../net/vault-lists.js"
 import { PagedList, FIRST_ROWS, MORE_ROWS } from "../components/PagedList.jsx"
 import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
@@ -58,6 +58,7 @@ const FILTER_ICONS = { all: "stack", mentions: "at", tagged: "at", mine: "person
 const filterIcon = (mode, id) => ICONS[mode === "followers" && id === "all" ? "followers" : FILTER_ICONS[id]]
 const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
+const scroller = el => el?.closest(".desk-list") ?? null
 const modeOf = (hash = location.hash) => { const m = /^#\/?vault\/([a-z]+)/.exec(hash)?.[1]; return isMode(m) ? m : null }
 
 /** `desk`: the desktop's list column, where the modes are a segmented header and Messages is a sidebar row. */
@@ -65,16 +66,19 @@ export function VaultScreen({ ctx, desk = false }) {
   const { vault, account, session } = ctx
   const me = session.pubkey
   const relays = uniq([...account.relays.read, ...account.relays.write, ...DEFAULT_RELAYS])
-  // The phone opens on "Vault" each time; "#/vault/notes" opens a list straight from a link.
-  const [mode, setMode] = useState(() => modeOf() ?? "activity")
-  const [filter, setFilter] = useState(() => defaultFilter(mode))
-  const [own, setOwn] = useState([])
-  const [inboundAll, setInbound] = useState([])
-  const [lists, setLists] = useState([]) // kind 3 lists naming the user
-  const [givenAll, setGiven] = useState([]) // zap receipts the user paid
+  // Coming back to the tab finds it as it was left (the phone keeps VaultTabView alive): list, mode, filter, scroll.
+  const [k] = useState(() => keptVault(me))
+  const link = modeOf()
+  // The phone opens on "Vault"; "#/vault/notes" opens a list straight from a link.
+  const [mode, setMode] = useState(() => link ?? k?.mode ?? "activity")
+  const [filter, setFilter] = useState(() => k && mode === k.mode ? k.filter : defaultFilter(mode))
+  const [own, setOwn] = useState(() => k?.own ?? [])
+  const [inboundAll, setInbound] = useState(() => k?.inbound ?? [])
+  const [lists, setLists] = useState(() => k?.lists ?? []) // kind 3 lists naming the user
+  const [givenAll, setGiven] = useState(() => k?.given ?? []) // zap receipts the user paid
   // Zap receipts their payee's zap service didn't publish (forged), by id. Checked after the first draw, since
   // resolving a zap service takes the network; until then a receipt still needs a valid signed zap request.
-  const [forged, setForged] = useState(() => new Set())
+  const [forged, setForged] = useState(() => k?.forged ?? new Set())
   const trust = receiptTrust(ctx)
   const screen = async evs => {
     const kept = new Set((await trust(evs).catch(() => evs)).map(e => e.id))
@@ -83,17 +87,17 @@ export function VaultScreen({ ctx, desk = false }) {
   }
   const inbound = forged.size ? inboundAll.filter(e => !forged.has(e.id)) : inboundAll
   const given = forged.size ? givenAll.filter(e => !forged.has(e.id)) : givenAll
-  const [notes, setNotes] = useState(new Map())
+  const [notes, setNotes] = useState(() => k?.notes ?? new Map())
   const [status, setStatus] = useState("")
-  const [loaded, setLoaded] = useState(false)
+  const [loaded, setLoaded] = useState(!!k)
   const { blocked } = useBlocks(ctx)
   const seenAt = useRef(followersSeenAt(me))
   const [searching, setSearching] = useState(false)
   const [refreshes, setRefreshes] = useState(0) // Refresh also asks the media servers again (BlossomGallery)
   const [reach, setReach] = useState("") // how the relays answered, for the status capsule's colour
   // Rows drawn so far, and whether Haven may hold older own or inbox events than those read (the phone's loadMore).
-  const [shown, setShown] = useState(FIRST_ROWS)
-  const [older, setOlder] = useState({ own: false, inbound: false })
+  const [shown, setShown] = useState(() => k && !link ? k.shown : FIRST_ROWS)
+  const [older, setOlder] = useState(() => k?.older ?? { own: false, inbound: false })
   const [paging, setPaging] = useState(false)
 
   useEffect(() => { const f = () => { const m = modeOf(); if (m) pick(m) }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
@@ -116,7 +120,37 @@ export function VaultScreen({ ctx, desk = false }) {
     setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : ""); setReach(err ? "down" : "up")
     settled()
   }
-  useEffect(() => { load() }, [me])
+  // Back on a kept tab: only what's new since it was left, merged in; the rows drawn and the scroll stay.
+  const update = async since => {
+    const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
+    setOwn(prev => merge(prev, o)); setInbound(prev => merge(prev, i))
+    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setReach("down"); return }
+    setReach("checking")
+    const err = await fetchVault(vault, me, relays, { trust, since, on: {
+      inbound: fresh => setInbound(prev => merge(prev, fresh)),
+      lists: l => setLists(prev => merge(prev, l)),
+      given: g => setGiven(prev => merge(prev, g)),
+      own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)) },
+    } })
+    setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : ""); setReach(err ? "down" : "up")
+  }
+  useEffect(() => {
+    if (!k) { load(); return }
+    if (!link && k.scrollY) requestAnimationFrame(() => { const el = scroller(root.current); if (el) el.scrollTop = k.scrollY; else scrollTo(0, k.scrollY) })
+    update(sinceKept(k))
+  }, [me])
+  // What the tab keeps when it's left. The scroll (the desktop's list column, else the page) is noted as it moves:
+  // by the time the screen unmounts, the next one may already have changed it.
+  const root = useRef()
+  const scrolled = useRef(k && !link ? k.scrollY : 0)
+  useEffect(() => {
+    const el = scroller(root.current), on = el ?? window
+    const f = () => { scrolled.current = el ? el.scrollTop : scrollY }
+    on.addEventListener("scroll", f, { passive: true }); return () => on.removeEventListener("scroll", f)
+  }, [])
+  const keep = useRef()
+  keep.current = { me, mode, filter, own, inbound: inboundAll, lists, given: givenAll, forged, notes, shown, older }
+  useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, scrollY: scrolled.current }) }, [])
 
   const pick = m => { setMode(m); setFilter(defaultFilter(m)); setShown(FIRST_ROWS) }
   const choose = id => { setFilter(id); setShown(FIRST_ROWS) }
@@ -139,10 +173,10 @@ export function VaultScreen({ ctx, desk = false }) {
 
   // "New" in the mode menu: what others sent since each mode was last open. The mode on screen counts as looked at.
   const [seen, setSeen] = useState(() => readSeen(me))
-  const [fetched, setFetched] = useState(false) // the relays were asked: only then is a first look's baseline whole
-  const [listsFetched, setListsFetched] = useState(false) // Followers' own answer
-  const [givenFetched, setGivenFetched] = useState(false) // Zaps given's own answer, after every payee is checked
-  const [ownFetched, setOwnFetched] = useState(false) // your likes and highlights from the relays
+  const [fetched, setFetched] = useState(!!k) // the relays were asked: only then is a first look's baseline whole
+  const [listsFetched, setListsFetched] = useState(!!k) // Followers' own answer
+  const [givenFetched, setGivenFetched] = useState(!!k) // Zaps given's own answer, after every payee is checked
+  const [ownFetched, setOwnFetched] = useState(!!k) // your likes and highlights from the relays
   // Which answer a mode's "nothing here" waits for; until then it shows its skeleton.
   const ready = mode === "followers" ? listsFetched : mode === "zaps" && filter === "given" ? givenFetched
     : (mode === "likes" && filter === "given") || mode === "highlights" ? fetched && ownFetched : fetched
@@ -171,7 +205,7 @@ export function VaultScreen({ ctx, desk = false }) {
   const filters = FILTERS[mode]
   const f = filters.find(x => x.id === filter)
   return (
-    <main class="screen vault">
+    <main class="screen vault" ref={root}>
       <header class="screen-head vault-head">
         {desk ? (
           <div class="vault-modes" role="tablist" aria-label="Vault">

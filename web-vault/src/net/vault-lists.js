@@ -249,6 +249,7 @@ function dedupe(evs) {
 export const READ_PAGE = 500
 
 const untilOf = until => until ? { until } : {}
+const sinceOf = since => since ? { since } : {}
 
 /** The user's own events the lists draw from, from Haven's outbox: the newest page, or the page before `until`. */
 export async function readOwn(vault, me, { until, limit = READ_PAGE } = {}) {
@@ -291,7 +292,7 @@ async function storeEach(route, evs) {
 /** Others' events that tag the user from the network, kept in Haven's inbox when it takes them. -> events */
 export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs } = {}) {
   // `trust` drops forged zap receipts (zaps.js trustedReceipts) before Haven keeps them.
-  const evs = await trust(await pool.querySync(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...(since ? { since } : {}) }, { maxWait: 8000 }))
+  const evs = await trust(await pool.querySync(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...sinceOf(since) }, { maxWait: 8000 }))
   if (vault.inbox) await storeEach(vault.inbox, evs)
   return dedupe(evs)
 }
@@ -300,37 +301,48 @@ export async function fetchInbound(vault, me, relays, { limit = 200, since, trus
  * The user's own reactions and highlights from the network into Haven's outbox: Import Notes (sync.js syncOwn) only
  * brings notes and articles, and a like made on the phone never passes through this page. -> stored
  */
-export async function fetchOwnExtras(vault, me, relays, { limit = 200 } = {}) {
-  const evs = await pool.querySync(relays, { kinds: [7, HIGHLIGHT_KIND], authors: [me], limit }, { maxWait: 8000 })
+export async function fetchOwnExtras(vault, me, relays, { limit = 200, since } = {}) {
+  const evs = await pool.querySync(relays, { kinds: [7, HIGHLIGHT_KIND], authors: [me], limit, ...sinceOf(since) }, { maxWait: 8000 })
   return (await storeEach(vault.outbox, evs)).filter(r => r.ok).length
 }
 
 /** Kind 3 lists naming the user, from the network. */
-export async function fetchFollowerLists(me, relays, { limit = 500 } = {}) {
-  return pool.querySync(relays, { kinds: [3], "#p": [me], limit }, { maxWait: 8000 })
+export async function fetchFollowerLists(me, relays, { limit = 500, since } = {}) {
+  return pool.querySync(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, { maxWait: 8000 })
 }
 
 /** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network. Most receipts carry it. */
-export async function fetchGivenZaps(me, relays, { limit = 100 } = {}) {
-  return pool.querySync(relays, { kinds: [9735], "#P": [me], limit }, { maxWait: 8000 })
+export async function fetchGivenZaps(me, relays, { limit = 100, since } = {}) {
+  return pool.querySync(relays, { kinds: [9735], "#P": [me], limit, ...sinceOf(since) }, { maxWait: 8000 })
 }
 
 /**
  * The Vault's network round: inbound, follower lists, zaps given and the user's own likes and highlights, asked at
  * once. Each one is handed to `on` as it lands, so the list on screen draws from the first answer and never waits on
- * the slowest: checking zaps given resolves every payee's zap service, ~20 s for 60 payees. -> once all are done,
- * the first error, or null
+ * the slowest: checking zaps given resolves every payee's zap service, ~20 s for 60 payees. `since` asks only for
+ * what came after it (coming back to a kept Vault tab). -> once all are done, the first error, or null
  */
-export async function fetchVault(vault, me, relays, { trust = async evs => evs, on = {}, fetchers = {} } = {}) {
+export async function fetchVault(vault, me, relays, { trust = async evs => evs, on = {}, fetchers = {}, since } = {}) {
   const f = { fetchInbound, fetchFollowerLists, fetchGivenZaps, fetchOwnExtras, ...fetchers }
   const each = (p, apply = () => {}) => p.then(apply)
   const results = await Promise.allSettled([
-    each(f.fetchInbound(vault, me, relays, { trust }), on.inbound),
-    each(f.fetchFollowerLists(me, relays).catch(() => []), on.lists),
-    each(f.fetchGivenZaps(me, relays).then(trust).catch(() => []), on.given),
-    each(f.fetchOwnExtras(vault, me, relays).catch(() => 0), on.own),
+    each(f.fetchInbound(vault, me, relays, { trust, since }), on.inbound),
+    each(f.fetchFollowerLists(me, relays, { since }).catch(() => []), on.lists),
+    each(f.fetchGivenZaps(me, relays, { since }).then(trust).catch(() => []), on.given),
+    each(f.fetchOwnExtras(vault, me, relays, { since }).catch(() => 0), on.own),
   ])
   return results.find(r => r.status === "rejected")?.reason ?? null
 }
+
+// ---- Coming back to the tab ----
+
+/** The Vault tab as it was left, per account, for as long as this page lives: the phone keeps VaultTabView alive
+ *  between tabs, so its list, mode, filter and scroll are where they were. A reload starts fresh. */
+const kept = new Map()
+export const keepVault = (me, state) => { kept.set(me, { ...state, at: Math.floor(Date.now() / 1000) }) }
+export const keptVault = me => kept.get(me) ?? null
+/** Where to ask the relays from when coming back: a minute before the tab was left, for relays' clocks and late
+ *  arrivals. Ids already held are merged away. */
+export const sinceKept = k => k?.at ? Math.max(0, k.at - 60) : undefined
 
 export { replyTarget }
