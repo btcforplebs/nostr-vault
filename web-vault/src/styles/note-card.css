@@ -25,5 +25,9 @@
 /* The parent preview's time in secondary, as the row's own. */
 .note-card .parent-head time { color: var(--text-2); }
 
-/* The thread's focused note (NoteDetail, isFocused): a 2 pt accent border and a soft accent glow. */
-.note-card.focused { border: 2px solid var(--accent); box-shadow: 0 0 16px rgb(230 115 38 / .35); }
+/* The thread's focused note (ThreadScreen Focus) is one card, as on the iPhone: the wrapper takes the orange border, glow
+   and the card's shape, holding the note and its reaction summary; the note inside drops its own card, which drew a
+   second orange box inside the first. */
+.note-card.focused { margin: 0 var(--gutter) 12px; border: 2px solid var(--accent); border-radius: var(--radius);
+  background: var(--s1); box-shadow: 0 0 16px rgb(230 115 38 / .35); }
+.note-card.focused > .note { margin: 0; border: 0; background: none; }

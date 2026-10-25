@@ -49,7 +49,7 @@
    plain text and a thumbnail; replies in a thread card indent 14px per level, four levels at most. */
 .condensed-list { display: flex; flex-direction: column; }
 .condensed { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px 6px calc(8px + var(--indent, 0px)); cursor: pointer; }
-.condensed:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.condensed:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; border-radius: 10px; } /* rounded, not a square box in the card */
 .condensed-card { margin: 0 var(--gutter) 6px; padding: 8px 12px; background: var(--s1); border: 1px solid var(--accent-line); border-radius: 10px; }
 .condensed-avatar { flex: none; line-height: 0; }
 .condensed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
