@@ -42,12 +42,12 @@ export function SearchStart({ ctx, recent, onPick, onClearRecent, onProfile, blo
     <>
       {recent.length > 0 && <>
         <div class="vault-search-head section-label"><span>Recent</span><button type="button" class="link" onClick={onClearRecent}>Clear</button></div>
-        <div class="chips">{recent.map(q => <button key={q} type="button" class="chip" onClick={() => onPick(q)}>{q}</button>)}</div>
+        <div class="chips">{recent.map(q => <button key={q} type="button" class="chip recent" onClick={() => onPick(q)}><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" /></svg>{q}</button>)}</div>
       </>}
       {hasForYou > 0 && <ForYou {...forYou} onProfile={onProfile} />}
       {trending.length > 0 && <>
         <div class="section-label">Trending</div>
-        <div class="chips">{trending.map(t => <button key={t} type="button" class="chip" onClick={() => onPick(`#${t}`)}>#{t}</button>)}</div>
+        <div class="chips">{trending.map(t => <button key={t} type="button" class="chip topic" onClick={() => onPick(`#${t}`)}>#{t}</button>)}</div>
       </>}
       {active.length > 0 && <>
         <div class="section-label">Active in your feed</div>
@@ -102,7 +102,7 @@ function ForYou({ people, topics, notes, onProfile }) {
     <section class="for-you">
       <div class="section-label for-you-head">
         <span class="for-you-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></svg>For you</span>
-        <span class="for-you-src" title="Picked in this browser from your follows' lists and the notes you have. No recommendation server is asked.">Ranked by your relay</span>
+        <span class="for-you-src" title="Picked in this browser from your follows' lists and the notes you have. No recommendation server is asked."><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v7H4zM12 11v5M6 20h12M12 16v4M8 7.5h.01" /></svg>Ranked by your relay</span>
       </div>
       {people.length > 0 && <>
         <div class="for-you-sub">People you may know</div>
