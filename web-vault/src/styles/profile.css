@@ -28,3 +28,5 @@
 .profile-tabs .tab-count { font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); }
 /* Too narrow for the counts: icons alone (the iPhone's ViewThatFits). */
 @container (max-width: 320px) { .profile-tabs .tab-count { display: none; } }
+/* Following and Followers on one line, 18 apart as on the iPhone (followCountsRow). */
+.profile-header .counts span + span { margin-left: 18px; }
