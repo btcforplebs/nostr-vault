@@ -70,3 +70,21 @@ body:has(.compose-sheet) .tabbar { display: none; }
   border-radius: 50%; border: 0; background: var(--accent-pale); color: var(--accent); }
 .compose-sheet .compose-add-photo svg { width: 24px; height: 24px; }
 .compose-sheet .compose-add-photo-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The send countdown (PostActionPill): an accent capsule at the top, "Posting in 5s", a 60 px bar, Undo. */
+.send-pill { position: fixed; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 0 4px 0 16px; min-height: 44px; border-radius: 999px;
+  background: var(--accent); color: #fff; font: 600 15px/1 var(--font); font-variant-numeric: tabular-nums;
+  box-shadow: 0 6px 20px rgb(0 0 0 / .35); white-space: nowrap; }
+.send-pill-bar { position: relative; width: 60px; height: 4px; border-radius: 2px; background: rgb(255 255 255 / .3); overflow: hidden; }
+.send-pill-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: #fff; transition: width .1s linear; }
+.send-pill .send-pill-undo { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .22);
+  color: #fff; font: 600 15px/1 var(--font); }
+.compose-undone { margin: 0 var(--gutter) 10px; }
+
+/* Replying: the iPhone's compact strip, picture beside "Replying to Name" and a few lines of their text. */
+.compose-target.compose-replying { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; }
+.compose-replying-text { min-width: 0; flex: 1; }
+.compose-replying-snippet { margin: 4px 0 0; color: var(--text-2); font: var(--t-foot); display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.compose-leave { justify-content: center; }
