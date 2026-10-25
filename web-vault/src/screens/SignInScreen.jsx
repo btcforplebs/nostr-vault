@@ -5,6 +5,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { findExtension, extensionSignIn } from "../signer/nip07.js"
 import { bunkerSignIn } from "../signer/nip46.js"
 import { ReadOnlySignIn } from "../components/ReadOnlySignIn.jsx"
+import { GetExtension } from "../components/GetExtension.jsx"
 import { signerFor } from "../signer/index.js"
 import { checkExtensionAccount } from "../signer/accounts.js"
 import { loadAccounts } from "../session.js"
@@ -71,7 +72,8 @@ export const methodLabel = account => account.method === "nip46" ? "Remote signe
 
 /** The extension button and the bunker field. onSignedIn({ signer, session }). Also the Accounts screen's "Add". */
 export function SignInOptions({ onSignedIn }) {
-  const [hasExt, setHasExt] = useState(false)
+  const [hasExt, setHasExt] = useState(null) // null: still looking
+  const [showHelp, setShowHelp] = useState(false)
   const [bunker, setBunker] = useState("")
   const [busy, setBusy] = useState("")
   const [err, setErr] = useState("")
@@ -85,11 +87,13 @@ export function SignInOptions({ onSignedIn }) {
   return (
     <>
       {hasExt && <button class="primary" disabled={!!busy} onClick={run("ext", extensionSignIn)} aria-busy={busy === "ext" || undefined}>{busy === "ext" ? "Waiting for the extension…" : "Sign in with extension"}</button>}
+      {hasExt === false && !showHelp && <button onClick={() => setShowHelp(true)}>Sign in with extension</button>}
+      {hasExt === false && showHelp && <GetExtension disabled={!!busy} onFound={() => { setHasExt(true); run("ext", extensionSignIn)() }} />}
       <label class="field">
         <span>Bunker link (NIP-46)</span>
         <input value={bunker} onInput={e => setBunker(e.currentTarget.value)} placeholder="bunker://… or name@domain" autocapitalize="off" autocorrect="off" spellcheck={false} />
       </label>
-      <button class={hasExt ? "" : "primary"} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))} aria-busy={busy === "bunker" || undefined}>
+      <button class={hasExt === false && !showHelp ? "primary" : ""} disabled={!!busy || !bunker.trim()} onClick={run("bunker", () => bunkerSignIn(bunker, pool))} aria-busy={busy === "bunker" || undefined}>
         {busy === "bunker" ? "Approve the connection in your signer…" : "Connect bunker"}
       </button>
       <ReadOnlySignIn disabled={!!busy} onSignedIn={onSignedIn} />

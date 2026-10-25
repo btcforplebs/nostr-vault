@@ -23,3 +23,9 @@ button.danger { color: var(--danger); }
 .readonly-signin .person-row { width: 100%; margin: 0; }
 .account-npub-line { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
 .account-npub-line .account-npub { flex: 1; min-width: 0; margin-bottom: 0; }
+/* Sign-in with no extension in this browser: which one to get for it (SignInScreen.jsx GetExtension). */
+.get-extension { display: grid; gap: 10px; padding: 16px; border-radius: var(--radius); background: var(--s1); border: 1px solid var(--accent-line); text-align: left; }
+.get-extension h2 { margin: 0; font: var(--t-headline); }
+.get-extension p { margin: 0; font: var(--t-sub); color: var(--text-2); }
+.get-extension p.small { font: var(--t-foot); }
+.get-extension a.button { justify-content: center; min-height: 48px; }
