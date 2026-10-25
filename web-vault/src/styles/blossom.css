@@ -1,0 +1,14 @@
+/* Vault › Media (BlossomGallery): the play mark on a video tile (iPhone VideoThumbnailView's play.circle.fill) and the
+   viewer's previous / next (the phone swipes between files). The gallery's other rules are in settings.css. */
+.blossom-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: grid; place-items: center;
+  width: 40px; height: 40px; border-radius: 50%; background: rgb(0 0 0 / .45); color: rgb(255 255 255 / .9);
+  box-shadow: 0 2px 8px rgb(0 0 0 / .3); pointer-events: none; }
+.blossom-play svg { margin-left: 2px; }
+.blossom-view { position: relative; touch-action: pan-y; }
+.blossom-step { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 40px; height: 40px;
+  min-height: 0; padding: 0 0 3px; border: 0; border-radius: 50%; background: rgb(0 0 0 / .55); color: #fff; font: 600 26px/1 var(--font); }
+.blossom-step:active:not(:disabled) { transform: translateY(-50%) scale(.94); }
+.blossom-step.prev { left: 8px; }
+.blossom-step.next { right: 8px; }
+/* Day headings as the phone's mediaSectionHeader: 13 pt bold, as written ("Today", not "TODAY"). */
+.blossom-day { text-transform: none; font-weight: 700; font-size: 13px; letter-spacing: .02em; color: var(--text); }

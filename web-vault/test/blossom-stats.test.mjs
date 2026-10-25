@@ -33,6 +33,8 @@ test("a server's health: Healthy, Offline when it didn't answer, Refused with it
   assert.equal(health("didn't answer"), "Offline")
   assert.equal(health("Failed to fetch"), "Offline")
   assert.equal(health(undefined), "Offline")
+  assert.equal(health(undefined, true), "Checking…", "still being asked")
+  assert.equal(health("ok", true), "Healthy")
   assert.equal(health("Auth header not found"), "Refused · Auth header not found")
 })
 
@@ -60,5 +62,9 @@ test("the header shows the four numbers and each server's health", () => {
   const d = text({ [A]: "ok", [B]: "HTTP 401" })
   for (const w of ["1/2", "?", "Refused · HTTP 401", "1 didn't list your files, so Backed Up can't be told"]) assert.ok(d.includes(w), w)
   assert.equal(d.includes("0%"), false)
-  assert.match(readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8"), /<BlossomStats blobs=\{found\.blobs\} servers=\{servers\} status=\{found\.status\} \/>/)
+  // While servers are still being asked: no Backed Up figure yet, and the unasked one says Checking, not Offline.
+  const p = walk(BlossomStats({ blobs, servers: [A, B], status: { [A]: "ok" }, pending: true })).filter(x => typeof x === "string").join(" ")
+  for (const w of ["1/2", "…", "Checking…"]) assert.ok(p.includes(w), w)
+  assert.equal(p.includes("Offline"), false)
+  assert.match(readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8"), /<BlossomStats blobs=\{found\.blobs\} servers=\{servers\} status=\{found\.status\} pending=\{!found\.done\} \/>/)
 })

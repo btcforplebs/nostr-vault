@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
-import { listBlobs, deleteBlob, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS } from "../src/net/blossom-gallery.js"
+import { listBlobs, deleteBlob, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const signs = []
@@ -36,6 +36,36 @@ test("lists merge by hash with the servers that hold each, newest first; bad ent
   // Opening Media again within the auth's life doesn't ask the signer again.
   await listBlobs([B], ME, { ctx, fetch })
   assert.equal(signs.length, 1)
+})
+
+test("each server's list draws as it answers, without waiting for the slowest", async () => {
+  resetListAuth()
+  let release
+  const slow = new Promise(r => { release = r })
+  const parts = []
+  const fetch = async url => url.startsWith(A) ? res(200, [{ sha256: H("1"), url: `${A}/${H("1")}`, uploaded: 1 }]) : (await slow, res(200, [{ sha256: H("2"), url: `${B}/${H("2")}`, uploaded: 2 }]))
+  const done = listBlobs([A, B], ME, { ctx, fetch, on: p => parts.push(p) })
+  await new Promise(r => setTimeout(r, 10))
+  assert.deepEqual(parts.map(p => [p.blobs.map(b => b.sha256[0]), p.status]), [[["1"], { [A]: "ok" }]], "A's files show while B is still being asked")
+  release()
+  const r = await done
+  assert.deepEqual(r.blobs.map(b => b.sha256[0]), ["2", "1"])
+  assert.equal(parts.length, 2)
+})
+
+test("a server that wanted a signed list is asked signed straight away next time", async () => {
+  resetListAuth()
+  const calls = []
+  const fetch = async (url, opt = {}) => { calls.push(opt.headers?.Authorization ? "auth" : "none"); if (!opt.headers?.Authorization) throw new TypeError("Failed to fetch"); return res(200, []) }
+  await listBlobs([B], ME, { ctx, fetch })
+  assert.deepEqual(calls, ["none", "auth"])
+  calls.length = 0
+  await listBlobs([B], ME, { ctx, fetch })
+  assert.deepEqual(calls, ["auth"], "no unsigned try first")
+  // A read-only account still asks unsigned: it can't sign.
+  calls.length = 0
+  await listBlobs([B], ME, { ctx: { ...ctx, signer: { readOnly: true } }, fetch })
+  assert.deepEqual(calls, ["none"])
 })
 
 test("a read-only account isn't asked to sign; the server just shows as refusing", async () => {
@@ -73,10 +103,13 @@ test("kinds from the type or the extension; filters; day groups keep order", () 
   assert.equal(mediaType({ url: "https://x/y.mov?x=1" }), "video")
   assert.equal(mediaType({ type: "application/pdf", url: "https://x/y" }), "other")
   assert.ok(TYPE_FILTERS.photos({ kind: "photo" }) && !TYPE_FILTERS.photos({ kind: "gif" }) && TYPE_FILTERS.all({ kind: "other" }))
-  const day = 86400
-  const g = byDay([{ uploaded: 10 * day + 5 }, { uploaded: 10 * day + 1 }, { uploaded: 9 * day }, { uploaded: 0 }], "en-US")
-  assert.deepEqual(g.map(x => x.blobs.length), [2, 1, 1])
-  assert.equal(g.at(-1).day, "Undated")
+  // The phone's headings (MediaDateGrouping): Today, This Week (the calendar week), This Month, month, month and year.
+  const now = new Date(2026, 9, 22, 15) // Thursday 22 October 2026
+  const at = (m, d, y = 2026) => new Date(y, m, d, 12).getTime() / 1000
+  const g = byDay([{ uploaded: at(9, 22) }, { uploaded: at(9, 22) - 3600 }, { uploaded: at(9, 19) }, { uploaded: at(9, 18) }, { uploaded: at(9, 2) }, { uploaded: at(8, 30) }, { uploaded: at(11, 25, 2025) }, { uploaded: 0 }], "en-US", now)
+  assert.deepEqual(g.map(x => [x.day, x.blobs.length]), [["Today", 2], ["This Week", 2], ["This Month", 1], ["September", 1], ["December 2025", 1], ["Undated", 1]])
+  // A week that starts on Monday leaves Sunday the 18th in This Month.
+  assert.deepEqual(byDay([{ uploaded: at(9, 19) }, { uploaded: at(9, 18) }], "en-GB", now).map(x => x.day), ["This Week", "This Month"])
   const t = blossomAuthTemplate("delete", H("d"), 1000)
   assert.deepEqual(t.tags, [["t", "delete"], ["x", H("d")], ["expiration", "1600"]])
 })

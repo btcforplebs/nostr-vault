@@ -1,5 +1,6 @@
 // Settings › Media Servers (iPhone BlossomSettingsView, "Other Servers"): the account's Blossom servers (BUD-03,
-// kind 10063), where Compose uploads photos, with Remove and Add. Saving signs and publishes the new list.
+// kind 10063), where Compose uploads photos, with Remove and Add. Saving signs and publishes the new list. Each saved
+// server is tested as the page opens, as the phone's MediaServersPage does.
 import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
@@ -28,7 +29,7 @@ export function MediaServersPage({ ctx }) {
   // With no list of its own, the account uploads to the defaults, so an edit starts from them.
   const start = ev => ev ? serverEntries(ev) : DEFAULT_MEDIA_SERVERS
   useEffect(() => {
-    latestList(ctx, 10063).then(r => { setLoaded(r); setUrls(start(r.event)) }).catch(e => { setLoaded({ event: undefined, checked: false }); setUrls(start()); setErr(String(e?.message ?? e)) })
+    latestList(ctx, 10063).then(r => { setLoaded(r); setUrls(start(r.event)); start(r.event).forEach(test) }).catch(e => { setLoaded({ event: undefined, checked: false }); setUrls(start()); setErr(String(e?.message ?? e)) })
   }, [])
 
   const saved = start(loaded?.event)
@@ -93,5 +94,13 @@ export function MediaServersPage({ ctx }) {
 /** A tested server's line: a dot and the phone's words, with why when it isn't working. */
 function Health({ h }) {
   if (!h || h === "checking") return <span class="server-health muted">{h ? "Checking…" : "Not checked yet"}</span>
-  return <span class={`server-health ${h.state}`}><span class="dot" />{SERVER_STATES[h.state]}{h.reason && h.state !== "working" ? ` (${h.reason})` : ""}</span>
+  return <span class={`server-health ${h.state}`}><span class="dot" />{SERVER_STATES[h.state]}{h.reason && h.state !== "working" ? ` (${h.reason})` : ""} · checked {checkedAgo(h.at)}</span>
+}
+
+/** "just now" under a minute, then "5 minutes ago" (the phone's .relative(presentation: .named)). */
+export function checkedAgo(at, now = Date.now(), locale) {
+  const s = (now - at) / 1000
+  if (s < 60) return "just now"
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" })
+  return s < 3600 ? rtf.format(-Math.floor(s / 60), "minute") : rtf.format(-Math.floor(s / 3600), "hour")
 }

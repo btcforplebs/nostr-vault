@@ -43,36 +43,64 @@ async function listAuth(ctx) {
   try { return await header } catch (e) { listAuths.delete(ctx.session.pubkey); throw e }
 }
 
-/**
- * Every server's list, merged by hash, newest first. A server that wants authorisation is asked again with a signed
- * "list" auth: it may say so (400, 401, 403: Primal answers 400 "missing auth event"), or its refusal may carry no
- * CORS header, which the page only sees as a failed fetch. -> { blobs: [{ sha256, url, type, size, uploaded, kind,
- * servers: [server] }], status: { server: "ok" | reason } }
- */
-export async function listBlobs(servers, pubkey, { ctx, fetch = globalThis.fetch, timeoutMs = 10_000 } = {}) {
-  const get = (server, headers) => fetch(`${server}/list/${pubkey}`, { headers, signal: AbortSignal.timeout?.(timeoutMs) })
-  const canSign = ctx?.signer && !ctx.signer.readOnly
-  const status = {}
-  const lists = await Promise.all(servers.map(async server => {
-    try {
-      let res
-      try { res = await get(server, {}) } catch (e) { if (!canSign || e?.name === "TimeoutError") throw e }
-      if (canSign && (!res || [400, 401, 403].includes(res.status))) res = await get(server, { Authorization: await listAuth(ctx) })
-      if (!res.ok) { status[server] = res.headers?.get?.("X-Reason") || `HTTP ${res.status}`; return [] }
-      const d = await res.json()
-      if (!Array.isArray(d)) { status[server] = "answered with something other than a list"; return [] }
-      status[server] = "ok"
-      return d.filter(b => HEX64.test(b?.sha256 ?? "") && typeof b.url === "string").map(b => ({ ...b, server }))
-    } catch (e) { status[server] = e?.name === "TimeoutError" ? "didn't answer" : String(e?.message ?? e); return [] }
-  }))
+// Servers that want a signed "list" (both defaults do): remembered in this browser, so the next visit asks them
+// signed at once instead of waiting out a refusal first (Primal's is a failed fetch, ~0.35 s).
+const AUTH_KEY = "nv-blossom-list-auth"
+const readNeedsAuth = () => { try { return new Set(JSON.parse(globalThis.localStorage?.getItem(AUTH_KEY) ?? "[]")) } catch { return new Set() } }
+let needsAuth = null
+const noteNeedsAuth = server => {
+  needsAuth ??= readNeedsAuth()
+  if (needsAuth.has(server)) return
+  needsAuth.add(server)
+  try { globalThis.localStorage?.setItem(AUTH_KEY, JSON.stringify([...needsAuth])) } catch {}
+}
+/** For tests: forget what was learned. */
+export const resetListAuth = () => { needsAuth = new Set(); listAuths.clear() }
+
+/** Lists merged by hash, newest first: [{ server, ...descriptor }] -> [{ sha256, url, type, size, uploaded, kind, servers }]. */
+function merge(lists) {
   const by = new Map()
   for (const b of lists.flat()) {
     const have = by.get(b.sha256)
     if (have) { if (!have.servers.includes(b.server)) have.servers.push(b.server); continue }
     by.set(b.sha256, { sha256: b.sha256, url: b.url, type: b.type ?? "", size: Number(b.size) || 0, uploaded: Number(b.uploaded) || 0, servers: [b.server] })
   }
-  const blobs = [...by.values()].map(b => ({ ...b, kind: mediaType(b) })).sort((a, b) => b.uploaded - a.uploaded)
-  return { blobs, status }
+  return [...by.values()].map(b => ({ ...b, kind: mediaType(b) })).sort((a, b) => b.uploaded - a.uploaded)
+}
+
+/**
+ * Every server's list, merged by hash, newest first. A server that wants authorisation is asked again with a signed
+ * "list" auth: it may say so (400, 401, 403: Primal answers 400 "missing auth event"), or its refusal may carry no
+ * CORS header, which the page only sees as a failed fetch. One that wanted it before is asked signed straight away.
+ * `on(partial)` gets the merged result each time a server answers, so the grid needn't wait for the slowest; servers
+ * still being asked have no status yet. -> { blobs: [{ sha256, url, type, size, uploaded, kind, servers: [server] }],
+ * status: { server: "ok" | reason } }
+ */
+export async function listBlobs(servers, pubkey, { ctx, fetch = globalThis.fetch, timeoutMs = 10_000, on } = {}) {
+  const get = (server, headers) => fetch(`${server}/list/${pubkey}`, { headers, signal: AbortSignal.timeout?.(timeoutMs) })
+  const canSign = ctx?.signer && !ctx.signer.readOnly
+  needsAuth ??= readNeedsAuth()
+  const status = {}
+  const lists = servers.map(() => [])
+  const answered = (i, list) => { lists[i] = list; on?.({ blobs: merge(lists), status: { ...status } }) }
+  await Promise.all(servers.map(async (server, i) => {
+    try {
+      let res
+      if (!(canSign && needsAuth.has(server))) {
+        try { res = await get(server, {}) } catch (e) { if (!canSign || e?.name === "TimeoutError") throw e }
+      }
+      if (canSign && (!res || [400, 401, 403].includes(res.status))) {
+        res = await get(server, { Authorization: await listAuth(ctx) })
+        if (res.ok) noteNeedsAuth(server)
+      }
+      if (!res.ok) { status[server] = res.headers?.get?.("X-Reason") || `HTTP ${res.status}`; return answered(i, []) }
+      const d = await res.json()
+      if (!Array.isArray(d)) { status[server] = "answered with something other than a list"; return answered(i, []) }
+      status[server] = "ok"
+      answered(i, d.filter(b => HEX64.test(b?.sha256 ?? "") && typeof b.url === "string").map(b => ({ ...b, server })))
+    } catch (e) { status[server] = e?.name === "TimeoutError" ? "didn't answer" : String(e?.message ?? e); answered(i, []) }
+  }))
+  return { blobs: merge(lists), status }
 }
 
 /** Delete a file from every server that holds it. -> [{ server, ok, message }] */
@@ -109,11 +137,29 @@ export function outcome(results, verb) {
   return `${verb} on ${ok} of ${results.length} server${results.length === 1 ? "" : "s"}${bad.length ? `. ${bad.join(" · ")}` : "."}`
 }
 
-/** Day headings for the grid, as the phone groups by date: [{ day, blobs }], newest first. */
-export function byDay(blobs, locale) {
+/** The first day of the week in `locale` (0 Sunday … 6 Saturday), as the phone's calendar has it; Sunday if unknown. */
+export function weekStart(locale) {
+  try { const l = new Intl.Locale(locale ?? Intl.DateTimeFormat().resolvedOptions().locale); const d = (l.getWeekInfo?.() ?? l.weekInfo)?.firstDay; return d ? d % 7 : 0 } catch { return 0 }
+}
+
+/** The heading a file sits under, as the phone's MediaDateGrouping: Today, This Week (the calendar week, not the last
+ *  seven days), This Month, then the month, with the year when it isn't this year. */
+export function dayHeading(uploaded, locale, now = new Date()) {
+  if (!uploaded) return "Undated"
+  const d = new Date(uploaded * 1000)
+  const sameMonth = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  if (sameMonth && d.getDate() === now.getDate()) return "Today"
+  const week = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() - weekStart(locale) + 7) % 7))
+  if (d >= week && d <= now) return "This Week"
+  if (sameMonth) return "This Month"
+  return d.toLocaleDateString(locale, d.getFullYear() === now.getFullYear() ? { month: "long" } : { month: "long", year: "numeric" })
+}
+
+/** Headings for the grid, runs in the order given (newest first opens with Today, oldest first ends with it): [{ day, blobs }]. */
+export function byDay(blobs, locale, now = new Date()) {
   const groups = []
   for (const b of blobs) {
-    const day = b.uploaded ? new Date(b.uploaded * 1000).toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" }) : "Undated"
+    const day = dayHeading(b.uploaded, locale, now)
     const last = groups.at(-1)
     if (last?.day === day) last.blobs.push(b)
     else groups.push({ day, blobs: [b] })

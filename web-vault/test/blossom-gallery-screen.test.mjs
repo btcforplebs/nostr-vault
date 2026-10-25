@@ -16,7 +16,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { SORTS, loadSort, sections, typeRank, isAudio } = await import("../src/screens/BlossomGallery.jsx")
+const { SORTS, loadSort, sections, typeRank, isAudio, neighbour, rememberedServers } = await import("../src/screens/BlossomGallery.jsx")
 const day = (d, h = 12) => Date.UTC(2026, 9, d, h) / 1000
 const b = (id, kind, uploaded, type = "") => ({ sha256: id, kind, uploaded, type, servers: [] })
 const files = [b("p1", "photo", day(1)), b("v2", "video", day(2)), b("g3", "gif", day(3)), b("a4", "other", day(4), "audio/mpeg"), b("o5", "other", day(5), "application/pdf"), b("p6", "photo", day(6))]
@@ -33,8 +33,10 @@ test("the iPhone's sorts, without 'On relay first' (no relay-held media on the w
 test("newest and oldest come in dated runs; media type is one run: photos, GIFs, videos, audio, other, newest first within", () => {
   assert.deepEqual(ids(sections(files, "newest", "en-US")), ["p6", "o5", "a4", "g3", "v2", "p1"])
   assert.deepEqual(ids(sections(files, "oldest", "en-US")), ["p1", "v2", "g3", "a4", "o5", "p6"])
-  assert.equal(sections(files, "newest", "en-US").length, 6)
-  assert.ok(sections(files, "oldest", "en-US").every(s => s.day))
+  // The phone's headings, read on Tuesday 6 October: the 4th (Sunday) and 5th are this week.
+  const now = new Date(2026, 9, 6, 18)
+  assert.deepEqual(sections(files, "newest", "en-US", now).map(s => [s.day, s.blobs.length]), [["Today", 1], ["This Week", 2], ["This Month", 3]])
+  assert.deepEqual(sections(files, "oldest", "en-US", now).map(s => s.day), ["This Month", "This Week", "Today"])
   const t = sections(files, "type", "en-US")
   assert.equal(t.length, 1)
   assert.equal(t[0].day, "")
@@ -60,5 +62,25 @@ test("the Vault's Refresh asks the media servers again", () => {
   const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
   assert.match(vault, /onClick=\{\(\) => \{ setRefreshes\(n => n \+ 1\); load\(\) \}\}/)
   assert.match(vault, /<BlossomGallery ctx=\{ctx\} filter=\{filter\} refreshes=\{refreshes\} \/>/)
-  assert.match(src, /useEffect\(\(\) => \{ load\(\) \}, \[ctx\.session\.pubkey, refreshes\]\)/)
+  assert.match(src, /useEffect\(\(\) => \{ load\(\) \}, \[me, refreshes\]\)/)
+})
+
+test("the viewer steps through the grid's order and stops at either end; video tiles carry a play mark", () => {
+  const order = [b("x"), b("y"), b("z")]
+  assert.equal(neighbour(order, "y", -1), "x")
+  assert.equal(neighbour(order, "y", 1), "z")
+  assert.equal(neighbour(order, "x", -1), null)
+  assert.equal(neighbour(order, "z", 1), null)
+  assert.equal(neighbour(order, "gone", 1), null)
+  assert.match(src, /ArrowLeft/)
+  assert.match(src, /b\.kind === "video" && <span class="blossom-play"/)
+})
+
+test("a second visit draws the last list at once; the servers last used are asked while the account's list is looked up", () => {
+  assert.match(src, /useState\(\(\) => shown\.get\(me\)\?\.found \?\? null\)/)
+  const m = new Map(); const st = { getItem: k => m.get(k) ?? null }
+  assert.equal(rememberedServers("pk", st), null)
+  m.set("nv-gallery-servers:pk", JSON.stringify(["https://a.example"])); assert.deepEqual(rememberedServers("pk", st), ["https://a.example"])
+  m.set("nv-gallery-servers:pk", "[1]"); assert.equal(rememberedServers("pk", st), null)
+  m.set("nv-gallery-servers:pk", "nope"); assert.equal(rememberedServers("pk", st), null)
 })
