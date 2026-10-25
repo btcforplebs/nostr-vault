@@ -110,30 +110,12 @@ extension NostrService {
                 print("NostrService: Smart broadcast event \(event.id.prefix(8)) to \(targetPubkey.prefix(8))'s inbox relays: \(targetRelays)")
                 #endif
 
+                // Skip relays already covered by the direct blast. Waits for
+                // each relay's OK: nos.lol, primal, nostr.mom and
+                // relay.nostr.net drop an event whose socket closes right
+                // after it (measured 2026-10-25, 0 of 4 kept it).
                 let blastrRelays = ConfigService.shared.config.activeBlastrRelays
-                for relayURLString in targetRelays {
-                    // Skip relays already covered by the direct blast
-                    if blastrRelays.contains(relayURLString) { continue }
-
-                    guard let url = URL(string: relayURLString) else { continue }
-                    let smartClient = WebSocketClient()
-                    smartClient.isTemporary = true
-
-                    smartClient.$connectionState
-                        .receive(on: DispatchQueue.main)
-                        .sink { state in
-                            if state == .connected {
-                                smartClient.send(text: str)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    smartClient.disconnect()
-                                }
-                            }
-                        }
-                        .store(in: &cancellables)
-
-                    smartClient.connect(url: url)
-                    trackTemporaryClient(smartClient)
-                }
+                broadcastRawEvent(eventDict, to: targetRelays.filter { !blastrRelays.contains($0) })
             } else if let targetPubkey = targetPubkey {
                 // We don't have their relays yet, fetch for next time
                 fetchRelayList(for: targetPubkey)
@@ -149,10 +131,33 @@ extension NostrService {
                 tags: event.tags,
                 blastrRelays: ConfigService.shared.config.activeBlastrRelays
             )
-            if let onBroadcastOutcome {
-                broadcastConfirmed(eventDict, to: relays, attemptsLeft: 3, completion: onBroadcastOutcome)
+            // The author's own kind 10002 write relays decide "Posted"; the
+            // relays above still get it. See PublishTargets.
+            let send: ([String]?) -> Void = { [weak self] authorWrite in
+                guard let self else { return }
+                let plan = PublishTargets.plan(authorWriteRelays: authorWrite, appWriteRelays: relays)
+                if let onBroadcastOutcome {
+                    if !plan.alsoSend.isEmpty { self.broadcastRawEvent(eventDict, to: plan.alsoSend) }
+                    self.broadcastConfirmed(eventDict, to: plan.confirmed, attemptsLeft: 3, completion: onBroadcastOutcome)
+                } else {
+                    self.broadcastRawEvent(eventDict, to: plan.all)
+                }
+            }
+            if event.kind == 10002 {
+                send(ProfileRepository.parseRelayListTags(event.tags).write)
+            } else if let known = outboxRelays[event.pubkey] {
+                send(known)
             } else {
-                broadcastRawEvent(eventDict, to: relays)
+                // Not loaded yet (fresh install, or an account made in another
+                // app): looked up first, briefly.
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let list = await self.fetchNewestReplaceable(kind: 10002, for: event.pubkey,
+                                                                 alsoAsk: ["wss://purplepag.es", "wss://user.kindpag.es"], timeout: 4)
+                    let write = list.map { ProfileRepository.parseRelayListTags($0.tags).write } ?? []
+                    if !write.isEmpty, self.outboxRelays[event.pubkey] == nil { self.outboxRelays[event.pubkey] = write }
+                    send(write)
+                }
             }
         } else {
             onBroadcastOutcome?(.refused)

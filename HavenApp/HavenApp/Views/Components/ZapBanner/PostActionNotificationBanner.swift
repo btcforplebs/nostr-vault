@@ -57,7 +57,7 @@ struct PostConfirmationPill: View {
         switch confirmation.state {
         case .sending:     return "\(confirmation.actionType.label)…"
         case .confirmed:   return confirmation.actionType.doneLabel
-        case .unconfirmed: return "Sent. No relay has confirmed it yet"
+        case .unconfirmed: return "Not posted. None of your relays took it"
         }
     }
 
@@ -65,7 +65,7 @@ struct PostConfirmationPill: View {
         switch confirmation.state {
         case .sending:     return .accent
         case .confirmed:   return .success
-        case .unconfirmed: return .neutral
+        case .unconfirmed: return .error
         }
     }
 }

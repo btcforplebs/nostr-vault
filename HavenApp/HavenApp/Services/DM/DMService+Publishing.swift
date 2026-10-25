@@ -218,39 +218,15 @@ extension DMService {
         client.connect(url: urlObj)
     }
 
+    /// Sends `event` to `url` without the caller waiting. The socket stays
+    /// open until the relay's OK (10 s cap): nos.lol, primal, nostr.mom and
+    /// relay.nostr.net drop an event whose socket closes right after it
+    /// (measured 2026-10-25: 0 of 4 kept it, 4 of 4 when the OK was awaited).
     func fireAndForgetPublish(_ event: NostrEvent, url: String) {
-        guard let urlObj = URL(string: url) else { return }
-
-        let client = WebSocketClient()
-        client.isTemporary = true
-        let eventDict = eventToDict(event)
-
-        let sub = client.$connectionState
-            .receive(on: DispatchQueue.main)
-            .sink { state in
-                if state == .connected {
-                    let msg = ["EVENT", eventDict] as [Any]
-                    if let data = try? JSONSerialization.data(withJSONObject: msg),
-                       let str = String(data: data, encoding: .utf8) {
-                        client.send(text: str)
-                    }
-                    // Short flush window for TCP send buffer, then disconnect
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        client.disconnect()
-                    }
-                } else if case .error = state {
-                    client.disconnect()
-                }
-            }
-        self.cancellables.insert(sub)
-
-        // Connect timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            if client.connectionState != .connected {
-                client.disconnect()
-            }
+        NostrService.shared.broadcastRawEvent(eventToDict(event), to: [url]) { relay, ok, message in
+            #if DEBUG
+            if !ok { print("DMService: send to \(relay) not accepted: \(message)") }
+            #endif
         }
-
-        client.connect(url: urlObj)
     }
 }
