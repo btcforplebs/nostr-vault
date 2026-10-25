@@ -10,7 +10,8 @@ import { visibleNotes } from "../net/blocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { ARTICLE_SCOPES, PAGE, fetchArticles, loadScope, saveScope } from "./articles.js"
-import { displayDate, displayTitle, longFormLink, longFormMeta, plainText, readingMinutes } from "./longform.js"
+import { displayDate, displayTitle, longFormMeta, plainText, readingMinutes } from "./longform.js"
+import { eventWebLink } from "../net/web-link.js"
 import { Markdown } from "./Markdown.jsx"
 import { ArticleEngagement } from "./Engagement.jsx"
 import { EmptyState } from "./EmptyState.jsx"
@@ -82,9 +83,11 @@ export function Scopes({ scopes, value, onPick, onRefresh }) {
 
 const dateText = ts => new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
 
-/** One card: hero image, title, a two-line preview, then author · date · minutes. */
+/** One card: hero image, title, a two-line preview, then author · date · minutes · Open in YakiHonne (the iPhone's
+ *  long-press "Open in …"). */
 export function ArticleRow({ event, onOpen }) {
   const m = longFormMeta(event)
+  const link = eventWebLink(event)
   const gated = gatedArticle(event)
   const preview = m.summary || plainText(gated ? stripTeaser(event.content) : event.content, 200)
   const minutes = readingMinutes(event.content)
@@ -100,6 +103,7 @@ export function ArticleRow({ event, onOpen }) {
         <AuthorName pubkey={event.pubkey} /></a>
         <span>·</span><time datetime={new Date(displayDate(event) * 1000).toISOString()}>{dateText(displayDate(event))}</time>
         {gated ? <><span>·</span><span class="reader-locked">🔒 Locked</span></> : minutes && <><span>·</span><span>{minutes} min read</span></>}
+        {link && <><span>·</span><OpenInWeb link={link} /></>}
       </div>
     </article>
   )
@@ -111,7 +115,7 @@ export function ArticleReader({ event, onBack, ctx }) {
   const m = longFormMeta(event)
   const gated = gatedArticle(event)
   const minutes = gated ? null : readingMinutes(event.content)
-  const link = longFormLink(event)
+  const link = eventWebLink(event)
   const web = threadLink(event)
   const [said, setSaid] = useState("")
   const tell = r => { setSaid(r === "copied" ? "Link copied" : r === "failed" ? "Couldn't copy the link" : ""); if (r === "copied") setTimeout(() => setSaid(""), 2000) }
@@ -120,7 +124,7 @@ export function ArticleReader({ event, onBack, ctx }) {
     <article class="reader">
       <div class="reader-bar">
         <button type="button" class="small" onClick={onBack}>‹ Back</button>
-        {link && <a class="reader-web small" href={link.url} target="_blank" rel="noopener noreferrer">Open in {link.site}</a>}
+        {link && <OpenInWeb link={link} />}
       </div>
       {m.image && <img class="reader-hero" src={m.image} alt="" referrerpolicy="no-referrer" />}
       <h1 class="reader-title">{displayTitle(event)}</h1>
@@ -141,6 +145,12 @@ export function ArticleReader({ event, onBack, ctx }) {
       {ctx && <ArticleEngagement ctx={ctx} article={event} />}
     </article>
   )
+}
+
+/** "Open in zap.cooking" and friends (the iPhone's OpenInWebButton): a new tab on the post's site. A click or Enter on it never
+ *  opens the card it sits on. */
+export function OpenInWeb({ link }) {
+  return <a class="reader-web small" href={link.url} target="_blank" rel="noopener noreferrer" title={`Open in ${link.site}`} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>Open in {link.site}</a>
 }
 
 /** A locked article: its teaser, then a lock card that links out. The web never pays for or unlocks an article. */

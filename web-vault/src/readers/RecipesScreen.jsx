@@ -7,9 +7,10 @@ import { AuthorName } from "../components/NoteCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { visibleNotes } from "../net/blocks.js"
 import { fetchProfiles } from "../net/profiles.js"
-import { ArticleReader, Scopes } from "./ArticlesScreen.jsx"
+import { ArticleReader, OpenInWeb, Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
-import { displayTitle, longFormLink, longFormMeta } from "./longform.js"
+import { displayTitle, longFormMeta } from "./longform.js"
+import { eventWebLink } from "../net/web-link.js"
 import { RECIPE_SCOPES, fetchRecipes, inCategory, loadScope, recipeCategories, saveScope } from "./recipes.js"
 import { SkeletonGrid } from "../components/Loading.jsx"
 import { followsDep, heldResults } from "./held.js"
@@ -84,18 +85,19 @@ export function RecipesEmpty({ scope, failed, onGlobal, onRetry }) {
 
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1)
 
-/** One tile: the hero image (most zap.cooking recipes have one), the title in two lines, the author. A click opens
- *  the reader; the title is also a real link to zap.cooking, so right-click or middle-click opens it there (the
- *  iPhone's long-press "Open in zap.cooking"). */
+/** One tile: the hero image (most zap.cooking recipes have one), the title in two lines, the author, and "Open in
+ *  zap.cooking" (the iPhone's long-press menu item). A click opens the reader; the title is also a real link to
+ *  zap.cooking, so right-click or middle-click opens it there. */
 export function RecipeTile({ event, onOpen }) {
   const { image } = longFormMeta(event)
-  const link = longFormLink(event)
+  const link = eventWebLink(event)
   return (
     <article class="recipe-tile" tabindex="0" onClick={onOpen} onKeyDown={e => { if (e.key === "Enter") onOpen() }}>
       {image ? <img src={image} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <div class="recipe-blank" aria-hidden="true">🍴</div>}
       <div class="recipe-text">
         <h3>{link ? <a href={link.url} target="_blank" rel="noopener noreferrer" onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen() }}>{displayTitle(event)}</a> : displayTitle(event)}</h3>
         <span class="muted small"><AuthorName pubkey={event.pubkey} /></span>
+        {link && <OpenInWeb link={link} />}
       </div>
     </article>
   )
