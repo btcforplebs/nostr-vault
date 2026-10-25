@@ -15,6 +15,7 @@ import { getProfile } from "../net/profiles.js"
 import { hashtagTags } from "../net/hashtags.js"
 import { Dialog } from "../components/Moderation.jsx"
 import { Avatar } from "../components/Avatar.jsx"
+import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -39,6 +40,18 @@ function PostResult({ result }) {
         <div key={r.url} class="muted small">{r.ok ? "✓ Also on this Mac's vault relay" : `This Mac's vault relay (${host(r.url)}) didn't answer. That doesn't change the relays above.`}</div>
       ))}
       <a href="#/profile">See it on your profile</a>
+    </div>
+  )
+}
+
+/** The iPhone's countdown pill (PostActionPill): "Posting in 5s", a bar running down, Undo. */
+function SendPill({ pending, onUndo }) {
+  const text = countdownText(pending.action, pending.remaining)
+  return (
+    <div class="send-pill" role="status" aria-label={`${SEND_ACTIONS[pending.action].label} in ${Math.max(1, Math.ceil(pending.remaining))} seconds`}>
+      <span class="send-pill-text">{text}</span>
+      <span class="send-pill-bar" aria-hidden="true"><span style={{ width: `${Math.min(100, (pending.remaining / pending.total) * 100)}%` }} /></span>
+      <button type="button" class="send-pill-undo" onClick={onUndo}>Undo</button>
     </div>
   )
 }
@@ -137,6 +150,12 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [err, setErr] = useState("")
+  // The send counting down: { action, total, remaining }. Nothing is signed until it ends; Undo drops it.
+  const [pending, setPending] = useState(null)
+  const countdown = useRef(null)
+  const [undone, setUndone] = useState(false)
+  // Leaving the composer mid-countdown is an Undo: the note stays as a draft, nothing is signed.
+  useEffect(() => () => countdown.current?.cancel(), [])
   // Read on every render: going from a reply to the Post button keeps this screen mounted and only changes the hash.
   const target = fixed ?? composeTarget()
   const [note, setNote] = useState(null) // { id, event } once looked up; event null when not found
@@ -220,22 +239,36 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
 
   const uploading = photos.some(p => p.status !== "done" && p.status !== "failed")
   const ready = photos.filter(p => p.status === "done")
-  const canPost = !busy && !uploading && (text.trim() || ready.length) && (!target || parent)
+  const canPost = !busy && !pending && !uploading && (text.trim() || ready.length) && (!target || parent)
 
-  const post = async () => {
-    setBusy(true); setErr(""); setResult(null)
+  // The iPhone's send delay: the note as it is now waits a few seconds (Settings › Send Delay), then is signed and sent.
+  const post = () => {
+    setErr(""); setResult(null); setUndone(false)
+    let built
+    try { built = buildPost({ text, mentions, photos: ready, target, parent }) } catch (e) { return setErr(String(e?.message ?? e)) }
+    const action = sendAction(target), seconds = sendDelaySeconds()
+    if (seconds > 0) setPending({ action, total: seconds, remaining: seconds })
+    countdown.current = startCountdown({
+      seconds,
+      onTick: remaining => setPending(p => p && { ...p, remaining }),
+      onDone: () => { countdown.current = null; setPending(null); send(built) },
+    })
+  }
+  const undo = () => { if (countdown.current?.cancel()) { countdown.current = null; setPending(null); setUndone(true); box.current?.focus() } }
+  const send = async ({ content, tags }) => {
+    setBusy(true)
     try {
-      const { content, tags } = buildPost({ text, mentions, photos: ready, target, parent })
       setResult(await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags))
       setText(""); setMentions({}); setPhotos([]); setMention(null)
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
   const title = !target ? "New Note" : target.mode === "reply" ? "Reply" : "Quote"
-  const postLabel = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : "Posting…") : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"
+  const postLabel = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : `${SEND_ACTIONS[sendAction(target)].label}…`) : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"
   const postButton = cls => <button class={cls} disabled={!canPost} onClick={post} aria-busy={busy || uploading || undefined}>{postLabel}</button>
   return (
     <main class={inline ? "screen compose-inline" : "screen compose-sheet"}>
+      {pending && <SendPill pending={pending} onUndo={undo} />}
       {/* The iPhone's compose sheet: Cancel, the title, and Post at the top right (ComposeView+Chrome). */}
       {!inline && <header class="compose-bar">
         <button type="button" class="compose-cancel" onClick={() => history.back()}>Cancel</button>
@@ -250,7 +283,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
         onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}>
         {!inline && <span class="compose-avatar" aria-hidden="true"><Avatar pubkey={ctx.session.pubkey} size={40} /></span>}
-        <textarea ref={box} class="compose" rows={inline ? 2 : 6} value={text} aria-label={title}
+        <textarea ref={box} class="compose" rows={inline ? 2 : 6} value={text} aria-label={title} readOnly={!!pending || busy}
           placeholder={target?.mode === "reply" ? "Write your reply" : target ? "Add your comment" : "What's happening?"}
           aria-autocomplete="list" aria-expanded={!!mention} aria-controls={mention ? "mention-picker" : undefined}
           onInput={e => { setText(e.currentTarget.value); track(e.currentTarget) }}
@@ -290,7 +323,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         )}
         {photos.filter(p => p.status === "failed").map(p => <p key={p.id} class="error small compose-photo-error">{p.error}</p>)}
         <div class="compose-tools">
-          <button type="button" class="small compose-add-photo" disabled={photos.length >= MAX_PHOTOS} onClick={() => picker.current.click()}
+          <button type="button" class="small compose-add-photo" disabled={photos.length >= MAX_PHOTOS || !!pending || busy} onClick={() => picker.current.click()}
             aria-label="Photo or video" title="Photo or video">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></svg>
             <span class="compose-add-photo-label">Photo or video</span>
@@ -301,6 +334,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         </div>
       </div>
       {inline && postButton("primary")}
+      {undone && !pending && !result && <p class="muted small compose-undone" role="status">Not sent. Nothing was signed, and your note is still here.</p>}
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}
     </main>
