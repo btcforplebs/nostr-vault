@@ -5,10 +5,10 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
-import { NoteText } from "../components/NoteText.jsx"
+import { Mention, NoteText } from "../components/NoteText.jsx"
 import { ago } from "../components/time.js"
 import {
-  fetchNotificationEvents, fetchNotes, filterRows, groupNotifications, insideRows, nextPage, reactionEmojiSummary,
+  aboutPreview, fetchNotificationEvents, fetchNotes, filterRows, groupNotifications, insideRows, reactionEmojiSummary,
   trustedWeb, visitNotifications,
 } from "../net/notifications.js"
 import { fetchProfiles } from "../net/profiles.js"
@@ -18,55 +18,89 @@ import { visibleRows } from "../net/blocks.js"
 import { followLists } from "../net/wot.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { SkeletonList, Spinner } from "../components/Loading.jsx"
+import "../styles/notifications.css"
 
 const PAGE = 100
+
+// What this session last had for each account: a second visit draws it at once and refreshes underneath, as the
+// iPhone's list is already there when the Vault tab opens. Memory only; a reload asks the relays again.
+const kept = new Map()
+const mergeEvents = (have, page) => {
+  if (!have?.length) return page
+  const ids = new Set(have.map(ev => ev.id))
+  const fresh = page.filter(ev => ev?.id && !ids.has(ev.id))
+  return fresh.length ? [...have, ...fresh] : have
+}
 
 export function NotificationsScreen({ ctx }) {
   const { vault, account, session } = ctx
   const relays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
-  const [events, setEvents] = useState(null) // every page's events, grouped together so folds span pages
-  const [notes, setNotes] = useState(new Map())
+  const last = kept.get(session.pubkey)
+  const [events, setEvents] = useState(last?.events ?? null) // every page's events, grouped together so folds span pages
+  const [notes, setNotes] = useState(last?.notes ?? new Map())
   const [status, setStatus] = useState("")
-  const [more, setMore] = useState({ until: null, done: false, busy: false })
-  // Who counts as inside your network (TrustMap.web); empty until the follows' lists are in, and then nobody is outside.
-  const [trusted, setTrusted] = useState(new Set())
+  const [loading, setLoading] = useState(!last) // the first load is still out: an empty list isn't "nothing" yet
+  const [more, setMore] = useState(last ? { ...last.more, busy: false } : { until: null, done: false, busy: false })
+  // Who counts as inside your network (TrustMap.web): null until the follows' lists are in, and then empty when
+  // there is no graph (nobody is outside).
+  const [trusted, setTrusted] = useState(last?.trusted ?? null)
   const { blocked } = useBlocks(ctx)
   const [filter, setFilter] = useState("all") // "all" | "mentions" (VaultToolbar: All / Mentions)
   // Rows newer than the last visit show a dot. Infinity until this visit is read, so nothing flashes as unread.
   const [unreadSince, setUnreadSince] = useState(Infinity)
   const gen = useRef(0) // a Refresh drops the pages an older load is still fetching
+  const filled = useRef(new Set(last?.notes?.keys() ?? [])) // notes asked for already, so each is fetched once
   useEffect(() => {
     setUnreadSince(visitNotifications(session.pubkey, { arriving: true }))
     return () => visitNotifications(session.pubkey, { arriving: false })
   }, [session.pubkey])
+  useEffect(() => { if (events) kept.set(session.pubkey, { events, notes, more, trusted }) }, [events, notes, more, trusted, session.pubkey])
 
-  const loadWeb = () => followLists(session.pubkey, account.follows).then(l => setTrusted(trustedWeb(account.follows, l))).catch(() => {})
+  // Not awaited by the list: likes, zaps and follows show at once, and notes from outside the follows wait for it.
+  const loadWeb = () => followLists(session.pubkey, account.follows).then(l => setTrusted(trustedWeb(account.follows, l))).catch(() => setTrusted(new Set()))
   useEffect(() => { loadWeb() }, [session.pubkey, account.follows.length])
 
   // The notes rows are about, and the faces, for the events not seen before.
-  const fillIn = async (page, have) => {
+  const fillIn = async page => {
     const rows = groupNotifications(page, session.pubkey)
     fetchProfiles(vault, rows.flatMap(x => x.who), relays).catch(() => {})
-    const about = await fetchNotes(vault, rows.map(x => x.noteId).filter(id => id && !have.has(id)), relays)
+    const ids = rows.map(x => x.noteId).filter(id => id && !filled.current.has(id))
+    for (const id of ids) filled.current.add(id)
+    const about = await fetchNotes(vault, ids, relays)
+    if (!about.size) return
     setNotes(n => new Map([...n, ...about]))
-    fetchProfiles(vault, [...about.values()].map(n => n.pubkey), relays).catch(() => {})
+    // Authors, and the people the user's notes name (drawn as @names in the quoted line).
+    const named = [...about.values()].flatMap(n => [n.pubkey, ...aboutPreview(n).parts.filter(p => p.pubkey).map(p => p.pubkey)])
+    fetchProfiles(vault, named, relays).catch(() => {})
   }
 
-  const load = async () => {
+  // `quiet`: a return visit refreshing rows already on screen says nothing; a Refresh says so above them.
+  const load = async ({ quiet = false } = {}) => {
     const g = ++gen.current
-    if (!navigator.onLine) { setStatus("Offline: notifications need the network"); setEvents(events ?? []); return }
+    if (!navigator.onLine) { setStatus("Offline: notifications need the network"); setEvents(e => e ?? []); return }
     // The first load says so in the list itself; a Refresh over rows says so above them. Never both.
-    setStatus(events ? "Loading…" : "")
+    setStatus(events && !quiet ? "Loading…" : "")
+    const first = !events
+    if (!quiet) filled.current = new Set(notes.keys()) // a Refresh asks again for notes that didn't come
     try {
-      const [page] = await Promise.all([fetchNotificationEvents(session.pubkey, relays, { limit: PAGE, trust: receiptTrust(ctx) }), loadWeb()])
+      const seen = new Set()
+      const show = page => {
+        if (g !== gen.current) return
+        setEvents(e => mergeEvents(e, page))
+        const fresh = page.filter(ev => !seen.has(ev.id))
+        for (const ev of fresh) seen.add(ev.id)
+        if (fresh.length) fillIn(fresh).catch(() => {})
+      }
+      const page = await fetchNotificationEvents(session.pubkey, relays, { limit: PAGE, trust: receiptTrust(ctx), onEvents: show })
       if (g !== gen.current) return
-      setEvents(page)
-      setMore({ ...nextPage(page, new Set()), busy: false })
+      show(page.events)
+      // A refresh keeps the older pages already loaded, so where they end still holds.
+      if (first) setMore({ until: page.until, done: page.done, busy: false })
       setStatus("")
-      await fillIn(page, new Map())
-    } catch (e) { setStatus(`Couldn't load (${e?.message ?? e})`); setEvents(events ?? []) }
+    } catch (e) { setStatus(`Couldn't load (${e?.message ?? e})`); setEvents(e => e ?? []) }
+    finally { if (g === gen.current) setLoading(false) }
   }
-  useEffect(() => { load() }, [session.pubkey])
+  useEffect(() => { load({ quiet: true }) }, [session.pubkey])
 
   // Older pages, when the end of the list comes on screen (VaultActivityList.loadMoreActivity).
   const loadMore = async () => {
@@ -77,10 +111,10 @@ export function NotificationsScreen({ ctx }) {
       const page = await fetchNotificationEvents(session.pubkey, relays, { limit: PAGE, until: more.until, trust: receiptTrust(ctx) })
       if (g !== gen.current) return
       const known = new Set(events.map(ev => ev.id))
-      const fresh = page.filter(ev => ev?.id && !known.has(ev.id))
-      setEvents([...events, ...fresh])
-      setMore({ ...nextPage(page, known), busy: false })
-      await fillIn(fresh, notes)
+      const fresh = page.events.filter(ev => ev?.id && !known.has(ev.id))
+      setEvents(e => mergeEvents(e, fresh))
+      setMore({ until: page.until, done: page.done, busy: false })
+      fillIn(fresh).catch(() => {})
     } catch { if (g === gen.current) setMore(m => ({ ...m, busy: false, done: true })) }
   }
   const end = useRef(null)
@@ -93,7 +127,8 @@ export function NotificationsScreen({ ctx }) {
     return () => io.disconnect()
   }, [events, more.until, more.done, more.busy, filter])
 
-  const rows = useMemo(() => events && insideRows(groupNotifications(events, session.pubkey), session.pubkey, { trusted }), [events, trusted, session.pubkey])
+  const rows = useMemo(() => events && insideRows(groupNotifications(events, session.pubkey), session.pubkey, { trusted, follows: account.follows }),
+    [events, trusted, session.pubkey, account.follows])
   // A like, repost or zap on someone else's note that only tags the user isn't about the user's note: the iPhone keeps
   // no row for it, so it goes once that note has loaded and shows another author.
   const notMine = r => aboutYourPost(r) && notes.get(r.noteId) && notes.get(r.noteId).pubkey !== session.pubkey
@@ -103,13 +138,13 @@ export function NotificationsScreen({ ctx }) {
 
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Notifications</h2><button class="small" onClick={load}>Refresh</button></header>
+      <header class="screen-head"><h2>Notifications</h2><button class="small" onClick={() => load()}>Refresh</button></header>
       <div class="segmented" role="tablist" aria-label="Show">
         <button role="tab" aria-selected={filter === "all"} class={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>All</button>
         <button role="tab" aria-selected={filter === "mentions"} class={filter === "mentions" ? "on" : ""} onClick={() => setFilter("mentions")}>Mentions</button>
       </div>
       {status && <div class="status-line">{status}</div>}
-      {shown === null ? <SkeletonList count={7} rowClass="note notification" avatar={32} label="Loading notifications…" />
+      {shown === null || (loading && !shown.length) ? <SkeletonList count={7} rowClass="note notification" avatar={32} label="Loading notifications…" />
         : !shown.length && (more.done || more.until === null) ? <Empty mentions={filter === "mentions"} />
         : shown.map(r => <Row key={r.id} row={r} note={r.noteId ? notes.get(r.noteId) : undefined} trusted={known} unread={r.created_at > unreadSince} me={session.pubkey} />)}
       {shown !== null && !more.done && more.until !== null && <p ref={end} class="waiting" role="status">{more.busy && <><Spinner />Loading older notifications…</>}</p>}
@@ -156,29 +191,57 @@ const follow = href => e => {
   location.hash = href
 }
 
-/** One row: who did what (and their words, or the note of the user's they reacted to). Several people on one note
- *  share a row. `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP. */
+/** One row, as VaultActivityRow: the kind's badge, the faces (up to six), when, and an unread dot; then who did what,
+ *  and their words or the user's note they reacted to. Several people on one note share a row.
+ *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP. */
 export function Row({ row, note, trusted = () => false, unread = false, me = "" }) {
-  const lead = row.who[0]
   const ev = row.events[0]
-  const ok = trusted(lead)
   const href = rowHref(row)
   return (
-    <article class={`note notification ${href ? "tappable" : ""}`} role={href ? "link" : undefined} tabIndex={href ? 0 : undefined}
+    <article class={`note notification notif-${row.type}${unread ? " unread" : ""}${href ? " tappable" : ""}`} role={href ? "link" : undefined} tabIndex={href ? 0 : undefined}
       onClick={href && follow(href)} onAuxClick={href && follow(href)} onKeyDown={href && (e => { if (e.key === "Enter" && e.target === e.currentTarget) location.hash = href })}>
-      <div class="note-head">
-        <Avatar pubkey={lead} size={32} load={ok} />
-        <span class="notif-who"><Who who={row.who} /> {verb(row)}</span>
-        <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
-        {unread && <span role="img" aria-label="New" title="New" style="flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); align-self: center" />}
+      <span class="notif-badge" aria-hidden="true">{BADGES[row.type]}</span>
+      <div class="notif-body">
+        <div class="notif-top">
+          <Faces who={row.who} trusted={trusted} />
+          <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
+          {unread && <span class="notif-dot" role="img" aria-label="New" title="New" />}
+        </div>
+        <div class="notif-who"><Who who={row.who} /> {verb(row)}</div>
+        {row.type === "reply" || row.type === "mention" || row.type === "quote" || row.type === "highlight"
+          ? <NoteText content={ev.content} images={trusted(row.who[0])} />
+          : (row.type === "zap" || row.type === "article") && row.comment
+            ? <NoteText content={row.comment} images={false} />
+            : aboutYourPost(row) ? <About note={note} me={me} /> : null}
       </div>
-      {row.type === "reply" || row.type === "mention" || row.type === "quote" || row.type === "highlight"
-        ? <NoteText content={ev.content} images={ok} />
-        : (row.type === "zap" || row.type === "article") && row.comment
-          ? <NoteText content={row.comment} images={false} />
-          : aboutYourPost(row) ? <About note={note} me={me} /> : null}
     </article>
   )
+}
+
+/** The faces of who did it, overlapping, six at most and "+N" for the rest (VaultActivityRow.avatars). */
+export const MAX_FACES = 6
+export function Faces({ who, trusted = () => false }) {
+  return (
+    <span class="notif-faces" aria-hidden="true">
+      {who.slice(0, MAX_FACES).map(pk => <Avatar key={pk} pubkey={pk} size={30} load={trusted(pk)} />)}
+      {who.length > MAX_FACES && <span class="notif-more">+{who.length - MAX_FACES}</span>}
+    </span>
+  )
+}
+
+// The kind's badge (VaultActivityRow.style): SF Symbols there, the same shapes here.
+const svg = (...d) => <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">{d.map(x => typeof x === "string" ? <path d={x} /> : x)}</svg>
+const solid = d => <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d={d} /></svg>
+const BADGES = {
+  reply: svg("M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 0 11H11"),
+  mention: svg(<circle cx="12" cy="12" r="4" />, "M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"),
+  quote: solid("M5 3h14a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9l-5 4v-4H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Zm3 5v4h2.2c0 1-.6 1.6-1.6 1.8v1.4c2.1-.2 3.4-1.6 3.4-3.6V8Zm6 0v4h2.2c0 1-.6 1.6-1.6 1.8v1.4c2.1-.2 3.4-1.6 3.4-3.6V8Z"),
+  reaction: solid("M12 21s-7.5-4.6-9.6-9.3C.9 8.4 2.9 4.5 6.6 4.5c2.1 0 3.9 1.2 5.4 3.1 1.5-1.9 3.3-3.1 5.4-3.1 3.7 0 5.7 3.9 4.2 7.2C19.5 16.4 12 21 12 21Z"),
+  repost: svg("m17 2 4 4-4 4", "M3 11v-1a4 4 0 0 1 4-4h14", "m7 22-4-4 4-4", "M21 13v1a4 4 0 0 1-4 4H3"),
+  zap: solid("M13.5 2 4 13.5h6.5L9.5 22 20 9.5h-6.5L13.5 2Z"),
+  article: svg("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6", "M16 13H8", "M16 17H8", "M10 9H8"),
+  highlight: svg("m9 11-6 6v3h9l3-3", "m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"),
+  follow: svg("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", <circle cx="9" cy="7" r="4" />, "M19 8v6", "M22 11h-6"),
 }
 
 /** "Ann", "Ann and Bob", "Ann and 3 others" (VaultActivityRow.who). */
@@ -212,11 +275,28 @@ export function verb(row) {
   }
 }
 
-/** The user's note they reacted to, quieter than their own words, and nothing until it has loaded. Only the user's own
- *  notes are quoted, as on the iPhone. */
+/** The user's note they reacted to, quieter than their own words and behind a rule, two lines at most, with its
+ *  pictures as thumbnails (VaultActivityThumbnails: three, the last counting the rest); nothing until it has loaded.
+ *  Only the user's own notes are quoted, as on the iPhone, so their pictures load. */
+export const MAX_THUMBS = 3
 function About({ note, me }) {
   if (!note || (me && note.pubkey !== me)) return null
-  const text = note.content.replace(/\s+/g, " ").trim()
-  if (!text) return null
-  return <div class="repost-line vault-about"><span>{text.length > 140 ? text.slice(0, 140) + "…" : text}</span></div>
+  const { parts, images } = aboutPreview(note)
+  if (!parts.length && !images.length) return null
+  const thumbs = images.slice(0, MAX_THUMBS), rest = images.length - thumbs.length
+  return (
+    <>
+      {parts.length > 0 && <div class="notif-about">{parts.map((p, i) => typeof p === "string" ? p : <Mention key={i} pubkey={p.pubkey} />)}</div>}
+      {thumbs.length > 0 && (
+        <div class="notif-thumbs" role="img" aria-label={images.length === 1 ? "1 picture" : `${images.length} pictures`}>
+          {thumbs.map((src, i) => (
+            <span key={src} class="notif-thumb">
+              <img src={src} alt="" loading="lazy" referrerpolicy="no-referrer" />
+              {rest > 0 && i === thumbs.length - 1 && <span class="notif-thumb-more">+{rest}</span>}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  )
 }

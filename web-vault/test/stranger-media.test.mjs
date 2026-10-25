@@ -10,6 +10,7 @@ import { transformSync } from "rolldown/utils"
 
 registerHooks({
   load(url, context, next) {
+    if (url.endsWith(".css")) return { format: "module", source: "", shortCircuit: true } // styles are the browser's
     if (!url.endsWith(".jsx")) return next(url, context)
     const path = fileURLToPath(url)
     const { code, errors } = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic", importSource: "preact" } })
@@ -17,7 +18,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { Row } = await import("../src/screens/NotificationsScreen.jsx")
+const { Row, Faces } = await import("../src/screens/NotificationsScreen.jsx")
 const { ActivityRow } = await import("../src/screens/VaultScreen.jsx")
 const { Avatar } = await import("../src/components/Avatar.jsx")
 const { NoteText } = await import("../src/components/NoteText.jsx")
@@ -30,6 +31,7 @@ function find(node, type, out = []) {
   if (!node || typeof node !== "object") return out
   if (Array.isArray(node)) { for (const n of node) find(n, type, out); return out }
   if (node.type === type) out.push(node)
+  if (node.type === Faces) find(Faces(node.props), type, out) // the row's stacked faces
   find(node.props?.children, type, out)
   return out
 }
@@ -43,6 +45,11 @@ test("Notifications: a stranger's avatar and inline images wait; a follow's load
     assert.equal(find(tree, Avatar)[0].props.load, ok, `avatar for ${ok ? "follow" : "stranger"}`)
     assert.equal(find(tree, NoteText)[0].props.images, ok, `images for ${ok ? "follow" : "stranger"}`)
   }
+})
+
+test("Notifications: in a row of several, each face loads only for a follow", () => {
+  const tree = Row({ row: { ...reply(STRANGER), type: "reaction", who: [STRANGER, FRIEND, "6".repeat(64)] }, trusted })
+  assert.deepEqual(find(tree, Avatar).map(a => a.props.load), [false, true, false])
 })
 
 test("Notifications: with no trust given, nothing a sender names loads", () => {
