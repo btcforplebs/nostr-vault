@@ -46,7 +46,8 @@ export const isListHash = hash => SPLIT.has(parseHash(hash).route)
 export function deskRedirect(hash, lastList) {
   const { route, arg } = parseHash(hash)
   if (route === "thread" && HEX.test(arg)) return withParam(lastList && isListHash(lastList) ? lastList : "#/feed", "note", arg)
-  if (route === "dm" && HEX.test(arg)) return `#/messages?dm=${arg}`
+  // Opened from Requests: it stays the list beside the conversation.
+  if (route === "dm" && HEX.test(arg)) return withParam(parseHash(lastList ?? "").path === "messages/requests" ? lastList : "#/messages", "dm", arg)
   return null
 }
 

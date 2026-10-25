@@ -1,6 +1,8 @@
 // Messages: the user's conversations, newest first (iPhone DMInboxView). Read from Haven's /chat and the relays
 // through net/dms.js; the text is decrypted in memory only. Blocked people's conversations are left out. Unread
-// conversations are bold with a count, as on the iPhone (net/dm-read.js).
+// conversations are bold with a count, as on the iPhone (net/dm-read.js). People outside the user's Web of Trust
+// whom the user never wrote to wait under Requests (net/dm-trust.js, the iPhone's DMTrust): one "Requests (N)" row
+// here opens them at #/messages/requests, and they never count towards an unread badge.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { decode } from "nostr-tools/nip19"
 import { Avatar } from "../components/Avatar.jsx"
@@ -12,8 +14,10 @@ import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
-import { conversations, dmRelaysFor, extraRelays, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
+import { conversations, cachedDmRelays, extraRelays, loadedRecently, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 import { SkeletonList } from "../components/Loading.jsx"
+import { hiddenFromUnread, useDmTrust } from "../components/useDmTrust.js"
+import { splitConversations } from "../net/dm-trust.js"
 
 // The people strip under "New message" is the composer's @mention picker; its styles come with it.
 if (import.meta.env) import("../styles/compose.css")
@@ -22,7 +26,7 @@ if (import.meta.env) import("../styles/compose.css")
 export async function inboxRelays(ctx) {
   const { read, write } = ctx.account.relays
   const lookup = uniq([...read, ...write, ...DEFAULT_RELAYS])
-  const mine = await dmRelaysFor(ctx.session.pubkey, lookup, { fallback: [] }).catch(() => [])
+  const mine = await cachedDmRelays(ctx.session.pubkey, lookup, { fallback: [] }).catch(() => [])
   return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
 }
 
@@ -41,12 +45,13 @@ export function useMessages(ctx) {
     let stop = () => {}
     let live = true
     ;(async () => {
+      const relays = inboxRelays(ctx) // looked up while Haven's copies open (loadMessages)
+      // Opening a screen right after a load (list -> conversation -> back) keeps what's held and only listens.
+      if (round === 0 && loadedRecently(ctx.session.pubkey)) { const r = await relays; if (live) stop = watchMessages(ctx, r); return }
       setSyncing(true)
       try {
-        const relays = await inboxRelays(ctx)
-        if (!live) return
         await loadMessages(ctx, relays).catch(() => {})
-        if (live) stop = watchMessages(ctx, relays)
+        if (live) stop = watchMessages(ctx, await relays)
       } finally { if (live) setSyncing(false) }
     })()
     return () => { live = false; off(); stop() }
@@ -70,15 +75,20 @@ export function useMessages(ctx) {
   return { ...m, syncing, retry, refresh: () => { forgetDeclinedAuth(); setRound(r => r + 1) } }
 }
 
-/** Unread counts per conversation, re-counted as messages land or are read. -> { counts: Map peer -> n, total } */
-export function useUnread(ctx, messages, blocked) {
+/** Unread counts per conversation, re-counted as messages land or are read. `total` leaves Requests out (they are
+ *  unread but silent). -> { counts: Map peer -> n, total } */
+export function useUnread(ctx, messages, blocked, trusted = new Set()) {
   const [, setTick] = useState(0)
   useEffect(() => onRead(() => setTick(t => t + 1)), [])
   const counts = unreadCounts(messages, ctx.session.pubkey, blocked)
+  const hidden = hiddenFromUnread(messages, ctx.session.pubkey, blocked, trusted)
   let total = 0
-  for (const n of counts.values()) total += n
+  for (const [peer, n] of counts) if (!hidden.has(peer)) total += n
   return { counts, total }
 }
+
+/** Whether the address is the Requests list ("#/messages/requests", maybe with a desktop "?dm="). */
+export const isRequestsHash = (hash = location.hash) => /^#\/?messages\/requests(\?|$)/.test(hash)
 
 /** Messages past the first load's ceiling, or that came in faster than they're opened live: open the next lot. */
 export function OpenMore({ ctx, more }) {
@@ -138,10 +148,15 @@ export function MessagesScreen({ ctx }) {
   const [err, setErr] = useState("")
   const toBox = useRef(null)
   const [people, setPeople] = useState(false) // the people strip: open while the box has focus, until Escape
-  const list = conversations(messages, blocked)
+  const trusted = useDmTrust(ctx)
+  const me = ctx.session.pubkey
+  const { inbox, requests } = splitConversations(conversations(messages, blocked), messages, me, trusted)
+  const showRequests = isRequestsHash()
+  const list = showRequests ? requests : inbox
+  const inboxPeers = new Set(inbox.map(c => c.peer))
   // Only a name is looked up: a key (whole or mistyped) or an address would tell the search relays who you mean to write to.
   const showPeople = people && peopleQuery(to)
-  const { counts, total } = useUnread(ctx, messages, blocked)
+  const { counts, total } = useUnread(ctx, messages, blocked, trusted)
 
   useEffect(() => {
     const relays = uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
@@ -159,9 +174,10 @@ export function MessagesScreen({ ctx }) {
   return (
     <main class="screen">
       <header class="screen-head">
-        <h2>Messages</h2>
+        <h2>{showRequests ? "Requests" : "Messages"}</h2>
         <span class="dm-head-actions">
-          {total > 0 && <button type="button" class="small" onClick={() => markRead(ctx.session.pubkey, [...messages.values()].filter(m => !blocked.has(m.peer)))}>Mark all read</button>}
+          {showRequests && <a class="small button" href="#/messages">Messages</a>}
+          {!showRequests && total > 0 && <button type="button" class="small" onClick={() => markRead(me, [...messages.values()].filter(m => inboxPeers.has(m.peer)))}>Mark all read</button>}
           {!note && <button type="button" class="small" onClick={refresh} disabled={syncing} aria-busy={syncing || undefined} aria-label="Refresh messages">{syncing ? "Refreshing…" : "Refresh"}</button>}
         </span>
       </header>
@@ -170,12 +186,12 @@ export function MessagesScreen({ ctx }) {
       <SignerTrouble trouble={trouble} retry={retry} />
       <AuthTrouble refresh={refresh} />
       <OpenMore ctx={ctx} more={more} />
-      <form class="dm-new" onSubmit={open}>
+      {!showRequests && <form class="dm-new" onSubmit={open}>
         <input ref={toBox} value={to} onInput={e => { setTo(e.currentTarget.value); setErr(""); setPeople(true) }}
           onFocus={() => setPeople(true)} onBlur={() => setPeople(false)} placeholder="New message to a name or npub…" autocapitalize="off" autocorrect="off" spellcheck={false}
           aria-label="New message to" aria-controls={showPeople ? "mention-picker" : undefined} />
         <button type="submit" class="small" disabled={!to.trim()}>Open</button>
-      </form>
+      </form>}
       {/* MessageComposerView's search: people by name (follows first, then a NIP-50 search), picked to open the thread. */}
       {showPeople && (
         <div class="dm-people">
@@ -188,7 +204,7 @@ export function MessagesScreen({ ctx }) {
           {ctx.session.method === "nip46" && <p class="status-line">Your signer may ask you to approve.</p>}
           <SkeletonList rowClass="dm-row" avatar={44} label="Opening your messages…" />
         </>
-        : !list.length ? (note ? null : (
+        : !list.length ? (note ? null : showRequests ? <div class="empty"><strong>No Requests</strong></div> : (
           // DMInboxView's empty state; the web composer is the "New message to" box above, not a button.
           <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with New message above</p></div>
         ))
@@ -202,6 +218,15 @@ export function MessagesScreen({ ctx }) {
             </span>
           </a>
         ) })}
+      {/* DMInboxView's Requests row: an inbox glyph, the iPhone's words, the count on the right. */}
+      {!showRequests && requests.length > 0 && (
+        <a class="dm-row dm-requests" href="#/messages/requests" aria-label={`Requests, ${requests.length}`}>
+          <span class="dm-requests-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg></span>
+          <span class="dm-row-text"><span class="dm-row-head"><span class="author-name">Requests</span><span class="dm-requests-count">{requests.length}</span></span>
+            <span class="dm-row-last">From people outside your Web of Trust</span></span>
+        </a>
+      )}
+      {showRequests && list.length > 0 && <p class="status-line muted small">These people are outside your Web of Trust, so their messages never notify you. Reply to move a conversation to your inbox.</p>}
     </main>
   )
 }

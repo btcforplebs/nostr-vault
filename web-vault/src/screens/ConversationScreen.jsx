@@ -9,7 +9,7 @@ import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
-import { dmPrefill, hasLegacy, sendMessage, sendFailure, thread } from "../net/dms.js"
+import { dmPrefill, dropFailed, hasLegacy, sendMessage, sendFailure, thread, warmDmRelays } from "../net/dms.js"
 import { dmContent, preparePhoto } from "../net/dm-photo.js"
 import { markRead } from "../net/dm-read.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
@@ -29,7 +29,6 @@ export function ConversationScreen({ ctx, peer }) {
   const { blocked } = useBlocks(ctx)
   // A link may start the box with a message (DMThreadView initialMessage): typed in, never sent until Send.
   const [text, setText] = useState(() => dmPrefill().text)
-  const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [photo, setPhoto] = useState(null) // { file, preview } ready to upload with the next send
   const [preparing, setPreparing] = useState(false) // a photo being redrawn: Send waits for it
@@ -46,6 +45,8 @@ export function ConversationScreen({ ctx, peer }) {
 
   useEffect(() => { const { text: t, hash } = dmPrefill(); if (t) history.replaceState(history.state, "", hash) }, [])
   useEffect(() => { fetchProfiles(ctx.vault, [peer], uniq([...ctx.account.relays.read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])).catch(() => {}) }, [peer])
+  // Their DM relays and mine, looked up now so the first Send goes straight out.
+  useEffect(() => { if (!note) warmDmRelays(ctx, peer) }, [peer, note])
   useEffect(() => { end.current?.scrollIntoView?.({ block: "end" }) }, [rows.length])
   // What's on screen is read: on opening, and as messages land while the tab is in front (DMThreadView markAsRead).
   useEffect(() => {
@@ -59,7 +60,7 @@ export function ConversationScreen({ ctx, peer }) {
   useEffect(() => clearPhoto, [peer])
   const attach = async files => {
     const file = [...(files ?? [])].find(isImageFile)
-    if (!file || busy || preparing) return
+    if (!file || preparing) return
     setStatus(""); setPreparing(true)
     try {
       const ready = await preparePhoto(file)
@@ -71,20 +72,18 @@ export function ConversationScreen({ ctx, peer }) {
   const send = async e => {
     e.preventDefault()
     const t = text.trim()
-    if ((!t && !photo) || busy || preparing) return
-    setBusy(true); setStatus("")
+    if ((!t && !photo) || preparing) return
+    // As on the iPhone: the box clears and the bubble shows at once ("Sending…"); the next message can be typed and
+    // sent straight away. A send that fails stays in the thread as "Not sent" with Try again (net/dms.js).
+    const sending = photo
+    setText(""); setStatus(""); if (sending) setPhoto(null)
+    field.current?.focus()
     try {
-      let url = null
-      if (photo) {
-        // The photo first: a message naming a link no server holds would reach them dead.
-        try { url = (await uploadPhoto(photo.file, { ctx, servers: await mediaServers(ctx) })).url }
-        catch { setStatus("The photo didn't upload, so nothing was sent. Try again."); return }
-      }
-      const { relays } = await sendMessage(ctx, peer, dmContent(t, url))
-      setText(""); clearPhoto()
-      const ok = relays.filter(r => r.ok).length
-      setStatus(ok === relays.length ? "" : `Sent to ${ok} of ${relays.length} relays`) // delivery to them is checked in sendMessage
-    } catch (err) { setStatus(sendFailure(err)) } finally { setBusy(false) }
+      await sendMessage(ctx, peer, t, sending ? {
+        preview: t ? `${t}\n(photo)` : "(photo)",
+        prepare: async () => dmContent(t, (await uploadPhoto(sending.file, { ctx, servers: await mediaServers(ctx) })).url),
+      } : {})
+    } catch (err) { setStatus(sendFailure(err)) } finally { if (sending) URL.revokeObjectURL(sending.preview) }
   }
 
   return (
@@ -103,31 +102,34 @@ export function ConversationScreen({ ctx, peer }) {
       <div class="dm-thread">
         {!rows.length && !note && (loaded ? <p class="empty">Start a conversation</p> : <BubbleSkeletons />)}
         {rows.map(m => (
-          <div key={m.id} class={m.from === me ? "dm-bubble mine" : "dm-bubble"}>
+          <div key={m.id} class={`dm-bubble${m.from === me ? " mine" : ""}${m.pending ? " pending" : ""}${m.failed ? " failed" : ""}`}>
             {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write
                 into /feed; dm keeps video links and nostr:npub as plain text (the iPhone does), and a stranger's
                 images wait for a tap. */}
             <NoteText content={m.content} depth={1} dm images={m.from === me || follows} />
-            <span class="dm-meta">{ago(m.at)}{m.legacy ? " · NIP-04" : ""}</span>
+            {m.failed
+              ? <span class="dm-meta dm-failed" role="alert">Not sent · <button type="button" class="link" onClick={() => m.resend().catch(err => setStatus(sendFailure(err)))}>Try again</button> · <button type="button" class="link" onClick={() => dropFailed(m.id)}>Remove</button></span>
+              : <span class="dm-meta">{m.pending ? "Sending…" : ago(m.at)}{m.legacy ? " · NIP-04" : ""}</span>}
           </div>
         ))}
-        <div ref={end} />
+        <div ref={end} class="dm-end" />
       </div>
       {!note && !isBlocked && (
         <form class={dragging ? "dm-compose dragging" : "dm-compose"} onSubmit={send}
           onDragOver={e => { if ([...(e.dataTransfer?.items ?? [])].some(i => i.kind === "file")) { e.preventDefault(); setDragging(true) } }}
           onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
           onDrop={e => { e.preventDefault(); setDragging(false); attach(e.dataTransfer?.files) }}>
+          {status && <div class="status-line error" role="status">{status}</div>}
           {photo && (
             <div class="dm-attachment">
               <img src={photo.preview} alt="Photo to send" />
-              <button type="button" class="dm-attachment-remove" onClick={clearPhoto} disabled={busy} aria-label="Remove photo">×</button>
+              <button type="button" class="dm-attachment-remove" onClick={clearPhoto} aria-label="Remove photo">×</button>
             </div>
           )}
           <div class="dm-compose-row">
-            <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={busy || preparing} aria-label="Attach photo">{preparing ? "Photo…" : "Photo"}</button>
+            <button type="button" class="small dm-photo-button" onClick={() => picker.current?.click()} disabled={preparing} aria-label="Attach photo">{preparing ? "Photo…" : "Photo"}</button>
             <input ref={picker} type="file" accept="image/*" hidden onChange={e => { attach(e.currentTarget.files); e.currentTarget.value = "" }} />
-            <textarea ref={field} rows={1} value={text} onInput={e => setText(e.currentTarget.value)} placeholder="Message…" disabled={busy} aria-label="Message"
+            <textarea ref={field} rows={1} value={text} onInput={e => setText(e.currentTarget.value)} placeholder="Message…" aria-label="Message"
               onKeyDown={e => { if (sendsOnEnter(e, coarse())) { e.preventDefault(); e.currentTarget.form?.requestSubmit() } }}
               onPaste={e => {
                 const files = [...(e.clipboardData?.files ?? [])]
@@ -135,11 +137,10 @@ export function ConversationScreen({ ctx, peer }) {
                 if (!e.clipboardData.getData("text/plain")) e.preventDefault() // text copied with the image still pastes
                 attach(files)
               }} />
-            <button type="submit" class="primary small" disabled={busy || preparing || (!text.trim() && !photo)} aria-busy={busy || undefined}>{busy ? "Sending…" : "Send"}</button>
+            <button type="submit" class="primary small" disabled={preparing || (!text.trim() && !photo)}>Send</button>
           </div>
         </form>
       )}
-      {status && <div class="status-line error" role="status">{status}</div>}
     </main>
   )
 }

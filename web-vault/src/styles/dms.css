@@ -42,3 +42,24 @@
 
 /* An image link in a stranger's DM waits for a tap (NoteText TapImage). */
 .tap-image { display: flex; margin: 8px 0 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A message on its way (Sending…) and one that didn't go (Not sent · Try again · Remove). */
+.dm-bubble.pending { opacity: .7; }
+.dm-bubble.failed { opacity: 1; background: var(--s2); color: var(--text); border: 1px solid var(--danger, #ff453a); }
+.dm-bubble.failed .dm-meta { color: var(--danger, #ff453a); }
+.dm-failed button.link { min-height: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+
+/* Desktop: no tab bar under the conversation pane, so the message box sits on the pane's floor, over the thread. */
+.desk-pane .dm-screen { display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: 0; }
+.desk-pane .dm-thread { flex: 1; }
+.desk-pane .dm-compose { bottom: 0; margin: 0; padding: 10px var(--gutter) 14px; background: rgb(0 0 0 / .86);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-top: 1px solid var(--hair); }
+
+/* Requests (DMInboxView): one row under the conversations' head, an inbox glyph in a round tile, the count at the right. */
+.dm-requests-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 999px; background: var(--s2); color: var(--text-2); }
+.dm-requests-count { margin-left: auto; font: var(--t-sub); color: var(--text-2); }
+
+/* The thread's end scrolls to just above the message box (and the phone's tab bar), never under it. */
+.dm-end { scroll-margin-bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 96px + env(safe-area-inset-bottom)); }
+.desk-pane .dm-end { scroll-margin-bottom: 96px; }
+.dm-compose > .status-line { margin: 0; }

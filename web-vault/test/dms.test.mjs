@@ -188,7 +188,8 @@ test("sendMessage throws when no relay took it, and with no signer that can encr
   const publish = () => [Promise.reject(new Error("closed"))]
   resetMessages(pk(A))
   await assert.rejects(sendMessage(ctxOf(A), pk(B), "x", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), publish }), /Error: Not delivered: none of their 1 relay took it\.$/)
-  assert.equal(getMessages().messages.size, 0, "not shown as sent")
+  const [failed] = getMessages().messages.values()
+  assert.deepEqual([getMessages().messages.size, failed.pending, failed.failed, failed.content], [1, false, "Not delivered: none of their 1 relay took it.", "x"], "shown as not sent, never as sent")
   await assert.rejects(sendMessage({ ...ctxOf(A), session: { method: "nip46", pubkey: pk(A) } }, pk(B), "x", { chat: fakeChat() }), /bunker/)
 })
 
@@ -200,7 +201,7 @@ test("sendMessage: a DM is not delivered when only the self-copy landed", async 
   const chat = fakeChat()
   resetMessages(pk(A))
   await assert.rejects(sendMessage(ctxOf(A), pk(B), "hi", { crypto: cryptoOf(A), query, chat, publish }), /Error: Not delivered: none of their 1 relay took it\.$/)
-  assert.equal(getMessages().messages.size, 0, "not shown as sent")
+  assert.deepEqual([...getMessages().messages.values()].map(m => [m.failed, m.pending]), [["Not delivered: none of their 1 relay took it.", false]], "shown as not sent, never as sent")
   assert.equal(chat.stored.length, 0, "no self-copy kept")
   assert.deepEqual(sent, ["wss://their-haven.example"], "the self-copy was never published, so my relay can't echo it back")
 })
@@ -384,4 +385,83 @@ test("dropping a relay after a failed AUTH tells the screens to look again, once
     await sendMessage(ctxOf(A, { write: ["wss://b-haven.example"] }), pk(B), "y", { crypto: cryptoOf(A), query, chat: fakeChat(), publish: ok, drop: () => {} })
     assert.deepEqual(heard, [], "no drop, no extra look")
   } finally { off() }
+})
+
+test("sendMessage: the bubble shows at once as Sending, turns real at the first relay's OK, before the slowest answers", async () => {
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://fast.example"], ["relay", "wss://slow.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  let releaseSlow
+  const slow = new Promise(r => { releaseSlow = r })
+  const publish = urls => [urls[0].includes("slow") ? slow : Promise.resolve("ok")]
+  resetMessages(pk(A))
+  const sending = sendMessage(ctxOf(A), pk(B), "quick", { crypto: cryptoOf(A), query, chat: fakeChat(), publish })
+  const [pending] = getMessages().messages.values()
+  assert.deepEqual([pending.pending, pending.content, pending.from], [true, "quick", pk(A)], "shown before any signing or lookup")
+  for (let i = 0; i < 50 && [...getMessages().messages.values()].some(m => m.pending); i++) await new Promise(r => setTimeout(r, 5))
+  const [real] = getMessages().messages.values()
+  assert.equal(getMessages().messages.size, 1)
+  assert.ok(!real.pending && !real.failed && !real.id.startsWith("pending:"), "real while the slow relay still hasn't answered")
+  releaseSlow("ok")
+  const { relays } = await sending
+  assert.equal(relays.filter(r => r.to === "them" && r.ok).length, 2)
+})
+
+test("sendMessage: a failed bubble's resend sends it again and replaces it", async () => {
+  const theirInbox = finalizeEvent({ kind: 10050, created_at: 2, tags: [["relay", "wss://b.example"]], content: "" }, B)
+  const query = async (relays, f) => (f.authors[0] === pk(B) ? [theirInbox] : [])
+  let up = false
+  const publish = () => [up ? Promise.resolve("ok") : Promise.reject(new Error("closed"))]
+  resetMessages(pk(A))
+  await assert.rejects(sendMessage(ctxOf(A), pk(B), "again", { crypto: cryptoOf(A), query, chat: fakeChat(), publish }), /Not delivered/)
+  const [failed] = getMessages().messages.values()
+  up = true
+  await failed.resend()
+  const all = [...getMessages().messages.values()]
+  assert.deepEqual(all.map(m => [m.content, !!m.failed, !!m.pending]), [["again", false, false]])
+})
+
+test("sendMessage: a photo that doesn't upload leaves a failed bubble with the text, and signs nothing", async () => {
+  let signed = 0
+  const ctx = ctxOf(A); const sign = ctx.signer.signEvent; ctx.signer = { signEvent: t => { signed++; return sign(t) } }
+  resetMessages(pk(A))
+  let uploads = 0
+  const prepare = async () => { uploads++; throw new Error("blossom 500 at https://evil") }
+  await assert.rejects(sendMessage(ctx, pk(B), "look", { crypto: cryptoOf(A), query: async () => [], chat: fakeChat(), prepare }), /^Error: The photo didn't upload, so nothing was sent\.$/)
+  const [m] = getMessages().messages.values()
+  assert.deepEqual([m.content, m.failed], ["look", "The photo didn't upload, so nothing was sent."])
+  assert.equal(signed, 0)
+  await assert.rejects(m.resend(), /photo didn't upload/)
+  assert.equal(uploads, 2, "Try again uploads the photo again, not the text alone")
+})
+
+test("DM relay lookups are kept per person, and a failed lookup isn't", async () => {
+  const { cachedDmRelays, forgetDmRelays } = await import("../src/net/dms.js")
+  forgetDmRelays()
+  let asked = 0
+  const query = async () => { asked++; return [] }
+  let t = 0; const clock = () => t
+  assert.deepEqual(await cachedDmRelays(pk(B), ["wss://x.example"], { query, fallback: ["wss://f.example"] }, clock), ["wss://f.example"])
+  await cachedDmRelays(pk(B), ["wss://x.example"], { query, fallback: ["wss://f.example"] }, clock)
+  assert.equal(asked, 1)
+  t = 11 * 60_000
+  await cachedDmRelays(pk(B), ["wss://x.example"], { query, fallback: ["wss://f.example"] }, clock)
+  assert.equal(asked, 2, "looked up again once it went stale")
+  const bad = async () => { throw new Error("down") }
+  await assert.rejects(cachedDmRelays(pk(C), ["wss://x.example"], { query: bad }, clock))
+  await new Promise(r => setTimeout(r, 0))
+  assert.deepEqual(await cachedDmRelays(pk(C), ["wss://x.example"], { query, fallback: [] }, clock), [], "asked again after a failure")
+  forgetDmRelays()
+})
+
+test("loadMessages: Haven's messages are on screen before the inbox relay lookup comes back", async () => {
+  const inHaven = await wrapFor(rumorFor(pk(B), pk(A), "kept here", 100), envOf(B), pk(A))
+  let release
+  const relays = new Promise(r => { release = r })
+  resetMessages(pk(A))
+  const loading = loadMessages(ctxOf(A), relays, { crypto: cryptoOf(A), query: async () => [], chat: fakeChat([inHaven]) })
+  for (let i = 0; i < 50 && !getMessages().loaded; i++) await new Promise(r => setTimeout(r, 5))
+  assert.equal(getMessages().loaded, true, "no skeleton while the relays are looked up")
+  assert.deepEqual([...getMessages().messages.values()].map(m => m.content), ["kept here"])
+  release(["wss://r.example"])
+  await loading
 })
