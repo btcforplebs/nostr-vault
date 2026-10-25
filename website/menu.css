@@ -1,0 +1,102 @@
+/* The header's Docs pill and the site menu (menu.js) for phones and narrow windows. Wide windows keep the header's
+   own links, so none of this shows above 960px. */
+.pill-docs { display: none; }
+.menu-toggle { display: none; }
+.site-menu[hidden] { display: none; }
+
+.pill-docs {
+    background: var(--accent);
+    color: #000;
+}
+
+.pill-docs:hover { transform: scale(1.04); }
+
+@media (max-width: 960px) {
+    .pill-docs { display: inline-block; }
+    nav.has-menu { gap: 10px; }
+    nav.has-menu .actions { margin-left: auto; }
+
+    .menu-toggle {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 5px;
+        flex: none;
+        width: 40px;
+        height: 40px;
+        padding: 0 10px;
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+    }
+
+    .menu-toggle span {
+        display: block;
+        height: 2px;
+        border-radius: 2px;
+        background: var(--text-primary);
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    nav.menu-open .menu-toggle span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    nav.menu-open .menu-toggle span:nth-child(2) { opacity: 0; }
+    nav.menu-open .menu-toggle span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+    .site-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: calc(100svh - 64px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 14px 18px 24px;
+        background: #0a0a0a;
+        border-bottom: 1px solid var(--glass-border);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+    }
+
+    .site-menu-group + .site-menu-group {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--glass-border);
+    }
+
+    .site-menu-title {
+        margin: 0 0 4px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+    }
+
+    .site-menu a {
+        display: block;
+        padding: 10px 0;
+        font-size: 1.02rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .site-menu a[aria-current="page"] { color: var(--accent); }
+
+    .site-menu a.menu-docs {
+        margin-bottom: 4px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: rgba(255, 140, 0, 0.14);
+        color: var(--accent);
+        font-size: 1.15rem;
+        font-weight: 700;
+    }
+}
+
+/* Phones: the bar keeps Docs and the web app; TestFlight and GitHub live in the menu. */
+@media (max-width: 768px) {
+    nav.has-menu .actions .pill-web { display: inline-block; }
+    nav.has-menu .actions .pill-testflight,
+    nav.has-menu .actions .pill-light { display: none; }
+    nav.has-menu .pill { padding: 8px 14px; }
+}
