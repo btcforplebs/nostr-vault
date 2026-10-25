@@ -161,6 +161,8 @@ export async function setFollow({ vault, signer, pubkey, target, follow, readRel
   if (first < 0) throw new Error(`No relay took it (0 of ${network.length}), so nothing changed. Try again.`)
   const stored = await vault.outbox.event(event)
   if (!stored.ok && !/^duplicate:/.test(stored.message)) throw new Error(`Sent, but Haven refused the follow list: ${stored.message}`)
+  // Following Backup keeps the old list and the new one (loaded late: that module imports this one).
+  import("./follow-backup.js").then(b => b.keepFollowChange(pubkey, base, event)).catch(() => {})
   return { event, follows: followsOf(event), taken: urls[first], settled }
 }
 

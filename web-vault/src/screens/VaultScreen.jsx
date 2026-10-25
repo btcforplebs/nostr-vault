@@ -22,8 +22,9 @@ import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from 
 import {
   MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
   mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
-  readOwn, readInbound, fetchVault,
+  readOwn, readInbound, readOlder, fetchVault, READ_PAGE,
 } from "../net/vault-lists.js"
+import { PagedList, FIRST_ROWS, MORE_ROWS } from "../components/PagedList.jsx"
 import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
 
@@ -90,12 +91,17 @@ export function VaultScreen({ ctx, desk = false }) {
   const [searching, setSearching] = useState(false)
   const [refreshes, setRefreshes] = useState(0) // Refresh also asks the media servers again (BlossomGallery)
   const [reach, setReach] = useState("") // how the relays answered, for the status capsule's colour
+  // Rows drawn so far, and whether Haven may hold older own or inbox events than those read (the phone's loadMore).
+  const [shown, setShown] = useState(FIRST_ROWS)
+  const [older, setOlder] = useState({ own: false, inbound: false })
+  const [paging, setPaging] = useState(false)
 
   useEffect(() => { const f = () => { const m = modeOf(); if (m) pick(m) }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
   const load = async () => {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
-    setOwn(o); setInbound(i); setLoaded(true)
+    setOwn(o); setInbound(i); setLoaded(true); setShown(FIRST_ROWS)
+    setOlder({ own: o.length >= READ_PAGE, inbound: i.length >= READ_PAGE })
     screen(i) // receipts kept before this check existed
     const settled = () => { setFetched(true); setListsFetched(true); setGivenFetched(true); setOwnFetched(true) }
     if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setReach("down"); settled(); return }
@@ -105,14 +111,28 @@ export function VaultScreen({ ctx, desk = false }) {
       inbound: fresh => { setInbound(prev => merge(prev, fresh)); setFetched(true) },
       lists: l => { setLists(l); setListsFetched(true) },
       given: g => { setGiven(g); setGivenFetched(true) },
-      own: async () => { setOwn(await readOwn(vault, me).catch(() => o)); setOwnFetched(true) },
+      own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)); setOwnFetched(true) },
     } })
     setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : ""); setReach(err ? "down" : "up")
     settled()
   }
   useEffect(() => { load() }, [me])
 
-  const pick = m => { setMode(m); setFilter(defaultFilter(m)) }
+  const pick = m => { setMode(m); setFilter(defaultFilter(m)); setShown(FIRST_ROWS) }
+  const choose = id => { setFilter(id); setShown(FIRST_ROWS) }
+  // The end of the list nears: draw more rows, and once all are drawn read the page before them from Haven.
+  const onMore = async atEnd => {
+    if (!atEnd) { setShown(n => n + MORE_ROWS); return }
+    if (paging || !(older.own || older.inbound)) return
+    setPaging(true)
+    const r = await readOlder(vault, me, { own, inbound: inboundAll, more: older }).catch(() => null)
+    if (r) {
+      if (r.own.length) setOwn(prev => merge(prev, r.own))
+      if (r.inbound.length) { setInbound(prev => merge(prev, r.inbound)); screen(r.inbound) }
+      setOlder(r.more); setShown(n => n + MORE_ROWS)
+    } else setOlder({ own: false, inbound: false })
+    setPaging(false)
+  }
   const followers = followersOf(lists, me, blocked)
   // Seeing the Followers list is what makes its "new" ones old, as on the phone; the current visit still shows them.
   useEffect(() => { if (mode === "followers" && followers.length) markFollowersSeen(me, followers[0].at) }, [mode, followers.length])
@@ -171,7 +191,7 @@ export function VaultScreen({ ctx, desk = false }) {
             {filters.length > 0 && <>
               <span class="vault-capsule-line" aria-hidden="true" />
               <div class="vault-capsule-filters" role="group" aria-label={`Filter: ${f?.title}`}>
-                {filters.map(x => <button key={x.id} class={`vault-capsule-btn ${x.id === filter ? "on" : ""}`} aria-pressed={x.id === filter} aria-label={x.title} title={x.title} onClick={() => setFilter(x.id)}><Icon d={filterIcon(mode, x.id)} size={18} /></button>)}
+                {filters.map(x => <button key={x.id} class={`vault-capsule-btn ${x.id === filter ? "on" : ""}`} aria-pressed={x.id === filter} aria-label={x.title} title={x.title} onClick={() => choose(x.id)}><Icon d={filterIcon(mode, x.id)} size={18} /></button>)}
               </div>
             </>}
             <span class="vault-capsule-line" aria-hidden="true" />
@@ -182,7 +202,7 @@ export function VaultScreen({ ctx, desk = false }) {
           <a class="vault-pill-btn" href="#/relay" aria-label="Vault Dashboard" title="Vault Dashboard"><Icon d={ICONS.dashboard} /></a>
           {filters.length > 0 && (
             <Menu label={<><Icon d={ICONS.filter} /><span>{f?.pill ?? f?.title}</span><Chevron /></>} title={`Filter: ${f?.title}`} align="right">
-              {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => setFilter(x.id)}>{x.title}</MenuItem>)}
+              {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => choose(x.id)}>{x.title}</MenuItem>)}
             </Menu>
           )}
           <button class="vault-pill-btn" onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} /></button>
@@ -192,7 +212,7 @@ export function VaultScreen({ ctx, desk = false }) {
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
-      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} />}
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
       {!desk && <a class={`vault-status ${reach || "idle"}`} href="#/relay" aria-label={`Vault Dashboard: ${REACH[reach || "idle"]}`} title={REACH[reach || "idle"]}><LockStack /><b>Vault</b></a>}
     </main>
@@ -242,40 +262,45 @@ function Menu({ label, title, align = "left", children }) {
 }
 const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={on ? "on" : ""} aria-checked={on} onClick={onClick}>{children}</button>
 
-function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted, refreshes = 0, fetched = true }) {
+const Grid = ({ children }) => <div class="vault-grid">{children}</div>
+
+function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
   // Nothing in this browser's relay yet, but the relays are still being asked: placeholders, not "nothing here".
   const Empty = ({ text }) => fetched ? <p class="empty">{text}</p> : <VaultSkeleton mode={mode} />
+  // A call, not a component made here: a new component type each render would draw every row again.
+  // A list that is empty so far but may have older rows in Haven still pages, so its end marker can ask for them.
+  const paged = (items, render, wrap) => <PagedList items={items} render={render} wrap={wrap} shown={page.shown} onMore={page.onMore} busy={page.busy} />
   switch (mode) {
     case "activity": {
       const follows = followers
       const rows = activityRows(inbound, me, { mine: own, follows, blocked }).filter(r => activityFilter(r, filter))
-      return rows.length ? rows.map(r => <ActivityRow key={r.id} row={r} trusted={trusted} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
+      return (rows.length || page.older) ? paged(rows, r => <ActivityRow key={r.id} row={r} trusted={trusted} onFollowers={onFollowers} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
     }
     case "notes": {
       const list = notesFor(own, inbound, me, filter, blocked)
-      return list.length ? list.map(n => <NoteCard key={n.id} event={n} />) : <Empty text={filter === "tagged" ? "No notes tag you yet." : "No notes yet."} />
+      return (list.length || page.older) ? paged(list, n => <NoteCard key={n.id} event={n} />) : <Empty text={filter === "tagged" ? "No notes tag you yet." : "No notes yet."} />
     }
     case "articles": {
       const list = articlesFor(own, inbound, me, filter, blocked)
-      return list.length ? list.map(a => <ArticleCard key={a.id} event={a} />) : <Empty text={filter === "recipes" ? "No recipes found. Recipes are articles tagged zapcooking or nostrcooking." : "Long-form posts you write or are tagged in land here."} />
+      return (list.length || page.older) ? paged(list, a => <ArticleCard key={a.id} event={a} />) : <Empty text={filter === "recipes" ? "No recipes found. Recipes are articles tagged zapcooking or nostrcooking." : "Long-form posts you write or are tagged in land here."} />
     }
     case "highlights": {
       const list = highlightsFor(own, inbound, me, filter, blocked)
-      return list.length ? list.map(h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
+      return (list.length || page.older) ? paged(list, h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
     }
     case "media": {
       if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
       const list = mediaFor(own)
-      return list.length
-        ? <div class="vault-grid">{list.map(p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><MediaImage item={p.item} author={me} loading="lazy" /></a>)}</div>
+      return (list.length || page.older)
+        ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><MediaImage item={p.item} author={me} loading="lazy" /></a>, Grid)
         : <Empty text="Pictures from your notes show here." />
     }
-    case "likes": return likes.length ? likes.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
-    case "zaps": return zaps.length ? zaps.map(r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />
+    case "likes": return (likes.length || page.older) ? paged(likes, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
+    case "zaps": return (zaps.length || page.older) ? paged(zaps, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />
     case "followers": {
       const list = followersFilter(followers, filter, seenAt)
       return list.length
-        ? list.map(f => <a key={f.pubkey} class="person-row" href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)
+        ? <>{followers.length > 0 && <div class="section-label">{followers.length} follower{followers.length === 1 ? "" : "s"}</div>}{paged(list, f => <a key={f.pubkey} class="person-row" href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)}</>
         : <Empty text={filter === "new" ? "No new followers since you last looked." : "No followers found on your relays yet."} />
     }
     default: return null
@@ -284,10 +309,14 @@ function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt,
 
 
 /** One "Vault" line: who did what, the text or the note it was about, the pictures as thumbnails (your own notes').
- *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP. */
-export function ActivityRow({ row, trusted = () => false }) {
+ *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP.
+ *  A tap opens what it's about (VaultActivityList.openActivity): the note, else the Followers list when several
+ *  followed you that day (`onFollowers`), else the person. */
+export function ActivityRow({ row, trusted = () => false, onFollowers }) {
   const ok = trusted(row.actors[0])
-  const open = row.openId ? () => { location.hash = `#/thread/${row.openId}` } : undefined
+  const open = row.openId ? () => { location.hash = `#/thread/${row.openId}` }
+    : row.kind === "follow" && row.actors.length > 1 && onFollowers ? onFollowers
+    : row.actors[0] ? () => { location.hash = `#/profile/${row.actors[0]}` } : undefined
   return (
     <article class={`note notification ${open ? "tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
       <div class="note-head">

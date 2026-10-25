@@ -58,7 +58,7 @@ export function FollowingBackupPage({ ctx }) {
         <section class="settings-group">
           <div class="section-label">Automatic Backups</div>
           {snaps.map(s => <ListRow key={s.id} list={s} current={current} onOpen={() => setOpen(s)} onDelete={async () => { await store.remove(s.id); reload() }} />)}
-          <p class="settings-note muted small">Snapshots are saved automatically when your following list changes. Up to 50 are kept.</p>
+          <p class="settings-note muted small">Snapshots are saved automatically when you follow or unfollow here, and when this page finds a newer list. Up to 50 are kept.</p>
         </section>
       )}
     </>

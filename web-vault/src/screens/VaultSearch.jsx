@@ -7,6 +7,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
+import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { SECTIONS, searchVault, terms } from "../net/vault-search.js"
@@ -86,9 +87,22 @@ const Chip = ({ on, onClick, children }) => <button role="tab" aria-selected={on
 /** A hashtag opens that tag's feed, as a #tag in a note does (NoteText). */
 export const hashtagHref = tag => `#/feed?tag=${encodeURIComponent(String(tag).toLowerCase())}`
 
+/** A person found: name, NIP-05 and two lines of about (VaultSearchPersonRow). */
+function PersonHit({ pubkey, trusted }) {
+  const p = useProfile(pubkey)
+  const nip05 = typeof p?.nip05 === "string" ? p.nip05.replace(/^_@/, "") : ""
+  const about = typeof p?.about === "string" ? p.about.trim() : ""
+  return (
+    <a class="person-row" href={`#/profile/${pubkey}`}>
+      <Avatar pubkey={pubkey} size={40} load={trusted(pubkey)} />
+      <span class="person-names"><AuthorName pubkey={pubkey} />{nip05 && <span class="person-sub">{nip05}</span>}{about && <span class="person-sub vault-search-about">{about}</span>}</span>
+    </a>
+  )
+}
+
 export function Row({ kind, item, trusted }) {
   switch (kind) {
-    case "people": return <a class="person-row" href={`#/profile/${item}`}><Avatar pubkey={item} size={40} load={trusted(item)} /><span class="person-names"><AuthorName pubkey={item} /></span></a>
+    case "people": return <PersonHit pubkey={item} trusted={trusted} />
     case "articles": return <ArticleCard event={item} />
     case "notes": case "media": return <NoteCard event={item} />
     case "hashtags": return <a class="settings-row vault-search-row" href={hashtagHref(item)}><span class="settings-title">#{item}</span></a>

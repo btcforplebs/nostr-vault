@@ -245,16 +245,40 @@ function dedupe(evs) {
 
 // ---- Reading and fetching ----
 
-/** The user's own events the lists draw from, from Haven's outbox. */
-export async function readOwn(vault, me) {
-  const evs = await vault.outbox.query({ kinds: [...NOTE_KINDS, 7, HIGHLIGHT_KIND, ARTICLE_KIND], authors: [me], limit: 500 })
+/** Events per read of Haven's stores. A full page means older ones may be left: readOlder asks for them. */
+export const READ_PAGE = 500
+
+const untilOf = until => until ? { until } : {}
+
+/** The user's own events the lists draw from, from Haven's outbox: the newest page, or the page before `until`. */
+export async function readOwn(vault, me, { until, limit = READ_PAGE } = {}) {
+  const evs = await vault.outbox.query({ kinds: [...NOTE_KINDS, 7, HIGHLIGHT_KIND, ARTICLE_KIND], authors: [me], limit, ...untilOf(until) })
   return dedupe(evs)
 }
 
 /** What Haven's inbox already holds for the user (others' events that tag them), or [] when it has nothing. */
-export async function readInbound(vault, me) {
+export async function readInbound(vault, me, { until, limit = READ_PAGE } = {}) {
   if (!vault.inbox) return []
-  return dedupe(await vault.inbox.query({ kinds: INBOUND_KINDS, "#p": [me], limit: 500 }).catch(() => []))
+  return dedupe(await vault.inbox.query({ kinds: INBOUND_KINDS, "#p": [me], limit, ...untilOf(until) }).catch(() => []))
+}
+
+/**
+ * The page of the user's own events and inbox before the oldest of each already read (the phone's loadMore, which
+ * pages its vault and inbox with `until`). `more` says which store may still hold older ones; a store whose last
+ * read came back short is done. Events on the cursor's second are read again and dropped by id, so none is skipped.
+ * -> { own, inbound, more: { own, inbound } }
+ */
+export async function readOlder(vault, me, { own, inbound, more = { own: true, inbound: true }, limit = READ_PAGE }) {
+  const page = async (on, read, list) => {
+    if (!on || !list.length) return { evs: [], more: false }
+    const until = list.reduce((m, e) => Math.min(m, e.created_at), Infinity)
+    const evs = await read(vault, me, { until, limit }).catch(() => [])
+    const have = new Set(list.map(e => e.id))
+    const fresh = evs.filter(e => !have.has(e.id))
+    return { evs: fresh, more: evs.length >= limit && fresh.length > 0 }
+  }
+  const [o, i] = await Promise.all([page(more.own, readOwn, own), page(more.inbound, readInbound, inbound)])
+  return { own: o.evs, inbound: i.evs, more: { own: o.more, inbound: i.more } }
 }
 
 // 100 writes at a time, not one round trip after another (sync.js storeAll). -> each write's answer

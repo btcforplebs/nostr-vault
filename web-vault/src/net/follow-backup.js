@@ -50,6 +50,12 @@ export async function keepSnapshot(store, list, me) {
   return true
 }
 
+/** After this browser signs a follow list (follows.js setFollow): keep the list it replaced and the new one, as the phone
+ *  does after every kind 3 it signs (FeedService+Follow). -> whether both were handled; never throws, since a backup
+ *  that can't be kept must not undo the follow. */
+export const keepFollowChange = (me, before, after, store = snapshotStore(me)) =>
+  keepSnapshot(store, before, me).then(() => keepSnapshot(store, after, me)).then(() => true, () => false)
+
 // ---- Older lists on the relays ----
 
 /** Every list of yours the relays still hold (most keep only the newest; some keep history), newest first. */
