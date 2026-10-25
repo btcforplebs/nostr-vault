@@ -143,6 +143,21 @@ test("save with no profile anywhere (confirmed) publishes just the typed fields"
   assert.deepEqual(event.tags, [])
 })
 
+test("save is done once one relay took it, while the others are still out", async () => {
+  const vault = fakeVault()
+  let release
+  const slow = new Promise((_, reject) => { release = () => reject(new Error("publish timed out")) })
+  const res = await saveProfile(ctxWith(vault), formFields(), { ...formFields(), name: "quick" },
+    { lookup: async () => ({ event: undefined, asked: 1, answered: 1, netFound: false, fromNet: false }),
+      publish: urls => urls.map((u, i) => (i === 1 ? Promise.resolve("") : slow)) })
+  assert.equal(JSON.parse(res.event.content).name, "quick")
+  assert.equal(vault.outbox.evs[0].id, res.event.id)
+  release()
+  const relays = await res.settled
+  assert.equal(relays.filter(r => r.ok).length, 1)
+  assert.equal(relays.find(r => r.ok).url, res.taken)
+})
+
 test("save throws when no relay took it, and keeps nothing in the outbox", async () => {
   const vault = fakeVault()
   await assert.rejects(saveProfile(ctxWith(vault), formFields(), { ...formFields(), name: "n" },

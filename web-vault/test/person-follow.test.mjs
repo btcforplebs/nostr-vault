@@ -324,6 +324,10 @@ test("their notes: fetched from their write relays, kept out of Haven /feed, rea
   assert.deepEqual((await readPersonNotes(vault, them_pk, { until: 199 })).map(n => n.created_at), [100])
   await syncPersonNotes(vault, them_pk, [], { until: 199, query: async (r, f) => { asked = f; return [] } })
   assert.equal(asked.until, 199, "an older page asks the network before that note")
+  // The screen asks the defaults at once, then only the write relays they didn't cover.
+  let relays
+  await syncPersonNotes(vault, them_pk, ["wss://their.write"], { defaults: false, query: async r => { relays = r; return [] } })
+  assert.deepEqual(relays, ["wss://their.write"])
   // Notes feed sync already saved (someone you follow) are merged in, once each.
   await vault.feed.event(notes[1])
   const saved = finalizeEvent({ kind: 1, created_at: 250, tags: [], content: "saved by feed sync" }, them)

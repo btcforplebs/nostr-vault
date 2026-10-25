@@ -14,6 +14,8 @@ const GROUPS = [
   ["LIGHTNING", [["lud16", "Address (lud16)", "you@walletofsatoshi.com", "email"]]],
 ]
 
+// photo.badge.plus: a picture with a plus at its corner.
+const PHOTO_ADD = "M14 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M3 16l4-4 3 3 3-3 3 3M8.5 9.5h.01M19 2v6M16 5h6"
 const isUrl = s => { try { return !!new URL(s.trim()).protocol } catch { return false } }
 
 export function EditProfile({ ctx, onClose }) {
@@ -80,6 +82,7 @@ export function EditProfile({ ctx, onClose }) {
               {["picture", "banner"].map(k => (
                 <label key={k} class={`button small${busy ? " disabled" : ""}`}>
                   <input type="file" accept="image/*" hidden disabled={busy} onChange={e => { upload(k, e.currentTarget.files?.[0]); e.currentTarget.value = "" }} />
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={PHOTO_ADD} /></svg>
                   {uploading === k ? "Uploading…" : `Choose ${k}`}
                 </label>
               ))}

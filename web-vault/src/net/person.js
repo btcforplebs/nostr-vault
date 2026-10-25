@@ -39,10 +39,10 @@ export async function readPersonNotes(vault, pubkey, { limit = PERSON_PAGE, unti
   return [...byId.values()].sort((a, b) => b.created_at - a.created_at).slice(0, limit)
 }
 
-/** One page of their notes and reposts (at or before `until`, if set) from their write relays, kept in memory.
- *  -> how many the network had */
-export async function syncPersonNotes(vault, pubkey, writeRelays, { until, limit = PERSON_PAGE, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const evs = await query(uniq([...writeRelays, ...DEFAULT_RELAYS]), { kinds: NOTE_KINDS, authors: [pubkey], limit, ...(until ? { until } : {}) }, { maxWait: 8000 })
+/** One page of their notes and reposts (at or before `until`, if set) from their write relays and, unless `defaults`
+ *  is false, the default relays, kept in memory. -> how many the network had */
+export async function syncPersonNotes(vault, pubkey, writeRelays, { until, limit = PERSON_PAGE, defaults = true, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const evs = await query(uniq([...writeRelays, ...(defaults ? DEFAULT_RELAYS : [])]), { kinds: NOTE_KINDS, authors: [pubkey], limit, ...(until ? { until } : {}) }, { maxWait: 8000 })
   const theirs = evs.filter(e => e.pubkey === pubkey && NOTE_KINDS.includes(e.kind))
   remember(pubkey, theirs)
   return theirs.length

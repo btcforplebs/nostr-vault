@@ -12,5 +12,7 @@
   border-radius: 8px; border-color: transparent; background: var(--accent-pale); color: var(--accent); font: var(--t-foot); font-weight: 600; }
 .follow-btn.on { background: var(--accent); color: #fff; }
 .follow-btn:disabled { background: var(--s2); color: var(--text-3); }
+/* Web of Trust and More: tinted like Follow and Message, as ProfileActions' icon pills (moderation.css draws them grey). */
+.person-actions a.more-btn, .person-actions button.more-btn { background: var(--accent-pale); color: var(--accent); }
 .person-error { margin: 10px var(--gutter) 0; font: var(--t-foot); }
 .person-end { padding: 16px var(--gutter) 24px; text-align: center; color: var(--text-3); font: var(--t-foot); }
