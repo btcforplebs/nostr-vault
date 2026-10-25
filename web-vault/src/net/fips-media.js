@@ -239,7 +239,7 @@ export function createFipsMedia({
   async function fallback(item, author, opts) {
     if (!allow(author)) throw new Error("not from someone you follow")
     const src = await source(item, author)
-    if (!src) throw new Error(fipsRef(item.url) || item.x ? "no mesh vault" : "no hash")
+    if (!src) throw Object.assign(new Error(fipsRef(item.url) || item.x ? "no mesh vault" : "no hash"), { code: NO_VAULT })
     return photo(src.vaults, src.sha256, opts)
   }
 
@@ -261,6 +261,11 @@ async function defaultReader(opts) {
   const { startPhotoReader } = await import("../../../web-relay/src/fips/photo-reader.js")
   return startPhotoReader(opts)
 }
+
+/** fallback's rejection when there was no vault to ask (the author lists none, or the item has no hash), as against a
+ *  vault that was asked and didn't answer. */
+export const NO_VAULT = "NO_VAULT"
+export const noVault = e => e?.code === NO_VAULT
 
 let shared
 /** The page's one loader (one reader, one cache). */

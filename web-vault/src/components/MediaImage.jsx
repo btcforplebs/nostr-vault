@@ -2,12 +2,13 @@
 // itself once it nears the screen (fips-media.js), only in notes from you or people you follow and only with the
 // Settings switch on: a NIP-F1 .fips link at once, an https photo after its server fails when the imeta gives its
 // hash and the author lists a fipsmesh:// vault. A box saying "Loading image over FIPS…" while it loads (never the dead
-// https image's broken icon), "Couldn't reach the owner's vault" if the read gives up.
+// https image's broken icon), "Couldn't reach the owner's vault" if a vault was asked and the read gave up. With no vault
+// to ask, an https photo stays the plain broken image.
 // Leaving the page stops its read and lets its blob: URL go. When the gate changes (a follow added, the switch
 // flipped) a photo still waiting re-checks it: one now allowed starts, one no longer allowed stops.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { fipsRef } from "../net/fips-ref.js"
-import { fipsMedia, meshAllowed, onMeshGate } from "../net/fips-media.js"
+import { fipsMedia, meshAllowed, noVault, onMeshGate } from "../net/fips-media.js"
 import { Spinner } from "./Loading.jsx"
 
 // Vite only (the node tests have no CSS loader): the spinner and "not reachable" box, wherever a photo is drawn.
@@ -27,12 +28,14 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
   const [why, setWhy] = useState("")
   const box = useRef(), ctl = useRef()
   const gated = useRef(false) // a mesh read is due but the author may not use the mesh (yet)
+  const tried = useRef(false) // this web photo's one mesh try found no vault to ask
   const [ver, setVer] = useState(0)
   useEffect(() => gate(() => setVer(v => v + 1)), [gate])
 
   useEffect(() => {
     const s = first()
     gated.current = s === "failed"
+    tried.current = false
     setState(s); setSrc(s === "web" ? item.url : undefined)
     return () => ctl.current?.abort() // a new url or gone from the page: the read stops, the URL can be released
   }, [item.url])
@@ -53,7 +56,12 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
       const c = (ctl.current = new AbortController())
       media.fallback(item, author, { signal: c.signal }).then(
         u => { got = true; if (live) { setSrc(u); setState("mesh") } },
-        e => { if (live && e?.name !== "AbortError") { setWhy(String(e?.message ?? e)); setState("unreached") } })
+        e => {
+          if (!live || e?.name === "AbortError") return
+          const next = afterMeshFail(e, item)
+          if (next === "web") { tried.current = true; setSrc(item.url) }
+          setWhy(String(e?.message ?? e)); setState(next)
+        })
     }
     const el = box.current
     const io = el && typeof IntersectionObserver === "function"
@@ -65,14 +73,18 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
 
   // A web photo whose server fails gets one mesh try when there is a hash to ask for and the author may use the mesh.
   const onError = e => {
-    if (state === "web" && item.x && allowed(author)) return setState("wait")
-    if (state === "web" && item.x) gated.current = true // a later follow or the switch can still start a mesh try
+    if (state === "web" && item.x && !tried.current && allowed(author)) return setState("wait")
+    if (state === "web" && item.x && !tried.current) gated.current = true // a later follow or the switch can still start a mesh try
     broken?.(e)
   }
 
   if (state === "wait" || state === "failed" || state === "unreached") return <MeshBox state={state} item={item} why={why} box={box} />
   return <img src={src} alt="" referrerpolicy="no-referrer" onError={onError} {...img} />
 }
+
+/** Where a photo goes when its mesh read fails: back to the https image (shown broken) when there was no vault to ask,
+ *  "failed" for a .fips link that has no https copy, "unreached" when a vault was asked and didn't answer. */
+export const afterMeshFail = (e, item) => (noVault(e) ? (fipsRef(item.url) ? "failed" : "web") : "unreached")
 
 export const LOADING_TEXT = "Loading image over FIPS…"
 export const UNREACHED_TEXT = "Couldn't reach the owner's vault"
