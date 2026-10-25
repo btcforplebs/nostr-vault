@@ -432,6 +432,24 @@ ol.steps > li::before {
     .docs-side { position: static; max-height: none; overflow: visible; padding: 0; }
     .docs-side.js .docs-nav { display: none; margin-top: 8px; }
     .docs-side.js.open .docs-nav { display: block; }
+    /* With JavaScript: the Docs menu and search ride under the header as one row while you read, and the open menu
+       scrolls on its own. */
+    .docs-side.js {
+        position: sticky;
+        top: 64px;
+        z-index: 20;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        margin: 0 -16px;
+        padding: 8px 16px;
+        background: #000;
+        border-bottom: 1px solid var(--glass-border);
+    }
+    .docs-side.js .docs-menu { width: auto; white-space: nowrap; }
+    .docs-side.js .docs-search { margin-bottom: 0; min-width: 0; }
+    .docs-side.js .docs-results { position: absolute; left: 0; right: 0; z-index: 1; }
+    .docs-side.js .docs-nav { grid-column: 1 / -1; max-height: calc(100svh - 150px); overflow-y: auto; overscroll-behavior: contain; }
     .docs-main h1 { font-size: 2.1rem; letter-spacing: -0.8px; }
     .docs-article h2 { font-size: 1.5rem; }
     .shots { grid-template-columns: repeat(2, 1fr); gap: 12px; }
