@@ -31,5 +31,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24 # website/Dockerfile builds the apps on node:24
+          check-latest: true # the runner's cached 24 can predate a security release
       - name: Build haven.wasm, test web-relay and web-vault, fail on any skip
         run: website/test-web-apps.sh
