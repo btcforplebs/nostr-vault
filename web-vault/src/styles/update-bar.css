@@ -1,0 +1,6 @@
+/* "Update ready, tap to reload" (src/components/UpdateBar.jsx): a capsule at the top, over every screen. */
+.update-bar { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 60;
+  max-width: calc(100vw - 2 * var(--gutter, 16px)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--accent-grad); border-color: transparent; color: #fff; box-shadow: 0 6px 20px rgba(0, 0, 0, .35); }
+.update-bar:active:not(:disabled) { transform: translateX(-50%) scale(.96); }
+.update-bar:disabled { background: var(--accent-grad); color: #fff; opacity: .8; }

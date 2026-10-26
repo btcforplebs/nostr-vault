@@ -36,6 +36,8 @@ import { tabOf } from "./src/components/tabs.js"
 import { startChromeFold } from "./src/components/chrome-fold.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import { Splash } from "./src/components/Loading.jsx"
+import { UpdateBar } from "./src/components/UpdateBar.jsx"
+import { watchUpdates } from "./src/sw-update.js"
 import { VaultReady } from "./src/components/VaultReady.jsx"
 import { hasLocalData, markPrepared, prepareVault, wasPrepared } from "./src/net/vault-ready.js"
 import { DesktopShell } from "./src/desktop/DesktopShell.jsx"
@@ -319,7 +321,7 @@ let workerAsked = false
 function registerWorker() {
   if (workerAsked || !("serviceWorker" in navigator)) return
   workerAsked = true
-  navigator.serviceWorker.register("./sw.js").catch(e => log("sw-error", { err: String(e) }))
+  navigator.serviceWorker.register("./sw.js").then(reg => watchUpdates(reg, navigator.serviceWorker)).catch(e => log("sw-error", { err: String(e) }))
 }
 if (loadSession()) document.readyState === "complete" ? registerWorker() : addEventListener("load", registerWorker, { once: true })
 if (loadSession()) navigator.storage?.persist?.().then(granted => log("persist", { granted }))
@@ -327,4 +329,4 @@ if (loadSession()) navigator.storage?.persist?.().then(granted => log("persist",
 // tab isn't blocked, and this one reloads onto the new build. Sign-out deletes the stores too, but drops the session
 // first; onSignedOutElsewhere handles that.
 addEventListener("idbstore-versionchange", () => { if (loadSession()) location.reload() }, { once: true })
-render(<App />, document.getElementById("app"))
+render(<><App /><UpdateBar /></>, document.getElementById("app"))
