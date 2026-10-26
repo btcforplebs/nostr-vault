@@ -45,16 +45,26 @@ test("Firefox: Sidecar's icon and an Add to Firefox badge for Firefox Add-ons", 
   assert.deepEqual(c.badge, { glyph: "./ext/firefox.svg", small: "Firefox Add-ons", big: "Add to Firefox" })
 })
 
-test("Safari: Nostash's app icon and a Get on the App Store badge (Mac App Store on a Mac)", () => {
-  const c = card(UA.iphone)
-  assert.equal(c.icon, "./ext/nostash.png")
+test("iPhone Safari: Nostr Build Shack's icon first, then Nostash's, each with a Get on the App Store badge", () => {
+  const help = extensionHelp(UA.iphone)
+  const c = installCard(help)
+  assert.equal(c.icon, "./ext/nostr-build-shack.png")
   assert.deepEqual(c.badge, { glyph: "./ext/apple.svg", small: "Get on the", big: "App Store" })
+  assert.equal(c.line, "Keeps your Nostr key in this device's keychain and signs in Safari for sites like this one.")
+  const next = installCard({ ...help.more[0], browser: help.browser })
+  assert.equal(next.icon, "./ext/nostash.png")
+  assert.deepEqual(next.badge, c.badge)
+  assert.equal(next.line, "Keeps your Nostr key in Safari and signs for sites like this one.")
+})
+
+test("Mac Safari: Nostash's app icon and a Get on the Mac App Store badge", () => {
   assert.equal(card(UA.safariMac).badge.big, "Mac App Store")
   assert.equal(card(UA.safariMac).icon, "./ext/nostash.png")
 })
 
 test("every icon a card can show is a local file, the app icons 3x their 48 px and the badge glyphs 2x their 26 px", () => {
-  const all = [UA.chrome, UA.firefox, UA.safariMac, UA.iphone].map(ua => card(ua))
+  const iphone = extensionHelp(UA.iphone)
+  const all = [...[UA.chrome, UA.firefox, UA.safariMac, UA.iphone].map(ua => card(ua)), ...iphone.more.map(app => installCard({ ...app, browser: iphone.browser }))]
   for (const src of new Set(all.flatMap(c => [c.icon, c.badge.glyph]))) {
     assert.match(src, /^\.\/ext\//)
     assert.ok(existsSync(file(src)), `${src} is missing`)

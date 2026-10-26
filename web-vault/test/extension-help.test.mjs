@@ -1,7 +1,7 @@
 // Sign-in with no extension: which signer extension each browser is pointed to (signer/nip07.js extensionHelp).
 import test from "node:test"
 import assert from "node:assert/strict"
-import { extensionHelp, SIDECAR_CHROME, SIDECAR_FIREFOX, NOSTASH } from "../src/signer/nip07.js"
+import { extensionHelp, SIDECAR_CHROME, SIDECAR_FIREFOX, NOSTASH, NOSTR_BUILD_SHACK } from "../src/signer/nip07.js"
 
 const UA = {
   chromeMac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
@@ -32,21 +32,23 @@ test("desktop Firefox gets Sidecar from Firefox Add-ons", () => {
   }
 })
 
-test("Safari on a Mac, iPhone or iPad gets Nostash, with how to turn it on", () => {
+test("Safari on a Mac gets Nostash; on iPhone and iPad, Nostr Build Shack first and then Nostash, each with how to turn it on", () => {
   const mac = extensionHelp(UA.safariMac)
   assert.equal(mac.name, "Nostash"); assert.equal(mac.url, NOSTASH); assert.equal(mac.store, "Mac App Store")
   assert.match(mac.after, /Safari › Settings › Extensions/)
-  const phone = extensionHelp(UA.safariIphone, { touch: 5 })
-  assert.equal(phone.url, NOSTASH); assert.equal(phone.store, "App Store")
-  assert.match(phone.after, /Settings › Apps › Safari › Extensions/)
+  assert.equal(mac.more, undefined)
   // iPadOS Safari says "Macintosh"; touch points give it away.
-  assert.equal(extensionHelp(UA.safariMac, { touch: 5 }).store, "App Store")
+  for (const phone of [extensionHelp(UA.safariIphone, { touch: 5 }), extensionHelp(UA.safariMac, { touch: 5 })]) {
+    assert.deepEqual([phone, ...phone.more].map(a => [a.name, a.url, a.store]),
+      [["Nostr Build Shack", NOSTR_BUILD_SHACK, "App Store"], ["Nostash", NOSTASH, "App Store"]])
+    for (const a of [phone, ...phone.more]) assert.match(a.after, new RegExp(`turn ${a.name} on in Settings › Apps › Safari › Extensions`))
+  }
 })
 
 test("browsers that can't run an extension get a note instead of a link", () => {
   for (const ua of [UA.chromeIphone, UA.firefoxIphone]) {
     const h = extensionHelp(ua)
-    assert.equal(h.url, undefined); assert.match(h.note, /Open this page in Safari/)
+    assert.equal(h.url, undefined); assert.match(h.note, /Open this page in Safari to sign in with Nostr Build Shack or Nostash/)
   }
   // Sidecar's Firefox listing is desktop only, and Android Chrome has no extensions.
   for (const ua of [UA.chromeAndroid, UA.firefoxAndroid]) {
@@ -60,4 +62,6 @@ test("every store link is one of the checked listings", () => {
   assert.equal(new URL(SIDECAR_CHROME).host, "chromewebstore.google.com")
   assert.equal(new URL(SIDECAR_FIREFOX).host, "addons.mozilla.org")
   assert.equal(new URL(NOSTASH).host, "apps.apple.com")
+  assert.equal(new URL(NOSTR_BUILD_SHACK).host, "apps.apple.com")
+  assert.match(NOSTR_BUILD_SHACK, /\/id6752591477$/)
 })
