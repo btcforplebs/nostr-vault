@@ -3,6 +3,7 @@
 // publishRelays picks. A like or repost reads as sent only once it is signed and a relay took it.
 import { neventEncode } from "nostr-tools/nip19"
 import { pool, publishRelays } from "./pool.js"
+import { appendClientTag } from "./client-tag.js"
 import { checkSigned } from "./sync.js"
 import { repostInner, repostedId, verifiedCopy } from "./thread.js"
 import { keepDeletedCopy } from "./recently-deleted.js"
@@ -66,12 +67,14 @@ export function actionTarget(event) {
 }
 
 /**
- * Sign `template`, send it to the relays publishRelays picks, and once one took it, keep it in Haven's outbox.
+ * Sign `unsigned` (a note or comment gets the client tag, client-tag.js), send it to the relays publishRelays picks, and
+ * once one took it, keep it in Haven's outbox.
  * Done at the first network relay's OK, as the iPhone fills the heart at once: waiting for every relay held it to the
  * slowest one's timeout (5 s). The rest finish in the background; `settled` has every relay's answer.
  * -> { event, relay: url, settled: Promise<[{ url, ok, message }]> }; throws when signing fails or no relay took it.
  */
-export async function publishAction(ctx, template) {
+export async function publishAction(ctx, unsigned) {
+  const template = { ...unsigned, tags: appendClientTag(unsigned.tags, unsigned.kind) }
   const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const { network, local } = publishRelays(ctx.account.relays.write)
   const urls = [...network, ...local]

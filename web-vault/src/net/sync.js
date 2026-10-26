@@ -3,6 +3,7 @@
 import { verifyEvent } from "nostr-tools/pure"
 import { normalizeURL } from "nostr-tools/utils"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
+import { appendClientTag } from "./client-tag.js"
 
 // Notes and reposts, plus the articles, polls, highlights, comments, pictures and generic reposts the iPhone shows in
 // Following (FeedServiceTypes.timelineKinds). feed-kinds.js timelineShows decides which comments and kind 16s draw.
@@ -215,7 +216,7 @@ export function checkSigned(event, template, pubkey) {
  * -> { event, local, relays: [{url, ok, message, local}] } with `local` set on this machine's own relay
  */
 export async function publishNote(vault, signer, pubkey, content, writeRelays, tags = []) {
-  const template = { kind: 1, created_at: now(), tags, content }
+  const template = { kind: 1, created_at: now(), tags: appendClientTag(tags, 1), content }
   const event = checkSigned(await signer.signEvent(template), template, pubkey)
   const local = await vault.outbox.event(event)
   if (!local.ok) throw new Error(`Haven refused the note: ${local.message}`)

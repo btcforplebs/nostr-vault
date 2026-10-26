@@ -104,7 +104,7 @@ test("publishNote signs the tags it is given", async t => {
   relaysSay(t, () => Promise.resolve(""))
   const c = ctxFor(), n = note()
   const { event } = await publishNote(c.vault, c.signer, c.session.pubkey, "my reply", c.account.relays.write, replyTags(n))
-  assert.deepEqual(event.tags, replyTags(n))
+  assert.deepEqual(event.tags, [...replyTags(n), ["client", "Nostr Vault on Web"]])
   assert.ok(verifyEvent(event))
 })
 
