@@ -2,7 +2,10 @@
 // stored and are fetched only once. Everything else is network first, with the cached copy when offline, so a
 // reload works without a network.
 const C = "nv-web-vault-v2"
-self.addEventListener("install", e => e.waitUntil(precache().then(() => self.skipWaiting())))
+// A first install starts at once. A new build waits beside the worker serving open pages (whose lazy chunks
+// activate's prune would drop) until a page asks: "Update ready, tap to reload" (src/sw-update.js).
+self.addEventListener("install", e => e.waitUntil(precache().then(() => self.registration?.active ? undefined : self.skipWaiting())))
+self.addEventListener("message", e => { if (e.data === "skip-waiting") self.skipWaiting() })
 self.addEventListener("activate", e => e.waitUntil(migrate().then(prune).then(() => self.clients.claim())))
 // The first visit's page and scripts were fetched before this worker existed, so nothing above would have stored
 // them: a reload offline right after the first visit fails. Stores the app shell now: index.html (served at the
