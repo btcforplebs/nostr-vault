@@ -228,7 +228,8 @@ export function followersOf(lists, me, blocked = new Set()) {
     const cur = newest.get(ev.pubkey)
     if (!cur || ev.created_at > cur.created_at) newest.set(ev.pubkey, ev)
   }
-  return [...newest.values()].filter(ev => tagsMe(ev, me) && !blocked.has(ev.pubkey)).map(ev => ({ pubkey: ev.pubkey, at: ev.created_at })).sort((a, b) => b.at - a.at)
+  // `followedAt`: when this browser first saw them follow (mergeLists), kept when they later edit their list.
+  return [...newest.values()].filter(ev => tagsMe(ev, me) && !blocked.has(ev.pubkey)).map(ev => ({ pubkey: ev.pubkey, at: ev.followedAt ?? ev.created_at })).sort((a, b) => b.at - a.at)
 }
 
 /** "Newest followers" are those that arrived after you last looked at the list; "all" is everyone. */
@@ -289,11 +290,43 @@ async function storeEach(route, evs) {
   return out
 }
 
-/** Others' events that tag the user from the network, kept in Haven's inbox when it takes them. -> events */
-export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs } = {}) {
-  // `trust` drops forged zap receipts (zaps.js trustedReceipts) before Haven keeps them.
-  const evs = await trust(await pool.querySync(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...sinceOf(since) }, { maxWait: 8000 }))
-  if (vault.inbox) await storeEach(vault.inbox, evs)
+/**
+ * Asks each relay on its own and hands each answer to `on` as it lands, so one slow relay never holds the list
+ * back (one querySync over all of them waited ~8.5 s for the slowest). An event a faster relay already handed on is
+ * dropped by id. Rejects only when every relay failed. -> every event handed on, once all have answered
+ */
+export async function eachRelay(relays, filter, on = () => {}, { maxWait = 8000, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const seen = new Set(), all = [], urls = uniq(relays)
+  let failed = 0, last
+  await Promise.all(urls.map(async url => {
+    let evs
+    try { evs = await query([url], filter, { maxWait }) } catch (e) { failed++; last = e; return }
+    const fresh = evs.filter(e => e && !seen.has(e.id) && seen.add(e.id))
+    if (!fresh.length) return
+    all.push(...fresh)
+    await on(fresh)
+  }))
+  if (urls.length && failed === urls.length) throw last
+  return all
+}
+
+const isZap = e => e.kind === 9735
+
+/**
+ * Others' events that tag the user from the network, kept in Haven's inbox. Each relay's answer is handed to `on`
+ * as it lands; its zap receipts follow once `trust` has checked them (zaps.js trustedReceipts: it resolves the zap
+ * service), so a forged one is never drawn or kept. A receipt that can't be checked now is drawn, not kept: the
+ * screen checks it again. -> events
+ */
+export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs, on = () => {}, query } = {}) {
+  const keep = evs => vault.inbox ? storeEach(vault.inbox, evs) : null
+  const evs = await eachRelay(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...sinceOf(since) }, async fresh => {
+    const rest = fresh.filter(e => !isZap(e)), zaps = fresh.filter(isZap)
+    if (rest.length) { on(rest); await keep(rest) }
+    if (!zaps.length) return
+    const checked = await trust(zaps).then(ok => ({ ok, sure: true }), () => ({ ok: zaps, sure: false }))
+    if (checked.ok.length) { on(checked.ok); if (checked.sure) await keep(checked.ok) }
+  }, { query })
   return dedupe(evs)
 }
 
@@ -306,33 +339,144 @@ export async function fetchOwnExtras(vault, me, relays, { limit = 200, since } =
   return (await storeEach(vault.outbox, evs)).filter(r => r.ok).length
 }
 
-/** Kind 3 lists naming the user, from the network. */
-export async function fetchFollowerLists(me, relays, { limit = 500, since } = {}) {
-  return pool.querySync(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, { maxWait: 8000 })
+/** Kind 3 lists naming the user, from the network, each relay's handed to `on` as it lands (compactLists). */
+export async function fetchFollowerLists(me, relays, { limit = 500, since, on = () => {}, query } = {}) {
+  return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs, me)), { query })
 }
 
-/** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network. Most receipts carry it. */
-export async function fetchGivenZaps(me, relays, { limit = 100, since } = {}) {
-  return pool.querySync(relays, { kinds: [9735], "#P": [me], limit, ...sinceOf(since) }, { maxWait: 8000 })
+/** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network, each relay's handed to `on` once
+ *  `trust` has checked it. Most receipts carry the tag. */
+export async function fetchGivenZaps(me, relays, { limit = 100, since, trust = async evs => evs, on = () => {}, query } = {}) {
+  return eachRelay(relays, { kinds: [9735], "#P": [me], limit, ...sinceOf(since) }, async evs => {
+    const ok = await trust(evs).catch(() => [])
+    if (ok.length) on(ok)
+  }, { query })
 }
 
 /**
  * The Vault's network round: inbound, follower lists, zaps given and the user's own likes and highlights, asked at
- * once. Each one is handed to `on` as it lands, so the list on screen draws from the first answer and never waits on
- * the slowest: checking zaps given resolves every payee's zap service, ~20 s for 60 payees. `since` asks only for
- * what came after it (coming back to a kept Vault tab). -> once all are done, the first error, or null
+ * once, every relay on its own. Each answer is handed to `on` as it lands (`on.inbound`, `on.lists` and `on.given`
+ * may be called once per relay), so the list on screen draws from the first answer and never waits on the slowest:
+ * checking zaps given resolves every payee's zap service, ~20 s for 60 payees. `on.own` is called once, after the
+ * user's own likes and highlights are in Haven. `since` asks only for what came after it. -> once all are done,
+ * the first error, or null
  */
 export async function fetchVault(vault, me, relays, { trust = async evs => evs, on = {}, fetchers = {}, since } = {}) {
   const f = { fetchInbound, fetchFollowerLists, fetchGivenZaps, fetchOwnExtras, ...fetchers }
-  const each = (p, apply = () => {}) => p.then(apply)
+  const hand = cb => evs => { if (evs?.length) cb?.(evs) }
   const results = await Promise.allSettled([
-    each(f.fetchInbound(vault, me, relays, { trust, since }), on.inbound),
-    each(f.fetchFollowerLists(me, relays, { since }).catch(() => []), on.lists),
-    each(f.fetchGivenZaps(me, relays, { since }).then(trust).catch(() => []), on.given),
-    each(f.fetchOwnExtras(vault, me, relays, { since }).catch(() => 0), on.own),
+    f.fetchInbound(vault, me, relays, { trust, since, on: hand(on.inbound) }),
+    f.fetchFollowerLists(me, relays, { since, on: hand(on.lists) }).catch(() => []),
+    f.fetchGivenZaps(me, relays, { since, trust, on: hand(on.given) }).catch(() => []),
+    f.fetchOwnExtras(vault, me, relays, { since }).catch(() => 0).then(n => on.own?.(n)),
   ])
   return results.find(r => r.status === "rejected")?.reason ?? null
 }
+
+// ---- Follower lists kept in this browser ----
+
+/**
+ * Kind 3 lists cut down to what Followers needs: each author's newest, with only a `p` tag for the user when it
+ * still names them. A full list is ~50 KB and a big account has 1,000s of followers; the cut one is ~150 bytes,
+ * small enough to keep between visits (keepLists) and to hand the screen.
+ */
+export function compactLists(lists, me) {
+  const newest = new Map()
+  for (const ev of lists) {
+    if (!ev || ev.kind !== 3 || !HEX64.test(ev.pubkey ?? "") || !Array.isArray(ev.tags)) continue
+    const cur = newest.get(ev.pubkey)
+    if (!cur || ev.created_at > cur.created_at) newest.set(ev.pubkey, ev)
+  }
+  return [...newest.values()].map(ev => ({ id: ev.id, kind: 3, pubkey: ev.pubkey, created_at: ev.created_at, tags: tagsMe(ev, me) ? [["p", me]] : [], ...(ev.followedAt ? { followedAt: ev.followedAt } : {}) }))
+}
+
+/**
+ * Newer follower lists over the ones held, per author. Someone who still follows the user keeps the time they were
+ * first seen following (`followedAt`): editing their list for someone else is not a new follow, and must not move
+ * their line to the top. -> compact lists
+ */
+export function mergeLists(prev, fresh, me) {
+  const by = new Map(compactLists(prev, me).map(l => [l.pubkey, l]))
+  for (const l of compactLists(fresh, me)) {
+    const cur = by.get(l.pubkey)
+    if (cur && cur.created_at >= l.created_at) continue
+    by.set(l.pubkey, cur?.tags.length && l.tags.length ? { ...l, followedAt: cur.followedAt ?? cur.created_at } : l)
+  }
+  return [...by.values()]
+}
+
+const LISTS = "nv-vault-follower-lists"
+/** The follower lists this browser holds for `me` (compactLists), or [] when none or unreadable. */
+export function readLists(me, storage = globalThis.localStorage) {
+  try {
+    const v = JSON.parse(storage?.getItem(`${LISTS}:${me}`) ?? "[]")
+    return Array.isArray(v) ? v.filter(e => e?.kind === 3 && HEX64.test(e.pubkey ?? "")) : []
+  } catch { return [] }
+}
+/** Keeps the follower lists for the next visit. A full storage is not an error: the next visit asks the relays. */
+export function keepLists(me, lists, storage = globalThis.localStorage) {
+  try { storage?.setItem(`${LISTS}:${me}`, JSON.stringify(compactLists(lists, me))) } catch {}
+}
+
+// ---- What the screen draws ----
+
+/** The rows the current mode and filter show, newest first: built once per change of what they're built from. */
+export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0 }) {
+  switch (mode) {
+    case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked }).filter(r => activityFilter(r, filter))
+    case "notes": return notesFor(own, inbound, me, filter, blocked)
+    case "articles": return articlesFor(own, inbound, me, filter, blocked)
+    case "highlights": return highlightsFor(own, inbound, me, filter, blocked)
+    case "media": return filter === "notes" ? mediaFor(own) : []
+    case "likes": return likesFor(own, inbound, me, filter, blocked)
+    case "zaps": return zapsFor(given, inbound, me, filter, blocked)
+    case "followers": return followersFilter(followers, filter, seenAt)
+    default: return []
+  }
+}
+
+/** Whose names a mode's rows show, in row order (the first two of a folded line, as Who draws them). */
+export function peopleOf(mode, rows) {
+  const out = []
+  for (const r of rows) {
+    if (mode === "activity") out.push(...r.actors.slice(0, 2))
+    else if (mode === "likes" || mode === "zaps") out.push(...r.who.slice(0, 2), ...(r.to ? [r.to] : []))
+    else if (mode === "followers") out.push(r.pubkey)
+    else if (r.pubkey) out.push(r.pubkey)
+  }
+  return uniq(out.filter(pk => HEX64.test(pk ?? "")))
+}
+
+/** The newest moment a list on screen shows: inbound events and the follows among `lists`. 0 when it shows none. */
+export function newestShown(inbound, lists = []) {
+  let top = 0
+  for (const e of inbound) if (e.created_at > top) top = e.created_at
+  for (const l of lists) { const at = l.followedAt ?? l.created_at; if (l.tags?.length && at > top) top = at }
+  return top
+}
+
+/**
+ * A network answer, split into what goes into the list now and what waits behind the "N new" pill, so the rows on
+ * screen never move under the reader. Held: what is newer than `top` (newestShown when the list was drawn) and
+ * would draw a line of its own, or move one up: an inbound event that makes a Vault row, a follower list from
+ * someone who wasn't following. Older answers fill in below. `top` 0: nothing drawn yet, all goes in.
+ * -> { now, later }
+ */
+export function splitArrivals(kind, fresh, { top, me, own = [], lists = [], blocked = new Set() }) {
+  if (!top) return { now: fresh, later: [] }
+  if (kind === "lists") {
+    const following = new Set(followersOf(lists, me).map(f => f.pubkey))
+    const isNew = l => l.tags?.length && l.created_at > top && !following.has(l.pubkey) && !blocked.has(l.pubkey)
+    return { now: fresh.filter(l => !isNew(l)), later: fresh.filter(isNew) }
+  }
+  const later = fresh.filter(e => e.created_at > top)
+  if (!later.length || !activityRows(later, me, { mine: own, blocked }).length) return { now: fresh, later: [] }
+  return { now: fresh.filter(e => e.created_at <= top), later }
+}
+
+/** How many Vault lines the held answers would add, for the pill. */
+export const heldCount = (held, me, own, blocked = new Set()) =>
+  activityRows(held.inbound, me, { mine: own, follows: followersOf(held.lists, me, blocked), blocked }).length
 
 // ---- Coming back to the tab ----
 

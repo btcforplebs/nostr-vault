@@ -28,8 +28,9 @@ export function EmptyFollowing({ onRefresh }) {
   </div>
 }
 
-/** Held-back new notes. Small (a count) once the feed is scrolled, as the iPhone's folds when you scroll. */
-export function NewPostsPill({ count, onShow }) {
+/** Held-back new notes. Small (a count) once the feed is scrolled, as the iPhone's folds when you scroll.
+ *  `text`: the label for a count, when what is held isn't posts (the Vault tab's "3 new"). */
+export function NewPostsPill({ count, onShow, text = n => `${n} New ${n === 1 ? "Post" : "Posts"}` }) {
   const [scrolled, setScrolled] = useState(() => (globalThis.scrollY ?? 0) > 200)
   useEffect(() => {
     const on = () => setScrolled(scrollY > 200)
@@ -38,9 +39,9 @@ export function NewPostsPill({ count, onShow }) {
   }, [])
   if (!count) return null
   const n = count > 99 && scrolled ? "99+" : count
-  return <button type="button" class={`new-posts${scrolled ? " small" : ""}`} onClick={onShow} aria-label={`${count} new posts, tap to load`}>
+  return <button type="button" class={`new-posts${scrolled ? " small" : ""}`} onClick={onShow} aria-label={`${text(count)}, tap to load`}>
     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-    {scrolled ? n : `${count} New ${count === 1 ? "Post" : "Posts"}`}
+    {scrolled ? n : text(count)}
   </button>
 }
 

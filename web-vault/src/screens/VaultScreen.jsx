@@ -3,7 +3,7 @@
 // filters as bare icons and search (VaultToolbar trailingPill). A floating "Vault" capsule, coloured by how the relays
 // answered, opens the Dashboard (VaultView+Layout). Your own events come from Haven's outbox; what others sent you from Haven's inbox and the relays.
 // The web's Vault Dashboard is the Relay screen, which already shows the relay's counts and storage.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
 import { ArticleCard } from "../components/ArticleCard.jsx"
@@ -20,13 +20,13 @@ import { VaultSearch } from "./VaultSearch.jsx"
 import { BlossomGallery } from "./BlossomGallery.jsx"
 import { newestByMode, readSeen, writeSeen, markSeen, baseline, newModes } from "../net/vault-new.js"
 import {
-  MODES, FILTERS, isMode, defaultFilter, previewOf, activityRows, activityFilter, notesFor, articlesFor, highlightsFor, highlightSource,
-  mediaFor, likesFor, zapsFor, followersOf, followersFilter, followersSeenAt, markFollowersSeen,
+  MODES, FILTERS, isMode, defaultFilter, previewOf, highlightSource, followersOf, followersSeenAt, markFollowersSeen,
   readOwn, readInbound, readOlder, fetchVault, READ_PAGE, keepVault, keptVault, sinceKept,
+  readLists, keepLists, mergeLists, itemsFor, peopleOf, newestShown, splitArrivals, heldCount,
 } from "../net/vault-lists.js"
 import { PagedList, FIRST_ROWS, MORE_ROWS } from "../components/PagedList.jsx"
 import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
-import { SkeletonRows } from "../components/FeedExtras.jsx"
+import { NewPostsPill, SkeletonRows } from "../components/FeedExtras.jsx"
 
 const ICONS = {
   activity: "M3 13h5l1.5 3h5L16 13h5M3 13l2-7h14l2 7v6H3z",
@@ -74,7 +74,8 @@ export function VaultScreen({ ctx, desk = false }) {
   const [filter, setFilter] = useState(() => k && mode === k.mode ? k.filter : defaultFilter(mode))
   const [own, setOwn] = useState(() => k?.own ?? [])
   const [inboundAll, setInbound] = useState(() => k?.inbound ?? [])
-  const [lists, setLists] = useState(() => k?.lists ?? []) // kind 3 lists naming the user
+  // Kind 3 lists naming the user, cut down (vault-lists.js compactLists) and kept in this browser between visits.
+  const [lists, setLists] = useState(() => k?.lists ?? readLists(me))
   const [givenAll, setGiven] = useState(() => k?.given ?? []) // zap receipts the user paid
   // Zap receipts their payee's zap service didn't publish (forged), by id. Checked after the first draw, since
   // resolving a zap service takes the network; until then a receipt still needs a valid signed zap request.
@@ -85,8 +86,13 @@ export function VaultScreen({ ctx, desk = false }) {
     const out = evs.filter(e => !kept.has(e.id)).map(e => e.id)
     if (out.length) setForged(f => new Set([...f, ...out]))
   }
-  const inbound = forged.size ? inboundAll.filter(e => !forged.has(e.id)) : inboundAll
-  const given = forged.size ? givenAll.filter(e => !forged.has(e.id)) : givenAll
+  const inbound = useMemo(() => forged.size ? inboundAll.filter(e => !forged.has(e.id)) : inboundAll, [inboundAll, forged])
+  const given = useMemo(() => forged.size ? givenAll.filter(e => !forged.has(e.id)) : givenAll, [givenAll, forged])
+  // Answers newer than the list on screen wait behind the "N new" pill instead of moving its rows
+  // (vault-lists.js splitArrivals). `top`: the newest moment the list showed when drawn; 0 until it is.
+  const [held, setHeld] = useState(() => k?.held ?? { inbound: [], lists: [] })
+  const top = useRef(k?.top ?? 0)
+  const holding = useRef(true) // Refresh shows everything it finds at once: it was asked for
   const [notes, setNotes] = useState(() => k?.notes ?? new Map())
   const [status, setStatus] = useState("")
   const [loaded, setLoaded] = useState(!!k)
@@ -102,9 +108,32 @@ export function VaultScreen({ ctx, desk = false }) {
 
   useEffect(() => { const f = () => { const m = modeOf(); if (m) pick(m) }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f) }, [])
 
-  const load = async () => {
+  // A network answer goes in now, or behind the pill once the list is drawn. The first inbound answer on an empty
+  // list is what gets drawn: later ones hold from there.
+  const arrive = (kind, fresh) => {
+    const put = kind === "inbound" ? evs => setInbound(prev => merge(prev, evs)) : evs => setLists(prev => mergeLists(prev, evs, me))
+    if (!holding.current) return put(fresh)
+    const { own: o, lists: l } = keep.current
+    const { now, later } = splitArrivals(kind, fresh, { top: top.current, me, own: o, lists: l, blocked })
+    if (now.length) put(now)
+    if (later.length) setHeld(h => ({ ...h, [kind]: merge(h[kind], later) }))
+    if (!top.current && kind === "inbound") top.current = newestShown(now)
+  }
+  const showHeld = () => {
+    const h = held
+    setInbound(prev => merge(prev, h.inbound)); setLists(prev => mergeLists(prev, h.lists, me))
+    setHeld({ inbound: [], lists: [] }); setShown(FIRST_ROWS)
+    top.current = Math.max(top.current, newestShown(h.inbound, h.lists))
+    const el = scroller(root.current); if (el) el.scrollTop = 0; else scrollTo(0, 0)
+  }
+  const load = async ({ hold = true } = {}) => {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
-    setOwn(o); setInbound(i); setLoaded(true); setShown(FIRST_ROWS)
+    // Refresh (`hold` false) also lets in what the pill held, and this round's answers go straight in.
+    const h = hold ? null : held
+    setOwn(o); setInbound(h ? merge(i, h.inbound) : i); setLoaded(true); setShown(FIRST_ROWS)
+    if (h) { setLists(prev => mergeLists(prev, h.lists, me)); setHeld({ inbound: [], lists: [] }) }
+    holding.current = hold
+    top.current = hold ? newestShown(i, keep.current.lists) : 0
     setOlder({ own: o.length >= READ_PAGE, inbound: i.length >= READ_PAGE })
     screen(i) // receipts kept before this check existed
     const settled = () => { setFetched(true); setListsFetched(true); setGivenFetched(true); setOwnFetched(true) }
@@ -112,9 +141,9 @@ export function VaultScreen({ ctx, desk = false }) {
     setStatus("Checking your relays…"); setReach("checking")
     // Each answer draws as it lands: the list never waits on the slowest (zaps given, net/vault-lists.js fetchVault).
     const err = await fetchVault(vault, me, relays, { trust, on: {
-      inbound: fresh => { setInbound(prev => merge(prev, fresh)); setFetched(true) },
-      lists: l => { setLists(l); setListsFetched(true) },
-      given: g => { setGiven(g); setGivenFetched(true) },
+      inbound: fresh => { arrive("inbound", fresh); setFetched(true) },
+      lists: l => { arrive("lists", l); setListsFetched(true) },
+      given: g => { setGiven(prev => merge(prev, g)); setGivenFetched(true) },
       own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)); setOwnFetched(true) },
     } })
     setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : ""); setReach(err ? "down" : "up")
@@ -124,11 +153,13 @@ export function VaultScreen({ ctx, desk = false }) {
   const update = async since => {
     const [o, i] = await Promise.all([readOwn(vault, me).catch(() => []), readInbound(vault, me)])
     setOwn(prev => merge(prev, o)); setInbound(prev => merge(prev, i))
+    holding.current = true
+    if (!top.current) top.current = newestShown(merge(keep.current.inbound, i), keep.current.lists)
     if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setReach("down"); return }
     setReach("checking")
     const err = await fetchVault(vault, me, relays, { trust, since, on: {
-      inbound: fresh => setInbound(prev => merge(prev, fresh)),
-      lists: l => setLists(prev => merge(prev, l)),
+      inbound: fresh => arrive("inbound", fresh),
+      lists: l => arrive("lists", l),
       given: g => setGiven(prev => merge(prev, g)),
       own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)) },
     } })
@@ -149,8 +180,10 @@ export function VaultScreen({ ctx, desk = false }) {
     on.addEventListener("scroll", f, { passive: true }); return () => on.removeEventListener("scroll", f)
   }, [])
   const keep = useRef()
-  keep.current = { me, mode, filter, own, inbound: inboundAll, lists, given: givenAll, forged, notes, shown, older }
-  useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, scrollY: scrolled.current }) }, [])
+  keep.current = { me, mode, filter, own, inbound: inboundAll, lists, given: givenAll, forged, notes, shown, older, held, top: top.current }
+  useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, top: top.current, scrollY: scrolled.current }) }, [])
+  // The next visit draws its Followers and follow lines from these before any relay answers.
+  useEffect(() => { if (listsFetched) keepLists(me, lists) }, [lists, listsFetched])
 
   const pick = m => { setMode(m); setFilter(defaultFilter(m)); setShown(FIRST_ROWS) }
   const choose = id => { setFilter(id); setShown(FIRST_ROWS) }
@@ -167,7 +200,7 @@ export function VaultScreen({ ctx, desk = false }) {
     } else setOlder({ own: false, inbound: false })
     setPaging(false)
   }
-  const followers = followersOf(lists, me, blocked)
+  const followers = useMemo(() => followersOf(lists, me, blocked), [lists, blocked])
   // Seeing the Followers list is what makes its "new" ones old, as on the phone; the current visit still shows them.
   useEffect(() => { if (mode === "followers" && followers.length) markFollowersSeen(me, followers[0].at) }, [mode, followers.length])
 
@@ -190,14 +223,23 @@ export function VaultScreen({ ctx, desk = false }) {
   const followersSeen = followersSeenAt(me)
   const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: followers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
 
+  // The current list's rows, sorted once per change of what they're built from, not on every render.
+  const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, seenAt: seenAt.current }), [mode, filter, own, inbound, given, followers, blocked])
+  const newCount = useMemo(() => heldCount(held, me, own, blocked), [held, own, blocked])
   // Likes and Zaps rows name the note they were about.
-  const likes = mode === "likes" ? likesFor(own, inbound, me, filter, blocked) : []
-  const zaps = mode === "zaps" ? zapsFor(given, inbound, me, filter, blocked) : []
-  const wanted = [...likes, ...zaps].map(r => r.noteId).filter(id => id && !notes.has(id))
+  const wanted = mode === "likes" || mode === "zaps" ? items.map(r => r.noteId).filter(id => id && !notes.has(id)) : []
   useEffect(() => { if (wanted.length) fetchNotes(vault, wanted, relays).then(found => setNotes(prev => new Map([...prev, ...found]))).catch(() => {}) }, [wanted.join()])
-  // Names and faces for whoever the current list shows.
-  const faces = mode === "activity" ? activityRows(inbound, me).flatMap(r => r.actors) : mode === "followers" ? followers.map(f => f.pubkey) : [...likes, ...zaps].flatMap(r => r.who)
-  useEffect(() => { if (faces.length) fetchProfiles(vault, faces, relays).catch(() => {}) }, [mode, faces.length])
+  // Names and faces, asked once for everyone the list names: the rows drawn so far first, then the rest
+  // (net/profiles.js reads Haven /feed, then the relays, and keeps what they send).
+  const asked = useRef(new Set())
+  const people = useMemo(() => peopleOf(mode, items), [mode, items])
+  useEffect(() => {
+    const onScreen = peopleOf(mode, items.slice(0, shown)).filter(pk => !asked.current.has(pk))
+    const rest = people.filter(pk => !asked.current.has(pk) && !onScreen.includes(pk))
+    for (const pk of [...onScreen, ...rest]) asked.current.add(pk)
+    if (onScreen.length) fetchProfiles(vault, onScreen, relays).catch(() => {})
+    if (rest.length) fetchProfiles(vault, rest, relays).catch(() => {})
+  }, [people, shown])
 
   // Anyone can reply, react, zap or follow: only a follow's (or your own) picture host and inline images are fetched.
   const trusted = pk => pk === me || account.follows.includes(pk)
@@ -216,7 +258,7 @@ export function VaultScreen({ ctx, desk = false }) {
             {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}{fresh.has(x.id) && <span class="vault-new">New</span>}</MenuItem>)}
             <hr />
             <MenuItem onClick={() => { location.hash = "#/relay" }}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
-            <MenuItem onClick={() => { setRefreshes(n => n + 1); load() }}><Icon d={ICONS.refresh} />Refresh</MenuItem>
+            <MenuItem onClick={() => { setRefreshes(n => n + 1); load({ hold: false }) }}><Icon d={ICONS.refresh} />Refresh</MenuItem>
           </Menu>
         )}
         {!desk ? (
@@ -240,13 +282,14 @@ export function VaultScreen({ ctx, desk = false }) {
             </Menu>
           )}
           <button class="vault-pill-btn" onClick={() => setSearching(!searching)} aria-label="Search your vault" aria-pressed={searching} title="Search your vault"><Icon d={ICONS.search} /></button>
-          <button class="vault-pill-btn" onClick={() => { setRefreshes(n => n + 1); load() }} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
+          <button class="vault-pill-btn" onClick={() => { setRefreshes(n => n + 1); load({ hold: false }) }} aria-label="Refresh" title="Refresh"><Icon d={ICONS.refresh} /></button>
         </div>
         )}
       </header>
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
-      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} own={own} inbound={inbound} me={me} blocked={blocked} followers={followers} seenAt={seenAt.current} likes={likes} zaps={zaps} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
+      {loaded && newCount > 0 && <NewPostsPill count={newCount} onShow={showHeld} text={n => `${n} new`} />}
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
       {!desk && <a class={`vault-status ${reach || "idle"}`} href="#/relay" aria-label={`Vault Dashboard: ${REACH[reach || "idle"]}`} title={REACH[reach || "idle"]}><LockStack /><b>Vault</b></a>}
     </main>
@@ -298,7 +341,7 @@ const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={o
 
 const Grid = ({ children }) => <div class="vault-grid">{children}</div>
 
-function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt, likes, zaps, notes, trusted, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
+function List({ ctx, mode, filter, items, me, followers, notes, trusted, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
   // Nothing in this browser's relay yet, but the relays are still being asked: placeholders, not "nothing here".
   const Empty = ({ text }) => fetched ? <p class="empty">{text}</p> : <VaultSkeleton mode={mode} />
   // A call, not a component made here: a new component type each render would draw every row again.
@@ -306,33 +349,32 @@ function List({ ctx, mode, filter, own, inbound, me, blocked, followers, seenAt,
   const paged = (items, render, wrap) => <PagedList items={items} render={render} wrap={wrap} shown={page.shown} onMore={page.onMore} busy={page.busy} />
   switch (mode) {
     case "activity": {
-      const follows = followers
-      const rows = activityRows(inbound, me, { mine: own, follows, blocked }).filter(r => activityFilter(r, filter))
+      const rows = items
       return (rows.length || page.older) ? paged(rows, r => <ActivityRow key={r.id} row={r} trusted={trusted} onFollowers={onFollowers} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
     }
     case "notes": {
-      const list = notesFor(own, inbound, me, filter, blocked)
+      const list = items
       return (list.length || page.older) ? paged(list, n => <NoteCard key={n.id} event={n} />) : <Empty text={filter === "tagged" ? "No notes tag you yet." : "No notes yet."} />
     }
     case "articles": {
-      const list = articlesFor(own, inbound, me, filter, blocked)
+      const list = items
       return (list.length || page.older) ? paged(list, a => <ArticleCard key={a.id} event={a} />) : <Empty text={filter === "recipes" ? "No recipes found. Recipes are articles tagged zapcooking or nostrcooking." : "Long-form posts you write or are tagged in land here."} />
     }
     case "highlights": {
-      const list = highlightsFor(own, inbound, me, filter, blocked)
+      const list = items
       return (list.length || page.older) ? paged(list, h => <HighlightCard key={h.id} event={h} trusted={trusted} />) : <Empty text="No highlights yet." />
     }
     case "media": {
       if (filter !== "notes") return <BlossomGallery ctx={ctx} filter={filter} refreshes={refreshes} />
-      const list = mediaFor(own)
+      const list = items
       return (list.length || page.older)
         ? paged(list, p => <a key={p.url} href={`#/thread/${p.noteId}`} class="vault-thumb"><MediaImage item={p.item} author={me} loading="lazy" /></a>, Grid)
         : <Empty text="Pictures from your notes show here." />
     }
-    case "likes": return (likes.length || page.older) ? paged(likes, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
-    case "zaps": return (zaps.length || page.older) ? paged(zaps, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />
+    case "likes": return (items.length || page.older) ? paged(items, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "You haven't liked anything from here yet." : "No likes on your notes yet."} />
+    case "zaps": return (items.length || page.older) ? paged(items, r => <EngagementRow key={r.id} row={r} note={notes.get(r.noteId)} me={me} trusted={trusted} />) : <Empty text={filter === "given" ? "No zaps you paid were found on your relays." : "No zaps on your notes yet."} />
     case "followers": {
-      const list = followersFilter(followers, filter, seenAt)
+      const list = items
       return list.length
         ? <>{followers.length > 0 && <div class="section-label">{followers.length} follower{followers.length === 1 ? "" : "s"}</div>}{paged(list, f => <a key={f.pubkey} class="person-row" href={`#/profile/${f.pubkey}`}><Avatar pubkey={f.pubkey} size={40} load={trusted(f.pubkey)} /><span class="person-names"><AuthorName pubkey={f.pubkey} /><span class="person-sub">followed you {ago(f.at)} ago</span></span></a>)}</>
         : <Empty text={filter === "new" ? "No new followers since you last looked." : "No followers found on your relays yet."} />

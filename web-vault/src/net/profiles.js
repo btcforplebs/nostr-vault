@@ -54,14 +54,23 @@ export async function fetchProfiles(vault, pubkeys, relays, { force = false, sav
   }
 }
 
+// Network asks in flight at once, per relay: a relay answers several, but 8 chunks of 200 one after another each
+// waited on the slowest relay (6 s), and a big Followers list never finished naming.
+const WAVE = 3
+
 async function load(vault, want, relays, { force, save, query }) {
   const urls = uniq([...relays, ...PROFILE_RELAYS])
-  for (let i = 0; i < want.length; i += 200) {
-    const chunk = want.slice(i, i + 200)
+  const chunks = []
+  for (let i = 0; i < want.length; i += 200) chunks.push(want.slice(i, i + 200))
+  // Haven first, for every chunk: a local read takes milliseconds, a relay's answer seconds.
+  for (const chunk of chunks) {
     const local = await vault.feed.query({ kinds: [0], authors: chunk })
     if (local.map(store).some(Boolean)) changed()
+  }
+  if (globalThis.navigator?.onLine === false) return
+  const ask = async chunk => {
     const missing = force ? chunk : chunk.filter(pk => !cache.has(pk))
-    if (!missing.length || globalThis.navigator?.onLine === false) continue
+    if (!missing.length) return
     await Promise.all(urls.map(async url => {
       const evs = await query([url], { kinds: [0], authors: missing }, { maxWait: 6000 }).catch(() => [])
       // Only what is newer than what is held: the same kind 0 from a second relay isn't drawn or written again.
@@ -71,6 +80,7 @@ async function load(vault, want, relays, { force, save, query }) {
       if (save) await storeAll(vault.feed, fresh)
     }))
   }
+  for (let i = 0; i < chunks.length; i += WAVE) await Promise.all(chunks.slice(i, i + WAVE).map(ask))
 }
 
 /** Resolves once every one of `pubkeys` has a name in memory, or `work` (the fetch for them) has settled. */
