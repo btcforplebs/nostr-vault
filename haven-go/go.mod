@@ -2,7 +2,7 @@ module github.com/barrydeen/haven
 
 go 1.24.1
 
-toolchain go1.24.4
+toolchain go1.27.3
 
 require (
 	github.com/btcsuite/btcd v0.25.0
