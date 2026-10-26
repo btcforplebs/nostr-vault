@@ -14,8 +14,6 @@ import com.nostrvault.relay.RelayForegroundService.Companion.launchedInputs
 import com.nostrvault.relay.RelayForegroundService.LifecycleState
 import com.nostrvault.relay.RelayForegroundService.RelayStatus
 import java.io.File
-import java.net.InetSocketAddress
-import java.net.Socket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -60,10 +58,11 @@ import kotlinx.coroutines.withTimeoutOrNull
             if (isShuttingDown) return false
             attempt++
             try {
-                withContext(Dispatchers.IO) {
-                    Socket().use { socket ->
-                        socket.connect(InetSocketAddress("127.0.0.1", port), 1000)
-                    }
+                val ours = withContext(Dispatchers.IO) { RelayIdentity.answersAsOurs(port, 1000) }
+                // Something else holds the port: not ours, so not running.
+                if (!ours) {
+                    Log.e(TAG, "Port $port answers, but not as this app's relay (another relay app on the same port?)")
+                    return false
                 }
                 Log.i(TAG, "Health check passed on attempt $attempt (port $port)")
                 return true

@@ -12,7 +12,8 @@ import dagger.hilt.components.SingletonComponent
 
 /**
  * Auto-start the relay service when the device boots.
- * Honors the user's "Auto-start Relay" advanced setting.
+ * Honors the user's "Auto-start Relay" advanced setting, and never runs
+ * before setup is finished.
  */
 class BootCompletedReceiver : BroadcastReceiver() {
 
@@ -36,7 +37,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
         configStore.reload()
         val config = configStore.config.value
         // An external relay replaces the embedded one; there is nothing to boot.
-        val autoStartEnabled = config.autoStartRelay && !config.useExternalRelay
+        // Nor before setup is finished: a setup left half-way has no account
+        // and no relay choice yet (it may be meant for Citrine).
+        val autoStartEnabled = config.hasCompletedSetup && config.autoStartRelay && !config.useExternalRelay
 
         if (autoStartEnabled) {
             Log.i(TAG, "Boot completed -- starting relay service")
