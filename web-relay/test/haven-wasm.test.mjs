@@ -119,3 +119,26 @@ test("real Haven: the owner's account notes are kept once the account is saved, 
     await h.stop()
   }
 })
+
+// The web Vault tab keeps what others sent the user in /inbox. The inbox asks a writer to AUTH before it takes an
+// event (MustNotBeBlacklistedToPost), and the client used to answer AUTH for reads only, so every write was refused
+// and each visit started empty.
+test("real Haven: /inbox keeps others' replies, likes, zaps and follow lists once the page's stream AUTHs", { skip: !built && "public/haven.wasm not built" }, async () => {
+  const { makeAuthEvent } = await import("nostr-tools/nip42")
+  const owner = generateSecretKey(), device = generateSecretKey(), stranger = generateSecretKey()
+  const me = getPublicKey(owner)
+  const h = await boot()
+  await h.start({ ownerNpub: npubEncode(me), whitelist: [npubEncode(getPublicKey(device))], env: { RELAY_URL: "vault.local" }, storePrefix: "inbox-auth" })
+  const auth = ch => finalizeEvent(makeAuthEvent("wss://vault.local/inbox", ch), device)
+  const c = new HavenClient(h.conn("ui-inbox", { mode: "nip01", route: "/inbox", owner: true }), { auth })
+  const now = Math.floor(Date.now() / 1000), mine = note(owner, "mine")
+  const ev = (kind, tags, content = "") => finalizeEvent({ kind, created_at: now, tags, content }, stranger)
+  const sent = [ev(1, [["e", mine.id], ["p", me]], "a reply"), ev(7, [["e", mine.id], ["p", me]], "+"), ev(9735, [["e", mine.id], ["p", me]]), ev(3, [["p", me]])]
+  for (const e of sent) assert.deepEqual(await c.event(e), { ok: true, message: "" }, `kind ${e.kind} kept`)
+  assert.equal((await c.query({ kinds: [1, 3, 7, 9735], "#p": [me] })).length, 4)
+  c.close()
+  const anon = new HavenClient(h.conn("no-auth", { mode: "nip01", route: "/inbox", owner: true }))
+  assert.match((await anon.event(ev(1, [["p", me]], "x"))).message, /^auth-required/, "no auth callback: refused, not retried")
+  anon.close()
+  await h.stop()
+})
