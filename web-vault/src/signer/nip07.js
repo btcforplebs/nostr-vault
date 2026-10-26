@@ -48,18 +48,24 @@ export function extensionCrypto() {
 
 // Where to get a signer extension when this browser has none. Links from sidecar.top and Logen, checked 2026-10-25: Sidecar is on
 // the Chrome Web Store (Brave installs from it too) and on Firefox Add-ons for desktop Firefox only; Nostash is one
-// App Store app with the Safari extension for Mac, iPhone and iPad.
+// App Store app with the Safari extension for Mac, iPhone and iPad. Nostr Build Shack (nostr.build, by Big Nut Media) is an
+// iPhone and iPad app that keeps Nostr keys in the iOS keychain and has a Safari extension that signs; Logen wants it first
+// on iPhone and iPad (2026-10-25). It has no Mac build, so a Mac gets Nostash alone.
 export const SIDECAR_CHROME = "https://chromewebstore.google.com/detail/sidecar-a-classy-nostr-si/moimlikilhheabdafocpmneehpblhiln"
 export const SIDECAR_FIREFOX = "https://addons.mozilla.org/firefox/addon/sidecar-a-classy-nostr-signer/"
 export const NOSTASH = "https://apps.apple.com/us/app/nostash/id6744309333"
+export const NOSTR_BUILD_SHACK = "https://apps.apple.com/us/app/nostr-build-shack/id6752591477"
 
 const SIDECAR_WHAT = "Sidecar keeps your Nostr key in your browser's side panel and signs for sites like this one, so the key never comes into the page."
 const NOSTASH_WHAT = "Nostash keeps your Nostr key in Safari and signs for sites like this one, so the key never comes into the page."
+const SHACK_WHAT = "Nostr Build Shack keeps your Nostr key in your iPhone's keychain and its Safari extension signs for sites like this one, so the key never comes into the page."
+const IOS_AFTER = name => `After installing, turn ${name} on in Settings › Apps › Safari › Extensions and allow it for this site.`
 
 /**
  * The extension to suggest for this browser. ua: navigator.userAgent; brave: whether navigator.brave exists; touch:
  * navigator.maxTouchPoints, which tells an iPad (it says "Macintosh") from a Mac.
- * -> { browser, name, url, store, what, after } to link, or { browser, note } where no extension can run.
+ * -> { browser, name, url, store, what, after, more } to link, or { browser, note } where no extension can run. more: the
+ *    other apps to offer after the first, each { name, url, store, what, after } (iPhone and iPad only).
  */
 export function extensionHelp(ua = "", { brave = false, touch = 0 } = {}) {
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && touch > 1)
@@ -67,8 +73,9 @@ export function extensionHelp(ua = "", { brave = false, touch = 0 } = {}) {
   const firefox = /Firefox\/|FxiOS\//.test(ua)
   const chromium = /Chrome\/|Chromium\/|CriOS\/|Edg[AiO]?\//.test(ua)
   if (ios) {
-    if (/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) return { browser: "this browser", note: "Extensions on iPhone and iPad run in Safari. Open this page in Safari to sign in with Nostash, or use a bunker link below." }
-    return { browser: "Safari", name: "Nostash", url: NOSTASH, store: "App Store", what: NOSTASH_WHAT, after: "After installing, turn Nostash on in Settings › Apps › Safari › Extensions and allow it for this site." }
+    if (/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) return { browser: "this browser", note: "Extensions on iPhone and iPad run in Safari. Open this page in Safari to sign in with Nostr Build Shack or Nostash, or use a bunker link below." }
+    return { browser: "Safari", name: "Nostr Build Shack", url: NOSTR_BUILD_SHACK, store: "App Store", what: SHACK_WHAT, after: IOS_AFTER("Nostr Build Shack"),
+      more: [{ name: "Nostash", url: NOSTASH, store: "App Store", what: NOSTASH_WHAT, after: IOS_AFTER("Nostash") }] }
   }
   if (android) return { browser: "this browser", note: "Browsers on Android can't add a Nostr extension yet. Use a bunker link from a signer app like Amber below." }
   if (firefox) return { browser: "Firefox", name: "Sidecar", url: SIDECAR_FIREFOX, store: "Firefox Add-ons", what: SIDECAR_WHAT }
