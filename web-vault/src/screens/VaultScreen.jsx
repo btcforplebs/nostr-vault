@@ -182,8 +182,6 @@ export function VaultScreen({ ctx, desk = false }) {
   const keep = useRef()
   keep.current = { me, mode, filter, own, inbound: inboundAll, lists, given: givenAll, forged, notes, shown, older, held, top: top.current }
   useEffect(() => () => { const { me: who, ...state } = keep.current; keepVault(who, { ...state, top: top.current, scrollY: scrolled.current }) }, [])
-  // The next visit draws its Followers and follow lines from these before any relay answers.
-  useEffect(() => { if (listsFetched) keepLists(me, lists) }, [lists, listsFetched])
 
   const pick = m => { setMode(m); setFilter(defaultFilter(m)); setShown(FIRST_ROWS) }
   const choose = id => { setFilter(id); setShown(FIRST_ROWS) }
@@ -210,6 +208,8 @@ export function VaultScreen({ ctx, desk = false }) {
   const [listsFetched, setListsFetched] = useState(!!k) // Followers' own answer
   const [givenFetched, setGivenFetched] = useState(!!k) // Zaps given's own answer, after every payee is checked
   const [ownFetched, setOwnFetched] = useState(!!k) // your likes and highlights from the relays
+  // The next visit draws its Followers and follow lines from these before any relay answers.
+  useEffect(() => { if (listsFetched) keepLists(me, lists) }, [lists, listsFetched])
   // Which answer a mode's "nothing here" waits for; until then it shows its skeleton.
   const ready = mode === "followers" ? listsFetched : mode === "zaps" && filter === "given" ? givenFetched
     : (mode === "likes" && filter === "given") || mode === "highlights" ? fetched && ownFetched : fetched
