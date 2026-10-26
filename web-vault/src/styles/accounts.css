@@ -30,6 +30,7 @@ button.danger { color: var(--danger); }
 .get-extension p.small { font: var(--t-foot); }
 /* The extension's own icon, name and one line, then a black store badge like the stores' own. */
 .get-extension .ext-card { display: flex; gap: 14px; align-items: center; }
+.get-extension a.ext-card { color: inherit; text-decoration: none; }
 .get-extension .ext-icon { flex: none; width: 48px; height: 48px; border-radius: 11px; box-shadow: 0 0 0 1px var(--hair); }
 .get-extension .ext-about { display: grid; gap: 2px; min-width: 0; }
 .get-extension .store-badge { display: inline-flex; align-items: center; justify-self: start; gap: 10px; min-height: 48px; padding: 6px 18px 6px 12px;

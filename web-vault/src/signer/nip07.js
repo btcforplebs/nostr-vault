@@ -55,6 +55,7 @@ export const SIDECAR_CHROME = "https://chromewebstore.google.com/detail/sidecar-
 export const SIDECAR_FIREFOX = "https://addons.mozilla.org/firefox/addon/sidecar-a-classy-nostr-signer/"
 export const NOSTASH = "https://apps.apple.com/us/app/nostash/id6744309333"
 export const NOSTR_BUILD_SHACK = "https://apps.apple.com/us/app/nostr-build-shack/id6752591477"
+export const AMBER_ZAPSTORE = "https://zapstore.dev/apps/com.greenart7c3.nostrsigner"
 
 const SIDECAR_WHAT = "Sidecar keeps your Nostr key in your browser's side panel and signs for sites like this one, so the key never comes into the page."
 const NOSTASH_WHAT = "Nostash keeps your Nostr key in Safari and signs for sites like this one, so the key never comes into the page."
@@ -64,8 +65,9 @@ const IOS_AFTER = name => `After installing, turn ${name} on in Settings › App
 /**
  * The extension to suggest for this browser. ua: navigator.userAgent; brave: whether navigator.brave exists; touch:
  * navigator.maxTouchPoints, which tells an iPad (it says "Macintosh") from a Mac.
- * -> { browser, name, url, store, what, after, more } to link, or { browser, note } where no extension can run. more: the
- *    other apps to offer after the first, each { name, url, store, what, after } (iPhone and iPad only).
+ * -> { browser, name, url, store, what, after, more } to link, or { browser, note, signer } where no extension can run. more: the
+ *    other apps to offer after the first, each { name, url, store, what, after } (iPhone and iPad only). signer: the signer
+ *    app the note names, { name, url, store } (Android only).
  */
 export function extensionHelp(ua = "", { brave = false, touch = 0 } = {}) {
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && touch > 1)
@@ -77,7 +79,8 @@ export function extensionHelp(ua = "", { brave = false, touch = 0 } = {}) {
     return { browser: "Safari", name: "Nostr Build Shack", url: NOSTR_BUILD_SHACK, store: "App Store", what: SHACK_WHAT, after: IOS_AFTER("Nostr Build Shack"),
       more: [{ name: "Nostash", url: NOSTASH, store: "App Store", what: NOSTASH_WHAT, after: IOS_AFTER("Nostash") }] }
   }
-  if (android) return { browser: "this browser", note: "Browsers on Android can't add a Nostr extension yet. Use a bunker link from a signer app like Amber below." }
+  if (android) return { browser: "this browser", note: "Browsers on Android can't add a Nostr extension yet. Use a bunker link from a signer app like Amber below.",
+    signer: { name: "Amber", url: AMBER_ZAPSTORE, store: "Zapstore" } }
   if (firefox) return { browser: "Firefox", name: "Sidecar", url: SIDECAR_FIREFOX, store: "Firefox Add-ons", what: SIDECAR_WHAT }
   if (chromium) return { browser: brave ? "Brave" : /Edg\//.test(ua) ? "Edge" : "Chrome", name: "Sidecar", url: SIDECAR_CHROME, store: "Chrome Web Store", what: SIDECAR_WHAT }
   if (/Safari\//.test(ua) && /Macintosh/.test(ua)) return { browser: "Safari", name: "Nostash", url: NOSTASH, store: "Mac App Store", what: NOSTASH_WHAT, after: "After installing, open Nostash once, then turn it on in Safari › Settings › Extensions and allow it for this site." }

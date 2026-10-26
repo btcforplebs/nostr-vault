@@ -17,13 +17,14 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { installCard } = await import("../src/components/GetExtension.jsx")
+const { installCard, noteWithSigner, SignerCard } = await import("../src/components/GetExtension.jsx")
 
 const UA = {
   chrome: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
   edge: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0",
   firefox: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:144.0) Gecko/20100101 Firefox/144.0",
   safariMac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+  android: "Mozilla/5.0 (Linux; Android 15; moto g) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36",
   iphone: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
 }
 const card = (ua, o) => installCard(extensionHelp(ua, o))
@@ -74,4 +75,21 @@ test("every icon a card can show is a local file, the app icons 3x their 48 px a
       assert.ok(w >= (src === all[0].badge.glyph ? 52 : 144), `${src} is ${w}px`)
     }
   }
+})
+
+test("Android: the note links Amber to its Zapstore page, and Amber gets a card with its local icon", () => {
+  const help = extensionHelp(UA.android)
+  const parts = noteWithSigner(help).props.children
+  assert.equal(parts[0], "Browsers on Android can't add a Nostr extension yet. Use a bunker link from a signer app like ")
+  assert.deepEqual([parts[1].type, parts[1].props.href, parts[1].props.children], ["a", "https://zapstore.dev/apps/com.greenart7c3.nostrsigner", "Amber"])
+  assert.equal(parts[2], " below.")
+  const card = SignerCard({ signer: help.signer })
+  assert.equal(card.props.href, help.signer.url)
+  const icon = card.props.children[0].props.src
+  assert.equal(icon, "./ext/amber.png")
+  const [w, h] = pngSize(readFileSync(file(icon)))
+  assert.ok(w === h && w >= 144, `${icon} is ${w}x${h}`)
+  // A note with no signer, or one that doesn't name it, stays plain text.
+  assert.equal(noteWithSigner({ note: "plain" }), "plain")
+  assert.equal(noteWithSigner({ note: "plain", signer: help.signer }), "plain")
 })
