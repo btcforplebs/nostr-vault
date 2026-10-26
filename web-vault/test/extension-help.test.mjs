@@ -54,6 +54,7 @@ test("browsers that can't run an extension get a note instead of a link", () => 
   for (const ua of [UA.chromeAndroid, UA.firefoxAndroid]) {
     const h = extensionHelp(ua)
     assert.equal(h.url, undefined); assert.match(h.note, /Android/)
+    assert.deepEqual(h.signer, { name: "Amber", url: "https://zapstore.dev/apps/com.greenart7c3.nostrsigner", store: "Zapstore" })
   }
   assert.match(extensionHelp("").note, /don't know a Nostr extension/)
 })
