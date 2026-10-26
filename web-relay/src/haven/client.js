@@ -4,7 +4,8 @@
 /**
  * @param conn  a havenConn(...) handle: { write(Uint8Array), onData(cb), onClose(cb), close() }
  * @param auth  optional (challenge) => Promise<signed kind 22242 event>. When set, a REQ or COUNT Haven closes
- *              with "auth-required:" is answered with NIP-42 AUTH once and sent again.
+ *              with "auth-required:", or an EVENT it answers with OK false "auth-required:", is answered with
+ *              NIP-42 AUTH once and sent again.
  */
 export class HavenClient {
   constructor(conn, { timeoutMs = 15_000, auth } = {}) {
@@ -24,7 +25,10 @@ export class HavenClient {
   }
 
   /** -> { ok, message } */
-  event(ev) {
+  async event(ev) {
+    const r = await this.#ask(ev.id, ["EVENT", ev])
+    if (r.ok || !this.auth || !r.message.startsWith("auth-required")) return r
+    await this.#authenticate()
     return this.#ask(ev.id, ["EVENT", ev])
   }
 

@@ -60,7 +60,7 @@ test("every tile shows how many servers hold it; the iPhone's loading and empty 
 
 test("the Vault's Refresh asks the media servers again", () => {
   const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
-  assert.match(vault, /onClick=\{\(\) => \{ setRefreshes\(n => n \+ 1\); load\(\) \}\}/)
+  assert.match(vault, /onClick=\{\(\) => \{ setRefreshes\(n => n \+ 1\); load\(\{ hold: false \}\) \}\}/)
   assert.match(vault, /<BlossomGallery ctx=\{ctx\} filter=\{filter\} refreshes=\{refreshes\} \/>/)
   assert.match(src, /useEffect\(\(\) => \{ load\(\) \}, \[me, refreshes\]\)/)
 })

@@ -113,6 +113,7 @@ export async function forgetThisBrowser({ vault, pubkey, storage = localStorage,
   // Removing the session is also what tells this page's other tabs to stop (see onSignedOutElsewhere).
   clearSession(storage)
   for (const k of LOCAL_KEYS) storage.removeItem(k)
+  storage.removeItem(`nv-vault-follower-lists:${pubkey}`) // the Vault's follower lists (net/vault-lists.js keepLists)
   const failed = []
   await Promise.all((await storeNames(pubkey, idb)).map(name => new Promise(resolve => {
     // "blocked" means a connection is still open (another tab still stopping); the delete finishes when it closes.

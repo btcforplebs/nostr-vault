@@ -234,9 +234,9 @@ test("the Vault draws each answer as it lands: inbound shows while zaps given ar
   let finishGiven
   const given = new Promise(r => { finishGiven = r })
   const fetchers = {
-    fetchInbound: async () => ["reply"],
-    fetchFollowerLists: async () => ["list"],
-    fetchGivenZaps: () => given,
+    fetchInbound: async (v, me, r, o) => { o.on(["reply"]); return ["reply"] },
+    fetchFollowerLists: async (me, r, o) => { o.on(["list"]); return ["list"] },
+    fetchGivenZaps: (me, r, o) => given.then(g => { o.on(g); return g }),
     fetchOwnExtras: async () => 0,
   }
   const done = fetchVault({}, "me", [], { fetchers, on: { inbound: e => seen.push(["inbound", e]), lists: l => seen.push(["lists", l]), given: g => seen.push(["given", g]) } })
@@ -249,7 +249,7 @@ test("the Vault draws each answer as it lands: inbound shows while zaps given ar
 
 test("a Vault fetch that fails is reported once the rest are in, and does not hold back the others", async () => {
   const seen = []
-  const fetchers = { fetchInbound: async () => { throw new Error("no relay") }, fetchFollowerLists: async () => ["list"], fetchGivenZaps: async () => [], fetchOwnExtras: async () => 0 }
+  const fetchers = { fetchInbound: async () => { throw new Error("no relay") }, fetchFollowerLists: async (me, r, o) => { o.on(["list"]); return ["list"] }, fetchGivenZaps: async () => [], fetchOwnExtras: async () => 0 }
   const err = await fetchVault({}, "me", [], { fetchers, on: { lists: l => seen.push(l) } })
   assert.equal(err?.message, "no relay")
   assert.deepEqual(seen, [["list"]])
