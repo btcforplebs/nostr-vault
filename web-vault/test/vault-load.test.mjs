@@ -109,6 +109,21 @@ test("a follow time a relay adds to an event is dropped; a kept one must be a wh
   assert.equal(newestShown([], merged), 300)
 })
 
+test("a list signed far in the future is skipped: it can't pin its author on top or stop new followers showing", async () => {
+  const { finalizeEvent } = await import("nostr-tools/pure")
+  const sk = generateSecretKey(), soon = Math.floor(Date.now() / 1000) + 60
+  const future = finalizeEvent({ kind: 3, created_at: 99999999999, tags: [["p", ME]], content: "" }, sk)
+  const fine = { ...ev(3, ALICE, [["p", ME]], "", soon) }
+  const lists = []
+  await fetchFollowerLists(ME, ["wss://r"], { on: l => lists.push(...l), query: async () => [future, fine] })
+  assert.deepEqual(lists.map(l => l.pubkey), [ALICE], "dropped as it arrives; a list a minute ahead is kept")
+  assert.deepEqual(followersOf([future, fine], ME).map(f => f.pubkey), [ALICE])
+  assert.equal(newestShown([], mergeLists(lists, [future], ME)), soon)
+  const storage = memStorage()
+  storage.setItem(`nv-vault-follower-lists:${ME}`, JSON.stringify([{ ...future }, fine]))
+  assert.deepEqual(readLists(ME, storage).map(l => l.pubkey), [ALICE], "and from a stored list")
+})
+
 test("sign-out forgets the kept follower lists", () => {
   const src = readFileSync(new URL("../src/haven/vault.js", import.meta.url), "utf8")
   assert.match(src, /storage\.removeItem\(`nv-vault-follower-lists:\$\{pubkey\}`\)/)
