@@ -92,6 +92,23 @@ test("follower lists are kept between visits, small, and someone editing their l
   assert.deepEqual(readLists(ME, storage), [])
 })
 
+test("a follow time a relay adds to an event is dropped; a kept one must be a whole second no later than its list", async () => {
+  const forged = { ...ev(3, ALICE, [["p", ME]], "", 300), followedAt: 99999999999 }, odd = { ...ev(3, BOB, [["p", ME]], "", 400), followedAt: "9" }
+  const lists = []
+  await fetchFollowerLists(ME, ["wss://r"], { on: l => lists.push(...l), query: async () => [forged, odd] })
+  assert.ok(lists.every(l => !("followedAt" in l)), "stripped before compactLists")
+  const sneaky = { ...ev(3, CAROL, [["p", ME]], "", 500), followedAt: 5 }
+  await fetchFollowerLists(ME, ["wss://r"], { on: l => lists.push(...l), query: async () => [sneaky] })
+  assert.equal(followersOf(lists, ME).find(f => f.pubkey === CAROL).at, 500, "even a plausible one from a relay is not kept")
+  const storage = memStorage()
+  storage.setItem(`nv-vault-follower-lists:${ME}`, JSON.stringify([{ ...forged, tags: [["p", ME]] }, { ...odd, tags: [["p", ME]] }, { ...sneaky, tags: [["p", ME]] }]))
+  const back = readLists(ME, storage)
+  assert.deepEqual(followersOf(back, ME).map(f => f.at), [400, 300, 5], "only an integer <= created_at survives a stored list")
+  const merged = mergeLists([{ ...forged, tags: [["p", ME]] }], [ev(3, ALICE, [["p", ME], ["p", BOB]], "", 600)], ME)
+  assert.equal(followersOf(merged, ME)[0].at, 300, "a bad kept time falls back to the list it was kept on")
+  assert.equal(newestShown([], merged), 300)
+})
+
 test("sign-out forgets the kept follower lists", () => {
   const src = readFileSync(new URL("../src/haven/vault.js", import.meta.url), "utf8")
   assert.match(src, /storage\.removeItem\(`nv-vault-follower-lists:\$\{pubkey\}`\)/)

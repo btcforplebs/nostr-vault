@@ -229,7 +229,7 @@ export function followersOf(lists, me, blocked = new Set()) {
     if (!cur || ev.created_at > cur.created_at) newest.set(ev.pubkey, ev)
   }
   // `followedAt`: when this browser first saw them follow (mergeLists), kept when they later edit their list.
-  return [...newest.values()].filter(ev => tagsMe(ev, me) && !blocked.has(ev.pubkey)).map(ev => ({ pubkey: ev.pubkey, at: ev.followedAt ?? ev.created_at })).sort((a, b) => b.at - a.at)
+  return [...newest.values()].filter(ev => tagsMe(ev, me) && !blocked.has(ev.pubkey)).map(ev => ({ pubkey: ev.pubkey, at: followedAtOf(ev) ?? ev.created_at })).sort((a, b) => b.at - a.at)
 }
 
 /** "Newest followers" are those that arrived after you last looked at the list; "all" is everyone. */
@@ -341,7 +341,9 @@ export async function fetchOwnExtras(vault, me, relays, { limit = 200, since } =
 
 /** Kind 3 lists naming the user, from the network, each relay's handed to `on` as it lands (compactLists). */
 export async function fetchFollowerLists(me, relays, { limit = 500, since, on = () => {}, query } = {}) {
-  return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs, me)), { query })
+  // `followedAt` is this browser's own note (mergeLists): a relay can add any key to an event's JSON, and the
+  // signature does not cover it.
+  return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs.map(({ followedAt, ...ev }) => ev), me)), { query })
 }
 
 /** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network, each relay's handed to `on` once
@@ -387,8 +389,10 @@ export function compactLists(lists, me) {
     const cur = newest.get(ev.pubkey)
     if (!cur || ev.created_at > cur.created_at) newest.set(ev.pubkey, ev)
   }
-  return [...newest.values()].map(ev => ({ id: ev.id, kind: 3, pubkey: ev.pubkey, created_at: ev.created_at, tags: tagsMe(ev, me) ? [["p", me]] : [], ...(ev.followedAt ? { followedAt: ev.followedAt } : {}) }))
+  return [...newest.values()].map(ev => ({ id: ev.id, kind: 3, pubkey: ev.pubkey, created_at: ev.created_at, tags: tagsMe(ev, me) ? [["p", me]] : [], ...(followedAtOf(ev) ? { followedAt: ev.followedAt } : {}) }))
 }
+// A kept follow time can only be a whole second no later than the list it is kept on.
+const followedAtOf = ev => Number.isInteger(ev.followedAt) && ev.followedAt > 0 && ev.followedAt <= ev.created_at ? ev.followedAt : undefined
 
 /**
  * Newer follower lists over the ones held, per author. Someone who still follows the user keeps the time they were
@@ -400,7 +404,7 @@ export function mergeLists(prev, fresh, me) {
   for (const l of compactLists(fresh, me)) {
     const cur = by.get(l.pubkey)
     if (cur && cur.created_at >= l.created_at) continue
-    by.set(l.pubkey, cur?.tags.length && l.tags.length ? { ...l, followedAt: cur.followedAt ?? cur.created_at } : l)
+    by.set(l.pubkey, cur?.tags.length && l.tags.length ? { ...l, followedAt: followedAtOf(cur) ?? cur.created_at } : l)
   }
   return [...by.values()]
 }
@@ -410,7 +414,7 @@ const LISTS = "nv-vault-follower-lists"
 export function readLists(me, storage = globalThis.localStorage) {
   try {
     const v = JSON.parse(storage?.getItem(`${LISTS}:${me}`) ?? "[]")
-    return Array.isArray(v) ? v.filter(e => e?.kind === 3 && HEX64.test(e.pubkey ?? "")) : []
+    return Array.isArray(v) ? compactLists(v, me) : []
   } catch { return [] }
 }
 /** Keeps the follower lists for the next visit. A full storage is not an error: the next visit asks the relays. */
@@ -451,7 +455,7 @@ export function peopleOf(mode, rows) {
 export function newestShown(inbound, lists = []) {
   let top = 0
   for (const e of inbound) if (e.created_at > top) top = e.created_at
-  for (const l of lists) { const at = l.followedAt ?? l.created_at; if (l.tags?.length && at > top) top = at }
+  for (const l of lists) { const at = followedAtOf(l) ?? l.created_at; if (l.tags?.length && at > top) top = at }
   return top
 }
 
