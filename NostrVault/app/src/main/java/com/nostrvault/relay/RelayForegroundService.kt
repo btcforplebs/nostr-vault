@@ -276,6 +276,16 @@ class RelayForegroundService : Service() {
 
         fun start(context: Context) {
             if (externalMode) return
+            // No relay and no notification before setup is finished: the
+            // setup import's cleanup and the boot receiver both got here on
+            // a setup that was left half-way. Setup's last step starts it.
+            val config = EntryPointAccessors
+                .fromApplication(context.applicationContext, BootCompletedReceiver.BootReceiverEntryPoint::class.java)
+                .configStore().config.value
+            if (!config.hasCompletedSetup) {
+                Log.i(TAG, "Setup not finished; not starting the relay")
+                return
+            }
             val intent = Intent(context, RelayForegroundService::class.java)
             context.startForegroundService(intent)
         }
