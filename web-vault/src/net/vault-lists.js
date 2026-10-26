@@ -4,6 +4,7 @@
 // sent (replies, mentions, quotes, reposts, likes, zaps, follows) is read from the user's relays and kept in Haven's
 // inbox route when it takes them, so the list still shows after a reload or offline. Nothing here signs.
 import { pool, uniq } from "./pool.js"
+import { MAX_SKEW } from "./follows.js"
 import { groupNotifications, replyTarget, reactionEmoji, zapRequest, zapSats } from "./notifications.js"
 import { imageItem } from "./note-media.js"
 
@@ -222,9 +223,9 @@ export function zapsFor(given, inbound, me, filter, blocked = new Set()) {
  * -> [{ pubkey, at }] newest first. The phone reads its follower ledger; the web reads the lists themselves.
  */
 export function followersOf(lists, me, blocked = new Set()) {
-  const newest = new Map()
+  const newest = new Map(), at = nowSec()
   for (const ev of lists) {
-    if (!ev || ev.kind !== 3 || ev.pubkey === me || !HEX64.test(ev.pubkey ?? "") || !Array.isArray(ev.tags)) continue
+    if (!ev || ev.kind !== 3 || ev.pubkey === me || !HEX64.test(ev.pubkey ?? "") || !Array.isArray(ev.tags) || tooNew(ev, at)) continue
     const cur = newest.get(ev.pubkey)
     if (!cur || ev.created_at > cur.created_at) newest.set(ev.pubkey, ev)
   }
@@ -382,15 +383,19 @@ export async function fetchVault(vault, me, relays, { trust = async evs => evs, 
  * still names them. A full list is ~50 KB and a big account has 1,000s of followers; the cut one is ~150 bytes,
  * small enough to keep between visits (keepLists) and to hand the screen.
  */
-export function compactLists(lists, me) {
+export function compactLists(lists, me, at = nowSec()) {
   const newest = new Map()
   for (const ev of lists) {
-    if (!ev || ev.kind !== 3 || !HEX64.test(ev.pubkey ?? "") || !Array.isArray(ev.tags)) continue
+    if (!ev || ev.kind !== 3 || !HEX64.test(ev.pubkey ?? "") || !Array.isArray(ev.tags) || tooNew(ev, at)) continue
     const cur = newest.get(ev.pubkey)
     if (!cur || ev.created_at > cur.created_at) newest.set(ev.pubkey, ev)
   }
   return [...newest.values()].map(ev => ({ id: ev.id, kind: 3, pubkey: ev.pubkey, created_at: ev.created_at, tags: tagsMe(ev, me) ? [["p", me]] : [], ...(followedAtOf(ev) ? { followedAt: ev.followedAt } : {}) }))
 }
+// A list dated MAX_SKEW or more ahead of now is skipped, as newestList does (follows.js): signed far in the future, it
+// would pin its author on top and, as the newest follow seen, keep "new followers" from ever showing anyone again.
+const nowSec = () => Math.floor(Date.now() / 1000)
+const tooNew = (ev, at) => !(ev.created_at < at + MAX_SKEW)
 // A kept follow time can only be a whole second no later than the list it is kept on.
 const followedAtOf = ev => Number.isInteger(ev.followedAt) && ev.followedAt > 0 && ev.followedAt <= ev.created_at ? ev.followedAt : undefined
 
