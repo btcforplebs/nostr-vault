@@ -71,24 +71,37 @@ enum ListMerge {
     /// What an unblock leaves in the encrypted content.
     enum PrivateEdit: Equatable {
         case content(String)
-        /// The person was taken out but the part couldn't be encrypted again.
+        /// The person may be in the private part but it couldn't be rewritten
+        /// and checked: publishing would leave them blocked, or lose the part.
         case failed
     }
 
     /// `content` with `remove` (hex) taken out of its encrypted `p` entries,
     /// encrypted again with the scheme it came in: NIP-04 when it has "?iv=",
     /// else NIP-44. `decrypt` and `encrypt` take the text and whether it is
-    /// NIP-04. Unchanged when no one in `remove` is in it or this device can't
-    /// open it; then reading the list back can't re-block them either.
-    static func removingPrivate(content: String, remove: [String],
+    /// NIP-04. Unchanged only when no one in `remove` is in it, or when it
+    /// can't be opened and `knownPrivate` (this device holds one of them as a
+    /// private block) is false. The new content is opened again with `decrypt`
+    /// and must give back the edited part in the same scheme, so a signer that
+    /// echoes the plaintext or uses another key or account never gets published.
+    static func removingPrivate(content: String, remove: [String], knownPrivate: Bool,
                                 decrypt: (String, Bool) async throws -> String,
                                 encrypt: (String, Bool) async throws -> String) async -> PrivateEdit {
         let ciphertext = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !remove.isEmpty, !ciphertext.isEmpty else { return .content(content) }
         let nip04 = MuteList.isNip04(ciphertext)
-        guard let plaintext = try? await decrypt(ciphertext, nip04),
-              let edited = privateRemoved(plaintext: plaintext, remove: remove) else { return .content(content) }
-        guard let encrypted = try? await encrypt(edited, nip04), !encrypted.isEmpty else { return .failed }
+        guard let plaintext = try? await decrypt(ciphertext, nip04) else {
+            return knownPrivate ? .failed : .content(content)
+        }
+        guard let edited = privateRemoved(plaintext: plaintext, remove: remove) else {
+            // What reading the list back sees: if it still has them, publishing
+            // this content blocks them again.
+            let read = (try? MuteList.privateTags(fromJSON: plaintext)) ?? []
+            return edit(name: "p", base: read, add: [], remove: remove).count < read.count ? .failed : .content(content)
+        }
+        guard let encrypted = try? await encrypt(edited, nip04), !encrypted.isEmpty,
+              MuteList.isNip04(encrypted) == nip04,
+              let reopened = try? await decrypt(encrypted, nip04), reopened == edited else { return .failed }
         return .content(encrypted)
     }
 

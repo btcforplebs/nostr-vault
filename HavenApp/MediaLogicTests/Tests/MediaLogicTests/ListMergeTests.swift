@@ -116,15 +116,14 @@ final class ListMergeTests: XCTestCase {
         return out
     }
 
-    private func unblock(_ content: String, _ remove: [String], schemes: inout [Bool],
-                         encryptFails: Bool = false) async -> ListMerge.PrivateEdit {
+    private func unblock(_ content: String, _ remove: [String], schemes: inout [Bool], knownPrivate: Bool = false,
+                         encrypt: ((String, Bool) throws -> String)? = nil) async -> ListMerge.PrivateEdit {
         var used: [Bool] = []
-        let result = await ListMerge.removingPrivate(content: content, remove: remove,
+        let result = await ListMerge.removingPrivate(content: content, remove: remove, knownPrivate: knownPrivate,
             decrypt: { used.append($1); return try Self.open($0, $1) },
             encrypt: { text, nip04 in
                 used.append(nip04)
-                if encryptFails { throw URLError(.userCancelledAuthentication) }
-                return Self.seal(text, nip04)
+                return try (encrypt ?? Self.seal)(text, nip04)
             })
         schemes = used
         return result
@@ -139,7 +138,7 @@ final class ListMergeTests: XCTestCase {
         XCTAssertFalse(MuteList.isNip04(content))
         XCTAssertEqual(try MuteList.privateTags(fromJSON: Self.open(content, false)),
                        [["p", "bbb", "wss://r.example/", "pet"], ["word", "spoiler"], ["e", "thread1"]])
-        XCTAssertEqual(schemes, [false, false])
+        XCTAssertEqual(schemes, [false, false, false], "opened, encrypted, opened again to check")
     }
 
     func testUnblockKeepsANip04PartNip04() async throws {
@@ -149,7 +148,7 @@ final class ListMergeTests: XCTestCase {
         XCTAssertTrue(MuteList.isNip04(content))
         XCTAssertEqual(try MuteList.privateTags(fromJSON: Self.open(content, true)),
                        [["p", "aaa"], ["word", "spoiler"], ["e", "thread1"]])
-        XCTAssertEqual(schemes, [true, true])
+        XCTAssertEqual(schemes, [true, true, true])
     }
 
     func testUnblockOfSomeoneNotInThePrivatePartLeavesItAsItIs() async {
@@ -163,32 +162,71 @@ final class ListMergeTests: XCTestCase {
 
     func testBlockAndEmptyContentNeverOpenThePrivatePart() async {
         var schemes: [Bool] = []
-        let block = await unblock(Self.seal(Self.privatePart, false), [], schemes: &schemes)
+        let block = await unblock(Self.seal(Self.privatePart, false), [], schemes: &schemes, knownPrivate: true)
         XCTAssertEqual(block, .content(Self.seal(Self.privatePart, false)))
         XCTAssertEqual(schemes, [])
-        let empty = await unblock("", ["aaa"], schemes: &schemes)
+        let empty = await unblock("", ["aaa"], schemes: &schemes, knownPrivate: true)
         XCTAssertEqual(empty, .content(""))
         XCTAssertEqual(schemes, [])
     }
 
-    func testAPrivatePartThisDeviceCantOpenIsKept() async {
+    func testAPrivatePartThisDeviceCantOpenIsKeptOnlyWhenTheyArentKnownPrivate() async {
         var schemes: [Bool] = []
-        let result = await unblock("v2:not base64!", ["aaa"], schemes: &schemes)
-        XCTAssertEqual(result, .content("v2:not base64!"))
+        let unknown = await unblock("v2:not base64!", ["aaa"], schemes: &schemes)
+        XCTAssertEqual(unknown, .content("v2:not base64!"))
+        // A signer that won't decrypt (Amber without silent permission, a
+        // bunker that's away) must not publish a list that re-blocks them.
+        let known = await unblock("v2:not base64!", ["aaa"], schemes: &schemes, knownPrivate: true)
+        XCTAssertEqual(known, .failed)
     }
 
-    func testAPrivatePartARewriteWouldLoseIsKept() async {
-        let odd = Self.seal(#"[["p","aaa"],["p","bbb",1],{"x":"y"}]"#, false)
+    func testAPrivatePartARewriteWouldLoseFailsWhenReadingItBackStillBlocksThem() async throws {
+        // Reading skips the null, number and object; writing can't keep them.
+        let odd = Self.seal(#"[["p","aaa",null],["p","bbb",1],{"x":"y"}]"#, false)
         var schemes: [Bool] = []
         let result = await unblock(odd, ["aaa"], schemes: &schemes)
-        XCTAssertEqual(result, .content(odd))
+        XCTAssertEqual(result, .failed)
         XCTAssertEqual(schemes, [false], "opened, never encrypted again")
+        XCTAssertTrue(try MuteList.privateTags(fromJSON: Self.open(odd, false)).contains(["p", "aaa"]))
+        // Someone who isn't in it: nothing to rewrite, the part is kept.
+        let other = await unblock(odd, ["ccc"], schemes: &schemes)
+        XCTAssertEqual(other, .content(odd))
         XCTAssertNil(ListMerge.privateRemoved(plaintext: #"{"p":"aaa"}"#, remove: ["aaa"]))
     }
 
     func testUnblockIsNotPublishedWhenThePrivatePartCantBeEncryptedAgain() async {
         var schemes: [Bool] = []
-        let result = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes, encryptFails: true)
+        let result = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes,
+                                   encrypt: { _, _ in throw URLError(.userCancelledAuthentication) })
         XCTAssertEqual(result, .failed)
+        let empty = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes, encrypt: { _, _ in "" })
+        XCTAssertEqual(empty, .failed)
+    }
+
+    func testASignerThatEchoesThePlaintextIsNotPublished() async {
+        var schemes: [Bool] = []
+        let result = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes, encrypt: { text, _ in text })
+        XCTAssertEqual(result, .failed)
+    }
+
+    func testASignerThatSwitchesSchemeIsNotPublished() async {
+        var schemes: [Bool] = []
+        let to04 = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes,
+                                 encrypt: { text, _ in Self.seal(text, true) })
+        XCTAssertEqual(to04, .failed)
+        let to44 = await unblock(Self.seal(Self.privatePart, true), ["aaa"], schemes: &schemes,
+                                 encrypt: { text, _ in Self.seal(text, false) })
+        XCTAssertEqual(to44, .failed)
+    }
+
+    func testASignerThatEncryptsSomethingElseIsNotPublished() async {
+        // Another key or account: this device opens it to other text, or not at all.
+        var schemes: [Bool] = []
+        let other = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes,
+                                  encrypt: { _, nip04 in Self.seal(#"[["p","zzz"]]"#, nip04) })
+        XCTAssertEqual(other, .failed)
+        let unreadable = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes,
+                                       encrypt: { _, _ in "v2:not base64!" })
+        XCTAssertEqual(unreadable, .failed)
     }
 }

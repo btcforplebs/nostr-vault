@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.nostrvault.data.model.MuteList
 import kotlinx.coroutines.runBlocking
@@ -149,12 +150,17 @@ class ListMergeTest {
 
     private val schemes = mutableListOf<Boolean>()
 
-    private fun unblock(content: String, remove: List<String>, encryptFails: Boolean = false) = runBlocking {
+    private fun unblock(
+        content: String,
+        remove: List<String>,
+        knownPrivate: Boolean = false,
+        encrypt: (String, Boolean) -> String? = ::seal,
+    ) = runBlocking {
         schemes.clear()
         ListMerge.removingPrivate(
-            content, remove,
+            content, remove, knownPrivate,
             decrypt = { text, nip04 -> schemes += nip04; open(text, nip04) },
-            encrypt = { text, nip04 -> schemes += nip04; if (encryptFails) null else seal(text, nip04) },
+            encrypt = { text, nip04 -> schemes += nip04; encrypt(text, nip04) },
         )
     }
 
@@ -168,7 +174,7 @@ class ListMergeTest {
             listOf(listOf("p", "bbb", "wss://r.example/", "pet"), listOf("word", "spoiler"), listOf("e", "thread1")),
             MuteList.privateTags(open(result.content, false)!!),
         )
-        assertEquals(listOf(false, false), schemes)
+        assertEquals("opened, encrypted, opened again to check", listOf(false, false, false), schemes)
     }
 
     @Test
@@ -179,7 +185,7 @@ class ListMergeTest {
             listOf(listOf("p", "aaa"), listOf("word", "spoiler"), listOf("e", "thread1")),
             MuteList.privateTags(open(result.content, true)!!),
         )
-        assertEquals(listOf(true, true), schemes)
+        assertEquals(listOf(true, true, true), schemes)
     }
 
     @Test
@@ -192,27 +198,54 @@ class ListMergeTest {
 
     @Test
     fun `block and empty content never open the private part`() {
-        assertEquals(ListMerge.PrivateEdit.Done(seal(privatePart, false)), unblock(seal(privatePart, false), emptyList()))
+        assertEquals(ListMerge.PrivateEdit.Done(seal(privatePart, false)), unblock(seal(privatePart, false), emptyList(), knownPrivate = true))
         assertEquals(emptyList<Boolean>(), schemes)
-        assertEquals(ListMerge.PrivateEdit.Done(""), unblock("", listOf("aaa")))
+        assertEquals(ListMerge.PrivateEdit.Done(""), unblock("", listOf("aaa"), knownPrivate = true))
         assertEquals(emptyList<Boolean>(), schemes)
     }
 
     @Test
-    fun `a private part this device can't open is kept`() {
+    fun `a private part this device can't open is kept only when they aren't known private`() {
         assertEquals(ListMerge.PrivateEdit.Done("v2:not base64!"), unblock("v2:not base64!", listOf("aaa")))
+        // A signer that won't decrypt (Amber without silent permission, a
+        // bunker that's away) must not publish a list that re-blocks them.
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock("v2:not base64!", listOf("aaa"), knownPrivate = true))
     }
 
     @Test
-    fun `a private part a rewrite would lose is kept`() {
-        val odd = seal("""[["p","aaa"],["p","bbb",1],{"x":"y"}]""", false)
-        assertEquals(ListMerge.PrivateEdit.Done(odd), unblock(odd, listOf("aaa")))
+    fun `a private part a rewrite would lose fails when reading it back still blocks them`() {
+        // Reading skips the null and the object; writing can't keep them.
+        val odd = seal("""[["p","aaa",null],["p","bbb",1],{"x":"y"}]""", false)
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(odd, listOf("aaa")))
         assertEquals("opened, never encrypted again", listOf(false), schemes)
+        assertTrue(MuteList.privateTags(open(odd, false)!!)!!.contains(listOf("p", "aaa")))
+        // Someone who isn't in it: nothing to rewrite, the part is kept.
+        assertEquals(ListMerge.PrivateEdit.Done(odd), unblock(odd, listOf("ccc")))
         assertNull(ListMerge.privateRemoved("""{"p":"aaa"}""", listOf("aaa")))
     }
 
     @Test
     fun `unblock is not published when the private part can't be encrypted again`() {
-        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa"), encryptFails = true))
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { _, _ -> null })
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { _, _ -> error("signer") })
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { _, _ -> "" })
+    }
+
+    @Test
+    fun `a signer that echoes the plaintext is not published`() {
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { text, _ -> text })
+    }
+
+    @Test
+    fun `a signer that switches scheme is not published`() {
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { text, _ -> seal(text, true) })
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, true), listOf("aaa")) { text, _ -> seal(text, false) })
+    }
+
+    @Test
+    fun `a signer that encrypts something else is not published`() {
+        // Another key or account: this device opens it to other text, or not at all.
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { _, nip04 -> seal("""[["p","zzz"]]""", nip04) })
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa")) { _, _ -> "v2:not base64!" })
     }
 }

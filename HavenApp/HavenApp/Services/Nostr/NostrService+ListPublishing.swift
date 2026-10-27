@@ -44,15 +44,17 @@ extension NostrService {
             // An unblock takes the person out of the encrypted part too, or
             // reading the published list back blocks them again.
             let content: String
+            let privateHex = MuteListStore.shared.privatePubkeys(forAccount: accountNpub)
             switch await ListMerge.removingPrivate(
                 content: base.content, remove: hexKeys(remove),
+                knownPrivate: hexKeys(remove).contains { privateHex.contains($0.lowercased()) },
                 decrypt: { try await MuteListStore.decryptToSelf($0, me: author, nip04: $1) },
                 encrypt: { try await MuteListStore.encryptToSelf($0, me: author, nip04: $1) }) {
             case .content(let edited):
                 content = edited
             case .failed:
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
-                                               message: "\(action) saved on this device only: your signer didn't update your private blocks",
+                                               message: "\(action) saved on this device only: your private blocks couldn't be updated",
                                                tone: .error)
                 return
             }

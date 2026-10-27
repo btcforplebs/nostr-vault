@@ -115,12 +115,15 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * device's public blocks after the change, is published only when the
      * account has no list anywhere. Returns what to tell the person when
      * nothing was published (the list couldn't be fetched, or wasn't signed).
+     * [privateBefore] is the account's private blocks before an unblock took
+     * the person off this device's list.
      */
     internal suspend fun NostrService.publishMuteListChangeImpl(
         accountNpub: String,
         add: List<String>,
         remove: List<String>,
         localBlocks: List<String>,
+        privateBefore: Collection<String> = emptyList(),
     ): String? {
         val forceOwner = forceOwnerFor(accountNpub) ?: run {
             Log.w(TAG, "publishMuteList: ${accountNpub.take(12)} is not the owner or active account; not published")
@@ -153,11 +156,12 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val content = when (
             val edited = ListMerge.removingPrivate(
                 baseContent, removeHex,
+                knownPrivate = remove.any { it in private || it in privateBefore },
                 decrypt = { text, nip04 -> decryptOwnList(author, text, nip04) },
                 encrypt = { text, nip04 -> encryptOwnList(author, text, nip04) },
             )
         ) {
-            ListMerge.PrivateEdit.Failed -> return "$action saved on this device only: your signer didn't update your private blocks"
+            ListMerge.PrivateEdit.Failed -> return "$action saved on this device only: your private blocks couldn't be updated"
             is ListMerge.PrivateEdit.Done -> edited.content
         }
         val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, removeHex)
@@ -340,7 +344,10 @@ internal object ListMerge {
     /** What an unblock leaves in the encrypted content. */
     sealed interface PrivateEdit {
         data class Done(val content: String) : PrivateEdit
-        /** The person was taken out but the part couldn't be encrypted again. */
+        /**
+         * The person may be in the private part but it couldn't be rewritten
+         * and checked: publishing would leave them blocked, or lose the part.
+         */
         data object Failed : PrivateEdit
     }
 
@@ -348,35 +355,43 @@ internal object ListMerge {
      * [content] with [remove] (hex) taken out of its encrypted "p" entries,
      * encrypted again with the scheme it came in: NIP-04 when it has "?iv=",
      * else NIP-44. [decrypt] and [encrypt] take the text and whether it is
-     * NIP-04, and return null when this device can't. Unchanged when no one
-     * in [remove] is in it or it can't be opened; then reading the list back
-     * can't re-block them either.
+     * NIP-04, and return null when this device can't. Unchanged only when no
+     * one in [remove] is in it, or when it can't be opened and [knownPrivate]
+     * (this device holds one of them as a private block) is false. The new
+     * content is opened again with [decrypt] and must give back the edited
+     * part in the same scheme, so a signer that echoes the plaintext or uses
+     * another key or account never gets published.
      */
     suspend fun removingPrivate(
         content: String,
         remove: List<String>,
+        knownPrivate: Boolean,
         decrypt: suspend (String, Boolean) -> String?,
         encrypt: suspend (String, Boolean) -> String?,
     ): PrivateEdit {
         val ciphertext = content.trim()
         if (remove.isEmpty() || ciphertext.isEmpty()) return PrivateEdit.Done(content)
         val nip04 = MuteList.isNip04(ciphertext)
-        val plaintext = try {
-            decrypt(ciphertext, nip04)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
+        val plaintext = attempt { decrypt(ciphertext, nip04) }
+            ?: return if (knownPrivate) PrivateEdit.Failed else PrivateEdit.Done(content)
+        val edited = privateRemoved(plaintext, remove) ?: run {
+            // What reading the list back sees: if it still has them,
+            // publishing this content blocks them again.
+            val read = MuteList.privateTags(plaintext).orEmpty()
+            return if (edit("p", read, emptyList(), remove).size < read.size) PrivateEdit.Failed else PrivateEdit.Done(content)
         }
-        val edited = plaintext?.let { privateRemoved(it, remove) } ?: return PrivateEdit.Done(content)
-        val encrypted = try {
-            encrypt(edited, nip04)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
-        return if (encrypted.isNullOrBlank()) PrivateEdit.Failed else PrivateEdit.Done(encrypted)
+        val encrypted = attempt { encrypt(edited, nip04) }
+        if (encrypted.isNullOrBlank() || MuteList.isNip04(encrypted) != nip04) return PrivateEdit.Failed
+        return if (attempt { decrypt(encrypted, nip04) } == edited) PrivateEdit.Done(encrypted) else PrivateEdit.Failed
+    }
+
+    /** [block]'s result, or null when it throws; cancellation still cancels. */
+    private suspend fun attempt(block: suspend () -> String?): String? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /** What an edit builds on. */

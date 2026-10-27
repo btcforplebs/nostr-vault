@@ -241,6 +241,7 @@ import com.nostrvault.ui.notification.FollowKind
     internal fun FeedService.unblockUserImpl(hexPubkey: String) {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
         if (npub !in configStore.config.value.blockedForActiveAccount()) return
+        val privateBefore = configStore.config.value.let { it.privateBlockedNpubsPerAccount[it.activeOrOwnerNpub()].orEmpty() }
         configStore.unblockProfile(npub)
-        publishActiveMuteList(remove = listOf(npub))
+        publishActiveMuteList(remove = listOf(npub), privateBefore = privateBefore)
     }
