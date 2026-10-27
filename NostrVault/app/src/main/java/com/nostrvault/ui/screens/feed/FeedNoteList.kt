@@ -203,7 +203,9 @@ internal fun FeedNoteList(
                     engagement = engagement,
                     onNoteClick = { id ->
                         // Expand inline first instead of navigating
-                        expandedNoteId = id
+                        listState.openHoldingTappedRow(note.id, expandedNoteId, notes) {
+                            expandedNoteId = id
+                        }
                     },
                     onProfileClick = openProfile,
                     avatarMenu = feedAvatarMenu,
