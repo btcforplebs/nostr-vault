@@ -187,3 +187,9 @@ extension FeedService {
         }
     }
 }
+
+extension ConfigService {
+    /// The active account can sign here: a key, or a bunker. A read-only
+    /// sign-in gets no Post or Edit Profile, as on the web.
+    var activeAccountCanSign: Bool { !FeedService.activeAccountIsReadOnly }
+}

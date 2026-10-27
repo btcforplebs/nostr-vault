@@ -224,9 +224,7 @@ class ConfigService: ObservableObject {
            !list.isEmpty {
             config.blastrRelays = list
         }
-        // If file doesn't exist or is empty, keep the defaults from HavenConfig
-        // The file holds this session's mesh address for the relay; never keep
-        // it as the owner's own (RelayConfiguration.droppingMeshAddresses).
+        // Missing/empty file keeps HavenConfig defaults; this session's mesh relay address is never the owner's own.
         config.blastrRelays = RelayConfiguration.droppingMeshAddresses(config.blastrRelays)
 
         // Load whitelisted npubs
@@ -733,10 +731,6 @@ class ConfigService: ObservableObject {
         // Not RelayProcessManager.addLog: this runs inside ConfigService.init.
         print("ConfigService: removed \(removed.count) starter-pack account(s) that setup added by mistake")
     }
-
-    /// The active account can sign here: a key, or a bunker. A read-only
-    /// sign-in gets no Post or Edit Profile, as on the web.
-    var activeAccountCanSign: Bool { !FeedService.activeAccountIsReadOnly }
 
     /// Returns whether a signing credential is stored for the given npub.
     func hasCredential(forNpub npub: String) -> Bool {
