@@ -835,7 +835,8 @@ class FeedService @Inject constructor(
     /** Alias for loadMore(), used by FeedViewModel. */
     fun loadOlderNotes() = loadMore()
 
-    fun likeNote(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) { likeNoteImpl(noteId, emoji, tags) }
+    /** [emojiTag] is a custom emoji's NIP-30 tag, sent along with [emoji] as its `:shortcode:`. */
+    fun likeNote(noteId: String, emoji: String? = null, tags: List<List<String>>? = null, emojiTag: List<String>? = null) { likeNoteImpl(noteId, emoji, tags, emojiTag) }
 
     fun repostNote(noteId: String) { repostNoteImpl(noteId) }
 

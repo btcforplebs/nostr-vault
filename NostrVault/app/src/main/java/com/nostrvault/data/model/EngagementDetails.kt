@@ -8,6 +8,8 @@ data class ReactionDetail(
     val id: String,
     val pubkey: String,
     val emoji: String,
+    /** Set when [emoji] is `:shortcode:` and the reaction's tag gives its image (NIP-30). */
+    val customEmoji: com.nostrvault.service.CustomEmoji? = null,
 )
 
 data class ZapDetail(

@@ -1,5 +1,6 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.service.CustomEmoji
 import java.text.BreakIterator
 import java.text.NumberFormat
 
@@ -10,25 +11,34 @@ import java.text.NumberFormat
  */
 object EngagementSummary {
 
-    data class EmojiGroup(val emoji: String, val count: Int)
+    /** [custom] is set for a NIP-30 emoji; [emoji] is then its `:shortcode:`. */
+    data class EmojiGroup(val emoji: String, val count: Int, val custom: CustomEmoji? = null)
 
     /** How many emoji pills the row draws before a "+N". */
     const val VISIBLE_EMOJI_GROUPS = 4
 
     /**
      * Reactions grouped by emoji, most used first (ties keep first-seen
-     * order). Anything longer than four characters, such as a `:shortcode:`
-     * custom emoji, is left out: it is a word, not a pill.
+     * order). A custom emoji with an image is its own group per shortcode
+     * and image. Other text longer than four characters, such as a
+     * `:shortcode:` with no tag, is left out: it is a word, not a pill.
      */
     fun groupReactions(reactions: List<ReactionDetail>): List<EmojiGroup> {
-        val counts = LinkedHashMap<String, Int>()
+        val counts = LinkedHashMap<Pair<String, String?>, Int>()
+        val customs = HashMap<Pair<String, String?>, CustomEmoji>()
         for (reaction in reactions) {
-            val emoji = reaction.emoji.ifBlank { "+" }.let { if (it == "+") "❤️" else it }
-            if (graphemeCount(emoji) > 4) continue
-            counts[emoji] = (counts[emoji] ?: 0) + 1
+            val custom = reaction.customEmoji
+            val key = if (custom != null) {
+                (custom.content to custom.url).also { customs.putIfAbsent(it, custom) }
+            } else {
+                val emoji = reaction.emoji.ifBlank { "+" }.let { if (it == "+") "❤️" else it }
+                if (graphemeCount(emoji) > 4) continue
+                emoji to null
+            }
+            counts[key] = (counts[key] ?: 0) + 1
         }
         return counts.entries
-            .map { EmojiGroup(it.key, it.value) }
+            .map { EmojiGroup(it.key.first, it.value, customs[it.key]) }
             .sortedByDescending { it.count }
     }
 

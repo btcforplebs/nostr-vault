@@ -45,6 +45,29 @@ class EngagementSummaryTest {
     }
 
     @Test
+    fun `a custom emoji with its image is a group per shortcode and image`() {
+        val pepe = com.nostrvault.service.CustomEmoji("pepe", "https://a.example/pepe.png")
+        val otherPepe = com.nostrvault.service.CustomEmoji("pepe", "https://b.example/pepe.png")
+        val groups = EngagementSummary.groupReactions(
+            listOf(
+                ReactionDetail("1", "a", ":pepe:", pepe),
+                ReactionDetail("2", "b", ":pepe:", pepe),
+                ReactionDetail("3", "c", ":pepe:", otherPepe),
+                reaction("d", ":untagged:"),
+                reaction("e", "❤️"),
+            ),
+        )
+        assertEquals(
+            listOf(
+                EngagementSummary.EmojiGroup(":pepe:", 2, pepe),
+                EngagementSummary.EmojiGroup(":pepe:", 1, otherPepe),
+                EngagementSummary.EmojiGroup("❤️", 1),
+            ),
+            groups,
+        )
+    }
+
+    @Test
     fun `zap text is count and grouped total`() {
         val previous = Locale.getDefault()
         Locale.setDefault(Locale.US)

@@ -262,6 +262,7 @@ internal fun HeroNoteCard(
                     NoteTextWithLinkCards(
                         content = invoiceBody,
                         cards = note.cardLinkURLs,
+                        emojis = note.customEmojis,
                         profiles = profiles,
                         mediaURLs = mediaSet,
                         onProfileClick = onProfileClick,
@@ -364,7 +365,7 @@ internal fun HeroNoteCard(
                             onClick = onReactionsClick,
                         ) {
                             shown.forEach { group ->
-                                Text(group.emoji, fontSize = 12.sp)
+                                ReactionGlyph(group.emoji, group.custom, fontSize = 12.sp)
                                 Spacer(Modifier.width(2.dp))
                                 Text("${group.count}", color = SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                                 Spacer(Modifier.width(4.dp))

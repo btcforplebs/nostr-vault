@@ -73,7 +73,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                             when (kind) {
                                 7 -> {
                                     val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                    synchronized(reactions) { reactions.add(ReactionDetail(id, pubkey, emoji)) }
+                                    synchronized(reactions) { reactions.add(ReactionDetail(id, pubkey, emoji, CustomEmoji.forReaction(content, tags))) }
                                 }
                                 9735 -> {
                                     val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
@@ -162,7 +162,7 @@ import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
                                         val detail: Any = when (kind) {
                                             7 -> {
                                                 val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                                ReactionDetail(id, pubkey, emoji)
+                                                ReactionDetail(id, pubkey, emoji, CustomEmoji.forReaction(content, tags))
                                             }
                                             9735 -> {
                                                 val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)

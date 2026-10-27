@@ -473,6 +473,7 @@ fun NoteCard(
                     NoteTextWithLinkCards(
                         content = invoiceBody,
                         cards = note.cardLinkURLs,
+                        emojis = note.customEmojis,
                         profiles = profiles,
                         mediaURLs = mediaSet,
                         fontSize = 17.sp,

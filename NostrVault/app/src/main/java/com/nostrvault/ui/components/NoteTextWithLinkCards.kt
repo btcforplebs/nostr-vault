@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.service.CustomEmoji
 import com.nostrvault.data.model.NoteLinkSegments
 import com.nostrvault.ui.theme.PrimaryText
 
@@ -29,6 +30,7 @@ fun NoteTextWithLinkCards(
     fontSize: TextUnit = 15.sp,
     lineHeight: TextUnit = 21.sp,
     selectable: Boolean = false,
+    emojis: Map<String, CustomEmoji> = emptyMap(),
 ) {
     val segments = remember(content, cards) { NoteLinkSegments.split(content, cards) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -44,6 +46,7 @@ fun NoteTextWithLinkCards(
                     fontSize = fontSize,
                     lineHeight = lineHeight,
                     selectable = selectable,
+                    emojis = emojis,
                 )
                 is NoteLinkSegments.Segment.Link -> LinkPreviewCard(url = segment.url)
             }

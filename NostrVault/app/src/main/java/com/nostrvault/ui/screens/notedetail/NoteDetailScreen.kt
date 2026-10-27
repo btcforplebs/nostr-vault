@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.ui.components.*
+import com.nostrvault.data.local.ReactionPick
 import androidx.compose.ui.text.font.FontFamily
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.flow.*
@@ -764,11 +765,16 @@ fun NoteDetailScreen(
     }
     emojiTargetNote?.let { target ->
         val emojiSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val reactionActions = LocalReactionActions.current
         EmojiPickerSheet(
             sheetState = emojiSheetState,
             onDismiss = { emojiTargetNote = null },
             onSelectEmoji = { emoji ->
                 viewModel.reactToNote(target.effectiveEventId, emoji)
+                emojiTargetNote = null
+            },
+            onSelectCustom = { custom ->
+                reactionActions?.pick?.invoke(target.effectiveEventId, ReactionPick.of(custom))
                 emojiTargetNote = null
             },
         )

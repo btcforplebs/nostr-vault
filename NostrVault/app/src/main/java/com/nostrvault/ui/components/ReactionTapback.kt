@@ -61,7 +61,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.nostrvault.data.local.EmojiPalette
 import com.nostrvault.data.local.EngagementTracker
+import com.nostrvault.data.local.ReactionPick
+import com.nostrvault.service.CustomEmoji
+import com.nostrvault.service.EmojiListRepository
 import com.nostrvault.ui.theme.LikeRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.Motion
@@ -82,12 +86,30 @@ object ReactionChoice {
         object Remove : Change
     }
 
-    /** The emoji the tapback bar offers, before its "+". */
-    val TAPBACK = listOf("❤️", "🤙", "🔥", "😂", "😮", "😢")
+    /** The emoji the tapback bar offers, before its "+", until the person changes it. */
+    val TAPBACK = EmojiPalette.DEFAULT_BAR.map { it.content }
 
-    /** The account's reaction as the button shows it, or null with none. */
-    fun shown(isLiked: Boolean, myContent: String?): String? =
-        if (!isLiked) null else reactionDisplayEmoji(myContent ?: "+")
+    private val SHORTCODE = Regex("^:[A-Za-z0-9_-]+:$")
+
+    /**
+     * The account's reaction as the button shows it, or null with none. A
+     * custom emoji stays its `:shortcode:`, so picking it again takes it back.
+     */
+    fun shown(isLiked: Boolean, myContent: String?): String? {
+        if (!isLiked) return null
+        val trimmed = myContent?.trim()
+        if (trimmed != null && SHORTCODE.matches(trimmed)) return trimmed
+        return reactionDisplayEmoji(myContent ?: "+")
+    }
+
+    /**
+     * The NIP-30 tag a reaction carries: [emojiTag] only when [content] is
+     * exactly its `:shortcode:`, so a Unicode reaction never names an image.
+     */
+    fun emojiTags(content: String, emojiTag: List<String>?): List<List<String>> {
+        val emoji = emojiTag?.let { CustomEmoji.fromTag(it) } ?: return emptyList()
+        return if (content.trim() == emoji.content) listOf(emoji.tag()) else emptyList()
+    }
 
     /** A tap reacts with the default, or takes the reaction back. */
     fun forTap(isLiked: Boolean, defaultContent: String): Change =
@@ -97,11 +119,14 @@ object ReactionChoice {
     fun forPick(isLiked: Boolean, myContent: String?, picked: String): Change =
         if (picked == shown(isLiked, myContent)) Change.Remove else Change.React(picked)
 
-    /** The bar's emoji: the default reaction always among them, first if it isn't a stock one. */
-    fun tapbackOptions(defaultContent: String): List<String> {
+    /**
+     * The bar's emoji: [bar] (the person's, most used first) with the default
+     * reaction always among them, first if it isn't already there.
+     */
+    fun tapbackOptions(defaultContent: String, bar: List<ReactionPick> = EmojiPalette.DEFAULT_BAR): List<ReactionPick> {
         val mine = reactionDisplayEmoji(defaultContent)
-        if (mine in TAPBACK) return TAPBACK
-        return listOf(mine) + TAPBACK.dropLast(1)
+        if (bar.any { it.custom == null && it.content == mine }) return bar
+        return listOf(ReactionPick(mine)) + bar.dropLast(1)
     }
 
     /**
@@ -122,9 +147,29 @@ object ReactionChoice {
 class ReactionActions(
     val myReactions: StateFlow<Map<String, EngagementTracker.MyReaction>>,
     val defaultReaction: () -> String,
-    /** Sends [emoji] to the note, or takes it back when it is the one already sent. */
-    val pick: (noteId: String, emoji: String) -> Unit,
-)
+    /** Sends [pick] to the note, or takes it back when it is the one already sent. */
+    val pick: (noteId: String, pick: ReactionPick) -> Unit,
+    /** The quick bar and recents, on this phone. */
+    val palette: StateFlow<EmojiPalette.State>,
+    /** The account's own custom emoji (10030 and its sets). */
+    val library: StateFlow<EmojiListRepository.Library>,
+    val refreshLibrary: () -> Unit,
+    /** [pick] was chosen to react with: recents and the bar's order learn from it. */
+    val recordUse: (pick: ReactionPick) -> Unit,
+    /** Puts [pick] on the quick bar where [replacing] was. */
+    val replaceSlot: (replacing: ReactionPick, pick: ReactionPick) -> Unit,
+) {
+    /** The image for a `:shortcode:` the account reacted with, when it is one it knows. */
+    fun customFor(content: String): CustomEmoji? {
+        val trimmed = content.trim()
+        if (trimmed.length < 3 || !trimmed.startsWith(":") || !trimmed.endsWith(":")) return null
+        val shortcode = trimmed.substring(1, trimmed.length - 1)
+        val state = palette.value
+        (state.recents + state.slots).firstOrNull { it.shortcode == shortcode }?.custom?.let { return it }
+        val lib = library.value
+        return (lib.single + lib.sets.flatMap { it.emojis }).firstOrNull { it.shortcode == shortcode }
+    }
+}
 
 val LocalReactionActions = staticCompositionLocalOf<ReactionActions?> { null }
 
@@ -166,7 +211,11 @@ internal fun ReactionButton(
     var highlighted by remember { mutableStateOf<Int?>(null) }
     var buttonBounds by remember { mutableStateOf(Rect.Zero) }
     var barBounds by remember { mutableStateOf<IntRect?>(null) }
-    val options = remember(actions) { ReactionChoice.tapbackOptions(actions?.defaultReaction?.invoke() ?: "+") }
+    val palette by (actions?.palette ?: remember { kotlinx.coroutines.flow.MutableStateFlow(EmojiPalette.State()) })
+        .collectAsState()
+    val options = remember(actions, palette) {
+        ReactionChoice.tapbackOptions(actions?.defaultReaction?.invoke() ?: "+", EmojiPalette.orderedBar(palette))
+    }
     val slotCount = if (onMore != null) options.size else options.size - 1
 
     var pulsing by remember { mutableStateOf(false) }
@@ -188,6 +237,7 @@ internal fun ReactionButton(
         close()
         if (index < options.size) {
             if (!Motion.isReduced) pulsing = true
+            actions?.recordUse?.invoke(options[index])
             actions?.pick?.invoke(noteId, options[index])
         } else {
             onMore?.invoke()
@@ -291,13 +341,16 @@ internal fun ReactionButton(
                 )
                 .then(if (count == null) Modifier else Modifier.padding(horizontal = 9.dp)),
         ) {
-            if (shown != null && shown != "❤️") {
+            val shownCustom = shown?.let { actions?.customFor(it) }
+            if (shownCustom != null) {
+                CustomEmojiImage(shownCustom, size = 18.dp)
+            } else if (shown != null && shown != "❤️" && !shown.startsWith(":")) {
                 Text(shown, fontSize = 15.sp)
             } else {
                 Icon(
                     imageVector = if (shown == null) NostrVaultIcons.Heart else NostrVaultIcons.HeartFilled,
                     contentDescription = null,
-                    tint = if (shown == null) SecondaryText else LikeRed,
+                    tint = if (shown == null) SecondaryText else if (shown == "❤️") LikeRed else colors.primary,
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -364,7 +417,7 @@ private class TapbackPosition(
 
 @Composable
 private fun TapbackBar(
-    options: List<String>,
+    options: List<ReactionPick>,
     current: String?,
     highlighted: Int?,
     showMore: Boolean,
@@ -389,7 +442,8 @@ private fun TapbackBar(
             .border(0.5.dp, Color.White.copy(alpha = 0.1f), CircleShape)
             .padding(INSET),
     ) {
-        options.forEachIndexed { index, emoji ->
+        options.forEachIndexed { index, pick ->
+            val emoji = pick.content
             val lift by animateFloatAsState(if (highlighted == index) 1f else 0f, Motion.pop(), label = "tapbackLift")
             Box(
                 contentAlignment = Alignment.Center,
@@ -401,8 +455,9 @@ private fun TapbackBar(
                 if (emoji == current) {
                     Box(Modifier.size(SLOT).clip(CircleShape).background(colors.primary.copy(alpha = 0.3f)))
                 }
-                Text(
-                    emoji,
+                ReactionGlyph(
+                    emoji = emoji,
+                    custom = pick.custom,
                     fontSize = 26.sp,
                     modifier = Modifier.graphicsLayer {
                         val s = 1f + 0.45f * lift
