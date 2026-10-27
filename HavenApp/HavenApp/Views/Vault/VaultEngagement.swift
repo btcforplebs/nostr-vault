@@ -18,12 +18,14 @@ func reactionDisplayEmoji(_ raw: String) -> String {
     return "❤️"
 }
 
-/// Unique display emojis for a set of raw reaction contents, in first-seen order.
-func reactionEmojiSummary(_ emojis: [String], limit: Int) -> String {
+/// Unique display emojis for a set of raw reaction contents, in first-seen
+/// order. A `:shortcode:` whose image `customShortcodes` knows stays as
+/// written, so the row can draw it.
+func reactionEmojiSummary(_ emojis: [String], limit: Int, customShortcodes: Set<String> = []) -> String {
     var seen = Set<String>()
     var result: [String] = []
     for raw in emojis {
-        let display = reactionDisplayEmoji(raw)
+        let display = CustomEmoji.shownShortcode(raw, known: customShortcodes) ?? reactionDisplayEmoji(raw)
         if seen.insert(display).inserted {
             result.append(display)
             if result.count == limit { break }

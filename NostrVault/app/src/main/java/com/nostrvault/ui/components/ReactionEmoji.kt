@@ -29,11 +29,18 @@ fun reactionDisplayEmoji(raw: String): String {
     return HEART
 }
 
-/** Unique display emojis for a set of raw reaction contents, in first-seen order. */
-fun reactionEmojiSummary(emojis: List<String>, limit: Int): String {
+/**
+ * Unique display emojis for a set of raw reaction contents, in first-seen
+ * order. A `:shortcode:` whose image [customShortcodes] knows stays as
+ * written, so the row can draw it; any other text is the heart.
+ */
+fun reactionEmojiSummary(emojis: List<String>, limit: Int, customShortcodes: Set<String> = emptySet()): String {
     val unique = LinkedHashSet<String>()
     for (raw in emojis) {
-        unique.add(reactionDisplayEmoji(raw))
+        val trimmed = raw.trim()
+        val custom = trimmed.length > 2 && trimmed.startsWith(":") && trimmed.endsWith(":") &&
+            trimmed.substring(1, trimmed.length - 1) in customShortcodes
+        unique.add(if (custom) trimmed else reactionDisplayEmoji(raw))
         if (unique.size == limit) break
     }
     return if (unique.isEmpty()) HEART else unique.joinToString("")

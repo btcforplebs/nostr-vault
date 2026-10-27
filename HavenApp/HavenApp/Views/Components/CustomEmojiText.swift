@@ -44,11 +44,21 @@ struct CustomEmojiText: View {
     }
 
     private func load() async {
+        let loaded = await Self.loadImages(for: emojis, fontSize: fontSize, skipping: images)
+        images.merge(loaded) { _, new in new }
+    }
+
+    /// The images for `emojis` (by URL), drawn a line of `fontSize` text tall;
+    /// those in `skipping` are not loaded again.
+    static func loadImages(for emojis: [String: CustomEmoji], fontSize: CGFloat,
+                           skipping: [String: PlatformImage] = [:]) async -> [String: PlatformImage] {
         let side = (fontSize * 1.25).rounded()
-        for emoji in emojis.values where images[emoji.url] == nil {
-            guard let url = URL(string: emoji.url), let image = await Self.image(at: url) else { continue }
-            images[emoji.url] = Self.scaled(image, side: side)
+        var out: [String: PlatformImage] = [:]
+        for emoji in emojis.values where skipping[emoji.url] == nil {
+            guard let url = URL(string: emoji.url), let image = await image(at: url) else { continue }
+            out[emoji.url] = scaled(image, side: side)
         }
+        return out
     }
 
     private static func image(at url: URL) async -> PlatformImage? {

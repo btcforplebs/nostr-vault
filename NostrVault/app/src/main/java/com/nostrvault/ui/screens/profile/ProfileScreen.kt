@@ -117,6 +117,8 @@ fun ProfileScreen(
     val allProfiles by viewModel.profiles.collectAsState()
     val quotedNotes by viewModel.quotedNotesCache.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
+    // Collected, not read once, so a card's like button updates after a reaction.
+    val likedIds by viewModel.likedEventIds.collectAsState()
     // Read per row through derivedStateOf, so a relay's answer recomposes
     // only the rows whose numbers changed.
     val engagementState = viewModel.engagementLedgers.collectAsState()
@@ -566,7 +568,7 @@ fun ProfileScreen(
                             allProfiles[note.pubkey] else profile,
                         profiles = allProfiles,
                         quotedNotes = quotedNotes,
-                        isLiked = viewModel.isLiked(note.effectiveEventId),
+                        isLiked = note.effectiveEventId in likedIds,
                         isReposted = note.effectiveEventId in repostedIds,
                         repostedByProfile = note.repostedBy?.let { allProfiles[it] },
                         onNoteClick = onNoteClick,

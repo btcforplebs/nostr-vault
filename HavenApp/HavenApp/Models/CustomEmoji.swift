@@ -75,6 +75,13 @@ struct CustomEmoji: Codable, Hashable {
         return isValidShortcode(inner) ? inner : nil
     }
 
+    /// A reaction's `:shortcode:` as written when `known` has its image, so a
+    /// row can draw it; nil for anything else (the caller's usual display).
+    static func shownShortcode(_ raw: String, known: Set<String>) -> String? {
+        guard let shortcode = loneShortcode(raw), known.contains(shortcode) else { return nil }
+        return ":\(shortcode):"
+    }
+
     /// The custom emoji a kind 7 reaction is: its content is exactly
     /// `:shortcode:` and a tag gives that shortcode's image. Anything else
     /// (Unicode, "+", a shortcode with no tag) is nil.
