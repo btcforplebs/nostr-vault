@@ -347,6 +347,7 @@ struct LiveStreamPlayerView: View {
         } message: {
             Text(zapFailure ?? "")
         }
+        .environment(\.liveAvatarOpensStream, false)
     }
 
     // MARK: - Header

@@ -46,6 +46,7 @@ struct AvatarView: View {
         }
         .frame(width: size, height: size)
         .clipped()
+        .modifier(LiveAvatarRing(pubkey: pubkey, size: size))
         .onAppear { loadImage() }
         .onChange(of: url) { _, _ in
             image = nil
