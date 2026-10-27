@@ -43,7 +43,8 @@ public struct NostrContentFormatter {
 
     @MainActor
     private static func formatUncached(_ content: String, mediaURLs: [URL], invoices: [NoteInvoices.Match]) -> AttributedString {
-        var text = content
+        // `nevent1…` written without `nostr:` gets the same card and mention.
+        var text = QuoteReference.prefixBare(content)
 
         // Lightning invoices are drawn as pay cards underneath.
         text = NoteInvoices.strip(invoices, from: text)
@@ -180,7 +181,7 @@ public struct NostrContentFormatter {
     /// `nostr:nevent1…` bech32 is unreadable in a preview.
     @MainActor
     public static func resolveMentionsPlainText(_ content: String) -> String {
-        var text = content
+        var text = QuoteReference.prefixBare(content)
         text = resolveMentionNames(in: text, regex: npubRegex)
         text = resolveMentionNames(in: text, regex: nprofileRegex)
         text = stripQuoteReferences(from: text)

@@ -260,26 +260,4 @@ extension SearchView {
             content()
         }
     }
-
-    func decodeNostrNoteId(_ query: String) -> String? {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let result = Bech32.decode(trimmed) else { return nil }
-        if result.hrp == "note" {
-            return result.data.count == 32 ? result.hexString : nil
-        } else if result.hrp == "nevent" {
-            var offset = 0
-            let data = result.data
-            while offset + 1 < data.count {
-                let type = data[offset]
-                let length = Int(data[offset + 1])
-                offset += 2
-                guard offset + length <= data.count else { break }
-                if type == 0 && length == 32 {
-                    return data[offset..<(offset + length)].map { String(format: "%02x", $0) }.joined()
-                }
-                offset += length
-            }
-        }
-        return nil
-    }
 }

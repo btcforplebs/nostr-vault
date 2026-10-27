@@ -113,35 +113,28 @@ extension SearchView {
             return
         }
 
-        let lower = trimmed.lowercased()
-        if lower.hasPrefix("note1") || lower.hasPrefix("nevent1") {
-            if let eventId = decodeNostrNoteId(trimmed) {
-                if let note = feedService.findNote(id: eventId) {
+        // A pasted note, article or profile reference opens it — `nostr:`
+        // or bare, note1/nevent1/naddr1/npub1/nprofile1. One that does not
+        // decode falls through to an ordinary text search.
+        if let link = NostrURI(pasted: trimmed), let target = QuoteReference.target(of: link) {
+            switch target {
+            case .note(let id), .address(let id):
+                if let note = feedService.findNote(id: id) {
                     openNote(note)
                 } else {
-                    pendingDirectNoteId = eventId
+                    pendingDirectNoteId = id
                     isSearching = true
                     searchResults = .empty
-                    feedService.fetchMissingNote(id: eventId)
+                    feedService.fetchMissingNote(id: id)
                 }
+            case .profile(let pubkey):
+                var results = SearchResults()
+                results.users[pubkey] = nostrService.profiles[pubkey] ?? FeedProfile(pubkey: pubkey)
+                searchResults = results
+                isSearching = false
+                pendingDirectNoteId = nil
+                showingProfile = pubkey
             }
-            return
-        }
-
-        // Decode npub to hex pubkey for direct profile lookup
-        if lower.hasPrefix("npub1"),
-           let decoded = Bech32.decode(trimmed),
-           decoded.hrp == "npub" {
-            let hexKey = decoded.hexString
-            var results = SearchResults()
-            if let profile = nostrService.profiles[hexKey] {
-                results.users[hexKey] = profile
-            } else {
-                results.users[hexKey] = FeedProfile(pubkey: hexKey)
-            }
-            searchResults = results
-            isSearching = false
-            pendingDirectNoteId = nil
             return
         }
 

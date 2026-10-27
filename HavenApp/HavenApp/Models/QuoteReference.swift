@@ -25,6 +25,7 @@ enum QuoteReference {
     /// needs the ids it is given to be unique.
     static func identifiers(in content: String) -> [String] {
         guard let regex = referenceRegex else { return [] }
+        let content = prefixBare(content)
         let ns = content as NSString
         var seen = Set<String>()
         return regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
@@ -213,5 +214,73 @@ enum QuoteReference {
 
     private static func hex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: - Bare references
+
+    /// A NIP-19 reference written without `nostr:` — `nevent1…`, `@npub1…` —
+    /// that is not part of a URL or a longer word. The bech32 alphabet has no
+    /// b, i, o or 1 after the separator.
+    private static let bareRegex = try! NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_/:.=?&#%+~@-])@?((?:npub|nprofile|note|nevent|naddr)1[02-9ac-hj-np-z]+)(?![A-Za-z0-9])"#
+    )
+
+    /// `content` with `nostr:` put in front of every bare reference that
+    /// decodes, so the quote cards and profile mentions treat `nevent1…` the
+    /// same as `nostr:nevent1…`. Many clients paste them bare. A leading `@`
+    /// on a bare profile is dropped: the mention draws its own.
+    ///
+    /// Only references that decode to something the app can open are touched,
+    /// so a word that merely starts like one ("note1st") stays text, and one
+    /// inside a URL (`njump.me/nevent1…`) stays part of the URL.
+    static func prefixBare(_ content: String) -> String {
+        guard content.contains("1") else { return content }
+        let ns = content as NSString
+        var result = content
+        for match in bareRegex.matches(in: content, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let bech = ns.substring(with: match.range(at: 1))
+            guard target(ofBech32: bech) != nil, let range = Range(match.range, in: result) else { continue }
+            result.replaceSubrange(range, with: "nostr:" + bech)
+        }
+        return result
+    }
+
+    // MARK: - Opening a reference
+
+    /// What a NIP-19 reference opens: a note by id, an addressable event by
+    /// coordinate, or a profile by pubkey.
+    enum Target: Equatable {
+        case note(String)
+        case address(String)
+        case profile(String)
+    }
+
+    /// The target of a bare bech32 reference, or nil when it does not decode
+    /// to one. `nsec1` and other kinds are never a target. The checksum is
+    /// required — `Bech32.decode` skips it — so a mistyped paste or a word in
+    /// a note never opens some other note.
+    static func target(ofBech32 identifier: String) -> Target? {
+        let id = identifier.lowercased()
+        guard Bech32.hasValidChecksum(id), let decoded = Bech32.decode(id) else { return nil }
+        switch decoded.hrp {
+        case "note":
+            return decoded.data.count == 32 ? .note(hex(decoded.data)) : nil
+        case "nevent":
+            return eventID(fromNeventTLV: decoded.data).map { .note($0) }
+        case "naddr":
+            return coordinate(fromNaddrTLV: decoded.data).map { .address($0) }
+        case "npub", "nprofile":
+            return profilePubkey(hrp: decoded.hrp, payload: decoded.data).map { .profile($0) }
+        default:
+            return nil
+        }
+    }
+
+    /// The target of a `nostr:` link.
+    static func target(of link: NostrURI) -> Target? {
+        switch link {
+        case .profile(let id), .event(let id), .address(let id):
+            return target(ofBech32: id)
+        }
     }
 }
