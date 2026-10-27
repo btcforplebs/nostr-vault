@@ -3,6 +3,7 @@ package com.nostrvault.service
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.ProfileUpdateSignal
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
@@ -283,20 +284,29 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
 
     /**
      * Keep the in-memory profile map bounded. When it exceeds [MAX_CACHED_PROFILES],
-     * retain the [TRIM_CACHED_PROFILES] freshest entries (by fetchedAt) plus the owner's
-     * own profile. Disk converges to the trimmed set on the next throttled save.
+     * retain the [TRIM_CACHED_PROFILES] freshest entries (by fetchedAt) plus every
+     * account the switcher shows. Disk converges to the trimmed set on the next
+     * throttled save.
      */
     private fun NostrService.trimProfiles(profiles: Map<String, FeedProfile>): Map<String, FeedProfile> {
         if (profiles.size <= MAX_CACHED_PROFILES) return profiles
-        val kept = profiles.entries
-            .sortedByDescending { it.value.fetchedAt ?: 0L }
-            .take(TRIM_CACHED_PROFILES)
-            .associate { it.key to it.value }
-        val owner = ownerHexPubkey
-        return if (owner.isNotEmpty() && !kept.containsKey(owner) && profiles.containsKey(owner)) {
-            kept + (owner to profiles.getValue(owner))
-        } else {
-            kept
+        return trimProfileMap(profiles, TRIM_CACHED_PROFILES, switcherAccountHexes())
+    }
+
+    /**
+     * Owner, added accounts, relay-follow accounts and the active one: the
+     * roster the account switcher and the bottom bar draw. Keeping only the
+     * owner let a long scroll evict the others, and nothing fetched them back,
+     * so the switcher showed initials until a relaunch (iOS #1240).
+     */
+    private fun NostrService.switcherAccountHexes(): Set<String> {
+        val config = configStore.config.value
+        val npubs = config.allAccountNpubs() + config.whitelistedNpubs.orEmpty()
+        return buildSet {
+            npubs.forEach { npub -> HavenBridge.decodeNpub(npub)?.let(::add) }
+            add(ownerHexPubkey)
+            add(configStore.activeAccountHexPubkey.value)
+            remove("")
         }
     }
 
@@ -391,3 +401,22 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
         noteProfileUpdated(pubkey)
         saveProfilesThrottled()
     }
+
+/**
+ * The [keep] freshest profiles (by fetchedAt), plus every profile in [always]
+ * that is present — those never count against the [keep] budget.
+ */
+internal fun trimProfileMap(
+    profiles: Map<String, FeedProfile>,
+    keep: Int,
+    always: Set<String>,
+): Map<String, FeedProfile> {
+    val kept = profiles.entries
+        .asSequence()
+        .filter { it.key !in always }
+        .sortedByDescending { it.value.fetchedAt ?: 0L }
+        .take(keep)
+        .associateTo(LinkedHashMap()) { it.key to it.value }
+    always.forEach { hex -> profiles[hex]?.let { kept[hex] = it } }
+    return kept
+}
