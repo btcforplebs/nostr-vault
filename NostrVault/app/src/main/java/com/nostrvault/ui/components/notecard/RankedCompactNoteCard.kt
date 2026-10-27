@@ -32,6 +32,8 @@ fun RankedCompactNoteCard(
     onProfileClick: (String) -> Unit,
     avatarMenu: AvatarMenuActions? = null,
     onTrustWeb: ((String) -> Unit)? = null,
+    quotes: List<CondensedQuote> = emptyList(),
+    quoteActions: CondensedQuoteActions? = null,
     modifier: Modifier = Modifier,
 ) {
     // derivedStateOf: a new ranking recomposes only the rows whose rank changed.
@@ -50,6 +52,8 @@ fun RankedCompactNoteCard(
             onProfileClick = onProfileClick,
             avatarMenu = avatarMenu,
             onTrustWeb = onTrustWeb,
+            quotes = quotes,
+            quoteActions = quoteActions,
         )
     }
 }

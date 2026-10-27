@@ -80,6 +80,10 @@ fun FeedThreadCard(
      * back as it is.
      */
     bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?> = { it to null },
+    /** The quotes a line's shown note makes, resolved against the caller's caches. */
+    quotesFor: @Composable (FeedNote) -> List<CondensedQuote> = { emptyList() },
+    /** Quotes draw under the lines only with these; the thread view leaves them out. */
+    quoteActions: CondensedQuoteActions? = null,
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -141,6 +145,8 @@ fun FeedThreadCard(
                 onTap = tapAction(root),
                 lineAnchor = lineAnchor,
                 bareRepostDisplay = bareRepostDisplay,
+                quotesFor = quotesFor,
+                quoteActions = quoteActions,
                 expandedRow = expandedRow,
             )
         } else if (!rootUnavailable) {
@@ -174,6 +180,8 @@ fun FeedThreadCard(
                 onTap = tapAction(entry.note),
                 lineAnchor = lineAnchor,
                 bareRepostDisplay = bareRepostDisplay,
+                quotesFor = quotesFor,
+                quoteActions = quoteActions,
                 expandedRow = expandedRow,
             )
         }
@@ -234,6 +242,8 @@ private fun ThreadCardLine(
     onTap: () -> Unit,
     lineAnchor: ThreadLineAnchor?,
     bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?>,
+    quotesFor: @Composable (FeedNote) -> List<CondensedQuote>,
+    quoteActions: CondensedQuoteActions?,
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
 ) {
     val note = entry.note
@@ -278,6 +288,9 @@ private fun ThreadCardLine(
             avatarMenu = avatarMenu,
             onTrustWeb = onTrustWeb,
             onTap = onTap,
+            // A bare repost shows its original's quotes.
+            quotes = if (quoteActions != null) quotesFor(shown) else emptyList(),
+            quoteActions = quoteActions,
             modifier = anchored,
         )
     }

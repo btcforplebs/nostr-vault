@@ -35,6 +35,9 @@ fun CompactNoteCard(
     /** The avatar opens this quick menu, as a full note's does. */
     avatarMenu: AvatarMenuActions? = null,
     onTrustWeb: ((String) -> Unit)? = null,
+    /** The notes [note] quotes, drawn under the line. See [CondensedNoteLine]. */
+    quotes: List<CondensedQuote> = emptyList(),
+    quoteActions: CondensedQuoteActions? = null,
     modifier: Modifier = Modifier,
 ) {
     val isArticle = (repostedOriginal ?: note).kind == ArticleMeta.KIND
@@ -53,6 +56,8 @@ fun CompactNoteCard(
         avatarMenu = avatarMenu,
         onTrustWeb = onTrustWeb,
         onTap = { onNoteClick(note.id) },
+        quotes = quotes,
+        quoteActions = quoteActions,
         modifier = modifier.fillMaxWidth(),
     )
 }
