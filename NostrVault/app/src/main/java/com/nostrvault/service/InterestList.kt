@@ -45,5 +45,26 @@ data class InterestList(
 
         /** NIP-24: hashtags are lowercase, no leading '#'. */
         fun normalize(hashtag: String): String = hashtag.trim().trimStart('#').lowercase()
+
+        /** What a post's #hashtag may be: letters, digits, `_`, at least one letter. */
+        private val HASHTAG = Regex("""[\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*""")
+
+        /**
+         * Many hashtags typed or pasted at once — "#bitcoin #nostr, art" or one
+         * per line — split on spaces, commas and '#'. [Parsed.hashtags] are
+         * normalized, in typed order, each once; [Parsed.rejected] are the
+         * pieces that can't be a hashtag ("#123", "c++"), as typed.
+         */
+        fun parseHashtags(input: String): Parsed {
+            val hashtags = LinkedHashSet<String>()
+            val rejected = mutableListOf<String>()
+            for (piece in input.split(Regex("""[\s,;#]+"""))) {
+                if (piece.isEmpty()) continue
+                if (HASHTAG.matches(piece)) hashtags.add(normalize(piece)) else rejected.add(piece)
+            }
+            return Parsed(hashtags.toList(), rejected)
+        }
     }
+
+    data class Parsed(val hashtags: List<String>, val rejected: List<String>)
 }

@@ -50,6 +50,9 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if !configService.activeAccountHexPubkey.isEmpty {
+                AddHashtagsField(follow: followMany, alreadyFollowed: interests.hashtags)
+            }
             if interests.hashtags.isEmpty {
                 noTagsState
             } else {
@@ -134,6 +137,13 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
         Task {
             if await !interests.setFollowing(tag, followed) { showingFollowFailed = true }
         }
+    }
+
+    /// Every tag from the add field, as one published list.
+    private func followMany(_ tags: [String]) async -> Bool {
+        let ok = await interests.setFollowing(tags, true)
+        if !ok { showingFollowFailed = true }
+        return ok
     }
 
     // MARK: Chips
