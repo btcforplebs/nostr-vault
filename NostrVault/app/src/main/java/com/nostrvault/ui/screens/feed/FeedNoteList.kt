@@ -20,10 +20,12 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.ui.components.AvatarMenuActions
 import com.nostrvault.ui.components.CondensedEngagement
+import com.nostrvault.ui.components.CondensedQuoteActions
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.RankedCompactNoteCard
 import com.nostrvault.ui.components.ThreadLineAnchor
+import com.nostrvault.ui.components.rememberCondensedQuotes
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.nostrvault.ui.theme.*
@@ -71,6 +73,14 @@ internal fun FeedNoteList(
     var broadcastNoteId by sheets::broadcastNoteId
     var trustWebAuthor by sheets::trustWebAuthor
     val density = LocalDensity.current
+    // A condensed line's quote opens the quoted note, as the expanded row's does.
+    val quoteActions = remember(viewModel, onNoteClick, onArticleClick) {
+        CondensedQuoteActions(
+            onOpen = onNoteClick,
+            onArticleClick = onArticleClick,
+            onMissing = { id -> viewModel.fetchMissingQuotedNotes(listOf(id)) },
+        )
+    }
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(
@@ -102,6 +112,8 @@ internal fun FeedNoteList(
                     rootUnavailable = thread.rootId in unavailableNoteIds,
                     lineAnchor = threadLineAnchor,
                     bareRepostDisplay = { note -> rememberBareRepostDisplay(note, viewModel) },
+                    quotesFor = { note -> rememberCondensedQuotes(note, viewModel.quotedNotesCache, viewModel::quotedNoteFor) },
+                    quoteActions = quoteActions,
                     // iOS: 12pt sides in threaded mode, 12pt between rows.
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     expandedRow = { note, _ ->
@@ -153,8 +165,12 @@ internal fun FeedNoteList(
             // Remove expensive Crossfade animation for better scroll performance
             if (showCompact) {
                 val (shownNote, repostPlaceholder) = rememberBareRepostDisplay(note, viewModel)
-                val shownPubkeys = remember(headPubkeys, shownNote.pubkey, shownNote.content) {
-                    (headPubkeys + shownNote.pubkey + NostrMentions.mentionedPubkeys(shownNote.content)).distinct()
+                // A bare repost shows its original's quotes.
+                val quotes = rememberCondensedQuotes(shownNote, viewModel.quotedNotesCache, viewModel::quotedNoteFor)
+                val quotedPubkeys = quotes.mapNotNull { it.note?.pubkey }
+                val shownPubkeys = remember(headPubkeys, shownNote.pubkey, shownNote.content, quotedPubkeys) {
+                    (headPubkeys + shownNote.pubkey + NostrMentions.mentionedPubkeys(shownNote.content) + quotedPubkeys)
+                        .distinct()
                 }
                 // derivedStateOf, not a plain read: the computation re-runs on
                 // every metadata batch, but this row only recomposes when one of
@@ -192,6 +208,8 @@ internal fun FeedNoteList(
                     onProfileClick = openProfile,
                     avatarMenu = feedAvatarMenu,
                     onTrustWeb = { author -> trustWebAuthor = author },
+                    quotes = quotes,
+                    quoteActions = quoteActions,
                     // iOS: 8pt sides for a compact row, 12pt between rows.
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                 )

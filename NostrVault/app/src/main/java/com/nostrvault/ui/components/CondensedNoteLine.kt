@@ -165,6 +165,13 @@ fun CondensedNoteLine(
     /** The menu's Web of Trust item, where the screen offers it. */
     onTrustWeb: ((String) -> Unit)? = null,
     onTap: (() -> Unit)? = null,
+    /**
+     * Notes this one quotes, drawn under it as the expanded feed draws them.
+     * Resolved by the caller ([CondensedQuote.resolve]) so a quote that lands
+     * later redraws the line. Nothing draws without [quoteActions].
+     */
+    quotes: List<CondensedQuote> = emptyList(),
+    quoteActions: CondensedQuoteActions? = null,
     themeColor: Color = LocalNostrVaultColors.current.primary,
     modifier: Modifier = Modifier,
 ) {
@@ -210,8 +217,7 @@ fun CondensedNoteLine(
             .then(if (depth > 0) Modifier.threadRail(themeColor, isOled) else Modifier),
         verticalAlignment = Alignment.Top,
     ) {
-        Row(
-            verticalAlignment = Alignment.Top,
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .background(backgroundColor, RoundedCornerShape(cornerRadius))
@@ -221,168 +227,181 @@ fun CondensedNoteLine(
                     vertical = if (style == CondensedLineStyle.CARD) 8.dp else 6.dp,
                 ),
         ) {
-            AvatarWithMenu(
-                pubkey = authorPubkey,
-                displayName = displayName,
-                menu = avatarMenu,
-                onProfileClick = onProfileClick,
-                onTrustWeb = onTrustWeb,
-            ) { avatarModifier ->
-                AvatarImage(
-                    url = profile?.pictureURL,
+            Row(verticalAlignment = Alignment.Top) {
+                AvatarWithMenu(
                     pubkey = authorPubkey,
-                    size = avatarSize,
-                    displayName = profile?.bestName,
-                    modifier = avatarModifier,
-                )
-            }
-
-            Spacer(Modifier.width(8.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                // Header: name · time · reply / repost / quote / kind markers
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = displayName,
-                        color = PrimaryText,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = nameSize,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        // The name opens the profile, as on a full post; the
-                        // photo opens the quick menu (iOS CondensedNoteLine).
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clickable { onProfileClick(authorPubkey) },
+                    displayName = displayName,
+                    menu = avatarMenu,
+                    onProfileClick = onProfileClick,
+                    onTrustWeb = onTrustWeb,
+                ) { avatarModifier ->
+                    AvatarImage(
+                        url = profile?.pictureURL,
+                        pubkey = authorPubkey,
+                        size = avatarSize,
+                        displayName = profile?.bestName,
+                        modifier = avatarModifier,
                     )
-                    if (!profile?.nip05.isNullOrBlank()) {
-                        Spacer(Modifier.width(3.dp))
-                        Icon(
-                            imageVector = NostrVaultIcons.Verified,
-                            contentDescription = "Verified",
-                            tint = Color(0xFF33CC99),
-                            modifier = Modifier.size(9.dp),
-                        )
-                    }
-                    if (note.isFromNostrVault) {
-                        Spacer(Modifier.width(3.dp))
-                        NostrVaultBadge(size = 9.dp)
-                    }
-                    Text(
-                        text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
-                        color = TertiaryText,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (note.isReply && depth == 0) {
-                        // A reply marker is noise inside a thread — the rail already says it.
-                        Icon(
-                            imageVector = NostrVaultIcons.Reply,
-                            contentDescription = null,
-                            tint = themeColor.copy(alpha = 0.7f),
-                            modifier = Modifier.size(10.dp),
-                        )
-                    }
-                    if (note.repostedBy != null) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = NostrVaultIcons.Repost,
-                            contentDescription = null,
-                            tint = RepostGreen.copy(alpha = 0.7f),
-                            modifier = Modifier.size(10.dp),
-                        )
-                    }
-                    // Same glyph as the full card's Quote button. iOS: CondensedNoteLine.
-                    if (note.quotedEventIds.isNotEmpty()) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = NostrVaultIcons.Quote,
-                            contentDescription = "Quote",
-                            tint = InfoBlue.copy(alpha = 0.7f),
-                            modifier = Modifier.size(10.dp),
-                        )
-                    }
-                    CondensedKindMarker.of(note)?.let { marker ->
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = marker.icon,
-                            contentDescription = marker.label,
-                            tint = marker.tint(themeColor).copy(alpha = 0.7f),
-                            modifier = Modifier.size(10.dp),
-                        )
-                    }
                 }
 
-                // Every URL comes out of the line (#170 parity); links come
-                // from the text actually shown, which an override replaces.
-                val (bodyMedia, bodyLinks) = remember(displayContent, mediaURLs, note.mediaURLs) {
-                    val media = FeedNote.parseMediaURLs(displayContent).toSet() + mediaURLs + note.mediaURLs
-                    media to FeedNote.parseLinkURLs(displayContent, media)
-                }
-                val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
-                    NostrMentions.collapseGaps(
-                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet())
-                    ).trim()
-                }
-                if (plainText.isNotBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    val line = @Composable {
-                        // iOS: full white on the root line, 85% (80% OLED) on
-                        // replies; newlines stay inside the line limit.
-                        Text(
-                            text = plainText,
-                            color = PrimaryText.copy(alpha = if (isRoot) 1f else if (isOled) 0.8f else 0.85f),
-                            fontSize = bodySize,
-                            maxLines = bodyLineLimit,
-                            overflow = TextOverflow.Ellipsis,
-                            lineHeight = (bodySize.value + 4).sp,
-                        )
-                    }
-                    if (showsTranslate) {
-                        TranslatableNoteText(
-                            // The note's own text (a poll's whole body, not its
-                            // one-line summary), so the translation cached under
-                            // this key is the one the full card shows too.
-                            noteKey = note.effectiveEventId,
-                            content = contentOverride ?: note.content,
-                            profiles = profiles,
-                            mediaURLs = bodyMedia,
-                            linkURLs = bodyLinks.toSet(),
-                            fontSize = bodySize,
-                            lineHeight = (bodySize.value + 4).sp,
-                            maxLines = bodyLineLimit,
-                            original = line,
-                        )
-                    } else {
-                        line()
-                    }
-                }
-
-                if (bodyLinks.isNotEmpty()) {
-                    Spacer(Modifier.height(3.dp))
-                    CondensedLinkChip(bodyLinks, themeColor)
-                }
-
-                if (!engagement.isEmpty) {
-                    Spacer(Modifier.height(2.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (engagement.reactions > 0) {
-                            EngagementChip(text = engagement.topEmoji ?: "❤️", count = engagement.reactions)
-                        }
-                        if (engagement.zaps > 0) {
-                            EngagementChip(icon = NostrVaultIcons.Zap, tint = ZapOrange, count = engagement.zaps)
-                        }
-                        if (engagement.reposts > 0) {
-                            EngagementChip(icon = NostrVaultIcons.Repost, tint = RepostGreen, count = engagement.reposts)
-                        }
-                    }
-                }
-            }
-
-            if (showsMediaThumbnail && mediaURLs.isNotEmpty()) {
                 Spacer(Modifier.width(8.dp))
-                CondensedMediaThumbnail(mediaURLs, isRoot)
+
+                Column(modifier = Modifier.weight(1f)) {
+                    // Header: name · time · reply / repost / quote / kind markers
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = displayName,
+                            color = PrimaryText,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = nameSize,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            // The name opens the profile, as on a full post; the
+                            // photo opens the quick menu (iOS CondensedNoteLine).
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .clickable { onProfileClick(authorPubkey) },
+                        )
+                        if (!profile?.nip05.isNullOrBlank()) {
+                            Spacer(Modifier.width(3.dp))
+                            Icon(
+                                imageVector = NostrVaultIcons.Verified,
+                                contentDescription = "Verified",
+                                tint = Color(0xFF33CC99),
+                                modifier = Modifier.size(9.dp),
+                            )
+                        }
+                        if (note.isFromNostrVault) {
+                            Spacer(Modifier.width(3.dp))
+                            NostrVaultBadge(size = 9.dp)
+                        }
+                        Text(
+                            text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
+                            color = TertiaryText,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (note.isReply && depth == 0) {
+                            // A reply marker is noise inside a thread — the rail already says it.
+                            Icon(
+                                imageVector = NostrVaultIcons.Reply,
+                                contentDescription = null,
+                                tint = themeColor.copy(alpha = 0.7f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                        }
+                        if (note.repostedBy != null) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = NostrVaultIcons.Repost,
+                                contentDescription = null,
+                                tint = RepostGreen.copy(alpha = 0.7f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                        }
+                        // Same glyph as the full card's Quote button. iOS: CondensedNoteLine.
+                        if (note.quotedEventIds.isNotEmpty()) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = NostrVaultIcons.Quote,
+                                contentDescription = "Quote",
+                                tint = InfoBlue.copy(alpha = 0.7f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                        }
+                        CondensedKindMarker.of(note)?.let { marker ->
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = marker.icon,
+                                contentDescription = marker.label,
+                                tint = marker.tint(themeColor).copy(alpha = 0.7f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                        }
+                    }
+
+                    // Every URL comes out of the line (#170 parity); links come
+                    // from the text actually shown, which an override replaces.
+                    val (bodyMedia, bodyLinks) = remember(displayContent, mediaURLs, note.mediaURLs) {
+                        val media = FeedNote.parseMediaURLs(displayContent).toSet() + mediaURLs + note.mediaURLs
+                        media to FeedNote.parseLinkURLs(displayContent, media)
+                    }
+                    val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
+                        NostrMentions.collapseGaps(
+                            NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet())
+                        ).trim()
+                    }
+                    if (plainText.isNotBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        val line = @Composable {
+                            // iOS: full white on the root line, 85% (80% OLED) on
+                            // replies; newlines stay inside the line limit.
+                            Text(
+                                text = plainText,
+                                color = PrimaryText.copy(alpha = if (isRoot) 1f else if (isOled) 0.8f else 0.85f),
+                                fontSize = bodySize,
+                                maxLines = bodyLineLimit,
+                                overflow = TextOverflow.Ellipsis,
+                                lineHeight = (bodySize.value + 4).sp,
+                            )
+                        }
+                        if (showsTranslate) {
+                            TranslatableNoteText(
+                                // The note's own text (a poll's whole body, not its
+                                // one-line summary), so the translation cached under
+                                // this key is the one the full card shows too.
+                                noteKey = note.effectiveEventId,
+                                content = contentOverride ?: note.content,
+                                profiles = profiles,
+                                mediaURLs = bodyMedia,
+                                linkURLs = bodyLinks.toSet(),
+                                fontSize = bodySize,
+                                lineHeight = (bodySize.value + 4).sp,
+                                maxLines = bodyLineLimit,
+                                original = line,
+                            )
+                        } else {
+                            line()
+                        }
+                    }
+
+                    if (bodyLinks.isNotEmpty()) {
+                        Spacer(Modifier.height(3.dp))
+                        CondensedLinkChip(bodyLinks, themeColor)
+                    }
+
+                    if (!engagement.isEmpty) {
+                        Spacer(Modifier.height(2.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (engagement.reactions > 0) {
+                                EngagementChip(text = engagement.topEmoji ?: "❤️", count = engagement.reactions)
+                            }
+                            if (engagement.zaps > 0) {
+                                EngagementChip(icon = NostrVaultIcons.Zap, tint = ZapOrange, count = engagement.zaps)
+                            }
+                            if (engagement.reposts > 0) {
+                                EngagementChip(icon = NostrVaultIcons.Repost, tint = RepostGreen, count = engagement.reposts)
+                            }
+                        }
+                    }
+                }
+
+                if (showsMediaThumbnail && mediaURLs.isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    CondensedMediaThumbnail(mediaURLs, isRoot)
+                }
+            }
+            // Under the text, lined up with it; below the thumbnail rather than
+            // beside it, so a quote keeps the line's width. iOS: quotedNotes.
+            if (quotes.isNotEmpty() && quoteActions != null) {
+                Spacer(Modifier.height(6.dp))
+                CondensedQuotedNotes(
+                    quotes = quotes,
+                    profiles = profiles,
+                    actions = quoteActions,
+                    modifier = Modifier.padding(start = avatarSize + 8.dp),
+                )
             }
         }
     }

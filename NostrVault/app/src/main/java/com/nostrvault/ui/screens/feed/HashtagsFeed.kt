@@ -38,6 +38,8 @@ import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
 import com.nostrvault.ui.components.CompactNoteCard
 import com.nostrvault.ui.components.CondensedEngagement
+import com.nostrvault.ui.components.CondensedQuote
+import com.nostrvault.ui.components.CondensedQuoteActions
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
@@ -348,6 +350,13 @@ internal fun HashtagsFeed(
     val openNote: (String) -> Unit = { id -> byId[id]?.let(onCacheNote); onNoteClick(id) }
     val reply: (String) -> Unit = { id -> byId[id]?.let(onCacheNote); onReply(id) }
     val quote: (String) -> Unit = { id -> byId[id]?.let(onCacheNote); onQuote(id) }
+    val quoteActions = remember(viewModel, byId, onArticleClick) {
+        CondensedQuoteActions(
+            onOpen = openNote,
+            onArticleClick = onArticleClick,
+            onMissing = { id -> viewModel.fetchMissingQuotedNotes(listOf(id)) },
+        )
+    }
 
     // Compact lines open in place first, like the main feed; thread cards
     // share the same open note.
@@ -396,6 +405,8 @@ internal fun HashtagsFeed(
                 engagement = engagement,
                 onNoteClick = { id -> openNoteId = id },
                 onProfileClick = onProfileClick,
+                quotes = CondensedQuote.resolve(note) { quotedNotesCache[it] },
+                quoteActions = quoteActions,
                 // iOS: 8pt sides for a compact row, 12pt between rows.
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             )
@@ -415,6 +426,8 @@ internal fun HashtagsFeed(
             onProfileClick = onProfileClick,
             onOpenThread = { note -> onCacheNote(note); onNoteClick(note.id) },
             onFetchMissingNote = viewModel::fetchMissingNote,
+            quotesFor = { note -> CondensedQuote.resolve(note) { quotedNotesCache[it] } },
+            quoteActions = quoteActions,
             // iOS: 12pt sides in threaded mode, 12pt between rows.
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             expandedRow = { note, _ -> fullRow(note) },
