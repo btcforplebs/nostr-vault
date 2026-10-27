@@ -16,7 +16,7 @@ import com.nostrvault.ui.components.ReactionChoice
      * Leaves [content] as the account's reaction on [noteId], replacing any
      * reaction it already had there (a NIP-09 deletion retracts the old one).
      */
-    internal fun FeedService.react(noteId: String, content: String, tags: List<List<String>>?) {
+    internal fun FeedService.react(noteId: String, content: String, tags: List<List<String>>?, emojiTag: List<String>? = null) {
         val previous = _myReactions.value[noteId]
         val wasLiked = noteId in _likedEventIds.value
         if (wasLiked && previous?.content == content) return
@@ -42,13 +42,13 @@ import com.nostrvault.ui.components.ReactionChoice
             // that author's relays for it.
             // Only the note itself: a repost found under its original's id
             // would name the reposter and kind 6.
-            val reactionTags = tags ?: findNote(noteId)?.takeIf { it.id == noteId }.let { note ->
+            val reactionTags = (tags ?: findNote(noteId)?.takeIf { it.id == noteId }.let { note ->
                 buildList {
                     add(listOf("e", noteId))
                     note?.pubkey?.let { add(listOf("p", it)) }
                     note?.kind?.let { add(listOf("k", it.toString())) }
                 }
-            }
+            }) + ReactionChoice.emojiTags(content, emojiTag)
             val event = withContext(Dispatchers.IO) {
                 runCatching { nostrService.signEventAsync(kind = 7, content = content, tags = reactionTags) }
                     .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
@@ -200,7 +200,7 @@ import com.nostrvault.ui.components.ReactionChoice
      * picked [emoji] (tapback bar or picker) is sent instead, replacing any
      * other reaction; picking the one already sent takes it back. iOS #322.
      */
-    internal fun FeedService.likeNoteImpl(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) {
+    internal fun FeedService.likeNoteImpl(noteId: String, emoji: String? = null, tags: List<List<String>>? = null, emojiTag: List<String>? = null) {
         val isLiked = noteId in _likedEventIds.value
         val current = _myReactions.value[noteId]?.content
         val change = if (emoji == null) {
@@ -209,7 +209,7 @@ import com.nostrvault.ui.components.ReactionChoice
             ReactionChoice.forPick(isLiked, current, emoji)
         }
         when (change) {
-            is ReactionChoice.Change.React -> react(noteId, change.content, tags)
+            is ReactionChoice.Change.React -> react(noteId, change.content, tags, emojiTag)
             ReactionChoice.Change.Remove -> removeReaction(noteId)
         }
     }

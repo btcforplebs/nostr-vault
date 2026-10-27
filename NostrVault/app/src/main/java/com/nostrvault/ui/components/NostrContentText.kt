@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.BareNostrRefs
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.service.CustomEmoji
 import com.nostrvault.ui.navigation.LocalOpenHashtag
 import com.nostrvault.ui.theme.*
 
@@ -57,6 +58,8 @@ fun NostrContentText(
     lineHeight: TextUnit = 21.sp,
     modifier: Modifier = Modifier,
     selectable: Boolean = false,
+    /** The note's NIP-30 emoji: `:shortcode:` in the text draws as the image. */
+    emojis: Map<String, CustomEmoji> = emptyMap(),
 ) {
     val colors = LocalNostrVaultColors.current
     val uriHandler = LocalUriHandler.current
@@ -72,12 +75,12 @@ fun NostrContentText(
     // Resolve mention display-names + build the styled string. This is cheap
     // (map lookups + string appends, no regex), so it can re-run when profiles
     // or theme change without hurting scroll.
-    val annotated = remember(segments, profiles, colors.primary) {
+    val annotated = remember(segments, profiles, colors.primary, emojis) {
         buildAnnotatedString {
             for (segment in segments) {
                 when (segment) {
                     // Inline markdown, as the iPhone renders it.
-                    is ContentSegment.PlainText -> appendInlineMarkdown(segment.text)
+                    is ContentSegment.PlainText -> appendTextWithEmoji(segment.text, emojis)
 
                     is ContentSegment.Mention -> {
                         val displayName = profiles[segment.pubkey]?.bestName
@@ -113,6 +116,7 @@ fun NostrContentText(
     }
 
     if (annotated.text.isBlank()) return
+    val emojiContent = remember(emojis) { customEmojiInlineContent(emojis) }
 
     if (selectable) {
         // The links are built once per string; they call through these so a
@@ -132,7 +136,35 @@ fun NostrContentText(
             BasicText(
                 text = linked,
                 style = TextStyle(color = textColor, fontSize = fontSize, lineHeight = lineHeight),
+                inlineContent = emojiContent,
             )
+        }
+        return
+    }
+
+    if (emojiContent.isNotEmpty()) {
+        // ClickableText draws no inline content, so the same taps on a BasicText.
+        TappableEmojiText(
+            text = annotated,
+            inlineContent = emojiContent,
+            style = TextStyle(color = textColor, fontSize = fontSize, lineHeight = lineHeight),
+            modifier = modifier,
+        ) { offset ->
+            annotated.getStringAnnotations("profile", offset, offset).firstOrNull()?.let {
+                onProfileClick(it.item)
+                return@TappableEmojiText
+            }
+            annotated.getStringAnnotations("url", offset, offset).firstOrNull()?.let {
+                try { uriHandler.openUri(it.item) } catch (_: Exception) {}
+                return@TappableEmojiText
+            }
+            if (openHashtag != null) {
+                annotated.getStringAnnotations("hashtag", offset, offset).firstOrNull()?.let {
+                    openHashtag(it.item)
+                    return@TappableEmojiText
+                }
+            }
+            onPlainTextClick?.invoke()
         }
         return
     }

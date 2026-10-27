@@ -37,12 +37,44 @@ class ReactionChoiceTest {
 
     @Test
     fun barAlwaysOffersTheDefaultReaction() {
-        assertEquals(ReactionChoice.TAPBACK, ReactionChoice.tapbackOptions("+"))
-        assertEquals(ReactionChoice.TAPBACK, ReactionChoice.tapbackOptions("🔥"))
-        val custom = ReactionChoice.tapbackOptions("🍕")
+        assertEquals(ReactionChoice.TAPBACK, ReactionChoice.tapbackOptions("+").map { it.content })
+        assertEquals(ReactionChoice.TAPBACK, ReactionChoice.tapbackOptions("🔥").map { it.content })
+        val custom = ReactionChoice.tapbackOptions("🍕").map { it.content }
         assertEquals(6, custom.size)
         assertEquals("🍕", custom.first())
         assertEquals(ReactionChoice.TAPBACK.dropLast(1), custom.drop(1))
+    }
+
+    @Test
+    fun barIsThePersonsOwnWithTheDefaultKept() {
+        val pepe = com.nostrvault.data.local.ReactionPick(":pepe:", "pepe", "https://x.example/p.png")
+        val bar = listOf(pepe) + listOf("🔥", "😂", "😮", "😢", "🤙").map { com.nostrvault.data.local.ReactionPick(it) }
+        // The default heart isn't on the person's bar, so it goes first and the last drops.
+        val options = ReactionChoice.tapbackOptions("+", bar)
+        assertEquals(listOf("❤️", ":pepe:", "🔥", "😂", "😮", "😢"), options.map { it.content })
+        assertEquals("https://x.example/p.png", options[1].url)
+        assertEquals(bar, ReactionChoice.tapbackOptions("🔥", bar))
+    }
+
+    @Test
+    fun aCustomReactionShowsAsItsShortcodeSoPickingItAgainTakesItBack() {
+        assertEquals(":pepe:", ReactionChoice.shown(isLiked = true, myContent = ":pepe:"))
+        assertEquals(Change.Remove, ReactionChoice.forPick(isLiked = true, myContent = ":pepe:", picked = ":pepe:"))
+        assertEquals(Change.React(":soapbox:"), ReactionChoice.forPick(isLiked = true, myContent = ":pepe:", picked = ":soapbox:"))
+        // Only a lone shortcode: text with one in it is still a heart.
+        assertEquals("❤️", ReactionChoice.shown(isLiked = true, myContent = "nice :pepe:"))
+    }
+
+    @Test
+    fun aCustomReactionCarriesExactlyItsEmojiTag() {
+        val tag = listOf("emoji", "pepe", "https://x.example/p.png", "30030:${"a".repeat(64)}:frogs")
+        assertEquals(listOf(tag), ReactionChoice.emojiTags(":pepe:", tag))
+        // A Unicode reaction never names an image, nor does a tag for another shortcode.
+        assertEquals(emptyList<List<String>>(), ReactionChoice.emojiTags("🔥", tag))
+        assertEquals(emptyList<List<String>>(), ReactionChoice.emojiTags(":other:", tag))
+        assertEquals(emptyList<List<String>>(), ReactionChoice.emojiTags(":pepe:", null))
+        // A bad image address is dropped, not sent.
+        assertEquals(emptyList<List<String>>(), ReactionChoice.emojiTags(":pepe:", listOf("emoji", "pepe", "javascript:alert(1)")))
     }
 
     @Test

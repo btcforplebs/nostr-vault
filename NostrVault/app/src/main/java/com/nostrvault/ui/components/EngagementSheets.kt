@@ -96,8 +96,9 @@ fun ReactorsSheet(
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = reactionDisplayEmoji(reaction.emoji),
+                            ReactionGlyph(
+                                emoji = reactionDisplayEmoji(reaction.emoji),
+                                custom = reaction.customEmoji,
                                 fontSize = 20.sp,
                             )
                         }

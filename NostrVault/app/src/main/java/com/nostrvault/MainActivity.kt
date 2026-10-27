@@ -74,6 +74,8 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var configStore: ConfigStore
     @Inject lateinit var dmService: DMService
     @Inject lateinit var feedService: FeedService
+    @Inject lateinit var emojiPalette: com.nostrvault.data.local.EmojiPaletteStore
+    @Inject lateinit var emojiList: com.nostrvault.service.EmojiListRepository
     @Inject lateinit var nostrService: NostrService
     @Inject lateinit var logStore: LogStore
     @Inject lateinit var localNotificationService: LocalNotificationService
@@ -188,10 +190,17 @@ class MainActivity : FragmentActivity() {
                 }
                 // The reaction button's tapback bar sends through here.
                 val reactionActions = remember {
+                    // The account's own custom emoji, for the picker (read only).
+                    emojiList.refresh()
                     com.nostrvault.ui.components.ReactionActions(
                         myReactions = feedService.myReactions,
                         defaultReaction = { configStore.config.value.defaultReactionEmoji },
-                        pick = { noteId, emoji -> feedService.likeNote(noteId, emoji) },
+                        pick = { noteId, pick -> feedService.likeNote(noteId, pick.content, emojiTag = pick.custom?.tag()) },
+                        palette = emojiPalette.state,
+                        library = emojiList.library,
+                        refreshLibrary = emojiList::refresh,
+                        recordUse = emojiPalette::recordUse,
+                        replaceSlot = emojiPalette::replaceSlot,
                     )
                 }
                 CompositionLocalProvider(

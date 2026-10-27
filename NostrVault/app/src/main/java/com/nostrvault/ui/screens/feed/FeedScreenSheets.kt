@@ -11,6 +11,8 @@ import com.nostrvault.data.model.toNote
 import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
+import com.nostrvault.ui.components.LocalReactionActions
+import com.nostrvault.data.local.ReactionPick
 import com.nostrvault.ui.components.TrustWebDialog
 import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.theme.*
@@ -176,11 +178,16 @@ internal fun FeedScreenSheets(
 
     // Emoji picker sheet
     if (emojiPickerNoteId != null) {
+        val reactionActions = LocalReactionActions.current
         EmojiPickerSheet(
             sheetState = emojiSheetState,
             onDismiss = { emojiPickerNoteId = null },
             onSelectEmoji = { emoji ->
                 emojiPickerNoteId?.let { viewModel.likeNote(it, emoji) }
+                emojiPickerNoteId = null
+            },
+            onSelectCustom = { custom ->
+                emojiPickerNoteId?.let { reactionActions?.pick?.invoke(it, ReactionPick.of(custom)) }
                 emojiPickerNoteId = null
             },
         )

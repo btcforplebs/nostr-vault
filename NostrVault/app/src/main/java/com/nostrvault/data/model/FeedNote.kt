@@ -158,6 +158,11 @@ data class FeedNote(
     val cardLinkURLs: List<String>
         get() = linkURLs.take(MAX_LINK_CARDS)
 
+    /** The note's NIP-30 emoji by shortcode, for drawing `:shortcode:` in its text. */
+    val customEmojis: Map<String, com.nostrvault.service.CustomEmoji> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        com.nostrvault.service.CustomEmoji.fromTags(tags)
+    }
+
     override fun equals(other: Any?): Boolean = other is FeedNote && id == other.id
     override fun hashCode(): Int = id.hashCode()
 

@@ -13,14 +13,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.nostrvault.data.local.EmojiPalette
+import com.nostrvault.data.local.ReactionPick
+import com.nostrvault.service.CustomEmoji
+import com.nostrvault.service.EmojiListRepository
 import com.nostrvault.ui.theme.*
 
 /**
  * Emoji reaction picker bottom sheet.
  * Port of iOS EmojiPickerView with quick reactions, categories, and custom input.
+ *
+ * With [onSelectCustom] it is the reaction picker: the quick bar (which
+ * can be edited), Recents, the account's own custom emoji and each set it
+ * added come first. Without it (choosing the default reaction) it offers
+ * Unicode only, as before.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,25 +38,48 @@ fun EmojiPickerSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onSelectEmoji: (String) -> Unit,
+    onSelectCustom: ((CustomEmoji) -> Unit)? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val haptic = LocalHapticFeedback.current
+    val actions = LocalReactionActions.current
+    val reacting = onSelectCustom != null && actions != null
     var searchQuery by remember { mutableStateOf("") }
     var customEmoji by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableIntStateOf(0) }
+    // The quick-bar slot being changed, while editing it.
+    var editing by remember { mutableStateOf(false) }
+    var editSlot by remember { mutableStateOf<ReactionPick?>(null) }
 
-    val quickReactions = listOf("\u2764\uFE0F", "\uD83D\uDC4D", "\uD83D\uDD25", "\uD83D\uDE02", "\uD83D\uDE2E", "\uD83D\uDE22", "\uD83C\uDF89", "\uD83D\uDE80")
+    val emptyPalette = remember { kotlinx.coroutines.flow.MutableStateFlow(EmojiPalette.State()) }
+    val emptyLibrary = remember { kotlinx.coroutines.flow.MutableStateFlow(EmojiListRepository.Library()) }
+    val palette by (actions?.palette ?: emptyPalette).collectAsState()
+    val library by (actions?.library ?: emptyLibrary).collectAsState()
+    LaunchedEffect(reacting) { if (reacting) actions?.refreshLibrary?.invoke() }
 
-    val categories = remember { emojiCategories() }
+    val tabs = remember(palette, library, reacting) { EmojiPickerTabs.build(emojiCategories(), palette, library, reacting) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabIndex = selectedTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
 
-    val displayedEmojis = remember(searchQuery, selectedCategory) {
-        if (searchQuery.isNotBlank()) {
-            val query = searchQuery.lowercase()
-            categories.flatMap { cat ->
-                cat.emojis.filter { it.lowercase().contains(query) }
-            }
+    val displayed = remember(searchQuery, tabIndex, tabs) {
+        if (searchQuery.isNotBlank()) EmojiPickerTabs.search(tabs, searchQuery) else tabs.getOrNull(tabIndex)?.picks.orEmpty()
+    }
+
+    fun choose(pick: ReactionPick) {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val slot = editSlot
+        if (editing && slot != null && actions != null) {
+            actions.replaceSlot(slot, pick)
+            editSlot = null
+            return
+        }
+        val custom = pick.custom
+        if (custom != null) {
+            if (onSelectCustom == null) return
+            actions?.recordUse?.invoke(pick)
+            onSelectCustom(custom)
         } else {
-            categories[selectedCategory].emojis
+            if (reacting) actions?.recordUse?.invoke(pick)
+            onSelectEmoji(pick.content)
         }
     }
 
@@ -73,22 +106,29 @@ fun EmojiPickerSheet(
 
             Spacer(Modifier.height(16.dp))
 
-            // Quick reactions row
-            Row(
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                for (emoji in quickReactions) {
-                    Text(
-                        text = emoji,
-                        fontSize = 28.sp,
-                        modifier = Modifier
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSelectEmoji(emoji)
-                            }
-                            .padding(4.dp),
-                    )
+            if (reacting) {
+                QuickBarRow(
+                    bar = EmojiPalette.orderedBar(palette),
+                    editing = editing,
+                    editSlot = editSlot,
+                    onToggleEdit = { editing = !editing; editSlot = null },
+                    onSlot = { slot -> if (editing) editSlot = slot else choose(slot) },
+                )
+            } else {
+                // Quick reactions row
+                Row(
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    for (emoji in QUICK_REACTIONS) {
+                        Text(
+                            text = emoji,
+                            fontSize = 28.sp,
+                            modifier = Modifier
+                                .clickable { choose(ReactionPick(emoji)) }
+                                .padding(4.dp),
+                        )
+                    }
                 }
             }
 
@@ -117,10 +157,7 @@ fun EmojiPickerSheet(
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (customEmoji.isNotBlank()) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onSelectEmoji(customEmoji.trim())
-                        }
+                        if (customEmoji.isNotBlank()) choose(ReactionPick(customEmoji.trim()))
                     },
                     enabled = customEmoji.isNotBlank(),
                     shape = RoundedCornerShape(10.dp),
@@ -162,25 +199,21 @@ fun EmojiPickerSheet(
 
             Spacer(Modifier.height(12.dp))
 
-            // Category tabs
-            if (searchQuery.isBlank()) {
+            // Tabs: Recents, your emoji and each set first when reacting, then the categories
+            if (searchQuery.isBlank() && tabs.isNotEmpty()) {
                 ScrollableTabRow(
-                    selectedTabIndex = selectedCategory,
+                    selectedTabIndex = tabIndex,
                     containerColor = SecondaryGroupedBg,
                     contentColor = PrimaryText,
                     edgePadding = 0.dp,
                     divider = {},
                 ) {
-                    categories.forEachIndexed { index, category ->
+                    tabs.forEachIndexed { index, tab ->
                         Tab(
-                            selected = selectedCategory == index,
-                            onClick = { selectedCategory = index },
-                            text = {
-                                Text(
-                                    text = category.icon,
-                                    fontSize = 18.sp,
-                                )
-                            },
+                            selected = tabIndex == index,
+                            onClick = { selectedTab = index },
+                            modifier = Modifier.semantics { contentDescription = tab.name },
+                            text = { ReactionGlyph(tab.icon.content, tab.icon.custom, fontSize = 18.sp) },
                         )
                     }
                 }
@@ -197,31 +230,31 @@ fun EmojiPickerSheet(
                     .fillMaxWidth()
                     .height(260.dp),
             ) {
-                items(displayedEmojis) { emoji ->
-                    Text(
-                        text = emoji,
-                        fontSize = 26.sp,
-                        textAlign = TextAlign.Center,
+                items(displayed) { pick ->
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSelectEmoji(emoji)
-                            }
+                            .clickable { choose(pick) }
+                            .semantics { contentDescription = pick.content }
                             .padding(4.dp),
-                    )
+                    ) {
+                        ReactionGlyph(pick.content, pick.custom, fontSize = 26.sp)
+                    }
                 }
             }
         }
     }
 }
 
-private data class EmojiCategory(
+private val QUICK_REACTIONS = listOf("\u2764\uFE0F", "\uD83D\uDC4D", "\uD83D\uDD25", "\uD83D\uDE02", "\uD83D\uDE2E", "\uD83D\uDE22", "\uD83C\uDF89", "\uD83D\uDE80")
+
+internal data class EmojiCategory(
     val name: String,
     val icon: String,
     val emojis: List<String>,
 )
 
-private fun emojiCategories(): List<EmojiCategory> = listOf(
+internal fun emojiCategories(): List<EmojiCategory> = listOf(
     EmojiCategory(
         name = "Smileys",
         icon = "\uD83D\uDE00",

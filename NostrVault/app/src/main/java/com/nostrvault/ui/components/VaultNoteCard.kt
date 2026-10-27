@@ -553,6 +553,7 @@ private fun NoteBody(
         NoteTextWithLinkCards(
             content = note.content,
             cards = note.cardLinkURLs,
+            emojis = note.customEmojis,
             profiles = profiles,
             mediaURLs = note.mediaURLs.toSet(),
             onProfileClick = onProfileClick,

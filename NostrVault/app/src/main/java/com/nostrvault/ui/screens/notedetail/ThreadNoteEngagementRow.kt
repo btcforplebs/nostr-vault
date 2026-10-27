@@ -85,7 +85,7 @@ internal fun ThreadNoteEngagementRow(
                 ) {
                     shown.forEachIndexed { index, group ->
                         if (index > 0) Spacer(Modifier.width(3.dp))
-                        Text(group.emoji, fontSize = 11.sp)
+                        ReactionGlyph(group.emoji, group.custom, fontSize = 11.sp)
                         Spacer(Modifier.width(1.dp))
                         Text("${group.count}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
