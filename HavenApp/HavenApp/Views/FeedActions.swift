@@ -139,8 +139,9 @@ struct FeedActions {
             let powSnap = PowPreferences.snapshot()
             let powDiff = powSnap.reactionEnabled ? powSnap.reactionDifficulty : 0
             let signed = await nostrService.mineAndSignEventAsync(kind: 7, content: content,
-                tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]
-                    + CustomEmoji.reactionTags(content: content, emojiTag: emojiTag), difficulty: powDiff)
+                tags: CustomEmoji.reactionEventTags(noteId: noteId, relayHint: relayHint, authorPubkey: note.pubkey,
+                                                    noteKind: note.kind, content: content, emojiTag: emojiTag),
+                difficulty: powDiff)
             await MainActor.run {
                 // Changed or removed while signing: this one never goes out.
                 guard feedService.pendingReactionTokens[noteId] == token else { return }

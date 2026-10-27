@@ -71,6 +71,18 @@ final class CustomEmojiTests: XCTestCase {
         XCTAssertEqual(CustomEmoji.reactionTags(content: ":pepe:", emojiTag: ["emoji", "pepe", "javascript:alert(1)"]), [])
     }
 
+    func testAKind7CarriesNoteAuthorKindAndOnlyAMatchingEmojiTag() {
+        let tag = ["emoji", "pepe", "https://x.example/p.png"]
+        XCTAssertEqual(
+            CustomEmoji.reactionEventTags(noteId: "n1", relayHint: "wss://r.example", authorPubkey: "a1", noteKind: 1,
+                                          content: ":pepe:", emojiTag: tag),
+            [["e", "n1", "wss://r.example"], ["p", "a1"], ["k", "1"], tag])
+        XCTAssertEqual(
+            CustomEmoji.reactionEventTags(noteId: "n1", relayHint: "wss://r.example", authorPubkey: "a1", noteKind: 1,
+                                          content: "🔥", emojiTag: nil),
+            [["e", "n1", "wss://r.example"], ["p", "a1"], ["k", "1"]])
+    }
+
     func testCustomReactionsGroupPerShortcodeAndImage() {
         let a = [["emoji", "pepe", "https://a.example/p.png"]]
         let b = [["emoji", "pepe", "https://b.example/p.png"]]

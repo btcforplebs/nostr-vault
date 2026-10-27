@@ -114,6 +114,14 @@ struct CustomEmoji: Codable, Hashable {
         return out
     }
 
+    /// A kind 7's tags: the note (`e` with a relay hint), its author (`p`),
+    /// its kind (`k`), and the NIP-30 tag when the reaction is a custom emoji.
+    static func reactionEventTags(noteId: String, relayHint: String, authorPubkey: String, noteKind: Int,
+                                  content: String, emojiTag: [String]?) -> [[String]] {
+        [["e", noteId, relayHint], ["p", authorPubkey], ["k", String(noteKind)]]
+            + reactionTags(content: content, emojiTag: emojiTag)
+    }
+
     /// The NIP-30 tag a reaction carries: `emojiTag` only when `content` is
     /// exactly its `:shortcode:`, so a Unicode reaction never names an image.
     static func reactionTags(content: String, emojiTag: [String]?) -> [[String]] {
