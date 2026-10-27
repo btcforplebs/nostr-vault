@@ -215,6 +215,7 @@ extension VaultView {
         let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
         let blacklist = configService.activeAccountBlockedHexPubkeys
+        let mutes = MuteListStore.shared.active
         let trusted = FeedService.shared.relayTabTrustedPubkeys()
 
         #if DEBUG
@@ -239,7 +240,9 @@ extension VaultView {
             if currentMode == .activity {
                 // MARK: - Vault (everything that came in)
                 let lines = VaultActivity.build(
-                    events: currentEvents.map {
+                    // Muted words, hashtags and threads: the mentions and replies,
+                    // and the likes and zaps on a muted thread.
+                    events: currentEvents.filter { $0.pubkey == owner || !mutes.hides(id: $0.id, content: $0.content, tags: $0.tags) }.map {
                         VaultActivity.Event(id: $0.id, pubkey: $0.pubkey, kind: $0.kind,
                                             createdAt: $0.created_at, content: $0.content, tags: $0.tags,
                                             images: $0.mediaURLs.filter(\.isImage))

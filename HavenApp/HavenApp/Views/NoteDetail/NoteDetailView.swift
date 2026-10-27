@@ -156,11 +156,13 @@ struct NoteDetailView: View {
     func threadReplies(in all: [FeedNote]) -> (visible: [FeedNote], outside: Int) {
         let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let blocked = configService.activeAccountBlockedHexPubkeys
+        let mutes = MuteListStore.shared.active
         let insiders = threadInsiders
         let replies = ThreadReplyVisibility.descendants(of: replyTargetId, in: all, id: \.id, parentId: \.parentEventId)
             .filter { n in
                 !FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: { byId[$0]?.pubkey })
                     && !FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
+                    && !mutes.hides(n)
             }
         if showsOutsideReplies { return (replies, 0) }
         var visible: [FeedNote] = []

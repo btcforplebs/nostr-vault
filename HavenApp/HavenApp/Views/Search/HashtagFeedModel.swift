@@ -162,6 +162,7 @@ final class HashtagFeedModel: ObservableObject {
 
         let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        let mutes = MuteListStore.shared.active
         for relay in relays {
             let client = WebSocketClient()
             client.isTemporary = true
@@ -177,7 +178,7 @@ final class HashtagFeedModel: ObservableObject {
             client.messageSubject
                 .receive(on: queue)
                 .compactMap { message -> FeedNote?? in
-                    Self.parse(message, subId: subId, blocked: blocked, tags: wantedTags, authors: wantedAuthors)
+                    Self.parse(message, subId: subId, blocked: blocked, mutes: mutes, tags: wantedTags, authors: wantedAuthors)
                 }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] parsed in
@@ -272,6 +273,7 @@ final class HashtagFeedModel: ObservableObject {
         }
         let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        let mutes = MuteListStore.shared.active
         let wantedTags = wantedTags
         let wantedAuthors = wantedAuthors
         for relay in relays {
@@ -290,7 +292,7 @@ final class HashtagFeedModel: ObservableObject {
             client.messageSubject
                 .receive(on: queue)
                 .compactMap { message -> FeedNote?? in
-                    Self.parse(message, subId: subId, blocked: blocked, tags: wantedTags, authors: wantedAuthors)
+                    Self.parse(message, subId: subId, blocked: blocked, mutes: mutes, tags: wantedTags, authors: wantedAuthors)
                 }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self, weak client] parsed in
@@ -553,7 +555,7 @@ final class HashtagFeedModel: ObservableObject {
     /// relay can send anything under any author.
     /// Only what was asked for: a relay can send validly signed posts that
     /// lack the tag, or come from people outside the requested authors.
-    nonisolated private static func parse(_ message: String, subId: String, blocked: Set<String>,
+    nonisolated private static func parse(_ message: String, subId: String, blocked: Set<String>, mutes: MuteList,
                                           tags wanted: Set<String>, authors: Set<String>?) -> FeedNote?? {
         guard let data = message.data(using: .utf8),
               let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
@@ -572,6 +574,7 @@ final class HashtagFeedModel: ObservableObject {
               authors.map({ $0.contains(pubkey) }) ?? true,
               tags.contains(where: { $0.count >= 2 && $0[0] == "t" && wanted.contains($0[1].lowercased()) }),
               !FeedNote.isNoiseOrSpam(content: content, tags: tags),
+              !mutes.hides(id: id, content: content, tags: tags),
               NostrEventVerifier.isValid(ev) else { return nil }
         return .some(FeedNote(id: id, pubkey: pubkey, content: content,
                               createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),

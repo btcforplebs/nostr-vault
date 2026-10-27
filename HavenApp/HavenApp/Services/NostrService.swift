@@ -121,6 +121,8 @@ class NostrService: ObservableObject {
         loadProfiles()
         updateOwnerHex()
         prefetchWhitelistedProfiles()
+        // The whole mute list, private part included, after this init returns.
+        DispatchQueue.main.async { MuteListStore.shared.start() }
 
         // React to active account switches — tear down old connections and event state.
         // Stored in configCancellable (not cancellables) so resetConnections() won't destroy it.

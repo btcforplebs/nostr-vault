@@ -149,9 +149,14 @@ final class LocalNotificationService {
             return
         }
 
+        // The relay knows only the public blocks; private ones, and muted
+        // words, hashtags and threads, are checked here.
+        if BlockedPeople.isBlocked(author, in: ConfigService.shared.blockedHexPubkeys(forAccount: npub)) { return }
         let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
         Task { @MainActor in
             let carried = await Self.carriedNotes(type: type, id: id)
+            if let raw = carried[NotificationNote.eventKey], let event = NotificationNote.decode(raw),
+               MuteListStore.shared.list(forHex: recipientHex).hides(id: event.id, content: event.content, tags: event.tags) { return }
             // The relay hands over the note's raw text, so a mention would read
             // `nostr:npub1…`. A reaction's preview is its emoji, not note text.
             let text = type == "reaction" ? preview : NostrContentFormatter.resolveMentionsPlainText(preview)
