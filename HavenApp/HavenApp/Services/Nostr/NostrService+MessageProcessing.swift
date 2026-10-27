@@ -116,31 +116,7 @@ extension NostrService {
             }
 
             if event.kind == 10000 {
-                let blockedHexKeys = ProfileRepository.parseMuteListPTags(event.tags)
-                let allNpubs = ConfigService.shared.allAccountNpubs
-                if let matchingNpub = allNpubs.first(where: { npub in
-                    Bech32.decode(npub)?.hexString == event.pubkey
-                }) {
-                    let blockedNpubs = ProfileRepository.hexKeysToNpubs(blockedHexKeys)
-                    let eventTimestamp = event.created_at
-                    DispatchQueue.main.async {
-                        let currentBlocks = ConfigService.shared.config.blockedNpubsPerAccount[matchingNpub] ?? []
-                        let lastSync = ConfigService.shared.config.blockedNpubsLastSyncTimestamp[matchingNpub] ?? 0
-
-                        if eventTimestamp >= lastSync && Set(currentBlocks) != Set(blockedNpubs) {
-                            ConfigService.shared.config.blockedNpubsPerAccount[matchingNpub] = blockedNpubs
-                            ConfigService.shared.config.blockedNpubsLastSyncTimestamp[matchingNpub] = eventTimestamp
-                            if matchingNpub == ConfigService.shared.config.ownerNpub {
-                                ConfigService.shared.config.blacklistedNpubs = blockedNpubs
-                            }
-                            ConfigService.shared.save()
-                            #if DEBUG
-                            print("NostrService: Synced \(blockedNpubs.count) blocks from Kind 10000 for \(matchingNpub.prefix(8))")
-                            #endif
-                            NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
-                        }
-                    }
-                }
+                applyOwnMuteList(event)
                 return
             }
 
