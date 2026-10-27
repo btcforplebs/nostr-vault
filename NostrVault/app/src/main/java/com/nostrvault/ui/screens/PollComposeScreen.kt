@@ -54,6 +54,7 @@ import com.nostrvault.ui.theme.WindowBackground
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /** When voting closes, counted from the moment Post is tapped. Twin of iOS PollComposeView.Closing. */
 internal enum class PollClosing(val label: String, val seconds: Long?) {
@@ -209,6 +210,7 @@ internal fun PollComposeScreen(onDone: () -> Unit, viewModel: ModeComposeViewMod
                 value = question,
                 onValueChange = { question = it },
                 label = { Text("Ask a question") },
+                keyboardOptions = ProseKeyboardOptions,
                 enabled = !busy,
                 maxLines = 4,
                 modifier = Modifier.fillMaxWidth(),
@@ -221,6 +223,7 @@ internal fun PollComposeScreen(onDone: () -> Unit, viewModel: ModeComposeViewMod
                         value = value,
                         onValueChange = { text -> options = options.toMutableList().also { it[index] = text } },
                         label = { Text("Option ${index + 1}") },
+                        keyboardOptions = ProseKeyboardOptions,
                         singleLine = true,
                         enabled = !busy,
                         modifier = Modifier.weight(1f),

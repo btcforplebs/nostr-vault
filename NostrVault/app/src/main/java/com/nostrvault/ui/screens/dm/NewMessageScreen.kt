@@ -54,6 +54,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /**
  * Compose a brand-new DM, picking a recipient by profile search or npub.
@@ -279,6 +280,7 @@ fun NewMessageScreen(
                     BasicTextField(
                         value = messageText,
                         onValueChange = viewModel::setMessageText,
+                        keyboardOptions = ProseKeyboardOptions,
                         textStyle = TextStyle(color = PrimaryText, fontSize = 15.sp),
                         cursorBrush = SolidColor(colors.primary),
                         modifier = Modifier

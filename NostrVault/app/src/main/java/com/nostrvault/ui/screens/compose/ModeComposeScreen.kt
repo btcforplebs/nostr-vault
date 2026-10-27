@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nostrvault.data.model.LongFormDraft
 import com.nostrvault.ui.theme.*
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -244,6 +245,7 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, minL
         label = { Text(label) },
         minLines = minLines,
         singleLine = minLines == 1,
+        keyboardOptions = ProseKeyboardOptions,
         modifier = Modifier.fillMaxWidth(),
     )
 }
