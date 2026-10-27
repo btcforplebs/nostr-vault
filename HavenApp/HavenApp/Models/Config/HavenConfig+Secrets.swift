@@ -24,18 +24,37 @@ extension HavenConfig {
         return out
     }
 
-    /// Fills in each client key the file left out from `stored`. A key the
-    /// file still holds (a config from before this build) wins: it is what
-    /// the session was running on.
+    /// Fills in each client key from `stored` (the keychain). The keychain
+    /// wins over the file: once a key is there, every save keeps it current,
+    /// so a different value in config.json was written by a build that could
+    /// not read the keychain. That build makes a fresh, unpaired key when it
+    /// finds the file blank (2.7.2 over 3.0.0, 2026-10-27), and the signer
+    /// refuses it. A key only the file holds (a config from before the
+    /// keychain, or one the keychain refused) is kept.
     mutating func attachNIP46ClientSecrets(_ stored: (String) -> String?) {
-        if nip46ClientSecretKey.isEmpty, let v = stored(Self.nip46ClientSecretAccount) {
+        if let v = stored(Self.nip46ClientSecretAccount), !v.isEmpty {
             nip46ClientSecretKey = v
         }
-        for npub in accountBunkerConfigs.keys where accountBunkerConfigs[npub]?.clientSecretKey.isEmpty == true {
-            if let v = stored(Self.nip46ClientSecretAccount(forNpub: npub)) {
+        for npub in accountBunkerConfigs.keys {
+            if let v = stored(Self.nip46ClientSecretAccount(forNpub: npub)), !v.isEmpty {
                 accountBunkerConfigs[npub]?.clientSecretKey = v
             }
         }
+    }
+
+    /// The client key an account's signer was paired with, when the live
+    /// config lost it: the account's own entry, then the keychain's copy for
+    /// that account. The shared slot in the keychain is used only for an
+    /// account with no entry of its own (the owner straight after setup); it
+    /// may hold another account's key otherwise. Nil: no paired key exists.
+    func pairedNIP46ClientSecret(forNpub npub: String, stored: (String) -> String?) -> String? {
+        if let cfg = accountBunkerConfigs[npub] {
+            if !cfg.clientSecretKey.isEmpty { return cfg.clientSecretKey }
+            if let v = stored(Self.nip46ClientSecretAccount(forNpub: npub)), !v.isEmpty { return v }
+            return nil
+        }
+        if let v = stored(Self.nip46ClientSecretAccount), !v.isEmpty { return v }
+        return nil
     }
 
     /// The config as written to disk: without each client key whose keychain
@@ -71,6 +90,11 @@ struct NIP46SecretSync {
             if synced[account] == value || store(value, account) {
                 synced[account] = value
                 held.insert(account)
+            } else if synced[account] != nil, delete(account) {
+                // The keychain refused the new key but still holds the old
+                // one, which would win at the next load: drop it, so the file
+                // (which keeps the new key) is the only copy.
+                synced[account] = nil
             }
         }
         for account in synced.keys where current[account] == nil {

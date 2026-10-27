@@ -171,6 +171,61 @@ final class KeysAtRestTests: XCTestCase {
         XCTAssertEqual(loaded.accountBunkerConfigs["npub1b"]?.clientSecretKey, "b-sk")
     }
 
+    /// 2.7.2 over 3.0.0 (LogePhone, 2026-10-27): the older build found the
+    /// file's keys blank, made a fresh unpaired one and saved it in the file.
+    /// Back on this build the paired keychain key must win, or the signer
+    /// keeps answering "Invalid or missing bunker secret".
+    func testThePairedKeychainKeyBeatsAnUnpairedFileKey() {
+        var config = HavenConfig.default
+        config.nip46ClientSecretKey = "fresh-unpaired-sk"
+        config.accountBunkerConfigs["npub1a"] = AccountBunkerConfig(bunkerURI: "bunker://x", clientSecretKey: "")
+        config.accountBunkerConfigs["npub1b"] = AccountBunkerConfig(bunkerURI: "bunker://y", clientSecretKey: "file-only-sk")
+        let keychain = ["nip46-client-secret": "paired-global-sk", "nip46-client-secret-npub1a": "paired-a-sk"]
+
+        config.attachNIP46ClientSecrets { keychain[$0] }
+
+        XCTAssertEqual(config.nip46ClientSecretKey, "paired-global-sk")
+        XCTAssertEqual(config.accountBunkerConfigs["npub1a"]?.clientSecretKey, "paired-a-sk")
+        XCTAssertEqual(config.accountBunkerConfigs["npub1b"]?.clientSecretKey, "file-only-sk",
+                       "a key only the file holds is kept")
+    }
+
+    /// The keychain refused a new key while holding the old one: the old one
+    /// goes, so it cannot win over the file's new key at the next load.
+    func testARefusedWriteDropsTheStaleKeychainCopy() {
+        var keychain = ["nip46-client-secret": "old-sk"]
+        var sync = NIP46SecretSync(synced: keychain)
+        let held = sync.sync(["nip46-client-secret": "new-sk"],
+                             store: { _, _ in false },
+                             delete: { keychain[$0] = nil; return true })
+        XCTAssertTrue(held.isEmpty, "the file keeps the new key")
+        XCTAssertTrue(keychain.isEmpty)
+
+        var config = HavenConfig.default
+        config.nip46ClientSecretKey = "new-sk"
+        config.attachNIP46ClientSecrets { keychain[$0] }
+        XCTAssertEqual(config.nip46ClientSecretKey, "new-sk")
+    }
+
+    /// A blank live key is never replaced by a fresh one while the account's
+    /// paired key can be found.
+    func testAPairedKeyIsFoundBeforeANewOneIsMade() {
+        var config = HavenConfig.default
+        config.ownerNpub = "npub1owner"
+        config.accountBunkerConfigs["npub1a"] = AccountBunkerConfig(bunkerURI: "bunker://x", clientSecretKey: "a-sk")
+        config.accountBunkerConfigs["npub1b"] = AccountBunkerConfig(bunkerURI: "bunker://y", clientSecretKey: "")
+        config.accountBunkerConfigs["npub1c"] = AccountBunkerConfig(bunkerURI: "bunker://z", clientSecretKey: "")
+        let keychain = ["nip46-client-secret": "shared-slot-sk", "nip46-client-secret-npub1b": "b-sk"]
+
+        XCTAssertEqual(config.pairedNIP46ClientSecret(forNpub: "npub1a") { keychain[$0] }, "a-sk")
+        XCTAssertEqual(config.pairedNIP46ClientSecret(forNpub: "npub1b") { keychain[$0] }, "b-sk")
+        XCTAssertNil(config.pairedNIP46ClientSecret(forNpub: "npub1c") { keychain[$0] },
+                     "the shared slot may be another account's key")
+        XCTAssertEqual(config.pairedNIP46ClientSecret(forNpub: "npub1owner") { keychain[$0] }, "shared-slot-sk",
+                       "an owner set up without an entry of its own uses the shared slot")
+        XCTAssertNil(HavenConfig.default.pairedNIP46ClientSecret(forNpub: "npub1owner") { _ in nil })
+    }
+
     func testARemovedSignerLeavesTheKeychain() {
         var keychain = ["nip46-client-secret-npub1a": "a-sk"]
         var sync = NIP46SecretSync(synced: keychain)
