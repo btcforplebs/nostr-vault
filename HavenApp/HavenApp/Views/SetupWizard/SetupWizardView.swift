@@ -111,10 +111,21 @@ struct SetupWizardView: View {
     private var pathSteps: [Int] {
         switch setupPath {
         case .none: return []
-        case .browse: return [2, 4, 8] // identity, import, done
         case .newToNostr: return [9, 10, 11, 8] // keys, password, profile, done (the Fill your feed guide finds people)
-        case .full: return isIOSDevice ? [2, 3, 4, 5, 6, 7, 8] : [2, 3, 4, 5, 6, 8]
-        case .useNostr: return [12, 14, 13] // your key, relay check, import tour
+        // Existing Nostr users: the Vault backup question comes before the relay import.
+        case .browse: return VaultBackupQuestion.steps(path: .browse, isIOS: isIOSDevice)
+        case .full: return VaultBackupQuestion.steps(path: .full, isIOS: isIOSDevice)
+        case .useNostr: return VaultBackupQuestion.steps(path: .useNostr, isIOS: isIOSDevice)
+        }
+    }
+
+    /// The path as the Vault backup question knows it; nil for a new account.
+    private var backupQuestionPath: VaultBackupQuestion.Path? {
+        switch setupPath {
+        case .useNostr: return .useNostr
+        case .full: return .full
+        case .browse: return .browse
+        case .none, .newToNostr: return nil
         }
     }
 
@@ -284,6 +295,11 @@ struct SetupWizardView: View {
                 bunkerURI: $bunkerURI,
                 onContinue: { goForward() }
             )
+        case VaultBackupQuestion.step:
+            VaultBackupQuestionStep(
+                onRestored: { answerBackupQuestion(.restored) },
+                onNo: { answerBackupQuestion(.no) }
+            )
         case 14:
             RelayCheckStep(npub: npub) { goForward() }
         case 13:
@@ -318,13 +334,10 @@ struct SetupWizardView: View {
     private func goForward() {
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
-            if currentStep == 12 && setupPath == .useNostr {
-                currentStep = 14 // your key → relay check
+            if let path = backupQuestionPath, VaultBackupQuestion.isAskedAfter(step: currentStep, path: path) {
+                currentStep = VaultBackupQuestion.step // → Do you have a Vault backup?
             } else if currentStep == 14 {
                 currentStep = 13 // relay check → import tour
-            } else if currentStep == 2 && setupPath == .browse {
-                // Browse mode: skip relay config, go to import step
-                currentStep = 4
             } else if currentStep == 4 && setupPath == .browse {
                 // Browse mode: after import, skip mirror/wallet/notifications — go to complete
                 currentStep = 8
@@ -347,16 +360,16 @@ struct SetupWizardView: View {
         withAnimation(WizardAnimations.springEnter) {
             if currentStep == 12 || currentStep == 9 || currentStep == 2 {
                 currentStep = 0 // Back to the front door
-            } else if currentStep == 14 {
-                currentStep = 12 // Relay check: back to your key
+            } else if currentStep == VaultBackupQuestion.step, let path = backupQuestionPath {
+                currentStep = VaultBackupQuestion.previous(path: path)
+            } else if currentStep == 14 || (currentStep == 4 && backupQuestionPath != nil) {
+                currentStep = VaultBackupQuestion.step // Relay import: back to the backup question
             } else if currentStep == 13 {
                 currentStep = 14 // Import tour: back to the relay check
             } else if currentStep == 11 {
                 currentStep = 10 // Profile: back to password
             } else if currentStep == 10 {
                 currentStep = 9 // Password: back to your keys
-            } else if currentStep == 4 && setupPath == .browse {
-                currentStep = 2 // Browse: back from import to identity (skip relay config)
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
                     currentStep = 11 // New to Nostr: back to profile
@@ -372,6 +385,19 @@ struct SetupWizardView: View {
             } else {
                 currentStep -= 1
             }
+        }
+    }
+
+    /// Yes (restored) skips the relay import; No goes on to it as before.
+    private func answerBackupQuestion(_ answer: VaultBackupQuestion.Answer) {
+        guard let path = backupQuestionPath else { return }
+        switch VaultBackupQuestion.next(after: answer, path: path) {
+        case .finish:
+            saveAndComplete()
+        case .step(let next):
+            direction = .forward
+            withAnimation(WizardAnimations.springEnter) { currentStep = next }
+            saveIntermediateConfig()
         }
     }
 

@@ -649,6 +649,37 @@ func RestoreDatabaseC(inputPath *C.char) (ret C.int) {
 	}))
 }
 
+// RestoreOwnBackupC is RestoreDatabaseC for setup: it refuses a backup that
+// holds no event signed by the owner, so someone else's backup is never
+// merged into a new vault. Returns 0 on success, 1 on failure, 2 when the
+// backup is not the owner's.
+//
+//export RestoreOwnBackupC
+func RestoreOwnBackupC(inputPath *C.char) (ret C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 own-backup restore recovered from panic: %v", r)
+			ret = 1
+		}
+	}()
+	goPath := C.GoString(inputPath)
+	config = loadConfig()
+	if config.OwnerPubKey == "" {
+		log.Println("🚫 own-backup restore: no owner set")
+		return 1
+	}
+	ours, err := zipHasEventBy(goPath, config.OwnerPubKey)
+	if err != nil {
+		log.Println("🚫 own-backup restore: cannot read backup:", err)
+		return 1
+	}
+	if !ours {
+		log.Println("🚫 own-backup restore: backup holds no event signed by the owner")
+		return 2
+	}
+	return RestoreDatabaseC(inputPath)
+}
+
 //export BackupToCloudC
 func BackupToCloudC() (ret C.int) {
 	defer func() {

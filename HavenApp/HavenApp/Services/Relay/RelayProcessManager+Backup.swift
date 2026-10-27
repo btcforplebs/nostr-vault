@@ -82,6 +82,19 @@ extension RelayProcessManager {
     }
 
     func runBackupRestore(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        runRestore(config: config, inputPath: inputPath, restore: { RestoreDatabaseC($0) }) { completion($0 == 0) }
+    }
+
+    /// Setup's restore: refuses a backup with no event signed by the owner
+    /// (code 2), so someone else's backup is never merged in. `completion`
+    /// gets RestoreOwnBackupC's code: 0 ok, 1 failed, 2 not the owner's.
+    func runOwnBackupRestore(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Int32) -> Void) {
+        runRestore(config: config, inputPath: inputPath, restore: { RestoreOwnBackupC($0) }, completion: completion)
+    }
+
+    private func runRestore(config: HavenConfig, inputPath: String,
+                            restore: @escaping @Sendable (UnsafeMutablePointer<CChar>) -> Int32,
+                            completion: @escaping @Sendable (Int32) -> Void) {
         enqueueLifecycle { [weak self] in
             guard let self else { return }
             let wasRunning = self.isRunning
@@ -89,18 +102,18 @@ extension RelayProcessManager {
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
             self.prepareEnvForBackup(config: config)
 
-            let success: Bool = await withCheckedContinuation { continuation in
+            let code: Int32 = await withCheckedContinuation { continuation in
                 DispatchQueue.global().async {
                     guard let cPath = strdup(inputPath) else {
-                        continuation.resume(returning: false)
+                        continuation.resume(returning: 1)
                         return
                     }
-                    let result = RestoreDatabaseC(cPath)
+                    let result = restore(cPath)
                     free(cPath)
-                    continuation.resume(returning: result == 0)
+                    continuation.resume(returning: result)
                 }
             }
-            completion(success)
+            completion(code)
             if wasRunning {
                 // Brief settle after a restore before reopening the DBs
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
