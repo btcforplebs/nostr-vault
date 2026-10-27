@@ -298,8 +298,13 @@ enum AccountSwitcherIdentity {
     /// System menus draw an image at its own size and drop SwiftUI modifiers,
     /// so the size and the circle are baked into the bitmap.
     static func menuIcon(pictureURL: URL?) -> PlatformImage? {
-        guard let url = pictureURL,
-              let image = AvatarImageCache.shared.image(for: url) else { return nil }
+        guard let url = pictureURL else { return nil }
+        if let kept = AccountMenuAvatars.shared.icons[url] { return kept }
+        guard let image = AvatarImageCache.shared.image(for: url) else { return nil }
+        return menuIcon(image)
+    }
+
+    static func menuIcon(_ image: PlatformImage) -> PlatformImage {
         #if os(macOS)
         let side: CGFloat = 18
         let size = NSSize(width: side, height: side)
@@ -327,18 +332,25 @@ enum AccountSwitcherIdentity {
     }
 }
 
-/// Starts loading every account's picture so a switcher menu has them when it
-/// opens. A menu builds its items from what is cached, and the cache is not
-/// observable, so this publishes once a picture lands and the menu rebuilds.
+/// Loads every account's picture so a switcher menu has them when it opens,
+/// and keeps the round icons itself. The shared avatar cache holds 300
+/// pictures, so scrolling a feed pushed the accounts' pictures out, and the
+/// menu fell back to the generic icon until the app restarted. A handful of
+/// 24 pt icons costs nothing to keep. A menu builds its items once, so this
+/// publishes when an icon lands and the menu rebuilds.
 final class AccountMenuAvatars: ObservableObject {
     static let shared = AccountMenuAvatars()
-    @Published private(set) var loaded: Set<URL> = []
+    @Published private(set) var icons: [URL: PlatformImage] = [:]
 
     func prefetch(_ urls: [URL]) {
-        for url in urls where !loaded.contains(url) {
+        let wanted = Set(urls)
+        if icons.keys.contains(where: { !wanted.contains($0) }) {
+            icons = icons.filter { wanted.contains($0.key) }
+        }
+        for url in wanted where icons[url] == nil {
             AvatarImageCache.shared.load(url: url) { [weak self] image in
-                guard image != nil else { return }
-                self?.loaded.insert(url)
+                guard let image else { return }
+                self?.icons[url] = AccountSwitcherIdentity.menuIcon(image)
             }
         }
     }
