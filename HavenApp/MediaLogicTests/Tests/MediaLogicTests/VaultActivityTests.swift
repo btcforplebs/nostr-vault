@@ -70,6 +70,22 @@ final class VaultActivityTests: XCTestCase {
         XCTAssertEqual(line.emojis, ["🔥", "+"])
     }
 
+    func testACustomEmojiReactionKeepsItsImageForTheRow() {
+        let url = "https://x.example/pepe.png"
+        let lines = build([
+            event("post", me, at: 100, content: "hi"),
+            event("r1", ann, kind: 7, at: 110, content: ":pepe:", tags: [["e", "post"], ["p", me], ["emoji", "pepe", url]]),
+            event("r2", bob, kind: 7, at: 120, content: ":untagged:", tags: [["e", "post"]]),
+        ])
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0].emojis, [":untagged:", ":pepe:"])
+        XCTAssertEqual(lines[0].customEmojis, ["pepe": CustomEmoji(shortcode: "pepe", url: url)])
+        // The row keeps the shortcode it can draw; text with no image is not kept.
+        XCTAssertEqual(CustomEmoji.shownShortcode(":pepe:", known: ["pepe"]), ":pepe:")
+        XCTAssertNil(CustomEmoji.shownShortcode(":untagged:", known: ["pepe"]))
+        XCTAssertNil(CustomEmoji.shownShortcode("🔥", known: ["pepe"]))
+    }
+
     func testReactionsToSomeoneElsesPostAreNotYours() {
         let lines = build([
             event("theirs", ann, at: 100),

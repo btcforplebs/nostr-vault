@@ -140,6 +140,8 @@ struct VaultActivityRow: View {
     var onImage: ((URL, [URL]) -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
+    /// Loaded images for the line's custom emoji, by URL.
+    @State private var emojiImages: [String: PlatformImage] = [:]
 
     private static let avatarLimit = 6
 
@@ -220,9 +222,15 @@ struct VaultActivityRow: View {
     }
 
     private var headline: some View {
-        (Text(who).fontWeight(.bold) + Text(" " + verb))
+        // A custom emoji reaction draws its image (NIP-30) once it has loaded.
+        (Text(who).fontWeight(.bold)
+            + CustomEmojiText.compose(AttributedString(" " + verb), emojis: line.customEmojis, images: emojiImages))
             .font(.appSystem(size: 15))
             .foregroundColor(.primary)
+            .task(id: line.customEmojis.values.map(\.url).sorted()) {
+                guard !line.customEmojis.isEmpty else { return }
+                emojiImages = await CustomEmojiText.loadImages(for: line.customEmojis, fontSize: 15)
+            }
     }
 
     /// Their words in full colour; your own post, when they only reacted to
@@ -293,7 +301,7 @@ struct VaultActivityRow: View {
         case .mention: return "mentioned you"
         case .quote: return "quoted your note"
         case .reaction:
-            let emojis = reactionEmojiSummary(line.emojis, limit: 3)
+            let emojis = reactionEmojiSummary(line.emojis, limit: 3, customShortcodes: Set(line.customEmojis.keys))
             return emojis == "❤️" ? "liked your note" : "reacted \(emojis) to your note"
         case .repost: return "reposted your note"
         case .zap:

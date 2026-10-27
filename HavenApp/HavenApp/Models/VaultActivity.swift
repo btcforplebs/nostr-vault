@@ -37,6 +37,8 @@ struct VaultActivity: Identifiable, Equatable {
     let preview: String
     /// Reactions only: the emoji, newest first, each once.
     var emojis: [String] = []
+    /// Reactions only: the NIP-30 images for `:shortcode:` emojis, by shortcode (first seen wins).
+    var customEmojis: [String: CustomEmoji] = [:]
     /// Zaps only: the total.
     var sats: Int64 = 0
     /// The pictures in the previewed note, in content order: theirs for a
@@ -45,6 +47,7 @@ struct VaultActivity: Identifiable, Equatable {
 
     static func == (a: VaultActivity, b: VaultActivity) -> Bool {
         a.id == b.id && a.actors == b.actors && a.createdAt == b.createdAt && a.sats == b.sats && a.emojis == b.emojis
+            && a.customEmojis == b.customEmojis
     }
 
     /// One zap from a receipt: who made it (the zap request's signer, never
@@ -102,15 +105,18 @@ struct VaultActivity: Identifiable, Equatable {
 
         var singles: [VaultActivity] = []
         // Folded lines, by kind and target: actors newest first.
-        var folds: [String: (kind: Kind, target: String, actors: [String], at: Int64, emojis: [String], sats: Int64)] = [:]
+        var folds: [String: (kind: Kind, target: String, actors: [String], at: Int64, emojis: [String], sats: Int64,
+                             custom: [String: CustomEmoji])] = [:]
         var seen = Set<String>()
 
-        func fold(_ kind: Kind, target: String, actor: String, at: Int64, emoji: String? = nil, sats: Int64 = 0) {
+        func fold(_ kind: Kind, target: String, actor: String, at: Int64, emoji: String? = nil, sats: Int64 = 0,
+                  custom: CustomEmoji? = nil) {
             let key = "\(kind)-\(target)"
-            var f = folds[key] ?? (kind, target, [], 0, [], 0)
+            var f = folds[key] ?? (kind, target, [], 0, [], 0, [:])
             f.actors.append(actor)
             f.at = max(f.at, at)
             if let emoji { f.emojis.append(emoji) }
+            if let custom, f.custom[custom.shortcode] == nil { f.custom[custom.shortcode] = custom }
             f.sats += sats
             folds[key] = f
         }
@@ -123,7 +129,8 @@ struct VaultActivity: Identifiable, Equatable {
                 guard !isBlocked(event.pubkey),
                       let target = firstTag("e", in: event.tags), myText[target] != nil else { continue }
                 fold(.reaction, target: target, actor: event.pubkey, at: event.createdAt,
-                     emoji: event.content.isEmpty ? "+" : event.content)
+                     emoji: event.content.isEmpty ? "+" : event.content,
+                     custom: CustomEmoji.forReaction(content: event.content, tags: event.tags))
                 continue
             }
 
@@ -183,7 +190,7 @@ struct VaultActivity: Identifiable, Equatable {
             VaultActivity(
                 id: key, kind: f.kind, actors: unique(f.actors), createdAt: f.at,
                 openId: f.target, preview: myText[f.target] ?? "",
-                emojis: unique(f.emojis), sats: f.sats, images: myImages[f.target] ?? [])
+                emojis: unique(f.emojis), customEmojis: f.custom, sats: f.sats, images: myImages[f.target] ?? [])
         }
 
         // Follows on one day fold into one line, like a notifications page.
