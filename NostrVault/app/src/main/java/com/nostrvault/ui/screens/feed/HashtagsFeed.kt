@@ -45,6 +45,7 @@ import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.HashtagSuggestions
+import com.nostrvault.service.InterestList
 import com.nostrvault.service.InterestListService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
@@ -190,6 +191,25 @@ class HashtagsFeedViewModel @Inject constructor(
                 _saving.value = _saving.value - tag
             }
         }
+    }
+
+    /**
+     * Follows every hashtag in [input] at once, as one published list.
+     * Returns what was read from it, so the field can keep what wasn't a tag.
+     */
+    fun followMany(input: String): InterestList.Parsed {
+        val parsed = InterestList.parseHashtags(input)
+        val tags = parsed.hashtags.filter { it !in followedTags.value && it !in _saving.value }
+        if (tags.isEmpty()) return parsed
+        _saving.value = _saving.value + tags
+        viewModelScope.launch {
+            try {
+                if (!interestListService.setFollowing(tags, true)) _followFailed.value = true
+            } finally {
+                _saving.value = _saving.value - tags.toSet()
+            }
+        }
+        return parsed
     }
 
     fun clearFollowFailed() { _followFailed.value = false }
@@ -442,6 +462,7 @@ internal fun HashtagsFeed(
         ),
         modifier = Modifier.fillMaxSize(),
     ) {
+        if (hasAccount) item(key = "hashtags-add") { AddHashtagsField(onAdd = viewModel::followMany) }
         if (followedTags.isNotEmpty()) item(key = "hashtags-chips") {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

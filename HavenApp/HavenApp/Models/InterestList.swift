@@ -31,6 +31,30 @@ struct InterestList: Codable, Equatable {
         return name.lowercased()
     }
 
+    /// What a post's #hashtag may be: letters, digits, `_`, at least one letter.
+    private static let hashtagPattern = try! NSRegularExpression(pattern: #"^[\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*$"#)
+    private static let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;#"))
+
+    /// Many hashtags typed or pasted at once ("#bitcoin #nostr, art" or one
+    /// per line), split on spaces, commas and '#'. `hashtags` are normalized,
+    /// in typed order, each once; `rejected` are the pieces that can't be a
+    /// hashtag ("#123", "c++"), as typed.
+    static func parseHashtags(_ input: String) -> (hashtags: [String], rejected: [String]) {
+        var hashtags: [String] = []
+        var seen = Set<String>()
+        var rejected: [String] = []
+        for piece in input.components(separatedBy: separators) where !piece.isEmpty {
+            let range = NSRange(piece.startIndex..., in: piece)
+            if hashtagPattern.firstMatch(in: piece, range: range) != nil {
+                let name = normalize(piece)
+                if seen.insert(name).inserted { hashtags.append(name) }
+            } else {
+                rejected.append(piece)
+            }
+        }
+        return (hashtags, rejected)
+    }
+
     /// Adds or removes one hashtag. Removing drops every case variant of it;
     /// everything else stays as it was.
     func setting(_ hashtag: String, followed: Bool) -> InterestList {

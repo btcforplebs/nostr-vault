@@ -190,6 +190,7 @@
 		25152CC40795124356403E17 /* MediaCacheService+Thumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27CE4B2C8531D50AE8C0E54 /* MediaCacheService+Thumbnails.swift */; };
 		2531814739AF65FD12D9E8AA /* VaultBackupQuestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A41A9364B207EA529A571A /* VaultBackupQuestion.swift */; };
 		25498E544190DB4D927C46F7 /* FeedNoteRow+NoteBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D82162127E3F681027E75B2 /* FeedNoteRow+NoteBody.swift */; };
+		254E08534536264DEAA5A164 /* AddHashtagsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AD262383BBB041A1931EF8 /* AddHashtagsField.swift */; };
 		254FBC3A28AC80DA7B7851F6 /* MarketplaceSellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE757A797972E778F02D705 /* MarketplaceSellView.swift */; };
 		25890D9712ADB87040AE6DBE /* ComposeView+Attachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD189D3728C9702A5C95D0E2 /* ComposeView+Attachments.swift */; };
 		25A894FF1DFCC84B17511AE0 /* SearchView+Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */; };
@@ -315,6 +316,7 @@
 		3CD06862A7872E34C7293253 /* LiveStatusService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 937CB610C3601ECF3B4BBD0E /* LiveStatusService.swift */; };
 		3CF633ADEDF48E775F9E1ABE /* MediaCacheService+Download.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51880D00BCBEDFB44A21F4EC /* MediaCacheService+Download.swift */; };
 		3D00F9E30D5216784C53ADDD /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8222A5F6E491EA57892ADC3 /* TrustMap.swift */; };
+		3D0E3867508389D59F2DBE94 /* AddHashtagsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AD262383BBB041A1931EF8 /* AddHashtagsField.swift */; };
 		3D71B8DAC40BC3DDCADB9B40 /* FeedLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2E558FEC2B0ED374B04E74 /* FeedLanguage.swift */; };
 		3D7D31F1738232081D005FD7 /* MediaPostQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */; };
 		3DF818A9990BDF480F1827BE /* BlockedPeople.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B8BF0CFACC02D638AEDA16 /* BlockedPeople.swift */; };
@@ -1507,6 +1509,7 @@
 		34514E56570393BEB67F9D54 /* MusicBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicBrowserView.swift; sourceTree = "<group>"; };
 		3479233DA13D1E79374B68FD /* MediaTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTabView.swift; sourceTree = "<group>"; };
 		34A3EE75F17D363C0E2C9E44 /* PublishTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublishTargets.swift; sourceTree = "<group>"; };
+		34AD262383BBB041A1931EF8 /* AddHashtagsField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddHashtagsField.swift; sourceTree = "<group>"; };
 		34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowView.swift; sourceTree = "<group>"; };
 		3530A78B65463AB53A515D98 /* FeedView+Toolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+Toolbar.swift"; sourceTree = "<group>"; };
 		3531FEF06A159858EBEB61A3 /* NostrVaultShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NostrVaultShare.entitlements; sourceTree = "<group>"; };
@@ -2098,6 +2101,7 @@
 		0D0EC42ECC4212D7E35F0A45 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				34AD262383BBB041A1931EF8 /* AddHashtagsField.swift */,
 				0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */,
 				68D53057E54E25FE7811AF00 /* Articles */,
 				7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */,
@@ -3416,6 +3420,7 @@
 				6BF25EB287DA24C1DE56166C /* ActionToastBanner.swift in Sources */,
 				89E68678D241ADE8DCCE1C00 /* AdaptiveGridLayout.swift in Sources */,
 				96642D69BFA041406EB6CA32 /* AddAccountSheetView.swift in Sources */,
+				3D0E3867508389D59F2DBE94 /* AddHashtagsField.swift in Sources */,
 				72EA2C8FEED5BD112DF6E461 /* AdvancedSettingsView.swift in Sources */,
 				390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */,
 				D10FC5CE1D299504F63FDAD2 /* AnimatedThumbnail.swift in Sources */,
@@ -4098,6 +4103,7 @@
 				D77C6C30CC8998E4A0341043 /* ActionToastBanner.swift in Sources */,
 				153EC819D98E2D7B186CF648 /* AdaptiveGridLayout.swift in Sources */,
 				9843970E4AFB5058A6BB47DD /* AddAccountSheetView.swift in Sources */,
+				254E08534536264DEAA5A164 /* AddHashtagsField.swift in Sources */,
 				4B4A991A7D0DBD612AC8595F /* AdvancedSettingsView.swift in Sources */,
 				0550886023E5A566CEFD6FC3 /* AnimatedImage.swift in Sources */,
 				FC7A7E5FE57DB163429FB829 /* AnimatedThumbnail.swift in Sources */,
