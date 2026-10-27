@@ -19,6 +19,15 @@ enum NostrURI: Equatable {
         self.init(string: url.absoluteString)
     }
 
+    /// What was pasted into a search field: a `nostr:` link, or the same
+    /// reference bare (`nevent1…`, `@npub1…`).
+    init?(pasted raw: String) {
+        var body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.hasPrefix("@") { body.removeFirst() }
+        if !body.lowercased().hasPrefix("nostr:") { body = "nostr:" + body }
+        self.init(string: body)
+    }
+
     init?(string raw: String) {
         var body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard body.lowercased().hasPrefix("nostr:") else { return nil }

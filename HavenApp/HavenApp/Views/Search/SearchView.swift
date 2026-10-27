@@ -384,7 +384,8 @@ struct SearchView: View {
             refreshDiscovery()
 
             guard let noteId = pendingDirectNoteId else { return }
-            if let note = notes.first(where: { $0.id == noteId }) {
+            // An naddr waits on a coordinate, which only findNote resolves.
+            if let note = notes.first(where: { $0.id == noteId }) ?? feedService.findNote(id: noteId) {
                 pendingDirectNoteId = nil
                 isSearching = false
                 openNote(note)
@@ -399,7 +400,7 @@ struct SearchView: View {
         }
         .onReceive(feedService.$parentNotesCache) { cache in
             guard let noteId = pendingDirectNoteId else { return }
-            if let note = cache[noteId] {
+            if let note = cache[noteId] ?? feedService.findNote(id: noteId) {
                 pendingDirectNoteId = nil
                 isSearching = false
                 openNote(note)
