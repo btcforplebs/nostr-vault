@@ -9,8 +9,6 @@ import com.nostrvault.relay.RelayForegroundService.Companion._relayStatus
 import com.nostrvault.relay.RelayForegroundService.LifecycleState
 import com.nostrvault.relay.RelayForegroundService.RelayStatus
 import java.io.File
-import java.net.InetSocketAddress
-import java.net.Socket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -41,16 +39,11 @@ import kotlinx.coroutines.withContext
                 delay(WATCHDOG_INTERVAL_MS)
                 if (lifecycleState != LifecycleState.RUNNING || isShuttingDown) break
 
+                // Our relay, not merely something on the port (RelayIdentity).
                 val alive = try {
                     withContext(Dispatchers.IO) {
-                        Socket().use { socket ->
-                            socket.connect(
-                                InetSocketAddress("127.0.0.1", currentRelayPort),
-                                WATCHDOG_PROBE_TIMEOUT_MS,
-                            )
-                        }
+                        RelayIdentity.answersAsOurs(currentRelayPort, WATCHDOG_PROBE_TIMEOUT_MS)
                     }
-                    true
                 } catch (_: Exception) {
                     false
                 }

@@ -14,7 +14,8 @@ import dagger.hilt.components.SingletonComponent
  * Auto-start the relay service when the device boots, and after an app
  * update: an update kills the process, and nothing else restarts the relay
  * until the app is next opened, so this vault and its mesh stay dark.
- * Honors the user's "Auto-start Relay" advanced setting.
+ * Honors the user's "Auto-start Relay" advanced setting, and never runs
+ * before setup is finished.
  * The FIPS mesh, if left on, comes back with it (RelayForegroundService.restoreMesh),
  * which is why the config is loaded here first: the mesh's allowlist comes from it.
  */
@@ -41,7 +42,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
         configStore.reload()
         val config = configStore.config.value
         // An external relay replaces the embedded one; there is nothing to boot.
-        val autoStartEnabled = config.autoStartRelay && !config.useExternalRelay
+        // Nor before setup is finished: a setup left half-way has no account
+        // and no relay choice yet (it may be meant for Citrine).
+        val autoStartEnabled = config.hasCompletedSetup && config.autoStartRelay && !config.useExternalRelay
 
         if (autoStartEnabled) {
             Log.i(TAG, "${intent.action} -- starting relay service")
