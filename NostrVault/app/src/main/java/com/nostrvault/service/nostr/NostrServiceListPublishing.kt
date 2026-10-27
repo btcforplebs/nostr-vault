@@ -106,8 +106,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val action = if (add.isEmpty()) "Unblock" else "Block"
         val cfg = configStore.config.value
         // The relays the mute list is read from at sign-in, so a block builds
-        // on the list another app last wrote, not an older copy.
-        val ask = (relayLists.value[author].orEmpty() + cfg.readRelays + NostrService.PROFILE_RELAYS).distinct()
+        // on the list another app last wrote, not an older copy, and the
+        // write relays editBase needs to hear from.
+        val ask = (cfg.writeRelays + relayLists.value[author].orEmpty() + cfg.readRelays + NostrService.PROFILE_RELAYS).distinct()
         val lookup = runCatching { lookupNewestReplaceable(10000, author, ask) }
             .getOrElse { NostrService.ReplaceableLookup(null, 0, 0) }
         // Private blocks stay in the encrypted content, never in the "p" tags.
