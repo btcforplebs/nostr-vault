@@ -109,3 +109,60 @@ enum NoteURLs {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
+
+/// How a collapsed note shows its text pieces and inline cards within one
+/// line budget, so cutting text into pieces keeps the 8-line clamp.
+enum NoteClamp {
+    enum Show: Equatable {
+        case full
+        case lines(Int)
+        case hidden
+
+        /// The `lineLimit` to draw a text piece with.
+        var lineLimit: Int? {
+            if case .lines(let n) = self { return n }
+            return nil
+        }
+    }
+
+    /// Lines in a text block `height` tall, given one line's height and the
+    /// spacing between lines.
+    static func lineCount(height: CGFloat, lineHeight: CGFloat, spacing: CGFloat) -> Int {
+        guard lineHeight > 0 else { return 0 }
+        return max(1, Int(((height + spacing) / (lineHeight + spacing)).rounded()))
+    }
+
+    /// One `Show` per segment, and whether anything was cut (for "Show more").
+    ///
+    /// Text spends the budget in reading order; the piece that runs over it is
+    /// clamped to what is left and everything after is hidden. A card costs no
+    /// lines — collapsed notes always showed their cards — but only draws if
+    /// the text before it fit. `lines[i]` is the measured line count of text
+    /// segment `i`; until it is known that piece takes the rest of the budget.
+    static func plan(_ segments: [NoteURLs.Segment], lines: [Int: Int], budget: Int) -> (shows: [Show], cut: Bool) {
+        var remaining = budget
+        var cut = false
+        var shows: [Show] = []
+        for (i, segment) in segments.enumerated() {
+            guard remaining > 0 else {
+                shows.append(.hidden)
+                cut = true
+                continue
+            }
+            switch segment {
+            case .link:
+                shows.append(.full)
+            case .text:
+                if let n = lines[i], n <= remaining {
+                    shows.append(.full)
+                    remaining -= n
+                } else {
+                    shows.append(.lines(remaining))
+                    if lines[i] != nil { cut = true }
+                    remaining = 0
+                }
+            }
+        }
+        return (shows, cut)
+    }
+}

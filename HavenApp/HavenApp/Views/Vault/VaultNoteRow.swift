@@ -23,15 +23,21 @@ struct NoteRow: View {
     @State var showingQuoters = false
     @State var isExpanded = false
     // "Show more" used to key off `cleanContent.count > 240` — a proxy that
-    // disagreed with the real 8-line clamp in both directions: a short note
-    // with several newlines could wrap past 8 lines with no button, and a
-    // long one-paragraph note under the char threshold... no, over it but
-    // still fitting in 8 lines got a button that revealed nothing new.
-    // These track the note's actual rendered height clamped vs. unclamped,
-    // so the button only appears when the clamp is actually cutting text.
-    @State var clampedContentHeight: CGFloat = 0
-    @State var fullContentHeight: CGFloat = 0
-    var isContentClamped: Bool { fullContentHeight > clampedContentHeight + 1 }
+    // disagreed with the real 8-line clamp in both directions. These are the
+    // rendered full heights of the note's text pieces (and of one line, at
+    // `lineHeightKey`), so the button only appears when the clamp cuts text.
+    @State var segmentHeights: [Int: CGFloat] = [:]
+    static let lineHeightKey = -1
+
+    /// Measured line count of each text piece, by segment index.
+    var measuredLines: [Int: Int] {
+        guard let line = segmentHeights[Self.lineHeightKey] else { return [:] }
+        var lines: [Int: Int] = [:]
+        for (i, height) in segmentHeights where i != Self.lineHeightKey {
+            lines[i] = NoteClamp.lineCount(height: height, lineHeight: line, spacing: 2)
+        }
+        return lines
+    }
 
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
