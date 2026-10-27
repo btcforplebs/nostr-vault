@@ -83,6 +83,7 @@ fun AvatarImage(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
+            .liveAvatarRing(pubkey, size)
             .size(size)
             .clip(CircleShape)
             .background(gradient),
