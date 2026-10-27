@@ -223,6 +223,22 @@ test("setBlock publishes nothing when one of the user's relays didn't answer and
   assert.equal(sent.length, 0)
 })
 
+test("a broadcast relay the kind 10002 names counts as the user's: silent there means nothing is signed", async () => {
+  const SNORT = "wss://relay.snort.social"
+  const relays = finalizeEvent({ kind: 10002, created_at: 50, tags: [["r", SNORT]], content: "" }, sk)
+  const vault = fakeVault()
+  const calls = [], sent = []
+  const ctx = ctxOf(vault, calls)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  const ask = async (url, f) => {
+    if (f.kinds[0] === 10002) return { events: url === "wss://purplepag.es" ? [relays] : [], answered: true }
+    return url === SNORT ? { events: [], answered: false } : { events: [], answered: true }
+  }
+  await assert.rejects(setBlock(ctx, B, { ask, publish: okPublish(sent) }), /Only \d+ of your \d+ relays answered/)
+  assert.deepEqual(calls, [], "not even signed"); assert.equal(sent.length, 0)
+})
+
 test("setBlock publishes nothing when the kind 10002 lookup times out", async () => {
   const vault = fakeVault()
   const calls = [], sent = []

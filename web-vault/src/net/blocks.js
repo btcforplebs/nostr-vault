@@ -260,7 +260,7 @@ async function listedRelays({ pubkey, relays, ask }) {
 /**
  * The newest kind 10000 from Haven's outbox and the network. The user's own relays are `relays` plus those its newest
  * kind 10002 names (listedRelays); purplepag.es and the broadcast relays a new list is also sent to are asked too but
- * don't count. `answered`: how many of the user's own relays sent their EOSE; `netFound`: one of them had a list;
+ * don't count unless that 10002 names them. `answered`: how many of the user's own relays sent their EOSE; `netFound`: one of them had a list;
  * `relaysKnown`: whether the 10002 is known (listedRelays), so the user's own relays are all of them.
  * `ask` is for tests. -> { base, asked, answered, netFound, relaysKnown }
  */
@@ -276,7 +276,7 @@ export async function findLatestBlockList({ vault, pubkey, relays, ask = askRela
   const more = listed.urls.filter(u => !first.includes(u))
   const urls = [...first, ...more]
   const replies = [...firstReplies, ...(await askAll(more))]
-  const own = uniq([...relays, ...more])
+  const own = uniq([...relays, ...listed.urls]) // a 10002 relay counts even when it was in `first` already
   const mine = i => own.includes(urls[i])
   const lists = r => r.events.filter(ev => ev?.kind === 10000 && ev.pubkey === pubkey && verifiedCopy(ev))
   const answered = replies.filter((r, i) => r.answered && mine(i)).length
