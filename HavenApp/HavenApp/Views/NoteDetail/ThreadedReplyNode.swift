@@ -148,10 +148,10 @@ struct ThreadedReplyNode: View {
     }
 
     // Per-note engagement helpers for this reply node
-    private func groupedReactionsForReply(_ noteId: String) -> [(emoji: String, count: Int)] {
+    private func groupedReactionsForReply(_ noteId: String) -> [ReactionGrouping.Group] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
-        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at, tags: $0.tags) }
+        return ReactionGrouping.groups(tagged: reactions)
     }
 
     private func zapTotalForReply(_ noteId: String) -> (count: Int, sats: Int64) {

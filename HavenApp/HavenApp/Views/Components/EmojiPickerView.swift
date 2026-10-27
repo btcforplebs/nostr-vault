@@ -1,12 +1,36 @@
 import SwiftUI
 
+/// The emoji picker. Reacting (`init(onSelect:)`), the editable quick bar
+/// comes first and the tabs start with Recents, the account's own custom
+/// emoji and each set it added (NIP-30/51, read only). Choosing the default
+/// reaction (`init(onSelectEmoji:)`) offers Unicode only, as before.
+/// Android: `EmojiPickerSheet.kt`.
 struct EmojiPickerView: View {
     @Environment(\.presentationMode) var presentationMode
-    let onSelectEmoji: (String) -> Void
-    
+    private let reacting: Bool
+    private let onSelect: (ReactionPick) -> Void
+
+    @ObservedObject private var palette = EmojiPaletteStore.shared
+    @ObservedObject private var emojiList = EmojiListService.shared
+
     @State private var searchText = ""
     @State private var customEmoji = ""
-    @State private var selectedCategory = "Smileys"
+    @State private var selectedCategory = ""
+    // Editing the quick bar: tap a slot, then any emoji to put there.
+    @State private var editingBar = false
+    @State private var editSlot: ReactionPick?
+
+    /// Reacting to a note: custom emoji and the quick bar included.
+    init(onSelect: @escaping (ReactionPick) -> Void) {
+        reacting = true
+        self.onSelect = onSelect
+    }
+
+    /// Choosing an emoji (the default reaction): Unicode only.
+    init(onSelectEmoji: @escaping (String) -> Void) {
+        reacting = false
+        onSelect = { onSelectEmoji($0.content) }
+    }
     
     // Standard quick reactions
     private let quickReactions = ["❤️", "👍", "🔥", "😂", "😮", "😢", "🎉", "🚀"]
@@ -61,21 +85,33 @@ struct EmojiPickerView: View {
         GridItem(.adaptive(minimum: 36, maximum: 44), spacing: 8)
     ]
     
-    // Filtered emojis based on search text
-    private var filteredEmojis: [String] {
-        if searchText.isEmpty {
-            return categories.first { $0.name == selectedCategory }?.emojis ?? []
+    private var tabs: [EmojiPickerTabs.Tab] {
+        let unicode = categories.map {
+            EmojiPickerTabs.Tab(name: $0.name, symbol: $0.icon, icon: nil, picks: $0.emojis.map { ReactionPick($0) })
         }
-        
+        return EmojiPickerTabs.build(categories: unicode, palette: palette.state, library: emojiList.library, reacting: reacting)
+    }
+
+    /// The tab shown: the one picked, or the first (Recents when there are any).
+    private var currentTab: String {
+        tabs.contains { $0.name == selectedCategory } ? selectedCategory : (tabs.first?.name ?? "Smileys")
+    }
+
+    // Filtered emojis based on search text
+    private var filteredEmojis: [ReactionPick] {
+        if searchText.isEmpty {
+            return tabs.first { $0.name == currentTab }?.picks ?? []
+        }
+        let custom = reacting ? EmojiPickerTabs.searchCustom(tabs, query: searchText) : []
         // Simple client-side search over all categories
-        return categories.flatMap { $0.emojis }.filter { emoji in
+        return custom + categories.flatMap { $0.emojis }.filter { emoji in
             // Because standard emoji databases are hard to embed, we check if they are in the search-defined category
             // or we allow custom emoji typing. Users can search for category names, or if search is exactly an emoji, we show it.
             if emoji == searchText { return true }
             
             // Basic tag search (English words mapped to categories)
             return isEmojiMatch(emoji: emoji, query: searchText.lowercased())
-        }
+        }.map { ReactionPick($0) }
     }
     
     var body: some View {
@@ -108,6 +144,17 @@ struct EmojiPickerView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     
                     // Quick Reactions Section
+                    if reacting {
+                        QuickBarRow(
+                            bar: EmojiPalette.orderedBar(palette.state),
+                            editing: editingBar,
+                            editSlot: editSlot,
+                            onToggleEdit: { editingBar.toggle(); editSlot = nil },
+                            onSlot: { slot in if editingBar { editSlot = slot } else { selectEmoji(slot) } }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                    } else {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Quick Reactions")
                             .font(.appSystem(size: 11, weight: .semibold, design: .monospaced))
@@ -117,7 +164,7 @@ struct EmojiPickerView: View {
                         HStack(spacing: 12) {
                             ForEach(quickReactions, id: \.self) { emoji in
                                 Button(action: {
-                                    selectEmoji(emoji)
+                                    selectEmoji(ReactionPick(emoji))
                                 }) {
                                     Text(emoji)
                                         .font(.appSystem(size: 26))
@@ -138,6 +185,7 @@ struct EmojiPickerView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
+                    }
                     
                     // Custom Input Section
                     VStack(alignment: .leading, spacing: 8) {
@@ -161,7 +209,7 @@ struct EmojiPickerView: View {
                             Button(action: {
                                 let trimmed = customEmoji.trimmingCharacters(in: .whitespacesAndNewlines)
                                 if !trimmed.isEmpty {
-                                    selectEmoji(trimmed)
+                                    selectEmoji(ReactionPick(trimmed))
                                 }
                             }) {
                                 Text("React")
@@ -220,26 +268,32 @@ struct EmojiPickerView: View {
                     if searchText.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(categories) { category in
+                                ForEach(tabs, id: \.name) { category in
+                                    let selected = currentTab == category.name
                                     Button(action: {
                                         withAnimation(Motion.pop) {
                                             selectedCategory = category.name
                                         }
                                     }) {
                                         HStack(spacing: 6) {
-                                            Image(systemName: category.icon)
-                                                .font(.appSystem(size: 11))
+                                            if let symbol = category.symbol {
+                                                Image(systemName: symbol)
+                                                    .font(.appSystem(size: 11))
+                                            } else if let icon = category.icon {
+                                                ReactionGlyph(icon, fontSize: 11)
+                                            }
                                             Text(category.name)
                                                 .font(.appSystem(size: 12, weight: .semibold))
+                                                .lineLimit(1)
                                         }
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
-                                        .foregroundColor(selectedCategory == category.name ? .white : .secondary)
-                                        .background(selectedCategory == category.name ? Color.havenPurple : Color.platformTertiaryGroupedBackground)
+                                        .foregroundColor(selected ? .white : .secondary)
+                                        .background(selected ? Color.havenPurple : Color.platformTertiaryGroupedBackground)
                                         .cornerRadius(8)
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 8)
-                                                .stroke(selectedCategory == category.name ? Color.havenPurple : Color.platformSeparator, lineWidth: 0.8)
+                                                .stroke(selected ? Color.havenPurple : Color.platformSeparator, lineWidth: 0.8)
                                         )
                                     }
                                     .buttonStyle(.plain)
@@ -251,7 +305,7 @@ struct EmojiPickerView: View {
                     
                     // Emojis Grid
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(searchText.isEmpty ? selectedCategory : "Search Results (\(filteredEmojis.count))")
+                        Text(searchText.isEmpty ? currentTab : "Search Results (\(filteredEmojis.count))")
                             .font(.appSystem(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.5)
@@ -269,12 +323,11 @@ struct EmojiPickerView: View {
                             .padding()
                         } else {
                             LazyVGrid(columns: columns, spacing: 10) {
-                                ForEach(filteredEmojis, id: \.self) { emoji in
+                                ForEach(Array(filteredEmojis.enumerated()), id: \.offset) { _, pick in
                                     Button(action: {
-                                        selectEmoji(emoji)
+                                        selectEmoji(pick)
                                     }) {
-                                        Text(emoji)
-                                            .font(.appSystem(size: 24))
+                                        ReactionGlyph(pick, fontSize: 24)
                                             .frame(width: 40, height: 40)
                                             // A clear background is not a hit
                                             // area; the corners were dead on the Mac.
@@ -297,16 +350,23 @@ struct EmojiPickerView: View {
         .frame(height: 520)
         .background(Color.platformSecondaryGroupedBackground)
         .cornerRadius(16)
+        .onAppear { if reacting { EmojiListService.shared.refresh() } }
     }
     
-    private func selectEmoji(_ emoji: String) {
+    private func selectEmoji(_ pick: ReactionPick) {
         // Haptic feedback
         #if os(iOS)
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
         #endif
-        
-        onSelectEmoji(emoji)
+
+        // Editing the quick bar: the pick goes in the chosen slot, the sheet stays.
+        if editingBar, let slot = editSlot {
+            palette.replaceSlot(slot, with: pick)
+            editSlot = nil
+            return
+        }
+        onSelect(pick)
         presentationMode.wrappedValue.dismiss()
     }
     

@@ -6,8 +6,10 @@ extension FeedNoteRow {
     /// happened, not a description of the resulting state, so it must not
     /// also fire when a like arrives from backfill or another client.
     /// The account's reaction as it should read on the button, if any.
-    private var shownReaction: String? {
+    /// A custom emoji stays its `:shortcode:`, so picking it again takes it back.
+    var shownReaction: String? {
         guard rowData.isLiked else { return nil }
+        if let mine = rowData.myReaction, let shortcode = CustomEmoji.loneShortcode(mine) { return ":\(shortcode):" }
         return reactionDisplayEmoji(rowData.myReaction ?? "+")
     }
 
@@ -19,13 +21,15 @@ extension FeedNoteRow {
         let shown = shownReaction
         let likes = rowData.engagement?.likes
         HStack(spacing: 4) {
-            if let shown, shown != "❤️" {
+            if let shown, let custom = EmojiPaletteStore.shared.custom(forContent: shown) {
+                CustomEmojiImage(emoji: custom, size: 18)
+            } else if let shown, shown != "❤️", !shown.hasPrefix(":") {
                 Text(shown)
                     .font(.system(size: 16))
             } else {
                 Image(systemName: shown == nil ? "heart" : "heart.fill")
                     .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(shown == nil ? .secondary : .red)
+                    .foregroundColor(shown == nil ? .secondary : shown == "❤️" ? .red : .accentColor)
             }
             countText(likes)
         }
@@ -86,14 +90,20 @@ extension FeedNoteRow {
     }
     #endif
 
-    /// Sends `emoji` as the reaction; picking the one already sent takes it back.
-    func pickReaction(_ emoji: String) {
-        if emoji == shownReaction {
+    /// Sends `pick` as the reaction; picking the one already sent takes it
+    /// back. Recents and the quick bar's order learn from what is sent.
+    func pickReaction(_ pick: ReactionPick) {
+        if pick.content == shownReaction {
             actions.unlikeNote(note)
-        } else {
-            actions.reactToNote(note, emoji)
-            Motion.firePulse($likePulse)
+            return
         }
+        EmojiPaletteStore.shared.recordUse(pick)
+        if let custom = pick.custom {
+            actions.reactWithCustom(note, custom)
+        } else {
+            actions.reactToNote(note, pick.content)
+        }
+        Motion.firePulse($likePulse)
     }
 
     private func toggleLike() {

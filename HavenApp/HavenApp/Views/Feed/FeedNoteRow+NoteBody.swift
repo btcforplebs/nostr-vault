@@ -101,11 +101,14 @@ extension FeedNoteRow {
             // Each link's card sits where the link was written, between the
             // text before and after it.
             let segments = NoteURLs.segments(bodySource.content, cards: LinkCards.shown(bodySource.linkURLs))
+            // NIP-30: only a note that tags custom emoji takes the image path.
+            let emojis = bodySource.content.contains(":") ? CustomEmoji.byShortcode(bodySource.tags) : [:]
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     switch segment {
                     case .text(let piece):
-                        Text(NostrContentFormatter.format(piece, mediaURLs: bodySource.mediaURLs, invoices: invoices))
+                        noteText(NostrContentFormatter.format(piece, mediaURLs: bodySource.mediaURLs, invoices: invoices),
+                                 emojis: emojis)
                             .font(.appSystem(size: 17, weight: .regular, design: .default))
                             .foregroundColor(Color(red: 1, green: 1, blue: 1))
                             .lineSpacing(2)
@@ -185,9 +188,7 @@ extension FeedNoteRow {
             if !rowData.zapsOnlyMode {
                 reactionButton
                     .popover(isPresented: $showingEmojiPicker) {
-                        EmojiPickerView { emoji in
-                            pickReaction(emoji)
-                        }
+                        EmojiPickerView(onSelect: { pickReaction($0) })
                         #if os(iOS)
                         .presentationDetents([.height(520)])
                         #endif
@@ -196,7 +197,7 @@ extension FeedNoteRow {
                     .popover(isPresented: $showingTapbackPopover, arrowEdge: .top) {
                         ReactionTapbackBar(
                             options: ReactionTapback.options(defaultContent: ConfigService.shared.config.defaultReactionEmoji),
-                            current: rowData.isLiked ? reactionDisplayEmoji(rowData.myReaction ?? "+") : nil,
+                            current: shownReaction,
                             highlighted: nil
                         ) { index in
                             showingTapbackPopover = false
@@ -303,5 +304,15 @@ extension FeedNoteRow {
         guard let value, value > 0, let engagement = rowData.engagement else { return "" }
         let lowerBound = engagement.isLowerBound && value >= PostEngagement.lowerBoundFrom
         return lowerBound ? "at least \(value) \(noun)" : "\(value) \(noun)"
+    }
+
+    /// A run of the note's text; with custom emoji it draws their images inline.
+    @ViewBuilder
+    func noteText(_ text: AttributedString, emojis: [String: CustomEmoji]) -> some View {
+        if emojis.isEmpty {
+            Text(text)
+        } else {
+            CustomEmojiText(text: text, emojis: emojis, fontSize: 17)
+        }
     }
 }

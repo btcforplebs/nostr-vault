@@ -160,11 +160,11 @@ struct AppearanceSettingsView: View {
         }
         .groupedFormStyleCompat()
         .sheet(isPresented: $showEmojiPicker) {
-            EmojiPickerView { emoji in
+            EmojiPickerView(onSelectEmoji: { emoji in
                 configService.config.defaultReactionEmoji = emoji
                 configService.save()
                 showEmojiPicker = false
-            }
+            })
         }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
