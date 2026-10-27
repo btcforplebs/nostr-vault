@@ -61,6 +61,7 @@ extern void SetAppForegroundC(int on);
 extern void UpdateBlacklistC(const char* npubsJSON);
 extern int BackupDatabaseC(const char* outputPath);
 extern int RestoreDatabaseC(const char* inputPath);
+extern int RestoreOwnBackupC(const char* inputPath);
 extern int BackupToCloudC(void);
 extern int RestoreFromCloudC(void);
 extern int ZipDirectoryC(const char* dirPath, const char* zipPath);
@@ -175,6 +176,14 @@ JNIEXPORT jint JNICALL
 Java_com_nostrvault_relay_HavenBridge_restoreDatabase(JNIEnv *env, jobject thiz, jstring inputPath) {
     const char *cPath = GET_CSTR(env, inputPath);
     int result = RestoreDatabaseC((char*)cPath);
+    REL_CSTR(env, inputPath, cPath);
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nostrvault_relay_HavenBridge_restoreOwnBackup(JNIEnv *env, jobject thiz, jstring inputPath) {
+    const char *cPath = GET_CSTR(env, inputPath);
+    int result = RestoreOwnBackupC((char*)cPath);
     REL_CSTR(env, inputPath, cPath);
     return result;
 }

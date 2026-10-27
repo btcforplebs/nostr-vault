@@ -144,10 +144,10 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `I already use Nostr is your key, relay check, import tour`() {
+    fun `I already use Nostr is your key, backup question, relay check, import tour`() {
         viewModel.setSetupPath(SetupPath.USE_NOSTR)
         assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
+            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
             viewModel.activeSteps.drop(2),
         )
     }
@@ -160,14 +160,14 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `a public key is read-only and goes to the relay check`() {
+    fun `a public key is read-only and goes to the backup question`() {
         viewModel.choosePath(SetupPath.USE_NOSTR)
         viewModel.advanceFromRelayChoice()
         assertEquals(WizardStep.USE_NOSTR_KEY, viewModel.step.value)
         viewModel.setUseNostrInput("nostr:npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m")
         viewModel.continueUseNostr()
 
-        assertEquals(WizardStep.RELAY_CHECK, viewModel.step.value)
+        assertEquals(WizardStep.BACKUP_QUESTION, viewModel.step.value)
         assertEquals("npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m", saved.ownerNpub)
         assertEquals("browse", saved.setupMode)
         assertEquals("browse", saved.signingMode)

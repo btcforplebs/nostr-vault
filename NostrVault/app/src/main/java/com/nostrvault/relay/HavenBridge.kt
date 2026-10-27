@@ -113,6 +113,14 @@ object HavenBridge {
      */
     external fun restoreDatabase(inputPath: String): Int
 
+    /**
+     * [restoreDatabase] for setup: refuses a backup that holds no valid event
+     * signed by the owner, so someone else's backup is never merged into a
+     * new vault. Returns 0 on success, 1 on failure, 2 when the backup is not
+     * the owner's (RestoreOwnBackupC).
+     */
+    external fun restoreOwnBackup(inputPath: String): Int
+
     /** Backup databases to configured cloud provider. */
     external fun backupToCloud(): Int
 

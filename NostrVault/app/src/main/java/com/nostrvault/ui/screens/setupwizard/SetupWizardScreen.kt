@@ -110,6 +110,7 @@ fun SetupWizardScreen(
                     WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
                     WizardStep.KEY_PASSWORD -> KeyPasswordStep(viewModel)
                     WizardStep.USE_NOSTR_KEY -> UseNostrKeyStep(viewModel)
+                    WizardStep.BACKUP_QUESTION -> BackupQuestionStep(viewModel, onComplete)
                     WizardStep.RELAY_CHECK -> RelayCheckStep(viewModel)
                     WizardStep.IMPORT_TOUR -> ImportTourStep(viewModel, onComplete)
                     WizardStep.PROFILE -> ProfileStep(viewModel)

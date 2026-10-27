@@ -55,7 +55,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
@@ -153,6 +153,10 @@ class SetupWizardViewModel @Inject constructor(
 
     internal val _importCompleted = MutableStateFlow(false)
     val importCompleted = _importCompleted.asStateFlow()
+
+    // "Do you have a Vault backup?"
+    internal val _backupQuestion = MutableStateFlow<VaultBackupQuestion.State>(VaultBackupQuestion.State.Ask)
+    val backupQuestion = _backupQuestion.asStateFlow()
 
     // Blossom
     internal val _blossomURL = MutableStateFlow("https://blossom.primal.net")
@@ -276,11 +280,12 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.COMPLETE,
     )
 
-    /** Steps for "I already use Nostr": your key, relay check, import tour.
-     *  The tour's Enter finishes setup, so there's no done screen. */
+    /** Steps for "I already use Nostr": your key, "Do you have a Vault
+     *  backup?", relay check, import tour. The tour's Enter finishes setup, so
+     *  there's no done screen; a restored backup finishes it at the question. */
     private val useNostrSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
-        WizardStep.USE_NOSTR_KEY, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
+        WizardStep.USE_NOSTR_KEY, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR,
     )
 
     /**
@@ -299,7 +304,7 @@ class SetupWizardViewModel @Inject constructor(
             return if (_useExternalRelay.value) {
                 // No import here, so "I already use Nostr" ends on the done screen.
                 val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA -
-                    WizardStep.RELAY_CHECK - WizardStep.IMPORT_TOUR
+                    WizardStep.BACKUP_QUESTION - WizardStep.RELAY_CHECK - WizardStep.IMPORT_TOUR
                 if (WizardStep.COMPLETE in withoutImport) withoutImport else withoutImport + WizardStep.COMPLETE
             } else {
                 steps
@@ -336,6 +341,7 @@ class SetupWizardViewModel @Inject constructor(
         _useNostrInput.value = ""
         _useNostrPassword.value = ""
         _useNostrConfirm.value = ""
+        _backupQuestion.value = VaultBackupQuestion.State.Ask
         _error.value = null
         _setupPath.value = path
         _step.value = WizardStep.RELAY_CHOICE
