@@ -106,8 +106,10 @@ struct FeedView: View {
         }
     }
 
+    /// `proxy` lets a tap that closes a bigger note above keep the tapped row
+    /// still; feeds without row tracking pass nil.
     @ViewBuilder
-    func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool, isExpanded: Bool) -> some View {
+    func feedNoteRowContent(note: FeedNote, profile: FeedProfile?, rowData: FeedNoteRowData, parentIsNext: Bool, isExpanded: Bool, proxy: ScrollViewProxy? = nil) -> some View {
         // The rank sits above the card, clear of the post's time and menu.
         VStack(alignment: .leading, spacing: 6) {
             if let ranked = popularRank(of: note) {
@@ -131,10 +133,7 @@ struct FeedView: View {
                 isReplyToNext: parentIsNext,
                 useCompactMode: isCompactModeActive,
                 isExpanded: isExpanded,
-                onTapRow: {
-                    // Toggle expansion: if already expanded, collapse it; otherwise expand it
-                    expandedNoteId = (expandedNoteId == note.id) ? nil : note.id
-                }
+                onTapRow: { toggleExpandedNote(note.id, proxy: proxy) }
             )
         }
         .padding(.horizontal, isCompactModeActive && !isExpanded ? 8 : 16)
