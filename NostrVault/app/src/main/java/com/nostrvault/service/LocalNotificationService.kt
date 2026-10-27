@@ -85,7 +85,10 @@ class LocalNotificationService @Inject constructor(
         /** How long a DM marker waits for the inbox to decrypt its message. */
         private const val DM_OPEN_TIMEOUT_MS = 3_000L
         private const val CARRIED_LOOKUP_TIMEOUT_MS = 1_500L
-        private const val FOLLOW_PROFILE_TIMEOUT_MS = 3_000L
+        // How long an alert waits for its author's name, picture and note (iOS NotificationReadiness).
+        private const val AUTHOR_PROFILE_TIMEOUT_MS = 3_000L
+        private const val AUTHOR_AVATAR_TIMEOUT_MS = 2_000L
+        private const val NOTE_READY_TIMEOUT_MS = 3_000L
         /**
          * The wait while a DM thread is open: a slow decrypt there (Amber) must
          * end with the message appearing in the thread, not a generic alert first.
@@ -385,12 +388,16 @@ class LocalNotificationService @Inject constructor(
             return
         }
 
-        val profiles = nostrService.get().profiles.value
-        val profile = if (author.length == 64) profiles[author] else null
-        val shown = notePreview(type, preview, profiles)
-        val (title, text) = buildContent(type, profile?.bestName, shown)
         scope.launch {
-            val carried = carriedNotes(type, id)
+            // Not before the note and its author can show (iOS NotificationReadiness).
+            val carried = withTimeoutOrNull(NOTE_READY_TIMEOUT_MS) {
+                var found = carriedNotes(type, id)
+                while (NotificationNote.EVENT_EXTRA !in found) { delay(250); found = carriedNotes(type, id) }
+                found
+            } ?: emptyMap()
+            val profile = awaitAuthor(author)
+            val shown = notePreview(type, preview, nostrService.get().profiles.value)
+            val (title, text) = buildContent(type, profile?.bestName, shown)
             deliver(InAppBanner(id, title, text, type, author, npub, profile?.pictureURL, carried))
         }
     }
@@ -535,17 +542,29 @@ class LocalNotificationService @Inject constructor(
     private fun announceFollow(follower: String, npub: String) {
         if (follower.length != 64) return
         scope.launch {
-            val nostr = nostrService.get()
-            if (nostr.profiles.value[follower] == null) {
-                nostr.fetchMissingProfiles(listOf(follower))
-                withTimeoutOrNull(FOLLOW_PROFILE_TIMEOUT_MS) {
-                    while (nostr.profiles.value[follower] == null) delay(250)
-                }
-            }
-            val profile = nostr.profiles.value[follower]
+            val profile = awaitAuthor(follower)
             val (title, text) = buildContent("follow", profile?.bestName, "")
             deliver(InAppBanner(follower, title, text, "follow", follower, npub, profile?.pictureURL))
         }
+    }
+
+    /**
+     * The author's profile once it has loaded, its picture fetched into the
+     * image cache, each wait bounded: an alert names a person the app can
+     * already draw. Null when the profile never arrives.
+     */
+    private suspend fun awaitAuthor(pubkey: String): FeedProfile? {
+        if (pubkey.length != 64) return null
+        val nostr = nostrService.get()
+        if (nostr.profiles.value[pubkey] == null) {
+            nostr.fetchMissingProfiles(listOf(pubkey))
+            withTimeoutOrNull(AUTHOR_PROFILE_TIMEOUT_MS) {
+                while (nostr.profiles.value[pubkey] == null) delay(250)
+            }
+        }
+        val profile = nostr.profiles.value[pubkey]
+        withTimeoutOrNull(AUTHOR_AVATAR_TIMEOUT_MS) { loadAvatar(profile?.pictureURL) }
+        return profile
     }
 
     /** Serialises the folded alert's read-then-replace, so two strangers arriving together both count. */
@@ -660,8 +679,8 @@ class LocalNotificationService @Inject constructor(
                 if (appInForeground && dms.visibleConversation == opened.first) return@launch
             }
             val sender = opened?.second?.senderPubkey ?: author
+            val profile = awaitAuthor(sender)
             val profiles = nostrService.get().profiles.value
-            val profile = if (sender.length == 64) profiles[sender] else null
             val text = opened?.second?.content
                 ?.let { dmPreview(NostrMentions.toPlainText(it, profiles)) }.orEmpty()
             val (title, body) = buildContent(type, profile?.bestName, text)

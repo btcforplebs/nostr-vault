@@ -152,9 +152,10 @@ final class LocalNotificationService {
         // The relay knows only the public blocks; private ones, and muted
         // words, hashtags and threads, are checked here.
         if BlockedPeople.isBlocked(author, in: ConfigService.shared.blockedHexPubkeys(forAccount: npub)) { return }
-        let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
         Task { @MainActor in
-            let carried = await Self.carriedNotes(type: type, id: id)
+            // Not before the note and its author can show (NotificationReadiness).
+            let carried = await Self.awaitRenderable(type: type, id: id, author: author)
+            let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
             if let raw = carried[NotificationNote.eventKey], let event = NotificationNote.decode(raw),
                MuteListStore.shared.list(forHex: recipientHex).hides(id: event.id, content: event.content, tags: event.tags) { return }
             // The relay hands over the note's raw text, so a mention would read
@@ -173,7 +174,7 @@ final class LocalNotificationService {
     /// post it was on, as userInfo entries (see `NotificationNote`). Read from
     /// this device's relay, which stored the event before raising the marker.
     /// Empty when the relay does not answer; the tap then loads by id.
-    private static func carriedNotes(type: String, id: String) async -> [String: String] {
+    static func carriedNotes(type: String, id: String) async -> [String: String] {
         var carried: [String: String] = [:]
         let found = await localEvents(ids: [id])
         guard let event = found[id] else { return carried }
@@ -262,23 +263,14 @@ final class LocalNotificationService {
         }
     }
 
-    /// How long a follow notification waits for the follower's profile.
-    private static let followProfileTimeout: TimeInterval = 3
-
     /// A new follower is usually a stranger whose profile isn't loaded yet;
     /// "Someone followed you" says nothing, so fetch the name first. The
     /// follower's pubkey rides as the id so a tap can open their profile.
     private func announceFollow(follower: String, npub: String) {
         Task { @MainActor in
-            let nostr = NostrService.shared
-            if nostr.profiles[follower] == nil {
-                nostr.fetchMissingProfiles(for: [follower])
-                let deadline = Date().addingTimeInterval(Self.followProfileTimeout)
-                while nostr.profiles[follower] == nil, Date() < deadline {
-                    try? await Task.sleep(for: .milliseconds(250))
-                }
-            }
-            deliver(id: follower, type: "follow", name: nostr.profiles[follower]?.bestName, preview: "", npub: npub)
+            await Self.awaitAuthor(follower)
+            deliver(id: follower, type: "follow", name: NostrService.shared.profiles[follower]?.bestName,
+                    preview: "", npub: npub)
         }
     }
 
@@ -372,6 +364,7 @@ final class LocalNotificationService {
                 if appInForeground, DMService.shared.visibleConversation == opened.conversationId { return }
             }
             let sender = opened?.message.senderPubkey ?? author
+            await Self.awaitAuthor(sender)
             let name = sender.isEmpty ? nil : NostrService.shared.profiles[sender]?.bestName
             let text = opened.flatMap {
                 NotificationPolicy.dmPreview(NostrContentFormatter.resolveMentionsPlainText($0.message.content))
