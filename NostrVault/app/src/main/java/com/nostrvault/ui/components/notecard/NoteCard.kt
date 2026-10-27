@@ -469,11 +469,12 @@ fun NoteCard(
                     lineHeight = 24.sp,
                     onTranslationClick = { onNoteClick(note.id) },
                 ) {
-                    NostrContentText(
+                    // Each link's card sits where the link was written (iOS #1246).
+                    NoteTextWithLinkCards(
                         content = invoiceBody,
+                        cards = note.cardLinkURLs,
                         profiles = profiles,
                         mediaURLs = mediaSet,
-                        linkURLs = linkSet,
                         fontSize = 17.sp,
                         lineHeight = 24.sp,
                         onProfileClick = onProfileClick,
@@ -493,10 +494,12 @@ fun NoteCard(
                 )
             }
 
-            // One card per link. The URLs are out of the text above, so a
-            // card is the only place each link still shows — quotes or not.
-            // Not for an article: its links and images belong to the reader.
-            if (!isArticle) for (link in note.cardLinkURLs) {
+            // One card per link for a poll or a highlight, whose text is not
+            // drawn by NoteTextWithLinkCards above. Text notes draw theirs
+            // inline. Not for an article: its links and images belong to the reader.
+            val cardsInline = repostPlaceholder == null && !isArticle && note.displayKind != FeedHighlight.KIND &&
+                poll == null && invoiceBody.isNotBlank()
+            if (!isArticle && !cardsInline) for (link in note.cardLinkURLs) {
                 Spacer(Modifier.height(8.dp))
                 LinkPreviewCard(
                     url = link,

@@ -47,6 +47,8 @@ fun SearchScreen(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
     onCompose: () -> Unit,
+    /** Where a pasted naddr1 opens (the address screen asks the user's relays). */
+    onAddressClick: (String) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val query by viewModel.query.collectAsState()
@@ -140,6 +142,7 @@ fun SearchScreen(
             when (result) {
                 is SearchViewModel.DirectLookupResult.NavigateToNote -> onNoteClick(result.noteId)
                 is SearchViewModel.DirectLookupResult.NavigateToProfile -> onProfileClick(result.pubkey)
+                is SearchViewModel.DirectLookupResult.NavigateToAddress -> onAddressClick(result.naddr)
             }
         }
     }

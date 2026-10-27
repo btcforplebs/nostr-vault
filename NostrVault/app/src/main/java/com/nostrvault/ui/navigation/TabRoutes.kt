@@ -111,6 +111,9 @@ internal fun NavGraphBuilder.tabRoutes(
             onCompose = {
                 navController.navigate(Screen.ComposeNote.createRoute())
             },
+            onAddressClick = { naddr ->
+                navController.navigate(Screen.AddressLink.createRoute(naddr))
+            },
         )
         }
     }

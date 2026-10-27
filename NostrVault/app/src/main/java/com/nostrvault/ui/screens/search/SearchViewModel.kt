@@ -7,13 +7,14 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.BareNostrRefs
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
+import com.nostrvault.data.model.QuoteRef
 import com.nostrvault.data.model.SearchFilter
 import com.nostrvault.data.model.SearchSourceState
 import com.nostrvault.service.GlobalSearchSession
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.InterestListService
@@ -78,6 +79,8 @@ class SearchViewModel @Inject constructor(
     sealed class DirectLookupResult {
         data class NavigateToNote(val noteId: String) : DirectLookupResult()
         data class NavigateToProfile(val pubkey: String) : DirectLookupResult()
+        /** A pasted naddr1: an article or other addressable event, by its bech32. */
+        data class NavigateToAddress(val naddr: String) : DirectLookupResult()
     }
 
     private val _query = MutableStateFlow("")
@@ -259,18 +262,13 @@ class SearchViewModel @Inject constructor(
         searchJob?.cancel()
         stopSession()
 
-        val trimmed = text.trim()
-        val lower = trimmed.lowercase()
-
-        // Bech32 direct lookup: note1 / nevent1
-        if (lower.startsWith("note1") || lower.startsWith("nevent1")) {
-            val eventId = when {
-                lower.startsWith("note1") -> HavenBridge.decodeNote(trimmed)
-                else -> HavenBridge.decodeNevent(trimmed)
-            }
-            if (eventId != null) {
-                val existing = feedService.findNote(eventId)
-                if (existing != null) {
+        // A pasted note, article or profile reference opens it — `nostr:` or
+        // bare, note1/nevent1/naddr1/npub1/nprofile1, an optional `@` (iOS
+        // #1250). One that does not decode searches as text.
+        when (val target = BareNostrRefs.pastedTarget(text)) {
+            is BareNostrRefs.Target.Note -> {
+                val eventId = target.id
+                if (feedService.findNote(eventId) != null) {
                     _pendingNoteId.value = null
                     _directLookup.tryEmit(DirectLookupResult.NavigateToNote(eventId))
                 } else {
@@ -289,22 +287,26 @@ class SearchViewModel @Inject constructor(
                 }
                 return
             }
-        }
-
-        // Not a note ID (or one that didn't decode): no note is being looked up,
-        // so "Looking up note..." can't show over an ordinary search.
-        _pendingNoteId.value = null
-
-        // Bech32 direct lookup: npub1
-        if (lower.startsWith("npub1")) {
-            val hexPubkey = HavenBridge.decodeNpub(trimmed)
-            if (hexPubkey != null) {
-                val profile = profiles.value[hexPubkey] ?: FeedProfile(pubkey = hexPubkey)
-                _results.value = GlobalSearchResults(profiles = listOf(profile))
+            is BareNostrRefs.Target.Address -> if (QuoteRef.isLinkableKind(target.coordinate.kind)) {
+                _pendingNoteId.value = null
                 _isSearching.value = false
+                _directLookup.tryEmit(DirectLookupResult.NavigateToAddress(target.naddr))
                 return
             }
+            is BareNostrRefs.Target.Profile -> {
+                _pendingNoteId.value = null
+                val profile = profiles.value[target.pubkey] ?: FeedProfile(pubkey = target.pubkey)
+                _results.value = GlobalSearchResults(profiles = listOf(profile))
+                _isSearching.value = false
+                _directLookup.tryEmit(DirectLookupResult.NavigateToProfile(target.pubkey))
+                return
+            }
+            null -> {}
         }
+
+        // Not a reference that decodes: no note is being looked up, so
+        // "Looking up note..." can't show over an ordinary search.
+        _pendingNoteId.value = null
 
         // Standard search path
         if (text.length >= 2) {
