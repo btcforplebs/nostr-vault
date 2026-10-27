@@ -24,22 +24,46 @@ extension HavenConfig {
         return out
     }
 
-    /// Fills in each client key from `stored` (the keychain). The keychain
-    /// wins over the file: once a key is there, every save keeps it current,
-    /// so a different value in config.json was written by a build that could
-    /// not read the keychain. That build makes a fresh, unpaired key when it
-    /// finds the file blank (2.7.2 over 3.0.0, 2026-10-27), and the signer
-    /// refuses it. A key only the file holds (a config from before the
-    /// keychain, or one the keychain refused) is kept.
-    mutating func attachNIP46ClientSecrets(_ stored: (String) -> String?) {
-        if let v = stored(Self.nip46ClientSecretAccount), !v.isEmpty {
-            nip46ClientSecretKey = v
+    /// Fills in each client key from `stored` (the keychain). Where the
+    /// keychain and config.json disagree, the key the signer was paired with
+    /// wins, told by the pubkey the pairing saved (`clientPubkey`), which
+    /// stays in the file:
+    /// - a file key that is not the paired one was made by a build that could
+    ///   not read the keychain, found the file blank and made a fresh key
+    ///   (2.7.2 over 3.0.0, LogePhone 2026-10-27): the keychain wins;
+    /// - a file key that is the paired one comes from pairing again on such a
+    ///   build: the file wins, and the next save stores it.
+    /// When the pubkeys can't decide (none saved, or the file key isn't it),
+    /// the keychain wins. A key only the file holds is kept. `pubkeyOf`
+    /// derives a key's hex pubkey. Returns the file keys that lost, so their
+    /// plaintext copies can be scrubbed.
+    @discardableResult
+    mutating func attachNIP46ClientSecrets(_ stored: (String) -> String?,
+                                           pubkeyOf: (String) -> String?) -> [String] {
+        var dropped: [String] = []
+        func pick(file: String, keychain: String?, paired: String) -> String {
+            guard let keychain, !keychain.isEmpty, keychain != file else { return file }
+            guard !file.isEmpty else { return keychain }
+            let pairedLower = paired.lowercased()
+            if !pairedLower.isEmpty, pubkeyOf(file)?.lowercased() == pairedLower { return file }
+            dropped.append(file)
+            return keychain
         }
-        for npub in accountBunkerConfigs.keys {
-            if let v = stored(Self.nip46ClientSecretAccount(forNpub: npub)), !v.isEmpty {
-                accountBunkerConfigs[npub]?.clientSecretKey = v
-            }
+        // The shared slot mirrors the active account: its entry's pubkey is
+        // the paired one. nip46ClientPubkey is rewritten along with a fresh
+        // key, so it is used only for an owner with no entry yet.
+        let activeNpub = activeAccountNpub.isEmpty ? ownerNpub : activeAccountNpub
+        let sharedPaired = accountBunkerConfigs[activeNpub]?.clientPubkey ?? nip46ClientPubkey
+        nip46ClientSecretKey = pick(file: nip46ClientSecretKey,
+                                    keychain: stored(Self.nip46ClientSecretAccount),
+                                    paired: sharedPaired)
+        for (npub, cfg) in accountBunkerConfigs {
+            accountBunkerConfigs[npub]?.clientSecretKey = pick(
+                file: cfg.clientSecretKey,
+                keychain: stored(Self.nip46ClientSecretAccount(forNpub: npub)),
+                paired: cfg.clientPubkey)
         }
+        return dropped
     }
 
     /// The client key an account's signer was paired with, when the live

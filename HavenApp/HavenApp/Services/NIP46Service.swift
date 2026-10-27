@@ -84,6 +84,9 @@ class NIP46Service: ObservableObject {
         if config.nip46ClientSecretKey.isEmpty,
            let paired = config.pairedNIP46ClientSecret(forNpub: keyNpub, stored: { CredentialStore.get(account: $0) }) {
             ConfigService.shared.config.nip46ClientSecretKey = paired
+            if let pubkey = ConfigService.nip46ClientPubkey(ofSecret: paired) {
+                ConfigService.shared.config.nip46ClientPubkey = pubkey
+            }
             ConfigService.shared.save()
             RelayProcessManager.shared.addLog("NIP-46: using the stored app key for this signer", level: "INFO")
         } else if config.nip46ClientSecretKey.isEmpty {

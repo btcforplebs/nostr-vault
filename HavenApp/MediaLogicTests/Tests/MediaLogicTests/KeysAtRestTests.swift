@@ -143,6 +143,9 @@ final class KeysAtRestTests: XCTestCase {
 
     // MARK: - NIP-46 client keys out of config.json
 
+    /// Stand-in key-to-pubkey: deterministic, and distinct per key.
+    private func pub(_ secret: String) -> String? { secret.isEmpty ? nil : "pub-\(secret)" }
+
     func testClientKeysLeaveTheFileOnlyOnceTheKeychainHoldsThem() throws {
         var config = HavenConfig.default
         config.nip46ClientSecretKey = "global-sk"
@@ -165,29 +168,81 @@ final class KeysAtRestTests: XCTestCase {
 
         // Next launch: the file has no keys; the keychain fills them back in.
         var loaded = try JSONDecoder().decode(HavenConfig.self, from: Data(disk.utf8))
-        loaded.attachNIP46ClientSecrets { keychain[$0] }
+        loaded.attachNIP46ClientSecrets({ keychain[$0] }, pubkeyOf: pub)
         XCTAssertEqual(loaded.nip46ClientSecretKey, "global-sk")
         XCTAssertEqual(loaded.accountBunkerConfigs["npub1a"]?.clientSecretKey, "a-sk")
         XCTAssertEqual(loaded.accountBunkerConfigs["npub1b"]?.clientSecretKey, "b-sk")
     }
 
     /// 2.7.2 over 3.0.0 (LogePhone, 2026-10-27): the older build found the
-    /// file's keys blank, made a fresh unpaired one and saved it in the file.
-    /// Back on this build the paired keychain key must win, or the signer
-    /// keeps answering "Invalid or missing bunker secret".
+    /// file's keys blank, made a fresh unpaired one and saved it in the file
+    /// (with its own nip46ClientPubkey). Back on this build the paired
+    /// keychain key must win, or the signer keeps answering "Invalid or
+    /// missing bunker secret".
     func testThePairedKeychainKeyBeatsAnUnpairedFileKey() {
         var config = HavenConfig.default
+        config.ownerNpub = "npub1a"
         config.nip46ClientSecretKey = "fresh-unpaired-sk"
-        config.accountBunkerConfigs["npub1a"] = AccountBunkerConfig(bunkerURI: "bunker://x", clientSecretKey: "")
-        config.accountBunkerConfigs["npub1b"] = AccountBunkerConfig(bunkerURI: "bunker://y", clientSecretKey: "file-only-sk")
-        let keychain = ["nip46-client-secret": "paired-global-sk", "nip46-client-secret-npub1a": "paired-a-sk"]
+        config.nip46ClientPubkey = "pub-fresh-unpaired-sk"
+        config.accountBunkerConfigs["npub1a"] = AccountBunkerConfig(bunkerURI: "bunker://x", clientSecretKey: "",
+                                                                    clientPubkey: "pub-paired-a-sk")
+        config.accountBunkerConfigs["npub1b"] = AccountBunkerConfig(bunkerURI: "bunker://y", clientSecretKey: "file-only-sk",
+                                                                    clientPubkey: "pub-file-only-sk")
+        config.accountBunkerConfigs["npub1c"] = AccountBunkerConfig(bunkerURI: "bunker://z", clientSecretKey: "stray-c-sk",
+                                                                    clientPubkey: "pub-paired-c-sk")
+        let keychain = ["nip46-client-secret": "paired-a-sk", "nip46-client-secret-npub1a": "paired-a-sk",
+                        "nip46-client-secret-npub1c": "paired-c-sk"]
 
-        config.attachNIP46ClientSecrets { keychain[$0] }
+        let dropped = config.attachNIP46ClientSecrets({ keychain[$0] }, pubkeyOf: pub)
 
-        XCTAssertEqual(config.nip46ClientSecretKey, "paired-global-sk")
+        XCTAssertEqual(config.nip46ClientSecretKey, "paired-a-sk",
+                       "the shared slot is judged by the active account's entry, not the rewritten nip46ClientPubkey")
         XCTAssertEqual(config.accountBunkerConfigs["npub1a"]?.clientSecretKey, "paired-a-sk")
         XCTAssertEqual(config.accountBunkerConfigs["npub1b"]?.clientSecretKey, "file-only-sk",
                        "a key only the file holds is kept")
+        XCTAssertEqual(config.accountBunkerConfigs["npub1c"]?.clientSecretKey, "paired-c-sk")
+        XCTAssertEqual(Set(dropped), ["fresh-unpaired-sk", "stray-c-sk"])
+    }
+
+    /// The mirror case: paired again on a build without the keychain (master,
+    /// 2.7.x), which saved the new key and its pubkey in the file. The old
+    /// keychain key must not win, or the next save writes the file blank and
+    /// the new pairing is lost.
+    func testANewPairingInTheFileBeatsAStaleKeychainKey() {
+        var config = HavenConfig.default
+        config.ownerNpub = "npub1a"
+        config.nip46BunkerURI = "bunker://new"
+        config.nip46ClientSecretKey = "new-sk"
+        config.nip46ClientPubkey = "pub-new-sk"
+        config.accountBunkerConfigs["npub1a"] = AccountBunkerConfig(bunkerURI: "bunker://new", clientSecretKey: "new-sk",
+                                                                    clientPubkey: "pub-new-sk")
+        var keychain = ["nip46-client-secret": "old-sk", "nip46-client-secret-npub1a": "old-sk"]
+        var sync = NIP46SecretSync(synced: keychain)
+
+        let dropped = config.attachNIP46ClientSecrets({ keychain[$0] }, pubkeyOf: pub)
+
+        XCTAssertEqual(config.nip46ClientSecretKey, "new-sk")
+        XCTAssertEqual(config.accountBunkerConfigs["npub1a"]?.clientSecretKey, "new-sk")
+        XCTAssertTrue(dropped.isEmpty)
+
+        // The save that follows moves the new key into the keychain.
+        let held = sync.sync(config.nip46ClientSecrets,
+                             store: { keychain[$1] = $0; return true },
+                             delete: { keychain[$0] = nil; return true })
+        XCTAssertEqual(keychain, ["nip46-client-secret": "new-sk", "nip46-client-secret-npub1a": "new-sk"])
+        XCTAssertEqual(held.count, 2)
+    }
+
+    /// No saved pubkey, or neither key matches it: the keychain wins.
+    func testTheKeychainWinsWhenThePubkeysCannotTell() {
+        for paired in ["", "pub-someone-else"] {
+            var config = HavenConfig.default
+            config.accountBunkerConfigs["npub1a"] = AccountBunkerConfig(bunkerURI: "bunker://x", clientSecretKey: "file-sk",
+                                                                        clientPubkey: paired)
+            let keychain = ["nip46-client-secret-npub1a": "keychain-sk"]
+            config.attachNIP46ClientSecrets({ keychain[$0] }, pubkeyOf: pub)
+            XCTAssertEqual(config.accountBunkerConfigs["npub1a"]?.clientSecretKey, "keychain-sk", paired)
+        }
     }
 
     /// The keychain refused a new key while holding the old one: the old one
@@ -203,7 +258,7 @@ final class KeysAtRestTests: XCTestCase {
 
         var config = HavenConfig.default
         config.nip46ClientSecretKey = "new-sk"
-        config.attachNIP46ClientSecrets { keychain[$0] }
+        config.attachNIP46ClientSecrets({ keychain[$0] }, pubkeyOf: pub)
         XCTAssertEqual(config.nip46ClientSecretKey, "new-sk")
     }
 
