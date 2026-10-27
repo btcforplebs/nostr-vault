@@ -62,6 +62,8 @@ class ComposeNoteViewModel @Inject constructor(
     private val mediaPostQueue: MediaPostQueue,
     private val notificationManager: NotificationManager,
     private val blossomPickerMedia: BlossomPickerMedia,
+    internal val emojiPalette: com.nostrvault.data.local.EmojiPaletteStore,
+    internal val emojiList: com.nostrvault.service.EmojiListRepository,
     @ApplicationContext internal val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -143,6 +145,11 @@ class ComposeNoteViewModel @Inject constructor(
 
     private val _showBlossomPicker = MutableStateFlow(false)
     val showBlossomPicker = _showBlossomPicker.asStateFlow()
+
+    // :emoji autocomplete state (NIP-30), see ComposeNoteViewModelEmoji.kt
+    internal val _emojiSuggestions = MutableStateFlow<List<com.nostrvault.service.CustomEmoji>>(emptyList())
+    val emojiSuggestions = _emojiSuggestions.asStateFlow()
+    internal var emojiQuery: ComposeEmoji.Query? = null
 
     // @mention autocomplete state
     internal val _mentionResults = MutableStateFlow<List<FeedProfile>>(emptyList())
@@ -254,6 +261,7 @@ class ComposeNoteViewModel @Inject constructor(
         _content.value = text
         scheduleDraftSave()
         updateMentionQuery(text, caret)
+        updateEmojiQuery(text, caret)
     }
 
     /**
@@ -646,6 +654,9 @@ class ComposeNoteViewModel @Inject constructor(
                         finalContent += "\nnostr:$note1"
                     }
                 }
+
+                // NIP-30: an `emoji` tag for each custom emoji the post uses.
+                tags.addAll(customEmojiTags(baseContent))
 
                 // Some media is only on this device: hand the post to the queue,
                 // which sends it once an outside server takes the media. The

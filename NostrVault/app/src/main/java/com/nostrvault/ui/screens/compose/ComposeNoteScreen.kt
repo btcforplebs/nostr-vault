@@ -86,6 +86,7 @@ fun ComposeNoteScreen(
     val uploadServers by viewModel.uploadServers.collectAsState()
     val showBlossomPicker by viewModel.showBlossomPicker.collectAsState()
     val mentionResults by viewModel.mentionResults.collectAsState()
+    val emojiSuggestions by viewModel.emojiSuggestions.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
     val activeAccount by viewModel.activeAccount.collectAsState()
     var showAccountSwitcher by remember { mutableStateOf(false) }
@@ -137,6 +138,22 @@ fun ComposeNoteScreen(
                     TextButton(onClick = { showDraftPrompt = false }) { Text("Keep Editing") }
                 }
             },
+        )
+    }
+
+    // Emoji button: the reaction picker, inserting at the caret instead (NIP-30).
+    var showEmojiPicker by remember { mutableStateOf(false) }
+    if (showEmojiPicker) {
+        val insert: (String) -> Unit = { insertion ->
+            showEmojiPicker = false
+            val (text, caret) = viewModel.insertPickedEmoji(insertion, textFieldValue.selection.start)
+            textFieldValue = TextFieldValue(text, TextRange(caret))
+        }
+        com.nostrvault.ui.components.EmojiPickerSheet(
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            onDismiss = { showEmojiPicker = false },
+            onSelectEmoji = insert,
+            onSelectCustom = { insert(it.content) },
         )
     }
 
@@ -350,6 +367,19 @@ fun ComposeNoteScreen(
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
         ) {
+            // :emoji suggestions
+            if (emojiSuggestions.isNotEmpty()) {
+                EmojiSuggestions(
+                    results = emojiSuggestions,
+                    onSelect = { emoji ->
+                        viewModel.insertEmojiSuggestion(emoji)?.let { (newText, caret) ->
+                            textFieldValue = TextFieldValue(newText, TextRange(caret))
+                        }
+                    },
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+
             // @mention suggestions
             if (mentionResults.isNotEmpty()) {
                 MentionSuggestions(
@@ -495,6 +525,21 @@ fun ComposeNoteScreen(
                             Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
                         }
                     }
+                }
+
+                // Emoji: your custom emoji and sets, or any emoji, at the caret.
+                IconButton(
+                    onClick = { showEmojiPicker = true },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(colors.primary.copy(alpha = 0.1f), CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EmojiEmotions,
+                        contentDescription = "Add emoji",
+                        tint = colors.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
 
                 Spacer(Modifier.weight(1f))
