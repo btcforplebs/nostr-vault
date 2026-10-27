@@ -62,6 +62,12 @@ struct CondensedNoteLine: View, Equatable {
     var showsMediaThumbnail: Bool = true
     /// A Translate button under the text for posts in another language.
     var showsTranslate: Bool = false
+    /// Notes this one quotes, drawn under it as the expanded feed draws them.
+    /// Resolved by the caller (`CondensedQuote.resolve`) so a quote that
+    /// arrives later changes the line and redraws it.
+    var quotes: [CondensedQuote] = []
+    /// Asks for a quoted note that hasn't arrived yet.
+    var onMissingQuote: ((String) -> Void)? = nil
 
     var onProfile: ((String) -> Void)? = nil
     var onTap: (() -> Void)? = nil
@@ -76,7 +82,8 @@ struct CondensedNoteLine: View, Equatable {
             && lhs.replyCount == rhs.replyCount && lhs.contentOverride == rhs.contentOverride
             && lhs.postedAt == rhs.postedAt && lhs.mediaURLs == rhs.mediaURLs
             && lhs.engagement == rhs.engagement && lhs.showsMediaThumbnail == rhs.showsMediaThumbnail
-            && lhs.showsTranslate == rhs.showsTranslate && (lhs.onTap == nil) == (rhs.onTap == nil)
+            && lhs.showsTranslate == rhs.showsTranslate && lhs.quotes == rhs.quotes
+            && (lhs.onTap == nil) == (rhs.onTap == nil)
     }
 
     @EnvironmentObject private var configService: ConfigService
@@ -157,44 +164,47 @@ struct CondensedNoteLine: View, Equatable {
                 threadRail
             }
 
-            HStack(alignment: .top, spacing: 8) {
-                VStack(spacing: 6) {
-                    AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
-                        .contentShape(Circle())
-                        .onTapGesture { toggleUserMenu() }
-                        .accessibilityLabel(Text("Profile of \(displayName)"))
-                    if showingUserMenu {
-                        AuthorQuickMenu(
-                            pubkey: authorPubkey,
-                            displayName: displayName,
-                            isFollowed: FeedService.shared.followedPubkeySet.contains(authorPubkey),
-                            expanded: menuExpanded,
-                            onWebOfTrust: { showingTrustWeb = true },
-                            dismiss: dismissUserMenu
-                        )
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(spacing: 6) {
+                        AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
+                            .contentShape(Circle())
+                            .onTapGesture { toggleUserMenu() }
+                            .accessibilityLabel(Text("Profile of \(displayName)"))
+                        if showingUserMenu {
+                            AuthorQuickMenu(
+                                pubkey: authorPubkey,
+                                displayName: displayName,
+                                isFollowed: FeedService.shared.followedPubkeySet.contains(authorPubkey),
+                                expanded: menuExpanded,
+                                onWebOfTrust: { showingTrustWeb = true },
+                                dismiss: dismissUserMenu
+                            )
+                        }
+                    }
+                    // The menu is wider than a condensed photo. Pinning the column
+                    // to the photo keeps the text from shifting when it opens.
+                    .frame(width: avatarSize)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        headerRow
+                        bodyText
+                        if showsTranslate {
+                            NoteTranslateButton(noteID: note.id, content: contentOverride ?? note.content,
+                                                kind: contentOverride == nil ? note.kind : 1)
+                                .padding(.top, 2)
+                        }
+                        linkChip
+                        engagementRow
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if showsMediaThumbnail, let firstMedia = mediaURLs.first {
+                        mediaThumbnail(firstMedia)
                     }
                 }
-                // The menu is wider than a condensed photo. Pinning the column
-                // to the photo keeps the text from shifting when it opens.
-                .frame(width: avatarSize)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    headerRow
-                    bodyText
-                    if showsTranslate {
-                        NoteTranslateButton(noteID: note.id, content: contentOverride ?? note.content,
-                                            kind: contentOverride == nil ? note.kind : 1)
-                            .padding(.top, 2)
-                    }
-                    linkChip
-                    engagementRow
-                }
-
-                Spacer(minLength: 8)
-
-                if showsMediaThumbnail, let firstMedia = mediaURLs.first {
-                    mediaThumbnail(firstMedia)
-                }
+                quotedNotes
             }
             .padding(.horizontal, style == .card ? 12 : 8)
             .padding(.vertical, style == .card ? 8 : 6)
@@ -237,6 +247,34 @@ struct CondensedNoteLine: View, Equatable {
     }
 
     // MARK: - Pieces
+
+    /// Each quoted note under the text, lined up with it. Below the media
+    /// thumbnail rather than beside it, so a quote keeps the line's width.
+    @ViewBuilder
+    private var quotedNotes: some View {
+        if !quotes.isEmpty {
+            VStack(spacing: 6) {
+                ForEach(quotes) { quote in
+                    switch quote {
+                    case .loaded(let quoted):
+                        // QuotedNoteView decides what a tap does, as in the
+                        // expanded feed: streams play, a quote of someone you
+                        // blocked does nothing.
+                        QuotedNoteView(note: quoted, opensThread: true)
+                    case .loading(let id):
+                        QuotedNoteSkeleton()
+                            .onAppear { onMissingQuote?(id) }
+                    case .unavailable:
+                        Text("Quoted note unavailable")
+                            .font(.appSystem(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding(.leading, avatarSize + 8)
+        }
+    }
 
     /// The vertical line that ties a reply back to what it answers.
     private var threadRail: some View {
@@ -469,6 +507,11 @@ struct CondensedNoteLine: View, Equatable {
         if !text.isEmpty {
             parts.append(text)
         }
+        for quote in quotes {
+            if case .loaded(let quoted) = quote {
+                parts.append("quoting " + NostrContentFormatter.resolveMentionsPlainText(quoted.content))
+            }
+        }
         if replyCount > 0 {
             parts.append("\(replyCount) \(replyCount == 1 ? "reply" : "replies")")
         }
@@ -499,6 +542,31 @@ struct CondensedNoteLine: View, Equatable {
             fmt.dateFormat = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
                 ? "MMM d" : "MMM d, yyyy"
             return fmt.string(from: date)
+        }
+    }
+}
+
+/// One quoted note under a condensed line: the note once it has arrived, a
+/// placeholder while it is fetched, or a plain notice when no relay has it.
+enum CondensedQuote: Equatable, Identifiable {
+    case loaded(FeedNote)
+    case loading(String)
+    case unavailable(String)
+
+    var id: String {
+        switch self {
+        case .loaded(let note): return note.id
+        case .loading(let id), .unavailable(let id): return id
+        }
+    }
+
+    /// The quotes `note` makes, each as far along as the feed has it. A bare
+    /// repost passes the note it carries, whose quotes are the ones shown.
+    static func resolve(for note: FeedNote, find: (String) -> FeedNote?,
+                        unavailable: Set<String>) -> [CondensedQuote] {
+        note.quotedEventIds.map { id in
+            if let quoted = find(id) { return .loaded(quoted) }
+            return unavailable.contains(id) ? .unavailable(id) : .loading(id)
         }
     }
 }

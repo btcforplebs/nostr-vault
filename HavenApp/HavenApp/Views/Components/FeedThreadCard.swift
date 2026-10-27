@@ -161,6 +161,12 @@ struct FeedThreadCard: View {
             contentOverride: contentOverride(for: note, original: original),
             postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
             mediaURLs: shown.mediaURLs,
+            quotes: CondensedQuote.resolve(
+                for: shown,
+                find: actions.findNote,
+                unavailable: FeedService.shared.unavailableNoteIds
+            ),
+            onMissingQuote: actions.fetchMissingNote,
             onProfile: onProfile,
             onTap: tapAction(for: note)
         )
