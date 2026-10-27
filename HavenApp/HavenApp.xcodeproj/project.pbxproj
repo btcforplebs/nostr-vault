@@ -201,6 +201,7 @@
 		2681BCA73FE8F40351489EB2 /* IdentityStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F37A04D4EB9E1C725671A610 /* IdentityStepView.swift */; };
 		26EC34BA41C0258FDC48AAC4 /* FeedActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85E435417789F6ABE84846C /* FeedActions.swift */; };
 		270AF3B7649E919B87BC94ED /* LiveFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47192F4794DB3DF64A802E30 /* LiveFeedViews.swift */; };
+		2730A44FC8B4A4AC41BF67A3 /* VaultBackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */; };
 		27414B230CC3AA23BA86C684 /* VideoPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */; };
 		27501A57652E5103F7832F81 /* FeedDashboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4081F45635AA7AA7E02B86BD /* FeedDashboardStore.swift */; };
 		2781CECEBC6411CB2C55082D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
@@ -936,6 +937,7 @@
 		B584E2B874D869370E468154 /* DMService+Conversations.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEE3815CD7DB160F1716E43F /* DMService+Conversations.swift */; };
 		B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		B6774D0A3A537A8FD5BBD0B7 /* ArticleCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3F3AF45A6E0196F0F434A2 /* ArticleCardView.swift */; };
+		B684A0DB8AFF29F06BEA8C78 /* VaultBackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */; };
 		B6867F1653FCFD96385539FD /* HighlightInlineBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FC58BB54728488999244E19 /* HighlightInlineBody.swift */; };
 		B6A088A376BCD2B2695FC0B6 /* GlobeStorm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E33934D682D87D02C55AFF1 /* GlobeStorm.swift */; };
 		B6AE8AA4F41D4F016CC076AF /* View+SoftTopScrollEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA565C1761FBC06F35A11553 /* View+SoftTopScrollEdge.swift */; };
@@ -1436,6 +1438,7 @@
 		19B6B870C61AB1313009408E /* NWCService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCService.swift; sourceTree = "<group>"; };
 		1A126A53D63DD4442630E87E /* GifItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GifItem.swift; sourceTree = "<group>"; };
 		1A2AB34DA20A23140E417E72 /* FeedService+ModeCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+ModeCache.swift"; sourceTree = "<group>"; };
+		1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultBackupRestore.swift; sourceTree = "<group>"; };
 		1AF6EB49EF70B0D69B6BF435 /* ProfileContent+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileContent+Media.swift"; sourceTree = "<group>"; };
 		1B03DACD65D976F80B315E19 /* MirrorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorService.swift; sourceTree = "<group>"; };
 		1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+Bridge.swift"; sourceTree = "<group>"; };
@@ -3076,6 +3079,7 @@
 				A5A22ED51531ABDF7FF411DA /* TenorGifService.swift */,
 				93ED6BB091A4EBC9250A7858 /* Theming.swift */,
 				D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */,
+				1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */,
 				2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */,
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
 				9BA557D10C9E58C90C37C72A /* ZapHistoryService.swift */,
@@ -3965,6 +3969,7 @@
 				9B7EAB5161D2211D2C606077 /* VaultActivity.swift in Sources */,
 				A57122F246651B7A435A4283 /* VaultActivityList.swift in Sources */,
 				98FA634F97C5E2AA9651D058 /* VaultActivityThumbnails.swift in Sources */,
+				2730A44FC8B4A4AC41BF67A3 /* VaultBackupRestore.swift in Sources */,
 				5C0AEAD4DE0514BF0CAD6AF3 /* VaultChangeHandlers.swift in Sources */,
 				AB8E43DAACBD89086EEF40D4 /* VaultContents.swift in Sources */,
 				1343B1B1B0D1A27A0DF3B815 /* VaultContentsModel.swift in Sources */,
@@ -4626,6 +4631,7 @@
 				479B88C49019A417889D71D1 /* VaultActivity.swift in Sources */,
 				8C418FB5341BAAE9D24F35FC /* VaultActivityList.swift in Sources */,
 				567D911077CA1B08DAEE62D5 /* VaultActivityThumbnails.swift in Sources */,
+				B684A0DB8AFF29F06BEA8C78 /* VaultBackupRestore.swift in Sources */,
 				B98B2A4703AA7C738B6B055E /* VaultChangeHandlers.swift in Sources */,
 				3C42876A6775C3606D55D919 /* VaultContents.swift in Sources */,
 				F389FFB2BE105FEF56D3A867 /* VaultContentsModel.swift in Sources */,

@@ -268,51 +268,13 @@ struct ImportNotesStep: View {
 
     private func restoreBackup(from url: URL) {
         isRestoring = true
-        guard url.startAccessingSecurityScopedResource() else {
-            restoreError = "Permission denied to access the file."
-            showRestoreError = true
+        VaultBackupRestore.restore(from: url, configService: configService) { error in
             isRestoring = false
-            return
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
-
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
-
-        let coordinator = NSFileCoordinator()
-        var coordinationError: NSError?
-        var copyError: Error?
-
-        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinationError) { safeURL in
-            do {
-                if FileManager.default.fileExists(atPath: tempFile.path) {
-                    try FileManager.default.removeItem(at: tempFile)
-                }
-                try FileManager.default.copyItem(at: safeURL, to: tempFile)
-            } catch {
-                copyError = error
-            }
-        }
-
-        if let error = coordinationError ?? copyError {
-            restoreError = "Failed to copy backup file: \(error.localizedDescription)"
-            showRestoreError = true
-            isRestoring = false
-            return
-        }
-
-        configService.save()
-        RelayProcessManager.shared.runBackupRestore(config: configService.config, inputPath: tempFile.path) { success in
-            try? FileManager.default.removeItem(at: tempFile)
-            Task { @MainActor in
-                isRestoring = false
-                if success {
-                    configService.reload()
-                    restoreCompleted = true
-                } else {
-                    restoreError = "Failed to restore backup. Check logs for details."
-                    showRestoreError = true
-                }
+            if let error {
+                restoreError = error
+                showRestoreError = true
+            } else {
+                restoreCompleted = true
             }
         }
     }
