@@ -87,7 +87,11 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             return
         }
         val author = npubToHex(accountNpub) ?: ownerHexPubkey
-        val blocked = blockedNpubs.mapNotNull { npubToHex(it) }
+        // Private mutes stay in the encrypted content; callers pass the
+        // combined list, so they are taken out of the public "p" tags here.
+        val cfg = configStore.config.value
+        val private = cfg.privateBlockedNpubsPerAccount[accountNpub.ifEmpty { cfg.ownerNpub }].orEmpty().toSet()
+        val blocked = blockedNpubs.filter { it !in private }.mapNotNull { npubToHex(it) }
         // The "p" tags are this device's blocks. The rest of the published
         // list (word, hashtag and thread mutes, and the encrypted private
         // mutes in content) was set in other clients and is kept.

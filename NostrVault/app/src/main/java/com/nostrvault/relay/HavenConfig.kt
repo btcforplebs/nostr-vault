@@ -46,6 +46,10 @@ data class HavenConfig(
     // account npub), published as a NIP-51 kind-10000 mute list.
     // Default-empty for backward compatibility with old configs.
     val blockedNpubsPerAccount: Map<String, List<String>> = emptyMap(),
+    // Per-account people muted in the private (encrypted) part of the
+    // account's kind 10000, set in another client. They hide notes like any
+    // block but are never written into the public "p" tags.
+    val privateBlockedNpubsPerAccount: Map<String, List<String>> = emptyMap(),
 
     // Private Relay
     val privateRelayName: String = "Nostr Vault Private",
@@ -538,7 +542,7 @@ data class HavenConfig(
      * iOS: HavenConfig.allBlockedNpubsAcrossAccounts.
      */
     fun allBlockedNpubsAcrossAccounts(): List<String> =
-        (blockedNpubsPerAccount.values.flatten() + blockedNpubs.orEmpty())
+        (blockedNpubsPerAccount.values.flatten() + privateBlockedNpubsPerAccount.values.flatten() + blockedNpubs.orEmpty())
             .map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
 
     /**
@@ -549,6 +553,13 @@ data class HavenConfig(
      * iOS: ConfigService.blockedHexPubkeys(forAccount:).
      */
     fun blockedFor(npub: String): List<String> =
+        (publicBlockedFor(npub) + privateBlockedNpubsPerAccount[npub].orEmpty()).distinct()
+
+    /**
+     * The blocks this device publishes as the "p" tags of [npub]'s mute list:
+     * [blockedFor] without the private entries. Block and unblock edit this.
+     */
+    fun publicBlockedFor(npub: String): List<String> =
         blockedNpubsPerAccount[npub] ?: if (npub == ownerNpub) blockedNpubs.orEmpty() else emptyList()
 
     /** Per-account push preferences, falling back to the global flags. */

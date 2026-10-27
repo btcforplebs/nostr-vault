@@ -46,21 +46,6 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
     }
 
-    internal fun NostrService.parseMuteListEvent(tags: List<List<String>>) {
-        val mutedNpubs = profileRepository.parseMuteListPTags(tags).mapNotNull { hexToNpub(it) }
-        // The owner's kind-10000 mute list. Sync into the owner's per-account blocked
-        // list (and the legacy flat field for backward compatibility).
-        configStore.update { config ->
-            val ownerKey = config.ownerNpub
-            config.copy(
-                blockedNpubs = mutedNpubs,
-                blockedNpubsPerAccount = if (ownerKey.isNotEmpty())
-                    config.blockedNpubsPerAccount + (ownerKey to mutedNpubs)
-                else config.blockedNpubsPerAccount,
-            )
-        }
-    }
-
     // ══════════════════════════════════════════════════════════════════
     // Relay list fetching
     // ══════════════════════════════════════════════════════════════════

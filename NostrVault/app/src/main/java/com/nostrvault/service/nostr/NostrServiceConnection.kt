@@ -14,6 +14,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
         if (BuildConfig.DEBUG) Log.d(TAG, "initialize: ownerHexPubkey=${ownerHexPubkey.take(16)}... (from ownerNpub=${configStore.config.value.ownerNpub.take(20)}...)")
         loadProfilesFromDisk()
         observeAccountSwitch()
+        observeMuteList()
     }
 
     internal fun NostrService.observeAccountSwitch() {

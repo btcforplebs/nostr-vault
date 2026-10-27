@@ -377,8 +377,8 @@ class ConfigStore @Inject constructor(
     fun blockProfile(npub: String) {
         update { cfg ->
             val key = cfg.activeOrOwnerNpub()
-            val current = cfg.blockedFor(key)
-            if (npub in current) cfg
+            val current = cfg.publicBlockedFor(key)
+            if (npub in cfg.blockedFor(key)) cfg
             else cfg.copy(
                 blockedNpubsPerAccount = cfg.blockedNpubsPerAccount + (key to (current + npub)),
             )
