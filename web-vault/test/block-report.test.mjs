@@ -112,14 +112,17 @@ test("no list yet: the first block starts one", async () => {
   assert.deepEqual(tags, [["p", B]]); assert.equal(content, "")
 })
 
-test("the guard: a list from the user's relays, or most of them answering; and no building on a shrunken copy", () => {
-  assert.equal(blockGuard({ asked: 3, answered: 0, netFound: true }), "")
-  assert.equal(blockGuard({ asked: 3, answered: 2, netFound: false }), "", "most answered and none had one: there is none yet")
-  assert.match(blockGuard({ asked: 3, answered: 0, netFound: false }), /None of your relays answered/)
-  assert.match(blockGuard({ asked: 4, answered: 2, netFound: false }), /Only 2 of your 4/)
+test("the guard: a list from the user's relays, or all of them answering; and no building on a shrunken copy", () => {
+  assert.equal(blockGuard({ relaysKnown: true, asked: 3, answered: 0, netFound: true }), "")
+  assert.equal(blockGuard({ relaysKnown: true, asked: 3, answered: 3, netFound: false }), "", "all answered and none had one: there is none yet")
+  assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 2, netFound: false }), /Only 2 of your 3/, "the one that didn't answer may hold it")
+  assert.match(blockGuard({ relaysKnown: true, asked: 3, answered: 0, netFound: false }), /None of your relays answered/)
+  assert.match(blockGuard({ relaysKnown: true, asked: 4, answered: 2, netFound: false }), /Only 2 of your 4/)
   const small = list([["p", A], ["p", B]])
-  assert.match(blockGuard({ asked: 1, answered: 1, netFound: true, base: small, known: 12 }), /holds 2 people but you had 12/)
-  assert.equal(blockGuard({ asked: 1, answered: 1, netFound: true, base: small, known: 4 }), "", "small lists aren't second-guessed")
+  assert.match(blockGuard({ relaysKnown: true, asked: 1, answered: 1, netFound: true, base: small, known: 12 }), /holds 2 people but you had 12/)
+  assert.equal(blockGuard({ relaysKnown: true, asked: 1, answered: 1, netFound: true, base: small, known: 4 }), "", "small lists aren't second-guessed")
+  assert.match(blockGuard({ relaysKnown: false, asked: 3, answered: 3, netFound: false }), /relay list \(kind 10002\) couldn't be loaded/, "a 10002 that timed out isn't a user with none")
+  assert.match(blockGuard({ asked: 3, answered: 3, netFound: true }), /couldn't be loaded/, "not said = not known")
 })
 
 test("newest list wins; one dated far in the future is ignored", () => {
@@ -174,6 +177,81 @@ test("setBlock publishes nothing when the guard refuses or no relay takes it", a
   assert.ok(!getBlocks().blocked.has(B))
   await assert.rejects(setBlock(ctx, ME, { ask: askWith() }), /yourself/)
   await assert.rejects(setBlock(ctx, "nope", { ask: askWith() }), /isn't a profile that can be blocked/)
+})
+
+// Amethyst's list: blocks, a word, a hashtag, a thread and a private part, on a relay only the user's kind 10002 names.
+// The web app hasn't loaded that 10002 (its relays are the defaults), and the default relays have no list.
+const AMETHYST = "wss://amethyst-only.example"
+function amethystWorld({ silent = [] } = {}) {
+  const relays = finalizeEvent({ kind: 10002, created_at: 50, tags: [["r", AMETHYST]], content: "" }, sk)
+  const theirs = list([["p", A], ["word", "scam"], ["t", "nsfw"], ["e", "e".repeat(64)]], seal44([["p", C], ["word", "secret"]]), 300)
+  const ask = async (url, f) => {
+    if (silent.includes(url)) return { events: [], answered: false }
+    if (f.kinds[0] === 10002) return { events: url === "wss://purplepag.es" ? [relays] : [], answered: true }
+    return { events: url === AMETHYST ? [theirs] : [], answered: true }
+  }
+  return { theirs, ask }
+}
+
+test("setBlock finds another app's list through the user's kind 10002 and keeps every entry it doesn't touch", async () => {
+  const { theirs, ask } = amethystWorld()
+  const vault = fakeVault()
+  const ctx = ctxOf(vault)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  const sent = []
+  const { event } = await setBlock(ctx, B, { ask, publish: okPublish(sent) })
+  assert.deepEqual(event.tags, [...theirs.tags, ["p", B]], "people, words, hashtags and threads all kept")
+  assert.equal(event.content, theirs.content, "the private part is kept as it was")
+
+  const { event: un } = await setBlock(ctx, A, { block: false, ask: async (url, f) => (f.kinds[0] === 10000 && url === AMETHYST ? { events: [event], answered: true } : ask(url, f)), publish: okPublish(sent) })
+  assert.deepEqual(un.tags, [["word", "scam"], ["t", "nsfw"], ["e", "e".repeat(64)], ["p", B]], "unblock takes out that one person only")
+  assert.deepEqual(open44(un.content), [["p", C], ["word", "secret"]], "the private part keeps its entries")
+})
+
+test("setBlock publishes nothing when one of the user's relays didn't answer and none had a list", async () => {
+  const vault = fakeVault()
+  const calls = [], sent = []
+  const ctx = ctxOf(vault, calls)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  const ask = async (url, f) => (url === "wss://w1.example" ? { events: [], answered: false } : { events: [], answered: true })
+  await assert.rejects(setBlock(ctx, B, { ask, publish: okPublish(sent) }), /Only 1 of your 2 relays answered/)
+  assert.deepEqual(calls, [], "not even signed"); assert.equal(sent.length, 0)
+  const { ask: amethystDown } = amethystWorld({ silent: [AMETHYST] })
+  await assert.rejects(setBlock(ctx, B, { ask: amethystDown, publish: okPublish(sent) }), /Only 2 of your 3 relays answered/, "the 10002's relay counts as the user's")
+  assert.equal(sent.length, 0)
+})
+
+test("a broadcast relay the kind 10002 names counts as the user's: silent there means nothing is signed", async () => {
+  const SNORT = "wss://relay.snort.social"
+  const relays = finalizeEvent({ kind: 10002, created_at: 50, tags: [["r", SNORT]], content: "" }, sk)
+  const vault = fakeVault()
+  const calls = [], sent = []
+  const ctx = ctxOf(vault, calls)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  const ask = async (url, f) => {
+    if (f.kinds[0] === 10002) return { events: url === "wss://purplepag.es" ? [relays] : [], answered: true }
+    return url === SNORT ? { events: [], answered: false } : { events: [], answered: true }
+  }
+  await assert.rejects(setBlock(ctx, B, { ask, publish: okPublish(sent) }), /Only \d+ of your \d+ relays answered/)
+  assert.deepEqual(calls, [], "not even signed"); assert.equal(sent.length, 0)
+})
+
+test("setBlock publishes nothing when the kind 10002 lookup times out", async () => {
+  const vault = fakeVault()
+  const calls = [], sent = []
+  const ctx = ctxOf(vault, calls)
+  resetBlocks()
+  await loadBlocks(ctx, [], { query: async () => [] })
+  const { ask } = amethystWorld({ silent: ["wss://purplepag.es"] })
+  await assert.rejects(setBlock(ctx, B, { ask, publish: okPublish(sent) }), /relay list \(kind 10002\) couldn't be loaded/)
+  assert.deepEqual(calls, [], "not even signed"); assert.equal(sent.length, 0)
+  const thrown = async () => { throw new Error("socket closed") }
+  const askThrows = async (url, f) => (f.kinds[0] === 10002 && url === "wss://purplepag.es" ? thrown() : ask(url, f))
+  await assert.rejects(setBlock(ctx, B, { ask: askThrows, publish: okPublish(sent) }), /couldn't be loaded/, "a relay that throws didn't answer either")
+  assert.equal(sent.length, 0)
 })
 
 test("reports carry the NIP-56 type on what's reported, and the iPhone's reason tag", () => {

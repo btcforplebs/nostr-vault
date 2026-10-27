@@ -9,7 +9,7 @@
 // (`word`), hashtags (`t`) and threads (`e`) ride on the same Set as `words`, `hashtags` and `threads` (muteSet), so
 // every screen that already hides blocked people's notes hides muted ones too.
 import { verifyEvent } from "nostr-tools/pure"
-import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
+import { pool, publishRelays, relayLists, BROADCAST_RELAYS, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
 import { askRelay, MAX_SKEW } from "./follows.js"
 import { checkSigned } from "./sync.js"
 import { replyRefs, repostInner } from "./thread.js"
@@ -243,22 +243,45 @@ export function newestBlockList(lists, pubkey, at = now()) {
 }
 
 /**
- * The newest kind 10000 from Haven's outbox and the user's relays (purplepag.es is asked too but doesn't count).
- * `answered`: how many of the user's own relays sent their EOSE; `netFound`: one of them had a list. `ask` is for tests.
- * -> { base, asked, answered, netFound }
+ * The relays of the user's newest kind 10002 found on `relays`, the defaults and the index relays. The account's own
+ * list may not be loaded yet (then it is the defaults), and a list another app wrote (Amethyst) can be on the relays
+ * that 10002 names alone. `known`: a 10002 was found, or every relay asked answered without one, so "no 10002" is
+ * real and not a relay that timed out. -> { urls, known }
+ */
+async function listedRelays({ pubkey, relays, ask }) {
+  const filter = { kinds: [10002], authors: [pubkey] }
+  const replies = await Promise.all(uniq([...relays, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]).map(url => ask(url, filter).catch(() => ({ events: [], answered: false }))))
+  const ev = replies.flatMap(r => r.events).filter(e => e?.kind === 10002 && e.pubkey === pubkey && verifiedCopy(e)).reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
+  if (!ev) return { urls: [], known: replies.every(r => r.answered) }
+  const { read, write } = relayLists(ev)
+  return { urls: uniq([...read, ...write]), known: true }
+}
+
+/**
+ * The newest kind 10000 from Haven's outbox and the network. The user's own relays are `relays` plus those its newest
+ * kind 10002 names (listedRelays); purplepag.es and the broadcast relays a new list is also sent to are asked too but
+ * don't count unless that 10002 names them. `answered`: how many of the user's own relays sent their EOSE; `netFound`: one of them had a list;
+ * `relaysKnown`: whether the 10002 is known (listedRelays), so the user's own relays are all of them.
+ * `ask` is for tests. -> { base, asked, answered, netFound, relaysKnown }
  */
 export async function findLatestBlockList({ vault, pubkey, relays, ask = askRelay }) {
   const filter = { kinds: [10000], authors: [pubkey] }
-  const own = uniq(relays)
-  const asked = uniq([...own, ...PROFILE_RELAYS])
-  const [local, replies] = await Promise.all([
+  const askAll = urls => Promise.all(urls.map(url => ask(url, filter).catch(() => ({ events: [], answered: false }))))
+  const first = uniq([...relays, ...PROFILE_RELAYS, ...BROADCAST_RELAYS])
+  const [local, firstReplies, listed] = await Promise.all([
     vault.outbox.query(filter).catch(() => []),
-    Promise.all(asked.map(url => ask(url, filter).catch(() => ({ events: [], answered: false })))),
+    askAll(first),
+    listedRelays({ pubkey, relays, ask }),
   ])
-  const net = replies.flatMap(r => r.events).filter(ev => ev?.kind === 10000 && ev.pubkey === pubkey && verifiedCopy(ev))
-  const answered = replies.filter((r, i) => r.answered && own.includes(asked[i])).length
-  const netFound = replies.some((r, i) => own.includes(asked[i]) && r.events.some(ev => ev?.kind === 10000 && ev.pubkey === pubkey && verifiedCopy(ev)))
-  return { base: newestBlockList([...local, ...net], pubkey), asked: own.length, answered, netFound }
+  const more = listed.urls.filter(u => !first.includes(u))
+  const urls = [...first, ...more]
+  const replies = [...firstReplies, ...(await askAll(more))]
+  const own = uniq([...relays, ...listed.urls]) // a 10002 relay counts even when it was in `first` already
+  const mine = i => own.includes(urls[i])
+  const lists = r => r.events.filter(ev => ev?.kind === 10000 && ev.pubkey === pubkey && verifiedCopy(ev))
+  const answered = replies.filter((r, i) => r.answered && mine(i)).length
+  const netFound = replies.some((r, i) => mine(i) && lists(r).length > 0)
+  return { base: newestBlockList([...local, ...replies.flatMap(lists)], pubkey), asked: own.length, answered, netFound, relaysKnown: listed.known }
 }
 
 /** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries (follows.js does the same). */
@@ -267,18 +290,22 @@ const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => {
 }
 
 /**
- * Why a new list may not be built, or "". A kind 10000 replaces the whole list, so one built on an old copy would
- * bring back people unblocked elsewhere and drop people blocked since. As follows.js: unless one of the user's own
- * relays had a list, more than half of them must have answered (then "no list anywhere" really means none yet, and
- * the first block may start one). And as follows.js's size rule: when the app already shows more than 10 public
- * blocks, a newest list holding fewer than half of them is a truncated or stale copy, not something to build on.
+ * Why a new list may not be built, or "". A kind 10000 replaces the whole list, so one built on an old copy, or on
+ * none, would drop what other apps added (Amethyst's blocks, words, hashtags, threads, the private part) and bring
+ * back people unblocked elsewhere. So a new list is built on the newest one the user's relays had; when none of them
+ * had one, every one of them must have answered, so "no list anywhere" really means none yet and the first block may
+ * start one. And as follows.js's size rule: when the app already shows more than 10 public blocks, a newest list
+ * holding fewer than half of them is a truncated or stale copy, not something to build on. All of this needs the
+ * user's relays: when their kind 10002 isn't known (`relaysKnown` false: none found and a relay asked for it didn't
+ * answer), the relays it names weren't asked and may hold the newest list, so nothing is built.
  * `base`: the list found; `known`: how many public blocks the app shows now.
  */
-export function blockGuard({ asked, answered, netFound, base, known = 0 }) {
-  if (!netFound && !(asked > 0 && answered * 2 > asked)) {
+export function blockGuard({ asked, answered, netFound, relaysKnown, base, known = 0 }) {
+  if (!netFound && !(asked > 0 && answered === asked)) {
     if (!answered) return "None of your relays answered, so your newest block list isn't known and nothing was changed. Try again when they're reachable."
-    return `Only ${answered} of your ${asked} relays answered and none had your block list, so your newest one isn't known and nothing was changed. Try again when most of them are reachable.`
+    return `Only ${answered} of your ${asked} relays answered and none had your block list, so your newest one isn't known and nothing was changed. Try again when they're all reachable.`
   }
+  if (relaysKnown !== true) return "Your relay list (kind 10002) couldn't be loaded, so the relays that may hold your block list weren't asked and nothing was changed. Try again when they're reachable."
   const have = pTags(base?.tags).length
   if (known > 10 && have < known / 2)
     return `The newest block list your relays have holds ${have} people but you had ${known}. Building on it would unblock most of them, so nothing was changed.`
