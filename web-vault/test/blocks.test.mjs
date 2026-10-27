@@ -7,6 +7,7 @@ import * as nip04 from "nostr-tools/nip04"
 import {
   pTags, isNip04, decrypterFor, privateBlocks, readBlockList, refreshBlockList, loadBlocks, getBlocks, onBlocks,
   isBlockedNote, repostState, visibleNotes, visiblePeople, visibleRows, visibleReplies,
+  muteEntries, muteSet, isMutedNote, resetBlocks,
 } from "../src/net/blocks.js"
 import { groupNotifications } from "../src/net/notifications.js"
 
@@ -47,20 +48,20 @@ test("a private part is decrypted with the matching scheme from the extension", 
     nip04: { decrypt: async (pk, c) => { calls.push(["nip04", pk]); return nip04.decrypt(sk, pk, c) } },
   }
   const opener = await decrypterFor({ method: "nip07", pubkey: ME }, { ext })
-  assert.deepEqual(await privateBlocks(list([], c44), opener), { pubkeys: [B], note: "" })
-  assert.deepEqual(await privateBlocks(list([], c04), opener), { pubkeys: [D], note: "" })
+  assert.deepEqual((await privateBlocks(list([], c44), opener)).pubkeys, [B])
+  assert.deepEqual((await privateBlocks(list([], c04), opener)).pubkeys, [D])
   assert.deepEqual(calls, [["nip44", ME], ["nip04", ME]])
 })
 
 test("when the private part can't be read, the note says why and the public part still applies", async () => {
   const bunker = await decrypterFor({ method: "nip46", pubkey: ME })
   assert.match(bunker.reason, /bunker isn't connected/)
-  assert.deepEqual(await privateBlocks(list([], "AgAAAA"), bunker), { pubkeys: [], note: bunker.reason })
+  assert.deepEqual(await privateBlocks(list([], "AgAAAA"), bunker), { pubkeys: [], tags: [], note: bunker.reason })
   const no44 = await decrypterFor({ method: "nip07", pubkey: ME }, { ext: { nip04: { decrypt: async () => "[]" } } })
   assert.match((await privateBlocks(list([], "AgAAAA"), no44)).note, /NIP44/)
   const refused = await decrypterFor({ method: "nip07", pubkey: ME }, { ext: { nip44: { decrypt: async () => { throw new Error("user said no") } } } })
   assert.equal((await privateBlocks(list([], "AgAAAA"), refused)).note, "user said no")
-  assert.deepEqual(await privateBlocks(list([["p", A]], ""), bunker), { pubkeys: [], note: "" }, "no private part, nothing to explain")
+  assert.deepEqual(await privateBlocks(list([["p", A]], ""), bunker), { pubkeys: [], tags: [], note: "" }, "no private part, nothing to explain")
 })
 
 test("the list is read from Haven's outbox, newest first, and the network's copy is stored there", async () => {
@@ -149,4 +150,88 @@ test("a thread drops blocked replies but keeps their unblocked replies in their 
   const tree = [n("1", C, [n("2", A, [n("3", B), n("4", A)])]), n("5", A)]
   const shown = visibleReplies(tree, new Set([A]))
   assert.deepEqual(shown, [n("1", C, [n("3", B)])])
+})
+
+// ---- Muted words, hashtags and threads (users' lists from other clients carry them, public and private) ----
+
+const T1 = "1".repeat(64), T2 = "2".repeat(64)
+
+test("mute entries: words and hashtags lowercased, threads only as ids", () => {
+  const m = muteEntries([["word", "Crypto Scam"], ["word", "crypto scam"], ["t", "#NSFW"], ["e", T1], ["e", "nope"], ["word", " "], ["p", A]])
+  assert.deepEqual(m.words, ["crypto scam"])
+  assert.deepEqual([...m.hashtags], ["nsfw"])
+  assert.deepEqual([...m.threads], [T1])
+})
+
+test("muted words, hashtags and threads hide notes, replies and reposts, with nobody blocked", () => {
+  const blocked = muteSet([], [["word", "airdrop"], ["t", "nsfw"], ["e", T1]])
+  assert.equal(blocked.size, 0)
+  const word = { id: "a1", kind: 1, pubkey: C, tags: [], content: "Free AIRDROP now" }
+  const tag = { id: "a2", kind: 1, pubkey: C, tags: [["t", "NSFW"]], content: "x" }
+  const inThread = { id: "a3", kind: 1, pubkey: C, tags: [["e", T1, "", "root"], ["e", T2, "", "reply"]], content: "x" }
+  const root = { id: T1, kind: 1, pubkey: C, tags: [], content: "x" }
+  const fine = { id: "a4", kind: 1, pubkey: C, tags: [["t", "art"]], content: "a drop of rain" }
+  assert.deepEqual(visibleNotes([word, tag, inThread, root, fine], blocked).map(e => e.id), ["a4"])
+  const sk2 = generateSecretKey()
+  const inner = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "airdrop!" }, sk2)
+  assert.equal(isBlockedNote({ id: "r", kind: 6, pubkey: C, tags: [["e", inner.id]], content: JSON.stringify(inner) }, blocked), true)
+  assert.equal(isMutedNote(fine, new Set([A])), false, "a plain Set mutes nothing")
+  const replies = [{ event: inThread, children: [{ event: fine, children: [] }] }]
+  assert.deepEqual(visibleReplies(replies, blocked).map(n => n.event.id), ["a4"])
+})
+
+test("notifications drop muted-word mentions and reactions on a muted thread", () => {
+  const mk = (kind, tags, content = "") => finalizeEvent({ kind, created_at: 10, tags, content }, generateSecretKey())
+  const mention = mk(1, [["p", ME]], "airdrop for you")
+  const like = mk(7, [["e", T1], ["p", ME]], "+")
+  const ok = mk(1, [["p", ME]], "hello")
+  const rows = groupNotifications([mention, like, ok], ME)
+  const shown = visibleRows(rows, muteSet([], [["word", "airdrop"], ["e", T1]]), ME).flatMap(r => r.events.map(e => e.id))
+  assert.deepEqual(shown, [ok.id])
+})
+
+test("a private part's words, hashtags and threads apply too, NIP-44 and NIP-04", async () => {
+  const key = nip44.getConversationKey(sk, ME)
+  for (const enc of [t => nip44.encrypt(t, key), t => nip04.encrypt(sk, ME, t)]) {
+    resetBlocks()
+    const content = await enc(JSON.stringify([["p", B], ["word", "Secret"], ["t", "spoilers"], ["e", T2]]))
+    const vault = fakeVault([list([["p", A], ["word", "loud"]], content, 100)])
+    const signer = { crypto: { decrypt: async (pk, c) => nip44.decrypt(c, key), decrypt04: async (pk, c) => nip04.decrypt(sk, pk, c) } }
+    await loadBlocks({ vault, signer, session: { method: "nip46", pubkey: ME } }, [], { query: async () => [] })
+    const { blocked, privateNote } = getBlocks()
+    assert.equal(privateNote, "")
+    assert.deepEqual([...blocked].sort(), [A, B])
+    assert.deepEqual(blocked.words.sort(), ["loud", "secret"])
+    assert.deepEqual([...blocked.hashtags], ["spoilers"])
+    assert.deepEqual([...blocked.threads], [T2])
+  }
+  resetBlocks()
+})
+
+test("the account's own relays, known after sign-in, are asked then; earlier ones aren't asked again", async () => {
+  resetBlocks()
+  const vault = fakeVault()
+  const onOwn = list([["p", C]], "", 300)
+  const asked = []
+  const query = async r => { asked.push(...r); return r.includes("wss://own") ? [onOwn] : [] }
+  const ctx = { vault, session: { method: "nip46", pubkey: ME } }
+  await loadBlocks(ctx, ["wss://default"], { opener: { reason: "t" }, query })
+  assert.equal(getBlocks().blocked.size, 0)
+  await loadBlocks(ctx, ["wss://default", "wss://own"], { opener: { reason: "t" }, query })
+  assert.deepEqual(asked, ["wss://default", "wss://own"])
+  assert.deepEqual([...getBlocks().blocked], [C])
+  resetBlocks()
+})
+
+test("a private part that couldn't be opened at sign-in is tried again on the next load", async () => {
+  resetBlocks()
+  const key = nip44.getConversationKey(sk, ME)
+  const vault = fakeVault([list([], nip44.encrypt(JSON.stringify([["p", B]]), key), 100)])
+  const ctx = { vault, session: { method: "nip46", pubkey: ME } }
+  await loadBlocks(ctx, ["wss://a"], { opener: { decrypt: async () => { throw new Error("signer didn't answer") } }, query: async () => [] })
+  assert.match(getBlocks().privateNote, /didn't answer/)
+  await loadBlocks(ctx, ["wss://b"], { opener: { decrypt: async c => nip44.decrypt(c, key) }, query: async () => [] })
+  assert.equal(getBlocks().privateNote, "")
+  assert.deepEqual([...getBlocks().blocked], [B])
+  resetBlocks()
 })

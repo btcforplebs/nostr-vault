@@ -100,8 +100,8 @@ test("the private block list opens through the bunker, NIP-44 or NIP-04", async 
   const c04 = nip04.encrypt(A, pk(A), JSON.stringify([["p", D1]]))
   const opener = await decrypterFor(bunkerSession(A), { signer })
   const list = content => finalizeEvent({ kind: 10000, created_at: 100, tags: [], content }, A)
-  assert.deepEqual(await privateBlocks(list(c44), opener), { pubkeys: [B1], note: "" })
-  assert.deepEqual(await privateBlocks(list(c04), opener), { pubkeys: [D1], note: "" })
+  assert.deepEqual((await privateBlocks(list(c44), opener)).pubkeys, [B1])
+  assert.deepEqual((await privateBlocks(list(c04), opener)).pubkeys, [D1])
 
   const stored = [finalizeEvent({ kind: 10000, created_at: 200, tags: [["p", "c".repeat(64)]], content: c44 }, A)]
   const vault = { outbox: { query: async () => stored, event: async () => ({ ok: true, message: "" }) } }

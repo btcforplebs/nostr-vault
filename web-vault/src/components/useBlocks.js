@@ -9,13 +9,16 @@ const NONE = { pubkey: null, blocked: new Set(), privateBlocked: new Set(), priv
 export function useBlocks(ctx) {
   const pubkey = ctx.session?.pubkey
   const [blocks, setBlocks] = useState(getBlocks)
+  // The account's own relays are often not known yet at sign-in (its kind 10002 comes after): when they arrive, they
+  // are asked too, since the list may be on them alone.
+  const { write = [], read = [] } = ctx.account?.relays ?? {}
+  const relays = uniq([...write, ...read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
   useEffect(() => {
     if (!pubkey) return
     const off = onBlocks(() => setBlocks(getBlocks()))
-    const { write = [], read = [] } = ctx.account.relays
-    loadBlocks(ctx, uniq([...write, ...read, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]))
+    loadBlocks(ctx, relays)
     setBlocks(getBlocks())
     return off
-  }, [pubkey])
+  }, [pubkey, relays.join(" ")])
   return pubkey && blocks.pubkey === pubkey ? blocks : NONE
 }
