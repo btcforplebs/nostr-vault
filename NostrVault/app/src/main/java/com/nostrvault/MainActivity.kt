@@ -151,6 +151,10 @@ class MainActivity : FragmentActivity() {
                     // still running that build.
                     runCatching { nostrService.republishDMRelayList() }
 
+                    // Media servers set in another app (kind 10063) become
+                    // upload servers here too.
+                    runCatching { nostrService.syncServerList() }
+
                     // onStart only starts DM listening when setup was already
                     // complete, so a user who just finished the wizard heard no
                     // DMs until they opened the DM tab or reopened the app.

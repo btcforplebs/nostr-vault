@@ -165,6 +165,7 @@ internal fun NavGraphBuilder.detailRoutes(
             onPublished = { navController.popBackStack() },
             onBack = { navController.popBackStack() },
             onOpenDrafts = { navController.navigate(Screen.Drafts.route) },
+            onOpenMediaServers = { navController.navigate(Screen.BlossomSettings.route) },
         )
     }
 

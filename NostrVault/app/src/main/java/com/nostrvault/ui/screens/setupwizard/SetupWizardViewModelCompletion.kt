@@ -75,6 +75,8 @@ import java.net.URL
             // over NIP-17 — senders fell through to a guessed relay set and
             // replies had nowhere defined to go.
             runCatching { nostrService.republishDMRelayList() }
+            // An existing account's media servers (kind 10063) become upload servers.
+            runCatching { nostrService.syncServerList() }
 
             if (_setupPath.value == SetupPath.NEW_TO_NOSTR && ownerIsGeneratedKey()) publishNewAccount()
 
