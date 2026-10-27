@@ -49,7 +49,7 @@ struct MediaListItem: View {
                                         .foregroundColor(.havenPurple.opacity(0.6))
                                 }
                             } else if item.isAnimatedGIF {
-                                AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 60, height: 60))
+                                AnimatedThumbnail(url: item.url)
                             } else {
                                 RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 60, height: 60))
                             }

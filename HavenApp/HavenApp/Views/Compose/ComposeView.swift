@@ -122,6 +122,10 @@ struct ComposeView: View {
         /// For relay-picked media: the blob in the local Blossom directory,
         /// read only for `imeta` dimensions and size. Never uploaded or deleted.
         var relayBlobFile: URL? = nil
+
+        /// GIF or WebP bytes, which may hold more than one frame and so are
+        /// previewed with `AnimatedThumbnail` rather than a still decode.
+        var isAnimatable: Bool { type.conforms(to: .gif) || type.conforms(to: .webP) }
     }
 
     /// `sheet(item:)` needs an Identifiable; the attachment's own id is a bare

@@ -225,6 +225,10 @@ extension ComposeView {
                                     .scaledToFill()
                                     .frame(width: side, height: side)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else if let data = attachment.data, attachment.isAnimatable {
+                                AnimatedThumbnail(data: data)
+                                    .frame(width: side, height: side)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else if let data = attachment.data, let img = PlatformImage(data: data) {
                                 Image(platformImage: img)
                                     .resizable()
@@ -301,7 +305,7 @@ extension ComposeView {
         if type.conforms(to: .movie) || type.conforms(to: .video) {
             VideoThumbnailView(url: url, mimeType: type.preferredMIMEType)
         } else if type.conforms(to: .gif) {
-            AnimatedImage(url: url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
+            AnimatedThumbnail(url: url)
         } else {
             RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
         }

@@ -52,7 +52,7 @@ struct MediaGridItem: View {
                             .padding(4)
                         }
                     } else if item.isAnimatedGIF {
-                        AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 250, height: 250))
+                        AnimatedThumbnail(url: item.url)
                     } else {
                         // Default to image for non-video/audio items
                         RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 250, height: 250))
