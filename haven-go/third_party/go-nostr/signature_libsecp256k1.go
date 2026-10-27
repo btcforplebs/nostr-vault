@@ -9,6 +9,13 @@ package nostr
 #cgo CFLAGS: -DENABLE_MODULE_SCHNORRSIG=1
 #cgo CFLAGS: -DENABLE_MODULE_EXTRAKEYS=1
 
+// haven: the whole library is compiled into this one cgo file and only called
+// from it, so it gets internal linkage. Exported, its symbols collided with
+// the copy swift-secp256k1 links into the macOS app (53 duplicate symbols).
+// SECP256K1_VAR_LINKAGE is ours: five constants in the .c files.
+#define SECP256K1_API static
+#define SECP256K1_VAR_LINKAGE static
+
 #include "./libsecp256k1/src/secp256k1.c"
 #include "./libsecp256k1/src/precomputed_ecmult.c"
 #include "./libsecp256k1/src/precomputed_ecmult_gen.c"
