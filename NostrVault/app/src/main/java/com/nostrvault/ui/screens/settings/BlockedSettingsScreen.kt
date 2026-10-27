@@ -15,14 +15,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -34,6 +37,7 @@ import javax.inject.Inject
 class BlockedSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val notificationManager: NotificationManager,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
@@ -51,19 +55,22 @@ class BlockedSettingsViewModel @Inject constructor(
 
     fun block(npub: String) {
         configStore.blockProfile(npub)
-        publishMuteList()
+        publishMuteListChange(add = listOf(npub))
     }
 
     fun unblock(npub: String) {
         configStore.unblockProfile(npub)
-        publishMuteList()
+        publishMuteListChange(remove = listOf(npub))
     }
 
-    private fun publishMuteList() {
+    private fun publishMuteListChange(add: List<String> = emptyList(), remove: List<String> = emptyList()) {
         val cfg = configStore.config.value
         // The list being published is the ACTIVE account's, so it is signed as
         // that account — labelling it the owner's overwrote the owner's kind 10000.
-        nostrService.publishMuteList(cfg.activeOrOwnerNpub(), cfg.blockedForActiveAccount())
+        viewModelScope.launch {
+            nostrService.publishMuteListChange(cfg.activeOrOwnerNpub(), add, remove, cfg.blockedForActiveAccount())
+                ?.let { notificationManager.showError(it) }
+        }
     }
 }
 

@@ -39,6 +39,7 @@ extension NostrService {
             // for the request sent there counts as an answer.
             var finished = Set<Int>()
             var answered = Set<Int>()
+            var newestBy: [Int: NostrEvent] = [:]
             var resumed = false
             var clients: [WebSocketClient] = []
             var subs = Set<AnyCancellable>()
@@ -47,7 +48,10 @@ extension NostrService {
                 lock.lock()
                 guard !resumed else { lock.unlock(); return }
                 resumed = true
-                let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count)
+                let from = newestBy.filter { $0.value.id == best?.id }.keys.map { targets[$0].absoluteString }
+                let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count,
+                                               answeredBy: Set(answered.map { targets[$0].absoluteString }),
+                                               from: Set(from))
                 lock.unlock()
                 DispatchQueue.main.async {
                     clients.forEach { $0.disconnect() }
@@ -76,6 +80,7 @@ extension NostrService {
                                NostrEventVerifier.isValid(json: str) {
                                 lock.lock()
                                 if best == nil || event.created_at > best!.created_at { best = event }
+                                if newestBy[index].map({ event.created_at > $0.created_at }) ?? true { newestBy[index] = event }
                                 lock.unlock()
                             } else if type == "EOSE" || type == "CLOSED" {
                                 lock.lock()

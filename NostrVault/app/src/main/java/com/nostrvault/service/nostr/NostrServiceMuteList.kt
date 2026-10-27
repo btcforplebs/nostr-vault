@@ -54,6 +54,9 @@ import com.nostrvault.service.NostrService.Companion.TAG
         val seen = replaceableNewest[key]
         if (seen != null && createdAt < seen) return
         replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        heldMuteLists.merge(hex, NostrEvent("", hex, createdAt, 10000, tags, content, "")) { a, b ->
+            if (b.createdAt >= a.createdAt) b else a
+        }
         val npub = hexToNpub(hex) ?: return
 
         val entries = MuteList.entries(tags, content) { ciphertext, nip04 -> decryptOwnList(hex, ciphertext, nip04) }
@@ -77,7 +80,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
      * this device can't. Amber is asked silently only, so a launch never
      * raises its approval screen; a bunker only when already connected.
      */
-    private suspend fun NostrService.decryptOwnList(hex: String, ciphertext: String, nip04: Boolean): String? {
+    internal suspend fun NostrService.decryptOwnList(hex: String, ciphertext: String, nip04: Boolean): String? {
         val config = configStore.config.value
         val npub = hexToNpub(hex) ?: return null
         val isActive = hex == activeHexPubkey
@@ -101,3 +104,40 @@ import com.nostrvault.service.NostrService.Companion.TAG
             }
         }
     }
+
+    /**
+     * [plaintext] encrypted to [hex] itself with its key, the way
+     * [decryptOwnList] opens it, or null when this device can't.
+     */
+    internal suspend fun NostrService.encryptOwnList(hex: String, plaintext: String, nip04: Boolean): String? {
+        val config = configStore.config.value
+        val npub = hexToNpub(hex) ?: return null
+        val isActive = hex == activeHexPubkey
+        return when (config.effectiveSigningMode(npub)) {
+            "amber" -> if (!isActive) null
+                else if (nip04) amberSignerService.nip04Encrypt(plaintext, hex)
+                else amberSignerService.nip44Encrypt(plaintext, hex)
+            "nip46" -> if (!isActive || !NIP46Service.isConnected.value || NIP46Service.connectedPubkey != hex) null
+                else if (nip04) NIP46Service.nip04Encrypt(hex, plaintext)
+                else NIP46Service.nip44Encrypt(hex, plaintext)
+            else -> {
+                val forceOwner = when {
+                    isActive -> false
+                    hex == ownerHexPubkey -> true
+                    else -> return null
+                }
+                val sk = resolveSecretKey(forceOwner) ?: return null
+                withContext(Dispatchers.Default) {
+                    if (nip04) HavenBridge.encryptNIP04(plaintext, hex, sk) else HavenBridge.encryptNIP44(plaintext, hex, sk)
+                }
+            }
+        }
+    }
+
+    /**
+     * The newest kind 10000 applied per account hex pubkey (tags, content and
+     * time only), what a block builds on when the relays return an older one.
+     */
+    private val heldMuteLists = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
+
+    internal fun heldMuteList(hex: String): NostrEvent? = heldMuteLists[hex]

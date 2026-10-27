@@ -53,6 +53,10 @@ struct ReplaceableLookup<Event> {
     let event: Event?
     let asked: Int
     let answered: Int
+    /// The relays that answered.
+    var answeredBy: Set<String> = []
+    /// The relays that sent `event`.
+    var from: Set<String> = []
 
     var confirmedNone: Bool { event == nil && asked > 0 && answered >= asked }
 }

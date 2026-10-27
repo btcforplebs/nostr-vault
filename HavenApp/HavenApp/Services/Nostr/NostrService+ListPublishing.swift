@@ -3,29 +3,59 @@ import Combine
 import SwiftUI
 
 extension NostrService {
-    /// Publishes a signed Kind 10000 (Mute List) event to configured relays for the active account
+    /// Blocks (`add`) or unblocks (`remove`) people, by npub, on
+    /// `accountNpub`'s kind 10000, a list other clients edit too. Only those
+    /// entries change on the newest list: everyone else on it, the muted
+    /// words, hashtags and threads, and the encrypted private part are kept.
+    /// `localBlocks`, this device's blocks after the change, is published
+    /// only when the account has no list anywhere. When the list can't be
+    /// fetched nothing is published and the person is told why.
     @MainActor
-    func publishMuteList(for accountNpub: String, blockedNpubs: [String]) {
-        // Convert npubs to hex pubkeys
-        let hexKeys = blockedNpubs.compactMap { npub -> String? in
-            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
-            return Bech32.decode(clean)?.hexString
+    func publishMuteListChange(for accountNpub: String, add: [String] = [], remove: [String] = [], localBlocks: [String]) {
+        let hexKeys: ([String]) -> [String] = { npubs in
+            npubs.compactMap { Bech32.decode($0.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString }
         }
-
         guard let author = Bech32.decode(accountNpub.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString else { return }
+        let action = add.isEmpty ? "Unblock" : "Block"
 
         Task {
-            // The "p" tags are this device's blocks. The rest of the published
-            // list (word, hashtag and thread mutes, and the encrypted private
-            // mutes in content) was set in other clients and is kept.
-            let event = await publishMergedList(kind: 10000, author: author, signAsNpub: accountNpub) { published in
-                (ListMerge.tags(name: "p", local: hexKeys, published: published?.tags ?? []) { _ in false },
-                 published?.content ?? "")
+            // The relays the mute list is read from at launch, so a block
+            // builds on the list another app last wrote, not an older copy.
+            let alsoAsk = Array(Set(ConfigService.shared.config.readRelays + MuteListStore.extraRelays))
+            let lookup = await lookupNewestReplaceable(kind: 10000, for: author, alsoAsk: alsoAsk)
+            let base: (tags: [[String]], content: String)
+            switch ListMerge.editBase(lookup, held: MuteListStore.shared.storedEvent(forHex: author),
+                                            own: ConfigService.shared.config.writeRelays.filter { !Self.isLoopbackRelay($0) }, createdAt: { $0.created_at }) {
+            case .list(let event):
+                base = (event.tags, event.content)
+            case .none:
+                base = (hexKeys(localBlocks).map { ["p", $0] }, "")
+            case .unknown:
+                #if DEBUG
+                print("NostrService: Kind 10000: list not fetched (\(lookup.answered)/\(lookup.asked) relays answered); not published")
+                #endif
+                ActionToastManager.shared.show(
+                    icon: "exclamationmark.triangle.fill",
+                    message: "\(action) saved on this device only: your relays didn't send your mute list, and publishing without it would erase blocks set in other apps. Try again later.",
+                    tone: .error)
+                return
             }
-            if let event {
-                ConfigService.shared.config.blockedNpubsLastSyncTimestamp[accountNpub] = event.created_at
-                ConfigService.shared.save()
+            let tags = ListMerge.edit(name: "p", base: base.tags, add: hexKeys(add), remove: hexKeys(remove))
+            guard let event = await signEventAsync(kind: 10000, content: base.content, tags: tags, signAsNpub: accountNpub) else {
+                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                               message: "\(action) saved on this device only: your signer didn't answer",
+                                               tone: .error)
+                return
             }
+            postEvent(event)
+            ConfigService.shared.config.blockedNpubsLastSyncTimestamp[accountNpub] = event.created_at
+            ConfigService.shared.save()
+            // This device's blocks become the published list, so people
+            // another app blocked show as blocked here too.
+            applyOwnMuteList(event)
+            #if DEBUG
+            print("NostrService: Published Kind 10000 with \(tags.count) tags for \(author.prefix(8))")
+            #endif
         }
     }
 

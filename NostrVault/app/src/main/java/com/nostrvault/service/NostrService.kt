@@ -337,7 +337,13 @@ class NostrService @Inject constructor(
 
     fun publishFireAndForget(event: NostrEvent, relays: List<String>) { publishFireAndForgetImpl(event, relays) }
 
-    fun publishMuteList(accountNpub: String, blockedNpubs: List<String>) { publishMuteListImpl(accountNpub, blockedNpubs) }
+    /** Blocks or unblocks on the published mute list; returns what to tell the person when it wasn't published. */
+    suspend fun publishMuteListChange(
+        accountNpub: String,
+        add: List<String> = emptyList(),
+        remove: List<String> = emptyList(),
+        localBlocks: List<String>,
+    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks)
 
     fun publishRelayList(accountNpub: String) { publishRelayListImpl(accountNpub) }
 
@@ -352,7 +358,15 @@ class NostrService @Inject constructor(
      * relays were asked and answered (EOSE). No event with every relay
      * answered means there genuinely is none, not that the lookup timed out.
      */
-    data class ReplaceableLookup(val event: NostrEvent?, val asked: Int, val answered: Int) {
+    data class ReplaceableLookup(
+        val event: NostrEvent?,
+        val asked: Int,
+        val answered: Int,
+        /** The relays that answered. */
+        val answeredBy: Set<String> = emptySet(),
+        /** The relays that sent [event]. */
+        val from: Set<String> = emptySet(),
+    ) {
         val confirmedNone: Boolean get() = event == null && asked > 0 && answered >= asked
     }
 

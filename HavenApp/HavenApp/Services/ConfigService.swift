@@ -736,8 +736,8 @@ class ConfigService: ObservableObject {
             // Post notification for instant UI refresh
             NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
 
-            // Publish updated mute list back to Nostr
-            NostrService.shared.publishMuteList(for: targetNpub, blockedNpubs: current)
+            // Add this one person to the published mute list
+            NostrService.shared.publishMuteListChange(for: targetNpub, add: [npub], localBlocks: current)
         }
     }
 
@@ -764,8 +764,8 @@ class ConfigService: ObservableObject {
             // Post notification for instant UI refresh
             NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
 
-            // Publish updated mute list back to Nostr
-            NostrService.shared.publishMuteList(for: targetNpub, blockedNpubs: current)
+            // Take this one person off the published mute list
+            NostrService.shared.publishMuteListChange(for: targetNpub, remove: [npub], localBlocks: current)
         }
     }
 

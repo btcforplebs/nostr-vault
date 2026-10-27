@@ -66,4 +66,69 @@ class ListMergeTest {
         assertEquals(listOf("wss://a"), ListMerge.Bases(file).get("10006:abc"))
         assertEquals(listOf("https://m"), ListMerge.Bases(file).get("10063:abc"))
     }
+
+    // ── Block / unblock on a mute list another app wrote ──
+
+    /** Amethyst's shape: public people, words, hashtags and a thread (its private part rides in content). */
+    private val amethystList = listOf(
+        listOf("p", "a1"), listOf("p", "b2", "wss://relay.example", "pet"), listOf("word", "spoiler"),
+        listOf("t", "nsfw"), listOf("e", "thread1"), listOf("p", "C3"),
+    )
+
+    @Test
+    fun `block keeps every old entry and adds one`() {
+        assertEquals(amethystList + listOf(listOf("p", "d4")), ListMerge.edit("p", amethystList, listOf("d4"), emptyList()))
+    }
+
+    @Test
+    fun `block of someone already listed changes nothing`() {
+        assertEquals(amethystList, ListMerge.edit("p", amethystList, listOf("a1"), emptyList()))
+    }
+
+    @Test
+    fun `unblock removes only that entry`() {
+        assertEquals(
+            listOf(
+                listOf("p", "a1"), listOf("p", "b2", "wss://relay.example", "pet"), listOf("word", "spoiler"),
+                listOf("t", "nsfw"), listOf("e", "thread1"),
+            ),
+            ListMerge.edit("p", amethystList, emptyList(), listOf("c3")),
+        )
+    }
+
+    @Test
+    fun `unblock leaves a word or thread with the same value`() {
+        val base = listOf(listOf("word", "x"), listOf("e", "x"), listOf("p", "x"))
+        assertEquals(listOf(listOf("word", "x"), listOf("e", "x")), ListMerge.edit("p", base, emptyList(), listOf("x")))
+    }
+
+    private fun list(createdAt: Long) = NostrEvent("", "me", createdAt, 10000, amethystList, "private", "")
+
+    @Test
+    fun `edit builds on the newer of the fetched and the held list`() {
+        val fetched = NostrService.ReplaceableLookup(list(100), asked = 3, answered = 1)
+        assertEquals(ListMerge.EditBase.Found(list(200)), ListMerge.editBase(fetched, list(200)))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fetched, null))
+    }
+
+    @Test
+    fun `edit is not published when the fetch fails`() {
+        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 0), list(200)))
+        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 2), null))
+        assertEquals(ListMerge.EditBase.None, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 3), null))
+    }
+
+    @Test
+    fun `edit is not published on a copy no own relay vouches for`() {
+        val own = listOf("wss://mine.example")
+        // Only purplepag.es answered; the user's relay timed out.
+        val stale = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://purplepag.es"), setOf("wss://purplepag.es"))
+        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(stale, list(50), own))
+        // The user's relay sent it.
+        val fromMine = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fromMine, null, own))
+        // The user's relay answered with an older copy; the newer one counts.
+        val newerElsewhere = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(newerElsewhere, null, own))
+    }
 }

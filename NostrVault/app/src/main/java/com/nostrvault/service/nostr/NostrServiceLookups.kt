@@ -149,6 +149,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         if (targets.isEmpty()) return ReplaceableLookup(null, 0, 0)
         val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
         val answered = java.util.concurrent.atomic.AtomicInteger(0)
+        val answeredBy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val newestBy = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
         coroutineScope {
             targets.map { url ->
                 launch(Dispatchers.IO) {
@@ -167,10 +169,14 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                                             if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
                                             if (dTag != null && ev.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@collect
                                             best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
+                                            newestBy.merge(url, ev) { a, b -> if (b.createdAt > a.createdAt) b else a }
                                         }
                                         "EOSE" -> {
                                             val ours = (arr.getOrNull(1) as? JsonPrimitive)?.contentOrNull == subId
-                                            if (done.complete(Unit) && ours) answered.incrementAndGet()
+                                            if (done.complete(Unit) && ours) {
+                                                answered.incrementAndGet()
+                                                answeredBy.add(url)
+                                            }
                                         }
                                         "CLOSED" -> done.complete(Unit)
                                     }
@@ -191,7 +197,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 }
             }.joinAll()
         }
-        return ReplaceableLookup(best.get(), targets.size, answered.get())
+        val newest = best.get()
+        val from = newestBy.filterValues { newest != null && it.id == newest.id }.keys
+        return ReplaceableLookup(newest, targets.size, answered.get(), answeredBy.toSet(), from.toSet())
     }
 
     /**
