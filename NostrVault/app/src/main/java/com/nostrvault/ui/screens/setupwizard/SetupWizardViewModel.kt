@@ -25,6 +25,7 @@ import com.nostrvault.service.NIP49Service
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.RelayImportService
 import com.nostrvault.service.StatsService
+import com.nostrvault.setup.CitrineDetect
 import com.nostrvault.setup.IdentityInput
 import com.nostrvault.setup.RelayCheck
 import com.nostrvault.setup.RelayCheckProbe
@@ -94,6 +95,11 @@ class SetupWizardViewModel @Inject constructor(
 
     internal val _externalBlossomInput = MutableStateFlow("")
     val externalBlossomInput = _externalBlossomInput.asStateFlow()
+
+    /** Citrine is on this phone: the relay choice becomes "Use Nostr Vault"
+     *  or "Use Citrine". Without it the step is unchanged. */
+    internal val _citrineInstalled = MutableStateFlow(false)
+    val citrineInstalled = _citrineInstalled.asStateFlow()
 
     // Account
     internal val _accountMode = MutableStateFlow(AccountMode.GENERATE)
@@ -237,6 +243,8 @@ class SetupWizardViewModel @Inject constructor(
 
     init {
         _isAmberAvailable.value = amberSignerService.isAmberInstalled()
+        _citrineInstalled.value = runCatching { CitrineDetect.isInstalled(appContext.packageManager) }
+            .getOrDefault(false)
     }
 
     // ── Setters ──────────────────────────────────────────────────
@@ -245,6 +253,19 @@ class SetupWizardViewModel @Inject constructor(
     fun setUseExternalRelay(value: Boolean) { _useExternalRelay.value = value }
     fun setExternalRelayInput(value: String) { _externalRelayInput.value = value }
     fun setExternalBlossomInput(value: String) { _externalBlossomInput.value = value }
+
+    /** "Use Citrine" fills Citrine's address and takes today's external relay
+     *  path; "Use Nostr Vault" is the normal built-in setup. */
+    fun chooseCitrine(use: Boolean) {
+        _error.value = null
+        if (use) {
+            _useExternalRelay.value = true
+            _externalRelayInput.value = CitrineDetect.RELAY_URL
+            _externalBlossomInput.value = ""
+        } else {
+            _useExternalRelay.value = false
+        }
+    }
     fun setAccountMode(mode: AccountMode) { _accountMode.value = mode }
     fun setNpubInput(value: String) { _npubInput.value = value; _error.value = null }
     fun setNsecInput(value: String) { _nsecInput.value = value; _error.value = null }

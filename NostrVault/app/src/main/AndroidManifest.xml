@@ -43,6 +43,8 @@
     <!-- NIP-55: Query Amber signer app for intent resolution -->
     <queries>
         <package android:name="com.greenart7c3.nostrsigner" />
+        <!-- Citrine, the relay app: setup offers it instead of the built-in relay. -->
+        <package android:name="com.greenart7c3.citrine" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="nostrsigner" />

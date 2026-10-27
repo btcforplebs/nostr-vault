@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.setup.CitrineDetect
 import com.nostrvault.ui.theme.*
 import java.net.URL
 
@@ -24,6 +25,12 @@ internal fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
     val relayInput by viewModel.externalRelayInput.collectAsState()
     val blossomInput by viewModel.externalBlossomInput.collectAsState()
     val error by viewModel.error.collectAsState()
+    val citrineInstalled by viewModel.citrineInstalled.collectAsState()
+
+    if (citrineInstalled) {
+        CitrineChoice(viewModel, useCitrine = useExternal, error = error)
+        return
+    }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -92,6 +99,59 @@ internal fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
                 fontSize = 12.sp,
             )
         }
+
+        error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(text = it, color = ErrorRed, fontSize = 13.sp)
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        WizardPrimaryButton(
+            text = "Continue",
+            onClick = viewModel::advanceFromRelayChoice,
+        )
+    }
+}
+
+/** Citrine is on this phone: one choice, Nostr Vault or Citrine. */
+@Composable
+private fun CitrineChoice(viewModel: SetupWizardViewModel, useCitrine: Boolean, error: String?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Citrine is on this phone",
+            color = PrimaryText,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Which one should keep your notes? You can change this later in Settings > Advanced.",
+            color = SecondaryText,
+            fontSize = 14.sp,
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        WizardOptionCard(
+            title = "Use Nostr Vault",
+            subtitle = "Recommended -- your notes and media live in this app, " +
+                "with notifications and the Popular feed",
+            selected = !useCitrine,
+            onClick = { viewModel.chooseCitrine(false) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        WizardOptionCard(
+            title = "Use Citrine",
+            subtitle = "Your notes stay in Citrine (${CitrineDetect.RELAY_URL}), so there is no " +
+                "second copy. Setup skips the import. Notifications and the Popular feed stay off.",
+            selected = useCitrine,
+            onClick = { viewModel.chooseCitrine(true) },
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         error?.let {
             Spacer(Modifier.height(8.dp))
