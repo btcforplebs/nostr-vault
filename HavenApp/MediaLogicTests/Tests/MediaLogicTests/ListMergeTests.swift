@@ -85,4 +85,21 @@ final class ListMergeTests: XCTestCase {
         let all = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 3)
         guard case .none = ListMerge.editBase(all, held: nil, createdAt: { $0 }) else { return XCTFail("no list anywhere should be none") }
     }
+
+    func testEditBaseIsUnknownOnACopyNoOwnRelayVouchesFor() {
+        let own = ["wss://mine.example"]
+        // Only purplepag.es answered; the user's relay timed out.
+        let stale = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
+                                      answeredBy: ["wss://purplepag.es"], from: ["wss://purplepag.es"])
+        guard case .unknown = ListMerge.editBase(stale, held: 50, own: own, createdAt: { $0 }) else { return XCTFail("built on a stale copy") }
+        // The user's relay sent it.
+        let fromMine = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1,
+                                         answeredBy: ["wss://mine.example/"], from: ["wss://mine.example/"])
+        guard case .list(let list) = ListMerge.editBase(fromMine, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
+        XCTAssertEqual(list, 100)
+        // The user's relay answered with an older copy; the newer one counts.
+        let newerElsewhere = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 2,
+                                               answeredBy: ["wss://mine.example", "wss://purplepag.es"], from: ["wss://purplepag.es"])
+        guard case .list = ListMerge.editBase(newerElsewhere, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
+    }
 }

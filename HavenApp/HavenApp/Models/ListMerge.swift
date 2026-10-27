@@ -59,15 +59,27 @@ enum ListMerge {
     }
 
     /// The newest of the list the relays returned and the one this device
-    /// already `held`. Unknown when no relay answered, or when no list turned
-    /// up and some relay didn't answer.
-    static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?,
+    /// already `held`. Unknown when no relay answered, when no list turned up
+    /// and some relay didn't answer, or when none of the account's `own`
+    /// relays was heard from: neither sent the list nor every one answered.
+    /// A copy on another relay alone can be older than the one on `own`.
+    static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String] = [],
                                 createdAt: (Event) -> Int64) -> EditBase<Event> {
         guard lookup.answered > 0 else { return .unknown }
+        let mine = Set(own.map(relayKey))
+        let ownHeard = mine.isEmpty || mine.isSubset(of: Set(lookup.answeredBy.map(relayKey)))
+            || lookup.from.contains { mine.contains(relayKey($0)) }
+        guard ownHeard else { return .unknown }
         if let newest = [lookup.event, held].compactMap({ $0 }).max(by: { createdAt($0) < createdAt($1) }) {
             return .list(newest)
         }
         return lookup.confirmedNone ? .none : .unknown
+    }
+
+    private static func relayKey(_ url: String) -> String {
+        var key = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while key.hasSuffix("/") { key.removeLast() }
+        return key
     }
 
     /// What this device last published per list, so the next publish can tell

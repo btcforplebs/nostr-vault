@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import android.util.Log
 import com.nostrvault.BuildConfig
+import com.nostrvault.data.model.MuteList
 import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenConfig
 import kotlinx.coroutines.*
@@ -103,21 +104,31 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val author = npubToHex(accountNpub) ?: ownerHexPubkey
         if (author.isBlank()) return null
         val action = if (add.isEmpty()) "Unblock" else "Block"
+        val cfg = configStore.config.value
         // The relays the mute list is read from at sign-in, so a block builds
         // on the list another app last wrote, not an older copy.
-        val ask = (relayLists.value[author].orEmpty() + configStore.config.value.readRelays + NostrService.PROFILE_RELAYS).distinct()
+        val ask = (relayLists.value[author].orEmpty() + cfg.readRelays + NostrService.PROFILE_RELAYS).distinct()
         val lookup = runCatching { lookupNewestReplaceable(10000, author, ask) }
             .getOrElse { NostrService.ReplaceableLookup(null, 0, 0) }
-        val (baseTags, content) = when (val base = ListMerge.editBase(lookup, heldMuteList(author))) {
+        // Private blocks stay in the encrypted content, never in the "p" tags.
+        val private = cfg.privateBlockedNpubsPerAccount[accountNpub.ifEmpty { cfg.ownerNpub }].orEmpty().toSet()
+        val (baseTags, baseContent) = when (val base = ListMerge.editBase(lookup, heldMuteList(author), cfg.writeRelays.filterNot(::isLoopbackRelay))) {
             is ListMerge.EditBase.Found -> base.event.tags to base.event.content
-            ListMerge.EditBase.None -> localBlocks.mapNotNull { npubToHex(it) }.map { listOf("p", it) } to ""
+            ListMerge.EditBase.None -> localBlocks.filter { it !in private }.mapNotNull { npubToHex(it) }.map { listOf("p", it) } to ""
             ListMerge.EditBase.Unknown -> {
                 Log.w(TAG, "kind 10000: list not fetched (${lookup.answered}/${lookup.asked} relays answered); not published")
                 return "$action saved on this device only: your relays didn't send your mute list, " +
                     "and publishing without it would erase blocks set in other apps. Try again later."
             }
         }
-        val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, remove.mapNotNull { npubToHex(it) })
+        val removeHex = remove.mapNotNull { npubToHex(it) }
+        // An unblock takes the person out of the encrypted part too, or
+        // reading the published list back blocks them again.
+        val content = when (val edited = privateRemoved(author, baseContent, removeHex)) {
+            PrivateEdit.Failed -> return "$action saved on this device only: your signer didn't update your private blocks"
+            is PrivateEdit.Done -> edited.content
+        }
+        val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, removeHex)
         val event = try {
             signEventAsync(kind = 10000, content = content, tags = tags, forceOwner = forceOwner)
         } catch (e: CancellationException) {
@@ -131,6 +142,29 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // app blocked show as blocked here too.
         applyMuteList(author, event.tags, event.content, event.createdAt)
         return null
+    }
+
+    private sealed interface PrivateEdit {
+        class Done(val content: String) : PrivateEdit
+        data object Failed : PrivateEdit
+    }
+
+    /**
+     * [content] with the [remove] hex pubkeys taken out of its encrypted "p"
+     * entries, encrypted the same way again. Unchanged when no one in
+     * [remove] is in it, or when this device can't open it: then reading
+     * the list back can't re-block them either.
+     */
+    private suspend fun NostrService.privateRemoved(hex: String, content: String, remove: List<String>): PrivateEdit {
+        if (remove.isEmpty() || content.isBlank()) return PrivateEdit.Done(content)
+        val nip04 = MuteList.isNip04(content)
+        val plaintext = runCatching { decryptOwnList(hex, content, nip04) }.getOrNull()
+        val privateTags = plaintext?.let(MuteList::privateTags) ?: return PrivateEdit.Done(content)
+        val edited = ListMerge.edit("p", privateTags, emptyList(), remove)
+        if (edited.size == privateTags.size) return PrivateEdit.Done(content)
+        val json = JsonArray(edited.map { tag -> JsonArray(tag.map(::JsonPrimitive)) }).toString()
+        val ciphertext = runCatching { encryptOwnList(hex, json, nip04) }.getOrNull()
+        return ciphertext?.let { PrivateEdit.Done(it) } ?: PrivateEdit.Failed
     }
 
     /**
@@ -289,11 +323,17 @@ internal object ListMerge {
 
     /**
      * The newest of the list the relays returned and the one this device
-     * already [held]. Unknown when no relay answered, or when no list turned
-     * up and some relay didn't answer.
+     * already [held]. Unknown when no relay answered, when no list turned up
+     * and some relay didn't answer, or when none of the account's [own]
+     * relays was heard from: neither sent the list nor every one answered.
+     * A copy on another relay alone can be older than the one on [own].
      */
-    fun editBase(lookup: NostrService.ReplaceableLookup, held: NostrEvent?): EditBase {
+    fun editBase(lookup: NostrService.ReplaceableLookup, held: NostrEvent?, own: Collection<String> = emptyList()): EditBase {
         if (lookup.answered == 0) return EditBase.Unknown
+        val mine = own.map(::relayKey).toSet()
+        val ownHeard = mine.isEmpty() || lookup.answeredBy.map(::relayKey).containsAll(mine) ||
+            lookup.from.any { relayKey(it) in mine }
+        if (!ownHeard) return EditBase.Unknown
         val newest = listOfNotNull(lookup.event, held).maxByOrNull { it.createdAt }
         return when {
             newest != null -> EditBase.Found(newest)
@@ -301,6 +341,8 @@ internal object ListMerge {
             else -> EditBase.Unknown
         }
     }
+
+    private fun relayKey(url: String): String = url.trim().lowercase().trimEnd('/')
 
     /**
      * What this device last published per list, so the next publish can tell

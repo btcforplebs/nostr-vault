@@ -358,7 +358,15 @@ class NostrService @Inject constructor(
      * relays were asked and answered (EOSE). No event with every relay
      * answered means there genuinely is none, not that the lookup timed out.
      */
-    data class ReplaceableLookup(val event: NostrEvent?, val asked: Int, val answered: Int) {
+    data class ReplaceableLookup(
+        val event: NostrEvent?,
+        val asked: Int,
+        val answered: Int,
+        /** The relays that answered. */
+        val answeredBy: Set<String> = emptySet(),
+        /** The relays that sent [event]. */
+        val from: Set<String> = emptySet(),
+    ) {
         val confirmedNone: Boolean get() = event == null && asked > 0 && answered >= asked
     }
 

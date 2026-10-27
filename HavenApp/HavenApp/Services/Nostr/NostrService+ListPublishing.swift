@@ -24,7 +24,8 @@ extension NostrService {
             let alsoAsk = Array(Set(ConfigService.shared.config.readRelays + MuteListStore.extraRelays))
             let lookup = await lookupNewestReplaceable(kind: 10000, for: author, alsoAsk: alsoAsk)
             let base: (tags: [[String]], content: String)
-            switch ListMerge.editBase(lookup, held: MuteListStore.shared.storedEvent(forHex: author), createdAt: { $0.created_at }) {
+            switch ListMerge.editBase(lookup, held: MuteListStore.shared.storedEvent(forHex: author),
+                                            own: ConfigService.shared.config.writeRelays.filter { !Self.isLoopbackRelay($0) }, createdAt: { $0.created_at }) {
             case .list(let event):
                 base = (event.tags, event.content)
             case .none:

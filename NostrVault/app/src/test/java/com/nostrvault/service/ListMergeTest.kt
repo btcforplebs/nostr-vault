@@ -117,4 +117,18 @@ class ListMergeTest {
         assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 2), null))
         assertEquals(ListMerge.EditBase.None, ListMerge.editBase(NostrService.ReplaceableLookup(null, 3, 3), null))
     }
+
+    @Test
+    fun `edit is not published on a copy no own relay vouches for`() {
+        val own = listOf("wss://mine.example")
+        // Only purplepag.es answered; the user's relay timed out.
+        val stale = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://purplepag.es"), setOf("wss://purplepag.es"))
+        assertEquals(ListMerge.EditBase.Unknown, ListMerge.editBase(stale, list(50), own))
+        // The user's relay sent it.
+        val fromMine = NostrService.ReplaceableLookup(list(100), 3, 1, setOf("wss://mine.example/"), setOf("wss://mine.example/"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(fromMine, null, own))
+        // The user's relay answered with an older copy; the newer one counts.
+        val newerElsewhere = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
+        assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(newerElsewhere, null, own))
+    }
 }
