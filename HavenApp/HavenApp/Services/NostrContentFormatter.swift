@@ -31,19 +31,22 @@ public struct NostrContentFormatter {
     /// for one. Leaving the reference in the text produced a bare blue "Quote"
     /// word beside — or instead of — the card.
     @MainActor
-    public static func format(_ content: String, mediaURLs: [URL] = []) -> AttributedString {
-        let key = "\(content.hashValue)_\(mediaURLs.count)" as NSString
+    static func format(_ content: String, mediaURLs: [URL] = [], invoices: [NoteInvoices.Match] = []) -> AttributedString {
+        let key = "\(content.hashValue)_\(mediaURLs.count)_\(invoices.count)" as NSString
         if let cached = cache.object(forKey: key) {
             return cached.value
         }
-        let result = formatUncached(content, mediaURLs: mediaURLs)
+        let result = formatUncached(content, mediaURLs: mediaURLs, invoices: invoices)
         cache.setObject(Box(result), forKey: key)
         return result
     }
 
     @MainActor
-    private static func formatUncached(_ content: String, mediaURLs: [URL]) -> AttributedString {
+    private static func formatUncached(_ content: String, mediaURLs: [URL], invoices: [NoteInvoices.Match]) -> AttributedString {
         var text = content
+
+        // Lightning invoices are drawn as pay cards underneath.
+        text = NoteInvoices.strip(invoices, from: text)
 
         // Strip URLs the view renders on its own — media as thumbnails,
         // links as preview cards.

@@ -97,7 +97,8 @@ extension FeedNoteRow {
             }
             .padding(.top, 4)
         } else {
-            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs))
+            let invoices = NoteInvoices.find(in: bodySource.content)
+            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs), invoices: invoices)
             VStack(alignment: .leading, spacing: 8) {
                 Text(formattedContent)
                     .font(.appSystem(size: 17, weight: .regular, design: .default))
@@ -119,6 +120,12 @@ extension FeedNoteRow {
             // link gets its card.
             ForEach(LinkCards.shown(bodySource.linkURLs), id: \.self) { url in
                 LinkPreviewCard(url: url)
+                    .padding(.top, 4)
+            }
+
+            // Lightning invoices — cut from the text, drawn as pay cards.
+            ForEach(invoices, id: \.invoice) { match in
+                LightningInvoiceCard(match: match)
                     .padding(.top, 4)
             }
         }
