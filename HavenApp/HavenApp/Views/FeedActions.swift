@@ -72,6 +72,8 @@ struct FeedActions {
     var likeNote: (FeedNote) -> Void = { _ in }
     var unlikeNote: (FeedNote) -> Void = { _ in }
     var reactToNote: (FeedNote, String) -> Void = { _, _ in }
+    /// Reacts with a NIP-30 custom emoji: `:shortcode:` plus its emoji tag.
+    var reactWithCustom: (FeedNote, CustomEmoji) -> Void = { _, _ in }
 
     // Repost
     var repostNote: (FeedNote) -> Void = { _ in }
@@ -107,7 +109,7 @@ struct FeedActions {
     /// Leaves `content` as the account's reaction on `note`, replacing any
     /// reaction it already had there (a NIP-09 deletion retracts the old one).
     @MainActor
-    private static func react(to note: FeedNote, with content: String,
+    private static func react(to note: FeedNote, with content: String, emojiTag: [String]? = nil,
                               feedService: FeedService, nostrService: NostrService) {
         let noteId = note.id
         let previous = feedService.myReactions[noteId]
@@ -137,7 +139,9 @@ struct FeedActions {
             let powSnap = PowPreferences.snapshot()
             let powDiff = powSnap.reactionEnabled ? powSnap.reactionDifficulty : 0
             let signed = await nostrService.mineAndSignEventAsync(kind: 7, content: content,
-                tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]], difficulty: powDiff)
+                tags: CustomEmoji.reactionEventTags(noteId: noteId, relayHint: relayHint, authorPubkey: note.pubkey,
+                                                    noteKind: note.kind, content: content, emojiTag: emojiTag),
+                difficulty: powDiff)
             await MainActor.run {
                 // Changed or removed while signing: this one never goes out.
                 guard feedService.pendingReactionTokens[noteId] == token else { return }
@@ -238,7 +242,10 @@ struct FeedActions {
     /// don't each duplicate ~70 lines of closure construction.
     @MainActor
     static func make(feedService: FeedService, nostrService: NostrService) -> FeedActions {
-        FeedActions(
+        // The picker's own custom emoji are read with this account's relays.
+        EmojiListService.shared.nostrService = nostrService
+        EmojiListService.shared.refresh()
+        return FeedActions(
             likeNote: { note in
                 react(to: feedService.originalNote(for: note), with: ConfigService.shared.config.defaultReactionEmoji,
                       feedService: feedService, nostrService: nostrService)
@@ -248,6 +255,10 @@ struct FeedActions {
             },
             reactToNote: { note, emoji in
                 react(to: feedService.originalNote(for: note), with: emoji, feedService: feedService, nostrService: nostrService)
+            },
+            reactWithCustom: { note, custom in
+                react(to: feedService.originalNote(for: note), with: custom.content, emojiTag: custom.tag,
+                      feedService: feedService, nostrService: nostrService)
             },
             repostNote: { note in
                 PendingPostManager.shared.startRepost(sourceNote: note, nostrService: nostrService)

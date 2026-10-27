@@ -21,10 +21,10 @@ final class ReactionTapback: ObservableObject {
         let noteId: String
         /// The reaction button, in window space.
         let anchor: CGRect
-        let options: [String]
+        let options: [ReactionPick]
         /// The account's current reaction as displayed, if there is one.
         let current: String?
-        let onPick: (String) -> Void
+        let onPick: (ReactionPick) -> Void
         let onMore: () -> Void
     }
 
@@ -43,16 +43,12 @@ final class ReactionTapback: ObservableObject {
     static let slot: CGFloat = 44
     static let inset: CGFloat = 6
 
-    /// The bar's emoji: the account's default reaction first if it is not
+    /// The bar's emoji: the person's quick bar (kept on this device, most
+    /// used first) with the account's default reaction first if it is not
     /// already one of them.
-    static func options(defaultContent: String) -> [String] {
-        var list = ["❤️", "🤙", "🔥", "😂", "😮", "😢"]
-        let mine = reactionDisplayEmoji(defaultContent)
-        if !list.contains(mine) {
-            list.removeLast()
-            list.insert(mine, at: 0)
-        }
-        return list
+    static func options(defaultContent: String) -> [ReactionPick] {
+        EmojiPalette.tapbackOptions(defaultDisplay: reactionDisplayEmoji(defaultContent),
+                                    bar: EmojiPalette.orderedBar(EmojiPaletteStore.shared.state))
     }
 
     static func barSize(optionCount: Int) -> CGSize {
@@ -60,7 +56,7 @@ final class ReactionTapback: ObservableObject {
     }
 
     func begin(noteId: String, anchor: CGRect, current: String?, defaultContent: String,
-               onPick: @escaping (String) -> Void, onMore: @escaping () -> Void) {
+               onPick: @escaping (ReactionPick) -> Void, onMore: @escaping () -> Void) {
         close()
         session = Session(noteId: noteId, anchor: anchor, options: Self.options(defaultContent: defaultContent),
                           current: current, onPick: onPick, onMore: onMore)
@@ -132,17 +128,17 @@ final class ReactionTapback: ObservableObject {
 
 /// The row of emoji itself, shared by the iOS layer and the macOS popover.
 struct ReactionTapbackBar: View {
-    let options: [String]
+    let options: [ReactionPick]
     let current: String?
     let highlighted: Int?
     let onChoose: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, emoji in
+            ForEach(Array(options.enumerated()), id: \.offset) { index, pick in
+                let emoji = pick.content
                 Button { onChoose(index) } label: {
-                    Text(emoji)
-                        .font(.system(size: 26))
+                    ReactionGlyph(pick, fontSize: 26)
                         .frame(width: ReactionTapback.slot, height: ReactionTapback.slot)
                         .background {
                             if emoji == current {

@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Thread Note Engagement Row (reusable compact row for expanded view)
 
 struct ThreadNoteEngagementRow: View {
-    let reactions: [(emoji: String, count: Int)]
+    let reactions: [ReactionGrouping.Group]
     let zapCount: Int
     let zapSats: Int64
     let repostCount: Int
@@ -17,9 +17,9 @@ struct ThreadNoteEngagementRow: View {
             HStack(spacing: 8) {
                 if !reactions.isEmpty {
                     HStack(spacing: 3) {
-                        ForEach(reactions.prefix(3), id: \.emoji) { group in
+                        ForEach(reactions.prefix(3), id: \.key) { group in
                             HStack(spacing: 1) {
-                                Text(group.emoji).font(.appSystem(size: 11))
+                                ReactionGlyph(group.emoji, custom: group.custom, fontSize: 11)
                                 Text("\(group.count)")
                                     .font(.appSystem(size: 9, weight: .bold, design: .monospaced))
                                     .foregroundColor(.secondary)

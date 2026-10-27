@@ -4,10 +4,10 @@ import Combine
 extension NoteDetailView {
     // MARK: - Rich Engagement Computations
 
-    private var groupedReactions: [(emoji: String, count: Int, reactorPubkeys: [String])] {
+    private var groupedReactions: [ReactionGrouping.Group] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = detailedReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
-        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count, reactorPubkeys: $0.reactorPubkeys) }
+        let reactions = detailedReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at, tags: $0.tags) }
+        return ReactionGrouping.groups(tagged: reactions)
     }
 
     struct ZapDetail: Hashable {
@@ -64,10 +64,9 @@ extension NoteDetailView {
                     showingReactorsSheet = true
                 } label: {
                     HStack(spacing: 4) {
-                        ForEach(groupedReactions.prefix(4), id: \.emoji) { group in
+                        ForEach(groupedReactions.prefix(4), id: \.key) { group in
                             HStack(spacing: 2) {
-                                Text(group.emoji)
-                                    .font(.appSystem(size: 12))
+                                ReactionGlyph(group.emoji, custom: group.custom, fontSize: 12)
                                 Text("\(group.count)")
                                     .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundColor(.secondary)
