@@ -549,11 +549,12 @@ private fun NoteBody(
 ) {
     // Content text (iOS lines 296-311)
     if (note.content.isNotBlank()) {
-        NostrContentText(
+        // Each link's card sits where the link was written (iOS #1248).
+        NoteTextWithLinkCards(
             content = note.content,
+            cards = note.cardLinkURLs,
             profiles = profiles,
             mediaURLs = note.mediaURLs.toSet(),
-            linkURLs = note.cardLinkURLs.toSet(),
             onProfileClick = onProfileClick,
             onPlainTextClick = { onNoteClick(note.id) },
             lineHeight = 20.sp,
@@ -563,12 +564,6 @@ private fun NoteBody(
     // Media previews (iOS lines 314-330)
     if (note.mediaURLs.isNotEmpty()) {
         MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
-    }
-
-    // One card per link: the URLs are out of the text above (#170).
-    // Links above quotes, as on iOS VaultNoteRow.
-    for (link in note.cardLinkURLs) {
-        LinkPreviewCard(url = link)
     }
 
     // Quoted events. This card already knew a quote existed — it suppressed

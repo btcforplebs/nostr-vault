@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import com.nostrvault.data.model.BareNostrRefs
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.ui.navigation.LocalOpenHashtag
 import com.nostrvault.ui.theme.*
@@ -241,9 +242,11 @@ private val HASHTAG_REGEX = Regex(
 
 /** [strippedURLs] are dropped from the text: media, and links drawn as cards. */
 internal fun parseContentSegments(
-    content: String,
+    rawContent: String,
     strippedURLs: Set<String>,
 ): List<ContentSegment> {
+    // `nevent1…` written without `nostr:` gets the same card and mention (iOS #1250).
+    val content = BareNostrRefs.prefixBare(rawContent)
     // Collect all matches with their ranges
     data class Match(val range: IntRange, val segment: ContentSegment)
 

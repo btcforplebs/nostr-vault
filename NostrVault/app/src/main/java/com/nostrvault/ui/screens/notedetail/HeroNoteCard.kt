@@ -258,11 +258,12 @@ internal fun HeroNoteCard(
                 ) {
                     // Long-press selects the focused note's text (iOS
                     // FeedNoteRow `.textSelection(.enabled)`).
-                    NostrContentText(
+                    // Each link's card sits where the link was written (iOS #1246).
+                    NoteTextWithLinkCards(
                         content = invoiceBody,
+                        cards = note.cardLinkURLs,
                         profiles = profiles,
                         mediaURLs = mediaSet,
-                        linkURLs = linkSet,
                         onProfileClick = onProfileClick,
                         fontSize = 17.sp,
                         lineHeight = 24.sp,
@@ -278,8 +279,8 @@ internal fun HeroNoteCard(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // One card per link: the URLs are out of the text above (#170).
-            for (link in note.cardLinkURLs) {
+            // A poll's links get their cards here; a text note draws them inline.
+            if (poll != null || invoiceBody.isBlank()) for (link in note.cardLinkURLs) {
                 LinkPreviewCard(url = link)
                 Spacer(Modifier.height(12.dp))
             }

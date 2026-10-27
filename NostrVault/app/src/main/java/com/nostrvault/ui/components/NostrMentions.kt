@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.data.model.BareNostrRefs
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.QuoteRef
 import com.nostrvault.relay.HavenBridge
@@ -55,7 +56,7 @@ object NostrMentions {
      * profile lookups narrowable to that row.
      */
     fun mentionedPubkeys(content: String): List<String> =
-        MENTION_REGEX.findAll(content)
+        MENTION_REGEX.findAll(BareNostrRefs.prefixBare(content))
             .mapNotNull { resolvePubkey(it.groupValues[1]) }
             .distinct()
             .toList()
@@ -81,7 +82,7 @@ object NostrMentions {
         mediaURLs: Set<String> = emptySet(),
         linkURLs: Set<String> = emptySet(),
     ): String {
-        var text = MENTION_REGEX.replace(content) { match ->
+        var text = MENTION_REGEX.replace(BareNostrRefs.prefixBare(content)) { match ->
             val identifier = match.groupValues[1]
             val pubkey = resolvePubkey(identifier)
             if (pubkey != null) "@${displayName(pubkey, profiles)}" else "@${identifier.take(10)}…"

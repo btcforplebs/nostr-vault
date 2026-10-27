@@ -156,7 +156,8 @@ object QuoteRef {
      */
     fun identifiers(content: String): List<String> {
         val seen = LinkedHashSet<String>()
-        for (match in REGEX.findAll(content)) seen.add(match.groupValues[1])
+        // A bare `nevent1…` is a quote too (iOS #1250).
+        for (match in REGEX.findAll(BareNostrRefs.prefixBare(content))) seen.add(match.groupValues[1])
         return seen.toList()
     }
 
