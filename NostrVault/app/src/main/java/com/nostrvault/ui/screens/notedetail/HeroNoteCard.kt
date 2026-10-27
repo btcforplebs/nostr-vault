@@ -1,5 +1,7 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.util.NoteInvoices
+import com.nostrvault.ui.components.LightningInvoiceCard
 import com.nostrvault.ui.notification.LocalNotificationManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -235,15 +237,18 @@ internal fun HeroNoteCard(
             // Content. A poll draws its question and options as the card,
             // bigger here, with who picked each option.
             val poll = remember(note.id, note.kind) { note.poll }
+            // Lightning invoices: cut from the text, drawn as pay cards under the links.
+            val invoices = remember(note.content) { if (poll == null) NoteInvoices.find(note.content) else emptyList() }
+            val invoiceBody = remember(note.content, invoices) { NoteInvoices.textWithout(invoices, note.content) }
             if (poll != null) {
                 PollCard(poll = poll, isFocused = true, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
                 Spacer(Modifier.height(12.dp))
-            } else if (note.content.isNotBlank()) {
+            } else if (invoiceBody.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
                 val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
                 TranslatableNoteText(
                     noteKey = note.effectiveEventId,
-                    content = note.content,
+                    content = invoiceBody,
                     profiles = profiles,
                     mediaURLs = mediaSet,
                     linkURLs = linkSet,
@@ -254,7 +259,7 @@ internal fun HeroNoteCard(
                     // Long-press selects the focused note's text (iOS
                     // FeedNoteRow `.textSelection(.enabled)`).
                     NostrContentText(
-                        content = note.content,
+                        content = invoiceBody,
                         profiles = profiles,
                         mediaURLs = mediaSet,
                         linkURLs = linkSet,
@@ -276,6 +281,11 @@ internal fun HeroNoteCard(
             // One card per link: the URLs are out of the text above (#170).
             for (link in note.cardLinkURLs) {
                 LinkPreviewCard(url = link)
+                Spacer(Modifier.height(12.dp))
+            }
+
+            for (match in invoices) {
+                LightningInvoiceCard(match = match)
                 Spacer(Modifier.height(12.dp))
             }
 
