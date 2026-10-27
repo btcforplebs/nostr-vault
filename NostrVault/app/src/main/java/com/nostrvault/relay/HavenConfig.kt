@@ -136,6 +136,12 @@ data class HavenConfig(
 
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
+    /**
+     * When [blossomMirrors] last changed, in Unix seconds: the created_at of
+     * a published kind 10063 this device adopted, or the time it was edited
+     * here. null = never set, which any published list beats.
+     */
+    val blossomMirrorsUpdatedAt: Long? = null,
     /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
     val autoMirrorMedia: Boolean = false,
     /**

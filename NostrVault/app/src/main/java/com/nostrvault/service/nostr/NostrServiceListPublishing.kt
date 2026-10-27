@@ -65,6 +65,31 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         if (action == DMInbox.SyncAction.PUBLISH) publishOwnerDMInboxList()
     }
 
+    /**
+     * Adds the servers on the owner's published media server list (kind
+     * 10063, set in another app) to this device's upload servers. See
+     * [ServerListAdoption]. Nothing is published here.
+     */
+    internal suspend fun NostrService.syncOwnerServerList() {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return
+        val config = configStore.config.value
+        val ask = (config.writeRelays + config.readRelays + NostrService.PROFILE_RELAYS).filterNot(::isLoopbackRelay).distinct()
+        val event = lookupNewestReplaceable(10063, owner, ask).event ?: return
+        val base = config.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }?.get("10063:$owner")
+        val own = listOf(config.macRelayHttpsURL).filter { it.isNotBlank() }
+        var added = emptyList<String>()
+        configStore.updateAsync { current ->
+            val result = ServerListAdoption.adopt(
+                current.blossomMirrors, current.blossomMirrorsUpdatedAt,
+                profileRepository.parseServerListTags(event.tags), event.createdAt, base, own,
+            ) ?: return@updateAsync current
+            added = result.added
+            current.copy(blossomMirrors = result.mirrors, blossomMirrorsUpdatedAt = result.updatedAt)
+        }
+        if (added.isNotEmpty()) Log.i(TAG, "Adopted ${added.size} media server(s) from the published kind 10063")
+    }
+
     fun NostrService.publishDMRelayList(dmRelays: List<String>) {
         // A kind 10050 is a PUBLIC announcement of where others should deliver
         // DMs to us. The embedded Haven relay lives on 127.0.0.1 and is never

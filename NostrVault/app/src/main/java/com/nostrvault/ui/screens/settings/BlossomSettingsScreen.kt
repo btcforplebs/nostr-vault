@@ -99,7 +99,7 @@ class BlossomSettingsViewModel @Inject constructor(
 
     private fun saveAndPublish() {
         viewModelScope.launch {
-            configStore.update { it.copy(blossomMirrors = _mirrors.value) }
+            configStore.update { it.copy(blossomMirrors = _mirrors.value, blossomMirrorsUpdatedAt = System.currentTimeMillis() / 1000) }
             try {
                 nostrService.publishServerList()
                 _publishStatus.value = "Server list published"

@@ -121,7 +121,12 @@ class ComposeNoteViewModel @Inject constructor(
     internal val _uploadMessage = MutableStateFlow<String?>(null)
     val uploadMessage = _uploadMessage.asStateFlow()
 
+    /** Where attached media is uploaded: the outside media servers. */
+    val uploadServers: StateFlow<List<String>> = configStore.config.map { it.activeBlossomMirrors }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.activeBlossomMirrors)
+
     /** All accounts (owner + added) with resolved name/avatar, for the in-composer switcher. */
+
     val accounts: StateFlow<List<AccountInfo>> =
         combine(configStore.config, nostrService.profiles) { config, profiles ->
             buildAccountInfos(config, profiles, includeWhitelisted = false)

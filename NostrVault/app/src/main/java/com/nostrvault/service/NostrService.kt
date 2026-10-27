@@ -377,6 +377,14 @@ class NostrService @Inject constructor(
 
     fun publishServerList() { publishServerListImpl() }
 
+    /** Adopts media servers from the owner's published kind 10063. See [syncOwnerServerList]. */
+    fun syncServerList() {
+        scope.launch(Dispatchers.IO) {
+            runCatching { syncOwnerServerList() }
+                .onFailure { Log.w(TAG, "Media server list sync failed: ${it.message}") }
+        }
+    }
+
     /** Your own loaded posts that link the blob [referencingBlob]; see [BlobPostDeletion.referencing]. */
     fun ownEvents(referencingBlob: String): List<NostrEvent> =
         BlobPostDeletion.referencing(events, activeHexPubkey, referencingBlob)

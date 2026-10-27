@@ -60,6 +60,7 @@ fun ComposeNoteScreen(
     onPublished: () -> Unit,
     onBack: () -> Unit,
     onOpenDrafts: () -> Unit = {},
+    onOpenMediaServers: () -> Unit = {},
     viewModel: ComposeNoteViewModel = hiltViewModel(),
 ) {
     val content by viewModel.content.collectAsState()
@@ -82,6 +83,7 @@ fun ComposeNoteScreen(
     }
     val quotedProfile by viewModel.quotedProfile.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
+    val uploadServers by viewModel.uploadServers.collectAsState()
     val showBlossomPicker by viewModel.showBlossomPicker.collectAsState()
     val mentionResults by viewModel.mentionResults.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
@@ -367,8 +369,9 @@ fun ComposeNoteScreen(
                     attachments = attachments,
                     onRemove = { viewModel.removeAttachment(it) },
                     onEditAlt = { altEditorTarget = it },
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
+                UploadServersLink(uploadServers, onOpenMediaServers, Modifier.padding(bottom = 8.dp))
             }
 
             // Upload progress
