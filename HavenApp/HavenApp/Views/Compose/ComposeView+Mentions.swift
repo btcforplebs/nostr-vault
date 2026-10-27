@@ -106,7 +106,7 @@ extension ComposeView {
 
     /// Returns the index in `new` just past the region that differs from `old` —
     /// i.e. where the caret sits after the edit that produced `new`.
-    private func caretIndex(old: String, new: String) -> String.Index {
+    func caretIndex(old: String, new: String) -> String.Index {
         let oldChars = Array(old)
         let newChars = Array(new)
         let maxLen = min(oldChars.count, newChars.count)

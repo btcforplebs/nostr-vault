@@ -350,6 +350,9 @@ extension ComposeView {
                 }
             }
 
+            // NIP-30: an `emoji` tag for each custom emoji the post uses.
+            tags.append(contentsOf: await MainActor.run { customEmojiTags(for: baseContent) })
+
             // Some media is only on this device: hand the post to the queue,
             // which sends it once an outside server takes the media. Everything
             // above is kept; hashtags and imeta are rebuilt from the final URLs
