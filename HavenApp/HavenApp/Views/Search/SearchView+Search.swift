@@ -60,10 +60,11 @@ extension SearchView {
     }
 
     func visibleNotes(_ notes: [FeedNote], _ filter: SearchBlockFilter) -> [FeedNote] {
-        filter.notes(notes) { note, blocked in
+        let mutes = MuteListStore.shared.active
+        return filter.notes(notes) { note, blocked in
             FeedFilterEngine.involvesBlocked(note, blocked: blocked,
                                              authorOf: { self.feedService.findNote(id: $0)?.pubkey })
-        }
+        }.filter { !mutes.hides($0) }
     }
 
     /// Opens a note in the split pane's detail column when there is one, and

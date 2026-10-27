@@ -712,7 +712,9 @@ class ConfigService: ObservableObject {
                 hexKeys.insert(decoded.hexString)
             }
         }
-        return hexKeys
+        // Private blocks from the list's encrypted part. Never stored in
+        // blockedNpubsPerAccount, which is published in the clear.
+        return hexKeys.union(MuteListStore.shared.privatePubkeys(forAccount: targetNpub))
     }
 
     func blockProfile(_ npub: String) {

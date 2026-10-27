@@ -13,6 +13,7 @@ extension FeedService {
     func recomputeFilteredNotes() {
         rebuildNoteIndex()
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        let mutes = MuteListStore.shared.active // muted words, hashtags and threads
         // Your web with today's follows, so a follow passes Global at once.
         let trusted = feedTrustedPubkeys
 
@@ -34,7 +35,7 @@ extension FeedService {
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
             languageOf: { [unowned self] note in self.language(of: note) },
             authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
-        )
+        ).filter { !mutes.hides($0) }
 
         // Only publish a change when the visible list actually differs.
         // Uses lazy zip to avoid allocating temporary [String] arrays.
@@ -56,7 +57,7 @@ extension FeedService {
             isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
             authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
-        )
+        ).filter { !mutes.hides($0) }
 
         if newMedia.count != filteredMediaNotes.count ||
             !zip(newMedia, filteredMediaNotes).allSatisfy({ $0.id == $1.id }) {
@@ -74,6 +75,7 @@ extension FeedService {
             count = 0
         } else {
             let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+            let mutes = MuteListStore.shared.active
             let authorOf: (String) -> String? = { [unowned self] id in self.findNote(id: id)?.pubkey }
             if feedMode == .media {
                 count = FeedFilterEngine.filterMediaNotes(
@@ -83,7 +85,7 @@ extension FeedService {
                     isGlobalMedia: mediaFeedMode == .global,
                     globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
                     authorOf: authorOf
-                ).count
+                ).filter { !mutes.hides($0) }.count
             } else {
                 count = FeedFilterEngine.filterFeedNotes(
                     notes: pendingNotes,
@@ -103,7 +105,7 @@ extension FeedService {
                     globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
                     languageOf: { [unowned self] note in self.language(of: note) },
                     authorOf: authorOf
-                ).count
+                ).filter { !mutes.hides($0) }.count
             }
         }
         if count != visiblePendingCount { visiblePendingCount = count }
