@@ -54,6 +54,9 @@ import com.nostrvault.service.NostrService.Companion.TAG
         val seen = replaceableNewest[key]
         if (seen != null && createdAt < seen) return
         replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        heldMuteLists.merge(hex, NostrEvent("", hex, createdAt, 10000, tags, content, "")) { a, b ->
+            if (b.createdAt >= a.createdAt) b else a
+        }
         val npub = hexToNpub(hex) ?: return
 
         val entries = MuteList.entries(tags, content) { ciphertext, nip04 -> decryptOwnList(hex, ciphertext, nip04) }
@@ -101,3 +104,11 @@ import com.nostrvault.service.NostrService.Companion.TAG
             }
         }
     }
+
+    /**
+     * The newest kind 10000 applied per account hex pubkey (tags, content and
+     * time only), what a block builds on when the relays return an older one.
+     */
+    private val heldMuteLists = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
+
+    internal fun heldMuteList(hex: String): NostrEvent? = heldMuteLists[hex]

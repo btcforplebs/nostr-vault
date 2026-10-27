@@ -27,7 +27,7 @@ final class MuteListStore {
     /// A list dated this far ahead is not taken: it would outrank every real one.
     private static let maxSkew: Int64 = 600
     /// Asked besides the account's own relays: where lists usually are.
-    private static let extraRelays = ["wss://purplepag.es", "wss://relay.damus.io", "wss://relay.primal.net"]
+    static let extraRelays = ["wss://purplepag.es", "wss://relay.damus.io", "wss://relay.primal.net"]
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: Self.defaultsKey),
@@ -41,6 +41,12 @@ final class MuteListStore {
     func list(forHex hex: String) -> MuteList {
         lock.lock(); defer { lock.unlock() }
         return lists[hex.lowercased()] ?? .empty
+    }
+
+    /// The newest kind 10000 this device holds for `hex`, as it arrived.
+    func storedEvent(forHex hex: String) -> NostrEvent? {
+        lock.lock(); defer { lock.unlock() }
+        return events[hex.lowercased()]
     }
 
     /// The active account's list, what the screens hide notes with.

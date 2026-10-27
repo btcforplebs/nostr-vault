@@ -233,7 +233,7 @@ import com.nostrvault.ui.notification.FollowKind
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
         if (npub in configStore.config.value.blockedForActiveAccount()) return
         configStore.blockProfile(npub)
-        publishActiveMuteList()
+        publishActiveMuteList(add = listOf(npub))
         _notes.value = _notes.value.filter { it.pubkey != hexPubkey }
         recomputeFilteredNotes()
     }
@@ -242,5 +242,5 @@ import com.nostrvault.ui.notification.FollowKind
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
         if (npub !in configStore.config.value.blockedForActiveAccount()) return
         configStore.unblockProfile(npub)
-        publishActiveMuteList()
+        publishActiveMuteList(remove = listOf(npub))
     }

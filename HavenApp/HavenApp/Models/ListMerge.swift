@@ -31,6 +31,45 @@ enum ListMerge {
         return mine + kept
     }
 
+    /// A block or unblock on a list other clients edit too: every `base` tag
+    /// kept as it is, the `name` tags for `remove` taken out, and `add` put
+    /// at the end unless already there. Replacing the whole `name` part with
+    /// this device's entries dropped people another app had just added.
+    static func edit(name: String, base: [[String]], add: [String], remove: [String]) -> [[String]] {
+        let removed = Set(remove.map(key))
+        var out = base.filter { tag in
+            !(tag.first == name && tag.count >= 2 && removed.contains(key(tag[1])))
+        }
+        var present = Set(out.compactMap { $0.first == name && $0.count >= 2 ? key($0[1]) : nil })
+        for value in add where !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !removed.contains(key(value)) && present.insert(key(value)).inserted {
+            out.append([name, value])
+        }
+        return out
+    }
+
+    /// What an edit builds on.
+    enum EditBase<Event> {
+        /// The newest list, published or already held here.
+        case list(Event)
+        /// Every relay answered and none has a list.
+        case none
+        /// Not known: publishing could replace a list this device never saw.
+        case unknown
+    }
+
+    /// The newest of the list the relays returned and the one this device
+    /// already `held`. Unknown when no relay answered, or when no list turned
+    /// up and some relay didn't answer.
+    static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?,
+                                createdAt: (Event) -> Int64) -> EditBase<Event> {
+        guard lookup.answered > 0 else { return .unknown }
+        if let newest = [lookup.event, held].compactMap({ $0 }).max(by: { createdAt($0) < createdAt($1) }) {
+            return .list(newest)
+        }
+        return lookup.confirmedNone ? .none : .unknown
+    }
+
     /// What this device last published per list, so the next publish can tell
     /// an entry another client added from one removed here. A list with no
     /// base yet (the first publish after this shipped) keeps every published

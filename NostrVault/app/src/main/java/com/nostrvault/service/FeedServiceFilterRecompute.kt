@@ -28,10 +28,13 @@ import com.nostrvault.service.FeedService.Companion.RECOMPUTE_DEBOUNCE_MS
         }
     }
 
-    /** Same as Settings → Blocked: the active account's list, signed as it. */
-    internal fun FeedService.publishActiveMuteList() {
+    /** Same as Settings → Blocked: the one change on the active account's list, signed as it. */
+    internal fun FeedService.publishActiveMuteList(add: List<String> = emptyList(), remove: List<String> = emptyList()) {
         val cfg = configStore.config.value
         val account = cfg.activeOrOwnerNpub()
         val list = cfg.blockedForActiveAccount()
-        scope.launch(Dispatchers.IO) { nostrService.publishMuteList(account, list) }
+        scope.launch(Dispatchers.IO) {
+            val failed = nostrService.publishMuteListChange(account, add, remove, list) ?: return@launch
+            withContext(Dispatchers.Main) { notificationManager.showError(failed) }
+        }
     }

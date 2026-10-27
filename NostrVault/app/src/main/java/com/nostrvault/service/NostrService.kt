@@ -337,7 +337,13 @@ class NostrService @Inject constructor(
 
     fun publishFireAndForget(event: NostrEvent, relays: List<String>) { publishFireAndForgetImpl(event, relays) }
 
-    fun publishMuteList(accountNpub: String, blockedNpubs: List<String>) { publishMuteListImpl(accountNpub, blockedNpubs) }
+    /** Blocks or unblocks on the published mute list; returns what to tell the person when it wasn't published. */
+    suspend fun publishMuteListChange(
+        accountNpub: String,
+        add: List<String> = emptyList(),
+        remove: List<String> = emptyList(),
+        localBlocks: List<String>,
+    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks)
 
     fun publishRelayList(accountNpub: String) { publishRelayListImpl(accountNpub) }
 
