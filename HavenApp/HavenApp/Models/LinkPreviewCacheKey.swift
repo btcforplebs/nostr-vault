@@ -63,4 +63,49 @@ enum NoteURLs {
             .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// One piece of a note in reading order: text, or a link that gets a card.
+    enum Segment: Equatable {
+        case text(String)
+        case link(URL)
+    }
+
+    /// `text` cut at each link in `cards`, so each card draws where its link
+    /// was written instead of in a pile under the note.
+    ///
+    /// Same whole-match rule as `strip`: a card's URL inside a longer kept URL
+    /// stays text. A link written twice gets its card at the first spot and
+    /// leaves the text at the second, as `strip` did. Text pieces are trimmed;
+    /// empty ones are dropped.
+    static func segments(_ text: String, cards: [URL]) -> [Segment] {
+        guard !cards.isEmpty else { return piece(text).map { [.text($0)] } ?? [] }
+        let wanted = Set(cards.map(\.absoluteString))
+        var placed = Set<String>()
+        var result: [Segment] = []
+        var pending = ""
+        let ns = text as NSString
+        var cursor = 0
+        for match in cardRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let found = ns.substring(with: match.range)
+            let key = URL(string: found)?.absoluteString ?? found
+            guard wanted.contains(key) else { continue }
+            pending += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            cursor = match.range.location + match.range.length
+            guard placed.insert(key).inserted, let url = URL(string: found) else { continue }
+            if let piece = piece(pending) { result.append(.text(piece)) }
+            pending = ""
+            result.append(.link(url))
+        }
+        pending += ns.substring(from: cursor)
+        if let piece = piece(pending) { result.append(.text(piece)) }
+        return result
+    }
+
+    /// A text piece as drawn: gaps left by a removed URL closed, ends trimmed.
+    private static func piece(_ text: String) -> String? {
+        let trimmed = text
+            .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
