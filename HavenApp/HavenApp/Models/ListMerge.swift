@@ -48,6 +48,50 @@ enum ListMerge {
         return out
     }
 
+    /// The private part of a kind 10000 with people taken out: the decrypted
+    /// `plaintext` without the `p` entries for `remove` (hex), as JSON again.
+    /// Nil when no one in `remove` is in it, or when it is not exactly a JSON
+    /// array of string arrays: writing it back would then lose what it holds.
+    static func privateRemoved(plaintext: String, remove: [String]) -> String? {
+        guard let data = plaintext.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
+        var tags: [[String]] = []
+        for item in array {
+            guard let tag = item as? [Any] else { return nil }
+            let strings = tag.compactMap { $0 as? String }
+            guard strings.count == tag.count else { return nil }
+            tags.append(strings)
+        }
+        let edited = edit(name: "p", base: tags, add: [], remove: remove)
+        guard edited.count < tags.count,
+              let out = try? JSONSerialization.data(withJSONObject: edited, options: [.withoutEscapingSlashes]) else { return nil }
+        return String(data: out, encoding: .utf8)
+    }
+
+    /// What an unblock leaves in the encrypted content.
+    enum PrivateEdit: Equatable {
+        case content(String)
+        /// The person was taken out but the part couldn't be encrypted again.
+        case failed
+    }
+
+    /// `content` with `remove` (hex) taken out of its encrypted `p` entries,
+    /// encrypted again with the scheme it came in: NIP-04 when it has "?iv=",
+    /// else NIP-44. `decrypt` and `encrypt` take the text and whether it is
+    /// NIP-04. Unchanged when no one in `remove` is in it or this device can't
+    /// open it; then reading the list back can't re-block them either.
+    static func removingPrivate(content: String, remove: [String],
+                                decrypt: (String, Bool) async throws -> String,
+                                encrypt: (String, Bool) async throws -> String) async -> PrivateEdit {
+        let ciphertext = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remove.isEmpty, !ciphertext.isEmpty else { return .content(content) }
+        let nip04 = MuteList.isNip04(ciphertext)
+        guard let plaintext = try? await decrypt(ciphertext, nip04),
+              let edited = privateRemoved(plaintext: plaintext, remove: remove) else { return .content(content) }
+        guard let encrypted = try? await encrypt(edited, nip04), !encrypted.isEmpty else { return .failed }
+        return .content(encrypted)
+    }
+
     /// What an edit builds on.
     enum EditBase<Event> {
         /// The newest list, published or already held here.

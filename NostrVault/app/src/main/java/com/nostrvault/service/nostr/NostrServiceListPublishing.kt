@@ -150,9 +150,15 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val removeHex = remove.mapNotNull { npubToHex(it) }
         // An unblock takes the person out of the encrypted part too, or
         // reading the published list back blocks them again.
-        val content = when (val edited = privateRemoved(author, baseContent, removeHex)) {
-            PrivateEdit.Failed -> return "$action saved on this device only: your signer didn't update your private blocks"
-            is PrivateEdit.Done -> edited.content
+        val content = when (
+            val edited = ListMerge.removingPrivate(
+                baseContent, removeHex,
+                decrypt = { text, nip04 -> decryptOwnList(author, text, nip04) },
+                encrypt = { text, nip04 -> encryptOwnList(author, text, nip04) },
+            )
+        ) {
+            ListMerge.PrivateEdit.Failed -> return "$action saved on this device only: your signer didn't update your private blocks"
+            is ListMerge.PrivateEdit.Done -> edited.content
         }
         val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, removeHex)
         val event = try {
@@ -168,29 +174,6 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // app blocked show as blocked here too.
         applyMuteList(author, event.tags, event.content, event.createdAt)
         return null
-    }
-
-    private sealed interface PrivateEdit {
-        class Done(val content: String) : PrivateEdit
-        data object Failed : PrivateEdit
-    }
-
-    /**
-     * [content] with the [remove] hex pubkeys taken out of its encrypted "p"
-     * entries, encrypted the same way again. Unchanged when no one in
-     * [remove] is in it, or when this device can't open it: then reading
-     * the list back can't re-block them either.
-     */
-    private suspend fun NostrService.privateRemoved(hex: String, content: String, remove: List<String>): PrivateEdit {
-        if (remove.isEmpty() || content.isBlank()) return PrivateEdit.Done(content)
-        val nip04 = MuteList.isNip04(content)
-        val plaintext = runCatching { decryptOwnList(hex, content, nip04) }.getOrNull()
-        val privateTags = plaintext?.let(MuteList::privateTags) ?: return PrivateEdit.Done(content)
-        val edited = ListMerge.edit("p", privateTags, emptyList(), remove)
-        if (edited.size == privateTags.size) return PrivateEdit.Done(content)
-        val json = JsonArray(edited.map { tag -> JsonArray(tag.map(::JsonPrimitive)) }).toString()
-        val ciphertext = runCatching { encryptOwnList(hex, json, nip04) }.getOrNull()
-        return ciphertext?.let { PrivateEdit.Done(it) } ?: PrivateEdit.Failed
     }
 
     /**
@@ -335,6 +318,65 @@ internal object ListMerge {
             if (value.isNotBlank() && key(value) !in removed && present.add(key(value))) out += listOf(name, value)
         }
         return out
+    }
+
+    /**
+     * The private part of a kind 10000 with people taken out: the decrypted
+     * [plaintext] without the "p" entries for [remove] (hex), as JSON again.
+     * Null when no one in [remove] is in it, or when it is not exactly a JSON
+     * array of string arrays: writing it back would then lose what it holds.
+     */
+    fun privateRemoved(plaintext: String, remove: List<String>): String? {
+        val array = runCatching { Json.parseToJsonElement(plaintext) as? JsonArray }.getOrNull() ?: return null
+        val tags = array.map { item ->
+            val tag = item as? JsonArray ?: return null
+            tag.map { value -> (value as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null }
+        }
+        val edited = edit("p", tags, emptyList(), remove)
+        if (edited.size == tags.size) return null
+        return JsonArray(edited.map { tag -> JsonArray(tag.map(::JsonPrimitive)) }).toString()
+    }
+
+    /** What an unblock leaves in the encrypted content. */
+    sealed interface PrivateEdit {
+        data class Done(val content: String) : PrivateEdit
+        /** The person was taken out but the part couldn't be encrypted again. */
+        data object Failed : PrivateEdit
+    }
+
+    /**
+     * [content] with [remove] (hex) taken out of its encrypted "p" entries,
+     * encrypted again with the scheme it came in: NIP-04 when it has "?iv=",
+     * else NIP-44. [decrypt] and [encrypt] take the text and whether it is
+     * NIP-04, and return null when this device can't. Unchanged when no one
+     * in [remove] is in it or it can't be opened; then reading the list back
+     * can't re-block them either.
+     */
+    suspend fun removingPrivate(
+        content: String,
+        remove: List<String>,
+        decrypt: suspend (String, Boolean) -> String?,
+        encrypt: suspend (String, Boolean) -> String?,
+    ): PrivateEdit {
+        val ciphertext = content.trim()
+        if (remove.isEmpty() || ciphertext.isEmpty()) return PrivateEdit.Done(content)
+        val nip04 = MuteList.isNip04(ciphertext)
+        val plaintext = try {
+            decrypt(ciphertext, nip04)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        val edited = plaintext?.let { privateRemoved(it, remove) } ?: return PrivateEdit.Done(content)
+        val encrypted = try {
+            encrypt(edited, nip04)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        return if (encrypted.isNullOrBlank()) PrivateEdit.Failed else PrivateEdit.Done(encrypted)
     }
 
     /** What an edit builds on. */

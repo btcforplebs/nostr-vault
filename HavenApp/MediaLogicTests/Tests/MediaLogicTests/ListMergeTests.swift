@@ -102,4 +102,93 @@ final class ListMergeTests: XCTestCase {
                                                answeredBy: ["wss://mine.example", "wss://purplepag.es"], from: ["wss://purplepag.es"])
         guard case .list = ListMerge.editBase(newerElsewhere, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
     }
+
+    // MARK: - Unblocking from the private part
+
+    /// Stand-in for NIP-44/NIP-04 to self: NIP-04 output carries "?iv=" as the real one does.
+    private static func seal(_ text: String, _ nip04: Bool) -> String {
+        nip04 ? Data(text.utf8).base64EncodedString() + "?iv=AAAA" : "v2:" + Data(text.utf8).base64EncodedString()
+    }
+
+    private static func open(_ text: String, _ nip04: Bool) throws -> String {
+        let body = nip04 ? String(text.prefix { $0 != "?" }) : String(text.dropFirst(3))
+        guard let data = Data(base64Encoded: body), let out = String(data: data, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
+        return out
+    }
+
+    private func unblock(_ content: String, _ remove: [String], schemes: inout [Bool],
+                         encryptFails: Bool = false) async -> ListMerge.PrivateEdit {
+        var used: [Bool] = []
+        let result = await ListMerge.removingPrivate(content: content, remove: remove,
+            decrypt: { used.append($1); return try Self.open($0, $1) },
+            encrypt: { text, nip04 in
+                used.append(nip04)
+                if encryptFails { throw URLError(.userCancelledAuthentication) }
+                return Self.seal(text, nip04)
+            })
+        schemes = used
+        return result
+    }
+
+    private static let privatePart = #"[["p","aaa"],["p","bbb","wss://r.example/","pet"],["word","spoiler"],["e","thread1"]]"#
+
+    func testUnblockOfAPrivateOnlyPersonTakesThemOutOfTheNip44Part() async throws {
+        var schemes: [Bool] = []
+        let result = await unblock(Self.seal(Self.privatePart, false), ["AAA"], schemes: &schemes)
+        guard case .content(let content) = result else { return XCTFail("not published: \(result)") }
+        XCTAssertFalse(MuteList.isNip04(content))
+        XCTAssertEqual(try MuteList.privateTags(fromJSON: Self.open(content, false)),
+                       [["p", "bbb", "wss://r.example/", "pet"], ["word", "spoiler"], ["e", "thread1"]])
+        XCTAssertEqual(schemes, [false, false])
+    }
+
+    func testUnblockKeepsANip04PartNip04() async throws {
+        var schemes: [Bool] = []
+        let result = await unblock(Self.seal(Self.privatePart, true), ["bbb"], schemes: &schemes)
+        guard case .content(let content) = result else { return XCTFail("not published: \(result)") }
+        XCTAssertTrue(MuteList.isNip04(content))
+        XCTAssertEqual(try MuteList.privateTags(fromJSON: Self.open(content, true)),
+                       [["p", "aaa"], ["word", "spoiler"], ["e", "thread1"]])
+        XCTAssertEqual(schemes, [true, true])
+    }
+
+    func testUnblockOfSomeoneNotInThePrivatePartLeavesItAsItIs() async {
+        let sealed = Self.seal(Self.privatePart, false)
+        var schemes: [Bool] = []
+        // A thread with the same value as the person is not a person.
+        let result = await unblock(sealed, ["ccc", "thread1"], schemes: &schemes)
+        XCTAssertEqual(result, .content(sealed))
+        XCTAssertEqual(schemes, [false], "opened, never encrypted again")
+    }
+
+    func testBlockAndEmptyContentNeverOpenThePrivatePart() async {
+        var schemes: [Bool] = []
+        let block = await unblock(Self.seal(Self.privatePart, false), [], schemes: &schemes)
+        XCTAssertEqual(block, .content(Self.seal(Self.privatePart, false)))
+        XCTAssertEqual(schemes, [])
+        let empty = await unblock("", ["aaa"], schemes: &schemes)
+        XCTAssertEqual(empty, .content(""))
+        XCTAssertEqual(schemes, [])
+    }
+
+    func testAPrivatePartThisDeviceCantOpenIsKept() async {
+        var schemes: [Bool] = []
+        let result = await unblock("v2:not base64!", ["aaa"], schemes: &schemes)
+        XCTAssertEqual(result, .content("v2:not base64!"))
+    }
+
+    func testAPrivatePartARewriteWouldLoseIsKept() async {
+        let odd = Self.seal(#"[["p","aaa"],["p","bbb",1],{"x":"y"}]"#, false)
+        var schemes: [Bool] = []
+        let result = await unblock(odd, ["aaa"], schemes: &schemes)
+        XCTAssertEqual(result, .content(odd))
+        XCTAssertEqual(schemes, [false], "opened, never encrypted again")
+        XCTAssertNil(ListMerge.privateRemoved(plaintext: #"{"p":"aaa"}"#, remove: ["aaa"]))
+    }
+
+    func testUnblockIsNotPublishedWhenThePrivatePartCantBeEncryptedAgain() async {
+        var schemes: [Bool] = []
+        let result = await unblock(Self.seal(Self.privatePart, false), ["aaa"], schemes: &schemes, encryptFails: true)
+        XCTAssertEqual(result, .failed)
+    }
 }

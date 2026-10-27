@@ -154,8 +154,10 @@ final class MuteListStore {
     }
 
     /// The private part, encrypted by the user to their own key: through the
-    /// remote signer when the account has one, else with the local key.
-    private static func decryptToSelf(_ ciphertext: String, me: String, nip04: Bool) async throws -> String {
+    /// remote signer when the account has one, else with the local key. Only
+    /// the active account's key is at hand, so `me` must be that account.
+    static func decryptToSelf(_ ciphertext: String, me: String, nip04: Bool) async throws -> String {
+        try await requireActive(me)
         if await MainActor.run(body: { ConfigService.shared.config.activeSigningMode() == "nip46" }) {
             return nip04
                 ? try await NIP04Service.decryptAsync(ciphertext: ciphertext, remotePubkey: me)
@@ -165,6 +167,26 @@ final class MuteListStore {
         return nip04
             ? try NIP04Service.decrypt(ciphertext: ciphertext, remotePubkey: me, localPrivkey: sk)
             : try NIP44Service.decrypt(ciphertext: ciphertext, senderPubkey: me, recipientPrivkey: sk)
+    }
+
+    /// The private part encrypted to the user's own key again, the way
+    /// `decryptToSelf` opens it.
+    static func encryptToSelf(_ plaintext: String, me: String, nip04: Bool) async throws -> String {
+        try await requireActive(me)
+        if await MainActor.run(body: { ConfigService.shared.config.activeSigningMode() == "nip46" }) {
+            return nip04
+                ? try await NIP04Service.encryptAsync(plaintext: plaintext, remotePubkey: me)
+                : try await NIP44Service.encryptAsync(plaintext: plaintext, recipientPubkey: me)
+        }
+        let sk = try await MainActor.run { try DMService.shared.getActivePrivateKey() }
+        return nip04
+            ? try NIP04Service.encrypt(plaintext: plaintext, remotePubkey: me, localPrivkey: sk)
+            : try NIP44Service.encrypt(plaintext: plaintext, recipientPubkey: me, senderPrivkey: sk)
+    }
+
+    private static func requireActive(_ hex: String) async throws {
+        let active = await MainActor.run { currentActiveHex }
+        guard !active.isEmpty, active == hex.lowercased() else { throw NIP44Service.NIP44Error.invalidKeyFormat }
     }
 }
 

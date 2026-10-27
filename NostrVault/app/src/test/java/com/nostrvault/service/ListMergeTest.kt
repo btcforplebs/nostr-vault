@@ -3,6 +3,9 @@ package com.nostrvault.service
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.nostrvault.data.model.MuteList
+import kotlinx.coroutines.runBlocking
+import java.util.Base64
 import java.io.File
 import java.nio.file.Files
 
@@ -130,5 +133,86 @@ class ListMergeTest {
         // The user's relay answered with an older copy; the newer one counts.
         val newerElsewhere = NostrService.ReplaceableLookup(list(100), 3, 2, setOf("wss://mine.example", "wss://purplepag.es"), setOf("wss://purplepag.es"))
         assertEquals(ListMerge.EditBase.Found(list(100)), ListMerge.editBase(newerElsewhere, null, own))
+    }
+
+    // Unblocking from the private part
+
+    /** Stand-in for NIP-44/NIP-04 to self: NIP-04 output carries "?iv=" as the real one does. */
+    private fun seal(text: String, nip04: Boolean): String {
+        val body = Base64.getEncoder().encodeToString(text.toByteArray())
+        return if (nip04) "$body?iv=AAAA" else "v2:$body"
+    }
+
+    private fun open(text: String, nip04: Boolean): String? = runCatching {
+        String(Base64.getDecoder().decode(if (nip04) text.substringBefore('?') else text.removePrefix("v2:")))
+    }.getOrNull()
+
+    private val schemes = mutableListOf<Boolean>()
+
+    private fun unblock(content: String, remove: List<String>, encryptFails: Boolean = false) = runBlocking {
+        schemes.clear()
+        ListMerge.removingPrivate(
+            content, remove,
+            decrypt = { text, nip04 -> schemes += nip04; open(text, nip04) },
+            encrypt = { text, nip04 -> schemes += nip04; if (encryptFails) null else seal(text, nip04) },
+        )
+    }
+
+    private val privatePart = """[["p","aaa"],["p","bbb","wss://r.example/","pet"],["word","spoiler"],["e","thread1"]]"""
+
+    @Test
+    fun `unblock of a private-only person takes them out of the NIP-44 part`() {
+        val result = unblock(seal(privatePart, false), listOf("AAA")) as ListMerge.PrivateEdit.Done
+        assertEquals(false, MuteList.isNip04(result.content))
+        assertEquals(
+            listOf(listOf("p", "bbb", "wss://r.example/", "pet"), listOf("word", "spoiler"), listOf("e", "thread1")),
+            MuteList.privateTags(open(result.content, false)!!),
+        )
+        assertEquals(listOf(false, false), schemes)
+    }
+
+    @Test
+    fun `unblock keeps a NIP-04 part NIP-04`() {
+        val result = unblock(seal(privatePart, true), listOf("bbb")) as ListMerge.PrivateEdit.Done
+        assertEquals(true, MuteList.isNip04(result.content))
+        assertEquals(
+            listOf(listOf("p", "aaa"), listOf("word", "spoiler"), listOf("e", "thread1")),
+            MuteList.privateTags(open(result.content, true)!!),
+        )
+        assertEquals(listOf(true, true), schemes)
+    }
+
+    @Test
+    fun `unblock of someone not in the private part leaves it as it is`() {
+        val sealed = seal(privatePart, false)
+        // A thread with the same value as the person is not a person.
+        assertEquals(ListMerge.PrivateEdit.Done(sealed), unblock(sealed, listOf("ccc", "thread1")))
+        assertEquals("opened, never encrypted again", listOf(false), schemes)
+    }
+
+    @Test
+    fun `block and empty content never open the private part`() {
+        assertEquals(ListMerge.PrivateEdit.Done(seal(privatePart, false)), unblock(seal(privatePart, false), emptyList()))
+        assertEquals(emptyList<Boolean>(), schemes)
+        assertEquals(ListMerge.PrivateEdit.Done(""), unblock("", listOf("aaa")))
+        assertEquals(emptyList<Boolean>(), schemes)
+    }
+
+    @Test
+    fun `a private part this device can't open is kept`() {
+        assertEquals(ListMerge.PrivateEdit.Done("v2:not base64!"), unblock("v2:not base64!", listOf("aaa")))
+    }
+
+    @Test
+    fun `a private part a rewrite would lose is kept`() {
+        val odd = seal("""[["p","aaa"],["p","bbb",1],{"x":"y"}]""", false)
+        assertEquals(ListMerge.PrivateEdit.Done(odd), unblock(odd, listOf("aaa")))
+        assertEquals("opened, never encrypted again", listOf(false), schemes)
+        assertNull(ListMerge.privateRemoved("""{"p":"aaa"}""", listOf("aaa")))
+    }
+
+    @Test
+    fun `unblock is not published when the private part can't be encrypted again`() {
+        assertEquals(ListMerge.PrivateEdit.Failed, unblock(seal(privatePart, false), listOf("aaa"), encryptFails = true))
     }
 }
