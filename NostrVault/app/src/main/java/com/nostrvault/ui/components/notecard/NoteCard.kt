@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.util.NoteInvoices
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -428,6 +429,9 @@ fun NoteCard(
             // avatar row, in every view (iOS #286, Logen: the most room).
             val isArticle = note.displayKind == ArticleMeta.KIND
             val poll = remember(note.id, note.displayKind, note.content) { note.poll }
+            // Lightning invoices: cut from the text, drawn as pay cards under the links.
+            val invoices = remember(note.content) { NoteInvoices.find(note.content) }
+            val invoiceBody = remember(note.content, invoices) { NoteInvoices.textWithout(invoices, note.content) }
             if (repostPlaceholder != null) {
                 RepostPlaceholderLine(repostPlaceholder)
             } else if (isArticle) {
@@ -452,12 +456,12 @@ fun NoteCard(
                 // tags, so the text path drew the question with nothing to
                 // vote on.
                 PollCard(poll = poll, isFocused = isFocused, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
-            } else if (note.content.isNotBlank()) {
+            } else if (invoiceBody.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
                 val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
                 TranslatableNoteText(
                     noteKey = note.effectiveEventId,
-                    content = note.content,
+                    content = invoiceBody,
                     profiles = profiles,
                     mediaURLs = mediaSet,
                     linkURLs = linkSet,
@@ -466,7 +470,7 @@ fun NoteCard(
                     onTranslationClick = { onNoteClick(note.id) },
                 ) {
                     NostrContentText(
-                        content = note.content,
+                        content = invoiceBody,
                         profiles = profiles,
                         mediaURLs = mediaSet,
                         linkURLs = linkSet,
@@ -497,6 +501,11 @@ fun NoteCard(
                 LinkPreviewCard(
                     url = link,
                 )
+            }
+
+            if (repostPlaceholder == null && !isArticle && poll == null && note.displayKind != FeedHighlight.KIND) for (match in invoices) {
+                Spacer(Modifier.height(8.dp))
+                LightningInvoiceCard(match = match)
             }
 
             // Quoted notes
