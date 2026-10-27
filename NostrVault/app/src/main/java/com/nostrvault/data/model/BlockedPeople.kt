@@ -86,10 +86,14 @@ object BlockedPeople {
      */
     fun unblock(config: HavenConfig, npub: String): HavenConfig {
         val key = config.activeOrOwnerNpub()
-        val rest = config.blockedFor(key).filter { it != npub }
+        val rest = config.publicBlockedFor(key).filter { it != npub }
         val legacy = config.blockedNpubs
+        val private = config.privateBlockedNpubsPerAccount[key]
         return config.copy(
             blockedNpubsPerAccount = config.blockedNpubsPerAccount + (key to rest),
+            privateBlockedNpubsPerAccount = if (private != null && npub in private)
+                config.privateBlockedNpubsPerAccount + (key to private.filter { it != npub })
+            else config.privateBlockedNpubsPerAccount,
             blockedNpubs = if (key == config.ownerNpub && legacy != null) legacy.filter { it != npub } else legacy,
         )
     }

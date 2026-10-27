@@ -56,7 +56,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
                 return
             }
             10000 -> {
-                parseMuteListEvent(tags)
+                scope.launch { applyMuteList(pubkey, tags, content, createdAt) }
                 return
             }
         }
