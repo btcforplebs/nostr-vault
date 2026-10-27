@@ -9,12 +9,18 @@
 	<array>
 		<string>group.com.havenapp.relay</string>
 	</array>
-	<!-- Shared with the widget extension. Not an App Group: registering that
-	     capability needs an Apple ID in Xcode, and the wildcard provisioning
-	     profile already grants every group under the 525WQ48Y72 prefix. -->
+	<!-- The first group is shared with the widget extension. Not an App Group:
+	     registering that capability needs an Apple ID in Xcode, and the
+	     wildcard provisioning profile already grants every group under the
+	     525WQ48Y72 prefix. It stays first: it is the default group.
+	     The second is the app's (CredentialStore.privateGroup): the key
+	     passwords and NIP-46 client keys. The widget and share extension do
+	     not carry it. It is not private from the team: the same wildcard lets
+	     any app signed by 525WQ48Y72 claim it. -->
 	<key>keychain-access-groups</key>
 	<array>
 		<string>525WQ48Y72.nostrvault.shared</string>
+		<string>525WQ48Y72.com.havenapp.relay</string>
 	</array>
 </dict>
 </plist>

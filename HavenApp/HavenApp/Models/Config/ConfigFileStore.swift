@@ -89,9 +89,43 @@ struct ConfigFileStore {
         return true
     }
 
-    /// Factory reset: config.json and its backup both go.
+    /// The copies beside config.json that can hold an old key: the backup
+    /// and every config.json.unreadable-<time>.
+    var copyURLs: [URL] {
+        let dir = url.deletingLastPathComponent()
+        let prefix = url.lastPathComponent + ".unreadable-"
+        let unreadable = ((try? fileManager.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasPrefix(prefix) }
+            .sorted()
+            .map { dir.appendingPathComponent($0) }
+        return [backupURL] + unreadable
+    }
+
+    /// Removes each of `secrets` from the backup and the unreadable copies,
+    /// as text, so it works on a file that will not decode too. Only values
+    /// that now live somewhere safer belong in `secrets`: anything else in a
+    /// copy (another key, say) is left alone. Returns the files rewritten.
+    @discardableResult
+    func scrub(_ secrets: [String]) -> [URL] {
+        let needles = secrets.filter { !$0.isEmpty }
+        guard !needles.isEmpty else { return [] }
+        var rewritten: [URL] = []
+        for file in copyURLs {
+            guard let data = try? Data(contentsOf: file),
+                  var text = String(data: data, encoding: .utf8) else { continue }
+            let before = text
+            for needle in needles { text = text.replacingOccurrences(of: needle, with: "") }
+            guard text != before, (try? Data(text.utf8).write(to: file, options: .atomic)) != nil else { continue }
+            rewritten.append(file)
+        }
+        return rewritten
+    }
+
+    /// Factory reset: config.json, its backup and the unreadable copies all
+    /// go; any of them can hold a key.
     func removeAll() {
+        let copies = copyURLs
         try? fileManager.removeItem(at: url)
-        try? fileManager.removeItem(at: backupURL)
+        for copy in copies { try? fileManager.removeItem(at: copy) }
     }
 }

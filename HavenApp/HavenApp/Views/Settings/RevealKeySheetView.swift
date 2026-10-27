@@ -11,7 +11,14 @@ struct RevealKeySheetView: View {
     @State private var errorMessage: String? = nil
     @State private var copied = false
 
+    // The key shows only for a typed password (RevealKeyGate): no fallback to
+    // the password saved on this device, so the passcode alone never reveals.
     var body: some View {
+        sheetContent
+    }
+
+    @ViewBuilder
+    private var sheetContent: some View {
         #if os(macOS)
         VStack(spacing: 0) {
             HStack {
@@ -70,10 +77,12 @@ struct RevealKeySheetView: View {
                         revealedKeyContent(nsec: nsec)
                     }
                 } else {
-                    Section("Enter Password") {
+                    Section {
                         SecureField("NIP-49 Password", text: $password)
                             .textContentType(.password)
                             .onSubmit { decryptKey() }
+                    } header: {
+                        Text("Enter Password")
                     }
                     if let error = errorMessage {
                         Text(error).foregroundColor(.red).font(.appCaption)
@@ -158,8 +167,9 @@ struct RevealKeySheetView: View {
         }
     }
 
+
     private func decryptKey() {
-        guard !password.isEmpty else { return }
+        guard let password = RevealKeyGate.password(typed: password) else { return }
         errorMessage = nil
 
         let isOwner = (npub == configService.config.ownerNpub)

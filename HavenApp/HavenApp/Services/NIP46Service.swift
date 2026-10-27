@@ -76,11 +76,28 @@ class NIP46Service: ObservableObject {
             throw NIP46Error.invalidBunkerURI
         }
 
-        // Generate client keypair if not yet created
-        if config.nip46ClientSecretKey.isEmpty {
-            #if DEBUG
-            print("[NIP46] Generating client keypair...")
+        // The client key the signer was paired with. A blank live key is
+        // looked up (the account's entry, then the keychain) before a new one
+        // is made: a new key is a stranger to a signer that wants a pairing
+        // secret, and it would answer "Invalid or missing bunker secret".
+        let keyNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+        if config.nip46ClientSecretKey.isEmpty,
+           let paired = config.pairedNIP46ClientSecret(forNpub: keyNpub, stored: { CredentialStore.get(account: $0) }) {
+            ConfigService.shared.config.nip46ClientSecretKey = paired
+            if let pubkey = ConfigService.nip46ClientPubkey(ofSecret: paired) {
+                ConfigService.shared.config.nip46ClientPubkey = pubkey
+            }
+            ConfigService.shared.save()
+            RelayProcessManager.shared.addLog("NIP-46: using the stored app key for this signer", level: "INFO")
+        } else if config.nip46ClientSecretKey.isEmpty {
+            #if os(iOS)
+            // Before the first unlock the keychain reads nothing: wait rather
+            // than replace a paired key it holds.
+            guard UIApplication.shared.isProtectedDataAvailable else {
+                throw NIP46Error.notConnected
+            }
             #endif
+            RelayProcessManager.shared.addLog("NIP-46: no app key for this signer yet, making a new one", level: "INFO")
             guard let keyPairCStr = GenerateKeyPairC() else {
                 throw NIP46Error.signingFailed
             }
