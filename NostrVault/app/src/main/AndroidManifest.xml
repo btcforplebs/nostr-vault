@@ -105,6 +105,21 @@
                 <data android:scheme="nostrvault" />
             </intent-filter>
 
+            <!-- Share profile links (https://nostrvault.app/p/<npub>) open the
+                 profile here; DeepLinkRouter reads them. Verification needs
+                 the site to serve /.well-known/assetlinks.json; until then
+                 Android offers the app from "Open supported links". -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="nostrvault.app" />
+                <data android:host="www.nostrvault.app" />
+                <data android:pathPrefix="/p/" />
+            </intent-filter>
+
             <!-- Share sheet: receive images/videos shared from other apps and
                  upload them to Blossom -->
             <intent-filter>
@@ -149,12 +164,13 @@
                 android:value="Local Nostr relay server that must run continuously to receive and serve events" />
         </service>
 
-        <!-- Auto-start relay on boot (user-toggleable) -->
+        <!-- Auto-start relay on boot and after an app update (user-toggleable) -->
         <receiver
             android:name=".relay.BootCompletedReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

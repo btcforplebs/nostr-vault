@@ -3,6 +3,10 @@ package com.nostrvault.ui.screens.music
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -68,17 +72,22 @@ fun formatTime(sec: Long): String = "%d:%02d".format(sec / 60, sec % 60)
 @Composable
 fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
     var query by remember { mutableStateOf("") }
-    /** The songs for the toolbar's current choice. */
-    var trending by remember { mutableStateOf<List<WavlakeTrack>>(emptyList()) }
-    /** Following: the artists found, shown above their songs. */
-    var followedArtists by remember { mutableStateOf<List<WavlakeArtist>>(emptyList()) }
     val musicScope by MusicFeedState.scope.collectAsState()
     val window by MusicFeedState.trendingWindow.collectAsState()
     val recentArtists by MusicFeedState.recentArtists.collectAsState()
     val picks by MusicFeedState.picks.collectAsState()
     var results by remember { mutableStateOf<List<WavlakeSearchResult>>(emptyList()) }
+    /** Search keeps its own spinner and message, so a search and the toolbar choice's load don't trip each other. */
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var listingLoading by remember { mutableStateOf(false) }
+    // What the toolbar's current choice shows, kept between opens.
+    val listings by MusicFeedState.listings.collectAsState()
+    val listing = listings[MusicFeedState.listingKey(musicScope, window)] ?: MusicFeedState.Listing()
+    /** The songs for the toolbar's current choice. */
+    val trending = listing.tracks
+    /** Following: the artists found, shown above their songs. */
+    val followedArtists = listing.artists
     val current by MusicPlayer.current.collectAsState()
     val playing by MusicPlayer.isPlaying.collectAsState()
     val path by MusicFeedState.path.collectAsState()
@@ -108,34 +117,15 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
 
     var loadAttempt by remember { mutableStateOf(0) }
     // Loads whatever the toolbar picked: trending for the window, or the
-    // Wavlake artists you follow. An artist page loads itself.
+    // Wavlake artists you follow; kept answers first, Wavlake only when
+    // stale (MusicFeedState.loadListing). An artist page loads itself.
     LaunchedEffect(musicScope, window, loadAttempt) {
-        trending = emptyList(); followedArtists = emptyList()
-        loading = true; error = null
-        when (musicScope) {
-            MusicScope.Trending -> {
-                trending = runCatching { WavlakeApi.trending(window.days) }
-                    .getOrElse { error = "Couldn't reach Wavlake. Tap to try again."; emptyList() }
-                if (trending.isEmpty() && error == null) error = "Nothing trending right now."
-            }
-            MusicScope.Following -> {
-                val follows = actions.followedPubkeys()
-                if (follows.isEmpty()) {
-                    error = "Follow people on Nostr, and the Wavlake artists among them show up here."
-                } else {
-                    val (artists, songs) = MusicFeedState.followedArtists(
-                        follows, actions.npubToHex, actions.blockedPubkeys.value,
-                    )
-                    followedArtists = artists; trending = songs
-                    if (artists.isEmpty()) {
-                        error = "None of the Wavlake artists checked are people you follow. " +
-                            "Artists show up here once they link their Nostr key on Wavlake."
-                    }
-                }
-            }
-            is MusicScope.Artist -> Unit
+        listingLoading = true
+        try {
+            MusicFeedState.loadListing(actions.followedPubkeys, actions.npubToHex, actions.blockedPubkeys.value)
+        } finally {
+            listingLoading = false
         }
-        loading = false
     }
 
     // Search once typing pauses, so each keystroke isn't a request.
@@ -161,6 +151,30 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
             is MusicPage.Album -> { pageLoading = true; albumPage = MusicFeedState.albumPage(page.album.id); pageLoading = false }
             null -> Unit
         }
+    }
+
+    // The song a feed card opened this artist's page for: tinted and
+    // scrolled to once the page's songs are in. A card tapped while the
+    // page already shows asks again through the same flow.
+    var highlightedId by remember(page) { mutableStateOf<String?>(null) }
+    val highlightRequest by MusicFeedState.highlight.collectAsState()
+    LaunchedEffect(page, artistPage, highlightRequest) {
+        val artist = (page as? MusicPage.Artist)?.artist ?: return@LaunchedEffect
+        val songs = artistPage?.tracks ?: return@LaunchedEffect
+        val id = MusicFeedState.highlightFor(artist.id) ?: return@LaunchedEffect
+        val index = songs.indexOfFirst { it.id == id }
+        if (index < 0) { MusicFeedState.clearHighlight(artist.id); return@LaunchedEffect }
+        highlightedId = id
+        // After the page's own jump to its top, and once its rows are laid out.
+        withFrameNanos { }
+        val target = MusicArtistRows.songItemIndex(
+            index, hasSearch = pageIsScope, hasAlbums = artistPage?.albums.orEmpty().isNotEmpty(),
+        )
+        listState.scrollToItem(target)
+        // Roughly centred, as iOS does, rather than pinned under the top bar.
+        listState.animateScrollBy(-listState.layoutInfo.viewportSize.height / 3f)
+        // Taken once: going back and returning later shows the page plain.
+        MusicFeedState.clearHighlight(artist.id)
     }
 
     // Nothing by a blocked artist shows: not their songs, their albums, their
@@ -241,10 +255,17 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                         if (songs.isNotEmpty()) {
                             item(key = "page-songs") { MusicSectionTitle("Songs") }
                             itemsIndexed(songs, key = { _, t -> "s-${t.id}" }) { index, track ->
-                                MusicTrackRow(
-                                    track = track, isCurrent = current?.id == track.id, isPlaying = playing, actions = actions,
-                                    onTap = { if (current?.id == track.id) MusicPlayer.togglePlayPause() else MusicPlayer.play(songs, index) },
-                                )
+                                val lit = highlightedId == track.id
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(10.dp))
+                                        .background(if (lit) accent.copy(alpha = 0.15f) else Color.Transparent)
+                                        .padding(horizontal = if (lit) 6.dp else 0.dp),
+                                ) {
+                                    MusicTrackRow(
+                                        track = track, isCurrent = current?.id == track.id, isPlaying = playing, actions = actions,
+                                        onTap = { if (current?.id == track.id) MusicPlayer.togglePlayPause() else MusicPlayer.play(songs, index) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -367,10 +388,14 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                     )
                 }
                 item(key = "status") {
+                    val browsing = query.isBlank()
+                    // A kept listing stays up while it refreshes, without a spinner.
+                    val spinning = if (browsing) listingLoading && listing.isEmpty else loading
+                    val message = if (browsing) listing.message else error
                     when {
-                        loading -> MusicSpinner()
-                        error != null -> Text(
-                            text = error!!, color = SecondaryText, fontSize = 14.sp,
+                        spinning -> MusicSpinner()
+                        message != null -> Text(
+                            text = message, color = SecondaryText, fontSize = 14.sp,
                             modifier = Modifier.fillMaxWidth().padding(24.dp)
                                 .clickable(enabled = query.isBlank()) { loadAttempt++ },
                         )
@@ -388,6 +413,17 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
             )
         }
     }
+}
+
+/** Where things sit in an artist page's list, for scrolling to a song. */
+object MusicArtistRows {
+    /**
+     * The list index of song [songIndex]: after the search field (when the
+     * toolbar picked the artist), the heading, the albums row (when there
+     * are albums) and the "Songs" title.
+     */
+    fun songItemIndex(songIndex: Int, hasSearch: Boolean, hasAlbums: Boolean): Int =
+        (if (hasSearch) 1 else 0) + 1 + (if (hasAlbums) 1 else 0) + 1 + songIndex
 }
 
 /**

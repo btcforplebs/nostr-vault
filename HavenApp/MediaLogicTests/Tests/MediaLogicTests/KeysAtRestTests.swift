@@ -415,10 +415,29 @@ final class KeysAtRestTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), ["notes.txt"])
     }
 
+    /// The FIPS mesh key is a private key too: it leaves the widget's group
+    /// in the same pass, keeping its value, so the mesh npub does not change.
+    func testTheMeshKeyMovesWithThePasswords() {
+        let keychain = FakeKeychain()
+        let mesh = MeshIdentityReset.keychainService
+        keychain.put("owner-key-password", "owner-pw", group: shared, accessible: oldClass)
+        keychain.put("mesh-nsec", "nsec1mesh", group: shared, accessible: CredentialStore.accessible, service: mesh)
+        keychain.put("snapshot.v1", "widget", group: shared, accessible: CredentialStore.accessible, service: "to.nostrvault.widget")
+
+        XCTAssertEqual(CredentialStore.migrateToThisDeviceOnly(in: keychain, privateGroup: mine), 2)
+
+        XCTAssertEqual(keychain.rows.first { $0.service == mesh }?.group, mine)
+        XCTAssertEqual(keychain.data(service: mesh, account: "mesh-nsec", group: mine), Data("nsec1mesh".utf8))
+        XCTAssertEqual(keychain.rows.first { $0.service == "to.nostrvault.widget" }?.group, shared,
+                       "the widget's own snapshot stays where the widget reads it")
+        XCTAssertEqual(CredentialStore.locationReport(in: keychain),
+                       "owner password in \(mine); mesh key in \(mine)")
+    }
+
     func testTheReportSaysWhenAKeyIsStillShared() {
         let keychain = FakeKeychain()
         keychain.put("owner-key-password", "owner-pw", group: shared, accessible: oldClass)
-        XCTAssertEqual(CredentialStore.locationReport(in: keychain), "owner password in \(shared)")
+        XCTAssertEqual(CredentialStore.locationReport(in: keychain), "owner password in \(shared); mesh key in none")
         XCTAssertFalse(CredentialStore.locationReport(in: keychain).contains("owner-pw"), "groups only, never values")
     }
 

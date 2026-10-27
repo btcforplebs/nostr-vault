@@ -276,7 +276,7 @@ internal fun HeroNoteCard(
 
             // Media, then links, then quotes, as on iOS.
             if (note.mediaURLs.isNotEmpty()) {
-                MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
+                MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
                 Spacer(Modifier.height(12.dp))
             }
 

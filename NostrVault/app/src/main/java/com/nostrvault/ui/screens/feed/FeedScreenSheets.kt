@@ -69,22 +69,12 @@ internal fun FeedScreenSheets(
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     if (showGlobalEveryoneWarning) {
-        AlertDialog(
-            onDismissRequest = { showGlobalEveryoneWarning = false },
-            title = { Text("Sensitive Content Warning") },
-            text = {
-                Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.setGlobalShowsEveryone(true)
-                        showGlobalEveryoneWarning = false
-                    },
-                ) { Text("Proceed", color = ErrorRed) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGlobalEveryoneWarning = false }) { Text("Cancel") }
+        // Under five follows it says why it's locked instead.
+        com.nostrvault.ui.components.EveryoneSwitchDialog(
+            onDismiss = { showGlobalEveryoneWarning = false },
+            onProceed = {
+                viewModel.setGlobalShowsEveryone(true)
+                showGlobalEveryoneWarning = false
             },
         )
     }

@@ -73,6 +73,12 @@ final class AvatarImageCache {
                 return
             }
 
+            // A `.fips` picture is reachable only over the mesh.
+            if MediaCacheService.isMeshOnly(url) {
+                self.finish(url: url, image: nil)
+                return
+            }
+
             // Network. Only the small copy is kept; the original is dropped.
             URLSession.shared.dataTask(with: AvatarThumbnail.url(for: url)) { data, response, _ in
                 guard let data = data,

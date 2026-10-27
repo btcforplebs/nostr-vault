@@ -296,6 +296,14 @@ enum NVDeepLinkRouter {
         switch link {
         case .profile(let id):
             guard let pubkey = QuoteReference.profilePubkey(fromBech32: id) else { return false }
+            // Before setup there is no profile screen: the link names who
+            // told you about Nostr Vault, and setup's referrer step starts
+            // on them (SetupReferral).
+            guard ConfigService.shared.config.hasCompletedSetup else {
+                SetupReferral().pendingReferrer = pubkey
+                center.post(name: .havenSetupReferrer, object: pubkey)
+                return true
+            }
             center.post(name: .havenOpenProfile, object: pubkey)
         case .event(let id):
             guard let decoded = Bech32.decode(id) else { return false }

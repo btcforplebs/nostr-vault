@@ -1,15 +1,17 @@
 import SwiftUI
 
-/// Who may write to your relay's inbox and chat, and how fast. These used
-/// to be split between "Performance & Limits" and "Global Web of Trust" in
-/// Advanced, although both answer the same question.
+/// Who may write to your relay's inbox and chat. These used to be split
+/// between "Performance & Limits" and "Global Web of Trust" in Advanced,
+/// although both answer the same question. The old Rate Limits rows (events
+/// and connections per minute) are gone: haven-go never read them, it uses
+/// its own fixed limits (haven-go/limits.go).
 struct RelayAccessSettingsView: View {
     @EnvironmentObject var configService: ConfigService
 
     var body: some View {
         Form {
             Section {
-                Stepper(value: $configService.config.chatRelayWotDepth, in: 1...5) {
+                Stepper(value: $configService.config.chatRelayWotDepth, in: RelayAccessLimits.followDistance) {
                     HStack {
                         Text("Follow Distance").settingInfo(.relayWotDepth)
                         Spacer()
@@ -38,31 +40,13 @@ struct RelayAccessSettingsView: View {
             } header: {
                 Text("Web of Trust")
             }
-
-            Section {
-                Stepper(value: $configService.config.outboxMaxEventsPerMinute, in: 10...1000, step: 10) {
-                    HStack {
-                        Text("Events").settingInfo(.relayRateLimits)
-                        Spacer()
-                        Text("\(configService.config.outboxMaxEventsPerMinute) / min")
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                Stepper(value: $configService.config.outboxMaxConnectionsPerMinute, in: 1...100) {
-                    HStack {
-                        Text("Connections")
-                        Spacer()
-                        Text("\(configService.config.outboxMaxConnectionsPerMinute) / min")
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-            } header: {
-                Text("Rate Limits")
-            }
         }
         .groupedFormStyleCompat()
+        .onAppear {
+            let depth = configService.config.chatRelayWotDepth
+            let clamped = RelayAccessLimits.clampedFollowDistance(depth)
+            if clamped != depth { configService.config.chatRelayWotDepth = clamped }
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

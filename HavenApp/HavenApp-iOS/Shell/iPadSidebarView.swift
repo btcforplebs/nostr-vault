@@ -55,7 +55,9 @@ struct iPadSidebarView: View {
         }
     }
 
+    /// A read-only sign-in can't sign a post, so ⌘N does nothing for it.
     private func composeNewPost() {
+        guard configService.activeAccountCanSign else { return }
         NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
     }
 
@@ -146,13 +148,15 @@ struct iPadSidebarView: View {
                     .buttonStyle(.plain)
 
                     // The phone's floating Post button, which this layout has
-                    // no bar for. Same path as ⌘N.
-                    Button(action: composeNewPost) {
-                        Label("New Post", systemImage: "square.and.pencil")
-                            .font(.appSystem(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.havenPurple)
+                    // no bar for. Same path as ⌘N. None for a read-only sign-in.
+                    if configService.activeAccountCanSign {
+                        Button(action: composeNewPost) {
+                            Label("New Post", systemImage: "square.and.pencil")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.havenPurple)
+                        }
+                        .accessibilityHint("Write a new post")
                     }
-                    .accessibilityHint("Write a new post")
 
                     // On the phone the inbox opens from the Vault tab's
                     // Messages button; here it also gets its own row, with
@@ -352,7 +356,7 @@ struct iPadSidebarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             // 0-2 are Feed, Search and Profile, which open their own composer.
-            guard let tab = note.object as? Int, tab >= 3 else { return }
+            guard let tab = note.object as? Int, tab >= 3, configService.activeAccountCanSign else { return }
             showingCompose = true
         }
         .sheet(isPresented: $showingCompose) {

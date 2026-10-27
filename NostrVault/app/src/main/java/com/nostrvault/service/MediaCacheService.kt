@@ -44,6 +44,15 @@ class MediaCacheService @Inject constructor(
         private const val NOT_FOUND_MAX_AGE_MS = 7L * 24 * 3600 * 1000 // 404 flags expire after 7 days (iOS parity)
         // Files above this size are trusted without hashing.
         private const val INTEGRITY_MAX_HASH_BYTES = 64L * 1024 * 1024
+
+        /** The download client. A seam so a test can check what it refuses. */
+        internal fun buildHttpClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(LocalBlossomCache.interceptor)
+            // A .fips host is a mesh name: never sent to DNS.
+            .addInterceptor(com.nostrvault.fips.FipsHostGuard)
+            .build()
     }
 
     // ── Caches ────────────────────────────────────────────────────────
@@ -104,11 +113,7 @@ class MediaCacheService @Inject constructor(
         context.getSharedPreferences("media_cache_404", Context.MODE_PRIVATE)
     }
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor(LocalBlossomCache.interceptor)
-        .build()
+    private val httpClient = buildHttpClient()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

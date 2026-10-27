@@ -136,13 +136,31 @@ fun MediaGalleryScreen(
     val clipboardManager = LocalClipboardManager.current
     val mediaCacheService = viewModel.mediaCacheService
 
-    // nostrvault://mediapaste: paste once the tab is on screen. A beat behind,
-    // as iOS does; Android also hides the clipboard until the window has focus.
+    // nostrvault://mediapaste: once the tab is on screen, ask before pasting.
+    // Any app can fire that link, so the clipboard is read only after Upload.
+    // A beat behind, as iOS does; Android also hides the clipboard until the
+    // window has focus.
     val pasteRequested by com.nostrvault.ui.navigation.PendingMediaPaste.requested.collectAsState()
+    val pasteAwaitingConfirm by com.nostrvault.ui.navigation.PendingMediaPaste.awaitingConfirm.collectAsState()
     LaunchedEffect(pasteRequested) {
         if (!pasteRequested) return@LaunchedEffect
         kotlinx.coroutines.delay(400)
-        if (com.nostrvault.ui.navigation.PendingMediaPaste.consume()) viewModel.pasteFromClipboard(context)
+        com.nostrvault.ui.navigation.PendingMediaPaste.consume()
+    }
+    if (pasteAwaitingConfirm) {
+        AlertDialog(
+            onDismissRequest = { com.nostrvault.ui.navigation.PendingMediaPaste.cancel() },
+            title = { Text("Upload from clipboard?") },
+            text = { Text("A link asked to upload what you copied to your vault and media servers. Upload it?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (com.nostrvault.ui.navigation.PendingMediaPaste.confirm()) viewModel.pasteFromClipboard(context)
+                }) { Text("Upload") }
+            },
+            dismissButton = {
+                TextButton(onClick = { com.nostrvault.ui.navigation.PendingMediaPaste.cancel() }) { Text("Cancel") }
+            },
+        )
     }
 
     // Upload choices, as on iOS: Photos and Videos pick several at once from

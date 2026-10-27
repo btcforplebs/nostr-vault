@@ -304,6 +304,7 @@ class RelayForegroundService : Service() {
     interface LogStoreEntryPoint {
         fun logStore(): LogStore
         fun localNotifier(): com.nostrvault.service.LocalNotificationService
+        fun fipsMeshManager(): com.nostrvault.fips.FipsMeshManager
     }
 
     // ── Lifecycle state machine (replaces bare `relayStarted` boolean) ──
@@ -326,6 +327,18 @@ class RelayForegroundService : Service() {
 
     private val localNotifier: com.nostrvault.service.LocalNotificationService by lazy {
         EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).localNotifier()
+    }
+
+    /**
+     * The mesh comes back with the relay, so a reboot brings both back without the app being
+     * opened: BootCompletedReceiver loads the config and starts this service, and this runs once
+     * the relay answers. A no-op when the mesh is off, already running, or the config is not
+     * loaded yet (a sticky restart in a fresh process: the mesh then starts with the app).
+     */
+    internal fun restoreMesh() {
+        EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java)
+            .fipsMeshManager()
+            .restoreIfEnabled(serviceScope)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

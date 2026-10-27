@@ -289,23 +289,10 @@ object FeedThreadGrouping {
 }
 
 /**
- * Which replies a thread view shows: blocked people and spam are dropped, and
- * replies from outside your network are folded until asked for. Pure, so the
- * rules are pinned by unit tests. iOS: `ThreadReplyVisibility`.
+ * Which replies a thread view shows. Pure, so the rules are pinned by unit
+ * tests. iOS: `ThreadReplyVisibility` (#1085).
  */
 object ThreadReplyVisibility {
-
-    /** Replies a thread view shows, and how many more are folded as outside your network. */
-    data class Replies(val visible: List<FeedNote>, val outside: Int)
-
-    /**
-     * Outside: not in your trusted set (Web of Trust plus follows) and not one
-     * of the thread's insiders (you, and the authors of the opened note and
-     * the notes above it). An empty trusted set means the graph has not
-     * loaded, and then nobody counts as outside.
-     */
-    fun isOutside(pubkey: String, trusted: Set<String>, insiders: Set<String>): Boolean =
-        trusted.isNotEmpty() && pubkey !in trusted && pubkey !in insiders
 
     /** Every note under [rootId], at any depth, among [notes]. Cycle-safe. */
     fun <T> descendants(rootId: String, notes: List<T>, id: (T) -> String, parentId: (T) -> String?): List<T> {
@@ -326,21 +313,13 @@ object ThreadReplyVisibility {
     }
 
     /**
-     * The replies under [targetId] in [pool], at any depth, minus [hidden]
-     * ones (blocked, spam). Unless [showOutside], replies from outside your
-     * network are counted rather than returned.
+     * Every reply under [targetId] in [pool], at any depth, except the ones
+     * [hidden] drops (blocked people, spam). Everyone else shows, whoever
+     * they are: replies from outside your network used to be folded behind
+     * a button, and the thread then read as the author talking to
+     * themselves, with the author's own answers to a folded reply gone with
+     * it (Logen, 2026-10-22).
      */
-    fun replies(
-        targetId: String,
-        pool: List<FeedNote>,
-        hidden: (FeedNote) -> Boolean,
-        trusted: Set<String>,
-        insiders: Set<String>,
-        showOutside: Boolean,
-    ): Replies {
-        val replies = descendants(targetId, pool, { it.id }, { it.parentEventId }).filterNot(hidden)
-        if (showOutside) return Replies(replies, 0)
-        val (outside, visible) = replies.partition { isOutside(it.pubkey, trusted, insiders) }
-        return Replies(visible, outside.size)
-    }
+    fun shown(targetId: String, pool: List<FeedNote>, hidden: (FeedNote) -> Boolean): List<FeedNote> =
+        descendants(targetId, pool, { it.id }, { it.parentEventId }).filterNot(hidden)
 }

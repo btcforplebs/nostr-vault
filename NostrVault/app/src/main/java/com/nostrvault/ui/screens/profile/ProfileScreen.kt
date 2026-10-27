@@ -88,6 +88,10 @@ fun ProfileScreen(
             viewModel.setPubkey(pubkey)
         }
     }
+    // Live while on screen: the stream stays open and new posts come in on
+    // their own, so the page has no pull to refresh (iOS onAppear/onDisappear).
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { viewModel.pauseStream() }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) { viewModel.resumeStream() }
 
     val profile by viewModel.profile.collectAsState()
     // Held here, not in the header item, so scrolling it away does not restart the wait.
@@ -206,7 +210,11 @@ fun ProfileScreen(
     // form lives in the view model, so after process death the sheet would
     // come back empty.
     var editingProfile by remember { mutableStateOf(false) }
+    var sharingProfile by remember { mutableStateOf(false) }
     val openEditor = { editViewModel.open(); editingProfile = true }
+    // A read-only sign-in can't sign a post or a kind 0: no Post, no Edit
+    // Profile (iOS and the web hide both too).
+    val canSign = com.nostrvault.ui.components.rememberCanSign()
     val copyNpub = {
         npub?.let { clipboard.setText(AnnotatedString(it)) }
         Unit
@@ -263,7 +271,7 @@ fun ProfileScreen(
             }
         },
         // iOS has the Post capsule on the Profile tab only (MyProfileView.postButton).
-        floatingActionButton = { if (isTab) ProfilePostCapsule(onPost = onCompose) },
+        floatingActionButton = { if (isTab && canSign) ProfilePostCapsule(onPost = onCompose) },
     ) { padding ->
         // Items before the section tabs: header, bio (when there is one),
         // links, follow counts and actions.
@@ -356,7 +364,7 @@ fun ProfileScreen(
                     isBlocked = isBlocked,
                     canZap = canZap,
                     zapSats = viewModel.defaultZapSats,
-                    onEditProfile = openEditor,
+                    onEditProfile = openEditor.takeIf { canSign },
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
@@ -369,6 +377,7 @@ fun ProfileScreen(
                         copyNpub()
                         if (android.os.Build.VERSION.SDK_INT < 33) lane.showFeedback("Public key copied", NostrVaultIcons.Copy)
                     },
+                    onShareProfile = { sharingProfile = true },
                     webLink = brainstormLink,
                     onOpenWebLink = { brainstormLink?.let { NostrWebLinks.open(context, it.url) } },
                     onOpenMyProfile = if (isTab) null else onOpenMyProfile,
@@ -540,6 +549,7 @@ fun ProfileScreen(
                                     onOpen = {
                                         com.nostrvault.ui.components.FullScreenMediaRouter.open(
                                             mediaItems.map { it.first }, idx, copyLink = true,
+                                            authors = mediaItems.map { it.second.pubkey },
                                         )
                                     },
                                     onReport = { gridReportTarget = it },
@@ -612,6 +622,10 @@ fun ProfileScreen(
 
     if (editingProfile) {
         ProfileEditSheet(viewModel = editViewModel, onClose = { editingProfile = false })
+    }
+
+    if (sharingProfile) {
+        npub?.let { ShareProfileSheet(npub = it, name = profile?.bestName, onDismiss = { sharingProfile = false }) }
     }
 
     openListing?.let { listing ->

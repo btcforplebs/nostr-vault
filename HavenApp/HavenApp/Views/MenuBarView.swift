@@ -172,7 +172,7 @@ struct MenuBarView: View {
             MacWindow.pendingCompose = false
             // SearchView owns object == 1 while it's on screen (selectedTab == .search);
             // for every other tab this is the only listener, so ⌘N works app-wide.
-            guard selectedTab != .search else { return }
+            guard selectedTab != .search, configService.activeAccountCanSign else { return }
             showingCompose = true
         }
         .onAppear {
@@ -183,7 +183,7 @@ struct MenuBarView: View {
             MacWindow.openWindowAction = openWindow
             // The status panel asks for a composer by setting this before the
             // window exists; this is the first moment a receiver could hear it.
-            if MacWindow.consumePendingCompose() {
+            if MacWindow.consumePendingCompose(), configService.activeAccountCanSign {
                 showingCompose = true
             }
             // A notification tapped while this window did not exist left its

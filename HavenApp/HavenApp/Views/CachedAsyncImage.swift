@@ -57,6 +57,12 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
                 return
             }
 
+            // A `.fips` link is reachable only over the mesh.
+            if MediaCacheService.isMeshOnly(url) {
+                DispatchQueue.main.async { self.isLoading = false }
+                return
+            }
+
             // Download if not cached
             let task = MediaSessionService.shared.session.dataTask(with: url) { data, response, error in
                 defer {

@@ -34,7 +34,9 @@ internal fun FeedMissingNotesEffects(notes: List<FeedNote>, viewModel: FeedViewM
             }.distinct()
         }
         if (missingIds.isNotEmpty()) {
-            viewModel.fetchMissingParentNotes(missingIds)
+            // The fetch adopts parents already in the feed first, which is a
+            // lookup per id over the index; off Main like the scan above.
+            withContext(Dispatchers.Default) { viewModel.fetchMissingParentNotes(missingIds) }
         }
     }
 
@@ -48,7 +50,7 @@ internal fun FeedMissingNotesEffects(notes: List<FeedNote>, viewModel: FeedViewM
             notes.flatMap { it.quotedEventIds }.distinct()
         }
         if (quotedIds.isEmpty()) return@LaunchedEffect
-        viewModel.fetchMissingQuotedNotes(quotedIds)
+        withContext(Dispatchers.Default) { viewModel.fetchMissingQuotedNotes(quotedIds) }
         viewModel.parentNotesCache.collect {
             viewModel.fetchMissingQuotedProfiles(quotedIds)
         }

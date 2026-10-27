@@ -147,4 +147,12 @@ class FeedServiceFollowListTest {
         val times = signed.map { it.createdAt }
         assertTrue("created_at must increase, got $times", times[1] > times[0])
     }
+
+    @Test
+    fun `a new list makes Discovery count the follows' follows again`() {
+        feed.lastExtendedNetworkLoadTime = System.currentTimeMillis()
+        assertTrue(!feed.needsExtendedNetworkRefresh())
+        feed.publishContactList(listOf(alice))
+        assertTrue("an unfollow kept the old follows-of-follows tally", feed.needsExtendedNetworkRefresh())
+    }
 }

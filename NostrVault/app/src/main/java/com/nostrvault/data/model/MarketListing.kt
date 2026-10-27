@@ -51,13 +51,21 @@ data class MarketListing(
             return "$price $unit"
         }
 
-    /** Plebeian Market's page, keyed by event id as MyNostrSpace links it. */
+    /**
+     * Where "on Plebeian" goes. The new Plebeian Market (PlebeianApp/market) loads only Gamma 30402
+     * products, by event id (`/products/<id>`); it has no auction route and no NIP-15 product page,
+     * so a 30018 product or a 30020 auction links to the seller's profile (`/profile/<hex>`).
+     */
     val plebeianUrl: String
-        get() = "https://plebeian.market/${if (isAuction) "auction" else "products"}/$id"
+        get() = if (hasPlebeianPage) "https://plebeian.market/products/$id" else "https://plebeian.market/profile/$pubkey"
 
-    /** The opening line of Message seller: which listing, and its Plebeian link. */
+    /** Whether [plebeianUrl] is this listing's own page, not its seller's. */
+    val hasPlebeianPage: Boolean get() = kind == CLASSIFIED_KIND
+
+    /** The opening line of Message seller: which listing, and its Plebeian page when it has one. */
     val messageToSeller: String
-        get() = "Hi! I'm interested in ${if (title.isEmpty()) "your listing" else "“$title”"}.\n$plebeianUrl"
+        get() = "Hi! I'm interested in ${if (title.isEmpty()) "your listing" else "“$title”"}." +
+            if (hasPlebeianPage) "\n$plebeianUrl" else ""
 
     companion object {
         const val PRODUCT_KIND = 30018

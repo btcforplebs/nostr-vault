@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.util.findAllOnce
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
@@ -11,7 +12,7 @@ import kotlinx.serialization.json.*
     fun NostrService.extractMediaURLs(content: String, pubkey: String, tags: List<List<String>>, createdAt: Long = 0L): List<MediaItem> {
         val urls = mutableListOf<MediaItem>()
         val urlRegex = Regex("""https?://\S+\.(jpg|jpeg|png|gif|webp|mp4|mov|webm|mp3|wav|ogg)""", RegexOption.IGNORE_CASE)
-        for (match in urlRegex.findAll(content)) {
+        for (match in urlRegex.findAllOnce(content)) {
             val urlStr = match.value
             val ext = urlStr.substringAfterLast('.').lowercase()
             val mediaType = when (ext) {

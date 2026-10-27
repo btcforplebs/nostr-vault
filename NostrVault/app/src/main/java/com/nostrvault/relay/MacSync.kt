@@ -1,5 +1,7 @@
 package com.nostrvault.relay
 
+import com.nostrvault.fips.DeviceRole
+import com.nostrvault.fips.HomeVaultRules
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -39,15 +41,34 @@ object MacSync {
 
     /**
      * The Mac address the relay is started with (MAC_RELAY_URL): the Mac's
-     * outbox as wss://host, or ws:// when the address was typed plain. ""
-     * without a Mac relay. Mirrors iOS RelayConfiguration.macRelayURL.
+     * outbox as wss://host, or ws:// when the address was typed plain. A Mac
+     * on the mesh gives [mesh]'s local address for that same npub, or "" until
+     * it has been dialed (RelayConfiguration.resolveMacMeshRelay). "" without
+     * a Mac relay. Mirrors iOS RelayConfiguration.macRelayURL(config:mesh:).
      */
-    fun macRelayURL(config: HavenConfig): String {
+    fun macRelayURL(config: HavenConfig, mesh: RelayConfiguration.MacMeshRelay? = RelayConfiguration.macMeshRelay): String {
+        macMeshNpub(config)?.let { npub ->
+            return mesh?.takeIf { it.npub == npub }?.url ?: ""
+        }
         val base = config.macRelayNormalizedBase
         if (base.isEmpty()) return ""
         val typed = config.macRelayURL.trim().lowercase()
         val plain = typed.startsWith("ws://") || typed.startsWith("http://")
         return (if (plain) "ws://" else "wss://") + base
+    }
+
+    /**
+     * The Mac's mesh npub, or null when the relay reaches it by URL (or there
+     * is none): the Mac relay field holding an npub (`npub1…`, `nostr:npub1…`,
+     * `fipsmesh://npub1…/`) as on iOS, else a device in My Devices marked
+     * Vault on Mac. A URL in the field wins, so a Mac that has one keeps it.
+     */
+    fun macMeshNpub(config: HavenConfig): String? {
+        val typed = config.macRelayURL.trim()
+        if (typed.isNotEmpty()) return HomeVaultRules.meshNpubFromInput(typed)
+        return config.fipsMesh.devices
+            .firstOrNull { it.role == DeviceRole.MAC && it.npub in config.fipsPeers && it.npub != config.homeVaultNpub }
+            ?.npub
     }
 
     fun parse(text: String): MacSyncStatus? = runCatching { json.decodeFromString<MacSyncStatus>(text) }.getOrNull()

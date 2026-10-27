@@ -1,5 +1,8 @@
 package com.nostrvault.relay
 
+import android.util.Log
+import com.nostrvault.fips.FipsBridge
+import com.nostrvault.fips.FipsIngress
 import java.io.File
 
 /**
@@ -7,7 +10,7 @@ import java.io.File
  * Generates the environment dictionary consumed by the Go relay via
  * HavenBridge.setEnv() before calling startRelay().
  *
- * No Android framework dependencies beyond java.io.File.
+ * No Android framework dependencies beyond java.io.File and android.util.Log.
  */
 object RelayConfiguration {
     /** Where features read when the owner has no read relays. */
@@ -156,7 +159,8 @@ object RelayConfiguration {
 
             // Mac relay: synced like any other relay, plus a one-time
             // full-history copy whose result lands in mac_sync_status.json
-            // (iOS passes the same; see MacSync).
+            // (iOS passes the same; see MacSync). A Mac on the mesh is its
+            // dialed local address (macMeshRelay), "" until then.
             "MAC_RELAY_URL" to MacSync.macRelayURL(config),
 
             // Backup
@@ -182,8 +186,36 @@ object RelayConfiguration {
 
             // TLS
             "HAVEN_ENABLE_TLS" to enableTLS,
+
+            // Loopback port the FIPS mesh forwards to: blob reads only.
+            "HAVEN_MESH_PLAIN_PORT" to config.meshPort.toString(),
+
+            // Go's soft memory limit, sized to this phone (see phoneGoMemLimitMB).
+            "GO_MEM_LIMIT_MB" to phoneGoMemLimitMB(totalMemoryBytes()).toString(),
         )
     }
+
+    /**
+     * The Go relay's soft memory limit on a phone, from its RAM: a quarter,
+     * between 256 MiB and 3 GiB (iOS RelayConfiguration.phoneGoMemLimitMB,
+     * #1007). Go's flat 256 MiB phone default (haven-go config.go), and the
+     * 192 MiB this app pinned before, is a limit a populated vault's live heap
+     * reaches, and then the collector runs back to back: on Logen's iPhone
+     * 18 Pro (2026-10-21) 69% of all CPU samples were Go GC mark workers,
+     * ~420% CPU, thermal state Serious.
+     */
+    fun phoneGoMemLimitMB(physicalMemory: Long): Int {
+        val quarter = (physicalMemory.coerceAtLeast(0L) / 4 / (1L shl 20)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return quarter.coerceIn(256, 3072)
+    }
+
+    /** This phone's RAM in bytes (MemTotal in /proc/meminfo), or 0 when it can't be read. */
+    fun totalMemoryBytes(meminfo: File = File("/proc/meminfo")): Long = runCatching {
+        meminfo.useLines { lines ->
+            lines.first { it.startsWith("MemTotal:") }
+                .split(Regex("\\s+"))[1].toLong() * 1024
+        }
+    }.getOrDefault(0L)
 
     /**
      * Kind 0 (profile metadata) never raises a notification, so a list holding
@@ -266,12 +298,104 @@ object RelayConfiguration {
     /** The blocked-people file when config names none (iOS's default name). */
     const val BLACKLIST_FILE_NAME = "blacklisted_npubs.json"
 
-    fun launchInputs(config: HavenConfig, relayDataDir: File): LaunchInputs = LaunchInputs(
-        env = generateEnvDictionary(config, relayDataDir),
-        importSeedRelays = config.importSeedRelays,
-        blastrRelays = config.blastrRelays,
-        dmRelays = config.dmRelays,
-    )
+    /**
+     * Dials a Mac on the mesh first (see [resolveMacMeshRelay]), so it blocks
+     * up to ~20 s when there is one: call it off the main thread.
+     */
+    fun launchInputs(
+        config: HavenConfig,
+        relayDataDir: File,
+        dial: (String) -> FipsIngress = FipsBridge::ingress,
+    ): LaunchInputs {
+        resolveMacMeshRelay(config, dial)
+        return LaunchInputs(
+            env = generateEnvDictionary(config, relayDataDir),
+            importSeedRelays = config.importSeedRelays,
+            blastrRelays = blastrRelays(config, macMeshRelay),
+            dmRelays = config.dmRelays,
+        )
+    }
+
+    /**
+     * The broadcast list the relay writes to: a Mac on the mesh goes first,
+     * at its dialed local address, so the phone's notes reach it. A Mac with
+     * a URL is synced through MAC_RELAY_URL as before. Port of iOS
+     * RelayConfiguration.blastrRelays(config:mesh:).
+     */
+    fun blastrRelays(config: HavenConfig, mesh: MacMeshRelay?): List<String> {
+        val npub = MacSync.macMeshNpub(config)
+        if (npub == null || mesh == null || mesh.npub != npub || mesh.url in config.blastrRelays) return config.blastrRelays
+        return listOf(mesh.url) + config.blastrRelays
+    }
+
+    /**
+     * A Mac relay on the mesh, dialed through FIPS: [url] is the local
+     * `ws://127.0.0.1:<port>/<token>` that reaches it. Never log [url]: the
+     * token keeps other apps on the phone out. Port of iOS
+     * RelayConfiguration.MacMeshRelay.
+     */
+    data class MacMeshRelay(val npub: String, val url: String)
+
+    /** Set by [resolveMacMeshRelay]; null when there is no Mac on the mesh or the dial failed. */
+    @Volatile
+    var macMeshRelay: MacMeshRelay? = null
+
+    /** How long a dial waits for the mesh node, which the app starts on open, possibly after the relay. */
+    const val MESH_NODE_WAIT_MS = 10_000L
+    private const val MESH_NODE_POLL_MS = 500L
+
+    /**
+     * Dials the Mac given as a mesh npub ([MacSync.macMeshNpub]) before the
+     * relay starts, so MAC_RELAY_URL is its local ws:// address and the relay
+     * syncs notes and history from it as from a Mac with a URL. Blocks: up to
+     * [MESH_NODE_WAIT_MS] for the node to come up, then up to 10 s for the
+     * dial. A failed dial leaves [macMeshRelay] null and the relay starts
+     * without the Mac; the next start tries again. Port of iOS
+     * RelayProcessManager.resolveMacMeshRelay.
+     */
+    fun resolveMacMeshRelay(
+        config: HavenConfig,
+        dial: (String) -> FipsIngress = FipsBridge::ingress,
+        pause: (Long) -> Unit = Thread::sleep,
+    ): MacMeshRelay? {
+        val npub = MacSync.macMeshNpub(config)
+        if (npub == null || !config.fipsMeshEnabled) {
+            macMeshRelay = null
+            return null
+        }
+        var ingress = dial(npub)
+        var waited = 0L
+        while (ingress.error == FipsBridge.ERR_NOT_RUNNING && waited < MESH_NODE_WAIT_MS) {
+            pause(MESH_NODE_POLL_MS)
+            waited += MESH_NODE_POLL_MS
+            ingress = dial(npub)
+        }
+        val url = ingress.url?.let(::meshWebsocketURL)
+        val relay = url?.let { MacMeshRelay(npub, it) }
+        macMeshRelay = relay
+        if (relay == null) {
+            Log.w("RelayConfiguration", "Mac relay ${npub.take(16)}… not reachable over the mesh (${ingress.error}); starting without it")
+        } else {
+            Log.i("RelayConfiguration", "Mac relay reached over the mesh (${npub.take(16)}…)")
+        }
+        return relay
+    }
+
+    /**
+     * An ingress base (`http://127.0.0.1:<port>/<token>`) as the websocket
+     * address the relay dials, or null for anything else. iOS
+     * HomeVaultLogic.websocketURL.
+     */
+    fun meshWebsocketURL(base: String): String? {
+        val uri = runCatching { java.net.URI(base.trim()) }.getOrNull() ?: return null
+        val scheme = when (uri.scheme?.lowercase()) {
+            "http" -> "ws"
+            "https" -> "wss"
+            else -> return null
+        }
+        if (uri.host.isNullOrEmpty()) return null
+        return scheme + base.trim().substring(uri.scheme.length)
+    }
 
     /**
      * Writes the relay lists the Go relay reads from files and points their

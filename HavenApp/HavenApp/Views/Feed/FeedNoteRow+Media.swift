@@ -16,6 +16,7 @@ extension FeedNoteRow {
                 maxHeight: 400,
                 isThumbnail: false
             )
+            .meshMediaNote(author: bodySource.pubkey, tags: bodySource.tags)
             .frame(maxWidth: .infinity)
         } else {
             // Multiple media — quick snappy fade carousel
@@ -27,6 +28,7 @@ extension FeedNoteRow {
                     isThumbnail: false,
                     fillsFrame: true
                 )
+                .meshMediaNote(author: bodySource.pubkey, tags: bodySource.tags)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
                 #if os(iOS)

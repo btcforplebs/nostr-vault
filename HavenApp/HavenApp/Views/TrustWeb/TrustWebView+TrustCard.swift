@@ -72,7 +72,7 @@ extension TrustWebView {
                 cardButton("Open in WoT", icon: "WoTTab", asset: true, filled: true) {
                     WOTOpenRequest.shared.open(pubkey)
                 }
-                .accessibilityHint(Text("Shows \(name(pubkey))'s web in the WOT tab"))
+                .accessibilityHint(Text("Shows \(name(pubkey)) on your web in the WOT tab"))
                 .padding(.leading, 4)
             } else {
                 cardActions(pubkey, following: following, blocked: blocked)

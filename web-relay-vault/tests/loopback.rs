@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use fips_tcp::{Config, Stack};
 use serde_json::{json, Value};
-use web_relay_vault::client::run_req;
+use web_relay_vault::client::{run_publish, run_req};
 use web_relay_vault::link::DatagramLink;
 use web_relay_vault::ndjson::{encode, LineDecoder};
 
@@ -61,6 +61,17 @@ impl Page {
                             }
                         }
                         let _ = self.stack.write(id, &encode(&json!(["EOSE", sub])), self.now);
+                    }
+                    if msg[0] == "EVENT" {
+                        let event = msg[1].clone();
+                        let refused = event["content"] == "refuse";
+                        let reply = if refused {
+                            json!(["OK", event["id"], false, "blocked: test"])
+                        } else {
+                            self.notes.push(event.clone());
+                            json!(["OK", event["id"], true, ""])
+                        };
+                        let _ = self.stack.write(id, &encode(&reply), self.now);
                     }
                 }
             }
@@ -153,4 +164,43 @@ fn stranger_never_gets_a_syn_ack() {
     assert!(out.events.is_empty() && out.eose_ms.is_none());
     assert_eq!(out.datagrams_in, 0);
     assert!(page.borrow().rejected >= 1);
+}
+
+#[test]
+fn owner_publishes_every_event_and_gets_each_ok_over_a_lossy_link() {
+    let page = Rc::new(RefCell::new(Page::new(vec![])));
+    let events: Vec<Value> = (0..20).map(|i| note(i, 3000)).collect();
+    let out = run_publish(&mut link(&page, OWNER, 7), &events, Duration::from_secs(60)).unwrap();
+    assert!(out.done_ms.is_some() && out.error.is_none(), "{out:?}");
+    assert!(out.not_accepted(&events).is_empty(), "{out:?}");
+    assert_eq!(out.acks.len(), 20);
+    let kept: Vec<Value> = page.borrow().notes.iter().map(|n| n["id"].clone()).collect();
+    let sent: Vec<Value> = events.iter().map(|e| e["id"].clone()).collect();
+    assert_eq!(kept, sent, "the page kept them out of order or corrupted");
+}
+
+#[test]
+fn a_refused_event_is_reported_not_accepted() {
+    let page = Rc::new(RefCell::new(Page::new(vec![])));
+    let mut refused = note(1, 10);
+    refused["content"] = json!("refuse");
+    let events = vec![note(0, 10), refused];
+    let out = run_publish(&mut link(&page, OWNER, 0), &events, Duration::from_secs(10)).unwrap();
+    assert!(out.done_ms.is_some(), "{out:?}");
+    assert_eq!(out.not_accepted(&events), vec![format!("{:064x}", 1).as_str()]);
+    let refusal = out.acks.iter().find(|a| !a.accepted).unwrap();
+    assert_eq!(refusal.message, "blocked: test");
+    assert_eq!(page.borrow().notes.len(), 1);
+}
+
+#[test]
+fn a_stranger_publish_never_connects_and_says_so() {
+    let page = Rc::new(RefCell::new(Page::new(vec![])));
+    let events = vec![note(0, 10)];
+    let out = run_publish(&mut link(&page, 2, 0), &events, Duration::from_secs(3)).unwrap();
+    assert_eq!(out.established_ms, None);
+    assert!(out.acks.is_empty() && out.done_ms.is_none());
+    assert_eq!(out.error.as_deref(), Some("the page never answered"));
+    assert_eq!(out.not_accepted(&events).len(), 1);
+    assert!(page.borrow().notes.is_empty());
 }

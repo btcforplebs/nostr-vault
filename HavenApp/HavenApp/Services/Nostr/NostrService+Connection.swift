@@ -211,7 +211,10 @@ extension NostrService {
         var urls = [config.nostrURL, config.nostrURL + "/inbox"]
             .compactMap { URL(string: $0) }
 
-        let macURL = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A mesh npub is not a URL: use the address the relay dialed for it.
+        let macURL = config.macRelayMeshNpub == nil
+            ? config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            : RelayConfiguration.macRelayURL(config: config)
         if !macURL.isEmpty {
             if let macRelay = URL(string: macURL) { urls.append(macRelay) }
             if let macInbox = URL(string: macURL + "/inbox") { urls.append(macInbox) }

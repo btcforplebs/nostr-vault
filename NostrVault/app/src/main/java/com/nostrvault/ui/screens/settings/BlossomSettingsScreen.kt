@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -118,6 +119,7 @@ class BlossomSettingsViewModel @Inject constructor(
 @Composable
 fun BlossomSettingsScreen(
     onBack: () -> Unit,
+    onOpenFipsMesh: () -> Unit = {},
     viewModel: BlossomSettingsViewModel = hiltViewModel(),
 ) {
     val mirrors by viewModel.mirrors.collectAsState()
@@ -302,7 +304,7 @@ fun BlossomSettingsScreen(
                     Text("No additional mirrors configured", color = SecondaryText, fontSize = 15.sp)
                 }
                 offlineCopies()
-                FipsSection()
+                FipsSection(onOpenFipsMesh)
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(mirrors) { mirror ->
@@ -317,7 +319,7 @@ fun BlossomSettingsScreen(
                         )
                     }
                     item { offlineCopies() }
-                    item { FipsSection() }
+                    item { FipsSection(onOpenFipsMesh) }
                 }
             }
         }
@@ -334,9 +336,10 @@ internal fun isVpnActive(context: android.content.Context): Boolean {
 /**
  * "FIPS": whether a VPN is up, and how to reach media on .fips servers.
  * Same as the iOS Media Servers screen (the Mac's own FIPS server is Mac only).
+ * Your own mesh lives in Settings → FIPS Mesh: one link to it here.
  */
 @Composable
-private fun FipsSection() {
+private fun FipsSection(onOpenFipsMesh: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var vpnActive by remember { mutableStateOf(false) }
     // Checked on open and on every return to the screen (iOS: onAppear).
@@ -373,6 +376,13 @@ private fun FipsSection() {
                         "server's .fips address as an Additional Server above.",
                     color = SecondaryText,
                     fontSize = 13.sp,
+                )
+                Text(
+                    "Your own devices and sharing: FIPS Mesh",
+                    color = LocalNostrVaultColors.current.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(onClick = onOpenFipsMesh),
                 )
             }
         }

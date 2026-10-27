@@ -88,6 +88,7 @@ extension FeedView {
         GeometryReader { geo in
             ZStack(alignment: .topTrailing) {
                 FeedMediaView(url: url, isThumbnail: true)
+                    .meshMediaNote(author: note.pubkey, tags: note.tags)
                     .frame(width: geo.size.width, height: geo.size.width)
                     .clipped()
 

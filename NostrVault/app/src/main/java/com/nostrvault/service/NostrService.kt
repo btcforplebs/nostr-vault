@@ -15,6 +15,7 @@ import com.nostrvault.data.model.SearchTermMatcher
 import com.nostrvault.data.model.ProfileUpdateSignal
 import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.fips.FipsMediaRouter
 import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
@@ -49,10 +50,13 @@ class NostrService @Inject constructor(
     internal val amberSignerService: AmberSignerService,
     internal val powPreferences: com.nostrvault.data.local.PowPreferences,
     internal val lookupPool: LookupSocketPool,
+    internal val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
         /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
         internal val REPLACEABLE_STATE_KINDS = setOf(0, 10000, 10002, 10050, 10063)
+        /** Lists cached on disk; their created_at is cached alongside (kind 0 keeps its own). */
+        internal val PERSISTED_LIST_KINDS = setOf(10002, 10050, 10063)
 
         /**
          * A loopback address means "this machine". Advertising one, or
@@ -277,8 +281,23 @@ class NostrService @Inject constructor(
     // Initialization
     // ══════════════════════════════════════════════════════════════════
 
+    /** Newest accepted event per "kind:pubkey" for [REPLACEABLE_STATE_KINDS],
+     *  seeded lazily from disk. Declared above init. */
+    internal val replaceableNewest = ReplaceableLedger { profileRepository.loadListStampsIfReady() }
+
     init {
         initialize()
+        FipsMediaRouter.serverLists = { _serverLists.value }
+        FipsMediaRouter.requestServerList = { fetchServerList(it) }
+        FipsMediaRouter.ownerHex = { ownerHexPubkey }
+        homeVault.ownerHex = { ownerHexPubkey }
+        homeVault.ownerIsActive = { ownerHexPubkey.isNotEmpty() && activeHexPubkey == ownerHexPubkey }
+        homeVault.signerIsLocal = {
+            SignerRouting.route(configStore.config.value, true, ownerHexPubkey, activeHexPubkey) is SignerRoute.Local
+        }
+        homeVault.signer = { kind, content, tags ->
+            signEventAsync(kind = kind, content = content, tags = tags, forceOwner = true)?.let { serializeEvent(it) }
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -286,9 +305,6 @@ class NostrService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     fun processRelayMessage(message: String, relayUrl: String) { processRelayMessageImpl(message, relayUrl) }
-
-    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
-    internal val replaceableNewest = ConcurrentHashMap<String, Long>()
 
     // ══════════════════════════════════════════════════════════════════
     // Profile management
@@ -301,6 +317,16 @@ class NostrService @Inject constructor(
     // (from a lagging relay) clobbering a fresher one, same failure mode as the
     // kind-3 follow-list clobber bug.
     internal val relayListCreatedAt = mutableMapOf<String, Long>()
+
+    // Newest 10063 wins: a kiosk vault republishes without its mesh entry
+    // when it leaves the mesh, and an older copy must not bring it back.
+    internal val serverListCreatedAt = mutableMapOf<String, Long>()
+
+    /**
+     * Fetch [pubkey]'s Blossom server list (kind 10063), which says whether
+     * their vault is on the FIPS mesh.
+     */
+    fun fetchServerList(pubkey: String) { fetchServerListImpl(pubkey) }
 
     /**
      * Sign a Nostr event asynchronously (supports NIP-46 remote signing).
@@ -376,7 +402,8 @@ class NostrService @Inject constructor(
 
     fun publishBlockedRelayList() { publishBlockedRelayListImpl() }
 
-    fun publishServerList() { publishServerListImpl() }
+    /** [dropMesh]: the home vault this phone listed before, when it changed. */
+    fun publishServerList(dropMesh: Collection<String> = emptyList()) { publishServerListImpl(dropMesh) }
 
     /** Adopts media servers from the owner's published kind 10063. See [syncOwnerServerList]. */
     fun syncServerList() {

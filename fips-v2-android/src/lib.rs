@@ -1,0 +1,1494 @@
+//! libnvfips: the FIPS mesh for the Nostr Vault Android app.
+//!
+//! Upstream FIPS runs in-process with an app-owned TUN, so the app needs no
+//! VpnService and does not take the phone's one VPN slot. Mesh IPv6 packets
+//! are terminated by fips-v2's userspace TCP/IP stack, which splices each mesh
+//! connection to an ordinary localhost socket (the relay, or a local listener).
+//!
+//! The Kotlin side is `com.nostrvault.fips.FipsBridge`. Control plane only:
+//! no packet ever crosses JNI.
+
+// The probe's single-mode `run` and `Mode` go unused here.
+#[allow(dead_code)]
+#[path = "../../fips-v2/src/stack.rs"]
+mod stack;
+
+mod node;
+pub mod own_devices;
+pub mod relay_link;
+pub mod strangers;
+pub use relay_link::relay_push;
+
+use std::net::{Ipv6Addr, SocketAddr};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use fips::identity::{Identity, PeerIdentity, decode_nsec, encode_nsec};
+use fips::Config;
+use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
+
+/// The one mesh port a vault serves on. `stack.rs` reads it from the crate root.
+pub const MESH_PORT: u16 = 80;
+
+/// What the app passes to `start`, as JSON. Every field is optional.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+pub struct StartOptions {
+    /// Npubs dialed at start. Anyone can reach this device; `ingress` adds
+    /// any other npub on demand.
+    pub peers: Vec<String>,
+    /// Advert and signaling relays. Empty keeps upstream's defaults.
+    pub relays: Vec<String>,
+    /// Local UDP port; 0 lets the OS choose.
+    pub udp_port: u16,
+    /// Offer private LAN addresses to peers (same-network testing only).
+    pub lan: bool,
+    /// Stop sharing once this many bytes have gone to the mesh since sharing
+    /// was turned on. 0 keeps the default; there is no "unlimited".
+    pub max_serve_bytes: u64,
+    /// Also peer with the public seeds in [`relay_link::PUBLIC_SEEDS`]: the
+    /// route a browser relay page is on. Each seed learns this device's public
+    /// IP, as any server it connects to does; nothing is advertised.
+    pub public_seeds: bool,
+    /// Path for the node's datagram API socket, inside the app's sandbox.
+    /// Empty leaves it off, and with it `relay_push`.
+    pub relay_socket: String,
+    /// The owner's devices. Set, only they reach this node: see
+    /// [`own_devices`]. Empty leaves the node open to anyone, as before.
+    pub own_devices: Vec<String>,
+    /// With `own_devices`: everyone else may reach this loopback port while
+    /// sharing, capped ([`strangers`]). It is Haven's mesh door
+    /// (`HAVEN_MESH_PLAIN_PORT`), never the relay port own devices get: the
+    /// door is the policy layer for mesh visitors. They find this node
+    /// through `public_seeds`. 0: they get silence.
+    pub strangers_port: u16,
+    /// Read anyone's vault without giving it this node's address: offers
+    /// are answered for `own_devices` only (for nobody when it is empty), and
+    /// `ingress` to an npub outside it sends no traversal offer. The vault is
+    /// reached over the mesh through the public seeds, on the strangers'
+    /// capped stack, never the owner's. Without `public_seeds` such a vault
+    /// is out of reach (the read fails, the app falls back to the URL), but
+    /// offers still go unanswered: the engine is never open. For a phone that
+    /// reads its follows' photos (client engine).
+    pub read_anyone: bool,
+}
+
+/// What sharing gives the mesh before it stops, unless the app sets its own.
+const DEFAULT_SERVE_TOTAL: u64 = 1 << 30;
+/// One visitor's share of that, so one reader cannot use it all.
+const SERVE_PER_PEER: u64 = 256 << 20;
+/// Parallel loads from one visitor (a gallery opens several at once).
+const SERVE_PER_PEER_OPEN: usize = 6;
+
+fn serve_limits(opts: &StartOptions) -> stack::ServeLimits {
+    // Own-devices mode serves no visitors: the owner's full-history copy
+    // runs uncapped, as it did through the fipsv2-probe helper.
+    if !opts.own_devices.is_empty() {
+        return stack::ServeLimits::default();
+    }
+    let total = if opts.max_serve_bytes == 0 { DEFAULT_SERVE_TOTAL } else { opts.max_serve_bytes };
+    stack::ServeLimits {
+        total_bytes: total,
+        per_peer_bytes: SERVE_PER_PEER.min(total),
+        per_peer_open: SERVE_PER_PEER_OPEN,
+    }
+}
+
+#[derive(Serialize)]
+struct Status {
+    running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    npub: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    address: Option<String>,
+    uptime_s: u64,
+    exported: Vec<u16>,
+    peers: Vec<String>,
+    /// Friends' vaults open for reading, each on a loopback port.
+    reading: Vec<Reading>,
+    counters: CountersOut,
+    /// Sharing was turned off because the mesh pulled `max_serve_bytes`.
+    cap_reached: bool,
+    max_serve_bytes: u64,
+    /// `relay_push` can run: the datagram API socket is on.
+    relay_link: bool,
+    /// Own-devices mode with `strangers` on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strangers: Option<StrangersOut>,
+}
+
+#[derive(Serialize)]
+struct StrangersOut {
+    open: usize,
+    total: u64,
+    refused: u64,
+    rx: u64,
+    tx: u64,
+}
+
+#[derive(Serialize)]
+struct Reading {
+    npub: String,
+    port: u16,
+    /// Read over the strangers' stack, without a dial (read_anyone).
+    #[serde(skip)]
+    via_mesh: bool,
+}
+
+/// Served = friends reading this phone's relay; read = this phone reading
+/// theirs. `_rx` is bytes from the mesh, `_tx` bytes sent to it.
+#[derive(Serialize, Default)]
+struct CountersOut {
+    served_open: u64,
+    served_total: u64,
+    served_rx: u64,
+    served_tx: u64,
+    read_open: u64,
+    read_total: u64,
+    read_rx: u64,
+    read_tx: u64,
+    served_refused: u64,
+}
+
+impl CountersOut {
+    fn from(c: &stack::Counters) -> Self {
+        let get = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed);
+        Self {
+            served_open: get(&c.served_open),
+            served_total: get(&c.served_total),
+            served_rx: get(&c.served_rx),
+            served_tx: get(&c.served_tx),
+            read_open: get(&c.read_open),
+            read_total: get(&c.read_total),
+            read_rx: get(&c.read_rx),
+            read_tx: get(&c.read_tx),
+            served_refused: get(&c.served_refused),
+        }
+    }
+}
+
+struct Running {
+    npub: String,
+    address: Ipv6Addr,
+    started: Instant,
+    /// The port being shared on the mesh; `None` while sharing is off.
+    exported: Option<u16>,
+    reading: Vec<Reading>,
+    ctl: Arc<stack::Control>,
+    /// Commands into the node's rx loop (adding a peer at runtime).
+    control: tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    stack_thread: std::thread::JoinHandle<()>,
+    /// The datagram API socket `relay_push` connects through; `None` when off.
+    relay_socket: Option<std::path::PathBuf>,
+    /// Set in own-devices mode: the only npubs `ingress` dials.
+    own: Option<own_devices::OwnDevices>,
+    strangers: Option<strangers::Strangers>,
+    /// Where strangers go while sharing (`StartOptions::strangers_port`).
+    strangers_port: u16,
+    /// `StartOptions::read_anyone`.
+    read_anyone: bool,
+    stop: tokio::sync::oneshot::Sender<()>,
+    node_thread: std::thread::JoinHandle<()>,
+}
+
+impl Running {
+    /// A total cap turned sharing off: the owner's stack's (an open node) or
+    /// the strangers' (own-devices mode, where own devices have none).
+    fn cap_reached(&self) -> bool {
+        self.ctl.cap_reached() || self.strangers.as_ref().is_some_and(|s| s.ctl.cap_reached())
+    }
+
+    /// The session total in force, 0 for none: in own-devices mode it binds
+    /// strangers only.
+    fn serve_total(&self) -> u64 {
+        match &self.strangers {
+            Some(s) => s.ctl.limits().total_bytes,
+            None => self.ctl.limits().total_bytes,
+        }
+    }
+}
+
+static STATE: Mutex<Option<Running>> = Mutex::new(None);
+
+/// The state, even after a panic while it was held: a poisoned lock would
+/// otherwise fail every later call as a start error, forever.
+fn state() -> std::sync::MutexGuard<'static, Option<Running>> {
+    STATE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// How long an offer stays valid and how long we wait for its answer. Upstream
+/// defaults to 120 s, which is also how long a missed offer stalls a connect
+/// (the glare path drops the peer's offer while ours goes unanswered).
+const SIGNAL_TTL_SECS: u64 = 30;
+
+pub const ERR_CONFIG: i32 = -1;
+pub const ERR_UNSUPPORTED: i32 = -2;
+pub const ERR_NOT_RUNNING: i32 = -3;
+pub const ERR_ALREADY_EXPORTED: i32 = -4;
+pub const ERR_START: i32 = -5;
+pub const ERR_BAD_NPUB: i32 = -6;
+/// `relay_push` without a datagram API socket (`relay_socket` was empty).
+pub const ERR_RELAY_OFF: i32 = -7;
+/// `relay_push` was handed something that is not a list of signed events.
+pub const ERR_BAD_EVENTS: i32 = -8;
+/// `ingress` to an npub outside `own_devices`: the dial would send this
+/// node's address to it.
+pub const ERR_NOT_OWN: i32 = -9;
+
+/// Every caller string is decoded or quoted before it reaches the template:
+/// the nsec and npubs are re-encoded from their decoded keys, and relay URLs
+/// are JSON strings (valid YAML), so no input can add keys or peers.
+fn config_yaml(nsec: &str, opts: &StartOptions) -> Result<Zeroizing<String>> {
+    let nsec = Zeroizing::new(encode_nsec(&decode_nsec(nsec).context("nsec")?));
+    let relays = if opts.relays.is_empty() {
+        String::new()
+    } else {
+        let list: Vec<String> = opts.relays.iter().map(|r| serde_json::Value::from(r.as_str()).to_string()).collect();
+        format!("      advert_relays: [{0}]\n      dm_relays: [{0}]\n", list.join(", "))
+    };
+    let own = own_devices::OwnDevices::parse_for(&opts.own_devices, opts.read_anyone)?;
+    // An open node already serves everyone.
+    anyhow::ensure!(opts.strangers_port == 0 || own.is_some(), "strangers_port needs own_devices");
+    let me = Identity::from_secret_key(decode_nsec(nsec.as_str()).context("nsec")?).npub();
+    let allowlist = own.as_ref().map(|o| o.allowlist_yaml(&me)).unwrap_or_default();
+    let mut dialed: Vec<String> = Vec::new();
+    for npub in opts.peers.iter().chain(own.iter().flat_map(|o| o.npubs.iter())) {
+        // A peer typed by hand into the config must not stop the engine.
+        let npub = match PeerIdentity::from_npub(npub) {
+            Ok(id) => id.npub(),
+            Err(e) => {
+                tracing::warn!("skipping peer {npub:?}: {e:#}");
+                continue;
+            }
+        };
+        if !dialed.contains(&npub) {
+            dialed.push(npub);
+        }
+    }
+    let mut peers = String::new();
+    for npub in &dialed {
+        let npub = PeerIdentity::from_npub(npub).with_context(|| format!("peer {npub:?}"))?.npub();
+        peers.push_str(&format!(
+            "  - npub: \"{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"nat\"\n    via_nostr: true\n    connect_policy: auto_connect\n"
+        ));
+    }
+    if opts.public_seeds {
+        for seed in relay_link::PUBLIC_SEEDS {
+            peers.push_str(&relay_link::seed_yaml(seed)?);
+        }
+    }
+    let peers = if peers.is_empty() { "peers: []\n".to_string() } else { format!("peers:\n{peers}") };
+    let native_api = relay_link::native_api_yaml(&opts.relay_socket)?;
+    // The control socket binds under /tmp, which an app sandbox cannot write.
+    Ok(Zeroizing::new(format!(
+        r#"node:
+  identity:
+    nsec: "{nsec}"
+  leaf_only: true
+  control:
+    enabled: false
+{native_api}  rendezvous:
+    nostr:
+      enabled: true
+      advertise: true
+      policy: configured_only
+{allowlist}      share_local_candidates: {lan}
+      signal_ttl_secs: {SIGNAL_TTL_SECS}
+{relays}dns:
+  enabled: false
+transports:
+  udp:
+    bind_addr: "0.0.0.0:{port}"
+    advertise_on_nostr: true
+    public: false
+{peers}"#,
+        nsec = nsec.as_str(),
+        lan = opts.lan,
+        port = opts.udp_port,
+        native_api = native_api,
+        allowlist = allowlist,
+    )))
+}
+
+pub fn generate_nsec() -> String {
+    encode_nsec(&Identity::generate().keypair().secret_key())
+}
+
+/// Parse and validate the generated config. Parsing alone accepts a malformed
+/// `offer_allowlist` or `reserved_npubs` entry and the node then drops it,
+/// which would refuse the owner's own device with no error.
+fn mesh_config(yaml: &str) -> Result<Config> {
+    let config: Config = serde_yaml::from_str(yaml).context("mesh config")?;
+    config.validate().context("mesh config")?;
+    Ok(config)
+}
+
+/// Start the node. Idempotent: an already-running node returns Ok.
+pub fn start(nsec: &str, opts: &StartOptions) -> Result<()> {
+    let mut state = state();
+    if state.is_some() {
+        return Ok(());
+    }
+    let yaml = config_yaml(nsec, opts)?;
+    let own = own_devices::OwnDevices::parse_for(&opts.own_devices, opts.read_anyone)?;
+    let relay_socket = relay_link::socket_path(&opts.relay_socket)?;
+    if let Some(path) = &relay_socket {
+        // A socket file left by a run that was killed would fail the bind.
+        let _ = std::fs::remove_file(path);
+    }
+    let config = mesh_config(&yaml)?;
+    drop(yaml);
+
+    let node::Spawned { npub, address, mtu, tun, control, stop: stop_tx, thread: node_thread } =
+        node::spawn(config, "fips-node")?;
+    tracing::info!(%npub, %address, mtu, "fips mesh started");
+
+    // One stack serves and reads over the TUN. It starts with sharing off.
+    let ctl = stack::Control::new();
+    ctl.set_limits(serve_limits(opts));
+    let stack_ctl = ctl.clone();
+    let (to_mesh, from_mesh) = tun;
+    // Own-devices mode: strangers' packets stop here, before the owner's
+    // stack, and go to their own capped one or nowhere.
+    let mut stranger_side = None;
+    let from_mesh = match &own {
+        None => from_mesh,
+        Some(own) => {
+            let (to_stack, stack_rx) = std::sync::mpsc::channel();
+            // Strangers' stack: the door while sharing, and the vaults read
+            // without a dial (read_anyone), whose packets are not own devices'.
+            let to_strangers = if opts.strangers_port != 0 || opts.read_anyone {
+                let (tx, rx) = std::sync::mpsc::channel();
+                // The app's limit is the strangers' total: own devices stay uncapped.
+                match strangers::Strangers::start(address, mtu, to_mesh.clone(), rx, opts.max_serve_bytes) {
+                    Ok(s) => stranger_side = Some(s),
+                    Err(e) => {
+                        let _ = stop_tx.send(());
+                        let _ = node_thread.join();
+                        return Err(e);
+                    }
+                }
+                Some(tx)
+            } else {
+                None
+            };
+            let addresses = own.addresses.clone();
+            let filter = std::thread::Builder::new().name("fips-own-only".into()).spawn(move || {
+                own_devices::filter(from_mesh, address, addresses, to_stack, to_strangers)
+            });
+            if let Err(e) = filter {
+                if let Some(s) = stranger_side.take() {
+                    s.stop();
+                }
+                let _ = stop_tx.send(());
+                let _ = node_thread.join();
+                return Err(e.into());
+            }
+            stack_rx
+        }
+    };
+    let stack_thread = std::thread::Builder::new().name("fips-stack".into()).spawn(move || {
+        if let Err(e) = stack::run_with(address, mtu, to_mesh, from_mesh, &stack_ctl) {
+            tracing::warn!("fips stack stopped: {e:#}");
+        }
+    });
+    let stack_thread = match stack_thread {
+        Ok(t) => t,
+        Err(e) => {
+            if let Some(s) = stranger_side.take() {
+                s.stop();
+            }
+            let _ = stop_tx.send(());
+            let _ = node_thread.join();
+            return Err(e.into());
+        }
+    };
+    *state = Some(Running {
+        npub,
+        address,
+        started: Instant::now(),
+        exported: None,
+        reading: Vec::new(),
+        ctl,
+        control,
+        stack_thread,
+        relay_socket,
+        own,
+        strangers: stranger_side,
+        strangers_port: opts.strangers_port,
+        read_anyone: opts.read_anyone,
+        stop: stop_tx,
+        node_thread,
+    });
+    Ok(())
+}
+
+/// Share a local TCP port (the relay, which also serves Blossom) on mesh :80.
+/// Sharing one port at a time; a different port needs `unexport` first.
+/// In own-devices mode `port` is for own devices only; strangers go to
+/// `strangers_port` at the same time.
+pub fn export(port: u16) -> i32 {
+    let mut state = state();
+    let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
+    // After the total cap turned sharing off, sharing again starts a new count.
+    if !run.cap_reached() {
+        match run.exported {
+            Some(p) if p == port => return 0,
+            Some(_) => return ERR_ALREADY_EXPORTED,
+            None => {}
+        }
+    }
+    if !share_split(&run.ctl, run.strangers.as_ref(), port, run.strangers_port) {
+        return ERR_START;
+    }
+    run.exported = Some(port);
+    0
+}
+
+/// Own devices' stack to `port`, strangers' to `strangers_port`. Strangers
+/// first, so a failure leaves nothing shared.
+fn share_split(own: &stack::Control, strangers: Option<&strangers::Strangers>, port: u16, strangers_port: u16) -> bool {
+    // The relay port is never the strangers' door.
+    if strangers.is_some() && strangers_port == port {
+        return false;
+    }
+    if strangers.is_some_and(|s| !s.share(Some(strangers_port))) {
+        return false;
+    }
+    if !own.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
+        if let Some(s) = strangers {
+            s.share(None);
+        }
+        return false;
+    }
+    true
+}
+
+/// Stop sharing. Friends' connections in progress are cut; reading continues.
+pub fn unexport() -> i32 {
+    let mut state = state();
+    let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
+    run.exported = None;
+    let strangers_off = run.strangers.as_ref().is_none_or(|s| s.share(None));
+    if !run.ctl.set_serve(None) || !strangers_off {
+        return ERR_START;
+    }
+    0
+}
+
+/// A loopback URL base, `http://127.0.0.1:<port>/<token>`, whose requests
+/// reach `npub`'s shared relay over the mesh: append the path (`/<sha256>`,
+/// or nothing for the relay). The token keeps other apps on the phone out, so
+/// it is never logged or put in `status_json`. The same npub gets the same URL. Any npub works (see `IngressRoute`): one the node did
+/// not start with is added as a peer, found through its Nostr advert.
+/// Waits up to 10 s for the node: call it off the UI thread. At most 32
+/// vaults stay open; opening one more closes the least recently read.
+pub fn ingress(npub: &str) -> Result<String, i32> {
+    let (route, control) = match state().as_ref() {
+        Some(run) => (ingress_route(run.own.as_ref(), run.read_anyone, npub), run.control.clone()),
+        None => return Err(ERR_NOT_RUNNING),
+    };
+    let Ok(peer) = PeerIdentity::from_npub(npub) else { return Err(ERR_BAD_NPUB) };
+    match route {
+        IngressRoute::Refuse => return Err(ERR_NOT_OWN),
+        // A dial sends this node's address: own devices, or an open node.
+        // Outside the state lock: the rx loop answers, and never takes that lock.
+        IngressRoute::Dial => {
+            if let Err(e) = add_peer(&control, npub) {
+                tracing::warn!("mesh add peer {npub}: {e:#}");
+                return Err(ERR_START);
+            }
+        }
+        // No offer: the session finds the vault through the seeds. FIPS still
+        // needs the vault's key: the mesh address is a hash prefix, and with
+        // no key a TUN packet gets no-route and a lookup answer is dropped
+        // (Tron, #1030). `cache_identity` puts it in the identity cache with no dial.
+        // Unseeded, the read is no-route: fail like a dial that failed, so the
+        // app falls back to the URL instead of keeping a dead mesh one (Tron, #1030 F5).
+        IngressRoute::ViaMesh => {
+            if let Err(e) = seed_identity(&control, npub) {
+                tracing::warn!("mesh seed identity {npub}: {e:#}");
+                return Err(ERR_START);
+            }
+        }
+    }
+    let mut state = state();
+    let Some(run) = state.as_mut() else { return Err(ERR_NOT_RUNNING) };
+    let via_mesh = route == IngressRoute::ViaMesh;
+    let ctl = match (via_mesh, run.strangers.as_ref()) {
+        (false, _) => run.ctl.clone(),
+        (true, Some(s)) => s.ctl.clone(),
+        // read_anyone always starts the strangers' stack.
+        (true, None) => return Err(ERR_START),
+    };
+    match ctl.connect_port(peer.address().to_ipv6()) {
+        Ok(reader) => {
+            let port = reader.port;
+            // Most recently read last; past the cap the stalest listener goes,
+            // matching the node's own cap on peers added this way.
+            run.reading.retain(|r| r.npub != npub);
+            run.reading.push(Reading { npub: npub.to_string(), port, via_mesh });
+            while run.reading.len() > MAX_READING {
+                let old = run.reading.remove(0);
+                if let Ok(id) = PeerIdentity::from_npub(&old.npub) {
+                    let ctl = match (old.via_mesh, run.strangers.as_ref()) {
+                        (true, Some(s)) => &s.ctl,
+                        _ => &run.ctl,
+                    };
+                    ctl.close_connect(id.address().to_ipv6());
+                }
+            }
+            Ok(reader.url())
+        }
+        Err(e) => {
+            tracing::warn!("mesh ingress {npub}: {e:#}");
+            Err(ERR_START)
+        }
+    }
+}
+
+/// How `ingress` reaches a vault.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum IngressRoute {
+    /// Add it as a peer and dial it: it gets this node's address.
+    Dial,
+    /// Over the mesh through the seeds, no offer: it never learns the address.
+    ViaMesh,
+    /// Outside own devices, and reading anyone is off (ERR_NOT_OWN).
+    Refuse,
+}
+
+fn ingress_route(own: Option<&own_devices::OwnDevices>, read_anyone: bool, npub: &str) -> IngressRoute {
+    match own {
+        None => IngressRoute::Dial,
+        Some(o) if o.contains(npub) => IngressRoute::Dial,
+        Some(_) if read_anyone => IngressRoute::ViaMesh,
+        Some(_) => IngressRoute::Refuse,
+    }
+}
+
+/// Vaults open for reading at once (the node keeps as many runtime peers).
+const MAX_READING: usize = 32;
+
+/// How long `ingress` waits for the node to take a new peer.
+const ADD_PEER_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Ask the node to dial `npub` through its advert. A known peer is a no-op.
+fn add_peer(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    npub: &str,
+) -> Result<()> {
+    control_request(control, "add_peer", serde_json::json!({ "npub": npub })).map(|_| ())
+}
+
+/// Put `npub`'s key in the node's identity cache and do nothing else: no
+/// peer, dial, offer, lookup or session, and no cap (fork `cache_identity`).
+/// The read's own packets then find the vault through the tree, so it never
+/// learns this node's address.
+fn seed_identity(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    npub: &str,
+) -> Result<()> {
+    control_request(control, "cache_identity", serde_json::json!({ "npub": npub })).map(|_| ())
+}
+
+/// One control command, answered by the node's rx loop. Its data on "ok".
+fn control_request(
+    control: &tokio::sync::mpsc::Sender<fips::control::ControlMessage>,
+    command: &str,
+    params: serde_json::Value,
+) -> Result<Option<serde_json::Value>> {
+    let request = fips::control::protocol::Request { command: command.into(), params: Some(params) };
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    let end = Instant::now() + ADD_PEER_TIMEOUT;
+    // A full queue is a burst of opens, not a failure: wait for room.
+    let mut message = (request, tx);
+    loop {
+        match control.try_send(message) {
+            Ok(()) => break,
+            Err(tokio::sync::mpsc::error::TrySendError::Full(m)) if Instant::now() < end => {
+                message = m;
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => anyhow::bail!("node busy or stopped: {e}"),
+        }
+    }
+    let response = loop {
+        match rx.try_recv() {
+            Ok(response) => break response,
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => anyhow::bail!("node stopped"),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) if Instant::now() < end => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => anyhow::bail!("node did not answer in {ADD_PEER_TIMEOUT:?}"),
+        }
+    };
+    anyhow::ensure!(response.status == "ok", "{}", response.message.unwrap_or_default());
+    Ok(response.data)
+}
+
+/// Stop the node, and the stack with it.
+pub fn stop() {
+    let Some(mut run) = state().take() else { return };
+    // Stacks first, so their resets still have a node to leave through.
+    if let Some(s) = run.strangers.take() {
+        s.stop();
+    }
+    run.ctl.stop();
+    let _ = run.stack_thread.join();
+    let _ = run.stop.send(());
+    let _ = run.node_thread.join();
+    if let Some(path) = &run.relay_socket {
+        let _ = std::fs::remove_file(path);
+    }
+    tracing::info!("fips mesh stopped");
+}
+
+pub fn status_json() -> String {
+    let state = state();
+    let status = match state.as_ref() {
+        None => Status {
+            running: false,
+            npub: None,
+            address: None,
+            uptime_s: 0,
+            exported: Vec::new(),
+            peers: Vec::new(),
+            reading: Vec::new(),
+            counters: CountersOut::default(),
+            cap_reached: false,
+            max_serve_bytes: 0,
+            relay_link: false,
+            strangers: None,
+        },
+        Some(run) => Status {
+            running: true,
+            npub: Some(run.npub.clone()),
+            address: Some(run.address.to_string()),
+            uptime_s: run.started.elapsed().as_secs(),
+            exported: run.exported.filter(|_| !run.cap_reached()).into_iter().collect(),
+            peers: Vec::new(),
+            reading: run.reading.iter().map(|r| Reading { npub: r.npub.clone(), port: r.port, via_mesh: r.via_mesh }).collect(),
+            counters: CountersOut::from(&run.ctl.counters),
+            cap_reached: run.cap_reached(),
+            max_serve_bytes: run.serve_total(),
+            relay_link: run.relay_socket.is_some(),
+            strangers: run.strangers.as_ref().map(|s| {
+                let get = |a: &std::sync::atomic::AtomicU64| a.load(Ordering::Relaxed);
+                let c = &s.counters;
+                StrangersOut {
+                    open: c.open.load(Ordering::Relaxed),
+                    total: get(&c.total),
+                    refused: get(&c.refused) + get(&s.ctl.counters.served_refused),
+                    rx: get(&c.rx),
+                    tx: get(&c.tx),
+                }
+            }),
+        },
+    };
+    serde_json::to_string(&status).unwrap_or_else(|_| "{\"running\":false}".into())
+}
+
+pub fn init_logging() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        use tracing_subscriber::prelude::*;
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,nostr_relay_pool=warn"));
+        #[cfg(target_os = "android")]
+        let _ = tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_android::layer("FipsMesh").ok())
+            .try_init();
+        // The Mac app is sandboxed and launched with no terminal, so stdout is
+        // lost and its container is TCC-locked to other tools. The unified log
+        // is the one place seed links and sessions can be read back:
+        // `log show --predicate 'subsystem == "com.bitvora.haven" AND category == "fips-mesh"'`.
+        #[cfg(target_os = "macos")]
+        let _ = tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_oslog::OsLogger::new("com.bitvora.haven", "fips-mesh"))
+            .try_init();
+        #[cfg(not(any(target_os = "android", target_os = "macos")))]
+        let _ = tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .try_init();
+    });
+}
+
+mod c_api;
+
+#[cfg(target_os = "android")]
+mod jni_api {
+    use super::*;
+    use jni::JNIEnv;
+    use jni::objects::{JClass, JString};
+    use jni::sys::{jint, jstring};
+
+    fn jstr(env: &mut JNIEnv, s: &JString) -> Option<String> {
+        env.get_string(s).ok().map(Into::into)
+    }
+
+    fn out(env: &mut JNIEnv, s: String) -> jstring {
+        env.new_string(s).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    }
+
+    /// A panic must not unwind across JNI; report it as a failure code.
+    fn guarded<T>(fallback: T, f: impl FnOnce() -> T + std::panic::UnwindSafe) -> T {
+        std::panic::catch_unwind(f).unwrap_or(fallback)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeStart(
+        mut env: JNIEnv,
+        _class: JClass,
+        nsec: JString,
+        options_json: JString,
+    ) -> jint {
+        init_logging();
+        let Some(nsec) = jstr(&mut env, &nsec).map(Zeroizing::new) else { return ERR_CONFIG };
+        let opts_raw = jstr(&mut env, &options_json).unwrap_or_default();
+        let opts: StartOptions = if opts_raw.trim().is_empty() {
+            StartOptions::default()
+        } else {
+            match serde_json::from_str(&opts_raw) {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!("mesh options: {e}");
+                    return ERR_CONFIG;
+                }
+            }
+        };
+        if config_yaml(&nsec, &opts).is_err() {
+            return ERR_CONFIG;
+        }
+        guarded(ERR_START, move || match start(&nsec, &opts) {
+            Ok(()) => 0,
+            Err(e) => {
+                tracing::warn!("mesh start failed: {e:#}");
+                ERR_START
+            }
+        })
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeGenerateNsec(
+        mut env: JNIEnv,
+        _class: JClass,
+    ) -> jstring {
+        let nsec = guarded(None, || Some(generate_nsec()));
+        match nsec {
+            Some(n) => out(&mut env, n),
+            None => std::ptr::null_mut(),
+        }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeStatusJSON(
+        mut env: JNIEnv,
+        _class: JClass,
+    ) -> jstring {
+        let s = guarded("{\"running\":false}".to_string(), status_json);
+        out(&mut env, s)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeExport(
+        _env: JNIEnv,
+        _class: JClass,
+        port: jint,
+    ) -> jint {
+        let Ok(port) = u16::try_from(port) else { return ERR_CONFIG };
+        guarded(ERR_START, move || export(port))
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeUnexport(
+        _env: JNIEnv,
+        _class: JClass,
+    ) -> jint {
+        guarded(ERR_START, unexport)
+    }
+
+    #[unsafe(no_mangle)]
+    /// The URL base, or the negative code as text ("-3"): JNI has no out-params.
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeIngress(
+        mut env: JNIEnv,
+        _class: JClass,
+        npub: JString,
+    ) -> jstring {
+        let result = match jstr(&mut env, &npub) {
+            Some(npub) => guarded(Err(ERR_START), move || ingress(&npub)),
+            None => Err(ERR_BAD_NPUB),
+        };
+        out(&mut env, result.unwrap_or_else(|code| code.to_string()))
+    }
+
+    /// The result JSON of [`relay_push`], or a negative code as a string, the
+    /// way `nativeIngress` answers. Blocks up to `timeout_ms`: call it off the
+    /// main thread.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeRelayPush(
+        mut env: JNIEnv,
+        _class: JClass,
+        relay_npub: JString,
+        events_json: JString,
+        timeout_ms: jint,
+    ) -> jstring {
+        let relay = jstr(&mut env, &relay_npub);
+        let events = jstr(&mut env, &events_json);
+        let timeout = Duration::from_millis(timeout_ms.max(0) as u64);
+        let result = match (relay, events) {
+            (None, _) => Err(ERR_BAD_NPUB),
+            (_, None) => Err(ERR_BAD_EVENTS),
+            (Some(relay), Some(events)) => guarded(Err(ERR_START), move || relay_push(&relay, &events, timeout)),
+        };
+        out(&mut env, result.unwrap_or_else(|code| code.to_string()))
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_nostrvault_fips_FipsBridge_nativeStop(
+        _env: JNIEnv,
+        _class: JClass,
+    ) {
+        guarded((), stop);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_config_the_app_generates_validates() {
+        let nsec = generate_nsec();
+        let phone = Identity::generate().npub();
+        let shapes = [
+            StartOptions::default(),
+            StartOptions { peers: vec![phone.clone()], relays: vec!["wss://nos.lol".into()], lan: true, ..Default::default() },
+            StartOptions {
+                own_devices: vec![phone.clone()],
+                strangers_port: 7778,
+                public_seeds: true,
+                relay_socket: "/tmp/nvr-test.sock".into(),
+                ..Default::default()
+            },
+        ];
+        for opts in shapes {
+            let yaml = config_yaml(&nsec, &opts).unwrap();
+            mesh_config(&yaml).unwrap_or_else(|e| panic!("{e:#}\n{}", yaml.as_str()));
+        }
+    }
+
+    #[test]
+    fn a_malformed_list_entry_stops_the_mesh_config() {
+        let nsec = generate_nsec();
+        let opts = StartOptions { own_devices: vec![Identity::generate().npub()], ..Default::default() };
+        let yaml = config_yaml(&nsec, &opts).unwrap();
+        let typo = yaml.replace("offer_allowlist: [\"", "offer_allowlist: [\"npub1typo\", \"");
+        assert_ne!(typo, *yaml, "the allowlist line is there to break");
+        assert!(serde_yaml::from_str::<Config>(&typo).is_ok(), "parsing alone accepts the typo");
+        let err = mesh_config(&typo).expect_err("a typo in offer_allowlist must stop the start");
+        assert!(format!("{err:#}").contains("offer_allowlist"), "{err:#}");
+
+        let reserved = yaml.replace("  leaf_only: true\n", "  leaf_only: true\n  limits:\n    reserved_npubs: [\"npub1typo\"]\n");
+        assert_ne!(reserved, *yaml);
+        let err = mesh_config(&reserved).expect_err("a typo in reserved_npubs must stop the start");
+        assert!(format!("{err:#}").contains("reserved_npubs"), "{err:#}");
+    }
+
+    #[test]
+    fn config_parses_with_and_without_peers() {
+        let nsec = generate_nsec();
+        for peers in [vec![], vec!["npub15mrkrlapfs52syawrthvyfhg349pkjd8zdkk6qfc4unj5jgxfwqsjmp6wn".to_string()]] {
+            let opts = StartOptions { peers, relays: vec!["wss://nos.lol".into()], ..Default::default() };
+            let yaml = config_yaml(&nsec, &opts).unwrap();
+            let cfg: Config = serde_yaml::from_str(&yaml).expect("parses");
+            assert!(!cfg.node.control.enabled);
+            assert_eq!(cfg.node.rendezvous.nostr.signal_ttl_secs, SIGNAL_TTL_SECS);
+            assert!(cfg.node.leaf_only, "a phone must never carry other nodes' traffic");
+            // Upstream's 128 on purpose: npubs are free, so a low cap lets a
+            // handful of strangers hold every slot and lock the owner's own
+            // phones out (Tron, #471). The serve caps bound what they can pull.
+            assert_eq!(cfg.node.limits.max_peers, 128);
+            assert_eq!(cfg.peers.len(), opts.peers.len());
+        }
+    }
+
+    #[test]
+    fn serve_limits_default_and_follow_the_owner() {
+        let d = serve_limits(&StartOptions::default());
+        assert_eq!((d.total_bytes, d.per_peer_bytes, d.per_peer_open), (DEFAULT_SERVE_TOTAL, SERVE_PER_PEER, SERVE_PER_PEER_OPEN));
+        // A total below one visitor's share caps that share too.
+        let small = serve_limits(&StartOptions { max_serve_bytes: 100 << 20, ..Default::default() });
+        assert_eq!((small.total_bytes, small.per_peer_bytes), (100 << 20, 100 << 20));
+        let opts: StartOptions = serde_json::from_str(r#"{"max_serve_bytes": 5368709120}"#).unwrap();
+        assert_eq!(serve_limits(&opts).total_bytes, 5 << 30);
+        let own = StartOptions { own_devices: vec![Identity::generate().npub()], max_serve_bytes: 100 << 20, ..Default::default() };
+        assert_eq!(serve_limits(&own), stack::ServeLimits::default(), "own devices are not capped");
+    }
+
+    /// A vault read without a dial must have its key in the node's identity
+    /// cache: FIPS cannot recover a key from a mesh address, and a packet to
+    /// an uncached one is answered at once with ICMPv6 no-route (Tron, #1030).
+    /// An offline node (no rendezvous, loopback UDP): send one packet to the
+    /// vault through the node's TUN, before and after seed_identity.
+    #[test]
+    fn seed_identity_caches_the_vault_key_without_a_dial() {
+        let nsec = generate_nsec();
+        let yaml = format!(
+            "node:\n  identity:\n    nsec: \"{nsec}\"\n  leaf_only: true\n  control:\n    enabled: false\n  rendezvous:\n    nostr:\n      enabled: false\ndns:\n  enabled: false\ntransports:\n  udp:\n    bind_addr: \"127.0.0.1:0\"\npeers: []\n"
+        );
+        let config: Config = serde_yaml::from_str(&yaml).expect("test config");
+        let node = node::spawn(config, "fips-test-seed").expect("node");
+        let (to_mesh, from_mesh) = &node.tun;
+        // ICMPv6 destination unreachable back from the node within `wait`.
+        let no_route = |dest: Ipv6Addr, wait: Duration| -> bool {
+            let mut pkt = vec![0u8; 40];
+            pkt[0] = 0x60;
+            pkt[6] = 59; // no next header
+            pkt[7] = 64;
+            pkt[8..24].copy_from_slice(&node.address.octets());
+            pkt[24..40].copy_from_slice(&dest.octets());
+            to_mesh.blocking_send(pkt).expect("tun send");
+            let end = Instant::now() + wait;
+            while let Some(left) = end.checked_duration_since(Instant::now()) {
+                match from_mesh.recv_timeout(left) {
+                    Ok(p) if p.len() > 40 && p[6] == 58 && p[40] == 1 => return true,
+                    Ok(_) => continue,
+                    Err(_) => return false,
+                }
+            }
+            false
+        };
+        let vault = Identity::generate();
+        let vault_addr = vault.address().to_ipv6();
+        // The control: an unseeded key is no-route, immediately.
+        assert!(no_route(vault_addr, Duration::from_secs(2)), "control: an uncached key should be no-route");
+        seed_identity(&node.control, &vault.npub()).unwrap();
+        assert!(!no_route(vault_addr, Duration::from_millis(500)), "seed_identity left the vault's key out of the cache");
+        // No cap: a feed of many authors seeds them all back to back, where
+        // probe_start refused the 5th inside one probe window (Tron, #1030 F5).
+        let others: Vec<Identity> = (0..8).map(|_| Identity::generate()).collect();
+        for (i, other) in others.iter().enumerate() {
+            seed_identity(&node.control, &other.npub()).unwrap_or_else(|e| panic!("seed {i}: {e:#}"));
+        }
+        for (i, other) in others.iter().enumerate() {
+            assert!(!no_route(other.address().to_ipv6(), Duration::from_millis(500)), "seed {i} left its key out of the cache");
+        }
+        let _ = node.stop.send(());
+        let _ = node.thread.join();
+    }
+
+    /// A reading phone answers offers from its own devices only, or from no
+    /// one: an open node answers anyone who knows its npub, with its public
+    /// and LAN address (Tron, #1023).
+    #[test]
+    fn read_anyone_answers_own_devices_only() {
+        let nsec = generate_nsec();
+        let me = Identity::from_secret_key(decode_nsec(&nsec).unwrap()).npub();
+        let allow = |opts: &StartOptions| -> Vec<String> {
+            let cfg: Config = serde_yaml::from_str(&config_yaml(&nsec, opts).unwrap()).unwrap();
+            cfg.node.rendezvous.nostr.offer_allowlist
+        };
+        // The control: the open client engine of today answers everyone.
+        assert!(allow(&StartOptions { public_seeds: true, lan: true, ..Default::default() }).is_empty());
+        // No devices: only this node itself, so no one else is answered.
+        let none = StartOptions { read_anyone: true, public_seeds: true, lan: true, ..Default::default() };
+        assert_eq!(allow(&none), vec![me.clone()]);
+        let mac = Identity::generate().npub();
+        let mine = StartOptions { own_devices: vec![mac.clone()], read_anyone: true, public_seeds: true, ..Default::default() };
+        assert_eq!(allow(&mine), vec![mac]);
+        // Without the seeds (middle server None) it still answers no one.
+        assert_eq!(allow(&StartOptions { read_anyone: true, ..Default::default() }), vec![me.clone()]);
+    }
+
+    /// Own devices are dialed; anyone else is read through the mesh with no
+    /// offer when read_anyone is on, and refused when it is off.
+    #[test]
+    fn ingress_dials_own_devices_only() {
+        let mac = Identity::generate().npub();
+        let follow = Identity::generate().npub();
+        let own = own_devices::OwnDevices::parse(&[mac.clone()]).unwrap().unwrap();
+        assert_eq!(ingress_route(None, false, &follow), IngressRoute::Dial, "an open node dials, as before");
+        assert_eq!(ingress_route(Some(&own), true, &mac), IngressRoute::Dial);
+        assert_eq!(ingress_route(Some(&own), true, &follow), IngressRoute::ViaMesh);
+        assert_eq!(ingress_route(Some(&own), false, &follow), IngressRoute::Refuse);
+        let empty = own_devices::OwnDevices::parse_for(&[], true).unwrap().unwrap();
+        assert_eq!(ingress_route(Some(&empty), true, &follow), IngressRoute::ViaMesh);
+        assert!(own_devices::OwnDevices::parse_for(&[], false).unwrap().is_none(), "no devices, not reading: open as before");
+    }
+
+    #[test]
+    fn config_refuses_strings_that_would_rewrite_it() {
+        let nsec = generate_nsec();
+        let npub = "npub15mrkrlapfs52syawrthvyfhg349pkjd8zdkk6qfc4unj5jgxfwqsjmp6wn";
+        // Tron's payloads: a second peer with an endpoint, an alias, a node subkey.
+        let extra_peer = format!("{npub}\"\n    addresses:\n      - transport: udp\n        addr: \"203.0.113.7:4242\"\n    connect_policy: auto_connect\n  - npub: \"{npub}\" #");
+        let alias = format!("{npub}\"\n    alias: \"pwned\" #");
+        // Each is skipped as a bad npub: the start goes on, the payload never lands.
+        for peers in [vec![extra_peer], vec![alias]] {
+            let opts = StartOptions { peers, ..Default::default() };
+            let yaml = config_yaml(&nsec, &opts).unwrap();
+            assert!(!yaml.contains("203.0.113.7") && !yaml.contains("pwned"), "{}", yaml.as_str());
+            let cfg: Config = serde_yaml::from_str(&yaml).expect("parses");
+            assert!(cfg.peers.is_empty());
+        }
+        let bad_nsec = format!("{nsec}\"\n  limits:\n    max_peers: 9999 #");
+        assert!(config_yaml(&bad_nsec, &StartOptions::default()).is_err());
+        // A relay is quoted, never parsed as YAML: the hostile string stays one URL.
+        let relay = "wss://a\"]\n      dm_relays: [\"wss://b".to_string();
+        let opts = StartOptions { relays: vec![relay.clone()], ..Default::default() };
+        let cfg: Config = serde_yaml::from_str(&config_yaml(&nsec, &opts).unwrap()).expect("parses");
+        assert_eq!(cfg.node.rendezvous.nostr.advert_relays, vec![relay.clone()]);
+        assert_eq!(cfg.node.rendezvous.nostr.dm_relays, vec![relay]);
+        // Clean input still works, and a peer comes out as one plain auto-connect npub.
+        let opts = StartOptions { peers: vec![npub.into()], ..Default::default() };
+        let cfg: Config = serde_yaml::from_str(&config_yaml(&nsec, &opts).unwrap()).unwrap();
+        assert_eq!(cfg.peers.len(), 1);
+        assert_eq!(cfg.peers[0].npub, npub);
+        assert!(cfg.peers[0].alias.is_none());
+    }
+
+    #[test]
+    fn status_is_stopped_before_start() {
+        let v: serde_json::Value = serde_json::from_str(&status_json()).unwrap();
+        assert_eq!(v["running"], false);
+        assert_eq!(v["exported"], serde_json::json!([]));
+        assert_eq!(v["reading"], serde_json::json!([]));
+        assert_eq!(v["counters"]["served_open"], 0);
+        assert_eq!(v["counters"]["read_rx"], 0);
+    }
+
+    #[test]
+    fn c_api_reports_codes_and_strings() {
+        use std::ffi::{CStr, CString};
+        let status = c_api::NvFipsStatusJSON();
+        assert!(unsafe { CStr::from_ptr(status) }.to_str().unwrap().starts_with("{\"running\":false"));
+        c_api::NvFipsFreeString(status);
+        c_api::NvFipsFreeString(std::ptr::null_mut());
+        let nsec = c_api::NvFipsGenerateNsec();
+        assert!(unsafe { CStr::from_ptr(nsec) }.to_str().unwrap().starts_with("nsec1"));
+        c_api::NvFipsFreeString(nsec);
+        assert_eq!(c_api::NvFipsStart(std::ptr::null(), std::ptr::null()), ERR_CONFIG);
+        let bad = CString::new("{not json").unwrap();
+        let key = CString::new("nsec1x").unwrap();
+        assert_eq!(c_api::NvFipsStart(key.as_ptr(), bad.as_ptr()), ERR_CONFIG);
+        let empty = CString::new("").unwrap();
+        assert_eq!(c_api::NvFipsStart(key.as_ptr(), empty.as_ptr()), ERR_CONFIG, "bad nsec is a config error");
+        let mut url = std::ptr::null_mut();
+        assert_eq!(c_api::NvFipsIngress(std::ptr::null(), &mut url), ERR_BAD_NPUB);
+        let npub = CString::new("npub1nope").unwrap();
+        assert_eq!(c_api::NvFipsIngress(npub.as_ptr(), std::ptr::null_mut()), ERR_CONFIG);
+        assert_eq!(c_api::NvFipsIngress(npub.as_ptr(), &mut url), ERR_NOT_RUNNING);
+        assert!(url.is_null(), "no URL on failure");
+        assert_eq!(c_api::NvFipsExport(4869), ERR_NOT_RUNNING);
+    }
+
+    #[test]
+    fn a_closed_read_port_is_reopened_fresh() {
+        let ctl = stack::Control::new();
+        let peer: Ipv6Addr = "fd00::1".parse().unwrap();
+        let first = ctl.connect_port(peer).unwrap();
+        assert_eq!(ctl.connect_port(peer).unwrap(), first, "reused while open");
+        ctl.close_connect(peer);
+        assert!(ctl.connect_ports().is_empty());
+        let second = ctl.connect_port(peer).unwrap();
+        assert_ne!(second.port, first.port, "a fresh listener, not the closed one");
+        assert_ne!(second.url(), first.url(), "and a fresh token");
+        ctl.close_connect("fd00::2".parse().unwrap()); // never opened: no-op
+        assert_eq!(ctl.connect_ports(), vec![(peer, second.port)]);
+    }
+
+    #[test]
+    fn ingress_and_unexport_need_a_running_node() {
+        assert_eq!(unexport(), ERR_NOT_RUNNING);
+        assert_eq!(ingress("npub1nope"), Err(ERR_NOT_RUNNING));
+    }
+
+    // Two stacks wired TUN to TUN in-process, no FIPS node: what the stack
+    // does with sharing, reading, counters and stop.
+    mod two_stacks {
+        use crate::stack::{self, Control};
+        use std::io::{Read, Write};
+        use std::net::{Ipv6Addr, SocketAddr, TcpListener, TcpStream};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::thread::JoinHandle;
+        use std::time::{Duration, Instant};
+
+        const A: Ipv6Addr = Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0xa);
+        const B: Ipv6Addr = Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0xb);
+
+        struct Side {
+            ctl: Arc<Control>,
+            thread: JoinHandle<()>,
+            /// Set to drop every packet between the two sides, as a lost path would.
+            cut: Arc<AtomicBool>,
+        }
+
+        /// Start stacks at A and B; each one's outbound packets are the other's inbound.
+        fn pair() -> (Side, Side) {
+            let (a_out, mut a_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+            let (b_out, mut b_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+            let (a_in_tx, a_in) = std::sync::mpsc::channel();
+            let (b_in_tx, b_in) = std::sync::mpsc::channel();
+            let cut = Arc::new(AtomicBool::new(false));
+            let (cut_ab, cut_ba) = (cut.clone(), cut.clone());
+            std::thread::spawn(move || {
+                while let Some(p) = a_out_rx.blocking_recv() {
+                    if cut_ab.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    let _ = b_in_tx.send(p);
+                }
+            });
+            std::thread::spawn(move || {
+                while let Some(p) = b_out_rx.blocking_recv() {
+                    if cut_ba.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    let _ = a_in_tx.send(p);
+                }
+            });
+            let side = |addr, out, inbound| {
+                let ctl = Control::new();
+                let c = ctl.clone();
+                let thread = std::thread::spawn(move || stack::run_with(addr, 1280, out, inbound, &c).unwrap());
+                Side { ctl, thread, cut: cut.clone() }
+            };
+            (side(A, a_out, a_in), side(B, b_out, b_in))
+        }
+
+        /// A local "relay" that takes an HTTP head, then answers each line
+        /// with `tag` + the line.
+        fn relay(tag: &'static str) -> SocketAddr {
+            relay_heads(tag).0
+        }
+
+        /// `relay`, and the heads it received, as the mesh delivered them.
+        fn relay_heads(tag: &'static str) -> (SocketAddr, Arc<std::sync::Mutex<Vec<String>>>) {
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = l.local_addr().unwrap();
+            let heads = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen = heads.clone();
+            std::thread::spawn(move || {
+                for mut s in l.incoming().flatten() {
+                    let seen = seen.clone();
+                    std::thread::spawn(move || {
+                        let mut head = Vec::new();
+                        let mut byte = [0u8; 1];
+                        while !head.ends_with(b"\r\n\r\n") {
+                            match s.read(&mut byte) {
+                                Ok(1) => head.push(byte[0]),
+                                _ => return,
+                            }
+                        }
+                        seen.lock().unwrap().push(String::from_utf8_lossy(&head).into_owned());
+                        let mut buf = [0u8; 4096];
+                        while let Ok(n) = s.read(&mut buf) {
+                            if n == 0 {
+                                break;
+                            }
+                            let mut reply = tag.as_bytes().to_vec();
+                            reply.extend_from_slice(&buf[..n]);
+                            if s.write_all(&reply).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+            });
+            (addr, heads)
+        }
+
+        /// What `open` sends, and what the relay gets once the token is out.
+        const UPGRADE: &str = "GET /{token} HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+        const SENT_HEAD: &str = "GET / HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+
+        fn token(r: &stack::Reader) -> String {
+            r.url().rsplit('/').next().unwrap().to_string()
+        }
+
+        fn connect(r: stack::Reader) -> TcpStream {
+            let s = TcpStream::connect(("127.0.0.1", r.port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            s
+        }
+
+        /// A raw stream to the peer behind `r`, past the token check.
+        fn open(r: stack::Reader) -> TcpStream {
+            let mut s = connect(r);
+            s.write_all(UPGRADE.replace("{token}", &token(&r)).as_bytes()).unwrap();
+            s
+        }
+
+        fn ask(s: &mut TcpStream, msg: &str) -> std::io::Result<String> {
+            s.write_all(msg.as_bytes())?;
+            let mut buf = [0u8; 256];
+            let n = s.read(&mut buf)?;
+            if n == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            Ok(String::from_utf8_lossy(&buf[..n]).into_owned())
+        }
+
+        fn wait_for(what: &str, f: impl Fn() -> bool) {
+            let end = Instant::now() + Duration::from_secs(5);
+            while !f() {
+                assert!(Instant::now() < end, "timed out waiting for {what}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        #[test]
+        fn share_read_toggle_count_and_stop() {
+            let (a, b) = pair();
+            a.ctl.set_serve(Some(relay("A:")));
+            b.ctl.set_serve(Some(relay("B:")));
+
+            // Share and read at once: each side reads the other over one TUN.
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let to_a = b.ctl.connect_port(A).unwrap();
+            assert_eq!(a.ctl.connect_port(B).unwrap(), to_b, "same peer, same port");
+            let mut ab = open(to_b);
+            let mut ba = open(to_a);
+            assert_eq!(ask(&mut ab, "ping").unwrap(), "B:ping");
+            assert_eq!(ask(&mut ba, "pong").unwrap(), "A:pong");
+
+            let (ca, cb) = (&a.ctl.counters, &b.ctl.counters);
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            assert_eq!((get(&ca.read_total), get(&ca.served_total)), (1, 1));
+            assert_eq!((get(&cb.read_total), get(&cb.served_total)), (1, 1));
+            assert_eq!((get(&ca.read_open), get(&ca.served_open)), (1, 1));
+            let h = SENT_HEAD.len() as u64;
+            assert_eq!(get(&ca.read_tx), h + 4, "A sent the head and ping");
+            assert_eq!(get(&cb.served_rx), h + 4, "B received the head and ping");
+            assert_eq!(get(&cb.served_tx), 6, "B answered B:ping");
+            assert_eq!(get(&ca.read_rx), 6, "A received B:ping");
+
+            // B stops sharing: A's open read is cut, a new one is refused, and
+            // B's own read of A carries on.
+            b.ctl.set_serve(None);
+            assert!(ask(&mut ab, "again").is_err(), "open connection survives sharing off");
+            let mut refused = open(to_b);
+            assert!(ask(&mut refused, "knock").is_err(), "new connection while sharing off");
+            assert_eq!(ask(&mut ba, "still").unwrap(), "A:still");
+            wait_for("B served_open = 0", || get(&cb.served_open) == 0);
+
+            // Sharing back on, without restarting anything.
+            b.ctl.set_serve(Some(relay("B2:")));
+            let mut again = open(to_b);
+            assert_eq!(ask(&mut again, "hi").unwrap(), "B2:hi");
+
+            // Stop ends both threads and resets what is open.
+            a.ctl.stop();
+            b.ctl.stop();
+            wait_for("stack threads to end", || a.thread.is_finished() && b.thread.is_finished());
+            a.thread.join().unwrap();
+            b.thread.join().unwrap();
+            assert!(ask(&mut again, "gone").is_err(), "connection survives stop");
+            assert_eq!(get(&ca.read_open) + get(&cb.served_open), 0);
+        }
+
+        #[test]
+        fn the_total_cap_turns_sharing_off_until_it_is_turned_on_again() {
+            let (a, b) = pair();
+            // "B:ping" is 6 bytes back to the mesh: the second answer crosses 10.
+            b.ctl.set_limits(stack::ServeLimits { total_bytes: 10, ..Default::default() });
+            b.ctl.set_serve(Some(relay("B:")));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let mut ab = open(to_b);
+            assert_eq!(ask(&mut ab, "ping").unwrap(), "B:ping");
+            assert!(!b.ctl.cap_reached(), "under the cap");
+            // The answer that crosses the cap may be cut on its way.
+            let _ = ask(&mut ab, "pong");
+            wait_for("B to reach its cap", || b.ctl.cap_reached());
+            assert!(ask(&mut ab, "more").is_err(), "open connection survives the cap");
+            let mut late = open(to_b);
+            assert!(ask(&mut late, "knock").is_err(), "new connection after the cap");
+
+            // Turning sharing on again starts a new count.
+            b.ctl.set_serve(Some(relay("B2:")));
+            assert!(!b.ctl.cap_reached());
+            let mut again = open(to_b);
+            assert_eq!(ask(&mut again, "hi").unwrap(), "B2:hi");
+        }
+
+        #[test]
+        fn one_visitor_over_its_bytes_is_cut_and_turned_away() {
+            let (a, b) = pair();
+            b.ctl.set_limits(stack::ServeLimits { per_peer_bytes: 10, ..Default::default() });
+            b.ctl.set_serve(Some(relay("B:")));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let mut ab = open(to_b);
+            assert_eq!(ask(&mut ab, "ping").unwrap(), "B:ping");
+            // The answer that crosses the cap may arrive before the cut.
+            let _ = ask(&mut ab, "pong");
+            assert!(ask(&mut ab, "more").is_err(), "a visitor over its cap keeps its connection");
+            let mut late = open(to_b);
+            assert!(ask(&mut late, "knock").is_err(), "a visitor over its cap gets a new connection");
+            assert!(b.ctl.counters.served_refused.load(Ordering::Relaxed) >= 2);
+            assert!(!b.ctl.cap_reached(), "one visitor's cap is not the total");
+        }
+
+        #[test]
+        fn one_visitor_holds_only_so_many_connections() {
+            let (a, b) = pair();
+            b.ctl.set_limits(stack::ServeLimits { per_peer_open: 1, ..Default::default() });
+            b.ctl.set_serve(Some(relay("B:")));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            let mut first = open(to_b);
+            assert_eq!(ask(&mut first, "one").unwrap(), "B:one");
+            let mut second = open(to_b);
+            assert!(ask(&mut second, "two").is_err(), "a second connection past the cap");
+            assert_eq!(ask(&mut first, "still").unwrap(), "B:still", "the first is untouched");
+            drop(first);
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            wait_for("B served_open = 0", || get(&b.ctl.counters.served_open) == 0);
+            let mut third = open(to_b);
+            assert_eq!(ask(&mut third, "three").unwrap(), "B:three", "room again once one closes");
+        }
+
+        #[test]
+        fn only_a_request_with_the_token_reaches_the_mesh() {
+            let (a, b) = pair();
+            let (addr, heads) = relay_heads("B:");
+            b.ctl.set_serve(Some(addr));
+            let r = a.ctl.connect_port(B).unwrap();
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            let refused = |mut s: TcpStream| {
+                let mut buf = [0u8; 64];
+                assert!(matches!(s.read(&mut buf), Ok(0) | Err(_)), "closed unanswered");
+            };
+
+            // Another app on the phone: no token, a wrong one, or nothing at all.
+            for head in ["GET / HTTP/1.1\r\n\r\n".to_string(), format!("GET /{} HTTP/1.1\r\n\r\n", "0".repeat(32))] {
+                let mut s = connect(r);
+                s.write_all(head.as_bytes()).unwrap();
+                refused(s);
+            }
+            refused(connect(r)); // silent until the head timeout
+            assert_eq!(get(&a.ctl.counters.read_total), 0, "nothing was dialled");
+
+            // Squatters: idle connections past the budget push out the oldest,
+            // so the app's own request still gets through.
+            let squat: Vec<TcpStream> = (0..20).map(|_| connect(r)).collect();
+            std::thread::sleep(Duration::from_millis(100));
+            assert_eq!(get(&b.ctl.counters.served_total), 0);
+
+            // The app, with the token: the relay sees a clean path, one request.
+            let mut s = connect(r);
+            let head = format!("GET /{}/abc HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n", token(&r));
+            s.write_all(head.as_bytes()).unwrap();
+            wait_for("the relay to get the head", || !heads.lock().unwrap().is_empty());
+            assert_eq!(heads.lock().unwrap()[0], "GET /abc HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+            assert_eq!(get(&a.ctl.counters.read_total), 1);
+            drop(squat);
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
+        fn a_connect_loop_does_not_push_out_the_app() {
+            let (a, b) = pair();
+            let (addr, heads) = relay_heads("B:");
+            b.ctl.set_serve(Some(addr));
+            let r = a.ctl.connect_port(B).unwrap();
+
+            // Another app connecting as fast as it can, never sending a byte.
+            let stop = Arc::new(AtomicBool::new(false));
+            let flood = {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let mut held = Vec::new();
+                    while !stop.load(Ordering::Relaxed) {
+                        if let Ok(s) = TcpStream::connect(("127.0.0.1", r.port)) {
+                            held.push(s);
+                        }
+                    }
+                })
+            };
+            std::thread::sleep(Duration::from_millis(200));
+
+            // The app's one request still gets through.
+            let mut s = connect(r);
+            s.write_all(format!("GET /{}/abc HTTP/1.1\r\n\r\n", token(&r)).as_bytes()).unwrap();
+            let end = Instant::now() + Duration::from_secs(5);
+            while heads.lock().unwrap().is_empty() {
+                assert!(Instant::now() < end, "the app was locked out by a connect loop");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            stop.store(true, Ordering::Relaxed);
+            flood.join().unwrap();
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
+        fn read_of_a_silent_peer_gives_up() {
+            let (a, b) = pair();
+            // Nothing answers for this address: B's stack drops what is not its own.
+            let nobody = a.ctl.connect_port(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0xc)).unwrap();
+            let mut s = open(nobody);
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            wait_for("the read to open", || get(&a.ctl.counters.read_open) == 1);
+            assert!(ask(&mut s, "anyone?").is_err(), "a read to nobody must fail");
+            wait_for("read_open back to 0", || get(&a.ctl.counters.read_open) == 0);
+
+            // An answered read idles past the connect timeout without being cut.
+            b.ctl.set_serve(Some(relay("B:")));
+            let mut ok = open(a.ctl.connect_port(B).unwrap());
+            assert_eq!(ask(&mut ok, "one").unwrap(), "B:one");
+            std::thread::sleep(Duration::from_millis(1500));
+            assert_eq!(ask(&mut ok, "two").unwrap(), "B:two");
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
+        fn a_friend_who_vanishes_is_let_go() {
+            let (a, b) = pair();
+            b.ctl.set_serve(Some(relay("B:")));
+            let mut s = open(a.ctl.connect_port(B).unwrap());
+            assert_eq!(ask(&mut s, "hi").unwrap(), "B:hi");
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+
+            // Idle but alive: keep-alive answers, nothing is cut.
+            std::thread::sleep(Duration::from_secs(4));
+            assert_eq!(ask(&mut s, "still").unwrap(), "B:still");
+
+            // The path goes silent, with no FIN or RST: both ends give up.
+            a.cut.store(true, Ordering::Relaxed);
+            let end = Instant::now() + Duration::from_secs(10);
+            while get(&a.ctl.counters.read_open) + get(&b.ctl.counters.served_open) > 0 {
+                assert!(Instant::now() < end, "a vanished friend holds the splice open");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
+        fn a_relay_that_is_down_costs_nothing() {
+            let (a, b) = pair();
+            // Nothing listens on the forward port.
+            let dead = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+            b.ctl.set_serve(Some(dead));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            for _ in 0..3 {
+                assert!(ask(&mut open(to_b), "x").is_err());
+            }
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            assert_eq!(get(&b.ctl.counters.served_total), 0);
+            wait_for("only the armed listeners to be left", || b.ctl.socket_count() == 4);
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+    }
+}

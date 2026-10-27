@@ -42,6 +42,8 @@ extension Notification.Name {
     static let havenOpenNotificationNote = Notification.Name("com.haven.openNotificationNote")
     /// Posted when the user taps feed relays in the dashboard — navigates to Settings > Feed Relays.
     static let havenOpenFeedRelaySettings = Notification.Name("com.haven.openFeedRelaySettings")
+    /// Posted by the FIPS link on Media Servers (Mac): switches Settings to FIPS Mesh.
+    static let havenOpenFipsMeshSettings = Notification.Name("com.haven.openFipsMeshSettings")
     /// Posted to open the Settings view from any context (e.g. profile toolbar, footer gear).
     static let havenOpenSettings = Notification.Name("com.haven.openSettings")
     /// Posted by FeedView when scroll direction changes — object is Bool (true = scrolling down = collapse tab bar).
@@ -65,8 +67,8 @@ extension Notification.Name {
     static let havenOpenMedia = Notification.Name("com.haven.openMedia")
     /// The WOT tab was tapped while showing: its globe goes back to you.
     static let wotTabReselected = Notification.Name("com.haven.wotTabReselected")
-    /// "Open in WoT" from a profile's or a post's globe: the WOT tab, on the
-    /// person in `WOTOpenRequest` (iOS; the Mac has no WOT tab).
+    /// "Open in WoT" from a profile's or a post's globe: the WOT tab, with the
+    /// person in `WOTOpenRequest` picked out (iOS; the Mac has no WOT tab).
     static let havenOpenWOT = Notification.Name("com.haven.openWOT")
     /// Run the Media tab's Magic Paste. Posted after `havenOpenMedia` when the
     /// Mosaic widget's wand is tapped, so one tap gets the same result as
@@ -79,6 +81,9 @@ extension Notification.Name {
     /// A `nostr:` link opened from outside the app. `object` is the hex pubkey
     /// (`havenOpenProfile`), or the hex event id / `naddr1…` (`havenOpenNote`).
     static let havenOpenProfile = Notification.Name("com.haven.openProfile")
+    /// A profile link opened before setup is done: the person who told you
+    /// about Nostr Vault (hex pubkey). Setup's referrer step starts on them.
+    static let havenSetupReferrer = Notification.Name("com.haven.setupReferrer")
     static let havenOpenNote = Notification.Name("com.haven.openNote")
 }
 

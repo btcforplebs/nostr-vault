@@ -11,9 +11,13 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 
 /**
- * Auto-start the relay service when the device boots.
+ * Auto-start the relay service when the device boots, and after an app
+ * update: an update kills the process, and nothing else restarts the relay
+ * until the app is next opened, so this vault and its mesh stay dark.
  * Honors the user's "Auto-start Relay" advanced setting, and never runs
  * before setup is finished.
+ * The FIPS mesh, if left on, comes back with it (RelayForegroundService.restoreMesh),
+ * which is why the config is loaded here first: the mesh's allowlist comes from it.
  */
 class BootCompletedReceiver : BroadcastReceiver() {
 
@@ -28,12 +32,13 @@ class BootCompletedReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED &&
+            intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
 
         val configStore = EntryPointAccessors
             .fromApplication(context.applicationContext, BootReceiverEntryPoint::class.java)
             .configStore()
-        // Fresh process on boot — load persisted config before reading the flag.
+        // Fresh process on boot or update — load persisted config before reading the flag.
         configStore.reload()
         val config = configStore.config.value
         // An external relay replaces the embedded one; there is nothing to boot.
@@ -42,10 +47,10 @@ class BootCompletedReceiver : BroadcastReceiver() {
         val autoStartEnabled = config.hasCompletedSetup && config.autoStartRelay && !config.useExternalRelay
 
         if (autoStartEnabled) {
-            Log.i(TAG, "Boot completed -- starting relay service")
+            Log.i(TAG, "${intent.action} -- starting relay service")
             RelayForegroundService.start(context)
         } else {
-            Log.d(TAG, "Boot completed -- auto-start disabled, skipping")
+            Log.d(TAG, "${intent.action} -- auto-start disabled, skipping")
         }
     }
 }

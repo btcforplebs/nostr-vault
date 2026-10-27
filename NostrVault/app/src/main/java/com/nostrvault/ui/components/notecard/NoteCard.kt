@@ -492,6 +492,7 @@ fun NoteCard(
                     urls = note.mediaURLs,
                     tags = note.tags,
                     autoplayVideos = autoplayVideos,
+                    author = note.pubkey,
                 )
             }
 

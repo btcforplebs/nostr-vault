@@ -53,10 +53,11 @@ class SetupWizardBackupQuestionTest {
     private fun backupFile() = File.createTempFile("backup", ".zip").apply { writeText("zip") }
 
     @Test
-    fun `the question comes after your key and before the relay check`() {
+    fun `the question comes after your key and Who told you, and before the relay check`() {
         val steps = viewModel.activeSteps
         val question = steps.indexOf(WizardStep.BACKUP_QUESTION)
-        assertEquals(steps.indexOf(WizardStep.USE_NOSTR_KEY) + 1, question)
+        assertEquals(steps.indexOf(WizardStep.USE_NOSTR_KEY) + 1, steps.indexOf(WizardStep.REFERRER))
+        assertEquals(steps.indexOf(WizardStep.REFERRER) + 1, question)
         assertEquals(steps.indexOf(WizardStep.RELAY_CHECK) - 1, question)
     }
 

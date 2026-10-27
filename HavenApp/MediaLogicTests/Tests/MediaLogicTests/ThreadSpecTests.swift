@@ -65,12 +65,23 @@ final class ThreadSpecTests: XCTestCase {
 }
 
 final class ThreadReplyVisibilityTests: XCTestCase {
-    func testOutsideNeedsALoadedGraph() {
-        XCTAssertFalse(ThreadReplyVisibility.isOutside("stranger", trusted: [], insiders: []))
-        XCTAssertTrue(ThreadReplyVisibility.isOutside("stranger", trusted: ["friend"], insiders: []))
-        XCTAssertFalse(ThreadReplyVisibility.isOutside("friend", trusted: ["friend"], insiders: []))
-        // The opened note's author is never folded, trusted or not.
-        XCTAssertFalse(ThreadReplyVisibility.isOutside("op", trusted: ["friend"], insiders: ["op"]))
+    /// Logen's report: a thread showed only the author's own replies. Every
+    /// reply shows, strangers' and the newest included, and the author's
+    /// answer to a stranger stays under it. Only what `isHidden` drops goes.
+    func testEveryReplyShowsExceptHidden() {
+        struct N { let id: String; let parent: String?; let author: String }
+        let notes = [
+            N(id: "root", parent: nil, author: "op"),
+            N(id: "op-self", parent: "root", author: "op"),
+            N(id: "stranger", parent: "root", author: "stranger"),
+            N(id: "op-answer", parent: "stranger", author: "op"),
+            N(id: "newest", parent: "root", author: "newcomer"),
+            N(id: "blocked", parent: "root", author: "blocked"),
+            N(id: "elsewhere", parent: "other", author: "stranger"),
+        ]
+        let ids = ThreadReplyVisibility.shown(under: "root", in: notes, id: \.id, parentId: \.parent,
+                                              isHidden: { $0.author == "blocked" }).map(\.id)
+        XCTAssertEqual(Set(ids), ["op-self", "stranger", "op-answer", "newest"])
     }
 
     func testDescendantsReachEveryDepthOnly() {

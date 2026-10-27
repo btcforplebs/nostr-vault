@@ -10,7 +10,7 @@ class SettingsGroupsTest {
     @Test
     fun `groups match the iPhone list`() {
         assertEquals(
-            listOf("Account", "Feed & Display", "Notifications", "Relays", "Your Vault Relay", "Help", "Advanced"),
+            listOf("Account", "Feed & Display", "Notifications", "Relays", "Your Vault Relay", "Mesh", "Help", "Advanced"),
             SETTINGS_GROUPS.map { it.title },
         )
         assertEquals(
@@ -20,6 +20,7 @@ class SettingsGroupsTest {
                 "Notifications",
                 "Relays", "Media Servers",
                 "Sync with Vault on Mac", "Who Can Reach You", "Import Notes", "Backup & Restore",
+                "FIPS Mesh",
                 "Tutorials",
                 "Proof of Work", "Database & Reset", "Bitcoin On-Chain", "Logs",
             ),

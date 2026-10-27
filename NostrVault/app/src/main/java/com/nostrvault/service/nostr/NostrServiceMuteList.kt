@@ -40,7 +40,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
         val config = configStore.config.value
         val ask = (relayLists.value[hex].orEmpty() + config.readRelays + PROFILE_RELAYS).distinct()
         val event = lookupNewestReplaceable(10000, hex, ask).event ?: return
-        applyMuteList(hex, event.tags, event.content, event.createdAt)
+        applyMuteList(hex, event.id, event.tags, event.content, event.createdAt)
     }
 
     /**
@@ -49,11 +49,10 @@ import com.nostrvault.service.NostrService.Companion.TAG
      * encrypted content. When it can't (a read-only account, a signer that
      * isn't connected), the private entries already known are kept.
      */
-    internal suspend fun NostrService.applyMuteList(hex: String, tags: List<List<String>>, content: String, createdAt: Long) {
+    internal suspend fun NostrService.applyMuteList(hex: String, id: String, tags: List<List<String>>, content: String, createdAt: Long) {
         val key = "10000:$hex"
-        val seen = replaceableNewest[key]
-        if (seen != null && createdAt < seen) return
-        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        // NIP-01 via the ledger: newest created_at wins, a same-second tie goes to the lowest id.
+        if (!replaceableNewest.record(key, createdAt, id)) return
         heldMuteLists.merge(hex, NostrEvent("", hex, createdAt, 10000, tags, content, "")) { a, b ->
             if (b.createdAt >= a.createdAt) b else a
         }
@@ -61,7 +60,7 @@ import com.nostrvault.service.NostrService.Companion.TAG
 
         val entries = MuteList.entries(tags, content) { ciphertext, nip04 -> decryptOwnList(hex, ciphertext, nip04) }
         // A newer list landed while this one was being opened.
-        if (replaceableNewest[key] != createdAt) return
+        if (!replaceableNewest.mayReplace(key, createdAt, id)) return
         val public = entries.public.mapNotNull { hexToNpub(it) }
         val private = entries.private?.mapNotNull { hexToNpub(it) }
         configStore.update { config ->

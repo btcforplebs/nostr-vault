@@ -176,7 +176,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         postEvent(event)
         // This device's blocks become the published list, so people another
         // app blocked show as blocked here too.
-        applyMuteList(author, event.tags, event.content, event.createdAt)
+        applyMuteList(author, event.id, event.tags, event.content, event.createdAt)
         return null
     }
 
@@ -189,7 +189,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         kind: Int,
         author: String,
         forceOwner: Boolean,
-        build: (NostrEvent?) -> Pair<List<List<String>>, String>,
+        extraRelays: () -> List<String> = { emptyList() },
+        build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
         scope.launch(Dispatchers.IO) {
@@ -200,8 +201,23 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 Log.w(TAG, "kind $kind: no relay answered; not published")
                 return@launch
             }
-            val (tags, content) = build(lookup.event)
-            signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+            val (tags, content) = build(lookup.event) ?: run {
+                Log.w(TAG, "kind $kind: nothing that may be published; not published")
+                return@launch
+            }
+            val extra = extraRelays()
+            if (extra.isEmpty()) {
+                signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+                return@launch
+            }
+            val event = try {
+                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+            } catch (e: Exception) {
+                Log.e(TAG, "kind $kind not signed: ${e.message}")
+                null
+            } ?: return@launch
+            postEvent(event)
+            extra.forEach { fireAndForgetPublish(event, it) }
         }
     }
 
@@ -211,15 +227,23 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * it is published but was not in what this device last published (the
      * base kept in [ListMerge.Bases]), so a local removal still removes it.
      */
-    private fun NostrService.publishOwnerEntryList(kind: Int, name: String, local: List<String>) {
+    private fun NostrService.publishOwnerEntryList(
+        kind: Int,
+        name: String,
+        local: List<String>,
+        extraRelays: () -> List<String> = { emptyList() },
+        adjust: (List<List<String>>) -> List<List<String>>? = { it },
+    ) {
         val owner = ownerHexPubkey
         val bases = configStore.config.value.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }
         val baseKey = "$kind:$owner"
-        publishMergedList(kind, owner, forceOwner = true) { published ->
+        publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
             val tags = ListMerge.tags(name, local, published?.tags.orEmpty()) { base == null || ListMerge.key(it) !in base }
+            // Null: [adjust] refused the list. Nothing goes out, so the base stays what was last published.
+            val adjusted = adjust(tags) ?: return@publishMergedList null
             bases?.put(baseKey, local)
-            tags to published?.content.orEmpty()
+            adjusted to published?.content.orEmpty()
         }
     }
 
@@ -268,11 +292,52 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         publishOwnerEntryList(10006, "relay", relays)
     }
 
-    internal fun NostrService.publishServerListImpl() {
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        if (mirrors.isEmpty()) return
-        publishOwnerEntryList(10063, "server", mirrors)
+    internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList()) {
+        val config = configStore.config.value
+        val mirrors = config.activeBlossomMirrors
+        val home = config.homeVaultNpub
+        val macs = linkedMacs(config)
+        if (mirrors.isEmpty() && home == null && macs.isEmpty() && dropMesh.isEmpty()) return
+        // Every fipsmesh:// entry on the published list is kept (a kiosk put
+        // it there), after the public servers; this phone's home vault and
+        // linked Macs are added and the ones it listed before ([dropMesh])
+        // removed. With no public server nothing is published (NIP-F1).
+        // Every write relay the owner's 10002 names, and purplepag.es, not only this phone's broadcast
+        // list: readers look a 10063 up on the author's write relays (Logen 2026-10-22: each list landed
+        // on one relay).
+        val extraRelays = {
+            ServerListRelays.extra(_outboxRelays.value[ownerHexPubkey], config.activeBlastrRelays)
+        }
+        publishOwnerEntryList(10063, "server", mirrors, extraRelays) { tags ->
+            val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
+            val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(
+                servers, servers, home, dropMesh, macs, myDevices = config.fipsPeers,
+            ) ?: return@publishOwnerEntryList null
+            merged.map { listOf("server", it) } + tags.filter { it.isNotEmpty() && it[0] != "server" }
+        }
     }
+
+    /** The Macs in My Devices this phone lists in the owner's 10063 (iOS 8af86b0d). */
+    internal fun linkedMacs(config: com.nostrvault.relay.HavenConfig): List<String> =
+        com.nostrvault.fips.MeshSendTargets.of(config).filter { it.role == com.nostrvault.fips.DeviceRole.MAC }.map { it.npub }
+
+/** Where a 10063 goes besides the broadcast relays. Pure for the tests. */
+internal object ServerListRelays {
+    const val INDEX_RELAY = "wss://purplepag.es"
+
+    /**
+     * The owner's published 10002 write relays and purplepag.es, minus what the broadcast already
+     * reaches ([broadcast]) and loopback addresses; compared without case or a trailing slash.
+     */
+    fun extra(publishedWrite: List<String>?, broadcast: List<String>): List<String> {
+        fun key(url: String) = url.trim().trimEnd('/').lowercase()
+        val sent = broadcast.map(::key).toMutableSet()
+        return (publishedWrite.orEmpty() + INDEX_RELAY)
+            .filter { it.startsWith("wss://") || it.startsWith("ws://") }
+            .filter { !NostrService.isLoopbackRelay(it) }
+            .filter { sent.add(key(it)) }
+    }
+}
 
 /**
  * Merging this device's entries into a list published by any client. NIP-51

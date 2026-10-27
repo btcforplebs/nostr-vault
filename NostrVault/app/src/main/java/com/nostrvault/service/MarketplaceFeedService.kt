@@ -71,8 +71,10 @@ class MarketplaceFeedService @Inject constructor(
          * timed out. nos.lol was dropped on 2026-10-12. relay.conduit.market
          * is Conduit's marketplace relay (2026-10-17): its page added 170
          * listings the others lack; most of its listings are throwaway-key
-         * test posts, which Global's trust filter keeps out. Same list as
-         * the Swift side.
+         * test posts, which Global's trust filter keeps out. nostr.mom,
+         * nos.lol and relay.plebeian.market are where the new Plebeian
+         * Market posts (Tara's check, 2026-10-22); nos.lol is back for that.
+         * Same list as the Swift side.
          */
         val RELAYS = listOf(
             "wss://relay.damus.io",
@@ -81,6 +83,9 @@ class MarketplaceFeedService @Inject constructor(
             "wss://nostr.wine",
             "wss://relay.primal.net",
             "wss://relay.conduit.market",
+            "wss://relay.plebeian.market",
+            "wss://nostr.mom",
+            "wss://nos.lol",
         )
     }
 
@@ -103,11 +108,16 @@ class MarketplaceFeedService @Inject constructor(
     val selectedCategory: StateFlow<MarketCategory?> = _selectedCategory.asStateFlow()
 
     /**
-     * Global by default, as on iPhone: almost nobody's follows sell anything,
-     * so Following would open on an empty grid.
+     * Following by default (Logen 2026-10-22): Global shows sellers from
+     * anywhere on Nostr and is reached through the global warning
+     * ([MarketScopeGate]). An empty Following grid offers the switch.
      */
-    private val _scope = MutableStateFlow(ReelsScope.GLOBAL)
+    private val _scope = MutableStateFlow(MarketScopeGate.OPENS_ON)
     val listingScope: StateFlow<ReelsScope> = _scope.asStateFlow()
+
+    /** Global was asked for: the screen shows the global warning, and Proceed calls [confirmGlobal]. */
+    private val _globalWarningPending = MutableStateFlow(false)
+    val globalWarningPending: StateFlow<Boolean> = _globalWarningPending.asStateFlow()
 
     /** True when Following is selected and the owner follows nobody. */
     private val _followSetIsEmpty = MutableStateFlow(false)
@@ -117,8 +127,27 @@ class MarketplaceFeedService @Inject constructor(
     private var job: Job? = null
     private var lastLoadedAt = 0L
 
-    /** Switches scope and reloads. The caller shows the warning before GLOBAL. */
+    /** Following switches at once; Global waits for the warning ([MarketScopeGate]). */
     fun setScope(newScope: ReelsScope) {
+        when (MarketScopeGate.request(newScope, _scope.value)) {
+            MarketScopeGate.Action.NONE -> Unit
+            MarketScopeGate.Action.WARN -> _globalWarningPending.value = true
+            MarketScopeGate.Action.SWITCH -> switchScope(newScope)
+        }
+    }
+
+    /** Proceed on the global warning. */
+    fun confirmGlobal() {
+        _globalWarningPending.value = false
+        switchScope(ReelsScope.GLOBAL)
+    }
+
+    /** Cancel on the global warning: stay where it was. */
+    fun cancelGlobal() {
+        _globalWarningPending.value = false
+    }
+
+    private fun switchScope(newScope: ReelsScope) {
         if (newScope == _scope.value) return
         _scope.value = newScope
         _listings.value = emptyList()
@@ -254,4 +283,21 @@ internal fun parseListingEvent(json: Json, raw: String, expectedSubId: String): 
 } catch (e: Exception) {
     Log.w("MarketplaceFeedService", "unparseable relay message: ${e.message}")
     null
+}
+
+/**
+ * Marketplace's Following / Global switch (Logen 2026-10-22): it opens on Following, and Global,
+ * which shows sellers from anywhere on Nostr, waits for the global feed warning. Pure for the
+ * tests. iOS: MarketScopeGate.swift.
+ */
+internal object MarketScopeGate {
+    val OPENS_ON = ReelsScope.FOLLOWING
+
+    enum class Action { NONE, SWITCH, WARN }
+
+    fun request(target: ReelsScope, current: ReelsScope): Action = when {
+        target == current -> Action.NONE
+        target == ReelsScope.GLOBAL -> Action.WARN
+        else -> Action.SWITCH
+    }
 }

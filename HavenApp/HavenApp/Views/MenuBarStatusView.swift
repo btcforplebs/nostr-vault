@@ -208,10 +208,13 @@ struct MenuBarStatusView: View {
             .buttonStyle(.plain)
             .disabled(relayManager.isBooting)
 
-            Button(action: newPost) {
-                actionLabel(icon: "square.and.pencil", title: "New Post", tint: .havenPurple)
+            // None for a read-only sign-in: it can't sign a post.
+            if configService.activeAccountCanSign {
+                Button(action: newPost) {
+                    actionLabel(icon: "square.and.pencil", title: "New Post", tint: .havenPurple)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Button(action: { openMainWindow() }) {
                 actionLabel(

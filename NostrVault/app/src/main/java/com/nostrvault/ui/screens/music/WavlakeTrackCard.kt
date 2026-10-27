@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens.music
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,7 +34,8 @@ private val trackCache = mutableMapOf<String, WavlakeTrack>()
 /**
  * A Wavlake song inside a post: artwork, title, artist and a play button,
  * in place of the generic link preview. Reposts and quotes of the song play
- * the same way. iOS: WavlakeTrackCard.
+ * the same way. Tapping the song opens its artist's page in Music, scrolled
+ * to it. iOS: WavlakeTrackCard.
  */
 @Composable
 fun WavlakeTrackCard(
@@ -69,12 +71,23 @@ fun WavlakeTrackCard(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)).padding(10.dp),
     ) {
-        Artwork(t.albumArtUrl, 52.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(t.title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(t.artist, color = SecondaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("♪ Wavlake", color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        // The song itself opens its artist's page in Music, scrolled to this
+        // song; the play button plays it right here.
+        val opensArtist = t.artistId != null
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f).then(
+                if (opensArtist) Modifier.clickable(onClickLabel = "Open ${t.artist} in Music") { MusicFeedState.showSong(t) }
+                else Modifier,
+            ),
+        ) {
+            Artwork(t.albumArtUrl, 52.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.artist, color = SecondaryText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("♪ Wavlake", color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
         IconButton(onClick = { if (isCurrent) MusicPlayer.togglePlayPause() else MusicPlayer.play(listOf(t)) }, modifier = Modifier.size(48.dp)) {
             Icon(

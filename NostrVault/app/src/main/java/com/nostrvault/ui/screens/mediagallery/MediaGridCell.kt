@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -21,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.fips.FipsMediaRouter
+import com.nostrvault.fips.meshAuthor
 import com.nostrvault.service.*
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.*
@@ -61,6 +64,26 @@ internal fun MediaSectionHeader(title: String) {
     )
 }
 
+/**
+ * Who a Vault tile's image may be read from over the mesh: the author of the
+ * note that posted it when that is someone else ([moderationTarget]), else the
+ * owner, whose vault this gallery lists. Feed parity (#1011).
+ */
+internal fun vaultTileMeshAuthor(moderationTarget: String?, ownerHex: String): String? =
+    moderationTarget ?: ownerHex.takeIf { it.isNotEmpty() }
+
+internal fun vaultGridImageRequest(
+    context: android.content.Context,
+    item: BlossomMediaItem,
+    moderationTarget: String?,
+    ownerHex: String,
+): ImageRequest = ImageRequest.Builder(context)
+    .data(item.localFile ?: item.displayUrl)
+    .meshAuthor(vaultTileMeshAuthor(moderationTarget, ownerHex))
+    .size(360, 360)
+    .crossfade(false) // Instant rendering for grid thumbnails
+    .build()
+
 /** Grid cell with context menu. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -99,15 +122,12 @@ internal fun MediaGridCell(
             AudioThumbnail(iconSize = 36.dp)
         } else {
             AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(item.localFile ?: item.displayUrl)
-                    .size(360, 360)
-                    .crossfade(false) // Instant rendering for grid thumbnails
-                    .build(),
+                model = vaultGridImageRequest(context, item, moderationTarget, FipsMediaRouter.ownerHex()),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+            MeshMediaStatusOverlay(url = item.displayUrl, compact = true, modifier = Modifier.matchParentSize())
         }
 
         if (item.isVideo) {

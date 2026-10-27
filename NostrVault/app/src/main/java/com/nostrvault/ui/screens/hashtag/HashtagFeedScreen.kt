@@ -202,22 +202,12 @@ fun HashtagFeedScreen(
     }
 
     if (showEveryoneWarning) {
-        AlertDialog(
-            onDismissRequest = { showEveryoneWarning = false },
-            title = { Text("Sensitive Content Warning") },
-            text = {
-                Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.setGlobalShowsEveryone(true)
-                        showEveryoneWarning = false
-                    },
-                ) { Text("Proceed", color = ErrorRed) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEveryoneWarning = false }) { Text("Cancel") }
+        // Under five follows it says why it's locked instead.
+        com.nostrvault.ui.components.EveryoneSwitchDialog(
+            onDismiss = { showEveryoneWarning = false },
+            onProceed = {
+                viewModel.setGlobalShowsEveryone(true)
+                showEveryoneWarning = false
             },
         )
     }

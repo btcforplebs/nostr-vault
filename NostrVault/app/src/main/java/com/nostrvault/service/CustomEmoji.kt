@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.util.findAllOnce
 import kotlinx.serialization.Serializable
 
 /**
@@ -77,7 +78,7 @@ data class CustomEmoji(
             if (emojis.isEmpty() || ':' !in text) return listOf(Segment.Text(text))
             val out = mutableListOf<Segment>()
             var last = 0
-            for (match in IN_TEXT.findAll(text)) {
+            for (match in IN_TEXT.findAllOnce(text)) {
                 val emoji = emojis[match.groupValues[1]] ?: continue
                 if (match.range.first > last) out += Segment.Text(text.substring(last, match.range.first))
                 out += Segment.Emoji(emoji)

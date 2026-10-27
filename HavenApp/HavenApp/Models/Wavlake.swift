@@ -69,6 +69,40 @@ struct WavlakeAlbum: Identifiable, Hashable, Codable {
 enum WavlakeAPI {
     static let base = URL(string: "https://wavlake.com/api/v1/content")!
 
+    /// How long each kind of answer is used before Wavlake is asked again.
+    enum MaxAge {
+        /// Rankings are sums of sats; ten minutes barely moves them.
+        static let rankings: TimeInterval = 10 * 60
+        /// Albums and artist pages change when an artist uploads.
+        static let page: TimeInterval = 60 * 60
+        /// An artist's name, picture and linked key, for Following.
+        static let artist: TimeInterval = 24 * 60 * 60
+        /// A search typed again soon after.
+        static let search: TimeInterval = 5 * 60
+    }
+
+    /// Rankings, albums and artists, kept on disk between launches.
+    static let cache = WavlakeCache(
+        directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Wavlake", isDirectory: true),
+        loader: { try await fetch($0) })
+
+    /// Searches, kept for this launch only.
+    static let searchCache = WavlakeCache(directory: nil, loader: { try await fetch($0) })
+
+    /// A kept answer, parsed, and whether it's young enough to skip asking
+    /// Wavlake again.
+    struct Kept<Value> {
+        let value: Value
+        let isFresh: Bool
+    }
+
+    /// What `cache` holds for `url`, without asking Wavlake.
+    static func kept<Value>(_ url: URL, maxAge: TimeInterval, _ parse: (Data) -> Value) async -> Kept<Value>? {
+        guard let hit = await cache.stored(url) else { return nil }
+        return Kept(value: parse(hit.data), isFresh: await cache.isFresh(hit, maxAge: maxAge))
+    }
+
     /// Top tracks by sats earned over the last `days` days.
     static func rankingsURL(days: Int = 7) -> URL {
         URL(string: "\(base.absoluteString)/rankings?sort=sats&days=\(days)")!
@@ -207,16 +241,24 @@ enum WavlakeAPI {
 
     /// Wavlake answers 1 to 90 days; anything longer is a 400.
     static func trending(days: Int = 7) async throws -> [WavlakeTrack] {
-        tracks(fromRankings: try await fetch(rankingsURL(days: days)))
+        tracks(fromRankings: try await cache.data(rankingsURL(days: days), maxAge: MaxAge.rankings))
+    }
+
+    static func keptTrending(days: Int = 7) async -> Kept<[WavlakeTrack]>? {
+        await kept(rankingsURL(days: days), maxAge: MaxAge.rankings, tracks(fromRankings:))
     }
 
     static func artist(_ id: String) async throws -> WavlakeArtist? {
-        artist(fromArtist: try await fetch(artistURL(id)), id: id)
+        artist(fromArtist: try await cache.data(artistURL(id), maxAge: MaxAge.artist), id: id)
+    }
+
+    static func keptArtist(_ id: String) async -> Kept<WavlakeArtist?>? {
+        await kept(artistURL(id), maxAge: MaxAge.artist) { artist(fromArtist: $0, id: id) }
     }
 
     static func search(_ term: String) async throws -> [WavlakeSearchResult] {
         guard let url = searchURL(term) else { return [] }
-        return results(fromSearch: try await fetch(url))
+        return results(fromSearch: try await searchCache.data(url, maxAge: MaxAge.search))
     }
 
     /// One track by id. The endpoint answers with a one-element array.
@@ -225,19 +267,27 @@ enum WavlakeAPI {
     }
 
     static func album(_ id: String) async throws -> [WavlakeTrack] {
-        tracks(fromAlbum: try await fetch(albumURL(id)))
+        tracks(fromAlbum: try await cache.data(albumURL(id), maxAge: MaxAge.page))
     }
 
     /// An album's heading and tracks, from one request.
     static func albumPage(_ id: String) async throws -> (album: WavlakeAlbum?, tracks: [WavlakeTrack]) {
-        let data = try await fetch(albumURL(id))
+        let data = try await cache.data(albumURL(id), maxAge: MaxAge.page)
         return (album(fromAlbum: data), tracks(fromAlbum: data))
+    }
+
+    static func keptAlbumPage(_ id: String) async -> Kept<(album: WavlakeAlbum?, tracks: [WavlakeTrack])>? {
+        await kept(albumURL(id), maxAge: MaxAge.page) { (album(fromAlbum: $0), tracks(fromAlbum: $0)) }
     }
 
     /// An artist page's details and albums, from one request.
     static func artistPage(_ id: String) async throws -> (artist: WavlakeArtist?, albums: [WavlakeAlbum]) {
-        let data = try await fetch(artistURL(id))
+        let data = try await cache.data(artistURL(id), maxAge: MaxAge.page)
         return (artist(fromArtist: data, id: id), albums(fromArtist: data))
+    }
+
+    static func keptArtistPage(_ id: String) async -> Kept<(artist: WavlakeArtist?, albums: [WavlakeAlbum])>? {
+        await kept(artistURL(id), maxAge: MaxAge.page) { (artist(fromArtist: $0, id: id), albums(fromArtist: $0)) }
     }
 
     /// Every track on `albums`, album by album in the order given. The
@@ -251,6 +301,99 @@ enum WavlakeAPI {
             for await (id, tracks) in group { byAlbum[id] = tracks }
         }
         return albums.flatMap { byAlbum[$0.id] ?? [] }
+    }
+
+    /// The kept tracks of `albums`, without asking Wavlake; nil unless
+    /// every album is kept.
+    static func keptTracks(onAlbums albums: [WavlakeAlbum]) async -> Kept<[WavlakeTrack]>? {
+        var tracks: [WavlakeTrack] = []
+        var isFresh = true
+        for album in albums {
+            guard let found = await kept(albumURL(album.id), maxAge: MaxAge.page, tracks(fromAlbum:)) else { return nil }
+            tracks += found.value
+            isFresh = isFresh && found.isFresh
+        }
+        return Kept(value: tracks, isFresh: isFresh)
+    }
+}
+
+/// Wavlake answers kept between opens of the Music tab, and on disk so a
+/// relaunch has them too. An answer younger than the caller's `maxAge` is
+/// used without asking Wavlake; an older one is still there to show while
+/// a new one loads. One address asked for twice at once is one request.
+actor WavlakeCache {
+    struct Hit {
+        let data: Data
+        let fetchedAt: Date
+    }
+
+    typealias Loader = @Sendable (URL) async throws -> Data
+
+    private let directory: URL?
+    private let now: @Sendable () -> Date
+    private let loader: Loader
+    private var memory: [URL: Hit] = [:]
+    private var inFlight: [URL: Task<Data, Error>] = [:]
+
+    /// `directory` nil keeps answers in memory only.
+    init(directory: URL?, now: @escaping @Sendable () -> Date = { Date() }, loader: @escaping Loader) {
+        self.directory = directory
+        self.now = now
+        self.loader = loader
+    }
+
+    /// What's kept for `url`, however old; nil when nothing is.
+    func stored(_ url: URL) -> Hit? {
+        if let hit = memory[url] { return hit }
+        guard let file = file(for: url),
+              let data = try? Data(contentsOf: file),
+              let date = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+        else { return nil }
+        let hit = Hit(data: data, fetchedAt: date)
+        memory[url] = hit
+        return hit
+    }
+
+    func isFresh(_ hit: Hit, maxAge: TimeInterval) -> Bool {
+        now().timeIntervalSince(hit.fetchedAt) < maxAge
+    }
+
+    /// `url`'s answer: the kept one while younger than `maxAge`, otherwise
+    /// a new one from Wavlake.
+    func data(_ url: URL, maxAge: TimeInterval) async throws -> Data {
+        if let hit = stored(url), isFresh(hit, maxAge: maxAge) { return hit.data }
+        return try await load(url)
+    }
+
+    /// Asks Wavlake for `url`, joining a request for it already under way.
+    func load(_ url: URL) async throws -> Data {
+        if let running = inFlight[url] { return try await running.value }
+        let loader = loader
+        let task = Task { try await loader(url) }
+        inFlight[url] = task
+        defer { inFlight[url] = nil }
+        let data = try await task.value
+        keep(data, for: url)
+        return data
+    }
+
+    private func keep(_ data: Data, for url: URL) {
+        let date = now()
+        memory[url] = Hit(data: data, fetchedAt: date)
+        guard let directory, let file = file(for: url) else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard (try? data.write(to: file, options: .atomic)) != nil else { return }
+        // The file's date is when the answer came, so a relaunch knows its age.
+        try? FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+    }
+
+    /// One file per address, named by the address itself.
+    private func file(for url: URL) -> URL? {
+        guard let directory else { return nil }
+        let name = Data(url.absoluteString.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+        return directory.appendingPathComponent(name)
     }
 }
 

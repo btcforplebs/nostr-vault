@@ -76,13 +76,43 @@ extension BlossomService {
 
         logger.info("Found \(mirrors.count) configured Blossom mirrors: \(mirrors)")
 
+        #if os(iOS)
+        // A copy for the owner's home vault (a kiosk phone, or the Mac set by
+        // mesh npub). With no server on this phone, the vault passes it on to
+        // the owner's public server from their 10063, which the note links.
+        let signer = await MainActor.run { nostrService.activeHexPubkey }
+        let forwardTo = await MainActor.run {
+            HomeVaultLogic.forwardServer(phoneMirrors: mirrors, ownerServerList: nostrService.serverLists[signer] ?? [])
+        }
+        let size = source.byteCount
+        let toHomeVault = await MainActor.run {
+            HomeVaultSender.shared.enqueue(blobSha256: sha256, contentType: contentType, signer: signer, byteCount: size, forwardTo: forwardTo)
+        }
+        #else
+        let toHomeVault = false
+        let forwardTo: String? = nil
+        #endif
+
         guard !mirrors.isEmpty else {
-            appLog("post upload stopped at stage 2 of 2 — saved on this device, but no outside Blossom server is configured", level: "ERROR")
+            if let forwardTo, let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: [forwardTo], sha256: sha256, contentType: contentType, vaultForwards: true) {
+                appLog("post upload ok — on the home vault, which passes it on to \(forwardTo)")
+                return .hosted(link)
+            }
+            // A vault was asked to pass it on and did not take it: the fix is
+            // the vault (is the app open?), not adding a server (2026-10-21).
+            if let forwardTo {
+                appLog("post upload stopped at stage 2 of 2 — saved on this device; the home vault did not take it to pass on to \(forwardTo)", level: "ERROR")
+                return .vaultDidNotTake
+            }
+            appLog("post upload stopped at stage 2 of 2 — saved on this device, but no outside Blossom server is configured" + (toHomeVault ? " and the home vault did not confirm it" : ""), level: "ERROR")
             return .noOutsideServer
         }
 
         if skipOutsideServers {
             appLog("saved \(sha256.prefix(8)) on this device only — an earlier attachment found every outside server down")
+            if let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: mirrors, sha256: sha256, contentType: contentType) {
+                return .hosted(link)
+            }
             return .savedOnDevice(unreachable: mirrors)
         }
 
@@ -108,9 +138,66 @@ extension BlossomService {
             return .hosted(externalURL)
         }
 
+        if let link = await kioskOnlyLink(toHomeVault: toHomeVault, mirrors: mirrors, sha256: sha256, contentType: contentType) {
+            return .hosted(link)
+        }
         appLog("post upload paused at stage 2 of 2 — saved on this device, no outside server accepted it after two passes; the post will wait for one", level: "WARN")
         return .savedOnDevice(unreachable: mirrors)
     }
+
+    /// The blob is on this phone and on its way to the home vault, but no public
+    /// server has it yet. The note goes out now (Logen's call) with the link the
+    /// first public server will serve it at, and the public upload keeps being
+    /// retried; NIP-F1 readers find the kiosk copy by hash meanwhile. nil: hold
+    /// the note as before.
+    /// `vaultForwards`: the vault was asked to pass it on, so this phone's own
+    /// public upload is only the fallback and waits longer.
+    private func kioskOnlyLink(toHomeVault: Bool, mirrors: [String], sha256: String, contentType: String, vaultForwards: Bool = false) async -> URL? {
+        #if os(iOS)
+        guard toHomeVault,
+              let server = HomeVaultLogic.linkServer(mirrors: mirrors, sha256: sha256, contentType: contentType),
+              let link = HomeVaultLogic.publicBlobURL(server: server, sha256: sha256, contentType: contentType) else { return nil }
+        // Only once the vault really holds it: queued is not enough (Tron, #473).
+        guard await HomeVaultSender.shared.ensureOnVault(sha256: sha256) else {
+            appLog("\(sha256.prefix(8)) not confirmed on the home vault — the post waits for a public server as before")
+            return nil
+        }
+        let signer = await MainActor.run { nostrService.activeHexPubkey }
+        let queued = await MainActor.run {
+            HomeVaultSender.shared.enqueue(mirrorSha256: sha256, contentType: contentType, signer: signer, server: server,
+                                           firstTryAfter: vaultForwards ? HomeVaultLogic.forwardFallbackDelay : 60)
+        }
+        guard queued else { return nil }
+        appLog("\(sha256.prefix(8)) is on the home vault; the note links \(link.absoluteString) and the public upload keeps retrying")
+        return link
+        #else
+        return nil
+        #endif
+    }
+
+    #if os(iOS)
+    /// One more public upload of a blob this phone already holds (the
+    /// kiosk-only case), to `server`, the one the note names. True once that
+    /// server has it; another server alone leaves the link dead.
+    func mirrorFromLocal(sha256: String, contentType: String, server: String?) async -> Bool {
+        guard let server else { return false }
+        // The vault may have passed it on already (photos through the Mac):
+        // never send the same photo up twice over mobile data.
+        if await checkPresence(mirror: server, sha256: sha256) == .present {
+            appLog("kiosk-only \(sha256.prefix(8)) is already on \(server)")
+            return true
+        }
+        guard let file = await HomeVaultTransport.localBlobFile(sha256: sha256) else { return false }
+        defer { try? FileManager.default.removeItem(at: file) }
+        let auth = await makeUploadAuth(sha256: sha256)
+        let urls = await mirrorUploadPass(source: .file(file), sha256: sha256, contentType: contentType, mirrors: [server], authBase64: auth, progress: nil)
+        // One server asked, so any result is that server taking it. The URL it
+        // returns is its descriptor's, which may name a CDN host (Tron, #473).
+        let done = !urls.isEmpty
+        if done { appLog("kiosk-only \(sha256.prefix(8)) is now on \(server), where the note links it") }
+        return done
+    }
+    #endif
 
     /// One concurrent BUD-02 upload pass over all configured mirrors.
     /// Returns the URLs of every mirror that accepted the blob, in the order

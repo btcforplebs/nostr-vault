@@ -149,7 +149,7 @@ internal fun KeyPasswordStep(viewModel: SetupWizardViewModel) {
             Icon(Icons.Default.Shield, contentDescription = null, tint = WizardAccent, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text(
-                "Nobody can reset this password or recover your secret key for you, not even us. Write both down.",
+                "This password locks the secret key you just saved. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.",
                 color = SecondaryText,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

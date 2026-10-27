@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.fips.meshAuthor as withMeshAuthor
 import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -42,6 +43,7 @@ fun ZoomableImage(
     onVerticalDrag: ((Float) -> Unit)? = null,
     onVerticalDragEnd: ((Float) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    meshAuthor: String? = null,
 ) {
     val context = LocalContext.current
     ZoomableBox(
@@ -51,9 +53,12 @@ fun ZoomableImage(
         onVerticalDragEnd = onVerticalDragEnd,
         onLongPress = onLongPress,
     ) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(model)
+                // A photo whose URL fails is read from its author's vault over the mesh, as in the feed.
+                .withMeshAuthor(meshAuthor)
                 // The feed's smaller copy, already in memory, stands in while
                 // the full image loads — so the zoom from the feed never flies
                 // an empty frame.
@@ -64,6 +69,8 @@ fun ZoomableImage(
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
         )
+        MeshMediaStatusOverlay(url = model as? String, modifier = Modifier.matchParentSize())
+        }
     }
 }
 

@@ -25,12 +25,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.AmberResultBridge
@@ -87,6 +90,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var mediaPostQueue: MediaPostQueue
     @Inject lateinit var widgetPublisher: WidgetPublisher
     @Inject lateinit var relayImportService: com.nostrvault.service.RelayImportService
+    @Inject lateinit var fipsMeshManager: FipsMeshManager
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* result ignored */ }
@@ -110,6 +114,10 @@ class MainActivity : FragmentActivity() {
         // retry every minute while any wait. Started right after the config
         // load (a queued post is only signed by the account that wrote it).
         mediaPostQueue.start()
+        // After reload(), never before: the preference lives in the config file
+        // and reads false until it has been loaded, which would make this a
+        // silent no-op every launch.
+        fipsMeshManager.restoreIfEnabled(lifecycleScope)
 
         // Handle media shared into the app via the system share sheet (ACTION_SEND)
         handleShareIntent(intent)
@@ -128,6 +136,9 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             val config by configStore.config.collectAsState()
+            // The saved keys' store would not open: ask, never carry on as if none were saved.
+            val credentialsUnreadable by com.nostrvault.data.local.CredentialStore.unreadable.collectAsState()
+            var continueWithoutCredentials by remember { mutableStateOf(false) }
 
             // Start relay service when setup completes (or on subsequent launches).
             // Both full and browse modes start the relay — browse mode only needs the
@@ -175,6 +186,10 @@ class MainActivity : FragmentActivity() {
                 zapsOnlyMode = config.zapsOnlyMode,
                 feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),
             ) {
+                if (credentialsUnreadable && !continueWithoutCredentials) {
+                    com.nostrvault.ui.screens.recovery.CredentialRecoveryScreen(onContinue = { continueWithoutCredentials = true })
+                    return@NostrVaultTheme
+                }
                 // "Translate post" (Appearance > Translation): one context for
                 // every note card, rebuilt only when the switch or language changes.
                 val noteTranslation = remember(config.showTranslateButton, config.translateTargetLanguage) {
@@ -227,7 +242,6 @@ class MainActivity : FragmentActivity() {
                                     logStore = logStore,
                                     dmUnreadCount = dmService.totalUnreadCountFlow,
                                     hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                                    pendingPostManager = pendingPostManager,
                                 )
                             }
                             // Full-screen media viewer overlay — lives in the activity window
@@ -240,6 +254,8 @@ class MainActivity : FragmentActivity() {
                             NotificationOverlay(
                                 notificationManager = notificationManager,
                                 modifier = Modifier.align(Alignment.TopCenter),
+                                // The post countdown, then Posting… / Posted.
+                                postAction = { com.nostrvault.ui.components.PendingPostBanner(pendingPostManager) },
                             ) {
                                 com.nostrvault.setup.ImportRunningPill(
                                     isImporting = relayImportService.isImporting,
@@ -295,6 +311,11 @@ class MainActivity : FragmentActivity() {
 
         if (intent.action != Intent.ACTION_VIEW) return
         val data = intent.data?.toString() ?: return
+        // A Share profile link opened before setup is who told them about
+        // the app: setup's "Who told you" step starts with that person.
+        if (!configStore.config.value.hasCompletedSetup) {
+            com.nostrvault.ui.navigation.ProfileWebLink.idFrom(data)?.let { com.nostrvault.setup.ReferrerFollows.prefill = it }
+        }
         DeepLinkRouter.fromUri(data, BridgeEntityDecoder)?.let {
             intent.data = null
             PendingDeepLink.post(it)

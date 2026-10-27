@@ -43,8 +43,8 @@ final class WOTOpenRequest {
     static let shared = WOTOpenRequest()
     private var pending: String?
 
-    /// Closes the globe and profiles it came from and shows the WOT tab
-    /// with `pubkey` in the middle.
+    /// Closes the globe and profiles it came from and shows the WOT tab,
+    /// you in the middle, with `pubkey` picked out and your paths to them lit.
     func open(_ pubkey: String) {
         pending = pubkey
         NotificationCenter.default.post(name: .havenOpenWOT, object: pubkey)

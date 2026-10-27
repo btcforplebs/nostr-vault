@@ -114,9 +114,11 @@ extension SearchView {
         }
 
         // A pasted note, article or profile reference opens it — `nostr:`
-        // or bare, note1/nevent1/naddr1/npub1/nprofile1. One that does not
-        // decode falls through to an ordinary text search.
-        if let link = NostrURI(pasted: trimmed), let target = QuoteReference.target(of: link) {
+        // or bare, note1/nevent1/naddr1/npub1/nprofile1, or a shared profile
+        // link (nostrvault.app/p/…). One that does not decode falls through
+        // to an ordinary text search.
+        if let link = NostrURI(string: trimmed) ?? NostrURI(pasted: trimmed),
+           let target = QuoteReference.target(of: link) {
             switch target {
             case .note(let id), .address(let id):
                 if let note = feedService.findNote(id: id) {
@@ -133,6 +135,10 @@ extension SearchView {
                 searchResults = results
                 isSearching = false
                 pendingDirectNoteId = nil
+                #if os(iOS)
+                // The profile covers the field: put the keyboard away with it.
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                #endif
                 showingProfile = pubkey
             }
             return

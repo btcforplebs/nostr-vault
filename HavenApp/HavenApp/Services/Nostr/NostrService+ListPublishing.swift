@@ -128,19 +128,119 @@ extension NostrService {
     /// Call whenever blossomMirrors changes (settings, setup wizard).
     /// Pass fipsDetectedNpub when available to include the detected .fips address.
     @MainActor
-    func publishServerList(fipsDetectedNpub: String? = nil) {
-        let mirrors = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
-        guard !mirrors.isEmpty else {
-            #if DEBUG
-            print("NostrService: No Blossom mirrors configured, skipping Kind 10063 publish")
-            #endif
-            return
+    /// Keeps the newest 10063 per author (persisted), so a replay is ignored.
+    /// `signedByAuthor`: the event's signature was checked and is the pubkey's;
+    /// an event that wasn't is refused and never moves the stamp.
+    @discardableResult
+    func acceptServerListStamp(pubkey: String, createdAt: Int64, id: String, signedByAuthor: Bool) -> Bool {
+        var stamps = UserDefaults.standard.dictionary(forKey: Self.serverListStampsKey) as? [String: String] ?? [:]
+        let seen = stamps[pubkey].flatMap { s -> (createdAt: Int64, id: String)? in
+            let parts = s.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let t = Int64(parts[0]) else { return nil }
+            return (t, String(parts[1]))
         }
+        guard HomeVaultLogic.keepsServerList(signedByAuthor: signedByAuthor, createdAt: createdAt, id: id, than: seen) else { return false }
+        stamps[pubkey] = "\(createdAt):\(id)"
+        UserDefaults.standard.set(stamps, forKey: Self.serverListStampsKey)
+        return true
+    }
 
-        // Local first via activeBlossomMirrors, so the primary server keeps its place.
-        let author = activeHexPubkey
+    // v2: builds before PR 999 stamped any 10063 a relay sent, signed or not, and
+    // a forged far-future created_at would outrank every real list forever. The
+    // v1 stamps (and the lists cached with them) are dropped once, in
+    // ProfileRepository.loadServerLists, so the next signed list wins again.
+    static let serverListStampsKey = "serverListStamps.v2"
+
+    /// What this device put in the owner's 10063 last time (its own servers
+    /// and mesh entries), so a removal here removes only those.
+    static func serverListManaged(owner: String) -> [String] {
+        UserDefaults.standard.stringArray(forKey: "serverListManaged.\(owner)") ?? []
+    }
+
+    func publishServerList(fipsDetectedNpub: String? = nil) {
+        var servers = ConfigService.shared.config.activeBlossomMirrors(detectedNpub: fipsDetectedNpub)
+        let owner = activeHexPubkey
+        // Merge into the newest list, never replace it (one rule for every
+        // phone): another phone's servers and mesh entries stay; only the
+        // servers this phone manages change. Public servers first (NIP-F1).
+        var ownMesh: String?
+        var photoNpub: String?
+        #if os(iOS)
+        // This phone's own mesh npub is never listed (and is dropped from an
+        // older list that had it): the main node is for the owner's devices.
+        ownMesh = FipsMeshService.shared.ownMeshNpub
+        // The home vault this phone sends to, and the Mac it is linked to:
+        // listed by the phone, so neither needs the owner's key.
+        servers += HomeVaultLogic.phoneMeshEntries(homeVault: HomeVaultSender.shared.homeVault,
+                                                   macMeshNpub: ConfigService.shared.config.macRelayMeshNpub,
+                                                   ownerHex: owner)
+        // A vault this phone listed before stays listed while it is still in My Devices.
+        for entry in HomeVaultLogic.stillOwnedMeshEntries(previouslyManaged: Self.serverListManaged(owner: owner),
+                                                          myDevices: FipsMeshDevices.current(ConfigService.shared.config).map(\.npub))
+            where !servers.contains(entry) {
+            servers.append(entry)
+        }
+        #else
+        // The Mac lists its photo node, so a photo post points viewers to the
+        // Mac with no setup; phones keep the entry through this same merge.
+        photoNpub = PhotoNode.npub()
+        #endif
+        let managedKey = "serverListManaged.\(owner)"
+        let previouslyManaged = Set(Self.serverListManaged(owner: owner))
+        let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
+
         Task {
-            await publishEntryList(kind: 10063, name: "server", local: mirrors, author: author, signAsNpub: nil)
+            // Start from the newest list on the relays, not this phone's cache
+            // (same rule as Android): the cache only when the relays could not
+            // say, and nothing when they all confirmed there is none.
+            let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [RelayConfiguration.serverListIndexerRelay])
+            let existing: [String]
+            if let newest = lookup.event {
+                // lookupNewestReplaceable keeps only events whose author and signature it checked.
+                if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id, signedByAuthor: true) {
+                    serverLists[owner] = ProfileRepository.parseServerListTags(newest.tags)
+                }
+                existing = serverLists[owner] ?? []
+            } else if lookup.confirmedNone {
+                existing = []
+            } else {
+                existing = serverLists[owner] ?? []
+            }
+            guard let merged = HomeVaultLogic.mergeServerList(
+                existing: existing,
+                current: current,
+                previouslyManaged: previouslyManaged,
+                ownMeshNpub: ownMeshNpub,
+                photoNpub: photo
+            ) else {
+                #if DEBUG
+                print("NostrService: No usable Blossom server, skipping Kind 10063 publish")
+                #endif
+                return
+            }
+            // Nothing changed: no new signed event on the public relays (kiosk
+            // mode republishes on every app switch; readers already hold this).
+            if merged == existing {
+                UserDefaults.standard.set(current, forKey: managedKey)
+                return
+            }
+            let tags = merged.map { ["server", $0] }
+            if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
+                // Ours is now the newest: merge from it next time, even before it echoes back.
+                // Signed here, by this account.
+                if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id, signedByAuthor: true) {
+                    serverLists[event.pubkey] = merged
+                }
+                UserDefaults.standard.set(current, forKey: managedKey)
+                postEvent(event)
+                #if DEBUG
+                print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
+                #endif
+            } else {
+                #if DEBUG
+                print("NostrService: Failed to sign Kind 10063 server list")
+                #endif
+            }
         }
     }
 
@@ -377,3 +477,53 @@ extension NostrService {
         }
     }
 }
+
+#if os(iOS)
+/// The Mac this phone is linked to by mesh npub. A Mac without the owner's
+/// key can't sign the 10063, so the phone lists it (Logen, 2026-10-21).
+enum LinkedMacEntry {
+    /// Republishes when the owner's kept 10063 lacks the linked Mac. Checked
+    /// when a signed 10063 arrives (the newest replays at every launch) and
+    /// when the Mac is linked. At most once per npub every 5 minutes.
+    @MainActor static func ensureListed(owner: String, nostr: NostrService) {
+        guard owner == nostr.activeHexPubkey,
+              let mac = ConfigService.shared.config.macRelayMeshNpub,
+              HomeVaultLogic.photoNodeMissing(from: nostr.serverLists[owner], photoNpub: mac) else { return }
+        let key = "\(owner):\(mac)"
+        if let last = lastTry[key], Date().timeIntervalSince(last) < 300 { return }
+        lastTry[key] = Date()
+        nostr.publishServerList()
+    }
+    @MainActor private static var lastTry: [String: Date] = [:]
+}
+#endif
+
+#if os(macOS)
+/// The Mac's photo node: its own mesh node (MacFipsMeshService), which also
+/// lets strangers read photos by hash through the public seeds, capped. Its
+/// npub goes in the owner's 10063.
+enum PhotoNode {
+    /// This Mac's mesh npub while its Mesh switch is on and the engine runs
+    /// (it starts only with a device added), else nil.
+    @MainActor static func npub() -> String? {
+        HomeVaultLogic.macPhotoNpub(MacFipsMeshService.photoNpub(), engineRunning: MacFipsMeshService.shared.running)
+            .flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
+    }
+
+    /// Republishes when the owner's kept 10063 lacks the photo node, so the
+    /// entry appears with no setup and comes back if a stale list (another
+    /// device's) dropped it. Checked when a 10063 arrives (even one already
+    /// seen: the newest list replays on every launch and is not "newer") and
+    /// when the Mac's mesh npub becomes known. At most once per npub every
+    /// 5 minutes, so a publish that never lands is retried, not looped.
+    @MainActor static func ensureListed(owner: String, nostr: NostrService) {
+        guard owner == nostr.activeHexPubkey, let npub = npub(),
+              HomeVaultLogic.photoNodeMissing(from: nostr.serverLists[owner], photoNpub: npub) else { return }
+        let key = "\(owner):\(npub)"
+        if let last = lastTry[key], Date().timeIntervalSince(last) < 300 { return }
+        lastTry[key] = Date()
+        nostr.publishServerList()
+    }
+    @MainActor private static var lastTry: [String: Date] = [:]
+}
+#endif

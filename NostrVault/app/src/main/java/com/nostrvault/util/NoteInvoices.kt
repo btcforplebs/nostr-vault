@@ -29,7 +29,7 @@ object NoteInvoices {
         // Most notes have none; skip the regex for them.
         if (!content.contains("ln", ignoreCase = true)) return emptyList()
         val seen = HashSet<String>()
-        return REGEX.findAll(content).mapNotNull { m ->
+        return REGEX.findAllOnce(content).mapNotNull { m ->
             val invoice = m.groupValues[1].lowercase()
             if (!seen.add(invoice)) return@mapNotNull null
             val details = Bolt11Details.read(invoice) ?: return@mapNotNull null

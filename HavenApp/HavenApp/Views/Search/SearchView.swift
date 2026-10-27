@@ -262,6 +262,8 @@ struct SearchView: View {
             searchFieldFocused = false
         }
         .overlay(alignment: .bottomTrailing) {
+            // A read-only sign-in can't sign a post, so it gets no Post.
+            if configService.activeAccountCanSign {
             ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingCompose = true }) {
                     HStack(spacing: 6) {
@@ -290,6 +292,7 @@ struct SearchView: View {
                 .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
+            }
         }
         .toolbar {
             // Left glass pill: result-type filters
@@ -317,7 +320,7 @@ struct SearchView: View {
             applySearchFilter()
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
-            guard (note.object as? Int) == 1 else { return }
+            guard (note.object as? Int) == 1, configService.activeAccountCanSign else { return }
             showingCompose = true
         }
         .sheet(isPresented: $showingCompose) {

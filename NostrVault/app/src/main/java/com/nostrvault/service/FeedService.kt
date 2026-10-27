@@ -229,10 +229,28 @@ class FeedService @Inject constructor(
      */
     val quotedNotes: StateFlow<Map<String, FeedNote>> =
         combine(_parentNotesCache, _quotedAddressCache) { byId, byAddress -> byId + byAddress }
+            // The merge copies the whole cache; off Main, so a parent landing
+            // mid-scroll does not spend the frame on it.
+            .flowOn(Dispatchers.Default)
             .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     internal val _followedPubkeys = MutableStateFlow<List<String>>(emptyList())
     val followedPubkeys: StateFlow<List<String>> = _followedPubkeys.asStateFlow()
+
+    // The mesh only dials people the owner follows (NIP-F1 reader rules).
+    // This init sits below _followedPubkeys on purpose: scope runs on
+    // Main.immediate, so collect() starts inside the constructor, and in the
+    // init block above the field it was still null (crash on every launch).
+    init {
+        scope.launch {
+            // You too: your own vault on another device serves your photos.
+            // (Not feedAuthorSet: followSet below is still null here.)
+            _followedPubkeys.collect { list ->
+                val me = nostrService.activeHexPubkey
+                com.nostrvault.fips.FipsMediaRouter.follows = if (me.isEmpty()) list.toSet() else list.toSet() + me
+            }
+        }
+    }
 
     private val followSet = SetOfList<String>()
 
@@ -678,6 +696,9 @@ class FeedService @Inject constructor(
 
     fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> = unfollowUserImpl(pubkey, undo)
 
+    /** Follows all of [pubkeys] in one list, for [account] only; [label] names them on the pill. */
+    suspend fun followMany(pubkeys: List<String>, account: String, label: String) = followManyImpl(pubkeys, account, label)
+
     /** Check if a pubkey is in the followed list. */
     fun isFollowing(pubkey: String): Boolean =
         pubkey in followedPubkeySet()
@@ -739,9 +760,10 @@ class FeedService @Inject constructor(
 
     // Thread grouping resolves every missing ancestor through findNote, so a
     // scan of the whole feed per lookup kept the UI thread busy for seconds.
-    // Rebuilt once per notes list; the first note matching by id or
-    // effectiveEventId wins, as the scan did.
+    // Rebuilt once per notes list; the first note with the id as its own wins,
+    // then the first repost carrying it.
     @Volatile internal var noteIndex: Pair<List<FeedNote>, Map<String, FeedNote>>? = null
+    @Volatile internal var quotedAddressIdIndex: Pair<Map<String, FeedNote>, Map<String, FeedNote>>? = null
 
     /**
      * Builds the note index for the current list, so the next lookup on Main

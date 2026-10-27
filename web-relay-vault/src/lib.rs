@@ -6,10 +6,10 @@
 //! takes datagrams in and hands datagrams out, and knows nothing about how they
 //! travel. A transport is a [`link::DatagramLink`] for one peer and one port
 //! pair. Adapters:
-//! - `native` (feature, Linux/FreeBSD/macOS): a jmcorgan v0.5.2 node's native
-//!   datagram API (`fips::native::client::FipsStream`).
-//! - Not yet: the in-process `fips-bridge-core` endpoint the shipped apps run.
-//!   That is a second `DatagramLink`, not a change here.
+//! - `native` (feature): a node's datagram API socket
+//!   (`fips::native::client::FipsStream`). Linux, FreeBSD and macOS on a
+//!   standalone node; Android and iOS inside the app's own node (libnvfips,
+//!   `fips-v2-android/src/relay_link.rs`), on our fork.
 
 pub mod client;
 pub mod link;
@@ -18,7 +18,7 @@ pub mod session;
 
 #[cfg(all(
     feature = "native",
-    any(target_os = "linux", target_os = "freebsd", target_os = "macos")
+    any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "macos", target_os = "ios")
 ))]
 pub mod native;
 

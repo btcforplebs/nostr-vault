@@ -77,8 +77,31 @@ extension RelayProcessManager {
             logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
         }
 
+        #if os(iOS)
+        await resolveMacMeshRelay(config: config)
+        #endif
+
         continueStartRelay(config: config, relayDataDir: relayDataDir)
     }
+
+    #if os(iOS)
+    /// A Mac relay given as a mesh npub is reached through FIPS: dial it
+    /// before the relay starts, so MAC_RELAY_URL is its local ws:// address.
+    /// Can take ~10 s. A failed dial starts the relay without the Mac.
+    private func resolveMacMeshRelay(config: HavenConfig) async {
+        guard let npub = config.macRelayMeshNpub else {
+            RelayConfiguration.macMeshRelay = nil
+            return
+        }
+        if let url = await FipsMeshService.shared.relayWebsocketURL(meshNpub: npub) {
+            RelayConfiguration.macMeshRelay = .init(npub: npub, url: url)
+            logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Mac relay reached over the mesh (\(npub.prefix(16))…)"))
+        } else {
+            RelayConfiguration.macMeshRelay = nil
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Mac relay \(npub.prefix(16))… not reachable over the mesh; starting without it"))
+        }
+    }
+    #endif
 
     /// Public method to add logs from other services
     nonisolated func addLog(_ message: String, level: String = "INFO") {

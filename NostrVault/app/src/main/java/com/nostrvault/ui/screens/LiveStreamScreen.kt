@@ -133,6 +133,11 @@ fun LiveStreamScreen(
     // broadcast where it is now (LiveRejoinListener in the service).
     LaunchedEffect(sharedPlayer) {
         val p = sharedPlayer ?: return@LaunchedEffect
+        // Minimized, the stream played sound only (MiniPlayerBar); the window
+        // shows the picture, so the video track goes back on.
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, false)
+            .build()
         if (!p.playWhenReady) {
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()

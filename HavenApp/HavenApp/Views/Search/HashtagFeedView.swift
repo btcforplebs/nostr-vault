@@ -12,6 +12,7 @@ struct HashtagFeedView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: HashtagFeedModel
     @State private var showingEveryoneWarning = false
+    @State private var showingTrustLock = false
     @State private var followSaving = false
     @State private var showingFollowFailed = false
     @State private var showingProfile: IdentifiableString?
@@ -66,11 +67,15 @@ struct HashtagFeedView: View {
                         if everyone {
                             configService.config.globalShowsEveryone = false
                             configService.save()
+                        } else if TrustScopeLock.isLocked(followCount: feedService.trustLockFollowCount, everyoneIsOn: false) {
+                            showingTrustLock = true
                         } else {
                             showingEveryoneWarning = true
                         }
                     } label: {
-                        Image(systemName: everyone ? "shield.slash.fill" : "checkmark.shield.fill")
+                        Image(systemName: everyone ? "shield.slash.fill"
+                              : TrustScopeLock.isLocked(followCount: feedService.trustLockFollowCount, everyoneIsOn: false)
+                              ? "lock.shield.fill" : "checkmark.shield.fill")
                             .foregroundColor(everyone ? .orange : .havenPurple)
                     }
                     .accessibilityLabel(everyone ? "Everyone" : "Web of Trust")
@@ -97,6 +102,9 @@ struct HashtagFeedView: View {
             Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
         } message: {
             Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
+        }
+        .sheet(isPresented: $showingTrustLock) {
+            TrustScopeLockSheet(followCount: feedService.trustLockFollowCount)
         }
         .alert("Couldn't save", isPresented: $showingFollowFailed) {
             Button("OK", role: .cancel) {}

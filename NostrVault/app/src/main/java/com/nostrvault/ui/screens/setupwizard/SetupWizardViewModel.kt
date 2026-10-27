@@ -56,7 +56,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, REFERRER, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
@@ -301,7 +301,8 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.COMPLETE,
     )
 
-    /** Steps for "I already use Nostr": your key, "Do you have a Vault
+    /** Steps for "I already use Nostr": your key, ("Who told you", added by
+     *  withReferrerStep), "Do you have a Vault
      *  backup?", relay check, import tour. The tour's Enter finishes setup, so
      *  there's no done screen; a restored backup finishes it at the question. */
     private val useNostrSteps = listOf(
@@ -316,12 +317,16 @@ class SetupWizardViewModel @Inject constructor(
      */
     val activeSteps: List<WizardStep>
         get() {
-            val steps = when (_setupPath.value) {
-                SetupPath.BROWSE -> browseSteps
-                SetupPath.NEW_TO_NOSTR -> newUserSteps
-                SetupPath.USE_NOSTR -> useNostrSteps
-                else -> fullSteps
-            }
+            val steps = withReferrerStep(
+                when (_setupPath.value) {
+                    SetupPath.BROWSE -> browseSteps
+                    SetupPath.NEW_TO_NOSTR -> newUserSteps
+                    SetupPath.USE_NOSTR -> useNostrSteps
+                    else -> fullSteps
+                },
+                _setupPath.value,
+                readOnly = configStore.config.value.setupMode == "browse",
+            )
             return if (_useExternalRelay.value) {
                 // No import here, so "I already use Nostr" ends on the done screen.
                 val withoutImport = steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA -
@@ -364,6 +369,7 @@ class SetupWizardViewModel @Inject constructor(
         _useNostrConfirm.value = ""
         _backupQuestion.value = VaultBackupQuestion.State.Ask
         _error.value = null
+        com.nostrvault.setup.ReferrerFollows.clear()
         _setupPath.value = path
         _step.value = WizardStep.RELAY_CHOICE
     }

@@ -109,3 +109,136 @@ pub fn run_req<L: DatagramLink>(
     }
     Ok(out)
 }
+
+/// What the page answered for one event.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ack {
+    pub id: String,
+    pub accepted: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Default)]
+pub struct PublishOutcome {
+    /// Milliseconds from SYN to ESTABLISHED. `None`: the page never answered.
+    pub established_ms: Option<u64>,
+    /// One `["OK", id, accepted, message]` per event the page answered, in
+    /// arrival order. An event with no entry here was not answered in time.
+    pub acks: Vec<Ack>,
+    /// Milliseconds from SYN to the last OK.
+    pub done_ms: Option<u64>,
+    /// `["NOTICE", msg]` lines, verbatim.
+    pub notices: Vec<Value>,
+    pub datagrams_out: usize,
+    pub datagrams_in: usize,
+    /// Set if the stream ended before every event was answered.
+    pub error: Option<String>,
+}
+
+impl PublishOutcome {
+    /// Ids of `events` the page did not accept: refused, or never answered.
+    pub fn not_accepted<'a>(&self, events: &'a [Value]) -> Vec<&'a str> {
+        events
+            .iter()
+            .filter_map(|e| e["id"].as_str())
+            .filter(|id| !self.acks.iter().any(|a| a.accepted && a.id == *id))
+            .collect()
+    }
+}
+
+/// Send already-signed events to a browser relay over any [`DatagramLink`] and
+/// wait for the page's `OK` for each. Nothing is signed here: an event goes
+/// out exactly as given. Returns once every event is answered or `deadline`
+/// passes.
+pub fn run_publish<L: DatagramLink>(
+    link: &mut L,
+    events: &[Value],
+    deadline: Duration,
+) -> io::Result<PublishOutcome> {
+    let t0 = Instant::now();
+    let ms = || t0.elapsed().as_millis() as u64;
+    let seed = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1);
+    let mut session = RelaySession::new(link.max_payload(), seed);
+    let mut out = PublishOutcome::default();
+    let mut sent = false;
+    let wanted: Vec<&str> = events.iter().filter_map(|e| e["id"].as_str()).collect();
+
+    let flush = |session: &mut RelaySession, link: &mut L, out: &mut PublishOutcome| -> io::Result<()> {
+        for datagram in session.outbound() {
+            link.send(&datagram)?;
+            out.datagrams_out += 1;
+        }
+        Ok(())
+    };
+    let fail = |e: crate::session::SessionError| io::Error::other(e.to_string());
+    let answered = |out: &PublishOutcome| wanted.iter().all(|id| out.acks.iter().any(|a| a.id == *id));
+
+    session.connect(ms(), seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)).map_err(fail)?;
+    flush(&mut session, link, &mut out)?;
+
+    while t0.elapsed() < deadline {
+        if let Some(datagram) = link.recv(TICK)? {
+            out.datagrams_in += 1;
+            if let Err(e) = session.on_datagram(&datagram, ms()) {
+                out.error = Some(e.to_string());
+                break;
+            }
+        }
+        if let Err(e) = session.poll(ms()) {
+            out.error = Some(e.to_string());
+            break;
+        }
+        if session.is_established() && out.established_ms.is_none() {
+            out.established_ms = Some(ms());
+        }
+        if session.is_established() && !sent {
+            for event in events {
+                session.send(&json!(["EVENT", event]), ms()).map_err(fail)?;
+            }
+            sent = true;
+        }
+        for message in session.take_messages() {
+            match message.get(0).and_then(Value::as_str) {
+                Some("OK") => {
+                    let id = message.get(1).and_then(Value::as_str).unwrap_or_default().to_string();
+                    let accepted = message.get(2).and_then(Value::as_bool).unwrap_or(false);
+                    let text = message.get(3).and_then(Value::as_str).unwrap_or_default().to_string();
+                    out.acks.retain(|a| a.id != id);
+                    out.acks.push(Ack { id, accepted, message: text });
+                }
+                Some("NOTICE") => out.notices.push(message),
+                _ => {}
+            }
+        }
+        flush(&mut session, link, &mut out)?;
+        if sent && answered(&out) {
+            out.done_ms = Some(ms());
+            break;
+        }
+        if session.is_gone() {
+            out.error = Some("stream dropped before every event was answered".into());
+            break;
+        }
+    }
+    if out.done_ms.is_none() && out.error.is_none() {
+        out.error = Some(if out.established_ms.is_none() {
+            "the page never answered".into()
+        } else {
+            "deadline passed before every event was answered".into()
+        });
+    }
+
+    if session.is_established() {
+        let _ = session.close(ms());
+        let grace = Instant::now();
+        while grace.elapsed() < CLOSE_GRACE && !session.is_gone() {
+            flush(&mut session, link, &mut out)?;
+            if let Some(datagram) = link.recv(TICK)? {
+                let _ = session.on_datagram(&datagram, ms());
+            }
+            let _ = session.poll(ms());
+        }
+        flush(&mut session, link, &mut out)?;
+    }
+    Ok(out)
+}

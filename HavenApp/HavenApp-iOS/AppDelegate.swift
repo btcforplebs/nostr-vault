@@ -59,7 +59,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
-    /// Keys at rest: the passwords into the app's own
+    /// Keys at rest: the passwords and the FIPS mesh key into the app's own
     /// keychain group on ThisDeviceOnly, the NIP-46 client keys out of config.json (ConfigService
     /// moves them as it loads), and a plaintext owner key encrypted and
     /// scrubbed from config.json and its copies. Before the first unlock
@@ -89,6 +89,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        // Before anything can fetch: URLSession.shared refuses .fips hosts on iOS.
+        FipsHostBlocker.install()
         secureKeysAtRest(application)
 
         // Register the background processing task so the system can wake us
@@ -125,6 +127,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             // follow list is known. (HavenApp/App/iOSAppDelegate.swift is not
             // in the iOS target; this file is.)
             FillYourVaultCoordinator.shared.start()
+            // Kiosk mode comes back on when the app does, if it was on.
+            FipsMeshService.shared.resumeWhenActive()
         }
 
         // Only request local notification permission if the user has already

@@ -100,7 +100,15 @@ struct AudioPlayerView: View {
     }
     
     private func setupPlayer() {
-        let newPlayer = AVPlayer(url: url)
+        // A `.fips` vault is reachable only over the mesh: a cached copy or nothing.
+        let playable: URL
+        if MediaCacheService.isMeshOnly(url) {
+            guard let local = MediaCacheService.shared.preparePlayableURL(for: url) else { return }
+            playable = local
+        } else {
+            playable = url
+        }
+        let newPlayer = AVPlayer(url: playable)
         
         // Use KVO to get duration as soon as it's ready
         Task {

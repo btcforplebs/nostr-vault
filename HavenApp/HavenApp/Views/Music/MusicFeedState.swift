@@ -63,6 +63,29 @@ final class MusicFeedState: ObservableObject {
         var tracks: [WavlakeTrack]
     }
 
+    /// What a toolbar choice showed, kept so opening the tab again draws
+    /// it at once instead of starting from a spinner.
+    struct Listing {
+        var tracks: [WavlakeTrack] = []
+        /// Following: the artists found, shown above their songs.
+        var artists: [WavlakeArtist] = []
+        var message: String?
+
+        var isEmpty: Bool { tracks.isEmpty && artists.isEmpty }
+    }
+
+    @Published private(set) var listings: [String: Listing] = [:]
+
+    /// Names the toolbar's current choice; changes whenever it picks
+    /// something else to show.
+    var listingKey: String {
+        switch scope {
+        case .trending: return "trending:\(trendingWindow.rawValue)"
+        case .artist(let artist): return "artist:\(artist.id)"
+        case .following: return "following"
+        }
+    }
+
     private init() {
         if let data = UserDefaults.standard.data(forKey: Self.recentKey),
            let saved = try? JSONDecoder().decode([WavlakeArtist].self, from: data) {
@@ -174,12 +197,30 @@ final class MusicFeedState: ObservableObject {
         }
     }
 
+    /// Songs come from an artist's newest 25 albums; the albums row lists
+    /// them all.
+    private static let artistPageAlbums = 25
+
     /// An artist's details, albums (newest first) and the songs on them.
-    /// Songs come from the newest 25 albums; the albums row lists them all.
+    /// A page kept from an earlier launch shows at once; when it's gone
+    /// stale it's asked for again behind it, ready for the next open.
     func artistPage(_ id: String) async -> ArtistPage? {
         if let cached = artistPages[id] { return cached }
+        if let kept = await WavlakeAPI.keptArtistPage(id),
+           let tracks = await WavlakeAPI.keptTracks(onAlbums: Array(kept.value.albums.prefix(Self.artistPageAlbums))),
+           kept.value.albums.isEmpty || !tracks.value.isEmpty {
+            let page = ArtistPage(artist: kept.value.artist, albums: kept.value.albums, tracks: tracks.value)
+            artistPages[id] = page
+            if !(kept.isFresh && tracks.isFresh) { Task { await fetchArtistPage(id) } }
+            return page
+        }
+        return await fetchArtistPage(id)
+    }
+
+    @discardableResult
+    private func fetchArtistPage(_ id: String) async -> ArtistPage? {
         guard let found = try? await WavlakeAPI.artistPage(id) else { return nil }
-        let tracks = await WavlakeAPI.tracks(onAlbums: Array(found.albums.prefix(25)))
+        let tracks = await WavlakeAPI.tracks(onAlbums: Array(found.albums.prefix(Self.artistPageAlbums)))
         let page = ArtistPage(artist: found.artist, albums: found.albums, tracks: tracks)
         // Every album failing is a bad connection, not an empty artist:
         // show it, but ask again next time.
@@ -188,12 +229,66 @@ final class MusicFeedState: ObservableObject {
         return page
     }
 
+    /// An album's heading and songs; kept ones first, like artistPage.
     func albumPage(_ id: String) async -> AlbumPage? {
         if let cached = albumPages[id] { return cached }
+        if let kept = await WavlakeAPI.keptAlbumPage(id), !kept.value.tracks.isEmpty {
+            let page = AlbumPage(album: kept.value.album, tracks: kept.value.tracks)
+            albumPages[id] = page
+            if !kept.isFresh { Task { await fetchAlbumPage(id) } }
+            return page
+        }
+        return await fetchAlbumPage(id)
+    }
+
+    @discardableResult
+    private func fetchAlbumPage(_ id: String) async -> AlbumPage? {
         guard let found = try? await WavlakeAPI.albumPage(id), !found.tracks.isEmpty else { return nil }
         let page = AlbumPage(album: found.album, tracks: found.tracks)
         albumPages[id] = page
         return page
+    }
+
+    /// Fills the toolbar choice's listing. What's kept shows first; then
+    /// Wavlake is asked only for what has gone stale, so reopening the
+    /// tab within minutes asks for nothing. A bad connection leaves kept
+    /// songs up rather than swapping them for an error.
+    func loadListing() async {
+        let key = listingKey
+        switch scope {
+        case .trending:
+            let days = trendingWindow.rawValue
+            if listings[key] == nil, let kept = await WavlakeAPI.keptTrending(days: days), !kept.value.isEmpty {
+                listings[key] = Listing(tracks: kept.value)
+            }
+            do {
+                let found = try await WavlakeAPI.trending(days: days)
+                listings[key] = Listing(tracks: found, message: found.isEmpty ? "Nothing trending right now." : nil)
+            } catch {
+                if listings[key]?.isEmpty ?? true {
+                    listings[key] = Listing(message: "Couldn't reach Wavlake. Tap to try again.")
+                }
+            }
+        case .artist:
+            // MusicArtistPage loads itself.
+            break
+        case .following:
+            let follows = Set(FeedService.shared.followedPubkeys)
+            guard !follows.isEmpty else {
+                listings[key] = Listing(message: "Follow people on Nostr, and the Wavlake artists among them show up here.")
+                return
+            }
+            if listings[key] == nil {
+                let kept = await followedArtists(follows: follows, keptOnly: true)
+                if !kept.artists.isEmpty { listings[key] = Listing(tracks: kept.tracks, artists: kept.artists) }
+            }
+            let found = await followedArtists(follows: follows)
+            listings[key] = Listing(
+                tracks: found.tracks, artists: found.artists,
+                message: found.artists.isEmpty
+                    ? "None of the Wavlake artists checked are people you follow. Artists show up here once they link their Nostr key on Wavlake."
+                    : nil)
+        }
     }
 
     func showTrending(_ window: TrendingWindow) {
@@ -207,23 +302,39 @@ final class MusicFeedState: ObservableObject {
         }
     }
 
+    private static let artistLookupsAtOnce = 6
+
     /// Wavlake artists whose linked Nostr key you follow, and their ranked
     /// songs. Wavlake can't be asked which artists a key follows, and only
     /// an artist's own page carries their key, so this checks the artists
-    /// of the last 90 days' rankings plus your recent artists.
-    func followedArtists(follows: Set<String>) async -> (artists: [WavlakeArtist], tracks: [WavlakeTrack]) {
-        let ranked = (try? await WavlakeAPI.trending(days: 90)) ?? []
+    /// of the last 90 days' rankings plus your recent artists. `keptOnly`
+    /// answers from what's already kept, without asking Wavlake; artists
+    /// still unknown are left out of that answer.
+    func followedArtists(follows: Set<String>, keptOnly: Bool = false)
+        async -> (artists: [WavlakeArtist], tracks: [WavlakeTrack]) {
+        let ranked = keptOnly
+            ? (await WavlakeAPI.keptTrending(days: 90))?.value ?? []
+            : (try? await WavlakeAPI.trending(days: 90)) ?? []
         var ids: [String] = []
         for id in recentArtists.map(\.id) + ranked.compactMap(\.artistId) where !ids.contains(id) {
             ids.append(id)
         }
-        let missing = ids.filter { artistCache[$0] == nil }
+        // Every artist goes through the cache: a kept one costs no request,
+        // and one gone stale is asked for again. A few at a time: sixty at
+        // once has Wavlake drop a third of them, and holds up every other
+        // request to it behind the ones still waiting.
         await withTaskGroup(of: WavlakeArtist?.self) { group in
-            for id in missing {
-                group.addTask { try? await WavlakeAPI.artist(id) }
+            var queue = ids[...]
+            func next() {
+                guard let id = queue.popFirst() else { return }
+                group.addTask {
+                    keptOnly ? (await WavlakeAPI.keptArtist(id))?.value ?? nil : try? await WavlakeAPI.artist(id)
+                }
             }
+            for _ in 0..<Self.artistLookupsAtOnce { next() }
             for await artist in group {
                 if let artist { artistCache[artist.id] = artist }
+                next()
             }
         }
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys

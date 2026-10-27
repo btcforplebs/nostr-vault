@@ -23,6 +23,7 @@ import com.nostrvault.service.NostrService.Companion.PROFILE_RETRY_TTL_MS
 import com.nostrvault.service.NostrService.Companion.PROFILE_SAVE_THROTTLE_MS
 import com.nostrvault.service.NostrService.Companion.PROFILE_TTL_MS
 import com.nostrvault.service.NostrService.Companion.PROFILE_UPDATE_DEBOUNCE_MS
+import com.nostrvault.service.NostrService.Companion.PERSISTED_LIST_KINDS
 import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
 
     internal fun NostrService.loadProfilesFromDisk() {
@@ -359,6 +360,8 @@ import com.nostrvault.service.NostrService.Companion.TRIM_CACHED_PROFILES
             profileRepository.saveOutboxRelays(_outboxRelays.value)
             profileRepository.saveDMRelayLists(_dmRelayLists.value)
             profileRepository.saveServerLists(_serverLists.value)
+            replaceableNewest.snapshot { it.substringBefore(':').toIntOrNull() in PERSISTED_LIST_KINDS }
+                ?.let { profileRepository.saveListStamps(it) }
         }
     }
 

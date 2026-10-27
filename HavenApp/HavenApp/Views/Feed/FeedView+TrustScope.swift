@@ -12,16 +12,21 @@ extension FeedView {
     @ViewBuilder
     var trustScopeButton: some View {
         let everyone = configService.config.globalShowsEveryone
+        // The shield wears a lock while Everyone can't be turned on yet.
+        let locked = TrustScopeLock.isLocked(followCount: feedService.trustLockFollowCount, everyoneIsOn: everyone)
+        let shield = everyone ? "shield.slash.fill" : (locked ? "lock.shield.fill" : "checkmark.shield.fill")
         #if os(macOS)
         Button(action: toggleTrustScope) {
-            Image(systemName: everyone ? "shield.slash.fill" : "checkmark.shield.fill")
+            Image(systemName: shield)
                 .font(.appSystem(size: 15, weight: .semibold))
                 .foregroundColor(everyone ? Color.orange : Color.havenPurple)
         }
         .buttonStyle(.plain)
-        .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
+        .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust"
+              : locked ? "Web of Trust. Everyone unlocks once you follow \(TrustScopeLock.followsNeeded) people"
+              : "Web of Trust: people you follow and the people they follow. Click for everyone")
         #else
-        IconFilterButton(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
+        IconFilterButton(icon: shield, tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
         #endif
     }
 
@@ -33,7 +38,7 @@ extension FeedView {
             Label("Web of Trust", systemImage: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark")
         }
         Button {
-            if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
+            if !configService.config.globalShowsEveryone { requestEveryone() }
         } label: {
             Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "shield.slash")
         }
@@ -58,6 +63,16 @@ extension FeedView {
     private func toggleTrustScope() {
         if configService.config.globalShowsEveryone {
             setGlobalShowsEveryone(false)
+        } else {
+            requestEveryone()
+        }
+    }
+
+    /// Turning Everyone on: the sensitive-content warning, or while the
+    /// account follows too few people, why it is locked (`TrustScopeLock`).
+    private func requestEveryone() {
+        if TrustScopeLock.isLocked(followCount: feedService.trustLockFollowCount, everyoneIsOn: false) {
+            showingTrustLock = true
         } else {
             showingGlobalEveryoneWarning = true
         }

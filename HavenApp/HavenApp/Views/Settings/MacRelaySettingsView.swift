@@ -16,7 +16,7 @@ struct MacRelaySettingsView: View {
             // ── URL Input ──────────────────────────────────────────────
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    CommitOnEndTextField("https://relay.example.com", text: $configService.config.macRelayURL)
+                    CommitOnEndTextField("https://relay.example.com or npub1…", text: $configService.config.macRelayURL)
                         .font(.system(.body, design: .monospaced))
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -106,7 +106,9 @@ struct MacRelaySettingsView: View {
                 } header: {
                     Text("Also Used For")
                 }
+            }
 
+            if !wssURL.isEmpty || configService.config.macRelayMeshNpub != nil {
                 // ── Sync ───────────────────────────────────────────────
                 Section {
                     MacRelaySyncStatusView()

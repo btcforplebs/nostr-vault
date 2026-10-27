@@ -38,6 +38,7 @@ struct FeedView: View {
     @State var galleryDragOffset: CGSize = .zero
     @State var isRefreshing = false
     @State var showingGlobalEveryoneWarning = false
+    @State var showingTrustLock = false
     /// The note a toolbar tap leaves under the toolbar.
     @StateObject var toolbarNote = FilterNoteModel()
     /// Same warning, raised before Recipes switches to the global set.

@@ -8,8 +8,9 @@ import Foundation
 /// Pure Foundation so MediaLogicTests can test the routing; the wizard
 /// (SetupWizardView) maps its own path onto `Path`.
 enum VaultBackupQuestion {
-    /// The wizard's step number for the question.
-    static let step = 15
+    /// The wizard's step number for the question. (15 is "Who told you about
+    /// Nostr Vault?", ReferrerStep.)
+    static let step = 16
 
     enum Path {
         /// iPhone/iPad "I use Nostr": your key, then the question.

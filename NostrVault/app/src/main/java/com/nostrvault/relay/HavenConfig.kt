@@ -134,6 +134,33 @@ data class HavenConfig(
     // Haven Relay (wss:// URL to a remote Haven relay to sync missed notes)
     val macRelayURL: String = "",
 
+    // FIPS mesh. The preference only; the identity itself is a private key and
+    // lives in CredentialStore, not in this file, which is plaintext JSON.
+    val fipsMeshEnabled: Boolean = false,
+
+    // Offer this device's relay (and the Blossom server sharing its port) to
+    // mesh peers. Separate from fipsMeshEnabled, and off by default: being
+    // findable on the mesh and being reachable are different decisions.
+    val fipsShareRelay: Boolean = false,
+
+    // Npubs allowed to reach this device over the mesh. Nobody else can.
+    val fipsPeers: List<String> = emptyList(),
+
+    // The owner's other device (a kiosk phone) that also gets their posts and
+    // media over the mesh: its mesh npub, from their 10063. Null for none.
+    val homeVaultNpub: String? = null,
+
+    // What one sharing session may send to the mesh before sharing stops (NIP-F1).
+    val fipsServeLimitBytes: Long = 1L shl 30,
+
+    // Bytes this sharing session has sent the mesh, across engine restarts and
+    // app launches. Reset when sharing is switched off or on.
+    val fipsServedBytes: Long = 0,
+
+    // The FIPS Mesh screen's own settings: device names and roles, sharing
+    // choices, finder relays and middle server.
+    val fipsMesh: com.nostrvault.fips.FipsMeshSettings = com.nostrvault.fips.FipsMeshSettings(),
+
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
     /**
@@ -297,6 +324,11 @@ data class HavenConfig(
     val activeSearchRelays: List<String>
         get() = searchRelays ?: com.nostrvault.data.model.DEFAULT_SEARCH_RELAYS
 
+    /** Loopback port the FIPS mesh forwards to. The relay serves blob reads
+     *  there and nothing else, so mesh peers never reach the relay itself. */
+    val meshPort: Int
+        get() = relayPort + 1
+
     companion object {
         /**
          * New installs open the timeline feeds in Threaded View (iOS
@@ -382,9 +414,15 @@ data class HavenConfig(
 
     // ── Haven Relay Derived URLs ──────────────────────────────────
 
-    /** Strips any scheme and trailing slashes from macRelayURL to give the bare host[:port]. */
+    /**
+     * Strips any scheme and trailing slashes from macRelayURL to give the bare host[:port].
+     * Empty for a mesh npub (`npub1…`, `nostr:npub1…`, `fipsmesh://npub1…/`): that
+     * Mac has no address anyone else can use, and the relay reaches it through
+     * FIPS ([MacSync.macRelayURL]). Same as iOS HavenConfig.macRelayNormalizedBase.
+     */
     val macRelayNormalizedBase: String
         get() {
+            if (com.nostrvault.fips.HomeVaultRules.meshNpubFromInput(macRelayURL) != null) return ""
             var url = macRelayURL.trim()
             for (scheme in listOf("wss://", "ws://", "https://", "http://")) {
                 if (url.lowercase().startsWith(scheme)) {

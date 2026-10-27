@@ -70,6 +70,10 @@ import java.net.URL
             // default so existing installs keep whatever they had.
             configStore.update { it.copy(hasCompletedSetup = true, enablePushNotifications = true) }
 
+            // Who told you about Nostr Vault: follow them, and whoever of
+            // their follows stayed ticked, now that this key is active.
+            ownerHexNow()?.let { followReferrerPicks(it) }
+
             // Advertise where to send us DMs. Setup never did this, so a new
             // account had no kind 10050 at all and was effectively unreachable
             // over NIP-17 — senders fell through to a guessed relay set and
@@ -97,7 +101,10 @@ import java.net.URL
         val photo = _profilePhotoJpeg.value
         val generated = generatedPkHex ?: return
         // Each event is signed by whichever account is active, so check it
-        // is still the generated key right before signing.
+        // is still the generated key right before signing, and drop anything
+        // signed by another key: the photo upload can take 30 s, and a kind 0
+        // or 10002 signed by another account would replace that account's own
+        // (iOS 5cd4b5e9).
         fun stillGenerated() = nostrService.activeHexPubkey == generated &&
             HavenBridge.decodeNpub(configStore.config.value.ownerNpub) == generated
 
@@ -106,7 +113,7 @@ import java.net.URL
             val relayTags = RelayConfiguration.newAccountRelayListTags(configStore.config.value.activeBlastrRelays)
             if (relayTags.isNotEmpty()) {
                 runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
-                    .getOrNull()?.let { nostrService.postEvent(it) }
+                    .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
             }
 
             val profile = JSONObject()
@@ -123,6 +130,10 @@ import java.net.URL
             }
             if (profile.length() == 0 || !stillGenerated()) return@launch
             runCatching { nostrService.signEventAsync(kind = 0, content = profile.toString(), tags = emptyList()) }
-                .getOrNull()?.let { nostrService.postEvent(it) }
+                .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
         }
     }
+
+/** A new account's relay list or profile goes out only if the new key signed it. */
+internal fun signedByNewKey(signedPubkey: String?, generatedHex: String): Boolean =
+    signedPubkey != null && signedPubkey.equals(generatedHex, ignoreCase = true)

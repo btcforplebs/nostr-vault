@@ -30,23 +30,7 @@ extension FeedService {
             return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
-            let previous = (pTags: contactListPTags, pubkeys: followedPubkeys)
-            contactListPTags = result.pTags
-            followedPubkeys = result.pubkeys
-            publishContactList(rollback: previous, onFailure: onPublishFailed)
-            // Re-filter so already-loaded notes from the newly-followed author
-            // surface immediately in the Following feed.
-            recomputeFilteredNotes()
-            // Re-issue the live primary REQ so the new follow's FUTURE notes stream
-            // in without waiting for a full refresh.
-            resubscribePrimaryIfNeeded()
-
-            // Auto-switch back to Following now that the user has follows.
-            if didAutoSwitchToCurated {
-                didAutoSwitchToCurated = false
-                switchMode(.following)
-            }
-
+            applyFollowEdit(pTags: result.pTags, pubkeys: result.pubkeys, onPublishFailed: onPublishFailed)
             return .success(())
         }
     }
@@ -140,6 +124,7 @@ extension FeedService {
                 return
             }
             self.recordOwnContactList(event: event)
+            self.watchForRebuiltWeb()
             NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
                 guard outcome == .refused else { return }
                 Task { @MainActor in fail(event.created_at) }

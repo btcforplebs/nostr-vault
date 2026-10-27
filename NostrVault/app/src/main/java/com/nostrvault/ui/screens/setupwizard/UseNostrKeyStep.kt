@@ -215,7 +215,7 @@ internal fun UseNostrKeyStep(viewModel: SetupWizardViewModel) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Nobody can reset this password for you, not even us. Write it down.",
+                    "This password locks the secret key you just saved. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.",
                     color = SecondaryText,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,

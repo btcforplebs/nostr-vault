@@ -18,35 +18,89 @@ struct MusicTrackList: View {
     @Binding var sheet: MusicSheet?
     /// Album order: a track number in place of the cover.
     var numbered = false
+    /// A song shown tinted, the one a feed card opened this page for.
+    var highlightedId: String? = nil
     @ObservedObject private var player = MusicPlayerService.shared
 
     var body: some View {
-        LazyVStack(spacing: 4) {
-            ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, track in
-                HStack(spacing: 0) {
-                    MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying,
-                                  number: numbered ? offset + 1 : nil)
-                        .contentShape(Rectangle())
-                        .accessibilityElement(children: .combine)
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
-                        .onTapGesture {
-                            if player.current?.id == track.id {
-                                player.togglePlayPause()
-                            } else {
-                                player.play(tracks, startAt: offset)
-                            }
+        // The highlighted song scrolls itself into view (ScrollIntoViewMarker),
+        // so it has to exist: a lazy row far down isn't made until the
+        // page is scrolled near it.
+        if highlightedId != nil {
+            VStack(spacing: 4) { rows }
+        } else {
+            LazyVStack(spacing: 4) { rows }
+        }
+    }
+
+    private var rows: some View {
+        ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, track in
+            HStack(spacing: 0) {
+                MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying,
+                              number: numbered ? offset + 1 : nil)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
+                    .onTapGesture {
+                        if player.current?.id == track.id {
+                            player.togglePlayPause()
+                        } else {
+                            player.play(tracks, startAt: offset)
                         }
-                    // The same actions as a long-press, in plain sight.
-                    MusicMoreMenu(label: "More for \(track.title)") {
-                        MusicTrackActions(track: track, sheet: $sheet)
                     }
+                // The same actions as a long-press, in plain sight.
+                MusicMoreMenu(label: "More for \(track.title)") {
+                    MusicTrackActions(track: track, sheet: $sheet)
                 }
-                .contextMenu { MusicTrackActions(track: track, sheet: $sheet) }
             }
+            .contextMenu { MusicTrackActions(track: track, sheet: $sheet) }
+            .padding(.horizontal, highlightedId == track.id ? 6 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(highlightedId == track.id ? Color.havenPurple.opacity(0.15) : Color.clear)
+            )
+            #if os(iOS)
+            .background { if highlightedId == track.id { ScrollIntoViewMarker() } }
+            #endif
         }
     }
 }
+
+#if os(iOS)
+/// Scrolls the scroll view it sits in so it's centred, once, when it
+/// appears. For a row inside the feed: a ScrollViewReader in here only
+/// reaches scroll views inside it, not the feed's own.
+struct ScrollIntoViewMarker: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView { Marker() }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    final class Marker: UIView {
+        private var done = false
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil, !done else { return }
+            // Once the page has laid out around it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.scroll() }
+        }
+
+        private func scroll() {
+            guard !done, window != nil else { return }
+            var view = superview
+            while let v = view, !(v is UIScrollView) { view = v.superview }
+            guard let scroll = view as? UIScrollView else { return }
+            done = true
+            let inset = scroll.adjustedContentInset
+            let rect = convert(bounds, to: scroll)
+            let top = -inset.top
+            let bottom = max(top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+            let y = min(max(rect.midY - scroll.bounds.height / 2, top), bottom)
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: y), animated: true)
+        }
+    }
+}
+#endif
 
 /// Play from the top and Shuffle, plus any extra pill (an artist's Nostr
 /// profile). Disabled until there are songs.
@@ -280,7 +334,7 @@ struct MusicArtwork: View {
 
     var body: some View {
         Group {
-            if let url {
+            if let url = MediaCacheService.offMeshURL(url) {
                 AsyncImage(url: url) { phase in
                     if let image = phase.image {
                         image.resizable().aspectRatio(contentMode: .fill)

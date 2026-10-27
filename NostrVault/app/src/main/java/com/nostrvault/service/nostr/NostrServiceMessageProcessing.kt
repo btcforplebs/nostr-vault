@@ -52,11 +52,11 @@ import com.nostrvault.service.NostrService.Companion.TAG
                 return
             }
             10063 -> {
-                parseServerListEvent(pubkey, tags)
+                parseServerListEvent(pubkey, tags, createdAt)
                 return
             }
             10000 -> {
-                scope.launch { applyMuteList(pubkey, tags, content, createdAt) }
+                scope.launch { applyMuteList(pubkey, id, tags, content, createdAt) }
                 return
             }
         }
@@ -90,13 +90,13 @@ import com.nostrvault.service.NostrService.Companion.TAG
      */
     internal fun NostrService.acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
         val key = "$kind:$pubkey"
+        val id = (eventObj["id"] as? JsonPrimitive)?.contentOrNull ?: return false
         // A profile saved on disk counts as seen, so after a restart an older
         // signed kind-0 cannot replace a newer one.
-        val seen = replaceableNewest[key] ?: if (kind == 0) _profiles.value[pubkey]?.createdAt else null
-        if (seen != null && createdAt < seen) return false
+        val diskProfile = if (kind == 0) _profiles.value[pubkey]?.createdAt else null
+        if (!replaceableNewest.mayReplace(key, createdAt, id, diskProfile)) return false
         if (!HavenBridge.verifyEvent(eventObj.toString())) return false
-        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
-        return createdAt >= (replaceableNewest[key] ?: createdAt)
+        return replaceableNewest.record(key, createdAt, id, diskProfile)
     }
 
     internal fun NostrService.handleEOSE(subId: String, relayUrl: String) {

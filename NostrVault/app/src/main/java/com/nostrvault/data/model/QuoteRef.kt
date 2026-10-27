@@ -1,5 +1,6 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.util.findAllOnce
 /**
  * The `nostr:` references a note makes to other events, and the key the app
  * looks each one up by.
@@ -157,7 +158,7 @@ object QuoteRef {
     fun identifiers(content: String): List<String> {
         val seen = LinkedHashSet<String>()
         // A bare `nevent1…` is a quote too (iOS #1250).
-        for (match in REGEX.findAll(BareNostrRefs.prefixBare(content))) seen.add(match.groupValues[1])
+        for (match in REGEX.findAllOnce(BareNostrRefs.prefixBare(content))) seen.add(match.groupValues[1])
         return seen.toList()
     }
 

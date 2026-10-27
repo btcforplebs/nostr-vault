@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 struct BlossomSettingsView: View {
     @EnvironmentObject var configService: ConfigService
@@ -7,9 +9,7 @@ struct BlossomSettingsView: View {
     @ObservedObject private var waitingPosts = MediaPostQueue.shared
 
     @State private var newMirrorURL = ""
-    #if os(macOS)
-    @StateObject private var fipsDetection = FIPSDetectionService()
-    #else
+    #if os(iOS)
     @State private var isVPNActive = false
     #endif
     
@@ -223,87 +223,15 @@ struct BlossomSettingsView: View {
                 Text("Offline Copies")
             }
 
-            // Section 4: FIPS
+            // Section 4: FIPS. Your own mesh (address, devices, sharing)
+            // lives on the FIPS Mesh page; this is about other people's servers.
             #if os(macOS)
             Section {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(fipsStatusColor)
-                        .frame(width: 8, height: 8)
-                    Text(fipsStatusText)
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
-                }
-
-                Toggle(isOn: Binding(
-                    get: { configService.config.fipsPublishEnabled },
-                    set: { newValue in
-                        configService.config.fipsPublishEnabled = newValue
-                        configService.save()
-                        NostrService.shared.publishServerList(fipsDetectedNpub: fipsDetection.detectedNpub)
-                    }
-                )) {
-                    Text("Publish .fips Address")
-                        .font(.appBody)
-                        .settingInfo(.shareFIPS)
-                }
-
-                if configService.config.fipsPublishEnabled {
-                    Picker("Address Source", selection: Binding(
-                        get: { configService.config.fipsAddressSource },
-                        set: { newValue in
-                            configService.config.fipsAddressSource = newValue
-                            configService.save()
-                            NostrService.shared.publishServerList(fipsDetectedNpub: fipsDetection.detectedNpub)
-                        }
-                    )) {
-                        Text("My Nostr npub").tag("owner")
-                        if fipsDetection.detectedNpub != nil {
-                            Text("Detected (nostr-vpn)").tag("detected")
-                        }
-                        Text("Custom").tag("custom")
-                    }
-
-                    if configService.config.fipsAddressSource == "custom" {
-                        TextField("npub1...", text: Binding(
-                            get: { configService.config.fipsCustomNpub },
-                            set: { newValue in
-                                configService.config.fipsCustomNpub = newValue
-                                configService.save()
-                            }
-                        ))
-                        .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
-                        .font(.appSystem(size: 12, design: .monospaced))
-                    }
-
-                    if let url = configService.config.fipsBlossomURL(detectedNpub: fipsDetection.detectedNpub) {
-                        HStack {
-                            Text(url)
-                                .font(.appSystem(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                                .lineLimit(1)
-                            Spacer()
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(url, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.appSystem(size: 12))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Text("A FIPS transport (e.g. nostr-vpn) must be running to make this address reachable.")
-                        .font(.appCaption2)
-                        .foregroundColor(.secondary.opacity(0.7))
-                }
+                FipsMeshLinkRow()
             } header: {
                 Text("FIPS")
             } footer: {
-                Text("Expose your Blossom server over the FIPS overlay network. Clients with a FIPS transport can reach your media without a public IP or domain.")
+                Text("Your .fips address and what you share on the mesh are under FIPS Mesh.")
             }
             #else
             Section {
@@ -318,16 +246,14 @@ struct BlossomSettingsView: View {
                 Text("To access media from .fips servers, enable your FIPS VPN (e.g. nostr-vpn) and add the server's .fips address as an Additional Server above.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
+                FipsMeshLinkRow()
             } header: {
                 Text("FIPS")
             }
             #endif
         }
         .groupedFormStyleCompat()
-        #if os(macOS)
-        .onAppear { fipsDetection.startPolling() }
-        .onDisappear { fipsDetection.stopPolling() }
-        #else
+        #if os(iOS)
         .onAppear { isVPNActive = Self.checkVPNActive() }
         #endif
         #if os(iOS)
@@ -335,24 +261,7 @@ struct BlossomSettingsView: View {
         #endif
     }
 
-    #if os(macOS)
-    private var fipsStatusColor: Color {
-        switch fipsDetection.status {
-        case .running: return .havenOnline
-        case .installed, .stale: return .yellow
-        case .notInstalled: return .gray
-        }
-    }
-
-    private var fipsStatusText: String {
-        switch fipsDetection.status {
-        case .running: return "FIPS transport active"
-        case .stale: return "FIPS transport not responding"
-        case .installed: return "FIPS transport installed but not running"
-        case .notInstalled: return "No FIPS transport detected"
-        }
-    }
-    #else
+    #if os(iOS)
     static func checkVPNActive() -> Bool {
         var addrs: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&addrs) == 0 else { return false }
