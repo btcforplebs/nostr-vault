@@ -231,7 +231,7 @@ private struct BlossomPickerGridItem: View {
                                 .foregroundColor(.havenPurple)
                         }
                     } else if item.isAnimatedGIF {
-                        AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
+                        AnimatedThumbnail(url: item.url)
                     } else {
                         RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
                     }

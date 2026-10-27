@@ -1061,6 +1061,7 @@
 		D016ED896705E2C8A0C450E5 /* RelayStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */; };
 		D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
 		D060107D62CCECE6BE12F68D /* OpenInWebButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0E9EC6033EC8D3F3C783BC /* OpenInWebButton.swift */; };
+		D10FC5CE1D299504F63FDAD2 /* AnimatedThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */; };
 		D11A40BAE7126C3D866D0DBA /* TrustPathCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFB53AF0B545D2F574F9F8D /* TrustPathCard.swift */; };
 		D140E2EA2C16AC28FAD5CD6B /* VaultSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E82F3342C8C1BDDEF52BF87 /* VaultSearch.swift */; };
 		D173CCC603C3702D53D294FC /* NIP46Error.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCE06AC36BF540013C789B2 /* NIP46Error.swift */; };
@@ -1315,6 +1316,7 @@
 		FBCF14F6C8AABAE90DDC2EA9 /* DMService+ExternalFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */; };
 		FC06EA259E80D2DF39C07DA1 /* DeletedPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F46900B31B7943F8CBF7892 /* DeletedPost.swift */; };
 		FC0E9B79F57A815ED1D00BDE /* BlossomService+PostUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125339BC390902958460CB6C /* BlossomService+PostUpload.swift */; };
+		FC7A7E5FE57DB163429FB829 /* AnimatedThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */; };
 		FC89992AA8E72FD8BD38EE85 /* FeedService+ExtendedNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90EE1AC599A9743E3EFC73CC /* FeedService+ExtendedNetwork.swift */; };
 		FCCCFD519D53A12A81C43930 /* PendingPostManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 665772231EE1D4B0755E95C3 /* PendingPostManager.swift */; };
 		FCF9E2A3BB6921EB9A467368 /* AccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFCB81ABC2BDA68F18D4D80 /* AccountDetailView.swift */; };
@@ -1795,6 +1797,7 @@
 		9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardMirrors.swift; sourceTree = "<group>"; };
 		9FEC6DB9D99B45B49569D8A5 /* ProfileContent+Sections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileContent+Sections.swift"; sourceTree = "<group>"; };
 		A0470608431CE649B6E55F7D /* QuotedNoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteView.swift; sourceTree = "<group>"; };
+		A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedThumbnail.swift; sourceTree = "<group>"; };
 		A18F26C050E4BFA86B818A60 /* ProfileEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditView.swift; sourceTree = "<group>"; };
 		A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceTypes.swift; sourceTree = "<group>"; };
 		A200B7EA08917B874F06B2AF /* NVShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareInbox.swift; sourceTree = "<group>"; };
@@ -2832,6 +2835,7 @@
 			isa = PBXGroup;
 			children = (
 				4757A74E31DFBA866003FD73 /* ActionButton.swift */,
+				A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */,
 				EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */,
 				382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */,
 				6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */,
@@ -3390,6 +3394,7 @@
 				96642D69BFA041406EB6CA32 /* AddAccountSheetView.swift in Sources */,
 				72EA2C8FEED5BD112DF6E461 /* AdvancedSettingsView.swift in Sources */,
 				390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */,
+				D10FC5CE1D299504F63FDAD2 /* AnimatedThumbnail.swift in Sources */,
 				2F2E46994E838BCF6F8FCA7B /* AppDelegate.swift in Sources */,
 				9DBA13DB50ECFF3FFF4832F8 /* AppearanceSettingsView.swift in Sources */,
 				0A7375CB08C83F8D842FB499 /* ArticleBlockFilter.swift in Sources */,
@@ -4065,6 +4070,7 @@
 				9843970E4AFB5058A6BB47DD /* AddAccountSheetView.swift in Sources */,
 				4B4A991A7D0DBD612AC8595F /* AdvancedSettingsView.swift in Sources */,
 				0550886023E5A566CEFD6FC3 /* AnimatedImage.swift in Sources */,
+				FC7A7E5FE57DB163429FB829 /* AnimatedThumbnail.swift in Sources */,
 				639693F76606BDA634926A35 /* AppDelegate.swift in Sources */,
 				A3258A0341853E49D016C521 /* AppearanceSettingsView.swift in Sources */,
 				8215148CFF06A7B523C2EA5F /* ArticleBlockFilter.swift in Sources */,
