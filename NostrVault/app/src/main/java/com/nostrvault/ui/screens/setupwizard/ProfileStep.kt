@@ -12,7 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
@@ -28,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.launch
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 @Composable
 internal fun ProfileStep(viewModel: SetupWizardViewModel) {
@@ -115,7 +115,7 @@ internal fun ProfileStep(viewModel: SetupWizardViewModel) {
             placeholder = { Text("Your name") },
             singleLine = true,
             colors = wizardTextFieldColors(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardOptions = ProseKeyboardOptions.copy(imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth(),
         )
 

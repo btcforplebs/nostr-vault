@@ -65,6 +65,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /**
  * Player for one NIP-53 live stream.
@@ -363,6 +364,7 @@ fun LiveStreamScreen(
                     value = chatInput,
                     onValueChange = { chatInput = it },
                     placeholder = { Text("Say something", color = TertiaryText) },
+                    keyboardOptions = ProseKeyboardOptions,
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     colors = OutlinedTextFieldDefaults.colors(

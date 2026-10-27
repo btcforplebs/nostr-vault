@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PlaceholderText
 import com.nostrvault.ui.theme.SeparatorColor
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /**
  * The thread's message box: the outlined field it always was, built on the
@@ -68,6 +69,7 @@ internal fun DMMessageField(
                 rest
             },
         textStyle = LocalTextStyle.current.merge(TextStyle(color = MaterialTheme.colorScheme.onSurface)),
+        keyboardOptions = ProseKeyboardOptions,
         cursorBrush = SolidColor(colors.primary),
         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
         interactionSource = interactionSource,

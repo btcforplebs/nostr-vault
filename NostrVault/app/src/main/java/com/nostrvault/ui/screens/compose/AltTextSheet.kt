@@ -11,6 +11,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /**
  * Sheet for writing one attachment's NIP-92 `alt` text.
@@ -51,6 +52,7 @@ internal fun AltTextSheet(
                     .heightIn(min = 100.dp)
                     .semantics { contentDescription = "Media description" },
                 placeholder = { Text("A cat asleep on a keyboard") },
+                keyboardOptions = ProseKeyboardOptions,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

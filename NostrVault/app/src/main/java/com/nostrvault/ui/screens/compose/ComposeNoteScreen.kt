@@ -37,6 +37,7 @@ import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.QuotedNoteCard
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.launch
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /**
  * Compose new note screen with text input and publish action.
@@ -310,6 +311,7 @@ fun ComposeNoteScreen(
                         },
                         // iOS shows the same prompt for a note, reply or quote.
                         placeholder = { Text("What's happening?", color = PlaceholderText) },
+                        keyboardOptions = ProseKeyboardOptions,
                         // Fills the space left and scrolls itself, which keeps the
                         // caret in view while typing.
                         colors = OutlinedTextFieldDefaults.colors(

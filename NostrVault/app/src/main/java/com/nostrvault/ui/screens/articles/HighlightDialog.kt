@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.nostrvault.ui.theme.*
+import com.nostrvault.ui.components.ProseKeyboardOptions
 
 /** Trim the tapped paragraph to the part worth keeping, optionally add a thought. */
 @Composable
@@ -34,6 +35,7 @@ internal fun HighlightDialog(
                     value = comment,
                     onValueChange = { comment = it },
                     label = { Text("Your thoughts (optional)") },
+                    keyboardOptions = ProseKeyboardOptions,
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth(),
                 )
