@@ -14,7 +14,7 @@ enum CredentialStore {
 
     /// These passwords decrypt the private keys, so they stay on this device:
     /// without `ThisDeviceOnly` an encrypted backup restores them onto another
-    /// phone.
+    /// phone. The mesh identity (FipsMeshService) is stored the same way.
     static let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
 
     /// The app's own keychain group on iOS. The default group is the first
@@ -86,8 +86,9 @@ enum CredentialStore {
     /// a failure (before the first unlock, say) leaves the old item readable
     /// and it moves at the next launch. Returns how many items changed.
     /// Every keychain service the migration moves: these passwords and the
-    /// NIP-46 client keys.
-    static let migratedServices = [service]
+    /// NIP-46 client keys, and the FIPS mesh key (FipsMeshService), a private
+    /// key of its own.
+    static let migratedServices = [service, MeshIdentityReset.keychainService]
 
     @discardableResult
     static func migrateToThisDeviceOnly(in keychain: CredentialKeychain = SystemKeychain(),
@@ -120,7 +121,7 @@ enum CredentialStore {
         return moved
     }
 
-    /// Where the owner password sits, for one launch log
+    /// Where the owner password and the mesh key sit, for one launch log
     /// line: a device log then shows the migration ran, with no probe app.
     /// Names groups only, never values.
     static func locationReport(in keychain: CredentialKeychain = SystemKeychain()) -> String {
@@ -128,7 +129,7 @@ enum CredentialStore {
             let groups = keychain.items(service: service).filter { $0.account == account }.map { $0.group ?? "no group" }
             return groups.isEmpty ? "none" : groups.joined(separator: " + ")
         }
-        return "owner password in \(place(service, ownerAccount))"
+        return "owner password in \(place(service, ownerAccount)); mesh key in \(place(MeshIdentityReset.keychainService, "mesh-nsec"))"
     }
 
     // MARK: - Any secret, by account name

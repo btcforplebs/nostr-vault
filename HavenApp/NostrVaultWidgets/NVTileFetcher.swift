@@ -65,8 +65,12 @@ enum NVTileFetcher {
     /// while the app is running — which is precisely when nobody is looking at
     /// the Home Screen. Those tiles come from the handoff or not at all, so
     /// spending a 4 s timeout on them would just delay every other tile.
+    /// A `.fips` vault is reachable only over the mesh, which the widget has
+    /// no way into; looking its host up would hand the vault npub to the
+    /// resolver on every refresh.
     private static func isFetchable(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
+        if host.hasSuffix(".fips") || host.hasSuffix(".fips.") { return false }
         return host != "127.0.0.1" && host != "localhost" && host != "::1"
     }
 }

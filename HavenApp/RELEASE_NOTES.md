@@ -1,3 +1,19 @@
+# Nostr Vault v3.0.0 Build 41 (macOS / iOS) Release Notes
+
+Nostr Vault 3.0 connects your iPhone and your Mac directly over the FIPS mesh, with no server in between.
+
+- **Your devices, connected.** Turn on FIPS Mesh in Settings, on the iPhone or the Mac, and add your devices by address or QR code.
+- **The mesh engine runs inside the Mac app.** Nothing else to install. The Mac serves your photos to your own devices, and your public photos to anyone else who asks.
+- **Notes and photos to your Mac.** Add your Mac as "Vault on Mac" and each new note and photo goes to it over the mesh. Your notes and history also sync back from the Mac. "Check sync with Vault on Mac" now ends on "Done" with counts, or says why it stopped.
+- **Home vault.** A spare iPhone can be your home vault: it gets your new posts and media and passes them on.
+- **Photos over the mesh.** Photos kept on your devices load over the mesh in the feed, the Vault and profiles.
+- **Your address stays private.** Once you add a device, only your devices learn this phone's address. Anyone else gets public photos only.
+- **Fixed:** the iPhone ran hot with the app open; the relay now gets memory sized to the phone. Search no longer freezes while you type a common word.
+
+Posting a photo still needs a public media server.
+
+---
+
 # Nostr Vault v2.7.2 Build 40 (macOS / iOS) Release Notes
 
 The App Store build. The app now stays cool with it open all day: the relay pauses work nobody can see while the app is in the background, backs off from flaky relays and signers, and the Web of Trust globe draws more cheaply. On the iPhone a locked article no longer links out to buy it on Fanfares; the Mac keeps that link, and on both it can only point at the article itself. New Message from a profile keeps the person you picked. Full list in [CHANGELOG.md](../CHANGELOG.md) under 2.7.2 (40).

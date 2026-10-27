@@ -224,7 +224,8 @@ class ConfigService: ObservableObject {
            !list.isEmpty {
             config.blastrRelays = list
         }
-        // If file doesn't exist or is empty, keep the defaults from HavenConfig
+        // Missing/empty file keeps HavenConfig defaults; this session's mesh relay address is never the owner's own.
+        config.blastrRelays = RelayConfiguration.droppingMeshAddresses(config.blastrRelays)
 
         // Load whitelisted npubs
         let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)

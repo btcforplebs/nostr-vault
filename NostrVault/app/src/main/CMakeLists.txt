@@ -15,6 +15,11 @@ set_target_properties(haven PROPERTIES
     IMPORTED_NO_SONAME TRUE
 )
 
+# 16 KB ELF segment alignment, so the bridge loads on 16 KB-page devices
+# (Android 15+). NDK r27, AGP 8.7's default, links 4 KB; every other .so in
+# the APK is already 16 KB.
+target_link_options(nostrvault-jni PRIVATE "-Wl,-z,max-page-size=16384")
+
 # Link JNI bridge against Go library and Android log
 target_link_libraries(
     nostrvault-jni

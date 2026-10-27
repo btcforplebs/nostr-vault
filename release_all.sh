@@ -135,7 +135,12 @@ APK_PATH="$DIST/$APK_NAME"
 if [ "$SKIP_ANDROID" = 0 ]; then
     log "Android: rebuilding Go relay (.so) and assembling release APK"
     (cd "$ANDROID_DIR" && ./build_haven_android.sh arm64)
+    # The FIPS mesh (libnvfips.so) is gitignored and optional at build time: an
+    # APK without it builds fine and reports the mesh as unavailable.
+    (cd "$ANDROID_DIR" && ./build_fips_v2_android.sh)
     (cd "$ANDROID_DIR" && ./gradlew assembleRelease -q)
+    unzip -l "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" | grep -q "lib/arm64-v8a/libnvfips.so" \
+        || die "APK has no libnvfips.so — the FIPS mesh would be missing"
     # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an
     # APK whose Go core predates the per-account signer sessions (#168).
     unzip -p "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" lib/arm64-v8a/libhaven.so \

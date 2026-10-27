@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
@@ -127,9 +128,6 @@ fun NoteDetailScreen(
     var reportTarget by remember { mutableStateOf<FeedNote?>(null) }
 
     val blockedPubkeys by viewModel.blockedPubkeys.collectAsState()
-    val trustedPubkeys by viewModel.trustedPubkeys.collectAsState()
-    // Replies from outside your network are folded until asked for.
-    var showsOutsideReplies by remember { mutableStateOf(false) }
 
     // Derive focused note, parents, and direct replies from focusedNoteId
     val focusedNote = remember(focusedNoteId, note, allReplies) {
@@ -182,21 +180,11 @@ fun NoteDetailScreen(
     // replies are what actually exist on relays.
     val replyTargetId = focusedNote?.effectiveEventId ?: noteId
 
-    // Replies under the opened note, at any depth, through the feed's block
-    // rule and spam check; replies from outside your network stay folded.
-    // You and the authors of the opened note and the notes above it are never
-    // folded. iOS: NoteDetailView.threadReplies (#278).
-    val threadReplies = remember(
-        replyTargetId, allReplies, parentNotes, note, dynamicParents, blockedPubkeys, trustedPubkeys, showsOutsideReplies,
-    ) {
+    // Every reply under the opened note, at any depth, through the feed's
+    // block rule and spam check; nothing else is folded (iOS #1085).
+    val threadReplies = remember(replyTargetId, allReplies, parentNotes, note, blockedPubkeys) {
         val byId = (parentNotes + listOfNotNull(note) + allReplies).associateBy { it.id }
-        val insiders = buildSet {
-            add(viewModel.activeHexPubkey)
-            note?.let { add(it.pubkey) }
-            focusedNote?.let { add(it.pubkey) }
-            dynamicParents.forEach { add(it.pubkey) }
-        }
-        ThreadReplyVisibility.replies(
+        ThreadReplyVisibility.shown(
             targetId = replyTargetId,
             pool = allReplies,
             hidden = { n ->
@@ -204,14 +192,10 @@ fun NoteDetailScreen(
                     byId[id]?.pubkey ?: viewModel.findNote(id)?.pubkey
                 }
             },
-            trusted = trustedPubkeys,
-            insiders = insiders,
-            showOutside = showsOutsideReplies,
         )
     }
     // The placeholder takes the opened note's replies and quotes with it.
-    val visibleReplies = if (showsBlockedPlaceholder) emptyList() else threadReplies.visible
-    val outsideReplies = if (showsBlockedPlaceholder) 0 else threadReplies.outside
+    val visibleReplies = if (showsBlockedPlaceholder) emptyList() else threadReplies
     val shownResponses = remember(otherResponses, blockedPubkeys, showsBlockedPlaceholder) {
         if (showsBlockedPlaceholder) emptyList()
         else BlockedPeople.visibleNotes(otherResponses, blockedPubkeys) { it.pubkey }
@@ -219,6 +203,17 @@ fun NoteDetailScreen(
 
     val directReplies = remember(replyTargetId, visibleReplies) {
         visibleReplies.filter { it.parentEventId == replyTargetId }.sortedBy { it.createdAt }
+    }
+    // The reply tree, worked out once per reply list rather than per row or
+    // per recomposition: full mode's rows, condensed mode's lines and counts.
+    val replyRows = remember(replyTargetId, visibleReplies, condensedReplies) {
+        if (condensedReplies) emptyList() else ThreadReplyRows.build(replyTargetId, visibleReplies)
+    }
+    val condensedTree = remember(replyTargetId, visibleReplies, condensedReplies) {
+        if (condensedReplies) FeedThreadGrouping.replyTree(replyTargetId, visibleReplies) else emptyList()
+    }
+    val condensedReplyCounts = remember(visibleReplies, condensedReplies) {
+        if (condensedReplies) ThreadReplyRows.replyCounts(visibleReplies) else emptyMap()
     }
 
     // Re-fetch engagement when focus changes; when refocusing inside the
@@ -577,11 +572,11 @@ fun NoteDetailScreen(
                 // ── Replies: loading / empty / header ───────────
                 if (showsBlockedPlaceholder) {
                     // Nothing under the placeholder: its replies went with it.
-                } else if (isLoadingReplies && directReplies.isEmpty() && outsideReplies == 0) {
+                } else if (isLoadingReplies && directReplies.isEmpty()) {
                     item(key = "replies_loading") {
                         InlineLoadingRow(text = "Loading replies…", color = colors.primary, verticalPadding = 24.dp)
                     }
-                } else if (directReplies.isEmpty() && outsideReplies == 0) {
+                } else if (directReplies.isEmpty()) {
                     item(key = "replies_empty") {
                         Text(
                             text = "No replies yet",
@@ -595,8 +590,7 @@ fun NoteDetailScreen(
                         )
                     }
                 } else {
-                    // iOS: plain uppercase "REPLIES", also above the
-                    // outside-network button when that is all there is.
+                    // iOS: plain uppercase "REPLIES".
                     item(key = "replies_header") {
                         Text(
                             text = "REPLIES",
@@ -613,38 +607,31 @@ fun NoteDetailScreen(
                 // Condensed: one card of lines, nested under what they answer;
                 // tap a line and it becomes the note you are reading, full size.
                 if (condensedReplies) {
-                    val tree = FeedThreadGrouping.replyTree(replyTargetId, visibleReplies)
-                    if (tree.isNotEmpty()) {
-                        item(key = "replies_condensed") {
-                            CondensedThreadCard {
-                                for (entry in tree) {
-                                    ThreadCondensedLine(
-                                        note = entry.note,
-                                        depth = entry.depth,
-                                        replyCount = visibleReplies.count { it.parentEventId == entry.note.id },
-                                        viewModel = viewModel,
-                                        profiles = profiles,
-                                        onProfileClick = onProfileClick,
-                                        onTrustWeb = openTrustWeb,
-                                        onTap = { scrollToNote(entry.note.id) },
-                                    )
-                                }
-                            }
+                    itemsIndexed(condensedTree, key = { _, entry -> "condensed_${entry.note.id}" }) { index, entry ->
+                        CondensedThreadCardRow(CardSegment.of(index, condensedTree.size)) {
+                            ThreadCondensedLine(
+                                note = entry.note,
+                                depth = entry.depth,
+                                replyCount = condensedReplyCounts[entry.note.id] ?: 0,
+                                viewModel = viewModel,
+                                profiles = profiles,
+                                onProfileClick = onProfileClick,
+                                onTrustWeb = openTrustWeb,
+                                onTap = { scrollToNote(entry.note.id) },
+                            )
                         }
                     }
-                } else items(directReplies, key = { it.id }) { reply ->
-                    ThreadedReplyNode(
-                        reply = reply,
-                        pool = visibleReplies,
-                        depth = 1,
+                } else items(replyRows, key = { it.id }) { row ->
+                    ThreadReplyRowItem(
+                        row = row,
                         focusedNoteId = focusedNoteId,
                         themeColor = colors.primary,
                         viewModel = viewModel,
                         expandedEngagement = expandedEngagement,
                         perNoteEngagement = perNoteEngagement,
                         profiles = profiles,
+                        quotedNotesCache = quotedNotesCache,
                         onProfileClick = onProfileClick,
-                        onNoteClick = onNoteClick,
                         onArticleClick = onArticleClick,
                         onFocus = { id -> scrollToNote(id) },
                         onReply = onReply,
@@ -661,41 +648,8 @@ fun NoteDetailScreen(
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
                         onEngagementClick = { kind, id -> engagementSheet = EngagementSheetTarget(kind, id) },
-                        // iOS fullRepliesList: 12pt between top-level replies.
-                        modifier = Modifier
-                            .padding(horizontal = ThreadSideInset)
-                            .padding(bottom = 12.dp),
+                        modifier = Modifier.padding(horizontal = ThreadSideInset),
                     )
-                }
-
-                // Replies from outside your network, folded until asked for.
-                if (outsideReplies > 0) {
-                    item(key = "outside_replies") {
-                        val count = outsideReplies
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showsOutsideReplies = true }
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                        ) {
-                            Icon(
-                                NostrVaultIcons.PeopleOutline,
-                                contentDescription = null,
-                                tint = SecondaryText,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = if (count == 1) "Show 1 reply from outside your network"
-                                else "Show $count replies from outside your network",
-                                color = SecondaryText,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
                 }
 
                 // ── Quotes & highlights (below the fold) ─────────

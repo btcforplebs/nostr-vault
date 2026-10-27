@@ -131,3 +131,65 @@ func TestMeshPortOnlyWhileSharing(t *testing.T) {
 		t.Fatal("mesh server goroutine did not exit")
 	}
 }
+
+// The own-devices port (iOS, where the relay port is TLS) serves the relay's
+// own handler as plain HTTP, and only between sharing on and sharing off.
+func TestMeshOwnPortServesRelayPlainWhileSharing(t *testing.T) {
+	freePort := func() (string, string) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := ln.Addr().String()
+		ln.Close()
+		_, port, _ := net.SplitHostPort(addr)
+		return addr, port
+	}
+	_, doorPort := freePort()
+	ownAddr, ownPort := freePort()
+	t.Setenv("HAVEN_MESH_PLAIN_PORT", doorPort)
+	t.Setenv("HAVEN_MESH_OWN_PORT", ownPort)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	relayHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Relay", "full")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	c := &relayCycle{ctx: ctx, cancel: cancel, server: &http.Server{Handler: relayHandler}}
+	relayLC.current.Store(c)
+	defer relayLC.current.Store(nil)
+	defer meshWanted.Store(false)
+
+	get := func() (*http.Response, error) {
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		return client.Get("http://" + ownAddr + "/private")
+	}
+	if _, err := get(); err == nil {
+		t.Fatal("own-devices port open before sharing")
+	}
+	setMeshServing(true)
+	var resp *http.Response
+	var err error
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if resp, err = get(); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("own-devices port closed while sharing: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent || resp.Header.Get("X-Relay") != "full" {
+		t.Fatalf("own-devices port did not serve the relay handler: %d %q", resp.StatusCode, resp.Header.Get("X-Relay"))
+	}
+	setMeshServing(false)
+	if _, err := get(); err == nil {
+		t.Fatal("own-devices port still open after sharing off")
+	}
+	if !c.waitBackground(2 * time.Second) {
+		t.Fatal("own-devices server goroutine did not exit")
+	}
+}

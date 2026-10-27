@@ -52,6 +52,7 @@ struct MediaListItem: View {
                                 AnimatedThumbnail(url: item.url)
                             } else {
                                 RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 60, height: 60))
+                                    .meshMediaNote(for: item)
                             }
                         }
                     )

@@ -125,10 +125,10 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `new to nostr is keys, password, profile, done`() {
+    fun `new to nostr is keys, password, profile, who told you, done`() {
         viewModel.setSetupPath(SetupPath.NEW_TO_NOSTR)
         assertEquals(
-            listOf(WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.COMPLETE),
+            listOf(WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.COMPLETE),
             viewModel.activeSteps.drop(2),
         )
     }
@@ -144,10 +144,10 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `I already use Nostr is your key, backup question, relay check, import tour`() {
+    fun `I already use Nostr is your key, who told you, backup question, relay check, import tour`() {
         viewModel.setSetupPath(SetupPath.USE_NOSTR)
         assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
+            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
             viewModel.activeSteps.drop(2),
         )
     }
@@ -156,7 +156,7 @@ class SetupWizardRelayChoiceTest {
     fun `I already use Nostr with an external relay ends on the done screen`() {
         viewModel.setSetupPath(SetupPath.USE_NOSTR)
         viewModel.setUseExternalRelay(true)
-        assertEquals(listOf(WizardStep.USE_NOSTR_KEY, WizardStep.COMPLETE), viewModel.activeSteps.drop(2))
+        assertEquals(listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.COMPLETE), viewModel.activeSteps.drop(2))
     }
 
     @Test

@@ -476,6 +476,9 @@ func StopRelayC() {
 			// Blob reads only, nothing to drain carefully; close outright.
 			c.meshServer.Close()
 		}
+		if c.ownServer != nil {
+			c.ownServer.Close()
+		}
 		// All background goroutines are context-driven, so this normally
 		// returns quickly; if something straggles, closing the DBs after a
 		// bounded wait is still safe — a late write hits Badger's

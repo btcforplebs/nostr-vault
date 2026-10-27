@@ -179,7 +179,7 @@ extension FeedView {
 
                         if feedService.feedMode == .polls && feedService.filteredNotes.isEmpty && !feedService.isLoadingFeed {
                             PollsEmptyStateView(scope: feedService.pollsFeedMode, status: feedService.pollStatusFilter,
-                                                onPost: configService.activeAccountHexPubkey.isEmpty ? nil : { modeComposer = .poll })
+                                                onPost: configService.activeAccountHexPubkey.isEmpty || !configService.activeAccountCanSign ? nil : { modeComposer = .poll })
                         }
 
                         if feedService.feedMode == .global && feedService.filteredNotes.isEmpty
@@ -422,7 +422,7 @@ extension FeedView {
                 rebuildThreadsIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
-                guard (note.object as? Int) == 0 else { return }
+                guard (note.object as? Int) == 0, configService.activeAccountCanSign else { return }
                 openComposer()
             }
             // ⌘R on an iPad keyboard: the same as pulling down.
@@ -433,6 +433,8 @@ extension FeedView {
         }
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
+            // A read-only sign-in can't sign a post, so it gets no Post.
+            if configService.activeAccountCanSign {
             ChromeFold(anchor: .bottomTrailing) {
                 Button {
                     openComposer()
@@ -466,6 +468,7 @@ extension FeedView {
                 .padding(.bottom, fillGuide.meterLift)
                 .animation(Motion.chrome, value: fillGuide.meterLift)
                 .hoverEffect(.lift)
+            }
             }
             #endif
         }

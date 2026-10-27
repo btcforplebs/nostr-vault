@@ -77,7 +77,7 @@ class SetupWizardCitrineChoiceTest {
         assertTrue(saved.useExternalRelay)
         assertEquals("ws://127.0.0.1:4869", saved.externalRelayURL)
         assertEquals("", saved.externalBlossomURL)
-        assertEquals(listOf(WizardStep.USE_NOSTR_KEY, WizardStep.COMPLETE), vm.activeSteps.drop(2))
+        assertEquals(listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.COMPLETE), vm.activeSteps.drop(2))
         assertEquals(WizardStep.USE_NOSTR_KEY, vm.step.value)
     }
 
@@ -91,7 +91,7 @@ class SetupWizardCitrineChoiceTest {
 
         assertFalse(saved.useExternalRelay)
         assertEquals(
-            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
+            listOf(WizardStep.USE_NOSTR_KEY, WizardStep.REFERRER, WizardStep.BACKUP_QUESTION, WizardStep.RELAY_CHECK, WizardStep.IMPORT_TOUR),
             vm.activeSteps.drop(2),
         )
     }

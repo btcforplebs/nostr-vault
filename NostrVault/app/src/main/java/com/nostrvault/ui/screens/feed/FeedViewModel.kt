@@ -117,6 +117,10 @@ class FeedViewModel @Inject constructor(
     val marketFollowSetIsEmpty = marketplaceFeedService.followSetIsEmpty
     val marketLoadFailed = marketplaceFeedService.loadFailed
     fun setMarketScope(scope: com.nostrvault.data.model.ReelsScope) = marketplaceFeedService.setScope(scope)
+    /** Marketplace asked for Global: the global warning is up. */
+    val marketGlobalWarning = marketplaceFeedService.globalWarningPending
+    fun confirmMarketGlobal() = marketplaceFeedService.confirmGlobal()
+    fun cancelMarketGlobal() = marketplaceFeedService.cancelGlobal()
     fun refreshMarketplace() = marketplaceFeedService.refresh()
     fun loadMarketplaceIfNeeded() = marketplaceFeedService.loadIfNeeded()
     fun selectMarketCategory(category: com.nostrvault.data.model.MarketCategory?) =

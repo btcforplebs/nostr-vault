@@ -24,11 +24,21 @@ import kotlin.concurrent.withLock
     internal fun FeedService.noteIndex(): Map<String, FeedNote> {
         val notes = _notes.value
         noteIndex?.let { (list, map) -> if (list === notes) return map }
-        val map = HashMap<String, FeedNote>(notes.size * 2)
-        for (note in notes) {
-            map.putIfAbsent(note.id, note)
-            map.putIfAbsent(note.effectiveEventId, note)
-        }
+        val map = buildNoteIndex(notes)
         noteIndex = notes to map
+        return map
+    }
+
+    /**
+     * The quoted addressable events by their current id. The cache is keyed by
+     * coordinate, so [findNoteImpl] used to scan its values for every miss —
+     * once per quote and per missing parent, on Main, while the feed scrolled.
+     */
+    internal fun FeedService.quotedAddressById(): Map<String, FeedNote> {
+        val byAddress = _quotedAddressCache.value
+        quotedAddressIdIndex?.let { (source, map) -> if (source === byAddress) return map }
+        val map = HashMap<String, FeedNote>(byAddress.size * 2)
+        for (note in byAddress.values) map.putIfAbsent(note.id, note)
+        quotedAddressIdIndex = byAddress to map
         return map
     }

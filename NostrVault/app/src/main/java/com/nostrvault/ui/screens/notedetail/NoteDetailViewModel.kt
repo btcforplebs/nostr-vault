@@ -118,22 +118,10 @@ class NoteDetailViewModel @Inject constructor(
         .map { feedService.blockedHexForActiveAccount() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
 
-    /**
-     * Your Web of Trust plus follows, taken once the graph has loaded. Empty
-     * until then, which folds nobody. iOS: `feedService.relayTabTrustedPubkeys()`.
-     */
-    private val _trustedPubkeys = MutableStateFlow<Set<String>>(emptySet())
-    val trustedPubkeys: StateFlow<Set<String>> = _trustedPubkeys.asStateFlow()
-
     val activeHexPubkey: String get() = nostrService.activeHexPubkey
 
     init {
         loadNoteThread()
-        viewModelScope.launch {
-            if (feedService.wotPubkeys.value.isEmpty()) feedService.loadWotPubkeys()
-            val wot = feedService.wotPubkeys.first { it.isNotEmpty() }
-            _trustedPubkeys.value = wot + feedService.followedPubkeys.value
-        }
         // Optimistic reply insertion: when the user publishes a reply from
         // ComposeNoteScreen it is emitted here immediately, before relay
         // confirmation, so it appears inline without waiting for a round-trip.

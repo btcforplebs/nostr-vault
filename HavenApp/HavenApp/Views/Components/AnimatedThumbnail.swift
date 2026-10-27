@@ -28,6 +28,9 @@ struct AnimatedThumbnail: View {
 
     @State private var isVisible = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The note this tile belongs to: when its URL fails, the photo is read
+    /// from the author's vault on the FIPS mesh, as `AnimatedImage` does.
+    @Environment(\.meshMediaNote) private var meshNote
 
     init(url: URL, contentMode: ContentMode = .fill) {
         self.source = .url(url)
@@ -43,7 +46,8 @@ struct AnimatedThumbnail: View {
         AnimatedFrameView(
             source: source,
             contentMode: contentMode,
-            isPlaying: isVisible && !reduceMotion
+            isPlaying: isVisible && !reduceMotion,
+            meshNote: meshNote
         )
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false }
@@ -58,11 +62,12 @@ private struct AnimatedFrameView: NSViewRepresentable {
     let source: AnimatedThumbnail.Source
     let contentMode: SwiftUI.ContentMode
     let isPlaying: Bool
+    let meshNote: MeshMediaNote?
 
     func makeNSView(context: Context) -> AnimatedFrameLayerView { AnimatedFrameLayerView() }
 
     func updateNSView(_ view: AnimatedFrameLayerView, context: Context) {
-        view.update(source: source, contentMode: contentMode, isPlaying: isPlaying)
+        view.update(source: source, contentMode: contentMode, isPlaying: isPlaying, meshNote: meshNote)
     }
 }
 
@@ -78,8 +83,9 @@ final class AnimatedFrameLayerView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func update(source: AnimatedThumbnail.Source, contentMode: SwiftUI.ContentMode, isPlaying: Bool) {
-        player.update(source: source, contentMode: contentMode, isPlaying: isPlaying)
+    func update(source: AnimatedThumbnail.Source, contentMode: SwiftUI.ContentMode, isPlaying: Bool,
+                meshNote: MeshMediaNote?) {
+        player.update(source: source, contentMode: contentMode, isPlaying: isPlaying, meshNote: meshNote)
     }
 }
 #else
@@ -87,11 +93,12 @@ private struct AnimatedFrameView: UIViewRepresentable {
     let source: AnimatedThumbnail.Source
     let contentMode: SwiftUI.ContentMode
     let isPlaying: Bool
+    let meshNote: MeshMediaNote?
 
     func makeUIView(context: Context) -> AnimatedFrameLayerView { AnimatedFrameLayerView() }
 
     func updateUIView(_ view: AnimatedFrameLayerView, context: Context) {
-        view.update(source: source, contentMode: contentMode, isPlaying: isPlaying)
+        view.update(source: source, contentMode: contentMode, isPlaying: isPlaying, meshNote: meshNote)
     }
 }
 
@@ -114,8 +121,9 @@ final class AnimatedFrameLayerView: UIView {
         CATransaction.commit()
     }
 
-    func update(source: AnimatedThumbnail.Source, contentMode: SwiftUI.ContentMode, isPlaying: Bool) {
-        player.update(source: source, contentMode: contentMode, isPlaying: isPlaying)
+    func update(source: AnimatedThumbnail.Source, contentMode: SwiftUI.ContentMode, isPlaying: Bool,
+                meshNote: MeshMediaNote?) {
+        player.update(source: source, contentMode: contentMode, isPlaying: isPlaying, meshNote: meshNote)
     }
 }
 #endif
@@ -139,20 +147,21 @@ final class AnimatedFramePlayer {
         layer.contentsGravity = .resizeAspectFill
     }
 
-    func update(source: AnimatedThumbnail.Source, contentMode: SwiftUI.ContentMode, isPlaying: Bool) {
+    func update(source: AnimatedThumbnail.Source, contentMode: SwiftUI.ContentMode, isPlaying: Bool,
+                meshNote: MeshMediaNote? = nil) {
         layer.contentsGravity = contentMode == .fill ? .resizeAspectFill : .resizeAspect
         if source != self.source {
             self.source = source
             stop()
             data = nil
             layer.contents = nil
-            load(source)
+            load(source, meshNote: meshNote)
         }
         self.isPlaying = isPlaying
         if isPlaying { start() } else { stop() }
     }
 
-    private func load(_ source: AnimatedThumbnail.Source) {
+    private func load(_ source: AnimatedThumbnail.Source, meshNote: MeshMediaNote?) {
         loadTask?.cancel()
         loadTask = Task { [weak self] in
             let bytes: Data?
@@ -162,7 +171,11 @@ final class AnimatedFramePlayer {
             case .url(let url):
                 bytes = await Task.detached(priority: .utility) {
                     if let cached = MediaCacheService.shared.loadFromCache(url: url) { return cached }
-                    return await MediaCacheService.shared.fetchData(url: url)
+                    // The note's own vault on the mesh when the URL fails.
+                    return await MediaCacheService.shared.fetchData(
+                        url: url, meshAuthor: meshNote?.author,
+                        imetaSha256: meshNote?.imetaSha256[url.absoluteString]
+                    )?.data
                 }.value
             }
             guard let bytes, !Task.isCancelled else { return }

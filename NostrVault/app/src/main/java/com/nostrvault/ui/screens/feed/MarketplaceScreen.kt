@@ -90,8 +90,13 @@ internal fun MarketplaceGrid(
     loadFailed: Boolean = false,
     scopeFollowing: Boolean = false,
     onShowGlobal: () -> Unit = {},
+    /** Global was asked for (top bar or the empty grid): the global warning is up. */
+    globalWarningPending: Boolean = false,
+    onConfirmGlobal: () -> Unit = {},
+    onCancelGlobal: () -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
+    if (globalWarningPending) MarketplaceGlobalWarning(onConfirmGlobal, onCancelGlobal)
     // Switching modes loads too, but a launch that restores Marketplace as the
     // default feed never goes through a switch.
     LaunchedEffect(Unit) { onAppear() }
@@ -359,7 +364,7 @@ internal fun MarketListingSheet(
                 colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = Color.Black),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (listing.isAuction) "Bid on Plebeian" else "Buy on Plebeian", fontWeight = FontWeight.SemiBold)
+                Text(if (listing.hasPlebeianPage) "Buy on Plebeian" else "Seller on Plebeian", fontWeight = FontWeight.SemiBold)
             }
             if (onMessageSeller != null) {
                 Spacer(Modifier.height(8.dp))
@@ -429,3 +434,28 @@ internal fun QuotedListingCard(listing: MarketListing, seller: FeedProfile?, mod
         )
     }
 }
+
+/**
+ * The global feed's warning, before Marketplace shows sellers from anywhere on Nostr (Logen
+ * 2026-10-22). Same words as iOS (feed.alert.sensitiveContent.*).
+ */
+@Composable
+internal fun MarketplaceGlobalWarning(onConfirm: () -> Unit, onCancel: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(MARKET_GLOBAL_WARNING_TITLE) },
+        text = { Text(MARKET_GLOBAL_WARNING_MESSAGE) },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onConfirm) {
+                Text("Proceed", color = com.nostrvault.ui.theme.ErrorRed)
+            }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onCancel) { Text("Cancel") } },
+    )
+}
+
+internal const val MARKET_GLOBAL_WARNING_TITLE = "Sensitive Content Warning"
+internal const val MARKET_GLOBAL_WARNING_MESSAGE =
+    "The global media feed shows unmoderated content shared across the entire Nostr network. " +
+        "This may include sensitive, explicit, or NSFW media."
+

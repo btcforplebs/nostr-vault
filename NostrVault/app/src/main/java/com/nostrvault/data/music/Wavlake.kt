@@ -80,6 +80,38 @@ object WavlakeApi {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    /** How long each kind of answer is used before Wavlake is asked again. */
+    object MaxAge {
+        /** Rankings are sums of sats; ten minutes barely moves them. */
+        const val RANKINGS = 10 * 60 * 1000L
+        /** Albums and artist pages change when an artist uploads. */
+        const val PAGE = 60 * 60 * 1000L
+        /** An artist's name, picture and linked key, for Following. */
+        const val ARTIST = 24 * 60 * 60 * 1000L
+        /** A search typed again soon after. */
+        const val SEARCH = 5 * 60 * 1000L
+    }
+
+    /** Rankings, albums and artists; on disk once [init] has run. */
+    @Volatile private var cache = WavlakeCache(directory = null, loader = ::fetch)
+
+    /** Searches, kept for this launch only. */
+    private val searchCache = WavlakeCache(directory = null, loader = ::fetch)
+
+    /** Keeps answers on disk between launches, in the app's cache folder. */
+    fun init(context: android.content.Context) {
+        cache = WavlakeCache(directory = java.io.File(context.cacheDir, "Wavlake"), loader = ::fetch)
+    }
+
+    /** A kept answer, parsed, and whether it's young enough to skip asking Wavlake again. */
+    data class Kept<T>(val value: T, val isFresh: Boolean)
+
+    /** What the cache holds for [url], without asking Wavlake. */
+    private suspend fun <T> kept(url: String, maxAgeMs: Long, parse: (String) -> T): Kept<T>? {
+        val hit = cache.stored(url) ?: return null
+        return Kept(parse(hit.body), cache.isFresh(hit, maxAgeMs))
+    }
+
     fun rankingsUrl(days: Int = 7) = "$BASE/rankings?sort=sats&days=$days"
     fun searchUrl(term: String): String =
         "$BASE/search".toHttpUrl().newBuilder().addQueryParameter("term", term).build().toString()
@@ -193,27 +225,50 @@ object WavlakeApi {
     }
 
     /** Wavlake answers 1 to 90 days; anything longer is a 400. */
-    suspend fun trending(days: Int = 7): List<WavlakeTrack> = tracksFromRankings(fetch(rankingsUrl(days)))
-    suspend fun search(term: String): List<WavlakeSearchResult> = resultsFromSearch(fetch(searchUrl(term)))
+    suspend fun trending(days: Int = 7): List<WavlakeTrack> =
+        tracksFromRankings(cache.data(rankingsUrl(days), MaxAge.RANKINGS))
+    suspend fun keptTrending(days: Int = 7): Kept<List<WavlakeTrack>>? =
+        kept(rankingsUrl(days), MaxAge.RANKINGS, ::tracksFromRankings)
+    suspend fun search(term: String): List<WavlakeSearchResult> =
+        resultsFromSearch(searchCache.data(searchUrl(term), MaxAge.SEARCH))
     suspend fun track(id: String): WavlakeTrack? = tracksFromRankings(fetch(trackUrl(id))).firstOrNull()
-    suspend fun album(id: String): List<WavlakeTrack> = tracksFromAlbum(fetch(albumUrl(id)))
-    suspend fun artist(id: String): WavlakeArtist? = artistFromArtist(fetch(artistUrl(id)), id)
+    suspend fun album(id: String): List<WavlakeTrack> = tracksFromAlbum(cache.data(albumUrl(id), MaxAge.PAGE))
+    suspend fun artist(id: String): WavlakeArtist? = artistFromArtist(cache.data(artistUrl(id), MaxAge.ARTIST), id)
+    suspend fun keptArtist(id: String): Kept<WavlakeArtist?>? = kept(artistUrl(id), MaxAge.ARTIST) { artistFromArtist(it, id) }
 
     /** An album's heading and tracks, from one request. */
     suspend fun albumPage(id: String): Pair<WavlakeAlbum?, List<WavlakeTrack>> {
-        val body = fetch(albumUrl(id))
+        val body = cache.data(albumUrl(id), MaxAge.PAGE)
         return albumFromAlbum(body) to tracksFromAlbum(body)
     }
 
+    suspend fun keptAlbumPage(id: String): Kept<Pair<WavlakeAlbum?, List<WavlakeTrack>>>? =
+        kept(albumUrl(id), MaxAge.PAGE) { albumFromAlbum(it) to tracksFromAlbum(it) }
+
     /** An artist's details and albums (newest first), from one request. */
     suspend fun artistPage(id: String): Pair<WavlakeArtist?, List<WavlakeAlbum>> {
-        val body = fetch(artistUrl(id))
+        val body = cache.data(artistUrl(id), MaxAge.PAGE)
         return artistFromArtist(body, id) to albumsFromArtist(body)
     }
+
+    suspend fun keptArtistPage(id: String): Kept<Pair<WavlakeArtist?, List<WavlakeAlbum>>>? =
+        kept(artistUrl(id), MaxAge.PAGE) { artistFromArtist(it, id) to albumsFromArtist(it) }
 
     /** Every track on [albums], album by album in the order given; they load side by side, a failed one is left out. */
     suspend fun tracksOnAlbums(albums: List<WavlakeAlbum>): List<WavlakeTrack> = kotlinx.coroutines.coroutineScope {
         albums.map { a -> async { runCatching { album(a.id) }.getOrDefault(emptyList()) } }.awaitAll().flatten()
+    }
+
+    /** The kept tracks of [albums], without asking Wavlake; null unless every album is kept. */
+    suspend fun keptTracksOnAlbums(albums: List<WavlakeAlbum>): Kept<List<WavlakeTrack>>? {
+        val tracks = mutableListOf<WavlakeTrack>()
+        var fresh = true
+        for (a in albums) {
+            val found = kept(albumUrl(a.id), MaxAge.PAGE, ::tracksFromAlbum) ?: return null
+            tracks += found.value
+            fresh = fresh && found.isFresh
+        }
+        return Kept(tracks, fresh)
     }
 }
 

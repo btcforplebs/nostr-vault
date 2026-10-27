@@ -49,6 +49,7 @@ class DMSignerRetryTest {
             credentialStore = CredentialStore,
             nostrService = mockk(relaxed = true),
             amberSignerService = mockk(relaxed = true),
+            feedService = stubFeedService(),
         )
     }
 
@@ -93,6 +94,7 @@ class DMSignerRetryTest {
             credentialStore = CredentialStore,
             nostrService = mockk(relaxed = true),
             amberSignerService = amber,
+            feedService = stubFeedService(),
         )
         repeat(2) { n ->
             service.pendingDecryptQueue.add(buildJsonObject {

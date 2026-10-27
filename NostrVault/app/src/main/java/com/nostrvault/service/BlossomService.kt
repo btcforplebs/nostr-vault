@@ -38,6 +38,7 @@ class BlossomService @Inject constructor(
     private val mediaCacheService: MediaCacheService,
     /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
     private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
+    internal val homeVault: com.nostrvault.fips.HomeVaultSender,
 ) {
     companion object {
         internal const val TAG = "BlossomService"
@@ -114,6 +115,33 @@ class BlossomService @Inject constructor(
         return true
     }
 
+    init {
+        homeVault.hostPublicly = { sha256, contentType, server, auth ->
+            hostLocalBlob(sha256, contentType, servers = listOf(server), authHeader = auth) == "$server/$sha256"
+        }
+    }
+
+    /**
+     * No public server took [sha256], but the owner's home vault has it:
+     * publish under the first public server's https URL now, and keep
+     * pushing the copy there. NIP-F1 readers find it on the vault by hash
+     * through the owner's 10063; other apps once the public copy lands.
+     * Never mesh-only (NIP-F1): with no public server there is no URL to
+     * publish, so this is null, as when there is no home vault or the vault
+     * doesn't have it.
+     */
+    internal suspend fun hostedViaHomeVault(sha256: String, contentType: String, mirrors: List<String>): PostUploadOutcome? {
+        homeVault.homeVaultNpub ?: return null
+        val server = com.nostrvault.fips.HomeVaultRules.publicServerFor(mirrors) {
+            com.nostrvault.relay.isPrivateNetworkURL(it)
+        } ?: return null
+        if (!homeVault.ensureOnVault(sha256)) return null
+        // No queued copy (queue full), no URL: the post waits instead.
+        if (!homeVault.needsPublicCopy(sha256, contentType, server)) return null
+        Log.i(TAG, "${sha256.take(8)}: only on the home vault; publishing under $server, public copy pending")
+        return PostUploadOutcome.Hosted("$server/$sha256")
+    }
+
     // Idle limits (no bytes moving), not totals: a big video keeps uploading
     // as long as bytes flow. 10-15 minutes of silence from a dead server used
     // to hold the post.
@@ -159,7 +187,8 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
         allowLocalFallback: Boolean = false,
-    ): String? = uploadAndMirror(UploadSource.Data(data), sha256, contentType, allowLocalFallback)
+        toHomeVault: Boolean = true,
+    ): String? = uploadAndMirror(UploadSource.Data(data), sha256, contentType, allowLocalFallback, toHomeVault)
 
     suspend fun uploadAndMirror(
         fileURL: File,
@@ -167,15 +196,18 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
         allowLocalFallback: Boolean = false,
-    ): String? = uploadAndMirror(UploadSource.FileSource(fileURL), sha256, contentType, allowLocalFallback)
+        toHomeVault: Boolean = true,
+    ): String? = uploadAndMirror(UploadSource.FileSource(fileURL), sha256, contentType, allowLocalFallback, toHomeVault)
 
     private suspend fun uploadAndMirror(
         source: UploadSource,
         sha256: String,
         contentType: String,
         allowLocalFallback: Boolean,
+        toHomeVault: Boolean,
     ): String? {
-        val attempt = upload(source, sha256, contentType, skipOutsideServers = false)
+        val attempt = upload(source, sha256, contentType, skipOutsideServers = false, toHomeVault = toHomeVault)
+        if (toHomeVault) homeVault.drainSoon()
         return when (val outcome = attempt.outcome) {
             is PostUploadOutcome.Hosted -> outcome.url
             // Local-relay URL, only ever returned for save-to-vault flows.
@@ -220,6 +252,7 @@ class BlossomService @Inject constructor(
         onProgress: ((Float) -> Unit)? = null,
     ): PostUploadOutcome =
         upload(UploadSource.FileSource(fileURL), sha256, contentType, skipOutsideServers).outcome
+            .also { homeVault.drainSoon() }
 
     /** What one upload did, plus the local URL when the local save succeeded. */
     internal data class UploadAttempt(val outcome: PostUploadOutcome, val localUrl: String?)

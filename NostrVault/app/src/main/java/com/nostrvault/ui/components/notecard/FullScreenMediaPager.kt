@@ -69,6 +69,7 @@ internal fun FullScreenMediaPager(
     onDismiss: () -> Unit,
     origin: Long? = null,
     copyLink: Boolean = false,
+    authors: List<String?> = emptyList(),
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
@@ -291,6 +292,7 @@ internal fun FullScreenMediaPager(
                 } else {
                     ZoomableImage(
                         model = url,
+                        meshAuthor = authors.getOrNull(page),
                         contentDescription = null,
                         onScaleChanged = { currentScale = it },
                         onVerticalDrag = onVerticalDrag,

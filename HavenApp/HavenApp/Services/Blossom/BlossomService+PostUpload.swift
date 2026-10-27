@@ -15,6 +15,9 @@ extension BlossomService {
         case savedOnDevice(unreachable: [String])
         /// In this device's relay, and there is no outside server to try.
         case noOutsideServer
+        /// In this device's relay, with no server of its own, and the home
+        /// vault (the Mac, or a kiosk) that would pass it on did not take it.
+        case vaultDidNotTake
         /// Never reached this device's relay.
         case notSavedOnDevice
     }

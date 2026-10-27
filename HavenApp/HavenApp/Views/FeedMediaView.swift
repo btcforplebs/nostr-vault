@@ -68,6 +68,7 @@ struct FeedMediaView: View {
 
     @ObservedObject private var configService = ConfigService.shared
     @Environment(\.mediaZoomNamespace) private var zoomNamespace
+    @Environment(\.meshMediaNote) private var meshNote
     @State private var mediaType: FeedMediaType?
     @State private var isDetecting: Bool = false
     @State private var videoAspectRatio: CGFloat?
@@ -111,7 +112,7 @@ struct FeedMediaView: View {
         )
         .frame(maxWidth: .infinity)
         .mediaFrame(isThumbnail: isThumbnail)
-        .onTapGestureIfSome(onTap)
+        .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
@@ -127,29 +128,34 @@ struct FeedMediaView: View {
                     avoidFullDownload: isThumbnail,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoAspectRatio ?? hintAspectRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(isThumbnail ? 1 : videoShapeRatio, contentMode: isThumbnail ? .fill : .fit)
             } else {
                 InlineFeedVideoPlayer(
                     url: url,
-                    onTap: onTap,
+                    onTap: openViewer,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoAspectRatio ?? hintAspectRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(isThumbnail ? 1 : videoShapeRatio, contentMode: isThumbnail ? .fill : .fit)
             }
         }
+        // A portrait narrows to stay under the cap whole instead of being cut.
+        .frame(maxWidth: isThumbnail ? .infinity : FeedVideoShape.maxWidth(ratio: videoShapeRatio, heightCap: videoHeightCap))
         .frame(maxWidth: .infinity)
         .frame(maxHeight: isThumbnail ? .infinity : videoHeightCap)
         .mediaFrame(isThumbnail: isThumbnail)
-        .onTapGestureIfSome(onTap)
+        .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
-    /// Height cap for inline video, mirroring `FeedPhotoView`: portraits get a
-    /// taller cap so they fill the width; defaults to the landscape cap until
-    /// the video's dimensions are known.
+    /// The video's own shape once a frame or the player says so; the note's
+    /// `imeta` `dim` only until then, since some clients publish a portrait
+    /// phone video's stored (landscape) size there.
+    private var videoShapeRatio: CGFloat? { videoAspectRatio ?? hintAspectRatio }
+
+    /// Height cap for inline video: portraits get the taller cap (see
+    /// `FeedVideoShape`); the landscape cap until the shape is known.
     private var videoHeightCap: CGFloat {
-        guard let ratio = videoAspectRatio ?? hintAspectRatio else { return maxHeight }
-        return ratio < 1 ? portraitMaxHeight : maxHeight
+        FeedVideoShape.heightCap(ratio: videoShapeRatio, landscapeCap: maxHeight, portraitCap: portraitMaxHeight)
     }
 
     private var photoView: some View {
@@ -162,8 +168,13 @@ struct FeedMediaView: View {
         )
         .frame(maxWidth: .infinity)
         .mediaFrame(isThumbnail: isThumbnail)
-        .onTapGestureIfSome(onTap)
+        .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
+    }
+
+    /// The tap, telling the viewer which note the photo is from.
+    private var openViewer: (() -> Void)? {
+        onTap.map { tap in { MeshMediaTap.opened(meshNote); tap() } }
     }
 
     /// Aspect ratio the note published in its `imeta` `dim`, if any.
@@ -238,6 +249,8 @@ private struct FeedPhotoView: View {
     @State private var aspectRatio: CGFloat?
     @State private var isLoading = false
     @State private var loadFailed = false
+    @State private var phase: MeshMediaPhase = .loading
+    @Environment(\.meshMediaNote) private var meshNote
 
     var body: some View {
         ZStack {
@@ -255,8 +268,9 @@ private struct FeedPhotoView: View {
             } else if loadFailed {
                 MediaFailedPlaceholder(url: url, compact: isThumbnail)
             } else {
-                MediaLoadingPlaceholder(url: url, isLoading: isLoading)
+                MediaLoadingPlaceholder(url: url, isLoading: isLoading && phase == .loading)
                     .transition(MediaLoadingPlaceholder.removal)
+                MeshMediaStatusView(phase: phase)
             }
         }
         .aspectRatio(isThumbnail || fillsFrame ? nil : displayAspectRatio, contentMode: .fit)
@@ -296,19 +310,27 @@ private struct FeedPhotoView: View {
         loadFailed = false
 
         // Fast path: check in-memory decoded image cache (no disk I/O)
-        if let cached = MediaCacheService.shared.cachedImage(for: url) {
+        // A photo read by the note's own imeta hash is cached under that hash.
+        let imetaSha256 = meshNote?.imetaSha256[url.absoluteString]
+        let blobKey = imetaSha256.map { MeshMediaRouter.blobCacheKey(sha256: $0) }
+        if let cached = MediaCacheService.shared.cachedImage(for: url)
+            ?? blobKey.flatMap({ MediaCacheService.shared.cachedImage(for: $0) }) {
             self.image = cached
             self.aspectRatio = ratioFor(cached); Self.knownRatios[url] = self.aspectRatio
             return
         }
 
         isLoading = true
+        phase = .loading
 
         Task {
-            if let data = await MediaCacheService.shared.fetchData(url: url) {
+            if let (data, cacheKey) = await MediaCacheService.shared.fetchData(
+                url: url, meshAuthor: meshNote?.author, imetaSha256: imetaSha256,
+                onLookup: { phase = .meshLookup }
+            ) {
                 let maxDimension: CGFloat = isThumbnail ? 300 : 800
                 if let downsampled = await ImageDownsampler.downsample(data: data, maxDimension: maxDimension) {
-                    MediaCacheService.shared.cacheImage(downsampled, for: url)
+                    MediaCacheService.shared.cacheImage(downsampled, for: cacheKey)
                     await MainActor.run {
                         // No `withAnimation`: the row must take its final
                         // height in one frame. Animating `aspectRatio` grew
@@ -320,17 +342,24 @@ private struct FeedPhotoView: View {
                         self.isLoading = false
                     }
                 } else if let img = PlatformImage(data: data) {
-                    MediaCacheService.shared.cacheImage(img, for: url)
+                    MediaCacheService.shared.cacheImage(img, for: cacheKey)
                     await MainActor.run {
                         self.image = img
                         self.aspectRatio = ratioFor(img); Self.knownRatios[url] = self.aspectRatio
                         self.isLoading = false
                     }
                 } else {
-                    await MainActor.run { self.isLoading = false; self.loadFailed = true }
+                    await MainActor.run { self.isLoading = false; self.phase = .notFound; self.loadFailed = true }
                 }
             } else {
-                await MainActor.run { self.isLoading = false; self.loadFailed = true }
+                // A failed photo draws MediaFailedPlaceholder, which says
+                // "Couldn't reach the owner's vault" only for a `.fips` link,
+                // even after a failed mesh try for an https one (3.0.1 #8).
+                await MainActor.run {
+                    self.isLoading = false
+                    self.phase = .failed(after: phase, meshOnly: MediaCacheService.isMeshOnly(url))
+                    self.loadFailed = true
+                }
             }
         }
     }
@@ -354,6 +383,7 @@ private struct FeedGIFView: View {
 
     @State private var aspectRatio: CGFloat?
     @State private var isLoading = true
+    @State private var phase: MeshMediaPhase = .loading
 
     var body: some View {
         ZStack {
@@ -372,13 +402,16 @@ private struct FeedGIFView: View {
                         self.aspectRatio = size.width / size.height
                     }
                     self.isLoading = false
-                }
+                    self.phase = .loading
+                },
+                onPhase: { phase = $0 }
             )
             .animation(Motion.media) { $0.opacity(isLoading ? 0 : 1) }
 
             if isLoading {
-                MediaLoadingPlaceholder(url: url, isLoading: true)
+                MediaLoadingPlaceholder(url: url, isLoading: phase == .loading)
                     .transition(MediaLoadingPlaceholder.removal)
+                MeshMediaStatusView(phase: phase)
             }
         }
         // A thumbnail fills the square its caller gives it. A nil ratio would
@@ -743,6 +776,56 @@ private extension View {
                 .contentShape(RoundedRectangle(cornerRadius: 8))
         } else {
             self.clipped().contentShape(Rectangle())
+        }
+    }
+}
+
+// MARK: - Mesh status
+
+/// The web's FIPS box: a spinner and "Loading image over FIPS…" while the
+/// author's vault is asked, a line of text when nothing came back. Drawn over
+/// whatever placeholder the photo already shows. A tile too small for the
+/// words keeps the spinner or icon and says them to VoiceOver.
+struct MeshMediaStatusView: View {
+    let phase: MeshMediaPhase
+    var video: Bool = false
+    /// On a dark backdrop (the full-screen viewer).
+    var onDark: Bool = false
+
+    var body: some View {
+        if let text = phase.text(video: video) {
+            GeometryReader { geo in
+                let roomy = geo.size.width >= 120 && geo.size.height >= 70
+                VStack(spacing: 6) {
+                    if phase == .meshLookup {
+                        ProgressView()
+                            .controlSize(roomy ? .regular : .small)
+                            .tint(onDark ? .white : Color.havenPurple.opacity(0.7))
+                    } else if !roomy {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.appSystem(size: 14))
+                    }
+                    if roomy {
+                        Text(text)
+                            .font(.appSystem(size: 13, weight: .medium))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                .foregroundStyle(onDark ? Color.white.opacity(0.8) : Color.secondary)
+                .padding(.horizontal, roomy ? 14 : 6)
+                .padding(.vertical, roomy ? 10 : 6)
+                // Readable over a blurhash preview as over plain grey.
+                .background(onDark ? AnyShapeStyle(.clear) : AnyShapeStyle(.ultraThinMaterial),
+                            in: RoundedRectangle(cornerRadius: 10))
+                .padding(8)
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityAddTraits(phase == .meshLookup ? .updatesFrequently : [])
+            .transition(.opacity.animation(Motion.fade))
         }
     }
 }

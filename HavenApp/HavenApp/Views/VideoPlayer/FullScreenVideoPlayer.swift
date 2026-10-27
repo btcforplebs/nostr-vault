@@ -24,6 +24,12 @@ struct FullScreenVideoPlayer: View {
     @ObservedObject private var failures = VideoPlaybackFailures.shared
     @State private var showControls: Bool = true
     @State private var hideControlsWork: DispatchWorkItem? = nil
+    /// The URL failed: the note author's vault on the mesh is asked instead.
+    /// The gallery passes its note down; the feed's viewer leaves it at the tap.
+    @Environment(\.meshMediaNote) private var envNote
+    @State private var tappedNote = MeshMediaTap.note
+    @State private var meshPhase: MeshMediaPhase = .loading
+    @State private var meshFile: URL? = nil
     #if os(iOS)
     @ObservedObject private var pipManager = PiPManager.shared
     #endif
@@ -32,12 +38,14 @@ struct FullScreenVideoPlayer: View {
         ZStack {
             Color.black
 
-            if failures.hasFailed(url) {
+            if failures.hasFailed(url) && meshFile == nil && meshPhase == .meshLookup {
+                MeshMediaStatusView(phase: meshPhase, video: true, onDark: true)
+            } else if failures.hasFailed(url) && meshFile == nil {
                 VStack(spacing: 16) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.appSystem(size: 40))
                         .foregroundColor(.orange)
-                    Text("Failed to load video")
+                    Text(meshPhase.text(video: true) ?? "Failed to load video")
                         .font(.appHeadline)
                         .foregroundColor(.white)
                 }
@@ -74,6 +82,7 @@ struct FullScreenVideoPlayer: View {
             }
         }
         .contentShape(Rectangle())
+        .task(id: failures.hasFailed(url)) { await rescueOverMesh() }
         .onTapGesture {
             withAnimation(Motion.fade) {
                 showControls.toggle()
@@ -164,6 +173,22 @@ struct FullScreenVideoPlayer: View {
         }
         hideControlsWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
+    }
+
+    /// The URL's ladder ran out: read the video from the note author's vault
+    /// on the mesh, then play that file.
+    private func rescueOverMesh() async {
+        let note = envNote ?? tappedNote
+        guard sharedPlayer == nil, failures.hasFailed(url), meshFile == nil, note != nil else { return }
+        let file = await MediaCacheService.shared.meshVideoFile(url: url, note: note, onLookup: { meshPhase = .meshLookup })
+        guard let file else {
+            meshPhase = .failed(after: meshPhase, meshOnly: MediaCacheService.isMeshOnly(url))
+            return
+        }
+        meshFile = file
+        let meshPlayer = await VideoPlaybackService.shared.preparedPlayer(for: file, mimeHint: mimeType, intent: .fullScreen)
+        player = meshPlayer
+        meshPlayer.play()
     }
 
     private func setupPlayer() {

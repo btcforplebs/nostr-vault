@@ -17,10 +17,10 @@ object WotOpenRequest {
     private val _pending = MutableStateFlow<String?>(null)
     val pending: StateFlow<String?> = _pending
 
-    /** Shows the WOT tab with [pubkey] in the middle. */
+    /** Shows the WOT tab, you in the middle, with [pubkey] picked out and your paths to them lit. */
     fun open(pubkey: String) { _pending.value = pubkey }
 
-    /** The person asked for, once: a recomposition does not move the globe twice. */
+    /** The person asked for, once: a recomposition does not pick them out twice. */
     fun take(): String? = _pending.value.also { _pending.value = null }
 }
 

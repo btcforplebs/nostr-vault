@@ -2263,7 +2263,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Encrypts your key with NIP-49. You'll need this to unlock."
+            "value" : "This password locks your secret key. It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, your secret key is your only way back in, so keep a copy somewhere safe."
           }
         }
       }

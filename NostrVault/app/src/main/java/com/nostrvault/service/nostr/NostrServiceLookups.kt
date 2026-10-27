@@ -4,6 +4,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import java.util.UUID
+import kotlinx.coroutines.sync.withPermit
+import kotlin.concurrent.withLock
 import com.nostrvault.service.NostrService.Companion.PROFILE_RELAYS
 import com.nostrvault.service.NostrService.Companion.RELAY_LIST_CHUNK
 import com.nostrvault.service.NostrService.Companion.RELAY_LIST_TIMEOUT_MS
@@ -37,14 +39,35 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
     }
 
-    internal fun NostrService.parseServerListEvent(pubkey: String, tags: List<List<String>>) {
+    internal fun NostrService.parseServerListEvent(pubkey: String, tags: List<List<String>>, createdAt: Long) {
         val servers = profileRepository.parseServerListTags(tags)
         if (servers.isNotEmpty()) {
             scope.launch(Dispatchers.Main.immediate) {
+                val known = serverListCreatedAt[pubkey]
+                if (known != null && createdAt < known) return@launch
+                serverListCreatedAt[pubkey] = createdAt
                 _serverLists.value = _serverLists.value + (pubkey to servers)
+                ensureLinkedMacsListed(pubkey, servers)
             }
         }
     }
+
+    /**
+     * A Mac without the owner's key cannot list itself, so this phone does (iOS LinkedMacEntry): when
+     * the owner's newest signed 10063 lacks a linked Mac, republish. At most once per Mac every 5 min.
+     */
+    private fun NostrService.ensureLinkedMacsListed(pubkey: String, servers: List<String>) {
+        if (pubkey != ownerHexPubkey) return
+        val missing = com.nostrvault.fips.HomeVaultRules.unlisted(servers, linkedMacs(configStore.config.value))
+        val now = System.currentTimeMillis()
+        val due = missing.filter { now - (linkedMacTries[it] ?: 0L) >= LINKED_MAC_RETRY_MS }
+        if (due.isEmpty()) return
+        due.forEach { linkedMacTries[it] = now }
+        publishServerList()
+    }
+
+    private val linkedMacTries = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val LINKED_MAC_RETRY_MS = 5 * 60_000L
 
     // ══════════════════════════════════════════════════════════════════
     // Relay list fetching
@@ -74,6 +97,56 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             scope.launch(Dispatchers.IO) {
                 lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
                     launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
+                }
+            }
+        }
+    }
+
+    internal fun NostrService.fetchServerListImpl(pubkey: String) {
+        // NIP-F1: the list lives on the author's own write relays. Not known
+        // yet: ask for their 10002 too, then ask those relays once it lands.
+        if (_outboxRelays.value[pubkey] == null) {
+            fetchRelayList(pubkey)
+            scope.launch {
+                delay(TEMP_CLIENT_DISCONNECT_MS)
+                if (_outboxRelays.value[pubkey] != null) queryServerList(pubkey, outboxOnly = true)
+            }
+        }
+        queryServerList(pubkey)
+    }
+
+    private fun NostrService.queryServerList(pubkey: String, outboxOnly: Boolean = false) {
+        val subId = "servers-${UUID.randomUUID().toString().take(8)}"
+        val filter = buildMap<String, Any> {
+            put("kinds", listOf(10063))
+            put("authors", listOf(pubkey))
+            put("limit", 1)
+        }
+
+        val outbox = (_outboxRelays.value[pubkey] ?: emptyList()).take(3)
+        val relays = if (outboxOnly) outbox
+            else (outbox + configStore.config.value.activeBlastrRelays.take(3)).distinct()
+        for (relayUrl in relays) {
+            if (!isValidRelayUrl(relayUrl)) continue
+            scope.launch(Dispatchers.IO) {
+                tempClientSemaphore.withPermit {
+                    val client = WebSocketClient(url = relayUrl, scope = scope)
+                    tempClientsLock.withLock { temporaryClients.add(client) }
+
+                    scope.launch {
+                        client.messages.collect { msg ->
+                            launch(Dispatchers.Default) {
+                                processRelayMessage(msg, relayUrl)
+                            }
+                        }
+                    }
+
+                    client.connect()
+                    client.send("[\"REQ\",\"$subId\",${buildFilterJson(filter)}]")
+
+                    delay(TEMP_CLIENT_DISCONNECT_MS)
+                    client.disconnect()
+                    tempClientsLock.withLock { temporaryClients.remove(client) }
                 }
             }
         }

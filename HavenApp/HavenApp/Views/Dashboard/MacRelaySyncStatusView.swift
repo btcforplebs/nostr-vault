@@ -24,14 +24,14 @@ struct MacRelaySyncStatusView: View {
     }
 
     private var isForCurrentMac: Bool {
-        status?.macURL == configuredMac
+        RelayConfiguration.macSyncStatus(status, isFor: configuredMac)
     }
 
     /// A copy refreshes its heartbeat every 20s; one silent for 90s died with
     /// its relay and is retried on the next start.
     private var isStale: Bool {
         guard let beat = status?.updatedAt ?? status?.startedAt else { return true }
-        return Date().timeIntervalSince1970 - TimeInterval(beat) > 90
+        return Date().timeIntervalSince1970 - TimeInterval(beat) > RelayConfiguration.macSyncStaleAfter
     }
 
     private var isRunning: Bool {
@@ -117,17 +117,17 @@ struct MacRelaySyncStatusView: View {
         guard isForCurrentMac, let status, let state = status.state else {
             return "Full copy from your Mac hasn't run yet"
         }
-        switch state {
-        case "running":
+        if state == "running" {
             return isStale ? "Copy was interrupted" : "Copying your full history from the Mac…"
-        case "done":
-            return (status.missing ?? 0) < 0 ? "Copied (this Mac can't be checked)" : "Everything copied · 0 missing"
-        case "incomplete":
-            let missing = status.missing ?? 0
-            return missing > 0 ? "\(missing) still missing" : "Copy didn't finish"
-        case "failed": return "Couldn't copy from your Mac"
-        default: return state
         }
+        return summary(status).headline
+    }
+
+    private func summary(_ status: RelayConfiguration.MacSyncStatus) -> (headline: String, detail: String) {
+        let checked = status.finishedAt.map {
+            Date(timeIntervalSince1970: TimeInterval($0)).formatted(date: .abbreviated, time: .shortened)
+        }
+        return RelayConfiguration.macSyncSummary(status, checked: checked)
     }
 
     private var detail: String? {
@@ -137,20 +137,7 @@ struct MacRelaySyncStatusView: View {
         if status.state == "running" {
             return isStale ? "The app closed during the copy. It picks up again next time the relay starts." : nil
         }
-        var parts: [String] = []
-        parts.append("\(status.posts ?? 0) posts and \(status.mentions ?? 0) mentions copied.")
-        if let finished = status.finishedAt {
-            let date = Date(timeIntervalSince1970: TimeInterval(finished))
-            parts.append("Checked \(date.formatted(date: .abbreviated, time: .shortened)).")
-        }
-        if status.state == "incomplete" || status.state == "failed" {
-            if let error = status.error, !error.isEmpty { parts.append(error) }
-            parts.append("It tries again next time the app starts.")
-        }
-        if (status.missing ?? 0) < 0 {
-            parts.append("Your Mac's relay is too old to compare lists, so it was copied page by page.")
-        }
-        return parts.joined(separator: " ")
+        return summary(status).detail
     }
 }
 #endif

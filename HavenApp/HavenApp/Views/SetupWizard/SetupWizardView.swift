@@ -111,12 +111,26 @@ struct SetupWizardView: View {
     private var pathSteps: [Int] {
         switch setupPath {
         case .none: return []
-        case .newToNostr: return [9, 10, 11, 8] // keys, password, profile, done (the Fill your feed guide finds people)
+        case .newToNostr: return [9, 10, 11, 15, 8] // keys, password, profile, who told you, done
         // Existing Nostr users: the Vault backup question comes before the relay import.
         case .browse: return VaultBackupQuestion.steps(path: .browse, isIOS: isIOSDevice)
-        case .full: return VaultBackupQuestion.steps(path: .full, isIOS: isIOSDevice)
-        case .useNostr: return VaultBackupQuestion.steps(path: .useNostr, isIOS: isIOSDevice)
+        case .full:
+            // macOS full setup: who told you (15) after the wallet.
+            let steps = VaultBackupQuestion.steps(path: .full, isIOS: isIOSDevice)
+            return isIOSDevice ? steps : Self.addingReferrer(to: steps, before: 8)
+        case .useNostr:
+            // your key, Vault backup?, relay check, (who told you), import tour.
+            // A read-only key can't follow anyone.
+            let steps = VaultBackupQuestion.steps(path: .useNostr, isIOS: isIOSDevice)
+            return useNostrIsReadOnly ? steps : Self.addingReferrer(to: steps, before: 13)
         }
+    }
+
+    /// `steps` with "Who told you about Nostr Vault?" (15) right before `next`.
+    private static func addingReferrer(to steps: [Int], before next: Int) -> [Int] {
+        var out = steps
+        out.insert(15, at: out.firstIndex(of: next) ?? out.endIndex)
+        return out
     }
 
     /// The path as the Vault backup question knows it; nil for a new account.
@@ -233,14 +247,14 @@ struct SetupWizardView: View {
                     if isIOSDevice {
                         goForward() // Go to notifications
                     } else {
-                        currentStep = 8 // Go to complete
+                        currentStep = 15 // Who told you, then complete
                     }
                 },
                 onSkip: {
                     if isIOSDevice {
                         goForward()
                     } else {
-                        currentStep = 8
+                        currentStep = 15
                     }
                 }
             )
@@ -282,8 +296,18 @@ struct SetupWizardView: View {
                 onContinue: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 8
+                        currentStep = 15
                     }
+                }
+            )
+        case 15:
+            ReferrerStep(
+                ownPubkey: NpubValidation.hexPubkey(fromNpub: npub),
+                excludeOwnFollows: setupPath != .newToNostr,
+                onFinish: { follows in
+                    // Followed in saveAndComplete, once the key is stored.
+                    SetupReferral().pendingFollows = follows
+                    goForward()
                 }
             )
         case 12:
@@ -318,6 +342,8 @@ struct SetupWizardView: View {
     /// at identity.
     private func choosePath(_ path: SetupPath) {
         setupPath = path
+        // Follows picked on an earlier way through are not this run's.
+        SetupReferral().pendingFollows = []
         direction = .forward
         withAnimation(WizardAnimations.springEnter) {
             switch path {
@@ -337,13 +363,16 @@ struct SetupWizardView: View {
             if let path = backupQuestionPath, VaultBackupQuestion.isAskedAfter(step: currentStep, path: path) {
                 currentStep = VaultBackupQuestion.step // → Do you have a Vault backup?
             } else if currentStep == 14 {
-                currentStep = 13 // relay check → import tour
+                // relay check → who told you → import tour
+                currentStep = useNostrIsReadOnly ? 13 : 15
+            } else if currentStep == 15 {
+                currentStep = setupPath == .useNostr ? 13 : 8
             } else if currentStep == 4 && setupPath == .browse {
                 // Browse mode: after import, skip mirror/wallet/notifications — go to complete
                 currentStep = 8
             } else if currentStep == 6 && !isIOSDevice {
-                // macOS full setup: skip notifications, go to complete
-                currentStep = 8
+                // macOS full setup: skip notifications, go to who told you
+                currentStep = 15
             } else {
                 currentStep += 1
             }
@@ -365,20 +394,23 @@ struct SetupWizardView: View {
             } else if currentStep == 14 || (currentStep == 4 && backupQuestionPath != nil) {
                 currentStep = VaultBackupQuestion.step // Relay import: back to the backup question
             } else if currentStep == 13 {
-                currentStep = 14 // Import tour: back to the relay check
+                currentStep = useNostrIsReadOnly ? 14 : 15 // Import tour: back to who told you / the relay check
+            } else if currentStep == 15 {
+                // Who told you: back to profile, the relay check or the wallet
+                currentStep = setupPath == .newToNostr ? 11 : setupPath == .useNostr ? 14 : 6
             } else if currentStep == 11 {
                 currentStep = 10 // Profile: back to password
             } else if currentStep == 10 {
                 currentStep = 9 // Password: back to your keys
             } else if currentStep == 8 {
                 if setupPath == .newToNostr {
-                    currentStep = 11 // New to Nostr: back to profile
+                    currentStep = 15 // New to Nostr: back to who told you
                 } else if setupPath == .browse {
                     currentStep = 4 // Browse: back to import
                 } else if isIOSDevice {
                     currentStep = 7 // iOS full: back to notifications
                 } else {
-                    currentStep = 6 // macOS full: back to wallet
+                    currentStep = 15 // macOS full: back to who told you
                 }
             } else if currentStep == 7 && isIOSDevice {
                 currentStep = 6 // iOS full: back to wallet
@@ -464,6 +496,14 @@ struct SetupWizardView: View {
 
         if setupPath == .newToNostr {
             publishNewAccount()
+        }
+
+        // Who told you about Nostr Vault, and the people picked under them:
+        // one follow-list edit, published once the list is known (a new key's
+        // is empty; an existing key's is read first, so nothing is lost).
+        let referralFollows = SetupReferral().takeFollows()
+        if !referralFollows.isEmpty {
+            FeedService.shared.followUsers(referralFollows)
         }
 
         if isIOSDevice {

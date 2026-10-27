@@ -67,6 +67,7 @@ import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.Motion
+import com.nostrvault.ui.notification.vaultAnchor
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.ZapOrange
@@ -129,7 +130,8 @@ fun BottomNavBar(
     /** Spoken name of the folded bar's action (iOS collapsedFABLabel). */
     condensedActionLabel: String = "Compose new post",
     condensedActionTint: Color? = null,
-    onCondensedAction: () -> Unit = {},
+    /** Null hides the action: compose for a read-only sign-in. */
+    onCondensedAction: (() -> Unit)? = {},
     onExpand: () -> Unit = {},
     /** Left of the avatar in the folded bar: music's now-playing disc (iOS CollapsedNowPlayingButton). */
     nowPlaying: @Composable () -> Unit = {},
@@ -308,7 +310,10 @@ private fun ExpandedNavRow(
                     showBadge = item.screen == Screen.Dashboard && (hasNewRelayActivity || hasUnreadDMs),
                     onClick = onTabClick,
                     holdToPick = if (item.screen == Screen.Feed) onPickFeedMode else null,
-                    modifier = Modifier.weight(1f),
+                    // The return pill's arrow points here.
+                    modifier = Modifier.weight(1f).then(
+                        if (item.screen == Screen.Dashboard) Modifier.vaultAnchor() else Modifier,
+                    ),
                 )
             }
         }
@@ -333,7 +338,7 @@ private fun CondensedNavCluster(
     actionIcon: ImageVector,
     actionLabel: String,
     actionTint: Color,
-    onAction: () -> Unit,
+    onAction: (() -> Unit)?,
     onExpand: () -> Unit,
     onAccountSwitcher: () -> Unit,
     nowPlaying: @Composable () -> Unit,
@@ -387,20 +392,22 @@ private fun CondensedNavCluster(
 
         // Contextual action — compose, or the Vault Dashboard on the Vault
         // tab (icon + tint supplied by the caller).
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(actionTint.copy(alpha = 0.15f))
-                .combinedClickableCompat(onClick = onAction),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = actionIcon,
-                contentDescription = actionLabel,
-                tint = actionTint,
-                modifier = Modifier.size(18.dp),
-            )
+        if (onAction != null) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(actionTint.copy(alpha = 0.15f))
+                    .combinedClickableCompat(onClick = onAction),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = actionIcon,
+                    contentDescription = actionLabel,
+                    tint = actionTint,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

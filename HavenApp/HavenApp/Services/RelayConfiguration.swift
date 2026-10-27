@@ -49,14 +49,101 @@ enum RelayConfiguration {
     /// has no TLS, and the old sync service honoured that; anything else is wss://.
     static func macRelayURL(config: HavenConfig) -> String {
         #if os(iOS)
+        return macRelayURL(config: config, mesh: macMeshRelay)
+        #else
+        return ""
+        #endif
+    }
+
+    /// A Mac relay typed as a mesh npub, dialed through FIPS: `url` is the
+    /// local `ws://127.0.0.1:<port>/<token>` that reaches it. Set before the
+    /// relay starts (RelayProcessManager), nil when there is none or the dial
+    /// failed. Never log `url`: the token keeps other apps on the phone out.
+    struct MacMeshRelay: Equatable {
+        let npub: String
+        let url: String
+    }
+
+    static var macMeshRelay: MacMeshRelay?
+
+    /// macRelayURL(config:) without the platform check. A mesh npub gives the
+    /// dialed address for that same npub, or "" until it has been dialed.
+    static func macRelayURL(config: HavenConfig, mesh: MacMeshRelay?) -> String {
+        if let npub = config.macRelayMeshNpub {
+            guard let mesh, mesh.npub == npub else { return "" }
+            return mesh.url
+        }
         let base = config.macRelayNormalizedBase
         guard !base.isEmpty else { return "" }
         let typed = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let plain = typed.hasPrefix("ws://") || typed.hasPrefix("http://")
         return (plain ? "ws://" : "wss://") + base
-        #else
-        return ""
-        #endif
+    }
+
+    /// A copy refreshes its heartbeat every 20 s (macsync.go); one silent for
+    /// 90 s died with its relay and is retried on the next start.
+    static let macSyncStaleAfter: TimeInterval = 90
+
+    /// The Mac copy is running now, not a "running" left by a relay that died.
+    static func macSyncIsLive(_ status: MacSyncStatus?, now: Date) -> Bool {
+        guard let status, status.state == "running",
+              let beat = status.updatedAt ?? status.startedAt else { return false }
+        return now.timeIntervalSince1970 - TimeInterval(beat) <= macSyncStaleAfter
+    }
+
+    /// The FIPS engine must stay up in the background: the Mac is reached
+    /// over the mesh and its copy is still running.
+    static func macSyncNeedsMesh(mesh: MacMeshRelay?, status: MacSyncStatus?, now: Date) -> Bool {
+        guard let mesh else { return false }
+        return macSyncIsLive(status, now: now) && status?.macURL.map(macRelayBaseForStatus) == macRelayBaseForStatus(mesh.url)
+    }
+
+    /// haven-go records the Mac URL with trailing slashes trimmed (macRelayBase).
+    private static func macRelayBaseForStatus(_ url: String) -> String {
+        var url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        while url.hasSuffix("/") { url.removeLast() }
+        return url
+    }
+
+    /// The status file is for this Mac address (haven-go trims trailing slashes).
+    static func macSyncStatus(_ status: MacSyncStatus?, isFor macURL: String) -> Bool {
+        guard let recorded = status?.macURL, !macURL.isEmpty else { return false }
+        return macRelayBaseForStatus(recorded) == macRelayBaseForStatus(macURL)
+    }
+
+    /// What the Mac sync card says once a copy has ended: "Done" with what was
+    /// copied, or the reason it stopped. `checked` is the formatted finish time.
+    static func macSyncSummary(_ status: MacSyncStatus, checked: String?) -> (headline: String, detail: String) {
+        let posts = status.posts ?? 0, mentions = status.mentions ?? 0
+        let missing = status.missing ?? 0
+        let reason = (status.error ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = []
+        parts.append(posts + mentions == 0
+            ? "Nothing new to copy: this phone already had it."
+            : "Copied \(posts.formatted()) posts and \(mentions.formatted()) mentions.")
+        let headline: String
+        switch status.state {
+        case "done":
+            headline = missing < 0 ? "Done (this Mac can't be checked)" : "Done · nothing missing"
+        case "incomplete" where reason.isEmpty && missing > 0:
+            // Finished cleanly, but a few events the phone won't store remain.
+            headline = "Done · \(missing.formatted()) couldn't be copied"
+            parts.append("It tries those again once a day.")
+        case "incomplete":
+            headline = missing > 0 ? "Stopped · \(missing.formatted()) still missing" : "Copy didn't finish"
+            if !reason.isEmpty { parts.append("Reason: \(reason).") }
+            parts.append("It tries again next time the app starts.")
+        case "failed":
+            headline = "Couldn't copy from your Mac"
+            parts = ["Reason: \(reason.isEmpty ? "none was recorded" : reason).", "It tries again next time the app starts."]
+        default:
+            headline = status.state ?? "Unknown"
+        }
+        if missing < 0 {
+            parts.append("Your Mac's relay is too old to compare lists, so it was copied page by page.")
+        }
+        if let checked { parts.append("Checked \(checked).") }
+        return (headline, parts.joined(separator: " "))
     }
 
     /// Result of the relay's one-time full-history copy from the Mac relay and
@@ -139,10 +226,58 @@ enum RelayConfiguration {
         LaunchInputs(
             env: generateEnvDictionary(config: config, relayDataDir: relayDataDir),
             importSeedRelays: config.importSeedRelays,
-            blastrRelays: config.activeBlastrRelays,
+            blastrRelays: blastrRelays(config: config, mesh: {
+                #if os(iOS)
+                return macMeshRelay
+                #else
+                return nil
+                #endif
+            }()),
             dmRelays: config.dmRelays,
             whitelistedNpubs: config.whitelistedNpubs
         )
+    }
+
+    /// A mesh dial's local address (`ws://127.0.0.1:<port>/<hex token>`,
+    /// see MacMeshRelay). It lives for one app session: the next dial gets a
+    /// new port and token, so a saved copy is a dead relay.
+    static func isMeshAddress(_ relay: String) -> Bool {
+        guard let url = URL(string: relay.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme?.lowercased() == "ws", url.host == "127.0.0.1", url.port != nil else { return false }
+        let parts = url.path.split(separator: "/")
+        guard parts.count == 1, let token = parts.first, token.count >= 16 else { return false }
+        return token.allSatisfy { $0.isHexDigit }
+    }
+
+    /// `relays` without saved mesh addresses. relays_blastr.json carries this
+    /// session's Mac address for the relay, and ConfigService read it back as
+    /// one of the owner's own broadcast relays: one more dead entry per launch
+    /// (eight on the 12 mini by 2026-10-21), and every post said no relay had
+    /// confirmed it.
+    static func droppingMeshAddresses(_ relays: [String]) -> [String] {
+        relays.filter { !isMeshAddress($0) }
+    }
+
+    /// The broadcast list the relay writes to: a Mac on the mesh goes first,
+    /// as a Mac with a URL does (HavenConfig.activeBlastrRelays), so the
+    /// phone's notes reach it.
+    static func blastrRelays(config: HavenConfig, mesh: MacMeshRelay?) -> [String] {
+        var relays = droppingMeshAddresses(config.activeBlastrRelays)
+        if let npub = config.macRelayMeshNpub, let mesh, mesh.npub == npub, !relays.contains(mesh.url) {
+            relays.insert(mesh.url, at: 0)
+        }
+        return relays
+    }
+
+    /// The Go relay's soft memory limit on a phone, from its RAM: a quarter,
+    /// between 256 MiB and 3 GiB. Go's flat 256 MiB phone default
+    /// (haven-go config.go) is a limit a populated vault's live heap reaches,
+    /// and then the collector runs back to back: on Logen's iPhone 18 Pro
+    /// (2026-10-21, build 39) 69% of all CPU samples were Go GC mark workers
+    /// with almost no other Go work, ~420% CPU, thermal state Serious.
+    static func phoneGoMemLimitMB(physicalMemory: UInt64) -> Int {
+        let quarter = Int(physicalMemory / 4 / (1 << 20))
+        return min(max(quarter, 256), 3072)
     }
 
     /// Build the full environment dictionary from a HavenConfig.
@@ -159,8 +294,12 @@ enum RelayConfiguration {
         let enableTLS = "0"
         let relayBindAddress = "0.0.0.0"
         #endif
+        // Haven's mesh door: mesh visitors (iPhone kiosk, the Mac's
+        // strangers) go here, never to the relay port. It listens only
+        // while the host has SetMeshServingC(1).
+        let meshPlainPort = String(config.meshPlainPort)
 
-        return [
+        var env: [String: String] = [
             "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
             "RELAY_PORT": String(config.relayPort),
@@ -275,7 +414,15 @@ enum RelayConfiguration {
 
             // TLS
             "HAVEN_ENABLE_TLS": enableTLS,
+            "HAVEN_MESH_PLAIN_PORT": meshPlainPort,
         ]
+        #if os(iOS)
+        // The relay port is TLS here; own devices on the mesh send plain
+        // HTTP, so kiosk mode hands them this port instead (open while sharing).
+        env["HAVEN_MESH_OWN_PORT"] = String(config.meshOwnPort)
+        env["GO_MEM_LIMIT_MB"] = String(phoneGoMemLimitMB(physicalMemory: ProcessInfo.processInfo.physicalMemory))
+        #endif
+        return env
     }
 
     /// Relays the app sends an event it just posted to, alongside handing it
@@ -291,15 +438,41 @@ enum RelayConfiguration {
     ///
     /// A kind 10050 also goes to the DM relays it names, where senders look
     /// for it.
-    static func directBroadcastRelays(kind: Int, tags: [[String]], blastrRelays: [String]) -> [String] {
+    ///
+    /// A kind 10063 also goes to every write relay in the owner's 10002 and
+    /// to purplepag.es, where readers look for it. On 2026-10-22 four lists
+    /// in a row each landed on one relay only, so a reader asking another
+    /// relay saw an older list. `ownerWriteRelays`: the author's 10002 write
+    /// relays; only wss, never this machine.
+    static func directBroadcastRelays(kind: Int, tags: [[String]], blastrRelays: [String],
+                                      ownerWriteRelays: [String] = []) -> [String] {
         var relays = blastrRelays.isEmpty ? fallbackBroadcastRelays : blastrRelays
         if kind == 10050 {
             for tag in tags where tag.count >= 2 && tag[0] == "relay" && !relays.contains(tag[1]) {
                 relays.append(tag[1])
             }
         }
+        if kind == 10063 {
+            func key(_ url: String) -> String {
+                var k = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                while k.hasSuffix("/") { k.removeLast() }
+                return k
+            }
+            var seen = Set(relays.map(key))
+            for relay in ownerWriteRelays + [serverListIndexerRelay] {
+                let url = relay.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let parsed = URL(string: url), parsed.scheme?.lowercased() == "wss",
+                      let host = parsed.host?.lowercased(),
+                      host != "localhost", host != "127.0.0.1", host != "0.0.0.0", host != "::1",
+                      seen.insert(key(url)).inserted else { continue }
+                relays.append(url)
+            }
+        }
         return relays
     }
+
+    /// The indexer relay every 10063 is also sent to (and read from).
+    static let serverListIndexerRelay = "wss://purplepag.es"
 
     /// The NIP-65 relay list for a new account whose relay is this device.
     ///

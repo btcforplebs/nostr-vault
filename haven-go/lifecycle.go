@@ -40,8 +40,12 @@ type relayCycle struct {
 	// meshServer is the loopback port the FIPS mesh tunnel forwards to:
 	// plain HTTP, blob reads plus owner-signed uploads and events (meshHandler).
 	meshServer *http.Server
-	pool       *nostr.SimplePool
-	wg         sync.WaitGroup
+	// ownServer is the relay in full, plain HTTP on a loopback port, for the
+	// owner's own devices on the FIPS mesh. Only iOS sets it: there the relay
+	// port is TLS (App Transport Security), and the mesh splices plain HTTP.
+	ownServer *http.Server
+	pool      *nostr.SimplePool
+	wg        sync.WaitGroup
 }
 
 // meshWanted is the host's last SetMeshServingC, kept across relay restarts.
@@ -90,6 +94,41 @@ func (c *relayCycle) startMeshServer() {
 		}
 	})
 	log.Printf("🔗 mesh listening at http://%s", addr)
+	c.startOwnServer()
+}
+
+// startOwnServer listens on HAVEN_MESH_OWN_PORT (loopback, plain HTTP, the
+// relay's full handler) while sharing: what the mesh hands the owner's own
+// devices. Unset on Mac and Android, whose relay port is already plain.
+// A plaintext request to the TLS relay port gets Go's 400 "Client sent an
+// HTTP request to an HTTPS server", which a sender reads as a refusal.
+func (c *relayCycle) startOwnServer() {
+	if c.ownServer != nil || c.server == nil {
+		return
+	}
+	raw := os.Getenv("HAVEN_MESH_OWN_PORT")
+	if raw == "" {
+		return
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port <= 0 {
+		log.Printf("⚠️ HAVEN_MESH_OWN_PORT %q is not a port", raw)
+		return
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Printf("🚫 mesh own-devices port %s: %v", addr, err)
+		return
+	}
+	srv := &http.Server{Addr: addr, Handler: c.server.Handler}
+	c.ownServer = srv
+	c.spawn("mesh-own-http-server", func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("🚫 mesh own-devices HTTP server exited: %v", err)
+		}
+	})
+	log.Printf("🔗 mesh own devices listening at http://%s", addr)
 }
 
 // stopMeshServer closes the mesh port, cutting reads in progress.
@@ -100,6 +139,11 @@ func (c *relayCycle) stopMeshServer() {
 	c.meshServer.Close()
 	c.meshServer = nil
 	log.Println("🔗 mesh port closed")
+	if c.ownServer != nil {
+		c.ownServer.Close()
+		c.ownServer = nil
+		log.Println("🔗 mesh own-devices port closed")
+	}
 }
 
 // spawn runs fn on a goroutine registered with the cycle's WaitGroup and

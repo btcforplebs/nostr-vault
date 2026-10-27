@@ -1,17 +1,22 @@
 package com.nostrvault.ui.navigation
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.nostrvault.ui.theme.Motion
 
 /**
  * The row above the tab bar that the music mini player shares with a
@@ -25,10 +30,16 @@ object FloatingButtonRow {
     /** Every floating button and the mini player: one height, so the two read as one row (iOS buttonHeight). */
     val buttonHeight: Dp = 48.dp
     val miniPlayerHeight: Dp = buttonHeight
-    /** The clear space the bottom bar keeps above its pill (its vertical padding). */
-    private val barTopPadding: Dp = 12.dp
+    /**
+     * The clear space the bottom bar keeps above its pill: BottomNavBar's top
+     * padding. It was left at 12.dp when the bar went to 4.dp (193607e73),
+     * which put the row's bottom edge 2.dp under the pill's top instead of
+     * [aboveBar] over it: Post, My Web, the Vault button and the mini player
+     * all sat on the bar (Logen, 2026-10-23).
+     */
+    private val barTopPadding: Dp = 4.dp
     /** The row sits this far above the bar's pill (iOS: the inset's 6pt spacing). */
-    private val aboveBar: Dp = 6.dp
+    val aboveBar: Dp = 6.dp
     /** Before the bar has been measured. */
     private val fallbackBottom: Dp = 84.dp
 
@@ -51,6 +62,12 @@ object FloatingButtonRow {
     private val gap: Dp = 10.dp
 
     private val widths = mutableStateMapOf<Any, Dp>()
+
+    /**
+     * How far the floating buttons rise to clear the return pill while it
+     * shows; zero otherwise. Animated where it is applied. iOS `setLift`.
+     */
+    var lift: Dp by mutableStateOf(0.dp)
 
     /**
      * How far the mini player's end stays clear of the screen's edge: the
@@ -76,13 +93,14 @@ object FloatingButtonRow {
         DisposableEffect(key) { onDispose { report(key, null) } }
         val density = LocalDensity.current
         val bottomInset = WindowInsets.systemBars.getBottom(density)
+        val raised = animateDpAsState(lift, Motion.bannerIn(), label = "floatingRowLift")
         return this
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
                 // Read here, in layout, so a re-measured bar re-places the button.
                 val centre = (rowBottom + miniPlayerHeight / 2).roundToPx()
                 val lift = (centre - placeable.height / 2 - scaffoldFabSpacing.roundToPx() - bottomInset)
-                    .coerceAtLeast(0)
+                    .coerceAtLeast(0) + raised.value.roundToPx()
                 val extraEnd = (endInset - scaffoldFabEndInset).roundToPx()
                 layout(placeable.width + extraEnd, placeable.height + lift) { placeable.place(0, 0) }
             }

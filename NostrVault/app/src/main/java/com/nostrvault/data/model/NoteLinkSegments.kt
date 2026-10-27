@@ -1,5 +1,7 @@
 package com.nostrvault.data.model
 
+import com.nostrvault.util.findAllOnce
+
 /**
  * A note cut at each link that gets a preview card, so each card draws where
  * its link was written instead of in a pile under the note. Port of iOS
@@ -35,7 +37,7 @@ object NoteLinkSegments {
         val out = mutableListOf<Segment>()
         val pending = StringBuilder()
         var cursor = 0
-        for (m in URL_REGEX.findAll(content)) {
+        for (m in URL_REGEX.findAllOnce(content)) {
             if (m.value !in wanted) continue
             pending.append(content, cursor, m.range.first)
             cursor = m.range.last + 1

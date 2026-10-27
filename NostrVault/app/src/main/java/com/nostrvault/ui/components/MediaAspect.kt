@@ -82,3 +82,33 @@ internal object MediaAspectCache {
  */
 internal fun knownAspectRatio(tags: List<List<String>>, url: String): Float? =
     imetaAspectRatio(tags, url) ?: MediaAspectCache.get(url)
+
+/**
+ * The box a feed video gets: the author's `dim` while it agrees with the frame we decoded, else
+ * the decoded frame. A phone records portrait as landscape pixels plus a rotate-90 flag, and many
+ * clients write `dim` from those pixels (1920x1080 for an upright video), so trusting the tag gave
+ * a portrait video a landscape box. The decoded poster has the rotation applied.
+ */
+internal fun videoBoxRatio(hinted: Float?, decoded: Float?): Float? {
+    if (hinted != null && decoded != null && isPortrait(hinted) != isPortrait(decoded) &&
+        !isSquareish(hinted) && !isSquareish(decoded)
+    ) return decoded
+    return hinted ?: decoded
+}
+
+private fun isPortrait(ratio: Float) = ratio < 1f
+private fun isSquareish(ratio: Float) = ratio in 0.95f..1.05f
+
+/**
+ * The tallest a portrait video may stand in the feed, in dp: a little over half the screen, so one
+ * video never fills it and the note's text and the next note stay in view. Never more than the
+ * 600dp a portrait photo gets.
+ */
+internal fun feedVideoMaxHeightDp(screenHeightDp: Int): Float =
+    minOf(600f, screenHeightDp * FEED_VIDEO_MAX_SCREEN_SHARE)
+
+internal const val FEED_VIDEO_MAX_SCREEN_SHARE = 0.6f
+
+/** Width ÷ height as the player shows the picture: its size times the pixel aspect ratio. 0 when not known yet. */
+internal fun videoDisplayAspect(width: Int, height: Int, pixelWidthHeightRatio: Float): Float =
+    if (width > 0 && height > 0) width * pixelWidthHeightRatio / height else 0f

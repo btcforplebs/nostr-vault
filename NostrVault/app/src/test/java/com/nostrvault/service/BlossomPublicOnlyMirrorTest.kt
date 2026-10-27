@@ -42,7 +42,7 @@ class BlossomPublicOnlyMirrorTest {
     private fun service(): BlossomService {
         val configStore = mockk<ConfigStore>(relaxed = true)
         every { configStore.config } returns MutableStateFlow(HavenConfig(ownerNpub = "npub1owner"))
-        return BlossomService(configStore, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
+        return BlossomService(configStore, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
     }
 
     @Test fun aPastedLinkNeverReachesALoopbackServer() = runTest {

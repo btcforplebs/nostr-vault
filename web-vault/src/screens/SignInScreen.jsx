@@ -17,7 +17,8 @@ import { StorageNote, askToKeep } from "../components/StorageNote.jsx"
 import { learn } from "../shell.js"
 import "../styles/accounts.css"
 
-export function SignInScreen({ onSignedIn }) {
+/** `onCreate`: Create an account (screens/CreateAccount.jsx), for someone new to Nostr. */
+export function SignInScreen({ onSignedIn, onCreate }) {
   const [saved] = useState(loadAccounts)
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState("")
@@ -43,6 +44,7 @@ export function SignInScreen({ onSignedIn }) {
         {saved.map(a => <SavedAccount key={a.pubkey} account={a} busy={busy === a.pubkey} disabled={!!busy} onClick={resume(a)} />)}
         <p class="muted small">Or sign in as someone else:</p>
       </div>}
+      {onCreate && <button class="primary" onClick={onCreate}>New to Nostr? Create an account</button>}
       <SignInOptions onSignedIn={signedIn} />
       <StorageNote />
       <p class="muted small signin-home">New to Nostr Vault? <a href="/#about" onClick={e => { e.preventDefault(); learn() }}>See what it is, and get the apps</a>.</p>

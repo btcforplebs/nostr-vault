@@ -38,6 +38,9 @@ extension MediaCacheService {
         if let cachedData = cachedFileData(at: cacheDirectory.appendingPathComponent(filename)) {
             return cachedData
         }
+        // Prefetch, the viewer and every other fetchData caller: a `.fips`
+        // host is reachable only over the mesh (see `isMeshOnly`).
+        if Self.isMeshOnly(url) { return nil }
 
         return await withCheckedContinuation { continuation in
             downloadLock.lock()

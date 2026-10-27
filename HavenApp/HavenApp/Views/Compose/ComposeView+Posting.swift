@@ -95,7 +95,10 @@ extension ComposeView {
                     let hostedDescriptor = NoteTagging.MediaDescriptor(
                         url: hostedURL.absoluteString,
                         mimeType: mimeType,
-                        sha256: ComposeView.blossomHash(in: hostedURL),
+                        // Viewers on the mesh fetch by this hash from the photo node, whatever host the
+                        // link names: from the link, else the relay's own blob (named by its hash), else hashed.
+                        sha256: ComposeView.blossomHash(in: hostedURL)
+                            ?? blob.flatMap { ComposeView.blossomHash(in: $0) ?? ComposeView.streamingSHA256(of: $0) },
                         pixelWidth: pixelSize.map { Int($0.width.rounded()) },
                         pixelHeight: pixelSize.map { Int($0.height.rounded()) },
                         alt: attachments[i].altText,
@@ -189,12 +192,12 @@ extension ComposeView {
                         alt: attachments[i].altText, byteCount: byteCount
                     ))
                     continue
-                case .noOutsideServer, .notSavedOnDevice:
+                case .noOutsideServer, .vaultDidNotTake, .notSavedOnDevice:
                     let message: String
-                    if case .noOutsideServer = outcome {
-                        message = MediaUploadOutcomeMessage.noOutsideServer
-                    } else {
-                        message = MediaUploadOutcomeMessage.notSavedOnDevice
+                    switch outcome {
+                    case .noOutsideServer: message = MediaUploadOutcomeMessage.noOutsideServer
+                    case .vaultDidNotTake: message = MediaUploadOutcomeMessage.vaultDidNotTake
+                    default: message = MediaUploadOutcomeMessage.notSavedOnDevice
                     }
                     DispatchQueue.main.async {
                         error = message

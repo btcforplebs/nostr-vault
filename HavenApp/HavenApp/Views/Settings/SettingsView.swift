@@ -59,6 +59,7 @@ struct SettingsView: View {
         case blossom = "Media Servers"
         case macRelay = "Sync with Vault on Mac"
         case relayAccess = "Who Can Reach You"
+        case fipsMesh = "FIPS Mesh"
         case importNotes = "Import Notes"
         case backup = "Backup & Restore"
         case startup = "Startup"
@@ -104,6 +105,7 @@ struct SettingsView: View {
                 return "desktopcomputer"
                 #endif
             case .relayAccess: return "person.2.badge.gearshape"
+            case .fipsMesh: return "point.3.filled.connected.trianglepath.dotted"
             case .importNotes: return "square.and.arrow.down"
             case .backup: return "externaldrive.fill"
             case .startup: return "power"
@@ -135,6 +137,7 @@ struct SettingsView: View {
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
             ("Your Vault Relay", relayTabs),
+            ("Mesh", [.fipsMesh]),
             ("Help", [.tutorials]),
             ("Advanced", [.proofOfWork, .advanced, .bitcoin, .logs]),
         ]
@@ -178,6 +181,9 @@ struct SettingsView: View {
         // gets no paneRequest): switch here too.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
             selectedTab = .relays
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenFipsMeshSettings)) { _ in
+            selectedTab = .fipsMesh
         }
         #endif
     }
@@ -606,6 +612,7 @@ struct SettingsView: View {
         case .pushNotifications: return .red
         case .importNotes: return .orange
         case .relayAccess: return .blue
+        case .fipsMesh: return .teal
         case .backup: return .indigo
         case .startup: return .green
         case .followingBackup: return .teal
@@ -647,6 +654,12 @@ struct SettingsView: View {
             case .importNotes: ImportSettingsView()
             case .media: MediaSettingsView()
             case .relayAccess: RelayAccessSettingsView()
+            case .fipsMesh:
+                #if os(iOS)
+                FipsMeshSettingsView()
+                #else
+                MacFipsMeshSettingsView()
+                #endif
             case .startup: StartupSettingsView()
             case .backup: BackupSettingsView()
             case .followingBackup: FollowingBackupSettingsView()

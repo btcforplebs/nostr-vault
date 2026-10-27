@@ -286,7 +286,7 @@ final class MusicPlayerService: ObservableObject {
     // MARK: - Loading
 
     private func loadCurrent(autoplay: Bool) {
-        guard let track = current, let url = track.audioURL else { return }
+        guard let track = current, let url = MediaCacheService.offMeshURL(track.audioURL) else { return }
         let item = makeItem(url: url, isLive: track.isLive)
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             let seconds = item.duration.seconds

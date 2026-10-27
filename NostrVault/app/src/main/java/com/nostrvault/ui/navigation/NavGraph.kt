@@ -29,8 +29,6 @@ import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AccountInfo
 import com.nostrvault.ui.components.buildAccountInfos
-import com.nostrvault.service.PendingPostManager
-import com.nostrvault.ui.components.PendingPostBanner
 import com.nostrvault.ui.components.AccountSwitcherSheet
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
@@ -74,6 +72,25 @@ private val BOTTOM_BAR_ROUTES = TOP_LEVEL_ROUTES + setOf(
 
 internal fun showsBottomBar(route: String?): Boolean = route in BOTTOM_BAR_ROUTES
 
+/** Tabs whose pushed screens count as inside them, as an iOS tab's own
+ *  NavigationStack: over a note opened from the Feed or the Vault that tab
+ *  stays lit, and tapping it goes back to it (then to the top). */
+private val STACK_TABS = setOf(Screen.Feed.route, Screen.Dashboard.route)
+
+/** The route the bottom bar lights for a back stack, bottom to top: the tab
+ *  on screen, or the Feed or Vault tab a pushed screen was opened from. */
+internal fun selectedTabRoute(stack: List<String?>): String? {
+    val top = stack.lastOrNull()
+    if (top in TOP_LEVEL_ROUTES) return top
+    val owner = stack.lastOrNull { it in TOP_LEVEL_ROUTES }
+    return if (owner in STACK_TABS) owner else top
+}
+
+/** True when a tap on [tab] goes back to it: it is lit, but a screen opened
+ *  from it is on top. */
+internal fun tabTapGoesBack(tab: String, stack: List<String?>): Boolean =
+    tab in STACK_TABS && stack.lastOrNull() != tab && selectedTabRoute(stack) == tab
+
 /** True when both ends of the transition are top-level tabs. */
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean {
     val from = initialState.destination.route
@@ -95,12 +112,13 @@ fun NostrVaultNavHost(
     logStore: LogStore,
     dmUnreadCount: StateFlow<Int>,
     hasNewRelayActivity: StateFlow<Boolean>,
-    pendingPostManager: PendingPostManager,
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val backStack by navController.currentBackStack.collectAsState()
+    val selectedTab = selectedTabRoute(backStack.map { it.destination.route })
 
     val showBottomBar = showsBottomBar(currentRoute)
 
@@ -236,10 +254,14 @@ fun NostrVaultNavHost(
             val opensVaultDashboard = currentRoute == Screen.Dashboard.route
             val condensedActionIcon = if (opensVaultDashboard) NostrVaultIcons.TabVault else NostrVaultIcons.Compose
             val condensedActionTint = if (opensVaultDashboard) relayStatusColor(relayStatus) else colors.primary
-            val onCondensedAction: () -> Unit = if (opensVaultDashboard) {
+            // A read-only sign-in can't sign a post: no compose action.
+            val canSign = com.nostrvault.ui.components.rememberCanSign()
+            val onCondensedAction: (() -> Unit)? = if (opensVaultDashboard) {
                 { feedService.requestRelayDashboard() }
-            } else {
+            } else if (canSign) {
                 { navController.navigate(Screen.ComposeNote.createRoute()) }
+            } else {
+                null
             }
 
             val density = LocalDensity.current
@@ -254,7 +276,7 @@ fun NostrVaultNavHost(
                     },
             ) {
                 BottomNavBar(
-                    currentRoute = currentRoute,
+                    currentRoute = selectedTab,
                     activeAccountPubkey = activeHex,
                     activeAvatarUrl = activeProfile?.pictureURL,
                     activeDisplayName = activeProfile?.bestName,
@@ -280,6 +302,15 @@ fun NostrVaultNavHost(
                         }
                     },
                     onReselect = { screen ->
+                        // Over a note opened from the Feed or the Vault: back
+                        // to the tab (iOS clears its path). The next tap goes
+                        // to the top, so a double tap is back and up. Read
+                        // live, so a fast second tap sees the first one's pop.
+                        val stack = navController.currentBackStack.value.map { it.destination.route }
+                        if (tabTapGoesBack(screen.route, stack)) {
+                            navController.popBackStack(screen.route, inclusive = false)
+                            return@BottomNavBar
+                        }
                         when (screen) {
                             Screen.Feed -> feedService.requestScrollToTop()
                             // The Vault tab's half on screen scrolls to the top;
@@ -348,14 +379,6 @@ fun NostrVaultNavHost(
         // it was opened with, and a route argument would mean re-resolving a
         // replaceable event that may already be gone.
         com.nostrvault.ui.components.LiveStreamHost()
-
-        // Pending post countdown banner
-        PendingPostBanner(
-            pendingPostManager = pendingPostManager,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = if (showBottomBar) 80.dp else 0.dp),
-        )
 
         // Hold-the-Feed-tab list: over everything, the bar included.
         if (showBottomBar) {

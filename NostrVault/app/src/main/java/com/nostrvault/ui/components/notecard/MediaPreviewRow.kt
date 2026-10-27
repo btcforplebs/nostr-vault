@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -12,11 +13,14 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.nostrvault.fips.MeshMediaStatus
+import com.nostrvault.fips.meshAuthor
 import androidx.compose.ui.semantics.contentDescription
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.delay
@@ -43,17 +47,19 @@ fun MediaPreviewRow(
     tags: List<List<String>> = emptyList(),
     /** Play videos inline (muted, looping, one at a time) instead of a poster. */
     autoplayVideos: Boolean = false,
+    /** The note's author, whose vault may serve this media over the FIPS mesh. */
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // Audio plays from its own card on the app-wide player; the rest open
     // the viewer. iOS: FeedAudioCard.
     val (audio, visual) = remember(urls) { urls.partition(::isAudioUrl) }
     if (audio.isEmpty()) {
-        VisualMediaPreview(visual, tags, autoplayVideos, modifier)
+        VisualMediaPreview(visual, tags, autoplayVideos, author, modifier)
         return
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags, autoplayVideos)
+        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags, autoplayVideos, author)
         audio.forEach { com.nostrvault.ui.screens.music.AudioFileCard(it) }
     }
 }
@@ -63,6 +69,7 @@ private fun VisualMediaPreview(
     urls: List<String>,
     tags: List<List<String>>,
     autoplay: Boolean,
+    author: String?,
     modifier: Modifier = Modifier,
 ) {
     // One id per row, so the viewer can find the photo it opened from.
@@ -72,8 +79,9 @@ private fun VisualMediaPreview(
             url = urls.first(),
             tags = tags,
             sourceKey = MediaSourceKey(origin, 0),
-            onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin) },
+            onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin, authors = urls.map { author }) },
             autoplay = autoplay,
+            author = author,
             modifier = modifier,
         )
     } else {
@@ -81,8 +89,9 @@ private fun VisualMediaPreview(
             urls = urls,
             tags = tags,
             origin = origin,
-            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin) },
+            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin, authors = urls.map { author }) },
             autoplay = autoplay,
+            author = author,
             modifier = modifier,
         )
     }
@@ -95,6 +104,7 @@ private fun SingleMediaPreview(
     sourceKey: MediaSourceKey,
     onMediaClick: (String) -> Unit,
     autoplay: Boolean = false,
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -105,6 +115,7 @@ private fun SingleMediaPreview(
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context)
             .data(remember(url, tags) { feedImageModel(tags, url) })
+            .meshAuthor(author)
             .size(800)
             .crossfade(100)
             .build(),
@@ -126,15 +137,23 @@ private fun SingleMediaPreview(
 
     // The hint wins while it exists, so the height does not change *again* when
     // the decode lands and reports a ratio a rounded `dim` disagrees with by a
-    // pixel.
-    val ratio = hintedRatio ?: decodedRatio
+    // pixel. A video's hint is overruled when it has the frame the wrong way
+    // round (a phone's rotated portrait video, see videoBoxRatio).
+    val ratio = if (isVideo) videoBoxRatio(hintedRatio, decodedRatio) else hintedRatio ?: decodedRatio
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
 
     val loaded = painter.state is AsyncImagePainter.State.Success
     // A photo that failed says so (MediaFailedPlaceholder); a video keeps its play icon.
     val failed = !isVideo && painter.state is AsyncImagePainter.State.Error
+    val meshPhases by MeshMediaStatus.phases.collectAsState()
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val cap = if (ratio != null && ratio < 1f) 600.dp else 400.dp
+        val cap = when {
+            // A portrait video stands at its own shape, but never fills the screen.
+            ratio != null && ratio < 1f && isVideo -> feedVideoMaxHeightDp(screenHeightDp).dp
+            ratio != null && ratio < 1f -> 600.dp
+            else -> 400.dp
+        }
         val displayHeight = when {
             ratio != null -> minOf(maxWidth / ratio, cap)
             failed -> maxWidth * 9f / 16f
@@ -164,7 +183,11 @@ private fun SingleMediaPreview(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
-            if (failed) {
+            if (!loaded) {
+                MeshMediaStatusOverlay(url = feedImageModel(tags, url), video = isVideo, modifier = Modifier.matchParentSize())
+            }
+            // A broken photo the mesh isn't answering for (its overlay says so itself).
+            if (failed && MeshMediaStatus.phaseFor(meshPhases, feedImageModel(tags, url)) == null) {
                 MediaFailedPlaceholder(url = url)
             }
             if (isVideo && autoplay) {

@@ -33,11 +33,12 @@ object HavenBridge {
             // cgocheck=0 disables the CGO pointer validity checks that can
             // misfire when Go heap objects contain mmap'd region boundaries.
             Os.setenv("GODEBUG", "asyncpreemptoff=1,cgocheck=0,madvdontneed=1", true)
-            // Cap Go heap to 192 MiB and collect more aggressively (default GOGC=100).
-            // Without these, BadgerDB mmap + Go GC + JVM heap exceed the ~3-4 GB
-            // available on typical Android devices, triggering the LMK.
-            // Budget: ~100-130 MiB BadgerDB (5 DBs × ~20-26 MiB) + ~60 MiB headroom.
-            Os.setenv("GOMEMLIMIT", "192MiB", true)
+            // Go's soft memory limit, sized to this phone: a quarter of its RAM,
+            // 256 MiB to 3 GiB. A fixed 192 MiB was a limit a populated vault's
+            // live heap reaches, and then the collector runs back to back and the
+            // phone runs hot (iPhone #1007). The relay sets the same value again
+            // at start (GO_MEM_LIMIT_MB, RelayConfiguration).
+            Os.setenv("GOMEMLIMIT", "${RelayConfiguration.phoneGoMemLimitMB(RelayConfiguration.totalMemoryBytes())}MiB", true)
             Os.setenv("GOGC", "50", true)
             System.loadLibrary("haven")
             System.loadLibrary("nostrvault-jni")
@@ -80,6 +81,19 @@ object HavenBridge {
      * Maps to Go: RequestRelaySyncC()
      */
     external fun requestRelaySync()
+
+    private external fun setMeshServingNative(on: Boolean)
+
+    /**
+     * Open or close the relay's FIPS mesh port (loopback, blob reads only).
+     * It listens only while sharing is on. Kept across relay restarts.
+     * Maps to Go: SetMeshServingC()
+     */
+    fun setMeshServing(on: Boolean) {
+        if (!isLoaded) return
+        runCatching { setMeshServingNative(on) }
+            .onFailure { android.util.Log.w("HavenBridge", "setMeshServing($on): $it") }
+    }
 
     /**
      * Re-run the copy from the Mac relay and its missing-events check; the

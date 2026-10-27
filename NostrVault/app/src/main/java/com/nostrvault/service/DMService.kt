@@ -5,6 +5,7 @@ import com.nostrvault.BuildConfig
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.model.BlockedPeople
+import com.nostrvault.data.model.DMTrust
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -34,6 +35,8 @@ class DMService @Inject constructor(
     internal val credentialStore: CredentialStore,
     internal val nostrService: NostrService,
     internal val amberSignerService: AmberSignerService,
+    /** Lazy: only its Web of Trust set is read, to split the inbox from Requests. */
+    internal val feedService: dagger.Lazy<FeedService>,
 ) {
     companion object {
         internal const val TAG = "DMService"
@@ -87,10 +90,29 @@ class DMService @Inject constructor(
     internal val _pendingDecryptCount = MutableStateFlow(0)
     val pendingDecryptCount: StateFlow<Int> = _pendingDecryptCount.asStateFlow()
 
-    val totalUnreadCount: Int
-        get() = conversations.value.sumOf { it.unreadCount }
+    /**
+     * The Relay tab's trusted set (Web of Trust graph plus follows, empty until
+     * the graph loads), kept live so the inbox re-splits as it changes.
+     */
+    internal val dmTrustedPubkeys: StateFlow<Set<String>> = trustedPubkeysFlow()
+        .stateIn(scope, SharingStarted.Eagerly, emptySet())
 
-    val totalUnreadCountFlow: StateFlow<Int> = conversations
+    private val inboxSplit: StateFlow<DMTrust.Split<DMConversation>> =
+        combine(conversations, dmTrustedPubkeys) { convos, trusted -> splitInbox(convos, trusted) }
+            .stateIn(scope, SharingStarted.Eagerly, DMTrust.Split(emptyList(), emptyList()))
+
+    /** The main inbox: your Web of Trust, and anyone you have written to. */
+    val inboxConversations: StateFlow<List<DMConversation>> = inboxSplit
+        .map { it.inbox }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** Everyone else: under Requests, never counted unread and never notified. */
+    val requestConversations: StateFlow<List<DMConversation>> = inboxSplit
+        .map { it.requests }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    val totalUnreadCount: Int
+        get() = inboxConversations.value.sumOf { it.unreadCount }
+
+    val totalUnreadCountFlow: StateFlow<Int> = inboxConversations
         .map { convos -> convos.sumOf { it.unreadCount } }
         .stateIn(scope, SharingStarted.WhileSubscribed(5_000), 0)
 

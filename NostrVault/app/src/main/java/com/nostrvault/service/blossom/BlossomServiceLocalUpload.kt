@@ -12,13 +12,28 @@ import com.nostrvault.service.BlossomService.Companion.TAG
 import com.nostrvault.service.BlossomService.UploadSource
 
     /**
+     * A waiting post's attachment: the outside servers, else the home vault
+     * (which may be the only host). What `MediaPostQueue` calls on a retry.
+     */
+    suspend fun BlossomService.hostWaitingBlob(sha256: String, contentType: String): String? =
+        hostLocalBlob(sha256, contentType)
+            ?: (hostedViaHomeVault(sha256, contentType, configStore.config.value.activeBlossomMirrors) as? BlossomService.PostUploadOutcome.Hosted)?.url
+
+    /**
      * Send a blob that is already in this device's relay to the outside
      * servers, returning the URL of the first that accepts it. What
      * `MediaPostQueue` calls when it retries a waiting post. One pass only —
      * the queue itself is the retry.
      */
-    suspend fun BlossomService.hostLocalBlob(sha256: String, contentType: String): String? = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
+    suspend fun BlossomService.hostLocalBlob(
+        sha256: String,
+        contentType: String,
+        /** Only these servers (the home vault's public copy names one); default all mirrors. */
+        servers: List<String>? = null,
+        /** A caller-signed auth (the owner's, for the home vault); default signed here. */
+        authHeader: String? = null,
+    ): String? = withContext(Dispatchers.IO) {
+        val mirrors = servers ?: configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) {
             Log.w(TAG, "waiting post: no outside Blossom server configured — holding ${sha256.take(8)}")
             return@withContext null
@@ -44,12 +59,12 @@ import com.nostrvault.service.BlossomService.UploadSource
                 return@withContext null
             }
 
-            val authHeader = createAuthHeader("upload", sha256)
-            if (authHeader.isEmpty()) {
+            val auth = authHeader ?: createAuthHeader("upload", sha256)
+            if (auth.isEmpty()) {
                 Log.e(TAG, "waiting post: could not sign Blossom auth for ${sha256.take(8)} — will retry")
                 return@withContext null
             }
-            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, authHeader)
+            val hosted = mirrorUploadPass(UploadSource.FileSource(temp), mirrors, sha256, contentType, auth)
             if (hosted != null) {
                 Log.i(TAG, "waiting post: ${sha256.take(8)} now hosted at $hosted")
             } else {

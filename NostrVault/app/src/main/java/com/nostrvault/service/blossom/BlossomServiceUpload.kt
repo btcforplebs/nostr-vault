@@ -14,6 +14,8 @@ import com.nostrvault.service.BlossomService.UploadSource
         sha256: String,
         contentType: String,
         skipOutsideServers: Boolean,
+        /** False for DM attachments: the vault's mesh door serves any blob to anyone with its hash. */
+        toHomeVault: Boolean = true,
     ): UploadAttempt = withContext(Dispatchers.IO) {
         // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
         // every mirror. The event is server-agnostic (no "u" tag), so one
@@ -33,15 +35,14 @@ import com.nostrvault.service.BlossomService.UploadSource
             else -> saveToLocalRelay((source as UploadSource.FileSource).file, sha256, contentType, authHeader)
         }
         if (!localOk) Log.w(TAG, "Local relay upload failed for ${sha256.take(8)} — continuing with mirrors")
+        // The owner's home vault on the mesh gets a copy too; it queues while unreachable.
+        if (toHomeVault) when (source) {
+            is UploadSource.Data -> homeVault.offerBlob(sha256, contentType, source.data)
+            is UploadSource.FileSource -> homeVault.offerBlob(sha256, contentType, source.file)
+        }
         val savedLocalUrl = if (localOk && localUrl != null) "$localUrl/$sha256" else null
 
-        // What to report when no outside server hosted it: a post may only wait
-        // for one if the blob is actually on this device.
-        fun notHosted(mirrors: List<String>): PostUploadOutcome = when {
-            !localOk -> PostUploadOutcome.NotSavedOnDevice
-            mirrors.isEmpty() -> PostUploadOutcome.NoOutsideServer
-            else -> PostUploadOutcome.SavedOnDevice(mirrors)
-        }
+        fun notHosted(mirrors: List<String>): PostUploadOutcome = notHostedOutcome(localOk, mirrors)
 
         val mirrors = configStore.config.value.activeBlossomMirrors
 
@@ -65,6 +66,7 @@ import com.nostrvault.service.BlossomService.UploadSource
         // Only skip when the blob is safe here; if the local save failed, an
         // outside server is the only place it can go, so try them anyway.
         if (skipOutsideServers && localOk) {
+            if (toHomeVault) hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
             Log.i(TAG, "Saved ${sha256.take(8)} on this device only — an earlier attachment found every outside server down")
             return@withContext UploadAttempt(PostUploadOutcome.SavedOnDevice(mirrors), savedLocalUrl)
         }
@@ -83,7 +85,23 @@ import com.nostrvault.service.BlossomService.UploadSource
 
         if (external == null) {
             Log.e(TAG, "All Blossom mirror uploads failed for ${sha256.take(8)} (saved on this device: $localOk)")
+            // The public copy is pushed from this phone's relay, so only when it is here.
+            if (localOk && toHomeVault) {
+                hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
+            }
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)
         }
         UploadAttempt(PostUploadOutcome.Hosted(external), savedLocalUrl)
     }
+
+/**
+ * What to report when no outside server hosted a blob. A post may only wait for a server if the blob is actually on
+ * this device. With no media server at all it is [BlossomService.PostUploadOutcome.NoOutsideServer], the "set up a
+ * media server" path, as on iPhone: never a post that waits on the home vault alone, since a mesh-only note is one
+ * no other app can load (NIP-F1).
+ */
+internal fun notHostedOutcome(localOk: Boolean, mirrors: List<String>): BlossomService.PostUploadOutcome = when {
+    !localOk -> BlossomService.PostUploadOutcome.NotSavedOnDevice
+    mirrors.isEmpty() -> BlossomService.PostUploadOutcome.NoOutsideServer
+    else -> BlossomService.PostUploadOutcome.SavedOnDevice(mirrors)
+}

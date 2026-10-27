@@ -14,10 +14,36 @@ class DMService: ObservableObject {
     /// their own, and again on every refresh.
     @Published var waitingForSignerCount = 0
 
-    /// The inbox as shown: conversations with a blocked person are hidden.
-    /// They stay in `conversations` (and on disk), so unblocking brings them back.
-    var visibleConversations: [DMConversation] {
-        BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id }
+    /// The inbox as shown: conversations with a blocked person are hidden, and
+    /// so are strangers outside your Web of Trust (`DMTrust`), who wait under
+    /// `requestConversations`. Both stay in `conversations` (and on disk), so
+    /// unblocking, trusting or answering brings them back.
+    var visibleConversations: [DMConversation] { trustSplit.inbox }
+
+    /// Conversations started by people outside your Web of Trust whom you
+    /// never answered. Never in the unread badge, never notified.
+    var requestConversations: [DMConversation] { trustSplit.requests }
+
+    private var trustSplit: (inbox: [DMConversation], requests: [DMConversation]) {
+        let unblocked = BlockedPeople.visibleConversations(conversations, blocked: ConfigService.shared.activeAccountBlockedHexPubkeys) { $0.id }
+        return DMTrust.split(unblocked, trusted: dmTrusted, own: [loadedAccountPubkey],
+                             counterparty: { $0.id },
+                             youWrote: { $0.messages.contains(where: \.isFromMe) })
+    }
+
+    /// Whether a conversation with `counterparty` belongs in the inbox.
+    func isInboxConversation(_ counterparty: String) -> Bool {
+        let youWrote = conversations.first(where: { $0.id == counterparty })?
+            .messages.contains(where: \.isFromMe) ?? false
+        return DMTrust.isInbox(counterparty: counterparty, youWrote: youWrote,
+                               trusted: dmTrusted, own: [loadedAccountPubkey])
+    }
+
+    /// Your Web of Trust for DMs: the relay's saved graph plus who you follow
+    /// now. Followers are not in it. Kept here, not read per render, because
+    /// the graph is thousands of keys.
+    var dmTrusted: Set<String> = [] {
+        didSet { if dmTrusted != oldValue { objectWillChange.send() } }
     }
 
     var totalUnreadCount: Int {
@@ -122,6 +148,20 @@ class DMService: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+
+        // FeedService holds the trust graph; read it after both singletons exist.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let feed = FeedService.shared
+            _ = feed.relayTabTrustedPubkeys()  // loads the saved graph if not yet
+            feed.$wotPubkeys
+                .combineLatest(feed.$followedPubkeys)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] wot, follows in
+                    self?.dmTrusted = wot.union(follows.map { $0.lowercased() })
+                }
+                .store(in: &self.cancellables)
+        }
 
         // Auto-connect when relay becomes available
         RelayProcessManager.shared.$state

@@ -51,11 +51,19 @@ struct MarketListing: Identifiable, Hashable {
         return "\(price) \(unit)"
     }
 
-    /// Plebeian Market's page for the listing, keyed by event id the way the
-    /// MyNostrSpace marketplace links it.
+    /// Where "on Plebeian" goes. The new Plebeian Market (PlebeianApp/market)
+    /// loads only Gamma 30402 products, by event id (`/products/<id>`); it has
+    /// no auction route and no NIP-15 product page. So a 30018 product or a
+    /// 30020 auction links to the seller's Plebeian profile instead
+    /// (`/profile/<hex>`), where their current products are.
     var plebeianURL: URL? {
-        URL(string: "https://plebeian.market/\(isAuction ? "auction" : "products")/\(id)")
+        hasPlebeianPage
+            ? URL(string: "https://plebeian.market/products/\(id)")
+            : URL(string: "https://plebeian.market/profile/\(pubkey)")
     }
+
+    /// Whether plebeianURL is this listing's own page, not its seller's.
+    var hasPlebeianPage: Bool { kind == Self.classifiedKind }
 
     private static let satUnits: Set<String> = ["SAT", "SATS", "SATOSHI", "SATOSHIS"]
 

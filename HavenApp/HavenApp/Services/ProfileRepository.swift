@@ -49,6 +49,16 @@ enum ProfileRepository {
     }
 
     static func loadServerLists() -> [String: [String]] {
+        // Once: lists cached before PR 999 were kept without their signature
+        // checked, so one may name a relay's node as the author's vault. Start
+        // over; each author's list comes back, verified, when it is next seen.
+        let migratedKey = "serverLists.verifiedOnly.v2"
+        if !UserDefaults.standard.bool(forKey: migratedKey) {
+            try? FileManager.default.removeItem(at: serverListsURL)
+            UserDefaults.standard.removeObject(forKey: "serverListStamps.v1")
+            UserDefaults.standard.set(true, forKey: migratedKey)
+            return [:]
+        }
         guard let data = try? Data(contentsOf: serverListsURL),
               let loaded = try? JSONDecoder().decode([String: [String]].self, from: data) else { return [:] }
         return loaded

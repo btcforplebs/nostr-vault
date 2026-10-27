@@ -67,6 +67,8 @@ enum ModePostPublisher {
             throw PublishError.upload("No outside media server took the upload. Try again when one is reachable.")
         case .noOutsideServer:
             throw PublishError.upload(MediaUploadOutcomeMessage.noOutsideServer)
+        case .vaultDidNotTake:
+            throw PublishError.upload(MediaUploadOutcomeMessage.vaultDidNotTake)
         case .notSavedOnDevice:
             throw PublishError.upload(MediaUploadOutcomeMessage.notSavedOnDevice)
         }

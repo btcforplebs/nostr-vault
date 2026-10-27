@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.util.findAllOnce
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -286,7 +287,7 @@ internal fun parseContentSegments(
 
     // nostr: mentions (npub, nprofile). Display-name resolution is deferred to
     // render time so this parse stays content-only (and memoizable).
-    for (m in NOSTR_MENTION_REGEX.findAll(content)) {
+    for (m in NOSTR_MENTION_REGEX.findAllOnce(content)) {
         val identifier = m.groupValues[1]
         val pubkey = NostrMentions.resolvePubkey(identifier)
         if (pubkey != null) {
@@ -295,12 +296,12 @@ internal fun parseContentSegments(
     }
 
     // nostr: quote references (note, nevent, naddr) — stripped from display
-    for (m in NOSTR_QUOTE_REGEX.findAll(content)) {
+    for (m in NOSTR_QUOTE_REGEX.findAllOnce(content)) {
         matches.add(Match(m.range, ContentSegment.QuoteRef(m.groupValues[1])))
     }
 
     // URLs — split into media (stripped) vs regular (clickable)
-    for (m in URL_REGEX.findAll(content)) {
+    for (m in URL_REGEX.findAllOnce(content)) {
         val url = m.value
         // Skip if this range overlaps a nostr: mention/quote already captured
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
@@ -313,7 +314,7 @@ internal fun parseContentSegments(
     }
 
     // Hashtags
-    for (m in HASHTAG_REGEX.findAll(content)) {
+    for (m in HASHTAG_REGEX.findAllOnce(content)) {
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
         matches.add(Match(m.range, ContentSegment.Hashtag(m.value, m.groupValues[1].lowercase())))
     }

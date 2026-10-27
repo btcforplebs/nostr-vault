@@ -17,8 +17,8 @@ struct ReelsFeedView: View {
     let onOpenNote: (FeedNote) -> Void
     let onLike: (FeedNote) -> Void
     let onShowGlobal: () -> Void
-    /// Opens the diVine composer.
-    var onPost: () -> Void = {}
+    /// Opens the diVine composer. Nil for a read-only sign-in: no Post.
+    var onPost: (() -> Void)? = {}
     /// A sheet (reply, profile, thread) is over the feed. The reel under it
     /// must go quiet: a sheet does not end the page's appearance.
     var isCovered: Bool = false
@@ -154,15 +154,17 @@ struct ReelsFeedView: View {
                 .font(.appSystem(size: 13))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
-            Button(action: onPost) {
-                Label("Post a diVine", systemImage: "plus")
-                    .font(.appSystem(size: 15, weight: .bold))
-                    .padding(.horizontal, 6)
+            if let onPost {
+                Button(action: onPost) {
+                    Label("Post a diVine", systemImage: "plus")
+                        .font(.appSystem(size: 15, weight: .bold))
+                        .padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.havenPurple)
+                .controlSize(.large)
+                .padding(.top, 8)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.havenPurple)
-            .controlSize(.large)
-            .padding(.top, 8)
             if service.followSetIsEmpty || (service.scope == .following && !service.loadFailed) {
                 Button("Show Global videos") { onShowGlobal() }
                     .buttonStyle(.borderless)
@@ -232,7 +234,7 @@ private struct ReelPageView: View {
     let onReply: () -> Void
     let onOpenNote: () -> Void
     let onLike: () -> Void
-    let onPost: () -> Void
+    let onPost: (() -> Void)?
 
     @ObservedObject private var failures = VideoPlaybackFailures.shared
     @State private var player: AVPlayer?
@@ -542,8 +544,10 @@ private struct ReelPageView: View {
 
     private var actionRail: some View {
         VStack(spacing: 12) {
-            postButton
-                .padding(.bottom, 6)
+            if let onPost {
+                postButton(onPost)
+                    .padding(.bottom, 6)
+            }
 
             railButton(
                 icon: isLiked ? "heart.fill" : "heart",
@@ -571,7 +575,7 @@ private struct ReelPageView: View {
 
     /// Posting is the one action that makes something new, so it reads as a
     /// filled button rather than another white glyph in the column.
-    private var postButton: some View {
+    private func postButton(_ onPost: @escaping () -> Void) -> some View {
         Button(action: onPost) {
             VStack(spacing: 3) {
                 Image(systemName: "plus")

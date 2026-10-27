@@ -678,6 +678,13 @@ class LocalNotificationService @Inject constructor(
                 // The conversation is already on screen.
                 if (appInForeground && dms.visibleConversation == opened.first) return@launch
             }
+            // Outside your Web of Trust and never written to: a Request, silent.
+            // An unopened gift wrap names no one, so it keeps the generic line.
+            val counterparty = opened?.first ?: author.takeIf { type == "dm" && it.length == 64 }
+            if (counterparty != null && !dms.isInboxConversation(counterparty)) {
+                if (BuildConfig.DEBUG) Log.i(TAG, "skip: DM request from ${counterparty.take(8)}")
+                return@launch
+            }
             val sender = opened?.second?.senderPubkey ?: author
             val profile = awaitAuthor(sender)
             val profiles = nostrService.get().profiles.value

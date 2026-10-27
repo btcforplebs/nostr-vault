@@ -52,6 +52,8 @@ struct MediaItemRenderer: View {
                 RetryableAsyncImage(url: mediaItem.url, contentMode: .fit)
             }
         }
+        // Photos, GIFs and videos alike fall back to the author's vault on the mesh.
+        .meshMediaNote(for: mediaItem)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             detectType()

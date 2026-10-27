@@ -16,7 +16,7 @@ val localProps = Properties().apply {
 
 android {
     namespace = "com.nostrvault"
-    compileSdk = 35
+    compileSdk = 36
 
     // Only wire the release signer when local.properties actually carries the
     // keystore. The unconditional `as String` casts here threw at configuration
@@ -41,8 +41,8 @@ android {
         applicationId = "com.nostrvault.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "2.7.2"
+        versionCode = 52
+        versionName = "3.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

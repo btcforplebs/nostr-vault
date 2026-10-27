@@ -109,8 +109,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        CURRENT_PROJECT_VERSION: "40"
-        MARKETING_VERSION: "2.7.2"
+        CURRENT_PROJECT_VERSION: "50"
+        MARKETING_VERSION: "3.0.1"
 
     preBuildScripts:
       - name: Build Go Library (macOS)
@@ -124,9 +124,19 @@ targets:
         # phase entirely once the .a exists, so every Go change was silently
         # missing from incremental builds.
         basedOnDependencyAnalysis: false
+      - name: Build FIPS Mesh Library (macOS)
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/build_fips_macos.sh"
+        outputFiles:
+          - $(PROJECT_DIR)/build/libnvfips.a
+        # Checksums the Rust sources itself, like the Go phase above.
+        basedOnDependencyAnalysis: false
 
     dependencies:
       - sdk: build/libhaven.a
+        embed: false
+        implicit: true
+      - sdk: build/libnvfips.a
         embed: false
         implicit: true
       - package: SilentPaymentsKit
@@ -191,8 +201,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "40"
-        MARKETING_VERSION: "2.7.2"
+        CURRENT_PROJECT_VERSION: "50"
+        MARKETING_VERSION: "3.0.1"
 
     preBuildScripts:
       - name: Build Go Library (iOS)
@@ -206,9 +216,19 @@ targets:
         # phase entirely once the .a exists, so every Go change was silently
         # missing from incremental builds.
         basedOnDependencyAnalysis: false
+      - name: Build FIPS Mesh Library (iOS)
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/build_fips_ios.sh"
+        outputFiles:
+          - $(PROJECT_DIR)/build/ios/libnvfips.a
+        # Checksums the Rust sources itself, like the Go phase above.
+        basedOnDependencyAnalysis: false
 
     dependencies:
       - framework: build/ios/libhaven_ios.a
+        embed: false
+        implicit: true
+      - framework: build/ios/libnvfips.a
         embed: false
         implicit: true
       - package: SilentPaymentsKit
@@ -239,8 +259,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_ENTITLEMENTS: NostrVaultWidgets/NostrVaultWidgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "40"
-        MARKETING_VERSION: "2.7.2"
+        CURRENT_PROJECT_VERSION: "50"
+        MARKETING_VERSION: "3.0.1"
         SKIP_INSTALL: YES
 
   # ── Share Extension (iOS / iPadOS) ────────────────────────
@@ -267,8 +287,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_ENTITLEMENTS: NostrVaultShare/NostrVaultShare.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "40"
-        MARKETING_VERSION: "2.7.2"
+        CURRENT_PROJECT_VERSION: "50"
+        MARKETING_VERSION: "3.0.1"
         SKIP_INSTALL: YES
 
 schemes:

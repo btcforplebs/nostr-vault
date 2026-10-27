@@ -4,6 +4,33 @@ import SwiftUI
 
 // MARK: - Artist and album pages
 
+/// The song a feed card opened its artist's page for. The card sets it
+/// just before opening the page, and the page takes it once, so going back
+/// and returning later shows the page plain.
+@MainActor
+final class MusicSongHighlight: ObservableObject {
+    static let shared = MusicSongHighlight()
+
+    struct Request: Equatable {
+        let artistId: String
+        let trackId: String
+    }
+
+    @Published private(set) var request: Request?
+
+    func show(_ track: WavlakeTrack) {
+        guard let artistId = track.artistId else { return }
+        request = Request(artistId: artistId, trackId: track.id)
+    }
+
+    /// The song to show for this artist, if one was asked for; clears it.
+    func take(artistId: String) -> String? {
+        guard let request, request.artistId == artistId else { return nil }
+        self.request = nil
+        return request.trackId
+    }
+}
+
 /// An artist's page: their picture and name, Play and Shuffle, a row of
 /// albums (newest first) to open, then every song.
 struct MusicArtistPage: View {
@@ -12,10 +39,23 @@ struct MusicArtistPage: View {
     let onBack: () -> Void
     @ObservedObject private var player = MusicPlayerService.shared
     @ObservedObject private var feed = MusicFeedState.shared
+    @ObservedObject private var highlight = MusicSongHighlight.shared
     @State private var page: MusicFeedState.ArtistPage?
     @State private var isLoading = true
+    /// The song a feed card opened this page for, tinted and scrolled to
+    /// (MusicTrackList).
+    @State private var highlightedId: String?
 
     var body: some View {
+        content
+            .task { await load() }
+            // A card tapped while this artist's page is already showing.
+            .onChange(of: highlight.request) { _, _ in
+                if page != nil { pickHighlight() }
+            }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             MusicBackButton(action: onBack)
 
@@ -58,7 +98,7 @@ struct MusicArtistPage: View {
                 }
                 if !page.tracks.isEmpty {
                     MusicSectionHeader(title: "Songs") { EmptyView() }
-                    MusicTrackList(tracks: page.tracks, sheet: $sheet)
+                    MusicTrackList(tracks: page.tracks, sheet: $sheet, highlightedId: highlightedId)
                 }
             } else {
                 MusicRetryMessage(text: "Couldn't load \(shown.name). Tap to try again.") {
@@ -66,7 +106,6 @@ struct MusicArtistPage: View {
                 }
             }
         }
-        .task { await load() }
     }
 
     /// The fetched details once they're in; what was tapped until then.
@@ -90,5 +129,13 @@ struct MusicArtistPage: View {
         guard !Task.isCancelled else { return }
         page = found
         isLoading = false
+        pickHighlight()
+    }
+
+    /// Shows the song a feed card asked for, when it's one of this page's.
+    private func pickHighlight() {
+        guard let id = highlight.take(artistId: artist.id) else { return }
+        guard page?.tracks.contains(where: { $0.id == id }) == true else { return }
+        highlightedId = id
     }
 }

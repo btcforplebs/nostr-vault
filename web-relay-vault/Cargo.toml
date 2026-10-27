@@ -11,13 +11,14 @@ description = "Vault side of the browser relay: NIP-01 over TCP/FIPS to a nostrv
 
 [features]
 default = ["native"]
-# The jmcorgan v0.5.2 native datagram API client. Its socket hand-off builds on
-# Linux, FreeBSD and macOS only (not Android, not iOS), so it is an adapter
-# behind a feature and the core builds without it.
+# The native datagram API client: a node's datagram API socket. Our fork
+# builds it on Android and iOS too, which is how the phones' libnvfips
+# (fips-v2-android) reaches the browser relay in-process.
 native = ["dep:fips"]
 
 [dependencies]
 # Pinned: the TS ⇄ Rust interop run (24/24) was against 0.2.5.
 nvpn-fips-tcp = "=0.2.5"
 serde_json = "1"
-fips = { git = "https://github.com/jmcorgan/fips", tag = "v0.5.2", optional = true }
+# Same rev as fips-v2-android, so the app links one fips.
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "e831d6d5", optional = true }

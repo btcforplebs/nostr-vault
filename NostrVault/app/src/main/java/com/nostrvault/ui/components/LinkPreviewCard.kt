@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.util.findAllOnce
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -328,12 +329,12 @@ private val TITLE_REGEX = Regex(
 )
 
 private fun extractMetaContent(html: String, property: String): String? {
-    for (match in META_REGEX.findAll(html)) {
+    for (match in META_REGEX.findAllOnce(html)) {
         if (match.groupValues[1].equals(property, ignoreCase = true)) {
             return match.groupValues[2].trim().takeIf { it.isNotBlank() }
         }
     }
-    for (match in META_REGEX_REVERSE.findAll(html)) {
+    for (match in META_REGEX_REVERSE.findAllOnce(html)) {
         if (match.groupValues[2].equals(property, ignoreCase = true)) {
             return match.groupValues[1].trim().takeIf { it.isNotBlank() }
         }

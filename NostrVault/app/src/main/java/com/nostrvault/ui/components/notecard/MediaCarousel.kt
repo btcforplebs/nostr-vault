@@ -1,5 +1,6 @@
 package com.nostrvault.ui.components
 
+import com.nostrvault.ui.components.MeshMediaStatusOverlay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.fips.MeshMediaStatus
+import com.nostrvault.fips.meshAuthor
 import androidx.compose.ui.semantics.contentDescription
 import com.nostrvault.ui.theme.*
 
@@ -28,6 +31,7 @@ internal fun MediaCarousel(
     origin: Long,
     onMediaClick: (Int) -> Unit,
     autoplay: Boolean = false,
+    author: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -53,7 +57,17 @@ internal fun MediaCarousel(
     // first photo: a portrait one displayed whole when posted alone lost its
     // top and bottom the moment a second image joined it.
     val firstRatio = remember(urls, tags) { knownAspectRatio(tags, urls.first()) }
-    val pagerRatio = (firstRatio ?: (4f / 3f)).coerceIn(2f / 3f, 16f / 9f)
+    // A first-page video takes the shape of its decoded frame when the hint has it the wrong way
+    // round or is missing: with the 4:3 default a portrait video was cut down to a landscape strip.
+    var firstDecoded by remember(urls) { mutableStateOf<Float?>(null) }
+    val firstIsVideo = isVideoUrl(urls.first())
+    val shapeRatio = if (firstIsVideo) videoBoxRatio(firstRatio, firstDecoded) else firstRatio
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    // A portrait video page is no taller than one alone in the feed (feedVideoMaxHeightDp).
+    val minRatio = if (firstIsVideo) {
+        maxOf(2f / 3f, config.screenWidthDp / feedVideoMaxHeightDp(config.screenHeightDp))
+    } else 2f / 3f
+    val pagerRatio = (shapeRatio ?: (4f / 3f)).coerceIn(minRatio, maxOf(minRatio, 16f / 9f))
 
     Column(modifier = modifier) {
         HorizontalPager(
@@ -66,6 +80,7 @@ internal fun MediaCarousel(
             val url = urls[page]
             var loaded by remember(url) { mutableStateOf(false) }
             var failed by remember(url) { mutableStateOf(false) }
+            val meshPhases by MeshMediaStatus.phases.collectAsState()
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -83,26 +98,34 @@ internal fun MediaCarousel(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(remember(url, tags) { feedImageModel(tags, url) })
+                        .meshAuthor(author)
                         .size(800)
                         .crossfade(100)
                         .build(),
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    // Photos fill the frame edge to edge (iOS #286). A video is shown whole: its
+                    // player fits, and a cropped poster would show a different picture.
+                    contentScale = if (isVideoUrl(url)) ContentScale.Fit else ContentScale.Crop,
                     onError = { if (!isVideoUrl(url)) failed = true },
                     onSuccess = { result ->
                         loaded = true
                         failed = false
                         val d = result.result.drawable
                         if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
-                            MediaAspectCache.put(
-                                url,
-                                d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat(),
-                            )
+                            val ratio = d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat()
+                            MediaAspectCache.put(url, ratio)
+                            if (page == 0) firstDecoded = ratio
                         }
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (failed) MediaFailedPlaceholder(url = url)
+                if (!loaded) {
+                    MeshMediaStatusOverlay(url = feedImageModel(tags, url), video = isVideoUrl(url), modifier = Modifier.matchParentSize())
+                }
+                // A broken photo the mesh isn't answering for (its overlay says so itself).
+                if (failed && MeshMediaStatus.phaseFor(meshPhases, feedImageModel(tags, url)) == null) {
+                    MediaFailedPlaceholder(url = url)
+                }
                 if (isVideoUrl(url) && autoplay && page == pagerState.currentPage) {
                     // Only the page in view is a candidate; the others keep a poster.
                     InlineFeedVideo(

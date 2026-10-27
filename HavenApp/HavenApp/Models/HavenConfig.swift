@@ -4,6 +4,13 @@ struct HavenConfig: Codable, Equatable {
     var ownerNpub: String = ""
     var relayURL: String = ""
     var relayPort: Int = 3355
+    /// Loopback port the FIPS mesh tunnel forwards to: plain HTTP, blob
+    /// GET/HEAD only, so mesh peers never reach the relay itself (NIP-F1).
+    var meshPlainPort: Int { relayPort + 1 }
+    /// The relay in full as plain HTTP for the owner's own devices on the
+    /// mesh (iOS only: the relay port there is TLS, and the mesh splices
+    /// plain HTTP). Open only while kiosk mode shares.
+    var meshOwnPort: Int { relayPort + 2 }
     var dbEngine: String = "badger"
     var blossomPath: String = "blossom/"
     var logLevel: String = "INFO"
@@ -175,6 +182,12 @@ struct HavenConfig: Codable, Equatable {
     var fipsAddressSource: String = "detected"  // "detected" | "owner" | "custom"
     var fipsCustomNpub: String = ""
 
+    // FIPS Mesh: the owner's own devices (one list both ways) and where a
+    // posted photo goes (MeshPhotoDestination raw value; stored only, the
+    // upload path reads it).
+    var meshDevices: [MeshDevice] = []
+    var meshPhotoDestination: String = MeshPhotoDestination.publicServer.rawValue
+
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
     // Default broadcast relays (Logen, 2026-10-07). nos.lol and nostr.mom
@@ -292,6 +305,7 @@ struct HavenConfig: Codable, Equatable {
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
         case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
+        case meshDevices, meshPhotoDestination
         case blastrRelaysFile, blastrRelays
         case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays, droppedDeadRelays
         case whitelistedNpubs, whitelistedNpubsFile
@@ -434,6 +448,11 @@ struct HavenConfig: Codable, Equatable {
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
         fipsAddressSource = try container.decodeIfPresent(String.self, forKey: .fipsAddressSource) ?? defaults.fipsAddressSource
         fipsCustomNpub = try container.decodeIfPresent(String.self, forKey: .fipsCustomNpub) ?? defaults.fipsCustomNpub
+        // An entry a newer app wrote (a role this one doesn't know) is skipped
+        // on its own, so it neither stops the config loading nor drops the rest.
+        meshDevices = (try? container.decodeIfPresent([LossyMeshDevice].self, forKey: .meshDevices))?
+            .compactMap(\.device) ?? defaults.meshDevices
+        meshPhotoDestination = try container.decodeIfPresent(String.self, forKey: .meshPhotoDestination) ?? defaults.meshPhotoDestination
 
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile
         blastrRelays = try container.decodeIfPresent([String].self, forKey: .blastrRelays) ?? defaults.blastrRelays

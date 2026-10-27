@@ -1,23 +1,27 @@
 package com.nostrvault.ui.notification
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -136,22 +140,31 @@ fun PillText(text: String, size: PillSize = PillSize.REGULAR, maxLines: Int = 1,
 }
 
 /**
- * The text button inside a regular pill (Undo, Edit): 13 sp bold, underlined,
- * at least 44 dp tall to tap. iOS `PillButton`.
+ * The text button inside a regular pill (Undo, Edit): 13 sp bold on a
+ * small 25 % white capsule, with a tap target at least 44 dp tall around
+ * it. iOS `PillButton`.
  */
 @Composable
 fun PillButton(title: String, onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-        modifier = Modifier.heightIn(min = 44.dp),
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            // The whole 44 dp target takes the tap; the ripple stays on the capsule.
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(vertical = 10.dp),
     ) {
         Text(
             text = title,
             color = PillStyle.textColor,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            textDecoration = TextDecoration.Underline,
+            modifier = Modifier
+                .clip(PillStyle.shape)
+                .background(PillStyle.textColor.copy(alpha = 0.25f))
+                .indication(interaction, LocalIndication.current)
+                .padding(horizontal = 10.dp, vertical = 5.dp),
         )
     }
 }

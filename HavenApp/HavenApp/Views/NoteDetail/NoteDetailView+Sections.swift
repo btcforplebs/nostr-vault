@@ -201,23 +201,22 @@ extension NoteDetailView {
 
     func repliesSection(proxy: ScrollViewProxy) -> some View {
         // One pass over everything in memory per redraw; this used to run
-        // four times (replies, pool, and the outside count twice), each a
-        // full scan of up to 10,000 notes, every time the live feed changed.
+        // four times, each a full scan of up to 10,000 notes, every time the
+        // live feed changed.
         let all = allThreadNotes
-        let split = threadReplies(in: all)
+        let replies = threadReplies(in: all)
         let context = contextNoteIds
         // What the views draw from: the opened note, the notes above it, and
         // the replies under it that pass `threadReplies`.
-        let pool = all.filter { context.contains($0.id) } + split.visible
+        let pool = all.filter { context.contains($0.id) } + replies
         let targetId = replyTargetId
         let currentReplies = pool.filter { $0.parentEventId == targetId }
             .sorted(by: { $0.createdAt < $1.createdAt })
-        let outsideCount = split.outside
 
         return VStack(alignment: .leading, spacing: 12) {
             // Replies already in memory — the one you just posted included —
             // show at once. The spinner is only for an empty page.
-            if isLoadingReplies && currentReplies.isEmpty && outsideCount == 0 {
+            if isLoadingReplies && currentReplies.isEmpty {
                 // Subtle loading indicator — replies are being buffered
                 HStack(spacing: 8) {
                     ProgressView()
@@ -230,7 +229,7 @@ extension NoteDetailView {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .transition(.opacity)
-            } else if currentReplies.isEmpty && outsideCount == 0 {
+            } else if currentReplies.isEmpty {
                 Text("No replies yet")
                     .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -248,27 +247,6 @@ extension NoteDetailView {
 
                 repliesList(currentReplies, pool: pool, proxy: proxy)
             }
-            outsideRepliesButton(count: outsideCount)
-        }
-    }
-
-    @ViewBuilder
-    private func outsideRepliesButton(count: Int) -> some View {
-        if !isLoadingReplies && count > 0 {
-            Button {
-                withAnimation(Motion.fade) { showsOutsideReplies = true }
-            } label: {
-                Label(count == 1 ? "Show 1 reply from outside your network"
-                                 : "Show \(count) replies from outside your network",
-                      systemImage: "person.crop.circle.badge.questionmark")
-                    .font(.appSystem(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
         }
     }
 

@@ -100,6 +100,13 @@ extension NostrService {
             #endif
         }
 
+        #if os(iOS)
+        // 1b. A copy for the owner's home vault (a kiosk phone on the mesh), if one is set.
+        HomeVaultSender.shared.enqueue(eventDict: eventDict)
+        // 1c. A copy for the owner's browser relay (a nostrvault.app page on the mesh), if one is set.
+        BrowserRelaySender.shared.enqueue(eventDict: eventDict)
+        #endif
+
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
         if event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == NIP10Thread.commentKind {
             // Find target author's pubkey from 'p' tags (skipping own pubkey)
@@ -126,10 +133,18 @@ extension NostrService {
         //    too, not only through the local relay. See
         //    RelayConfiguration.directBroadcastRelays for why.
         if directBroadcast {
+            // The same list the relay blasts to, so a Mac reached over the
+            // mesh is asked too and its OK confirms the post.
+            #if os(iOS)
+            let mesh = RelayConfiguration.macMeshRelay
+            #else
+            let mesh: RelayConfiguration.MacMeshRelay? = nil
+            #endif
             let relays = RelayConfiguration.directBroadcastRelays(
                 kind: event.kind,
                 tags: event.tags,
-                blastrRelays: ConfigService.shared.config.activeBlastrRelays
+                blastrRelays: RelayConfiguration.blastrRelays(config: ConfigService.shared.config, mesh: mesh),
+                ownerWriteRelays: outboxRelays[event.pubkey] ?? []
             )
             // The author's own kind 10002 write relays decide "Posted"; the
             // relays above still get it. See PublishTargets.

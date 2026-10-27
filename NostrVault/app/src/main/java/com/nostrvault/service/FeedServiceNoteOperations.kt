@@ -7,14 +7,28 @@ import kotlinx.serialization.json.*
 import com.nostrvault.service.FeedService.Companion.MAX_FEED_NOTES
 
 /**
- * The note in the feed whose own id is [id], or null. [index] is the feed's
- * lookup by id and by effectiveEventId; a repost is filed under its original's
- * id too, and a newer repost claims that key before the original, so a miss
- * there falls back to [notes] (iOS #302 matches on the note's own id).
+ * The feed's lookup by id and by effectiveEventId. Own ids first: a repost
+ * files under its original's id too, and when it sat earlier in the list it
+ * claimed that key, so every lookup of the original then fell back to a scan
+ * of the whole feed on Main. Within each pass the first note wins.
  */
-internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, notes: List<FeedNote>, id: String): FeedNote? {
+internal fun buildNoteIndex(notes: List<FeedNote>): Map<String, FeedNote> {
+    val map = HashMap<String, FeedNote>(notes.size * 2)
+    for (note in notes) map.putIfAbsent(note.id, note)
+    for (note in notes) map.putIfAbsent(note.effectiveEventId, note)
+    return map
+}
+
+/**
+ * The note in the feed whose own id is [id], or null. [index] is the feed's
+ * lookup by id and by effectiveEventId; own ids are filed before a repost's
+ * effectiveEventId, so a hit under another id means no note has this one as
+ * its own (iOS #302 matches on the note's own id). [notes] is unused: the
+ * fallback scan of the whole feed ran on Main for every repost in view.
+ */
+internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, @Suppress("UNUSED_PARAMETER") notes: List<FeedNote>, id: String): FeedNote? {
     val hit = index[id] ?: return null
-    return if (hit.id == id) hit else notes.firstOrNull { it.id == id }
+    return if (hit.id == id) hit else null
 }
 
 /**

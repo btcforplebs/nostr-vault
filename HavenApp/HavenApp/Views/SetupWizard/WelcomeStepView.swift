@@ -38,6 +38,10 @@ struct WelcomeStepView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 16)
             }
+            // A GeometryReader puts its child at the top leading corner. On the
+            // Mac the buttons stop at 360 pt, so without this the block hugs the
+            // left of the window; on iPhone they already fill the width.
+            .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showWhatsInside) {
             WhatsInsideSheet()

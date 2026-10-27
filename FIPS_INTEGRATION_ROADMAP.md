@@ -50,7 +50,7 @@ fips node ◄── find each other via Nostr relays + STUN ──► fips node
           ◄────────────── direct UDP link ─────────────►
 ```
 
-- **Engine:** upstream `fips`, pinned to a tag (v0.5.2 today), plus smoltcp, in one Rust core
+- **Engine:** upstream `fips`, pinned to a tag (v0.5.3 today), plus smoltcp, in one Rust core
   shared by every platform. Code: `fips-v2/` (engine) and `fips-v2-android/` (Android wrapper).
 - **Sharing:** the node accepts mesh connections on port 80 and passes them to the local relay.
 - **Reading (planned):** one local port per friend. The app points that friend's relay and Blossom URLs at

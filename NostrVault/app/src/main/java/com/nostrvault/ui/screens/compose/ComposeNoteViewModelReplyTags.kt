@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.util.findAllOnce
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -108,7 +109,7 @@ import kotlinx.coroutines.flow.map
             .map { it[1] }
             .toMutableSet()
         val result = mutableListOf<List<String>>()
-        for (match in NostrMentions.MENTION_REGEX.findAll(text)) {
+        for (match in NostrMentions.MENTION_REGEX.findAllOnce(text)) {
             val pubkey = NostrMentions.resolvePubkey(match.groupValues[1]) ?: continue
             if (seen.add(pubkey)) result.add(listOf("p", pubkey))
         }

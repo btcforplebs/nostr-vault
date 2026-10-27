@@ -184,6 +184,15 @@ extension FeedView {
         }
         .padding(.vertical, 16)
         .onAppear { marketplaceService.loadIfNeeded() }
+        // Global waits for the global feed's warning (MarketScopeGate).
+        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $marketplaceService.globalWarningPending) {
+            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
+                marketplaceService.confirmGlobal()
+            }
+            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "feed.alert.sensitiveContent.message"))
+        }
         // Sellers are mostly strangers, so their names aren't cached yet.
         .task(id: marketplaceService.listings.count) {
             nostrService.fetchMissingProfiles(for: Array(Set(marketplaceService.listings.map(\.pubkey))))
@@ -232,14 +241,14 @@ extension FeedView {
             onOpenNote: { openNoteDetail($0) },
             onLike: { feedActionsValue.likeNote($0) },
             onShowGlobal: { reelsService.setScope(.global) },
-            onPost: { modeComposer = .divine },
+            onPost: configService.activeAccountCanSign ? { modeComposer = .divine } : nil,
             isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
                 || showingMediaUrl != nil || showingDashboard
         )
         // feedList is not on screen in diVines, so the collapsed tab bar's
         // compose button is answered here.
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
-            guard (note.object as? Int) == 0 else { return }
+            guard (note.object as? Int) == 0, configService.activeAccountCanSign else { return }
             modeComposer = .divine
         }
     }

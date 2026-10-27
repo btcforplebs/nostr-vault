@@ -153,6 +153,7 @@ extension FeedNoteRow {
                                     portraitMaxHeight: 200,
                                     isThumbnail: false
                                 )
+                                .meshMediaNote(author: parent.pubkey, tags: parent.tags)
                                 .frame(maxWidth: .infinity)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .allowsHitTesting(false)

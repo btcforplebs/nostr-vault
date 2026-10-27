@@ -83,7 +83,8 @@ internal fun MediaFeedGrid(
                 url = note.mediaURLs.first(),
                 mediaCount = note.mediaURLs.size,
                 sourceKey = MediaSourceKey(zoomOrigin, index),
-                onTap = { FullScreenMediaRouter.open(gridUrls, index, zoomOrigin) },
+                author = note.pubkey,
+                onTap = { FullScreenMediaRouter.open(gridUrls, index, zoomOrigin, authors = notes.map { it.pubkey }) },
                 onLongPress = { onNoteClick(note.id) },
             )
         }
@@ -113,6 +114,7 @@ private fun MediaGridCell(
     url: String,
     mediaCount: Int,
     sourceKey: MediaSourceKey,
+    author: String,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -130,6 +132,7 @@ private fun MediaGridCell(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
+            meshAuthor = author,
         )
 
         // Top-right indicator: stacked-squares for multi-media, play for a lone video.
