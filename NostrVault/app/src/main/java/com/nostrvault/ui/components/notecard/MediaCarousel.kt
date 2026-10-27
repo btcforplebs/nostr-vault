@@ -65,6 +65,7 @@ internal fun MediaCarousel(
         ) { page ->
             val url = urls[page]
             var loaded by remember(url) { mutableStateOf(false) }
+            var failed by remember(url) { mutableStateOf(false) }
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -87,8 +88,10 @@ internal fun MediaCarousel(
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    onError = { if (!isVideoUrl(url)) failed = true },
                     onSuccess = { result ->
                         loaded = true
+                        failed = false
                         val d = result.result.drawable
                         if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
                             MediaAspectCache.put(
@@ -99,6 +102,7 @@ internal fun MediaCarousel(
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
+                if (failed) MediaFailedPlaceholder(url = url)
                 if (isVideoUrl(url) && autoplay && page == pagerState.currentPage) {
                     // Only the page in view is a candidate; the others keep a poster.
                     InlineFeedVideo(
