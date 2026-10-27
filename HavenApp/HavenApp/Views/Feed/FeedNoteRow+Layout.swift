@@ -23,6 +23,12 @@ extension FeedNoteRow {
                 reposts: rowData.stats.reposts
             ),
             showsTranslate: note.kind != 30023,
+            quotes: CondensedQuote.resolve(
+                for: rowData.resolvedOriginal ?? note,
+                find: actions.findNote,
+                unavailable: FeedService.shared.unavailableNoteIds
+            ),
+            onMissingQuote: actions.fetchMissingNote,
             onProfile: { onProfile?($0) },
             onTap: { onTapRow?() }
         )
