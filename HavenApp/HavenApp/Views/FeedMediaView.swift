@@ -237,6 +237,7 @@ private struct FeedPhotoView: View {
     @State private var image: PlatformImage?
     @State private var aspectRatio: CGFloat?
     @State private var isLoading = false
+    @State private var loadFailed = false
 
     var body: some View {
         ZStack {
@@ -251,6 +252,8 @@ private struct FeedPhotoView: View {
                     .resizable()
                     .aspectRatio(contentMode: isThumbnail || fillsFrame ? .fill : .fit)
                     .transition(.opacity.animation(Motion.media))
+            } else if loadFailed {
+                MediaFailedPlaceholder(url: url, compact: isThumbnail)
             } else {
                 MediaLoadingPlaceholder(url: url, isLoading: isLoading)
                     .transition(MediaLoadingPlaceholder.removal)
@@ -273,6 +276,7 @@ private struct FeedPhotoView: View {
     /// so the row is already the right height when the pixels arrive.
     private var displayAspectRatio: CGFloat? {
         aspectRatio ?? Self.knownRatios[url] ?? MediaHints.shared.hint(for: url)?.aspectRatio
+            ?? (loadFailed ? 16 / 9 : nil)
     }
 
     /// Ratios of photos already decoded this session. A row that scrolls off
@@ -289,6 +293,7 @@ private struct FeedPhotoView: View {
 
     private func loadImage() {
         guard image == nil, !isLoading else { return }
+        loadFailed = false
 
         // Fast path: check in-memory decoded image cache (no disk I/O)
         if let cached = MediaCacheService.shared.cachedImage(for: url) {
@@ -322,10 +327,10 @@ private struct FeedPhotoView: View {
                         self.isLoading = false
                     }
                 } else {
-                    await MainActor.run { self.isLoading = false }
+                    await MainActor.run { self.isLoading = false; self.loadFailed = true }
                 }
             } else {
-                await MainActor.run { self.isLoading = false }
+                await MainActor.run { self.isLoading = false; self.loadFailed = true }
             }
         }
     }
@@ -474,6 +479,36 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Failed placeholder
+
+/// What a photo shows when it could not be loaded. A vault link (`.fips`)
+/// names the owner's vault, so it says that vault wasn't reached; any other
+/// link is a plain broken image — its server is not the owner's vault, and
+/// saying so would send them looking in the wrong place.
+struct MediaFailedPlaceholder: View {
+    let url: URL
+    var compact = false
+
+    var body: some View {
+        let vault = MediaVaultLink.isVault(url)
+        VStack(spacing: 6) {
+            Image(systemName: vault ? "externaldrive.badge.xmark" : "photo.badge.exclamationmark")
+                .font(.appSystem(size: compact ? 18 : 26))
+            if vault && !compact {
+                Text(MediaVaultLink.unreachedText)
+                    .font(.appSystem(size: 13, weight: .medium))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .foregroundColor(.secondary)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minHeight: compact ? nil : 120)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(vault ? MediaVaultLink.unreachedText : "Image unavailable")
     }
 }
 
