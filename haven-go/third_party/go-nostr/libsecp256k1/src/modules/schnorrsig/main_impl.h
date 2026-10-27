@@ -97,7 +97,7 @@ static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *ms
     return 1;
 }
 
-const secp256k1_nonce_function_hardened secp256k1_nonce_function_bip340 = nonce_function_bip340;
+SECP256K1_VAR_LINKAGE const secp256k1_nonce_function_hardened secp256k1_nonce_function_bip340 = nonce_function_bip340;
 
 /* Initializes SHA256 with fixed midstate. This midstate was computed by applying
  * SHA256 to SHA256("BIP0340/challenge")||SHA256("BIP0340/challenge"). */

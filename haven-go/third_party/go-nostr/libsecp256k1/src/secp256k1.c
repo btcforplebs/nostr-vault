@@ -71,8 +71,15 @@ static const secp256k1_context secp256k1_context_static_ = {
     { secp256k1_default_error_callback_fn, 0 },
     0
 };
-const secp256k1_context *secp256k1_context_static = &secp256k1_context_static_;
-const secp256k1_context *secp256k1_context_no_precomp = &secp256k1_context_static_;
+/* haven: the linkage of the exported constants. Empty upstream; go-nostr's
+ * cgo build sets it to `static` together with SECP256K1_API, so that none of
+ * the library's symbols leave libhaven (see signature_libsecp256k1.go). */
+#ifndef SECP256K1_VAR_LINKAGE
+#define SECP256K1_VAR_LINKAGE
+#endif
+
+SECP256K1_VAR_LINKAGE const secp256k1_context *secp256k1_context_static = &secp256k1_context_static_;
+SECP256K1_VAR_LINKAGE const secp256k1_context *secp256k1_context_no_precomp = &secp256k1_context_static_;
 
 /* Helper function that determines if a context is proper, i.e., is not the static context or a copy thereof.
  *
@@ -504,8 +511,8 @@ static int nonce_function_rfc6979(unsigned char *nonce32, const unsigned char *m
    return 1;
 }
 
-const secp256k1_nonce_function secp256k1_nonce_function_rfc6979 = nonce_function_rfc6979;
-const secp256k1_nonce_function secp256k1_nonce_function_default = nonce_function_rfc6979;
+SECP256K1_VAR_LINKAGE const secp256k1_nonce_function secp256k1_nonce_function_rfc6979 = nonce_function_rfc6979;
+SECP256K1_VAR_LINKAGE const secp256k1_nonce_function secp256k1_nonce_function_default = nonce_function_rfc6979;
 
 static int secp256k1_ecdsa_sign_inner(const secp256k1_context* ctx, secp256k1_scalar* r, secp256k1_scalar* s, int* recid, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function noncefp, const void* noncedata) {
     secp256k1_scalar sec, non, msg;
