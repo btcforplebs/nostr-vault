@@ -41,12 +41,18 @@ struct RepostedNoteView: View {
             let urls = inner.mediaURLs
             let links = LinkCards.shown(inner.linkURLs)
             let content = inner.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !content.isEmpty {
-                Text(NostrContentFormatter.format(content, mediaURLs: urls + links))
-                    .font(.appSystem(size: 14, weight: .regular, design: .default))
-                    .foregroundColor(Color(red: 0.9, green: 0.9, blue: 0.9))
-                    .lineSpacing(2)
-                    .lineLimit(nil)
+            // Each link's card sits where the link was written.
+            ForEach(Array(NoteURLs.segments(content, cards: links).enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case .text(let piece):
+                    Text(NostrContentFormatter.format(piece, mediaURLs: urls))
+                        .font(.appSystem(size: 14, weight: .regular, design: .default))
+                        .foregroundColor(Color(red: 0.9, green: 0.9, blue: 0.9))
+                        .lineSpacing(2)
+                        .lineLimit(nil)
+                case .link(let url):
+                    LinkPreviewCard(url: url)
+                }
             }
 
             // Media previews
@@ -64,11 +70,6 @@ struct RepostedNoteView: View {
                     }
                     .frame(height: 250)
                 }
-            }
-
-            // Link previews, one per link — the text no longer shows them.
-            ForEach(links, id: \.self) { url in
-                LinkPreviewCard(url: url)
             }
 
             // Quoted notes and articles

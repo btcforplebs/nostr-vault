@@ -98,14 +98,23 @@ extension FeedNoteRow {
             .padding(.top, 4)
         } else {
             let invoices = NoteInvoices.find(in: bodySource.content)
-            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs), invoices: invoices)
+            // Each link's card sits where the link was written, between the
+            // text before and after it.
+            let segments = NoteURLs.segments(bodySource.content, cards: LinkCards.shown(bodySource.linkURLs))
             VStack(alignment: .leading, spacing: 8) {
-                Text(formattedContent)
-                    .font(.appSystem(size: 17, weight: .regular, design: .default))
-                    .foregroundColor(Color(red: 1, green: 1, blue: 1))
-                    .lineSpacing(2)
-                    .lineLimit(nil)
-                    .textSelection(.enabled)
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                    switch segment {
+                    case .text(let piece):
+                        Text(NostrContentFormatter.format(piece, mediaURLs: bodySource.mediaURLs, invoices: invoices))
+                            .font(.appSystem(size: 17, weight: .regular, design: .default))
+                            .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                            .lineSpacing(2)
+                            .lineLimit(nil)
+                            .textSelection(.enabled)
+                    case .link(let url):
+                        LinkPreviewCard(url: url)
+                    }
+                }
                 NoteTranslateButton(noteID: bodySource.id, content: bodySource.content, kind: bodySource.kind)
             }
             .padding(.top, 4)
@@ -113,13 +122,6 @@ extension FeedNoteRow {
             // Media previews
             if !bodySource.mediaURLs.isEmpty {
                 feedMediaCarousel(urls: bodySource.mediaURLs)
-                    .padding(.top, 4)
-            }
-
-            // Link previews — the text no longer carries the URLs, so every
-            // link gets its card.
-            ForEach(LinkCards.shown(bodySource.linkURLs), id: \.self) { url in
-                LinkPreviewCard(url: url)
                     .padding(.top, 4)
             }
 
