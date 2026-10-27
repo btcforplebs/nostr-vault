@@ -1,16 +1,12 @@
 import SwiftUI
 
-/// Measures a note body's fully unclamped height so `truncate` can tell
-/// whether its `lineLimit` actually cut anything, rather than guessing from
-/// character count.
-private struct FullTextHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-private struct ClampedTextHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// Full heights of a note's text pieces, by segment index, plus one line's
+/// height at `NoteRow.lineHeightKey`, so `NoteClamp` can count lines.
+private struct SegmentHeightsKey: PreferenceKey {
+    static var defaultValue: [Int: CGFloat] = [:]
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
 }
 
 extension NoteRow {
@@ -85,42 +81,61 @@ extension NoteRow {
                 let urls = event.mediaURLs
                 let links = LinkCards.shown(event.linkURLs)
 
-                if !cleanContent.isEmpty {
-                    let formattedContent = NostrContentFormatter.format(cleanContent, mediaURLs: urls + links)
-                    Group {
-                        if truncate {
-                            Text(formattedContent)
-                                .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
-                                .foregroundColor(Color(red: 1, green: 1, blue: 1))
-                                .lineSpacing(2)
-                                .lineLimit(isExpanded ? nil : 8)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .background(
-                                    Text(formattedContent)
+                // Each link's card sits where the link was written. Collapsed,
+                // the text pieces share one 8-line budget, so the clamp still
+                // cuts at 8 lines however the text is split around cards.
+                let segments = NoteURLs.segments(cleanContent, cards: links)
+                let collapsed = truncate && !isExpanded
+                let plan = NoteClamp.plan(segments, lines: measuredLines, budget: 8)
+                if !segments.isEmpty {
+                    VStack(alignment: .leading, spacing: cardSpacing) {
+                        ForEach(Array(segments.enumerated()), id: \.offset) { i, segment in
+                            let show = collapsed ? plan.shows[i] : .full
+                            if show != .hidden {
+                                switch segment {
+                                case .text(let piece):
+                                    Text(NostrContentFormatter.format(piece, mediaURLs: urls))
                                         .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
+                                        .foregroundColor(Color(red: 1, green: 1, blue: 1))
                                         .lineSpacing(2)
-                                        .lineLimit(nil)
+                                        .lineLimit(show.lineLimit)
                                         .fixedSize(horizontal: false, vertical: true)
-                                        .hidden()
-                                        .background(GeometryReader { geo in
-                                            Color.clear.preference(key: FullTextHeightKey.self, value: geo.size.height)
-                                        })
-                                )
-                                .background(GeometryReader { geo in
-                                    Color.clear.preference(key: ClampedTextHeightKey.self, value: geo.size.height)
-                                })
-                                .onPreferenceChange(FullTextHeightKey.self) { fullContentHeight = $0 }
-                                .onPreferenceChange(ClampedTextHeightKey.self) { clampedContentHeight = $0 }
-                        } else {
-                            Text(formattedContent)
-                                .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
-                                .foregroundColor(Color(red: 1, green: 1, blue: 1))
-                                .lineSpacing(2)
-                                .fixedSize(horizontal: false, vertical: true)
+                                case .link(let url):
+                                    LinkPreviewCard(url: url)
+                                }
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        if truncate {
+                            // Every text piece at full length, unseen, to count its lines.
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("A")
+                                    .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .background(GeometryReader { geo in
+                                        Color.clear.preference(key: SegmentHeightsKey.self, value: [Self.lineHeightKey: geo.size.height])
+                                    })
+                                ForEach(Array(segments.enumerated()), id: \.offset) { i, segment in
+                                    if case .text(let piece) = segment {
+                                        Text(NostrContentFormatter.format(piece, mediaURLs: urls))
+                                            .font(.appSystem(size: contentFontSize, weight: .regular, design: .default))
+                                            .lineSpacing(2)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .background(GeometryReader { geo in
+                                                Color.clear.preference(key: SegmentHeightsKey.self, value: [i: geo.size.height])
+                                            })
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .hidden()
+                        }
+                    }
+                    .onPreferenceChange(SegmentHeightsKey.self) { segmentHeights = $0 }
 
-                    if truncate && !isExpanded && isContentClamped {
+                    if collapsed && plan.cut {
                         Button(action: { withAnimation(Motion.panel) { isExpanded = true } }) {
                             Text("Show more")
                                 .font(.appSystem(size: 12, weight: .semibold, design: .monospaced))
@@ -145,11 +160,6 @@ extension NoteRow {
                         }
                         .frame(height: 300)
                     }
-                }
-
-                // Link previews, one per link — the text no longer shows them.
-                ForEach(links, id: \.self) { url in
-                    LinkPreviewCard(url: url)
                 }
 
                 // Quoted notes and articles
