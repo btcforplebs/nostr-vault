@@ -3,9 +3,11 @@
 // The list is kept in Haven's outbox (the user's own events live there), so it holds offline. Blocking and
 // unblocking (setBlock) publish a new list built on the newest one found, the way follows.js edits the follow list.
 //
-// Public entries are the `p` tags. A private part, when there is one, is the content: a JSON array of tags encrypted
+// Public entries are the tags. A private part, when there is one, is the content: a JSON array of tags encrypted
 // to the user's own key (NIP-44, or NIP-04 from older clients). Only a signer that can decrypt reads it; when this
-// one can't, `privateNote` says why and only the public part applies.
+// one can't, `privateNote` says why and only the public part applies. People are the `p` entries; muted words
+// (`word`), hashtags (`t`) and threads (`e`) ride on the same Set as `words`, `hashtags` and `threads` (muteSet), so
+// every screen that already hides blocked people's notes hides muted ones too.
 import { verifyEvent } from "nostr-tools/pure"
 import { pool, publishRelays, PROFILE_RELAYS, uniq } from "./pool.js"
 import { askRelay, MAX_SKEW } from "./follows.js"
@@ -20,6 +22,42 @@ const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? 
 /** Hex pubkeys from a list of tags: valid `p` tags only, lowercased, once each. */
 export function pTags(tags) {
   return uniq((Array.isArray(tags) ? tags : []).filter(t => Array.isArray(t) && t[0] === "p" && HEX64.test(String(t[1] ?? "").toLowerCase())).map(t => t[1].toLowerCase()))
+}
+
+/** The list's muted words (lowercased), hashtags (lowercased, no #) and threads (event ids), from a list of tags. */
+export function muteEntries(tags) {
+  const ts = (Array.isArray(tags) ? tags : []).filter(t => Array.isArray(t) && typeof t[1] === "string" && t[1].trim())
+  const of = name => uniq(ts.filter(t => t[0] === name).map(t => t[1].trim().toLowerCase()))
+  return {
+    words: of("word"),
+    hashtags: new Set(of("t").map(t => t.replace(/^#/, ""))),
+    threads: new Set(of("e").filter(id => HEX64.test(id))),
+  }
+}
+
+/** A Set of blocked pubkeys carrying the muted words, hashtags and threads (muteEntries) along with it. */
+export function muteSet(pubkeys = [], tags = []) {
+  return Object.assign(new Set(pubkeys), muteEntries(tags))
+}
+
+/** True when `blocked` hides anything: people, or muted words, hashtags or threads. */
+export const blocksAny = blocked => !!blocked && (blocked.size > 0 || blocked.words?.length > 0 || blocked.hashtags?.size > 0 || blocked.threads?.size > 0)
+
+/** True when a note's own words, hashtags or thread are muted. A plain Set (no mutes) never mutes. */
+export function isMutedNote(ev, blocked) {
+  if (!ev || !blocked) return false
+  const { words, hashtags, threads } = blocked
+  if (threads?.size) {
+    if (threads.has(ev.id)) return true
+    const { root, parent } = replyRefs(ev)
+    if ((root && threads.has(root)) || (parent && threads.has(parent))) return true
+  }
+  if (hashtags?.size && (ev.tags ?? []).some(t => t[0] === "t" && hashtags.has(String(t[1] ?? "").toLowerCase().replace(/^#/, "")))) return true
+  if (words?.length) {
+    const text = String(ev.content ?? "").toLowerCase()
+    if (text && words.some(w => text.includes(w))) return true
+  }
+  return false
 }
 
 /** NIP-04 ciphertext carries "?iv="; anything else is taken as NIP-44. */
@@ -49,15 +87,17 @@ export async function decrypterFor(session, { ext, signer } = {}) {
   }
 }
 
-/** The private entries of a kind 10000. -> { pubkeys, note } where note is "" when nothing was left unread. */
+/** The private entries of a kind 10000. -> { pubkeys, tags, note } where note is "" when nothing was left unread. */
 export async function privateBlocks(ev, opener) {
   const c = typeof ev?.content === "string" ? ev.content.trim() : ""
-  if (!c) return { pubkeys: [], note: "" }
-  if (!opener?.decrypt) return { pubkeys: [], note: opener?.reason ?? "no way to decrypt" }
+  if (!c) return { pubkeys: [], tags: [], note: "" }
+  if (!opener?.decrypt) return { pubkeys: [], tags: [], note: opener?.reason ?? "no way to decrypt" }
   try {
-    return { pubkeys: pTags(JSON.parse(await opener.decrypt(c))), note: "" }
+    const tags = JSON.parse(await opener.decrypt(c))
+    if (!Array.isArray(tags)) throw new Error("it isn't a list")
+    return { pubkeys: pTags(tags), tags, note: "" }
   } catch (e) {
-    return { pubkeys: [], note: e?.message ? String(e.message) : "couldn't decrypt it" }
+    return { pubkeys: [], tags: [], note: e?.message ? String(e.message) : "couldn't decrypt it" }
   }
 }
 
@@ -77,59 +117,66 @@ export async function refreshBlockList(vault, pubkey, relays, { query = (r, f, o
 }
 
 // What the screens read. One list per signed-in account; a new account starts empty.
-let state = { pubkey: null, blocked: new Set(), privateBlocked: new Set(), privateNote: "", eventId: null }
+const empty = pubkey => ({ pubkey, blocked: muteSet(), privateBlocked: new Set(), privateNote: "", eventId: null })
+let state = empty(null)
 let loading = null
+let asked = new Set() // relays already asked for this account's list
 const listeners = new Set()
 
 export const getBlocks = () => state
 /** Forget the loaded list, so the next loadBlocks reads it again (tests; a new account resets on its own). */
-export function resetBlocks() { state = { pubkey: null, blocked: new Set(), privateBlocked: new Set(), privateNote: "", eventId: null }; loading = null; for (const cb of listeners) cb() }
+export function resetBlocks() { state = empty(null); loading = null; asked = new Set(); for (const cb of listeners) cb() }
 export function onBlocks(cb) { listeners.add(cb); return () => listeners.delete(cb) }
 
+// The same list is read again only when its private part couldn't be opened last time (a bunker that hadn't
+// connected yet, an extension that was locked): this try may open it.
 async function apply(pubkey, ev, opener) {
-  if (!ev || ev.id === state.eventId) return
+  if (!ev || (ev.id === state.eventId && !state.privateNote)) return
+  if (state.eventId && ev.id !== state.eventId && ev.created_at < (state.created_at ?? 0)) return // never go back to an older list
   const priv = await privateBlocks(ev, opener)
   if (state.pubkey !== pubkey) return // signed out or switched while decrypting
-  state = { pubkey, blocked: new Set([...pTags(ev.tags), ...priv.pubkeys]), privateBlocked: new Set(priv.pubkeys), privateNote: priv.note, eventId: ev.id }
+  state = { pubkey, blocked: muteSet([...pTags(ev.tags), ...priv.pubkeys], [...(ev.tags ?? []), ...priv.tags]), privateBlocked: new Set(priv.pubkeys), privateNote: priv.note, eventId: ev.id, created_at: ev.created_at }
   for (const cb of listeners) cb()
 }
 
 /**
- * Load the block list once per account: Haven's copy first (so offline works), then the network's if it is newer.
- * Later calls for the same account return the same promise. `opener` and `query` are for tests.
+ * Load the block list for an account: Haven's copy first (so offline works), then the network's if it is newer.
+ * A later call for the same account asks only relays not asked yet (the account's own relays arrive after sign-in,
+ * once its kind 10002 is read), and tries the private part again if it couldn't be opened. `opener` and `query`
+ * are for tests.
  */
 export function loadBlocks({ vault, session, signer }, relays, { opener, query, log } = {}) {
   const pubkey = session.pubkey
-  if (state.pubkey === pubkey && loading) return loading
-  state = { pubkey, blocked: new Set(), privateBlocked: new Set(), privateNote: "", eventId: null }
-  for (const cb of listeners) cb()
-  loading = (async () => {
+  const fresh = uniq(relays).filter(r => !asked.has(r))
+  if (state.pubkey === pubkey && loading && !fresh.length) return loading
+  if (state.pubkey !== pubkey) { state = empty(pubkey); asked = new Set(); loading = null; for (const cb of listeners) cb() }
+  for (const r of fresh) asked.add(r)
+  const before = loading ?? Promise.resolve() // one load at a time per account, so lists land in order
+  loading = before.then(async () => {
     const open = opener ?? (await decrypterFor(session, { signer }))
     await apply(pubkey, await readBlockList(vault, pubkey), open)
-    if (globalThis.navigator?.onLine === false) return
-    await apply(pubkey, await refreshBlockList(vault, pubkey, relays, { query, log }), open)
-  })().catch(e => log?.("blocks-load-failed", { message: String(e?.message ?? e) }))
+    if (globalThis.navigator?.onLine === false || !fresh.length) return
+    await apply(pubkey, await refreshBlockList(vault, pubkey, fresh, { query, log }), open)
+  }).catch(e => log?.("blocks-load-failed", { message: String(e?.message ?? e) }))
   return loading
 }
 
-/** The author a repost carries, from its embedded note if that note's signature checks (repostInner), or null:
- *  anyone can write any pubkey into a repost, so an unchecked one is not known. */
-function repostedAuthor(ev) {
-  return repostInner(ev)?.pubkey?.toLowerCase() ?? null
-}
+/** A repost or reaction whose `e` tag points at a muted thread. */
+const isMutedThreadRef = (ev, blocked) => !!blocked?.threads?.size && (ev.tags ?? []).some(t => t[0] === "e" && blocked.threads.has(String(t[1] ?? "").toLowerCase()))
 
 /** True when a note is a blocked person's, a repost of one (someone you follow can repost a blocked person), or a reply
  *  to one, when `authorOf` knows who wrote the parent (the iPhone's FeedFilterEngine.isBlocked). A repost whose note
  *  doesn't check is hidden if its p tag names a blocked person, but a p tag never clears one: the card checks the note
  *  it fetches by id instead (repostState). */
 export function isBlockedNote(ev, blocked, authorOf = () => null) {
-  if (!ev || !blocked.size) return false
+  if (!ev || !blocksAny(blocked)) return false
   if (blocked.has(String(ev.pubkey).toLowerCase())) return true
   if (ev.kind === 6 || ev.kind === 16) {
-    const original = repostedAuthor(ev)
-    if (original) return blocked.has(original)
-    return blocked.has((ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase())
+    const inner = repostInner(ev)
+    if (inner) return blocked.has(inner.pubkey.toLowerCase()) || isMutedNote(inner, blocked) || isMutedThreadRef(ev, blocked)
+    return blocked.has((ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()) || isMutedThreadRef(ev, blocked)
   }
+  if (isMutedNote(ev, blocked)) return true
   if (ev.kind === 1111) {
     const answered = (ev.tags ?? []).find(t => t[0] === "p")?.[1]?.toLowerCase()
     if (answered && blocked.has(answered)) return true
@@ -144,12 +191,12 @@ export function isBlockedNote(ev, blocked, authorOf = () => null) {
 export function repostState(ev, kinds, blocked) {
   if (ev === undefined) return "loading"
   if (!kinds.has(ev?.kind)) return "missing"
-  return blocked?.size && isBlockedNote(ev, blocked) ? "blocked" : "note"
+  return blocksAny(blocked) && isBlockedNote(ev, blocked) ? "blocked" : "note"
 }
 
 /** Notes left once blocked people's, and replies to the blocked people's notes among them, are taken out. */
 export function visibleNotes(evs, blocked) {
-  if (!blocked.size) return evs
+  if (!blocksAny(blocked)) return evs
   const byId = new Map(evs.map(ev => [ev.id, ev]))
   return evs.filter(ev => !isBlockedNote(ev, blocked, id => byId.get(id)?.pubkey))
 }
@@ -162,14 +209,19 @@ export const visiblePeople = (pubkeys, blocked) => (blocked.size ? pubkeys.filte
  * people liked shows two once one is blocked, and a row only blocked people made is gone.
  */
 export function visibleRows(rows, blocked, pubkey) {
-  if (!blocked.size) return rows
-  const evs = rows.flatMap(r => r.events).filter(ev => { const n = classify(ev, pubkey); return n && !blocked.has(n.who) })
+  if (!blocksAny(blocked)) return rows
+  const evs = rows.flatMap(r => r.events).filter(ev => {
+    const n = classify(ev, pubkey)
+    if (!n || blocked.has(n.who)) return false
+    if (n.noteId && blocked.threads?.has(n.noteId)) return false // a like or zap on a note in a muted thread
+    return !((ev.kind === 1 || ev.kind === 1111) && isMutedNote(ev, blocked))
+  })
   return groupNotifications(evs, pubkey)
 }
 
 /** A thread's reply tree without blocked people's replies. Their replies' own replies stay, moved up to their place. */
 export function visibleReplies(replies, blocked) {
-  if (!blocked.size) return replies
+  if (!blocksAny(blocked)) return replies
   return replies.flatMap(n => {
     const children = visibleReplies(n.children, blocked)
     return isBlockedNote(n.event, blocked) ? children : [{ event: n.event, children }]
