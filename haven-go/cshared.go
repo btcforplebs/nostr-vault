@@ -197,14 +197,12 @@ func SetHavenEnvC(key *C.char, value *C.char) {
 	os.Setenv(C.GoString(key), C.GoString(value))
 }
 
-// prepareCSharedEnv performs the per-start environment setup shared by
-// normal and import mode. Must be called with relayLC.mu held — it
-// mutates the package globals config/fs and the process CWD.
-func prepareCSharedEnv() error {
-	// On Android (and other embedded hosts), the process CWD is NOT the relay
-	// data directory.  DATABASE_PATH is set to <relayDataDir>/data/ — derive
-	// the relay data root and chdir so that relative paths (db/*, wot_cache.json,
-	// relays_*.json) resolve correctly, matching the iOS subprocess behaviour.
+// chdirToRelayRoot: on Android (and other embedded hosts), the process CWD
+// is NOT the relay data directory. DATABASE_PATH is set to
+// <relayDataDir>/data/ — derive the relay data root and chdir so that
+// relative paths (db/*, wot_cache.json, relays_*.json) resolve correctly,
+// matching the iOS subprocess behaviour. Must be called with relayLC.mu held.
+func chdirToRelayRoot() {
 	if dbPath := os.Getenv("DATABASE_PATH"); dbPath != "" {
 		relayRoot := filepath.Dir(strings.TrimRight(dbPath, "/"))
 		if err := os.Chdir(relayRoot); err != nil {
@@ -213,6 +211,13 @@ func prepareCSharedEnv() error {
 			log.Printf("📂 CWD set to relay data root: %s", relayRoot)
 		}
 	}
+}
+
+// prepareCSharedEnv performs the per-start environment setup shared by
+// normal and import mode. Must be called with relayLC.mu held — it
+// mutates the package globals config/fs and the process CWD.
+func prepareCSharedEnv() error {
+	chdirToRelayRoot()
 
 	config = loadConfig() // reload config dynamically
 
@@ -601,6 +606,9 @@ func BackupDatabaseC(outputPath *C.char) (ret C.int) {
 	log.Printf("📦 Starting database backup to %s", goPath)
 
 	return C.int(withExclusiveDBs("backup", func() int {
+		// The relay may never have started in this process (setup), so
+		// the CWD can still be "/" and db/* would not resolve.
+		chdirToRelayRoot()
 		config = loadConfig()
 		if err := initDBs(); err != nil {
 			log.Println("🚫 backup: failed to init DBs:", err)
@@ -631,6 +639,9 @@ func RestoreDatabaseC(inputPath *C.char) (ret C.int) {
 	log.Printf("📦 Starting database restore from %s", goPath)
 
 	return C.int(withExclusiveDBs("restore", func() int {
+		// The relay may never have started in this process (setup), so
+		// the CWD can still be "/" and db/* would not resolve.
+		chdirToRelayRoot()
 		config = loadConfig()
 		if err := initDBs(); err != nil {
 			log.Println("🚫 restore: failed to init DBs:", err)

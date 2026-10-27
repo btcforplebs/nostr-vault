@@ -115,23 +115,15 @@ import java.net.URL
 
             withContext(Dispatchers.IO) {
                 try {
-                    // The Go restore opens the databases itself, so a running
-                    // relay is stopped first and started again after; one that
-                    // isn't running stays down. iOS runBackupRestore.
-                    val result = if (RelayForegroundService.serviceAlive) {
-                        relayImportService.withRelayStopped { HavenBridge.restoreDatabase(zipPath) }
-                    } else {
-                        val relayDataDir = File(appContext.filesDir, "relay_data")
-                        RelayConfiguration.ensureDirectories(relayDataDir)
-                        RelayConfiguration.generateEnvDictionary(configStore.config.value, relayDataDir)
-                            .forEach { (key, value) -> HavenBridge.setEnv(key, value) }
-                        HavenBridge.restoreDatabase(zipPath)
-                    }
+                    // Setup only restores the signing-in key's own backup,
+                    // same as the backup question (runOwnBackupRestore).
+                    val result = runOwnBackupRestore(zipPath)
+                    File(zipPath).delete()
                     if (result == 0) {
                         _importCompleted.value = true
                         _importStatus.value = "Restore complete"
                     } else {
-                        _importStatus.value = "Restore failed (code $result)"
+                        _importStatus.value = VaultBackupQuestion.restoreError(result) ?: "Restore failed"
                     }
                 } catch (e: Exception) {
                     _importStatus.value = "Restore failed: ${e.message}"
