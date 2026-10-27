@@ -99,6 +99,49 @@ extension FeedView {
         }
     }
 
+    /// Opens or closes a note in the condensed feed. Opening one closes the
+    /// note that was open; when that sat above, it shrank and everything
+    /// under it slid up with it, the tapped row too, as far as off screen.
+    /// The tapped row is held where it was tapped instead, the way a thread
+    /// line is, with no animation so the close and the scroll that makes up
+    /// for it land in the same frame.
+    func toggleExpandedNote(_ noteId: String, proxy: ScrollViewProxy?) {
+        guard expandedNoteId != noteId else {
+            expandedNoteId = nil
+            return
+        }
+        let notes = feedService.filteredNotes
+        guard let proxy, let openId = expandedNoteId,
+              let y = threadLineTops.tops[noteId],
+              let openIndex = notes.firstIndex(where: { $0.id == openId }),
+              let tappedIndex = notes.firstIndex(where: { $0.id == noteId }),
+              openIndex < tappedIndex else {
+            expandedNoteId = noteId
+            return
+        }
+        holdThreadLine(noteId, at: y, proxy: proxy)
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { expandedNoteId = noteId }
+    }
+
+    /// A feed row with a zero-height marker at its top, the same target and
+    /// position record a thread line has, so `toggleExpandedNote` can hold it.
+    private func heldRow<Row: View>(_ noteId: String, @ViewBuilder row: () -> Row) -> some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: 0)
+                .id(ThreadLineTops.anchorId(for: noteId))
+            row()
+        }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named(ThreadLineTops.coordinateSpace)).minY
+        } action: { [threadLineTops] y in
+            threadLineTops.tops[noteId] = y
+            threadLineTops.lineMoved(noteId, to: y)
+        }
+    }
+
     var feedList: some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .top) {
@@ -168,28 +211,30 @@ extension FeedView {
                             let isExpanded = (expandedNoteId == note.id)
                             let shouldUseNavLink = !isCompactModeActive || isExpanded
 
-                            Group {
+                            heldRow(note.id) {
                                 if shouldUseNavLink {
                                     NoteNavigationLink(note: note) {
-                                        feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded)
+                                        feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded, proxy: proxy)
                                     }
                                     .buttonStyle(.plain)
                                 } else {
-                                    feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded)
+                                    feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded, proxy: proxy)
                                 }
                             }
                             .onAppear { prefetchAhead(ofNote: note.id) }
                             .trackFeedVisibility(note.id, in: visibleRows)
                             #else
                             let isExpanded = (expandedNoteId == note.id)
-                            feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded)
-                                .onTapGesture {
-                                    // On macOS in full mode, open note detail
-                                    if !isCompactModeActive {
-                                        showingNoteId = note.id
-                                    }
+                            heldRow(note.id) {
+                                feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded, proxy: proxy)
+                            }
+                            .onTapGesture {
+                                // On macOS in full mode, open note detail
+                                if !isCompactModeActive {
+                                    showingNoteId = note.id
                                 }
-                                .onAppear { prefetchAhead(ofNote: note.id) }
+                            }
+                            .onAppear { prefetchAhead(ofNote: note.id) }
                             #endif
                         }
                         }
