@@ -2,7 +2,8 @@ import Foundation
 
 /// Restores a Nostr Vault backup file picked by the user into this device's
 /// relay. Shared by setup's Import step and its "Do you have a Vault backup?"
-/// question, so both run the same restore.
+/// question, so both run the same restore. Only the signing-in key's own
+/// backup is restored (RestoreOwnBackupC); Settings restores any.
 @MainActor
 enum VaultBackupRestore {
     /// Copies the picked file out of its security scope, then restores it.
@@ -39,15 +40,11 @@ enum VaultBackupRestore {
         }
 
         configService.save()
-        RelayProcessManager.shared.runBackupRestore(config: configService.config, inputPath: tempFile.path) { success in
+        RelayProcessManager.shared.runOwnBackupRestore(config: configService.config, inputPath: tempFile.path) { code in
             try? FileManager.default.removeItem(at: tempFile)
             Task { @MainActor in
-                if success {
-                    configService.reload()
-                    completion(nil)
-                } else {
-                    completion("Failed to restore backup. Check logs for details.")
-                }
+                if code == 0 { configService.reload() }
+                completion(VaultBackupQuestion.restoreError(code: code))
             }
         }
     }

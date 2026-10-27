@@ -44,4 +44,14 @@ final class VaultBackupQuestionTests: XCTestCase {
         XCTAssertEqual(VaultBackupQuestion.previous(path: .browse), 2)
         XCTAssertEqual(VaultBackupQuestion.previous(path: .full), 3)
     }
+
+    /// Someone else's backup (code 2) is refused with its own message, not
+    /// the generic failure, and only 0 counts as restored.
+    func testRestoreCodes() {
+        XCTAssertNil(VaultBackupQuestion.restoreError(code: 0))
+        let notYours = VaultBackupQuestion.restoreError(code: 2)
+        XCTAssertEqual(notYours?.contains("isn't yours"), true)
+        XCTAssertNotEqual(notYours, VaultBackupQuestion.restoreError(code: 1))
+        XCTAssertNotNil(VaultBackupQuestion.restoreError(code: 1))
+    }
 }

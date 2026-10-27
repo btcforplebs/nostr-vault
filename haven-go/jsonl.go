@@ -179,11 +179,16 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxCapacity)
 
-	count := 0
+	count, skipped := 0, 0
 	for scanner.Scan() {
 		var event nostr.Event
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return err
+		}
+		if !importable(&event, time.Now()) {
+			slog.Warn("⏭️ skipping unsigned, altered or future-dated event", "id", event.ID)
+			skipped++
+			continue
 		}
 
 		if err := db.SaveEvent(ctx, &event); err != nil {
@@ -200,8 +205,74 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 		return err
 	}
 
-	slog.Info("📥 imported events", "count", count)
+	slog.Info("📥 imported events", "count", count, "skipped", skipped)
 	return nil
+}
+
+// importFutureSlack is how far past now a backup event may be dated. A real
+// export holds nothing later than the moment it was made; a little slack
+// covers clock skew between the device that wrote it and this one.
+const importFutureSlack = 24 * time.Hour
+
+// importable reports whether a backup line may go into the vault: its id
+// must match its content, its signature must be valid for its pubkey, and
+// it must not be dated in the future. A backup file is not trusted: without
+// these, a crafted file could plant an owner follow list (the Web of Trust)
+// dated years ahead, or notes and DMs as anyone.
+func importable(ev *nostr.Event, now time.Time) bool {
+	if !ev.CheckID() {
+		return false
+	}
+	if ok, err := ev.CheckSignature(); err != nil || !ok {
+		return false
+	}
+	return ev.CreatedAt.Time().Before(now.Add(importFutureSlack))
+}
+
+// zipHasEventBy reports whether a backup zip holds at least one importable
+// event signed by pubkey. Setup uses it to refuse someone else's backup.
+func zipHasEventBy(zipFileName, pubkey string) (bool, error) {
+	zipFile, err := zip.OpenReader(zipFileName)
+	if err != nil {
+		return false, fmt.Errorf("error opening zip file: %w", err)
+	}
+	defer zipFile.Close()
+
+	now := time.Now()
+	for _, file := range zipFile.File {
+		if !strings.HasSuffix(file.Name, ".jsonl") {
+			continue
+		}
+		found, err := entryHasEventBy(file, pubkey, now)
+		if err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func entryHasEventBy(file *zip.File, pubkey string, now time.Time) (bool, error) {
+	rc, err := file.Open()
+	if err != nil {
+		return false, fmt.Errorf("error opening zip entry %s: %w", file.Name, err)
+	}
+	defer rc.Close()
+
+	scanner := bufio.NewScanner(rc)
+	scanner.Buffer(make([]byte, 64*1024), 100*1024*1024)
+	for scanner.Scan() {
+		var event nostr.Event
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return false, err
+		}
+		if event.PubKey == pubkey && importable(&event, now) {
+			return true, nil
+		}
+	}
+	return false, scanner.Err()
 }
 
 func exportDB(ctx context.Context, db DBBackend, w io.Writer) error {

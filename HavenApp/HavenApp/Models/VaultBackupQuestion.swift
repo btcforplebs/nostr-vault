@@ -44,6 +44,18 @@ enum VaultBackupQuestion {
         }
     }
 
+    /// What setup's restore tells the person, from the relay's restore code
+    /// (RestoreOwnBackupC): nil on success. Setup only restores a backup that
+    /// holds notes signed by the key signing in, so someone else's backup is
+    /// never merged into a new vault.
+    static func restoreError(code: Int32) -> String? {
+        switch code {
+        case 0: return nil
+        case 2: return "This backup isn't yours. It holds no notes signed by the key you signed in with."
+        default: return "Failed to restore backup. Check logs for details."
+        }
+    }
+
     /// The step that leads to the question, for Back.
     static func previous(path: Path) -> Int {
         switch path {
