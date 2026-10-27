@@ -2,8 +2,8 @@
 // itself once it nears the screen (fips-media.js), only in notes from you or people you follow and only with the
 // Settings switch on: a NIP-F1 .fips link at once, an https photo after its server fails when the imeta gives its
 // hash and the author lists a fipsmesh:// vault. A box saying "Loading image over FIPS…" while it loads (never the dead
-// https image's broken icon), "Couldn't reach the owner's vault" if a vault was asked and the read gave up. With no vault
-// to ask, an https photo stays the plain broken image.
+// https image's broken icon), "Couldn't reach the owner's vault" if the photo is a vault link (.fips) and the read gave
+// up. An https photo that fails stays the plain broken image, whether or not a vault was asked for a copy.
 // Leaving the page stops its read and lets its blob: URL go. When the gate changes (a follow added, the switch
 // flipped) a photo still waiting re-checks it: one now allowed starts, one no longer allowed stops.
 import { useEffect, useRef, useState } from "preact/hooks"
@@ -45,7 +45,12 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
     if (!ver) return
     const ok = allowed(author)
     if (ok && gated.current) { gated.current = false; setState("wait") }
-    else if (!ok && state === "wait") { gated.current = true; setWhy("mesh photos are off for this note"); setState("failed") }
+    else if (!ok && state === "wait") {
+      gated.current = true
+      // An https photo goes back to its own (broken) image; only a .fips link has nothing else to show.
+      if (fipsRef(item.url)) { setWhy("mesh photos are off for this note"); setState("failed") }
+      else { setSrc(item.url); setState("web") }
+    }
   }, [ver])
 
   useEffect(() => {
@@ -82,9 +87,10 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
   return <img src={src} alt="" referrerpolicy="no-referrer" onError={onError} {...img} />
 }
 
-/** Where a photo goes when its mesh read fails: back to the https image (shown broken) when there was no vault to ask,
- *  "failed" for a .fips link that has no https copy, "unreached" when a vault was asked and didn't answer. */
-export const afterMeshFail = (e, item) => (noVault(e) ? (fipsRef(item.url) ? "failed" : "web") : "unreached")
+/** Where a photo goes when its mesh read fails. An https photo goes back to its own image, shown broken: it is not
+ *  the vault's link, so "Couldn't reach the owner's vault" would blame the wrong server. A .fips link has no https copy:
+ *  "failed" when there was no vault to ask, "unreached" when its vault was asked and didn't answer. */
+export const afterMeshFail = (e, item) => (fipsRef(item.url) ? (noVault(e) ? "failed" : "unreached") : "web")
 
 export const LOADING_TEXT = "Loading image over FIPS…"
 export const UNREACHED_TEXT = "Couldn't reach the owner's vault"

@@ -130,10 +130,16 @@ private fun SingleMediaPreview(
     val ratio = hintedRatio ?: decodedRatio
 
     val loaded = painter.state is AsyncImagePainter.State.Success
+    // A photo that failed says so (MediaFailedPlaceholder); a video keeps its play icon.
+    val failed = !isVideo && painter.state is AsyncImagePainter.State.Error
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val cap = if (ratio != null && ratio < 1f) 600.dp else 400.dp
-        val displayHeight = if (ratio != null) minOf(maxWidth / ratio, cap) else 200.dp
+        val displayHeight = when {
+            ratio != null -> minOf(maxWidth / ratio, cap)
+            failed -> maxWidth * 9f / 16f
+            else -> 200.dp
+        }
         // Square to its edges, with no rounded frame, and grey only while
         // the photo loads (iOS #286, Logen: screen room).
         Box(
@@ -158,6 +164,9 @@ private fun SingleMediaPreview(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
+            if (failed) {
+                MediaFailedPlaceholder(url = url)
+            }
             if (isVideo && autoplay) {
                 InlineFeedVideo(key = sourceKey, url = url, modifier = Modifier.matchParentSize())
             } else if (isVideo) {
