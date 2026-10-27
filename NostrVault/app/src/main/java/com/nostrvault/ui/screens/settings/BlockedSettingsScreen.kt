@@ -59,16 +59,21 @@ class BlockedSettingsViewModel @Inject constructor(
     }
 
     fun unblock(npub: String) {
+        val privateBefore = configStore.config.value.let { it.privateBlockedNpubsPerAccount[it.activeOrOwnerNpub()].orEmpty() }
         configStore.unblockProfile(npub)
-        publishMuteListChange(remove = listOf(npub))
+        publishMuteListChange(remove = listOf(npub), privateBefore = privateBefore)
     }
 
-    private fun publishMuteListChange(add: List<String> = emptyList(), remove: List<String> = emptyList()) {
+    private fun publishMuteListChange(
+        add: List<String> = emptyList(),
+        remove: List<String> = emptyList(),
+        privateBefore: List<String> = emptyList(),
+    ) {
         val cfg = configStore.config.value
         // The list being published is the ACTIVE account's, so it is signed as
         // that account — labelling it the owner's overwrote the owner's kind 10000.
         viewModelScope.launch {
-            nostrService.publishMuteListChange(cfg.activeOrOwnerNpub(), add, remove, cfg.blockedForActiveAccount())
+            nostrService.publishMuteListChange(cfg.activeOrOwnerNpub(), add, remove, cfg.blockedForActiveAccount(), privateBefore)
                 ?.let { notificationManager.showError(it) }
         }
     }

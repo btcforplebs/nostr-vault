@@ -343,7 +343,8 @@ class NostrService @Inject constructor(
         add: List<String> = emptyList(),
         remove: List<String> = emptyList(),
         localBlocks: List<String>,
-    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks)
+        privateBefore: Collection<String> = emptyList(),
+    ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks, privateBefore)
 
     fun publishRelayList(accountNpub: String) { publishRelayListImpl(accountNpub) }
 

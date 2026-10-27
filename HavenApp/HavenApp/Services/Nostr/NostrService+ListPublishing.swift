@@ -6,7 +6,8 @@ extension NostrService {
     /// Blocks (`add`) or unblocks (`remove`) people, by npub, on
     /// `accountNpub`'s kind 10000, a list other clients edit too. Only those
     /// entries change on the newest list: everyone else on it, the muted
-    /// words, hashtags and threads, and the encrypted private part are kept.
+    /// words, hashtags and threads, and the rest of the encrypted private
+    /// part are kept. An unblock also takes the person out of the private part.
     /// `localBlocks`, this device's blocks after the change, is published
     /// only when the account has no list anywhere. When the list can't be
     /// fetched nothing is published and the person is told why.
@@ -40,8 +41,25 @@ extension NostrService {
                     tone: .error)
                 return
             }
+            // An unblock takes the person out of the encrypted part too, or
+            // reading the published list back blocks them again.
+            let content: String
+            let privateHex = MuteListStore.shared.privatePubkeys(forAccount: accountNpub)
+            switch await ListMerge.removingPrivate(
+                content: base.content, remove: hexKeys(remove),
+                knownPrivate: hexKeys(remove).contains { privateHex.contains($0.lowercased()) },
+                decrypt: { try await MuteListStore.decryptToSelf($0, me: author, nip04: $1) },
+                encrypt: { try await MuteListStore.encryptToSelf($0, me: author, nip04: $1) }) {
+            case .content(let edited):
+                content = edited
+            case .failed:
+                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                               message: "\(action) saved on this device only: your private blocks couldn't be updated",
+                                               tone: .error)
+                return
+            }
             let tags = ListMerge.edit(name: "p", base: base.tags, add: hexKeys(add), remove: hexKeys(remove))
-            guard let event = await signEventAsync(kind: 10000, content: base.content, tags: tags, signAsNpub: accountNpub) else {
+            guard let event = await signEventAsync(kind: 10000, content: content, tags: tags, signAsNpub: accountNpub) else {
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
                                                message: "\(action) saved on this device only: your signer didn't answer",
                                                tone: .error)
