@@ -6,15 +6,23 @@ struct BlockedSettingsView: View {
     
     @State private var searchInput = ""
     @State private var isSearching = false
-    
+    /// Bumped when the mute list's private part is reopened, which the
+    /// config doesn't publish.
+    @State private var privateRevision = 0
+
     var blockedNpubs: [String] {
+        _ = privateRevision
         let active = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetNpub = active.isEmpty ? configService.config.ownerNpub : active
         // Same source as the dashboard's "N people blocked" count
         // (ConfigService.blockedHexPubkeys): the owner's legacy blacklist
-        // counts until a per-account list exists.
-        return configService.config.blockedNpubsPerAccount[targetNpub]
+        // counts until a per-account list exists, plus the private blocks.
+        let listed = configService.config.blockedNpubsPerAccount[targetNpub]
             ?? (targetNpub == configService.config.ownerNpub ? configService.config.blacklistedNpubs : [])
+        let listedHex = Set(listed.compactMap { Bech32.decode($0)?.hexString.lowercased() })
+        let privateOnly = MuteListStore.shared.privatePubkeys(forAccount: targetNpub)
+            .subtracting(listedHex).sorted()
+        return listed + ProfileRepository.hexKeysToNpubs(privateOnly)
     }
 
     var body: some View {
@@ -62,6 +70,9 @@ struct BlockedSettingsView: View {
             }
         }
         .groupedFormStyleCompat()
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in
+            privateRevision += 1
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

@@ -766,6 +766,11 @@ class ConfigService: ObservableObject {
 
             // Take this one person off the published mute list
             NostrService.shared.publishMuteListChange(for: targetNpub, remove: [npub], localBlocks: current)
+        } else if let hex = Bech32.decode(npub.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString,
+                  MuteListStore.shared.privatePubkeys(forAccount: targetNpub).contains(hex.lowercased()) {
+            // Blocked only in the list's encrypted part: nothing to change
+            // here, the published list drops them and the store reopens it.
+            NostrService.shared.publishMuteListChange(for: targetNpub, remove: [npub], localBlocks: current)
         }
     }
 
