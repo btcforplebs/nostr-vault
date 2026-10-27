@@ -35,6 +35,8 @@ data class VaultActivity(
     val preview: String,
     /** Reactions only: the emoji, newest first, each once. */
     val emojis: List<String> = emptyList(),
+    /** Reactions only: the NIP-30 images for `:shortcode:` [emojis], by shortcode (first seen wins). */
+    val customEmojis: Map<String, com.nostrvault.service.CustomEmoji> = emptyMap(),
     /** Zaps only: the total. */
     val sats: Long = 0,
     /**
@@ -110,11 +112,15 @@ data class VaultActivity(
             val folds = LinkedHashMap<String, Fold>()
             val seen = HashSet<String>()
 
-            fun fold(kind: Kind, target: String, actor: String, at: Long, emoji: String? = null, sats: Long = 0) {
+            fun fold(
+                kind: Kind, target: String, actor: String, at: Long, emoji: String? = null, sats: Long = 0,
+                custom: com.nostrvault.service.CustomEmoji? = null,
+            ) {
                 val f = folds.getOrPut("${kind.name.lowercase()}-$target") { Fold(kind, target) }
                 f.actors += actor
                 f.at = maxOf(f.at, at)
                 if (emoji != null) f.emojis += emoji
+                if (custom != null) f.customEmojis.putIfAbsent(custom.shortcode, custom)
                 f.sats += sats
             }
 
@@ -126,7 +132,10 @@ data class VaultActivity(
                     if (isBlocked(event.pubkey)) continue
                     val target = firstTag("e", event.tags) ?: continue
                     if (target !in myText) continue
-                    fold(Kind.REACTION, target, event.pubkey, event.createdAt, emoji = event.content.ifEmpty { "+" })
+                    fold(
+                        Kind.REACTION, target, event.pubkey, event.createdAt, emoji = event.content.ifEmpty { "+" },
+                        custom = com.nostrvault.service.CustomEmoji.forReaction(event.content, event.tags),
+                    )
                     continue
                 }
 
@@ -189,7 +198,8 @@ data class VaultActivity(
                 VaultActivity(
                     id = key, kind = f.kind, actors = f.actors.distinct(), createdAt = f.at,
                     openId = f.target, preview = myText[f.target] ?: "",
-                    emojis = f.emojis.distinct(), sats = f.sats, images = myImages[f.target].orEmpty(),
+                    emojis = f.emojis.distinct(), customEmojis = f.customEmojis, sats = f.sats,
+                    images = myImages[f.target].orEmpty(),
                 )
             }
 
@@ -255,6 +265,7 @@ data class VaultActivity(
             val actors = ArrayList<String>()
             var at = 0L
             val emojis = ArrayList<String>()
+            val customEmojis = LinkedHashMap<String, com.nostrvault.service.CustomEmoji>()
             var sats = 0L
         }
 

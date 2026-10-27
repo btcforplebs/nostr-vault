@@ -106,6 +106,27 @@ class VaultActivityTest {
         assertTrue(line.aboutYourPost)
     }
 
+    @Test fun `a custom emoji reaction keeps its image for the row`() {
+        val url = "https://x.example/pepe.png"
+        val lines = build(
+            listOf(
+                event("post", me, at = 100, content = "hi"),
+                event("r1", ann, kind = 7, at = 110, content = ":pepe:",
+                    tags = listOf(listOf("e", "post"), listOf("p", me), listOf("emoji", "pepe", url))),
+                event("r2", bob, kind = 7, at = 120, content = ":untagged:", tags = listOf(listOf("e", "post"))),
+            ),
+        )
+        val line = lines.single()
+        assertEquals(listOf(":untagged:", ":pepe:"), line.emojis)
+        assertEquals(mapOf("pepe" to com.nostrvault.service.CustomEmoji("pepe", url)), line.customEmojis)
+        // The row's words keep the shortcode it can draw; text with no image is a like.
+        assertEquals(
+            "❤️:pepe:",
+            com.nostrvault.ui.components.reactionEmojiSummary(line.emojis, limit = 3, customShortcodes = line.customEmojis.keys),
+        )
+        assertEquals("❤️", com.nostrvault.ui.components.reactionEmojiSummary(line.emojis, limit = 3))
+    }
+
     @Test fun `reactions to someone else's post are not yours`() {
         val lines = build(
             listOf(

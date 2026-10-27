@@ -80,6 +80,8 @@ import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.appendTextWithEmoji
+import com.nostrvault.ui.components.customEmojiInlineContent
 import com.nostrvault.ui.components.reactionEmojiSummary
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.navigation.FloatingButtonRow
@@ -640,14 +642,17 @@ private fun VaultActivityRow(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // A custom emoji reaction draws its image (NIP-30).
+            val emojiContent = remember(line.customEmojis) { customEmojiInlineContent(line.customEmojis) }
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(who) }
                     append(" ")
-                    append(verb)
+                    appendTextWithEmoji(verb, line.customEmojis)
                 },
                 color = PrimaryText,
                 fontSize = 15.sp,
+                inlineContent = emojiContent,
             )
             if (preview.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
@@ -694,7 +699,7 @@ private fun activityVerb(line: VaultActivity): String = when (line.kind) {
     VaultActivity.Kind.MENTION -> "mentioned you"
     VaultActivity.Kind.QUOTE -> "quoted your note"
     VaultActivity.Kind.REACTION -> {
-        val emojis = reactionEmojiSummary(line.emojis, limit = 3)
+        val emojis = reactionEmojiSummary(line.emojis, limit = 3, customShortcodes = line.customEmojis.keys)
         if (emojis == "❤️") "liked your note" else "reacted $emojis to your note"
     }
     VaultActivity.Kind.REPOST -> "reposted your note"
