@@ -12,8 +12,11 @@ import { MediaImage } from "../components/MediaImage.jsx"
 import { imageItem } from "../net/note-media.js"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
+import { useDmTrust } from "../components/useDmTrust.js"
+import { readSince, unreadFrom } from "../net/notify-watch.js"
+import { Faces, Who as Names } from "../components/ActivityFaces.jsx"
 import { fetchProfiles } from "../net/profiles.js"
-import { formatSats, fetchNotes } from "../net/notifications.js"
+import { formatSats, fetchNotes, reactionEmojiSummary } from "../net/notifications.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { receiptTrust } from "../net/zaps.js"
 import { VaultSearch } from "./VaultSearch.jsx"
@@ -97,7 +100,11 @@ export function VaultScreen({ ctx, desk = false }) {
   const [status, setStatus] = useState("")
   const [loaded, setLoaded] = useState(!!k)
   const { blocked } = useBlocks(ctx)
+  const network = useDmTrust(ctx) // who counts as inside the network: notes from outside it stay out of the Vault list
   const seenAt = useRef(followersSeenAt(me))
+  // Lines newer than the last look show a dot (VaultActivityList unreadSince): the Vault list's mark as this visit
+  // found it, else when this browser started watching the account (notify-watch.js readSince).
+  const unreadSince = useRef(unreadFrom(readSeen(me)?.activity ?? 0, readSince(me)))
   const [searching, setSearching] = useState(false)
   const [refreshes, setRefreshes] = useState(0) // Refresh also asks the media servers again (BlossomGallery)
   const [reach, setReach] = useState("") // how the relays answered, for the status capsule's colour
@@ -224,7 +231,7 @@ export function VaultScreen({ ctx, desk = false }) {
   const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: followers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
 
   // The current list's rows, sorted once per change of what they're built from, not on every render.
-  const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, seenAt: seenAt.current }), [mode, filter, own, inbound, given, followers, blocked])
+  const items = useMemo(() => itemsFor(mode, filter, { own, inbound, given, followers, me, blocked, seenAt: seenAt.current, trusted: network }), [mode, filter, own, inbound, given, followers, blocked, network])
   const newCount = useMemo(() => heldCount(held, me, own, blocked), [held, own, blocked])
   // Likes and Zaps rows name the note they were about.
   const wanted = mode === "likes" || mode === "zaps" ? items.map(r => r.noteId).filter(id => id && !notes.has(id)) : []
@@ -289,7 +296,7 @@ export function VaultScreen({ ctx, desk = false }) {
       {searching ? <VaultSearch ctx={ctx} onClose={() => setSearching(false)} /> : <>
       <div class="status-line keep">{status}</div>
       {loaded && newCount > 0 && <NewPostsPill count={newCount} onShow={showHeld} text={n => `${n} new`} />}
-      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
+      {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} unreadSince={unreadSince.current} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
       {!desk && <a class={`vault-status ${reach || "idle"}`} href="#/relay" aria-label={`Vault Dashboard: ${REACH[reach || "idle"]}`} title={REACH[reach || "idle"]}><LockStack /><b>Vault</b></a>}
     </main>
@@ -341,7 +348,7 @@ const MenuItem = ({ on, onClick, children }) => <button role="menuitem" class={o
 
 const Grid = ({ children }) => <div class="vault-grid">{children}</div>
 
-function List({ ctx, mode, filter, items, me, followers, notes, trusted, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
+function List({ ctx, mode, filter, items, me, followers, notes, trusted, unreadSince = Infinity, refreshes = 0, fetched = true, page = { shown: Infinity, onMore: () => {} }, onFollowers }) {
   // Nothing in this browser's relay yet, but the relays are still being asked: placeholders, not "nothing here".
   const Empty = ({ text }) => fetched ? <p class="empty">{text}</p> : <VaultSkeleton mode={mode} />
   // A call, not a component made here: a new component type each render would draw every row again.
@@ -350,7 +357,7 @@ function List({ ctx, mode, filter, items, me, followers, notes, trusted, refresh
   switch (mode) {
     case "activity": {
       const rows = items
-      return (rows.length || page.older) ? paged(rows, r => <ActivityRow key={r.id} row={r} trusted={trusted} onFollowers={onFollowers} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
+      return (rows.length || page.older) ? paged(rows, r => <ActivityRow key={r.id} row={r} trusted={trusted} unread={r.created_at > unreadSince} onFollowers={onFollowers} />) : <Empty text={filter === "mentions" ? "No replies, mentions or quotes yet." : "Nothing has come in yet. Replies, likes, zaps, reposts and new followers land here."} />
     }
     case "notes": {
       const list = items
@@ -388,18 +395,19 @@ function List({ ctx, mode, filter, items, me, followers, notes, trusted, refresh
  *  `trusted(pubkey)`: whose avatar and inline images may load; a stranger's would tell their server your IP.
  *  A tap opens what it's about (VaultActivityList.openActivity): the note, else the Followers list when several
  *  followed you that day (`onFollowers`), else the person. */
-export function ActivityRow({ row, trusted = () => false, onFollowers }) {
+export function ActivityRow({ row, trusted = () => false, unread = false, onFollowers }) {
   const ok = trusted(row.actors[0])
   const open = row.openId ? () => { location.hash = `#/thread/${row.openId}` }
     : row.kind === "follow" && row.actors.length > 1 && onFollowers ? onFollowers
     : row.actors[0] ? () => { location.hash = `#/profile/${row.actors[0]}` } : undefined
   return (
-    <article class={`note notification ${open ? "tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
+    <article class={`note notification${unread ? " unread" : ""}${open ? " tappable" : ""}`} onClick={open && (e => { if (!e.target.closest("a, button")) open() })}>
       <div class="note-head">
-        <Avatar pubkey={row.actors[0]} size={32} load={ok} />
-        <span class="notif-who"><Who who={row.actors} /> {verb(row)}</span>
+        <Faces who={row.actors} trusted={trusted} />
         <time class="note-time" datetime={new Date(row.created_at * 1000).toISOString()}>{ago(row.created_at)}</time>
+        {unread && <span class="notif-dot" role="img" aria-label="New" title="New" />}
       </div>
+      <div class="notif-who"><Names who={row.actors} /> {verb(row)}</div>
       {["reply", "mention", "quote", "article", "highlight"].includes(row.kind)
         ? <NoteText content={row.preview} images={ok} />
         : row.preview ? <div class="repost-line vault-about"><span>{cut(row.preview)}</span></div> : null}
@@ -408,16 +416,17 @@ export function ActivityRow({ row, trusted = () => false, onFollowers }) {
   )
 }
 
-function verb(row) {
+/** What they did, in the phone's words (VaultActivityList verb). */
+export function verb(row) {
   switch (row.kind) {
-    case "reply": return "replied"
+    case "reply": return "replied to you"
     case "mention": return "mentioned you"
-    case "quote": return "quoted you"
-    case "repost": return "reposted"
-    case "like": return `liked ${row.emojis.filter(e => e !== "❤️").join(" ")}`.trim()
-    case "zap": return row.sats ? `⚡ zapped ${formatSats(row.sats)} sats` : "⚡ zapped"
+    case "quote": return "quoted your note"
+    case "repost": return "reposted your note"
+    case "like": { const e = reactionEmojiSummary(row.emojis); return e === "❤️" ? "liked your note" : `reacted ${e} to your note` }
+    case "zap": return row.openId ? `zapped your note ${row.sats.toLocaleString()} sats` : `zapped you ${row.sats.toLocaleString()} sats`
     case "follow": return "followed you"
-    case "article": return "wrote an article tagging you"
+    case "article": return "tagged you in an article"
     case "highlight": return "highlighted you"
     default: return ""
   }

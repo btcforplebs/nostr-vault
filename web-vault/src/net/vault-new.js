@@ -12,7 +12,7 @@ export function modeOfKind(kind) {
   if (kind === 9735) return "zaps"
   if (kind === ARTICLE_KIND) return "articles"
   if (kind === HIGHLIGHT_KIND) return "highlights"
-  if (kind === 1 || kind === 6 || kind === 1111) return "notes"
+  if (kind === 1 || kind === 6 || kind === 16 || kind === 1111 || kind === 1068) return "notes"
   return null
 }
 
@@ -31,7 +31,13 @@ export function newestByMode(inbound, me, blocked = new Set()) {
 export function readSeen(me, storage = globalThis.localStorage) {
   try { const s = JSON.parse(storage?.getItem(`${KEY}:${me}`) ?? "null"); return s && typeof s === "object" ? s : null } catch { return null }
 }
-export const writeSeen = (me, seen, storage = globalThis.localStorage) => storage?.setItem(`${KEY}:${me}`, JSON.stringify(seen))
+export function writeSeen(me, seen, storage = globalThis.localStorage) {
+  storage?.setItem(`${KEY}:${me}`, JSON.stringify(seen))
+  for (const cb of seenListeners) cb()
+}
+const seenListeners = new Set()
+/** Called when a Vault list mark moves (the tab title's count, useNotifyWatch). -> unsubscribe */
+export const onSeen = cb => { seenListeners.add(cb); return () => seenListeners.delete(cb) }
 
 /** The marks with `mode` seen up to `at` (never moved back). */
 export const markSeen = (seen, mode, at) => ({ ...seen, [mode]: Math.max(seen?.[mode] ?? 0, at ?? 0) })

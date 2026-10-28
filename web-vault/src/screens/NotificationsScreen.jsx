@@ -3,8 +3,7 @@
 // Read from the user's read relays; nothing here signs. The note each row is about comes from Haven's outbox
 // (the user's own notes) or the network. Reuses .note / .note-head / .repost-line from app.css.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
-import { Avatar } from "../components/Avatar.jsx"
-import { AuthorName } from "../components/NoteCard.jsx"
+import { Faces, Who } from "../components/ActivityFaces.jsx"
 import { Mention, NoteText } from "../components/NoteText.jsx"
 import { ago } from "../components/time.js"
 import {
@@ -19,6 +18,8 @@ import { followLists } from "../net/wot.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { SkeletonList, Spinner } from "../components/Loading.jsx"
 import "../styles/notifications.css"
+
+export { Faces, Who, MAX_FACES } from "../components/ActivityFaces.jsx"
 
 const PAGE = 100
 
@@ -218,17 +219,6 @@ export function Row({ row, note, trusted = () => false, unread = false, me = "" 
   )
 }
 
-/** The faces of who did it, overlapping, six at most and "+N" for the rest (VaultActivityRow.avatars). */
-export const MAX_FACES = 6
-export function Faces({ who, trusted = () => false }) {
-  return (
-    <span class="notif-faces" aria-hidden="true">
-      {who.slice(0, MAX_FACES).map(pk => <Avatar key={pk} pubkey={pk} size={30} load={trusted(pk)} />)}
-      {who.length > MAX_FACES && <span class="notif-more">+{who.length - MAX_FACES}</span>}
-    </span>
-  )
-}
-
 // The kind's badge (VaultActivityRow.style): SF Symbols there, the same shapes here.
 const svg = (...d) => <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">{d.map(x => typeof x === "string" ? <path d={x} /> : x)}</svg>
 const solid = d => <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d={d} /></svg>
@@ -242,15 +232,6 @@ const BADGES = {
   article: svg("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6", "M16 13H8", "M16 17H8", "M10 9H8"),
   highlight: svg("m9 11-6 6v3h9l3-3", "m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"),
   follow: svg("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", <circle cx="9" cy="7" r="4" />, "M19 8v6", "M22 11h-6"),
-}
-
-/** "Ann", "Ann and Bob", "Ann and 3 others" (VaultActivityRow.who). */
-export function Who({ who }) {
-  const [a, b] = who
-  if (!a) return "Someone"
-  if (!b) return <AuthorName pubkey={a} />
-  if (who.length === 2) return <><AuthorName pubkey={a} /> and <AuthorName pubkey={b} /></>
-  return <><AuthorName pubkey={a} /> and {who.length - 1} others</>
 }
 
 /** What they did, in the iPhone's words (VaultActivityRow.verb). */

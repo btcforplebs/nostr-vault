@@ -5,7 +5,8 @@
 // inbox route when it takes them, so the list still shows after a reload or offline. Nothing here signs.
 import { pool, uniq } from "./pool.js"
 import { MAX_SKEW } from "./follows.js"
-import { groupNotifications, replyTarget, reactionEmoji, zapRequest, zapSats } from "./notifications.js"
+import { groupNotifications, replyTarget, reactionEmoji, zapRequest, zapSats, isOutside } from "./notifications.js"
+import { isMutedNote } from "./blocks.js"
 import { imageItem } from "./note-media.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -13,7 +14,12 @@ export const ARTICLE_KIND = 30023
 export const HIGHLIGHT_KIND = 9802
 export const NOTE_KINDS = [1, 6]
 /** Kinds the Vault list reads from the network for the user: everything the phone's inbox lists. */
-export const INBOUND_KINDS = [1, 6, 7, 9735, HIGHLIGHT_KIND, ARTICLE_KIND]
+export const COMMENT_KIND = 1111
+export const POLL_KIND = 1068
+/** Kinds the Vault list reads from the network for the user: everything the phone's inbox lists (NostrService
+ *  relayTabNoteKinds, plus reactions, both repost kinds and zaps). */
+export const INBOUND_KINDS = [1, 6, 7, 16, 9735, HIGHLIGHT_KIND, ARTICLE_KIND, COMMENT_KIND, POLL_KIND]
+const TAGGING_KINDS = [1, ARTICLE_KIND, HIGHLIGHT_KIND, COMMENT_KIND, POLL_KIND]
 
 /** The mode menu, in the phone's order. "activity" is shown as "Vault". */
 export const MODES = [
@@ -46,6 +52,7 @@ export const defaultFilter = mode => FILTERS[mode]?.[0]?.id ?? ""
 
 const tag = (ev, name) => ev.tags.find(t => t[0] === name && t[1])?.[1]
 const lastE = ev => { const es = ev.tags.filter(t => t[0] === "e" && HEX64.test(t[1] ?? "")); return es.length ? es[es.length - 1][1] : null }
+const firstE = ev => ev.tags.find(t => t[0] === "e" && HEX64.test(t[1] ?? ""))?.[1] ?? null
 const tagsMe = (ev, me) => ev.tags.some(t => t[0] === "p" && t[1] === me)
 const byNewest = (a, b) => b.created_at !== a.created_at ? b.created_at - a.created_at : (a.id < b.id ? -1 : 1)
 const dayOf = ts => { const d = new Date(ts * 1000); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
@@ -77,11 +84,14 @@ export function previewOf(ev) {
  * Likes, plain zaps and reposts on one of your notes share a line; follows on one day share a line; a reply,
  * mention, quote, article, highlight or zap with words is a line of its own.
  * `mine` is the user's own notes (for what a like or repost was about); `follows` is [{ pubkey, at }] of people
- * who follow the user; `blocked` is a Set of pubkeys to leave out.
+ * who follow the user; `blocked` is a Set of pubkeys to leave out, and when it is the mute list (blocks.js muteSet)
+ * its words, hashtags and threads mute notes too, as the iPhone applies them. `trusted` is the network
+ * (notifications.js trustedWeb): a note tagging the user from outside it is left out (VaultTypes isOutside); empty,
+ * nobody is outside. Likes, reposts and zaps target the first `e` tag, as the phone reads them.
  * -> [{ id, kind, actors: [pubkey], created_at, openId, preview, emojis, sats, images, imagesBy }]; `imagesBy` is whose
  * note the images are from (whose mesh vault MediaImage may ask).
  */
-export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set() } = {}) {
+export function activityRows(inbound, me, { mine = [], follows = [], blocked = new Set(), trusted = new Set() } = {}) {
   const myText = new Map(mine.map(n => [n.id, previewOf(n)]))
   const myImages = new Map(mine.map(n => [n.id, imagesOf(n)]))
   const folds = new Map()
@@ -100,7 +110,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
     if (!ev || seen.has(ev.id) || !Array.isArray(ev.tags)) continue
     seen.add(ev.id)
     if (ev.kind === 7) {
-      const target = lastE(ev)
+      const target = firstE(ev)
       if (ev.pubkey === me || !target || !myText.has(target) || blocked.has(ev.pubkey)) continue
       fold("like", target, ev.pubkey, ev.created_at, { emoji: reactionEmoji(ev.content) })
       continue
@@ -111,7 +121,7 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       const sender = req.pubkey
       if (sender === me || blocked.has(sender)) continue
       const sats = zapSats(ev)
-      const target = (req && lastE(req)) || lastE(ev)
+      const target = (req && firstE(req)) || firstE(ev)
       const comment = (req?.content ?? "").trim()
       if (target && myText.has(target) && !comment) fold("zap", target, sender, ev.created_at, { sats })
       else singles.push({ id: ev.id, kind: "zap", actors: [sender], created_at: ev.created_at, openId: target && myText.has(target) ? target : null,
@@ -119,12 +129,13 @@ export function activityRows(inbound, me, { mine = [], follows = [], blocked = n
       continue
     }
     if (ev.pubkey === me || blocked.has(ev.pubkey)) continue
-    if (ev.kind === 6) {
-      const target = lastE(ev)
+    if (ev.kind === 6 || ev.kind === 16) {
+      const target = firstE(ev)
       if (target && myText.has(target)) fold("repost", target, ev.pubkey, ev.created_at)
       continue
     }
-    if (![1, ARTICLE_KIND, HIGHLIGHT_KIND].includes(ev.kind) || !tagsMe(ev, me)) continue
+    if (!TAGGING_KINDS.includes(ev.kind) || !tagsMe(ev, me)) continue
+    if (isMutedNote(ev, blocked) || isOutside(ev.pubkey, me, new Set(), trusted)) continue
     let kind = "mention"
     if (ev.kind === ARTICLE_KIND) kind = "article"
     else if (ev.kind === HIGHLIGHT_KIND) kind = "highlight"
@@ -430,9 +441,9 @@ export function keepLists(me, lists, storage = globalThis.localStorage) {
 // ---- What the screen draws ----
 
 /** The rows the current mode and filter show, newest first: built once per change of what they're built from. */
-export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0 }) {
+export function itemsFor(mode, filter, { own = [], inbound = [], given = [], followers = [], me, blocked = new Set(), seenAt = 0, trusted = new Set() }) {
   switch (mode) {
-    case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked }).filter(r => activityFilter(r, filter))
+    case "activity": return activityRows(inbound, me, { mine: own, follows: followers, blocked, trusted }).filter(r => activityFilter(r, filter))
     case "notes": return notesFor(own, inbound, me, filter, blocked)
     case "articles": return articlesFor(own, inbound, me, filter, blocked)
     case "highlights": return highlightsFor(own, inbound, me, filter, blocked)
