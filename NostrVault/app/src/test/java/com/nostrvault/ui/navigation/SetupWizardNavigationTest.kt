@@ -2,6 +2,7 @@ package com.nostrvault.ui.navigation
 
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import androidx.arch.core.executor.ArchTaskExecutor
 import androidx.arch.core.executor.TaskExecutor
 import androidx.navigation.NavBackStackEntry
@@ -13,7 +14,9 @@ import androidx.navigation.createGraph
 import com.nostrvault.ui.screens.settings.SETUP_INCOMPLETE_DESTINATION
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkConstructor
 import io.mockk.mockkStatic
+import io.mockk.unmockkConstructor
 import io.mockk.unmockkStatic
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -89,9 +92,14 @@ class SetupWizardNavigationTest {
             val text = firstArg<String>()
             mockk<Uri>(relaxed = true) { every { this@mockk.toString() } returns text }
         }
+        // Navigation 2.10 hashes each entry's saved state, and the JVM's stub
+        // Bundle answers keySet() with null. These routes carry no arguments.
+        mockkConstructor(Bundle::class)
+        every { anyConstructed<Bundle>().keySet() } returns emptySet()
     }
 
     @After fun tearDown() {
+        unmockkConstructor(Bundle::class)
         unmockkStatic(Uri::class)
         ArchTaskExecutor.getInstance().setDelegate(null)
     }

@@ -4,7 +4,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -16,8 +15,8 @@ class NWCServiceTest {
     private fun noPreimage(response: NWCResponse) {
         try {
             NWCService.paidPreimage(response); fail("should not count as paid")
-        } catch (e: NWCNoPreimageException) {
-            assertFalse(e is NWCNotSentException)
+        } catch (_: NWCNoPreimageException) {
+            // Only "no preimage" is caught: a NWCNotSentException escapes and fails the test.
         }
     }
 
