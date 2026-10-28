@@ -132,7 +132,7 @@ kotlin {
 
 dependencies {
     // ---- Compose BOM ----
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -146,61 +146,61 @@ dependencies {
     implementation("androidx.compose.animation:animation")
 
     // Navigation
-    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
 
     // Lifecycle + ViewModel
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-service:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.10.0")
 
     // Activity
-    implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.core:core-ktx:1.18.0")
 
     // Fragment (FragmentActivity host) + Biometric (reveal-key auth)
-    implementation("androidx.fragment:fragment-ktx:1.8.5")
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
     implementation("androidx.biometric:biometric:1.1.0")
 
     // ---- Dependency Injection (Hilt) ----
     implementation("com.google.dagger:hilt-android:2.58")
     ksp("com.google.dagger:hilt-android-compiler:2.58")
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+    implementation("androidx.hilt:hilt-lifecycle-viewmodel-compose:1.3.0")
 
     // ---- Networking ----
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // ---- Image Loading (Coil) ----
-    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
 
     // ---- Video (ExoPlayer / Media3) ----
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-ui:1.5.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
     // Live streams are HLS (.m3u8); ExoPlayer needs this to open one.
-    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
     // Music: a MediaSessionService keeps Wavlake playing in the background
     // with notification and lock-screen controls.
-    implementation("androidx.media3:media3-session:1.5.1")
+    implementation("androidx.media3:media3-session:1.11.1")
 
     // ---- JSON ----
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // ---- Coroutines ----
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // ---- Encrypted Storage ----
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
 
     // ---- QR Code ----
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     // ---- Home-screen widgets (Glance) ----
-    implementation("androidx.glance:glance-appwidget:1.1.1")
-    implementation("androidx.glance:glance-material3:1.1.1")
+    implementation("androidx.glance:glance-appwidget:1.2.0")
+    implementation("androidx.glance:glance-material3:1.2.0")
 
     // ---- Markdown ----
     implementation("com.github.jeziellago:compose-markdown:0.5.4")
@@ -213,7 +213,7 @@ dependencies {
     implementation("com.google.mlkit:translate:17.0.3")
 
     // ---- Permissions ----
-    implementation("com.google.accompanist:accompanist-permissions:0.36.0")
+    implementation("com.google.accompanist:accompanist-permissions:0.37.3")
 
     // ---- Firebase (Push Notifications) ----
     // Uncomment when google-services.json is added
@@ -221,10 +221,10 @@ dependencies {
 
     // ---- Testing ----
     testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:1.13.13")
+    testImplementation("io.mockk:mockk:1.14.11")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
