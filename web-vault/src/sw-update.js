@@ -18,7 +18,10 @@ const show = () => { if (!ready) { ready = true; for (const f of listeners) f(tr
  * - One that finishes installing while this page runs: the bar.
  * - A newer worker taking over without this page asking (another tab tapped): the bar, as this page is the old build.
  */
-export function watchUpdates(reg, sw, env = { reload: () => location.reload(), doc: document, every: setInterval, after: setTimeout, now: Date.now }) {
+// The timers are wrapped, not passed bare: env.every(...) calls its function as a method of env, and a browser's
+// setInterval / setTimeout called with any `this` but the window throws "Illegal invocation".
+const pageEnv = () => ({ reload: () => location.reload(), doc: document, every: (f, ms) => setInterval(f, ms), after: (f, ms) => setTimeout(f, ms), now: () => Date.now() })
+export function watchUpdates(reg, sw, env = pageEnv()) {
   const hadController = !!sw.controller
   let asked = false
   apply = () => {
