@@ -523,7 +523,7 @@ func ingestPopularEngagement(ctx context.Context) {
 		log.Printf("📊 popular tally restored: %d targets across %d hours", targets, buckets)
 	}
 
-	go persistPopularTally(ctx)
+	spawnFromCtx(ctx, "persistPopularTally", func() { persistPopularTally(ctx) })
 
 	log.Println("📊 subscribing to engagement (kinds 7/6/9735) on", len(relays), "relays")
 	var backoff time.Duration

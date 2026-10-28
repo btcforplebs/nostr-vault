@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -46,6 +48,122 @@ type relayCycle struct {
 	ownServer *http.Server
 	pool      *nostr.SimplePool
 	wg        sync.WaitGroup
+
+	// running counts live spawned goroutines by name, for the log line
+	// when a stop has to leave some behind.
+	runningMu sync.Mutex
+	running   map[string]int
+
+	// hijacked holds connections the HTTP servers handed over to a
+	// handler (khatru's WebSockets). Server.Shutdown neither closes nor
+	// waits for them, so their goroutines outlived the cycle and kept
+	// querying databases the stop had closed.
+	hijackedMu sync.Mutex
+	hijacked   map[net.Conn]struct{}
+}
+
+type cycleCtxKey struct{}
+
+// newRelayCycle makes a cycle whose context carries the cycle itself, so
+// code deep inside a spawned goroutine can register its own helpers with
+// spawnFromCtx.
+func newRelayCycle() *relayCycle {
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &relayCycle{cancel: cancel}
+	c.ctx = context.WithValue(ctx, cycleCtxKey{}, c)
+	return c
+}
+
+// spawnFromCtx runs fn on the cycle that ctx belongs to, so teardown waits
+// for it; with no cycle in ctx (CLI, tests) it is a plain goroutine. Call
+// it only from a goroutine that is itself spawned on that cycle.
+func spawnFromCtx(ctx context.Context, name string, fn func()) {
+	if c, ok := ctx.Value(cycleCtxKey{}).(*relayCycle); ok {
+		c.spawn(name, fn)
+		return
+	}
+	go runsafe.Run(name, fn)
+}
+
+// trackHijacked makes srv report the connections it hands to handlers, so
+// stop can close them. Serve srv on a listener from trackConns so each
+// connection leaves the set again when it closes; otherwise a long-running
+// relay keeps every WebSocket it ever accepted until the next stop.
+func (c *relayCycle) trackHijacked(srv *http.Server) {
+	srv.ConnState = func(conn net.Conn, state http.ConnState) {
+		if state != http.StateHijacked {
+			return
+		}
+		if tc, ok := conn.(*tls.Conn); ok {
+			conn = tc.NetConn()
+		}
+		c.hijackedMu.Lock()
+		if c.hijacked == nil {
+			c.hijacked = map[net.Conn]struct{}{}
+		}
+		c.hijacked[conn] = struct{}{}
+		c.hijackedMu.Unlock()
+	}
+}
+
+// trackConns wraps ln so a hijacked connection drops out of the cycle's
+// set when it closes.
+func (c *relayCycle) trackConns(ln net.Listener) net.Listener {
+	return &trackedListener{Listener: ln, cycle: c}
+}
+
+type trackedListener struct {
+	net.Listener
+	cycle *relayCycle
+}
+
+func (l *trackedListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &trackedConn{Conn: conn, cycle: l.cycle}, nil
+}
+
+type trackedConn struct {
+	net.Conn
+	cycle *relayCycle
+}
+
+func (t *trackedConn) Close() error {
+	t.cycle.hijackedMu.Lock()
+	delete(t.cycle.hijacked, t)
+	t.cycle.hijackedMu.Unlock()
+	return t.Conn.Close()
+}
+
+// closeHijacked closes every handed-over connection. khatru's read loop
+// then fails, cancels the connection's context, and its request
+// goroutines wind down.
+func (c *relayCycle) closeHijacked() int {
+	c.hijackedMu.Lock()
+	conns := c.hijacked
+	c.hijacked = nil
+	c.hijackedMu.Unlock()
+	for conn := range conns {
+		conn.Close()
+	}
+	return len(conns)
+}
+
+// stillRunning names the spawned goroutines that have not returned.
+func (c *relayCycle) stillRunning() []string {
+	c.runningMu.Lock()
+	defer c.runningMu.Unlock()
+	names := make([]string, 0, len(c.running))
+	for name, n := range c.running {
+		if n > 1 {
+			name += "×" + strconv.Itoa(n)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // meshWanted is the host's last SetMeshServingC, kept across relay restarts.
@@ -87,9 +205,10 @@ func (c *relayCycle) startMeshServer() {
 		return
 	}
 	srv := newMeshServer(addr)
+	c.trackHijacked(srv)
 	c.meshServer = srv
 	c.spawn("mesh-http-server", func() {
-		if err := srv.Serve(newMeshListener(ln)); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(c.trackConns(newMeshListener(ln))); err != nil && err != http.ErrServerClosed {
 			log.Printf("🚫 mesh HTTP server exited: %v", err)
 		}
 	})
@@ -122,9 +241,10 @@ func (c *relayCycle) startOwnServer() {
 		return
 	}
 	srv := &http.Server{Addr: addr, Handler: c.server.Handler}
+	c.trackHijacked(srv)
 	c.ownServer = srv
 	c.spawn("mesh-own-http-server", func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(c.trackConns(ln)); err != nil && err != http.ErrServerClosed {
 			log.Printf("🚫 mesh own-devices HTTP server exited: %v", err)
 		}
 	})
@@ -151,8 +271,21 @@ func (c *relayCycle) stopMeshServer() {
 // spawning goroutine itself was spawned (the counter is then ≥ 1).
 func (c *relayCycle) spawn(name string, fn func()) {
 	c.wg.Add(1)
+	c.runningMu.Lock()
+	if c.running == nil {
+		c.running = map[string]int{}
+	}
+	c.running[name]++
+	c.runningMu.Unlock()
 	go func() {
 		defer c.wg.Done()
+		defer func() {
+			c.runningMu.Lock()
+			if c.running[name]--; c.running[name] <= 0 {
+				delete(c.running, name)
+			}
+			c.runningMu.Unlock()
+		}()
 		runsafe.Run(name, fn)
 	}()
 }
@@ -177,11 +310,40 @@ func (c *relayCycle) waitBackground(d time.Duration) bool {
 type lifecycleManager struct {
 	mu      sync.Mutex
 	current atomic.Pointer[relayCycle]
+	// drained is closed once the last stopped cycle's goroutines have all
+	// returned and its databases have really closed. Guarded by mu.
+	drained <-chan struct{}
 }
 
 var relayLC lifecycleManager
 
 var errAlreadyRunning = errors.New("relay already running")
+
+var errStillDraining = errors.New("the last relay cycle is still shutting down")
+
+// drainWait bounds how long a start waits for the last cycle to drain.
+var drainWait = 10 * time.Second
+
+// setDrained records when the cycle being torn down will be fully gone.
+// Caller holds mu.
+func (l *lifecycleManager) setDrained(ch <-chan struct{}) { l.drained = ch }
+
+// awaitDrained waits, up to d, for the last cycle to be fully gone. No new
+// cycle, import, backup or restore may open the databases or touch the
+// relay globals before then: the old cycle's goroutines would run on top
+// of the new one. Caller holds mu.
+func (l *lifecycleManager) awaitDrained(d time.Duration) bool {
+	if l.drained == nil {
+		return true
+	}
+	select {
+	case <-l.drained:
+		l.drained = nil
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
 
 // startCycle runs setup under the lifecycle mutex and installs the cycle
 // on success. setup receives the fresh cycle (ctx/cancel populated) and
@@ -192,10 +354,12 @@ func (l *lifecycleManager) startCycle(setup func(c *relayCycle) error) error {
 	if l.current.Load() != nil {
 		return errAlreadyRunning
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	c := &relayCycle{ctx: ctx, cancel: cancel}
+	if !l.awaitDrained(drainWait) {
+		return errStillDraining
+	}
+	c := newRelayCycle()
 	if err := setup(c); err != nil {
-		cancel()
+		c.cancel()
 		c.waitBackground(5 * time.Second) // drain anything setup spawned
 		return err
 	}
@@ -231,6 +395,10 @@ func withExclusiveDBs(name string, fn func() int) int {
 	defer relayLC.mu.Unlock()
 	if relayLC.current.Load() != nil {
 		log.Printf("🚫 %s refused: relay is running — stop it first", name)
+		return 1
+	}
+	if !relayLC.awaitDrained(drainWait) {
+		log.Printf("🚫 %s refused: %v", name, errStillDraining)
 		return 1
 	}
 	return fn()

@@ -151,11 +151,23 @@ func GranularInitDBs(names []string) error {
 
 	for i, name := range names {
 		path := "db/" + name
+		// A store from the last cycle that a straggler still held when it
+		// stopped closes only when released. Opening the same path before
+		// then would run two stores on one directory.
+		if old := retiringDBs[name]; old != nil {
+			select {
+			case <-old.Done():
+			case <-time.After(retiringDBWait):
+				return fmt.Errorf("%sDB init failed: the last relay cycle is still using it", name)
+			}
+			delete(retiringDBs, name)
+		}
 		slog.Info(fmt.Sprintf("Initializing %s database (%d/%d)", name, i+1, len(names)))
-		db := newDBBackend(path)
-		if err := db.Init(); err != nil {
+		inner := newDBBackend(path)
+		if err := inner.Init(); err != nil {
 			return fmt.Errorf("%sDB init failed: %w", name, err)
 		}
+		db := DBBackend(newGatedDB(inner))
 		dbs[name] = db
 		slog.Info(fmt.Sprintf("✓ %s database ready", name))
 
@@ -179,18 +191,47 @@ func GranularInitDBs(names []string) error {
 	return nil
 }
 
-func CloseDBs() {
+// retiringDBs holds stores closed while a straggler was still inside
+// them; GranularInitDBs waits for them before reopening the same path.
+// Guarded by dbMu.
+var retiringDBs = map[string]*gatedDB{}
+
+// retiringDBWait bounds how long a reopen waits for the last cycle's store.
+var retiringDBWait = 10 * time.Second
+
+// CloseDBs closes every open database. New calls are refused at once; calls
+// in flight are waited for up to closeDBsWait, after which a store still in
+// use closes as soon as its last caller leaves. Returns a channel closed
+// once every store has really closed.
+func CloseDBs() <-chan struct{} {
+	ch, _ := closeDBs(closeDBsWait)
+	return ch
+}
+
+var closeDBsWait = 2 * time.Second
+
+func closeDBs(d time.Duration) (<-chan struct{}, bool) {
 	dbMu.Lock()
-	defer dbMu.Unlock()
-	if dbs != nil {
-		for name, db := range dbs {
-			if db != nil {
-				slog.Info("Closing database", "name", name)
-				db.Close()
-				dbs[name] = nil
-			}
+	var gates []*gatedDB
+	for name, db := range dbs {
+		if db == nil {
+			continue
 		}
+		slog.Info("Closing database", "name", name)
+		if g, ok := db.(*gatedDB); ok {
+			gates = append(gates, g)
+			retiringDBs[name] = g
+		} else {
+			db.Close()
+		}
+		dbs[name] = nil
 	}
+	dbMu.Unlock()
+	allClosed, inTime := closeGatedDBs(gates, d)
+	if !inTime {
+		slog.Warn("a database is still in use; it closes when its last reader finishes")
+	}
+	return allClosed, inTime
 }
 
 // relayServiceURL builds the canonical URL a client actually connects to for

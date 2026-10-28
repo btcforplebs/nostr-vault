@@ -1,7 +1,7 @@
 .DS_Store
 .env
 .idea/
-blossom/
+/blossom/
 db.zip
 db/
 dist/
