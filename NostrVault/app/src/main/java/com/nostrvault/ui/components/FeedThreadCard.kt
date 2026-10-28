@@ -30,6 +30,7 @@ import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadEntry
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
+import com.nostrvault.ui.theme.Motion
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
@@ -391,9 +392,10 @@ class ThreadLineAnchor(
         scope.launch {
             try {
                 val top = holdId?.let { tops[it] } ?: return@launch
+                // The first move glides, unless Reduce Motion is on.
                 if (glideNext) {
                     glideNext = false
-                    listState.animateScrollBy(top - holdY)
+                    if (Motion.isReduced) listState.scrollBy(top - holdY) else listState.animateScrollBy(top - holdY)
                 } else {
                     listState.scrollBy(top - holdY)
                 }

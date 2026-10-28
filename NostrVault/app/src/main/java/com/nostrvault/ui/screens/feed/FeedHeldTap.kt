@@ -3,6 +3,7 @@ package com.nostrvault.ui.screens.feed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.withFrameNanos
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.ui.theme.Motion
 
 /**
  * Opens a note in the condensed feed. Opening one closes the note that was
@@ -45,5 +46,6 @@ internal suspend fun LazyListState.glideToTapLine(rowId: String) {
     withFrameNanos { }
     val row = layoutInfo.visibleItemsInfo.firstOrNull { it.key == rowId } ?: return
     if (row.offset == 0) return
-    animateScrollToItem(row.index)
+    // Reduce Motion: jump instead of glide.
+    if (Motion.isReduced) scrollToItem(row.index) else animateScrollToItem(row.index)
 }
