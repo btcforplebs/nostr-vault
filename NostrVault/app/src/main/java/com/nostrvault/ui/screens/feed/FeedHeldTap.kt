@@ -3,6 +3,7 @@ package com.nostrvault.ui.screens.feed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.withFrameNanos
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedThread
 import com.nostrvault.ui.theme.Motion
 
 /**
@@ -48,4 +49,15 @@ internal suspend fun LazyListState.glideToTapLine(rowId: String) {
     if (row.offset == 0) return
     // Reduce Motion: jump instead of glide.
     if (Motion.isReduced) scrollToItem(row.index) else animateScrollToItem(row.index)
+}
+
+/**
+ * The list key of the row that shows the open post: the post itself in the
+ * condensed feed, the card of the thread it belongs to in the threaded one.
+ * Null when nothing is open or the post is no longer in the list.
+ */
+internal fun openRowKey(openId: String?, isThreaded: Boolean, threads: List<FeedThread>): String? = when {
+    openId == null -> null
+    !isThreaded -> openId
+    else -> threads.firstOrNull { t -> t.rootId == openId || t.entries.any { it.note.id == openId } }?.rootId
 }
