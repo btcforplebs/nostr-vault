@@ -155,6 +155,10 @@ struct HavenConfig: Codable, Equatable {
     /// Picking a nostr.build GIF downloads it and uploads it to your own
     /// Blossom servers, instead of posting nostr.build's link.
     var saveGifsToBlossom: Bool = false
+    /// When `blossomMirrors` last changed, in Unix seconds: the created_at of
+    /// a published kind 10063 this device adopted, or the time it was edited
+    /// here. nil = never set, which any published list beats.
+    var blossomMirrorsUpdatedAt: Int64? = nil
 
     /// Where a brand-new account's photos go when it has no server of its own.
     /// blossomMirrors is otherwise empty on a fresh install, and with no
@@ -303,7 +307,7 @@ struct HavenConfig: Codable, Equatable {
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
-        case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
+        case blossomMirrors, blossomMirrorsUpdatedAt, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case meshDevices, meshPhotoDestination
         case blastrRelaysFile, blastrRelays
@@ -442,6 +446,7 @@ struct HavenConfig: Codable, Equatable {
 
         blossomMirrors = (try container.decodeIfPresent([String].self, forKey: .blossomMirrors) ?? defaults.blossomMirrors)
             .filter { !HavenConfig.isDefunctMirror($0) }
+        blossomMirrorsUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .blossomMirrorsUpdatedAt)
         autoMirrorMedia = try container.decodeIfPresent(Bool.self, forKey: .autoMirrorMedia) ?? defaults.autoMirrorMedia
         saveGifsToBlossom = try container.decodeIfPresent(Bool.self, forKey: .saveGifsToBlossom) ?? defaults.saveGifsToBlossom
 

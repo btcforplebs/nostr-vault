@@ -132,6 +132,7 @@ struct BlossomSettingsView: View {
                             Spacer()
                             Button(action: {
                                 configService.config.blossomMirrors.removeAll(where: { $0 == url })
+                                configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
                                 configService.save()
                                 NostrService.shared.publishServerList()
                             }) {
@@ -289,6 +290,8 @@ struct BlossomSettingsView: View {
             }
             if !configService.config.blossomMirrors.contains(trimmed) {
                 configService.config.blossomMirrors.append(trimmed)
+                // A published list older than this edit is not adopted over it.
+                configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
                 configService.save()
                 NostrService.shared.publishServerList()
                 newMirrorURL = ""

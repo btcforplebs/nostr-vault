@@ -493,6 +493,8 @@ struct SetupWizardView: View {
         // guessed relay set, and replies had nowhere defined to go. Without it a
         // brand-new user is effectively unreachable over NIP-17.
         NostrService.shared.republishDMRelayListsForSignableAccounts()
+        // An existing account's media servers (kind 10063) become upload servers.
+        Task { await NostrService.shared.syncOwnerServerList() }
 
         if setupPath == .newToNostr {
             publishNewAccount()

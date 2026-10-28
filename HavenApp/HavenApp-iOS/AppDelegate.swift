@@ -148,6 +148,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(5))
                 NostrService.shared.republishDMRelayListsForSignableAccounts()
+                // Media servers set in another app (kind 10063) become
+                // upload servers here too.
+                await NostrService.shared.syncOwnerServerList()
             }
         }
 
