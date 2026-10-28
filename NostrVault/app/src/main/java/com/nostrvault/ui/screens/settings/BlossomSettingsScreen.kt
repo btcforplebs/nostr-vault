@@ -93,6 +93,13 @@ class BlossomSettingsViewModel @Inject constructor(
         saveAndPublish()
     }
 
+    /** Media Servers › Suggested. Leaves a half-typed address alone. */
+    fun addSuggested(url: String) {
+        if (url in _mirrors.value) return
+        _mirrors.value = _mirrors.value + url
+        saveAndPublish()
+    }
+
     fun removeMirror(url: String) {
         _mirrors.value = _mirrors.value - url
         saveAndPublish()
@@ -294,19 +301,19 @@ fun BlossomSettingsScreen(
 
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
-            if (mirrors.isEmpty()) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                ) {
-                    Text("No additional mirrors configured", color = SecondaryText, fontSize = 15.sp)
-                }
-                offlineCopies()
-                FipsSection(onOpenFipsMesh)
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (mirrors.isEmpty()) {
+                    item {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                        ) {
+                            Text("No additional mirrors configured", color = SecondaryText, fontSize = 15.sp)
+                        }
+                    }
+                } else {
                     items(mirrors) { mirror ->
                         MirrorRow(
                             url = mirror,
@@ -318,9 +325,10 @@ fun BlossomSettingsScreen(
                             modifier = Modifier.padding(start = 16.dp),
                         )
                     }
-                    item { offlineCopies() }
-                    item { FipsSection(onOpenFipsMesh) }
                 }
+                item { SuggestedMediaServersSection(mirrors, viewModel::addSuggested) }
+                item { offlineCopies() }
+                item { FipsSection(onOpenFipsMesh) }
             }
         }
     }
