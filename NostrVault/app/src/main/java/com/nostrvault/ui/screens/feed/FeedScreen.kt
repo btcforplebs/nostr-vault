@@ -239,7 +239,24 @@ fun FeedScreen(
 
     FeedScrollTrackingEffects(listState, notes, viewModel)
 
-    FeedAutoApplyEffect(viewModel, pendingCount = { pendingCount }, autoLoad = { autoLoad }, isAtTop = { isAtTop })
+    // A tapped post stays open after the reader scrolls away from it, so what
+    // matters is whether its row is still on screen.
+    val currentOpenRowKey by rememberUpdatedState(openRowKey(expandedNoteId, isThreaded, feedThreads))
+    val openRowShown by remember {
+        derivedStateOf {
+            val key = currentOpenRowKey ?: return@derivedStateOf false
+            listState.layoutInfo.visibleItemsInfo.any { it.key == key }
+        }
+    }
+
+    // Not while a tapped post is on screen: new posts landing on top would
+    // push it off the tap line. They apply once it has scrolled away.
+    FeedAutoApplyEffect(
+        viewModel,
+        pendingCount = { pendingCount },
+        autoLoad = { autoLoad && !openRowShown },
+        isAtTop = { isAtTop },
+    )
 
     FeedRevealEffect(listState, isThreaded = { isThreaded }, feedThreads = { feedThreads }, notes = { notes }, isAtTop = { isAtTop })
 
@@ -304,7 +321,7 @@ fun FeedScreen(
         isLoadingFeed = isLoadingFeed,
         hasNotes = hasAnyNotes,
     )
-    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop) &&
+    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop || openRowShown) &&
         feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()
@@ -566,6 +583,7 @@ fun FeedScreen(
                 FeedNoteList(
                     viewModel = viewModel,
                     listState = listState,
+                    openRowShown = { openRowShown },
                     padding = padding,
                     meterLift = meterLift,
                     threadLineAnchor = threadLineAnchor,

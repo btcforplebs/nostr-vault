@@ -108,8 +108,9 @@ internal fun FeedAutoApplyEffect(
                 if (shouldApply) {
                     // Brief debounce to batch rapid arrivals
                     delay(150)
-                    // Re-check — user may have scrolled away during debounce
-                    if (isAtTop()) {
+                    // Re-check: the reader may have scrolled away, or opened a
+                    // post (which turns auto-load off), during the debounce.
+                    if (isAtTop() && autoLoad()) {
                         // The reveal effect below performs the scroll once the
                         // prepend has actually landed in the list — scrolling
                         // here (even after a fixed delay) races composition and

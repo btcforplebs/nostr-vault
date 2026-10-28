@@ -1,7 +1,10 @@
 package com.nostrvault.ui.screens.feed
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.withFrameNanos
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedThread
+import com.nostrvault.ui.theme.Motion
 
 /**
  * Opens a note in the condensed feed. Opening one closes the note that was
@@ -34,3 +37,27 @@ internal fun LazyListState.openHoldingTappedRow(
  */
 internal fun heldTapPosition(openIndex: Int?, tappedIndex: Int, tappedOffset: Int): Pair<Int, Int>? =
     if (openIndex != null && openIndex in 0 until tappedIndex) tappedIndex to -tappedOffset else null
+
+/**
+ * After [openHoldingTappedRow]: glides the opened row so its top sits on the
+ * tap line, the list's content top (TapAnchor). Waits a frame so the open and
+ * the hold have laid out first; a row already on the line does not move.
+ */
+internal suspend fun LazyListState.glideToTapLine(rowId: String) {
+    withFrameNanos { }
+    val row = layoutInfo.visibleItemsInfo.firstOrNull { it.key == rowId } ?: return
+    if (row.offset == 0) return
+    // Reduce Motion: jump instead of glide.
+    if (Motion.isReduced) scrollToItem(row.index) else animateScrollToItem(row.index)
+}
+
+/**
+ * The list key of the row that shows the open post: the post itself in the
+ * condensed feed, the card of the thread it belongs to in the threaded one.
+ * Null when nothing is open or the post is no longer in the list.
+ */
+internal fun openRowKey(openId: String?, isThreaded: Boolean, threads: List<FeedThread>): String? = when {
+    openId == null -> null
+    !isThreaded -> openId
+    else -> threads.firstOrNull { t -> t.rootId == openId || t.entries.any { it.note.id == openId } }?.rootId
+}

@@ -86,7 +86,7 @@ internal fun HeroNoteCard(
         border = androidx.compose.foundation.BorderStroke(2.dp, themeColor),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = HeroCardGap)
             .shadow(
                 elevation = 8.dp,
                 shape = cardShape,
@@ -402,3 +402,6 @@ internal fun HeroNoteCard(
  * focused reply read as the same card.
  */
 private const val HERO_TINT_ALPHA = 0.04f
+
+/** Space above and below the hero card; the thread subtracts it so the card itself sits on the tap line. */
+internal val HeroCardGap = 4.dp
