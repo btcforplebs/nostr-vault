@@ -8,7 +8,11 @@ import { getBlocks } from "../net/blocks.js"
 import { useDmTrust } from "./useDmTrust.js"
 import {
   POLL_MS, notifyOn, permission, readMark, writeMark, readSince, unreadFrom, vaultLines, unreadLines, titleWith, noticesFor, lookingAtVault,
+  setVaultUnread,
 } from "../net/notify-watch.js"
+import { readTypes, lineWanted } from "../net/notify-prefs.js"
+import { showNotice, listenNoticeClicks } from "../net/notify-show.js"
+import { useDmNotify } from "./useDmNotify.js"
 
 const nameOf = pk => getProfile(pk)?.name ?? ""
 
@@ -32,7 +36,7 @@ export function useNotifyWatch(ctx) {
     let mark = readMark(me)
     const since = readSince(me)
     const from = () => unreadFrom(readSeen(me)?.activity ?? 0, since)
-    const show = () => { document.title = titleWith(unreadLines(lines, from()).length, base) }
+    const show = () => { const n = unreadLines(lines, from()).length; setVaultUnread(n); document.title = titleWith(n, base) }
     const rebuild = async () => {
       const { vault } = live.current
       const [inbound, own] = await Promise.all([readInbound(vault, me).catch(() => []), readOwn(vault, me).catch(() => [])])
@@ -45,16 +49,12 @@ export function useNotifyWatch(ctx) {
       if (!fresh.length) return
       // Names for the text, the faces' profiles the list will draw anyway.
       await fetchProfiles(live.current.vault, uniq(fresh.flatMap(r => r.actors.slice(0, 2))), relays).catch(() => {})
-      const out = noticesFor(lines, { mark, seenAt, nameOf })
+      const types = readTypes()
+      const out = noticesFor(lines, { mark, seenAt, nameOf, wanted: kind => lineWanted(kind, types) })
       mark = out.mark
       writeMark(me, mark)
       if (!notifyOn() || permission() !== "granted" || lookingAtVault()) return
-      for (const n of out.notices) {
-        try {
-          const note = new Notification(n.title, { body: n.body, tag: n.tag, icon: "./icon.svg" })
-          note.onclick = () => { try { window.focus() } catch {} location.hash = n.href; note.close() }
-        } catch {} // Chrome on Android only shows notifications from a service worker: nothing to do there.
-      }
+      for (const n of out.notices) await showNotice(n)
     }
     const poll = async () => {
       if (stopped) return
@@ -74,13 +74,15 @@ export function useNotifyWatch(ctx) {
     rebuild().catch(() => {}).then(poll)
     // A look at the Vault list moves its seen mark: the title's count follows at once.
     const offSeen = onSeen(show)
+    const offClicks = listenNoticeClicks()
     addEventListener("hashchange", show)
-    return () => { stopped = true; clearTimeout(timer); offSeen(); removeEventListener("hashchange", show); document.title = base }
+    return () => { stopped = true; clearTimeout(timer); offSeen(); offClicks(); setVaultUnread(0); removeEventListener("hashchange", show); document.title = base }
   }, [me, relays.join(" ")])
 }
 
 /** useNotifyWatch as an element, for the signed-in part of the app. */
 export function NotifyWatch({ ctx }) {
   useNotifyWatch(ctx)
+  useDmNotify(ctx)
   return null
 }

@@ -1,5 +1,5 @@
 // New Vault activity while this tab is open (the phone's Vault tab notifications, pull only): no push server, no Web
-// Push, no service worker. While a page of the app is open, even in a background tab, the user's relays are asked
+// Push. While a page of the app is open, even in a background tab, the user's relays are asked
 // every POLL_MS for what tags them. What came in is folded into the Vault list's lines (vault-lists.js activityRows),
 // a line newer than the user last looked raises one browser notification (Notification API, off until the user turns
 // it on in Settings), and the count of lines newer than the Vault list's "seen" mark is shown in the tab's title.
@@ -102,7 +102,8 @@ const TEXT = {
   follow: who => [`${who} followed you`, ""],
 }
 /** Kinds of line the phone notifies by default (NotificationPolicy: mentions, replies, zaps, follows on; reactions and
- *  reposts off). Articles and highlights never raise one there. The title's count still has every line. */
+ *  reposts off). Articles and highlights never raise one there. The title's count still has every line. The user's
+ *  own choices are notify-prefs.js readTypes; this is what they start as. */
 export const NOTIFIED = new Set(["reply", "mention", "quote", "zap", "follow"])
 
 // A notification is plain text: `nostr:` people as a short @npub, as the rows show them before names load, and
@@ -118,12 +119,12 @@ export function lineNotice(row, nameOf = () => "") {
 }
 
 /**
- * Which notifications to raise for `lines`: lines of a NOTIFIED kind newer than both `mark` (already raised) and
+ * Which notifications to raise for `lines`: lines `wanted(kind)` (default NOTIFIED) newer than both `mark` (already raised) and
  * `seenAt` (looked at in the Vault list), newest first, at most MAX_AT_ONCE, else one summary.
  * -> { notices, mark } with the new mark.
  */
-export function noticesFor(lines, { mark, seenAt = 0, nameOf, now = Math.floor(Date.now() / 1000) } = {}) {
-  const fresh = lines.filter(r => NOTIFIED.has(r.kind) && r.created_at > mark && r.created_at > seenAt).sort((a, b) => b.created_at - a.created_at)
+export function noticesFor(lines, { mark, seenAt = 0, nameOf, now = Math.floor(Date.now() / 1000), wanted = k => NOTIFIED.has(k) } = {}) {
+  const fresh = lines.filter(r => wanted(r.kind) && r.created_at > mark && r.created_at > seenAt).sort((a, b) => b.created_at - a.created_at)
   // Every line moves the mark, notified or not; one dated ahead of now can't hold the next ones back.
   const next = Math.max(mark, Math.min(now, lines.reduce((m, r) => Math.max(m, r.created_at), mark)))
   if (!fresh.length) return { notices: [], mark: next }
@@ -134,3 +135,10 @@ export function noticesFor(lines, { mark, seenAt = 0, nameOf, now = Math.floor(D
 /** Whether the user is looking at the Vault list now, so a notification would only repeat what's on screen. */
 export const lookingAtVault = (doc = globalThis.document, hash = globalThis.location?.hash ?? "") =>
   doc?.visibilityState === "visible" && /^#\/?vault(\/activity)?\/?$/.test(hash)
+
+// The count of unread Vault lines, for the Vault tab's dot (the iPhone's vaultHasNews) as well as the title.
+let vaultUnread = 0
+const unreadListeners = new Set()
+export const getVaultUnread = () => vaultUnread
+export function setVaultUnread(n) { if (n !== vaultUnread) { vaultUnread = n; for (const cb of unreadListeners) cb() } }
+export const onVaultUnread = cb => { unreadListeners.add(cb); return () => unreadListeners.delete(cb) }

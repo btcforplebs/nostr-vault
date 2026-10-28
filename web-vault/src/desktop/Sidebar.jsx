@@ -6,6 +6,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
+import { useVaultUnread } from "../components/useVaultUnread.js"
 import { learn } from "../shell.js"
 import { resetBrowser } from "../screens/SettingsScreen.jsx"
 
@@ -29,6 +30,7 @@ const SECTIONS = [["feed", "Feed", "g f"], ["search", "Search", "/"], ["profile"
 export function Sidebar({ ctx, side, rail }) {
   const readOnly = ctx.signer?.readOnly
   const unread = useUnreadTotal(ctx)
+  const vaultNew = useVaultUnread() // unread Vault lines: a dot on Vault (the iPhone's vaultHasNews)
   // badge: a count after the name (iPadSidebarView's red capsule); on the rail, where names hide, a dot on the icon.
   const row = (id, label, keys, badge = 0) => (
     <a key={id} href={`#/${id}`} class={side === id ? "side-row on" : "side-row"} aria-current={side === id ? "page" : undefined}
@@ -46,7 +48,7 @@ export function Sidebar({ ctx, side, rail }) {
         : <a class="side-row side-post" href="#/compose" title={rail ? "New Post (n)" : "n"} aria-label={rail ? "New Post" : undefined}><Icon d={ICON.post} /><span class="side-label">New Post</span></a>}
       {row("messages", "Messages", "g m", unread)}
       <hr />
-      {SECTIONS.map(([id, label, keys]) => row(id, label, keys))}
+      {SECTIONS.map(([id, label, keys]) => row(id, label, keys, id === "vault" ? vaultNew : 0))}
       <hr />
       <HelpRows rail={rail} />
       <RelayFoot ctx={ctx} rail={rail} />

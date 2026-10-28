@@ -2,6 +2,7 @@
 // it on is the only place the app asks the browser for permission, so it only ever asks on the user's tap.
 import { useEffect, useState } from "preact/hooks"
 import { notifyOn, onNotifyPref, permission, setNotifyOn, turnOn } from "../net/notify-watch.js"
+import { TYPES, readTypes, setType, onTypes } from "../net/notify-prefs.js"
 
 const WHY = {
   denied: "This browser blocks notifications for this site. Allow them in the browser's site settings, then turn this on again.",
@@ -11,7 +12,9 @@ const WHY = {
 export function NotifySwitch() {
   const [on, setOn] = useState(() => notifyOn() && permission() === "granted")
   const [why, setWhy] = useState("")
+  const [types, setTypes] = useState(readTypes)
   useEffect(() => onNotifyPref(() => setOn(notifyOn() && permission() === "granted")), [])
+  useEffect(() => onTypes(() => setTypes(readTypes())), [])
   const flip = async e => {
     const want = e.currentTarget.checked
     setWhy("")
@@ -26,7 +29,13 @@ export function NotifySwitch() {
         <span class="settings-title">Browser notifications</span>
         <input type="checkbox" role="switch" checked={on} onChange={flip} />
       </label>
-      <p class="settings-note muted small">{why || "While Nostr Vault is open in a tab, even in the background, new replies, mentions, likes, zaps and followers show as notifications. Nothing is sent to a push server: the tab asks your relays about once a minute."}</p>
+      {on && TYPES.map(t => (
+        <label key={t.id} class="settings-row static notify-switch notify-type">
+          <span class="settings-title">{t.title}</span>
+          <input type="checkbox" role="switch" checked={types[t.id]} onChange={e => setType(t.id, e.currentTarget.checked)} />
+        </label>
+      ))}
+      <p class="settings-note muted small">{why || "While Nostr Vault is open in a tab, even in the background, what you pick here shows as notifications. Nothing goes through a push server: the tab asks your relays about once a minute, so nothing arrives once every tab is closed. Messages are opened by your signer as they arrive."}</p>
     </>
   )
 }
