@@ -244,6 +244,7 @@ struct ComposeView: View {
             // just-added photo needed a scroll to see and ate typing room.
             if !attachments.isEmpty {
                 attachmentGrid
+                UploadServersLink()
             }
 
             footer

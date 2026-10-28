@@ -84,6 +84,9 @@ class AppDelegate: NSObject, ObservableObject {
                 // makes them reachable again, including from senders
                 // still running that build.
                 NostrService.shared.republishDMRelayListsForSignableAccounts()
+                // Media servers set in another app (kind 10063) become
+                // upload servers here too.
+                Task { await NostrService.shared.syncOwnerServerList() }
 
                 // Start profile picture prefetch service (runs once per day on Wi-Fi)
                 try? await Task.sleep(for: .seconds(5))
