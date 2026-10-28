@@ -41,12 +41,14 @@ import { watchUpdates } from "./src/sw-update.js"
 import { VaultReady } from "./src/components/VaultReady.jsx"
 import { hasLocalData, markPrepared, prepareVault, wasPrepared } from "./src/net/vault-ready.js"
 import { DesktopShell } from "./src/desktop/DesktopShell.jsx"
-import { deskModeFor, deskRedirect, phoneRedirect, isListHash } from "./src/desktop/routes.js"
+import { deskModeFor, deskRedirect, phoneRedirect, isListHash, withParam } from "./src/desktop/routes.js"
 import "./src/styles/app.css"
 import "./src/styles/quotes.css"
 import "./src/styles/dms.css"
 import "./src/styles/settings.css"
 import { NotifyWatch } from "./src/components/useNotifyWatch.js"
+import { VaultDashboard } from "./src/screens/VaultDashboard.jsx"
+import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
 const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "settings", "accounts", "wallet"]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
@@ -67,7 +69,8 @@ let lastList = null
 function settle(mode) {
   const fix = mode === "phone" ? phoneRedirect(location.hash) : deskRedirect(location.hash, lastList)
   if (fix) history.replaceState(history.state, "", fix)
-  if (mode !== "phone" && isListHash(location.hash)) lastList = location.hash
+  // The dashboard sheet (?sheet=dashboard) is over the list, not part of it: a note opened later doesn't reopen it.
+  if (mode !== "phone" && isListHash(location.hash)) lastList = withParam(location.hash, "sheet", null)
   return routeOf()
 }
 function useDeskMode() {
@@ -228,6 +231,7 @@ function App() {
       <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
+      {isDashboardOpen() && <VaultDashboard ctx={ctx} />}
       <AuthPrompt />
     </div>
   )

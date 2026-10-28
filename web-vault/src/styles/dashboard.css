@@ -1,0 +1,89 @@
+/* The Vault Dashboard sheet (screens/VaultDashboard.jsx, iPhone VaultDashboardView): a sheet over the screen, cards of
+   rows. A phone gets it full height from the top; a wide window, a centred panel. */
+.dash-sheet { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: flex-end; justify-content: center; }
+.dash-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .5); }
+.dash-panel { position: relative; display: flex; flex-direction: column; width: 100%; max-width: 680px; height: calc(100dvh - 12px - env(safe-area-inset-top));
+  background: var(--bg); border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgb(0 0 0 / .35); overflow: hidden; }
+@media (min-width: 760px) { .dash-sheet { align-items: center; } .dash-panel { height: min(900px, calc(100dvh - 48px)); border-radius: 16px; } }
+.dash-bar-top { display: grid; grid-template-columns: 80px 1fr 80px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--hair); }
+.dash-bar-top h2 { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0; font: 600 17px/1.2 var(--font); }
+.dash-bar-top .done { justify-self: end; font-weight: 600; }
+.dash-scroll { flex: 1; overflow-y: auto; padding: 8px 16px calc(32px + env(safe-area-inset-bottom)); display: grid; gap: 24px; align-content: start; }
+.dash-link { background: none; border: 0; padding: 6px 2px; color: var(--accent); font: var(--t-body); cursor: pointer; text-decoration: none; }
+
+.dash-section { display: grid; gap: 8px; }
+.dash-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px; }
+.dash-head h3 { margin: 0; font: 600 15px/1.3 var(--font); color: var(--text-2); }
+.dash-detail { font: var(--t-foot); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.dash-card { background: var(--s1); border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; }
+.dash-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 11px 14px; color: var(--text);
+  background: none; border: 0; font: inherit; text-align: left; text-decoration: none; }
+.dash-card > * + * { border-top: 1px solid var(--hair); }
+.dash-row.link { cursor: pointer; }
+.dash-row.link:hover { background: var(--s2); }
+.dash-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--s2); color: var(--text-2); }
+.dash-icon.done { background: color-mix(in srgb, #30d158 18%, transparent); color: #30d158; }
+.dash-icon.todo { background: color-mix(in srgb, #ff9f0a 18%, transparent); color: #ff9f0a; font: 800 15px/1 var(--font); }
+.dash-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.dash-title { font: 600 15px/1.3 var(--font); }
+.dash-sub { font: 12px/1.35 var(--font); color: var(--text-2); }
+.dash-value { color: var(--text-2); font: 15px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dash-fix { color: #ff9f0a; font: 600 13px var(--font); }
+.dash-chevron { flex: none; color: var(--text-2); opacity: .6; transition: transform .15s; }
+.dash-chevron.open { transform: rotate(90deg); }
+.dash-button { flex: none; border-radius: 999px; padding: 6px 14px; border: 1px solid var(--hair); background: var(--s2); color: var(--accent); font: 600 13px var(--font); cursor: pointer; }
+.dash-button:disabled { opacity: .5; cursor: default; }
+.dash-progress { width: 100%; height: 4px; margin-top: 4px; accent-color: var(--accent); }
+.dash-note { font: 13px/1.4 var(--font); color: var(--text-2); min-height: 0; }
+.dash-note.error { color: #ff9f0a; }
+.dash-note .storage-note p { margin: 2px 0; }
+.dash-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--text-2); animation: dash-spin .8s linear infinite; }
+@keyframes dash-spin { to { transform: rotate(360deg); } }
+.dash-breakdown { display: grid; gap: 6px; padding: 0 14px 12px 56px; }
+.dash-line { display: flex; justify-content: space-between; gap: 8px; font: 13px var(--font); }
+.dash-line span:last-child { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* Status card. */
+.dash-status { display: flex; align-items: center; gap: 14px; padding: 16px; background: var(--s1); border: 1px solid var(--hair); border-radius: 14px; }
+.dash-status-title { font: 700 17px/1.25 var(--font); }
+.dash-dot { position: relative; flex: none; width: 32px; height: 32px; display: grid; place-items: center; }
+.dash-dot::before { content: ""; position: absolute; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, #33d980 18%, transparent); animation: dash-halo 2.4s ease-in-out infinite alternate; }
+.dash-dot i { position: relative; width: 12px; height: 12px; border-radius: 50%; background: #33d980; }
+@keyframes dash-halo { to { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .dash-dot::before { animation: none; } }
+.dash-menu { position: relative; }
+.dash-more { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--s2); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
+.dash-menu-list { position: absolute; right: 0; top: 40px; z-index: 2; min-width: 140px; padding: 4px; background: var(--s2); border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .35); }
+.dash-menu-list button { display: block; width: 100%; padding: 9px 12px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: var(--t-body); cursor: pointer; }
+.dash-menu-list button:hover { background: var(--s1); }
+
+/* In your vault: the storage bar. */
+.dash-storage { display: grid; gap: 12px; padding: 14px; }
+.dash-bar { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; background: var(--s2); }
+.dash-bar i { display: block; min-width: 3px; }
+.dash-legend { display: flex; gap: 16px; font: 12px var(--font); }
+.dash-legend span { display: grid; grid-template-columns: auto 1fr; column-gap: 5px; align-items: center; }
+.dash-legend b { width: 7px; height: 7px; border-radius: 50%; }
+.dash-legend em { grid-column: 2; font-style: normal; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.dash-bar .data, .dash-legend .data { background: #7b5cff; }
+.dash-bar .media, .dash-legend .media { background: #0a84ff; }
+
+/* Relay activity. */
+.dash-act-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font: 700 12px/1 var(--mono); letter-spacing: .04em; color: var(--text-2); }
+.dash-spacer { flex: 1; }
+.dash-pill { padding: 3px 8px; border-radius: 999px; font: 700 11px/1.2 var(--font); letter-spacing: 0; }
+.dash-pill.good { background: color-mix(in srgb, #30d158 20%, transparent); color: #30d158; }
+.dash-pill.headsUp { background: color-mix(in srgb, #ff9f0a 20%, transparent); color: #ff9f0a; }
+.dash-pill.problem { background: color-mix(in srgb, #ff453a 20%, transparent); color: #ff453a; }
+.dash-act-item { display: grid; grid-template-columns: 8px 1fr auto; gap: 10px; align-items: baseline; padding: 9px 14px; font: 13px/1.4 var(--font); }
+.dash-act-item i { width: 8px; height: 8px; border-radius: 50%; background: #30d158; }
+.dash-act-item.headsUp i { background: #ff9f0a; } .dash-act-item.problem i { background: #ff453a; }
+.dash-act-item time { color: var(--text-2); font: 11px var(--font); white-space: nowrap; }
+.dash-act-empty { display: grid; gap: 4px; padding: 16px 14px; font: 13px var(--font); color: var(--text-2); }
+.dash-act-empty b { color: var(--text); }
+.dash-window { display: grid; gap: 14px; }
+.dash-banner { display: grid; gap: 4px; padding: 14px; border-radius: 14px; background: color-mix(in srgb, #30d158 12%, var(--s1)); }
+.dash-banner.headsUp { background: color-mix(in srgb, #ff9f0a 12%, var(--s1)); }
+.dash-banner.problem { background: color-mix(in srgb, #ff453a 12%, var(--s1)); }
+.dash-banner span { color: var(--text-2); font: 13px var(--font); }
+.dash-actions { display: flex; gap: 10px; }
