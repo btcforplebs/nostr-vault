@@ -9,8 +9,9 @@ import { parseRef } from "./quotes.js"
 import { mediaType } from "./media.js"
 import { meshHost } from "./fips-ref.js"
 
-/** Notes, contact lists (a follow), reposts, reactions, generic reposts, highlights, zaps, long-form articles. */
-export const NOTIFICATION_KINDS = [1, 3, 6, 7, 16, 9802, 9735, 30023]
+/** Notes, contact lists (a follow), reposts, reactions, generic reposts, highlights, zaps, long-form articles, and the
+ *  comments (1111) and polls (1068) the phones list too. */
+export const NOTIFICATION_KINDS = [1, 3, 6, 7, 16, 1068, 1111, 9802, 9735, 30023]
 const HEX64 = /^[0-9a-f]{64}$/
 
 /** Fetch events of the notification kinds that tag `pubkey`, newest first, the user's own left out. */
@@ -165,7 +166,7 @@ export function classify(ev, pubkey) {
   if (ev.pubkey === pubkey && ev.kind !== 9735) return null // own events aren't notifications; a zap's sender is checked below
   const base = { who: ev.pubkey, noteId: null, sats: 0, emoji: "", comment: "", created_at: ev.created_at, event: ev }
   switch (ev.kind) {
-    case 1: {
+    case 1: case 1068: case 1111: {
       // A quote names the quoted note in a `q` tag (NIP-18); the iPhone reads it before any `e` tag.
       const quoted = firstTag(ev.tags, "q")
       if (quoted) return { ...base, type: "quote", noteId: quoted }

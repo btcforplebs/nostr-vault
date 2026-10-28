@@ -274,7 +274,7 @@ test("fetch: each relay is asked on its own and the list shows once half have an
   const done = fetchNotificationEvents(ME, ["wss://a", "wss://b", "wss://slow", "wss://a"], { limit: 2, query, onEvents: evs => shows.push(evs.map(e => e.id)) })
   await new Promise(r => setTimeout(r, 20))
   assert.deepEqual(asked.map(([r]) => r), [["wss://a"], ["wss://b"], ["wss://slow"]], "one relay per ask, each once")
-  assert.deepEqual(asked[0][1], { kinds: [1, 3, 6, 7, 16, 9802, 9735, 30023], "#p": [ME], limit: 2 }, "one filter object")
+  assert.deepEqual(asked[0][1], { kinds: [1, 3, 6, 7, 16, 1068, 1111, 9802, 9735, 30023], "#p": [ME], limit: 2 }, "one filter object")
   assert.deepEqual(shows, [[a.id, b.id]], "shown with two of three in, the slow relay still out")
   release()
   const page = await done

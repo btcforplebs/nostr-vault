@@ -46,6 +46,7 @@ import "./src/styles/app.css"
 import "./src/styles/quotes.css"
 import "./src/styles/dms.css"
 import "./src/styles/settings.css"
+import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 
 const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "settings", "accounts", "wallet"]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
@@ -222,6 +223,7 @@ function App() {
   // The relay screen stays mounted (its FIPS panel finds its elements once, by id), in the same place in both layouts.
   return (
     <div class={desk ? "app desk-app" : "app"}>
+      <NotifyWatch ctx={ctx} />
       {desk ? <DesktopShell ctx={ctx} mode={mode} hash={location.hash} lastList={lastList} /> : <PhoneScreens ctx={ctx} route={route} arg={arg} other={other} />}
       <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
