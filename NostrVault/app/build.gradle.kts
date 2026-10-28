@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.dagger.hilt.android")
@@ -17,7 +16,7 @@ val localProps = Properties().apply {
 
 android {
     namespace = "com.nostrvault"
-    compileSdk = 36
+    compileSdk = 37
 
     // Only wire the release signer when local.properties actually carries the
     // keystore. The unconditional `as String` casts here threw at configuration
@@ -132,7 +131,7 @@ kotlin {
 
 dependencies {
     // ---- Compose BOM ----
-    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -146,26 +145,26 @@ dependencies {
     implementation("androidx.compose.animation:animation")
 
     // Navigation
-    implementation("androidx.navigation:navigation-compose:2.9.8")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
 
     // Lifecycle + ViewModel
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-service:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-process:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-service:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.11.0")
 
     // Activity
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.1")
 
     // Fragment (FragmentActivity host) + Biometric (reveal-key auth)
     implementation("androidx.fragment:fragment-ktx:1.9.1")
     implementation("androidx.biometric:biometric:1.1.0")
 
     // ---- Dependency Injection (Hilt) ----
-    implementation("com.google.dagger:hilt-android:2.58")
-    ksp("com.google.dagger:hilt-android-compiler:2.58")
-    implementation("androidx.hilt:hilt-lifecycle-viewmodel-compose:1.3.0")
+    implementation("com.google.dagger:hilt-android:2.60.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.60.1")
+    implementation("androidx.hilt:hilt-lifecycle-viewmodel-compose:1.4.0")
 
     // ---- Networking ----
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -186,7 +185,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.11.1")
 
     // ---- JSON ----
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
 
     // ---- Coroutines ----
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")

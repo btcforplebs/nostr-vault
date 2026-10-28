@@ -55,7 +55,7 @@ class PostOnFirstServerTest {
     fun `the others finish in the background`() = runBlocking {
         val late = CompletableDeferred<Pair<Int, String?>>()
         val allDone = CompletableDeferred<Unit>()
-        val url = FirstAnswer.first(background, listOf(
+        val url = FirstAnswer.first<String>(background, listOf(
             suspend { "fast" },
             suspend { delay(200); "slow" },
         ), onLate = { index, result -> late.complete(index to result) }, onAllDone = {
