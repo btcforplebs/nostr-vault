@@ -13,5 +13,8 @@ the foreground, many REQs open and close at once, and a torn read of a listener'
 corruption: the Go GC aborts the whole app with "found pointer to free object" (LogePhone,
 2026-10-28). The fix has to live here because the list is private to khatru.
 
-No changes from upstream yet; the next commit patches `listener.go`.
+Changes from upstream are listed below. Keep every other file byte-identical to v0.19.1.
+
+- `listener.go`: `notifyListeners` collects matching listeners under `clientsMutex` and writes
+  to them after unlocking.
 

@@ -435,6 +435,17 @@ func (pool *SimplePool) subMany(
 
 	pending := xsync.NewCounter()
 	pending.Add(int64(len(urls)))
+	if len(urls) == 0 {
+		// HAVEN PATCH: with no relays nothing ever closed events, so a caller
+		// ranging over it hung past ctx cancellation and held its relay
+		// cycle open. Close it when ctx ends, as with relays.
+		ticker.Stop()
+		go func() {
+			<-ctx.Done()
+			close(events)
+		}()
+		return events
+	}
 	for i, url := range urls {
 		url = NormalizeURL(url)
 		urls[i] = url

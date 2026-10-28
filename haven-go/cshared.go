@@ -352,6 +352,7 @@ func StartRelayC(importMode bool) {
 
 		addr := net.JoinHostPort(config.RelayBindAddress, strconv.Itoa(config.RelayPort))
 		cycle.server = &http.Server{Addr: addr, Handler: mux}
+		cycle.trackHijacked(cycle.server)
 
 		// Only enable HTTPS when HAVEN_ENABLE_TLS=1 (iOS needs it for App Transport Security;
 		// macOS uses plain HTTP since Cloudflare handles TLS termination)
@@ -401,6 +402,10 @@ func StartRelayC(importMode bool) {
 	switch {
 	case err == errAlreadyRunning:
 		log.Println("⚠️ StartRelayC ignored: relay already running")
+	case err == errStillDraining:
+		// The databases still belong to the last cycle; closing them here
+		// would be the very use-after-close this wait prevents.
+		log.Println("🚫 StartRelayC refused:", err)
 	case err != nil:
 		log.Println("🚫", err)
 		// initRelays may have opened some DBs before failing
@@ -419,14 +424,18 @@ func runImportCycle() {
 		log.Println("⚠️ Import ignored: relay already running")
 		return
 	}
+	if !relayLC.awaitDrained(drainWait) {
+		log.Println("🚫 Import refused:", errStillDraining)
+		return
+	}
 
 	if err := prepareCSharedEnv(); err != nil {
 		log.Println("🚫", err)
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	c := &relayCycle{ctx: ctx, cancel: cancel}
+	c := newRelayCycle()
+	ctx, cancel := c.ctx, c.cancel
 	c.pool = nostr.NewSimplePool(ctx,
 		nostr.WithPenaltyBox(),
 		nostr.WithRelayOptions(
@@ -479,16 +488,32 @@ func StopRelayC() {
 		if c.ownServer != nil {
 			c.ownServer.Close()
 		}
-		// All background goroutines are context-driven, so this normally
-		// returns quickly; if something straggles, closing the DBs after a
-		// bounded wait is still safe — a late write hits Badger's
-		// ErrDBClosed (or the runsafe recover) instead of corrupting state.
-		// In a backgrounded app the sockets are frozen, so stragglers are
-		// common — the short wait matters more than a clean drain.
-		if !c.waitBackground(2 * time.Second) {
-			log.Println("⚠️ background goroutines did not exit within 2s; closing DBs anyway")
+		// Shutdown leaves WebSockets alone; close them so khatru's
+		// connection goroutines end instead of outliving the cycle.
+		if n := c.closeHijacked(); n > 0 {
+			log.Printf("🔌 closed %d open WebSocket connection(s)", n)
 		}
-		CloseDBs()
+		// All background goroutines are context-driven, so this normally
+		// returns quickly. In a backgrounded app the sockets are frozen, so
+		// stragglers are common. The databases must not close under them,
+		// and the next cycle must not start beside them: the host waits for
+		// this call, so after the bounded wait the rest is handed to a
+		// reaper and the next start waits for it (relayLC.drained).
+		if c.waitBackground(2 * time.Second) {
+			allClosed, _ := closeDBs(time.Second)
+			relayLC.setDrained(allClosed)
+			return
+		}
+		log.Printf("⚠️ background goroutines still running after 2s (%s); databases close when they finish",
+			strings.Join(c.stillRunning(), ", "))
+		drained := make(chan struct{})
+		relayLC.setDrained(drained)
+		go func() {
+			c.wg.Wait()
+			<-CloseDBs()
+			log.Println("✅ last relay cycle drained; databases closed")
+			close(drained)
+		}()
 	})
 }
 

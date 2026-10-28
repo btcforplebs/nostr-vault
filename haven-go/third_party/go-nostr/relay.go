@@ -172,7 +172,9 @@ func (r *Relay) ConnectWithTLS(ctx context.Context, tlsConfig *tls.Config) error
 			select {
 			case <-r.connectionContext.Done():
 				ticker.Stop()
-				r.Connection = nil
+				// HAVEN PATCH: Connection is no longer set to nil here. That write
+				// raced the read loop and close(); IsConnected (the context) is
+				// what says the connection is gone.
 
 				for _, sub := range r.Subscriptions.Range {
 					sub.unsub(fmt.Errorf("relay connection closed: %w / %w", context.Cause(r.connectionContext), r.ConnectionError))
@@ -407,7 +409,7 @@ func (r *Relay) publish(ctx context.Context, id string, env Envelope) error {
 func (r *Relay) Subscribe(ctx context.Context, filters Filters, opts ...SubscriptionOption) (*Subscription, error) {
 	sub := r.PrepareSubscription(ctx, filters, opts...)
 
-	if r.Connection == nil {
+	if r.Connection == nil || !r.IsConnected() {
 		return nil, fmt.Errorf("not connected to %s", r.URL)
 	}
 

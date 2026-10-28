@@ -1,5 +1,3 @@
-//go:build !cshared
-
 package main
 
 import (
@@ -170,6 +168,35 @@ func TestStartAfterStopSeesCleanState(t *testing.T) {
 	}
 	if second.ctx.Err() != nil {
 		t.Fatal("second cycle's context must be live")
+	}
+	lc.stopCycle(func(c *relayCycle) {})
+}
+
+// TestStartWaitsForLastCycleToDrain: a stop that had to leave goroutines
+// behind hands back a drained channel; until it closes, no new cycle may
+// start beside them.
+func TestStartWaitsForLastCycleToDrain(t *testing.T) {
+	var lc lifecycleManager
+	old := drainWait
+	drainWait = 50 * time.Millisecond
+	defer func() { drainWait = old }()
+
+	if err := lc.startCycle(func(c *relayCycle) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	drained := make(chan struct{})
+	lc.stopCycle(func(c *relayCycle) { lc.setDrained(drained) })
+
+	setupRan := false
+	if err := lc.startCycle(func(c *relayCycle) error { setupRan = true; return nil }); err != errStillDraining {
+		t.Fatalf("start while draining = %v, want errStillDraining", err)
+	}
+	if setupRan {
+		t.Fatal("setup ran while the last cycle was still draining")
+	}
+	close(drained)
+	if err := lc.startCycle(func(c *relayCycle) error { return nil }); err != nil {
+		t.Fatalf("start after drain = %v", err)
 	}
 	lc.stopCycle(func(c *relayCycle) {})
 }

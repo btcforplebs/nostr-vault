@@ -133,8 +133,22 @@ func (rl *Relay) removeClientAndListeners(ws *WebSocket) {
 }
 
 // returns how many listeners were notified
+//
+// HAVEN PATCH: upstream ranged over rl.listeners with no lock while
+// addListener/removeListenerId/removeClientAndListeners append to it and
+// swap-delete entries under clientsMutex. A torn read of a listener (its
+// filter's slices and maps) is heap corruption, which the Go GC reports as
+// "found pointer to free object". Snapshot the matches under the lock and
+// write outside it, so a slow client cannot stall subscribe/unsubscribe.
+// The lock is this relay's own: the listeners of a routed subrelay are
+// guarded by its parent's mutex instead, and Haven does not use routes.
 func (rl *Relay) notifyListeners(event *nostr.Event) int {
-	count := 0
+	type target struct {
+		ws *WebSocket
+		id string
+	}
+	var targets []target
+	rl.clientsMutex.Lock()
 listenersloop:
 	for _, listener := range rl.listeners {
 		if listener.filter.Matches(event) {
@@ -143,9 +157,13 @@ listenersloop:
 					continue listenersloop
 				}
 			}
-			listener.ws.WriteJSON(nostr.EventEnvelope{SubscriptionID: &listener.id, Event: *event})
-			count++
+			targets = append(targets, target{listener.ws, listener.id})
 		}
 	}
-	return count
+	rl.clientsMutex.Unlock()
+	for _, t := range targets {
+		id := t.id
+		t.ws.WriteJSON(nostr.EventEnvelope{SubscriptionID: &id, Event: *event})
+	}
+	return len(targets)
 }

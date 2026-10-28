@@ -17,3 +17,8 @@ Changes from upstream are listed below. Keep every other file byte-identical to 
 
 - `signature_libsecp256k1.go`: `CheckSignature` rejects a pubkey that isn't 64 hex chars or a
   sig that isn't 128; `Sign` rejects a secret key that isn't 32 bytes.
+- `pool.go`: `subMany` with no relay URLs closes its channel when the context ends. Before, it
+  never closed, so a caller ranging over it outlived relay stops.
+- `relay.go`: the writer goroutine no longer sets `Connection` to nil when the connection ends
+  (that write raced the read loop and `close()`); `Subscribe` also checks
+  `IsConnected()`.
