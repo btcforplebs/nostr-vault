@@ -41,7 +41,7 @@ android {
     defaultConfig {
         applicationId = "com.nostrvault.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 52
         versionName = "3.0.1"
 
