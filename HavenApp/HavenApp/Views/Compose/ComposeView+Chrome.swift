@@ -134,19 +134,6 @@ extension ComposeView {
                         .help("Search GIFs from nostr.build or Tenor")
                     }
 
-                    // Emoji: your custom emoji and sets, or any emoji, where you were typing.
-                    Button(action: { showingEmojiPicker = true }) {
-                        Image(systemName: "face.smiling")
-                            .font(.appTitle3)
-                            .foregroundColor(purple)
-                            .padding(10)
-                            .background(purple.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add emoji")
-                    .help("Add an emoji")
-
                     Spacer()
 
                     Button(action: { showBlossomPicker = true }) {

@@ -64,12 +64,9 @@ struct ComposeView: View {
     // Debounced NIP-50 relay search for mentioning people who aren't followed / cached.
     @State var mentionSearchTask: Task<Void, Never>? = nil
 
-    // :emoji autocomplete and the emoji button (NIP-30), see ComposeView+Emoji.swift
+    // :emoji autocomplete (NIP-30), see ComposeView+Emoji.swift
     @State var emojiSuggestions: [CustomEmoji] = []
     @State var emojiQuery: ComposeEmoji.Query? = nil
-    /// Where the last edit left the caret, in Characters: the emoji button inserts there.
-    @State var lastCaretOffset: Int = 0
-    @State var showingEmojiPicker = false
 
     // Draft auto-save state
     @State var draftId: String? = nil
@@ -346,12 +343,6 @@ struct ComposeView: View {
             }
             .sheet(isPresented: $showingGifPicker) {
                 GifPickerSheet { item in attachGif(item) }
-            }
-            .sheet(isPresented: $showingEmojiPicker) {
-                EmojiPickerView(onSelect: { insertPickedEmoji($0) })
-                #if os(iOS)
-                .presentationDetents([.height(520)])
-                #endif
             }
             .sheet(item: $altEditorTarget) { _ in
                 altEditorSheet
