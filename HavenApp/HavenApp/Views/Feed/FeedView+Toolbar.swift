@@ -40,12 +40,13 @@ extension FeedView {
     #endif
 
     /// The floating "New Posts" button is up: unloaded posts, and either
-    /// auto-load is off or the user has scrolled away from the top. Never
+    /// auto-load is off, the user has scrolled away from the top, or a
+    /// tapped post is open (which holds auto-load back). Never
     /// when it's switched off in Appearance settings. It is an ambient pill
     /// (`docs/pills.md`): `.ambientPill()` hides it while the lane is busy.
     var showsNewPostsButton: Bool {
         configService.config.showNewPostsPill
-            && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop)
+            && feedService.visiblePendingCount > 0 && (!configService.config.autoLoadNewPosts || !isAtTop || expandedNoteId != nil)
     }
 
     #if os(iOS)

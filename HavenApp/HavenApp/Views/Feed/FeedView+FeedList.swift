@@ -371,6 +371,13 @@ extension FeedView {
                         scheduleAutoLoad(delay: 0.5)
                     }
                 }
+                .onChange(of: expandedNoteId) { _, openId in
+                    // Closing a tapped post releases the auto-load it held back.
+                    if openId == nil && isAtTop && configService.config.autoLoadNewPosts
+                        && feedService.visiblePendingCount > 0 && !feedService.isLoadingFeed {
+                        scheduleAutoLoad(delay: 0.5)
+                    }
+                }
                 .modifier(RowDataCacheObservers(
                     feedService: feedService,
                     nostrService: nostrService,
