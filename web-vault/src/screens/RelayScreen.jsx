@@ -1,25 +1,19 @@
-// Today's relay page as one screen of the app: Haven's status, then the FIPS panel from web-relay (pairing,
-// start/stop, seed and owner status). The panel finds its elements by id, so this screen stays mounted.
-import { useEffect, useRef, useState } from "preact/hooks"
+// Who Can Reach You (Settings and the Vault Dashboard's Vault settings): the FIPS panel from web-relay (pairing,
+// start/stop, seed and owner status), then the account. The relay's status, counts and storage are on the Vault
+// Dashboard (VaultDashboard.jsx). The panel finds its elements by id, so this screen stays mounted.
+import { useEffect, useState } from "preact/hooks"
 import { npubEncode } from "nostr-tools/nip19"
 import { signedInWith } from "../session.js"
 import { bytesToHex } from "nostr-tools/utils"
 import { mountFipsPanel } from "../../../web-relay/src/fips/panel.js"
 import { loadRelayIdentity } from "../../../web-relay/src/fips/node.js"
-import { StorageNote } from "../components/StorageNote.jsx"
 import { fipsStorage } from "../haven/vault.js"
 import { resetBrowser } from "./SettingsScreen.jsx"
 
 export function RelayScreen({ ctx, log }) {
   const { vault, session } = ctx
-  const [counts, setCounts] = useState({})
-  const [storage, setStorage] = useState({})
   const [address, setAddress] = useState("")
   const [copied, setCopied] = useState(false)
-  // This screen mounts at boot, before the follows arrive from the network; the timer reads the current list.
-  const follows = useRef(ctx.account.follows)
-  follows.current = ctx.account.follows
-
   useEffect(() => { mountFipsPanel({ haven: vault.haven, owners: vault.owners, log, account: session.pubkey, storage: fipsStorage() }) }, [])
   // The relay's mesh address is the npub of its own FIPS key (made once, kept in this browser), never the user's key.
   // The FIPS card shows only mesh addresses, never the account: FIPS is not tied to who is signed in.
@@ -30,35 +24,9 @@ export function RelayScreen({ ctx, log }) {
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
-  useEffect(() => {
-    const tick = async () => {
-      const [own, feed] = await Promise.all([
-        vault.outbox.count({ authors: [session.pubkey] }).catch(() => "?"),
-        // Only follows: the thread view also caches other people's notes in /feed.
-        follows.current.length ? vault.feed.count({ kinds: [1, 6], authors: follows.current }).catch(() => "?") : 0,
-      ])
-      const est = await navigator.storage?.estimate?.()
-      setCounts({ own, feed })
-      setStorage({ persisted: (await navigator.storage?.persisted?.()) ?? null, usageMB: est ? (est.usage / 1048576).toFixed(1) : "?" })
-    }
-    tick()
-    const t = setInterval(tick, 10_000)
-    return () => clearInterval(t)
-  }, [])
-
   return (
     <main class="screen">
-      <header class="screen-head"><h2>Your Vault Relay</h2></header>
-      <section class="card">
-        <div class="relay-state"><span class="dot on" />Your vault is running in this browser</div>
-        <div class="stats">
-          <div><div class="k">your events</div><div class="v">{counts.own ?? "–"}</div></div>
-          <div><div class="k">feed cache</div><div class="v">{counts.feed ?? "–"}</div></div>
-          <div><div class="k">storage</div><div class="v">{storage.usageMB ?? "–"} MB</div></div>
-        </div>
-        <div class="muted small">started in {vault.loadMs + vault.startMs} ms</div>
-        <StorageNote kept={storage.persisted} />
-      </section>
+      <header class="screen-head"><h2>Who Can Reach You</h2></header>
       <section class="card">
         <h3>FIPS</h3>
         <p class="muted small">NIP-01 on port 7447, only for the vaults listed below. FIPS uses this relay's own mesh key, not your Nostr account.</p>

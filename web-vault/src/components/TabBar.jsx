@@ -1,6 +1,7 @@
 import { Avatar } from "./Avatar.jsx"
 import { useUnreadTotal } from "./useUnreadTotal.js"
 import { useVaultUnread } from "./useVaultUnread.js"
+import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { useEffect, useState } from "preact/hooks"
 import { isFolded, onFoldedChange, unfold } from "./chrome-fold.js"
 import "../styles/tabbar.css"
@@ -67,7 +68,8 @@ function FoldedBar({ route, pubkey, unread, news, canPost, inert }) {
         <Avatar pubkey={pubkey} size={36} />
         {news && <span class="tab-dot" aria-hidden="true" />}
       </button>
-      {(vault || canPost) && <a class={vault ? "fold-action vault" : "fold-action"} href={vault ? "#/relay" : "#/compose"} aria-label={vault ? "Vault Dashboard" : "Compose new post"}>
+      {(vault || canPost) && <a class={vault ? "fold-action vault" : "fold-action"} href={vault ? dashboardHref() : "#/compose"} aria-label={vault ? "Vault Dashboard" : "Compose new post"}
+        onClick={vault ? e => { e.preventDefault(); openDashboard() } : undefined}>
         {vault ? ICONS.vault : <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={PENCIL} /></svg>}
       </a>}
     </div>

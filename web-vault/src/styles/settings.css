@@ -77,15 +77,17 @@ a.settings-row:hover { background: var(--s2); }
 .vault-capsule-line { flex: none; width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
 @media (max-width: 400px) { .vault-capsule-btn { width: 30px; } }
 @media (max-width: 350px) { .vault-capsule-btn { width: 26px; } .vault-capsule-line { margin: 0; } }
-/* The floating "Vault" capsule above the tab bar, bottom right (VaultView+Layout), coloured by the relays' answer. */
+/* The floating "Vault" capsule above the tab bar, bottom right (VaultView+Layout), coloured by the app's relay
+   connections (net/connection-color.js, the iPhone's connectionColor). On a wide window, 20px up, as on an iPad. */
 .vault-status { position: fixed; z-index: 10; right: max(var(--gutter), calc(50% - 320px + var(--gutter)));
   bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 12px + env(safe-area-inset-bottom));
   display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 18px; border-radius: 999px;
   --reach: #8e8e93; background: var(--reach); color: #fff; font: 700 14px/1 var(--font-round); text-decoration: none;
   box-shadow: 0 4px 8px color-mix(in srgb, var(--reach) 35%, transparent); }
-.vault-status.checking { --reach: #ffd60a; }
-.vault-status.up { --reach: #30d158; }
-.vault-status.down { --reach: #ff453a; }
+.vault-status.connecting { --reach: #ffd60a; }
+.vault-status.connected { --reach: #30d158; }
+.vault-status.error { --reach: #ff453a; }
+.vault-status.desk { right: 24px; bottom: 20px; }
 
 /* Vault lists. */
 .note.tappable { cursor: pointer; }

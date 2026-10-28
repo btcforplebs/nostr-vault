@@ -1,8 +1,8 @@
 // The Vault tab (iPhone VaultTabView): a mode pill on the left (Vault · Notes · Articles · Highlights · Media ·
 // Likes · Zaps · Followers, then the Vault Dashboard), and on the right one pill with the Messages envelope, the mode's
-// filters as bare icons and search (VaultToolbar trailingPill). A floating "Vault" capsule, coloured by how the relays
-// answered, opens the Dashboard (VaultView+Layout). Your own events come from Haven's outbox; what others sent you from Haven's inbox and the relays.
-// The web's Vault Dashboard is the Relay screen, which already shows the relay's counts and storage.
+// filters as bare icons and search (VaultToolbar trailingPill). A floating "Vault" capsule, coloured by the app's relay
+// connections, opens the Vault Dashboard sheet (VaultView+Layout; components/VaultButton.jsx, VaultDashboard.jsx).
+// Your own events come from Haven's outbox; what others sent you from Haven's inbox and the relays.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName, NoteCard } from "../components/NoteCard.jsx"
@@ -30,6 +30,8 @@ import {
 import { PagedList, FIRST_ROWS, MORE_ROWS } from "../components/PagedList.jsx"
 import { SkeletonGrid, SkeletonList } from "../components/Loading.jsx"
 import { NewPostsPill, SkeletonRows } from "../components/FeedExtras.jsx"
+import { VaultButton } from "../components/VaultButton.jsx"
+import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 
 const ICONS = {
   activity: "M3 13h5l1.5 3h5L16 13h5M3 13l2-7h14l2 7v6H3z",
@@ -107,7 +109,6 @@ export function VaultScreen({ ctx, desk = false }) {
   const unreadSince = useRef(unreadFrom(readSeen(me)?.activity ?? 0, readSince(me)))
   const [searching, setSearching] = useState(false)
   const [refreshes, setRefreshes] = useState(0) // Refresh also asks the media servers again (BlossomGallery)
-  const [reach, setReach] = useState("") // how the relays answered, for the status capsule's colour
   // Rows drawn so far, and whether Haven may hold older own or inbox events than those read (the phone's loadMore).
   const [shown, setShown] = useState(() => k && !link ? k.shown : FIRST_ROWS)
   const [older, setOlder] = useState(() => k?.older ?? { own: false, inbound: false })
@@ -144,8 +145,8 @@ export function VaultScreen({ ctx, desk = false }) {
     setOlder({ own: o.length >= READ_PAGE, inbound: i.length >= READ_PAGE })
     screen(i) // receipts kept before this check existed
     const settled = () => { setFetched(true); setListsFetched(true); setGivenFetched(true); setOwnFetched(true) }
-    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setReach("down"); settled(); return }
-    setStatus("Checking your relays…"); setReach("checking")
+    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); settled(); return }
+    setStatus("Checking your relays…")
     // Each answer draws as it lands: the list never waits on the slowest (zaps given, net/vault-lists.js fetchVault).
     const err = await fetchVault(vault, me, relays, { trust, on: {
       inbound: fresh => { arrive("inbound", fresh); setFetched(true) },
@@ -153,7 +154,7 @@ export function VaultScreen({ ctx, desk = false }) {
       given: g => { setGiven(prev => merge(prev, g)); setGivenFetched(true) },
       own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)); setOwnFetched(true) },
     } })
-    setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : ""); setReach(err ? "down" : "up")
+    setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : "")
     settled()
   }
   // Back on a kept tab: only what's new since it was left, merged in; the rows drawn and the scroll stay.
@@ -162,15 +163,14 @@ export function VaultScreen({ ctx, desk = false }) {
     setOwn(prev => merge(prev, o)); setInbound(prev => merge(prev, i))
     holding.current = true
     if (!top.current) top.current = newestShown(merge(keep.current.inbound, i), keep.current.lists)
-    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); setReach("down"); return }
-    setReach("checking")
+    if (!navigator.onLine) { setStatus("Offline: showing what this browser's relay holds"); return }
     const err = await fetchVault(vault, me, relays, { trust, since, on: {
       inbound: fresh => arrive("inbound", fresh),
       lists: l => arrive("lists", l),
       given: g => setGiven(prev => merge(prev, g)),
       own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)) },
     } })
-    setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : ""); setReach(err ? "down" : "up")
+    setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : "")
   }
   useEffect(() => {
     if (!k) { load(); return }
@@ -264,7 +264,7 @@ export function VaultScreen({ ctx, desk = false }) {
           <Menu label={<><Icon d={ICONS[mode]} /><b>{m.title}</b>{fresh.size > 0 && <span class="vault-new-dot" aria-label="new in another mode" />}<Chevron /></>} title={`Vault: ${m.title}`}>
             {MODES.map(x => <MenuItem key={x.id} on={x.id === mode} onClick={() => pick(x.id)}><Icon d={ICONS[x.id]} />{x.title}{fresh.has(x.id) && <span class="vault-new">New</span>}</MenuItem>)}
             <hr />
-            <MenuItem onClick={() => { location.hash = "#/relay" }}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
+            <MenuItem onClick={openDashboard}><Icon d={ICONS.dashboard} />Vault Dashboard</MenuItem>
             <MenuItem onClick={() => { setRefreshes(n => n + 1); load({ hold: false }) }}><Icon d={ICONS.refresh} />Refresh</MenuItem>
           </Menu>
         )}
@@ -282,7 +282,7 @@ export function VaultScreen({ ctx, desk = false }) {
           </div>
         ) : (
         <div class="vault-right">
-          <a class="vault-pill-btn" href="#/relay" aria-label="Vault Dashboard" title="Vault Dashboard"><Icon d={ICONS.dashboard} /></a>
+          <a class="vault-pill-btn" href={dashboardHref()} onClick={e => { e.preventDefault(); openDashboard() }} aria-label="Vault Dashboard" title="Vault Dashboard"><Icon d={ICONS.dashboard} /></a>
           {filters.length > 0 && (
             <Menu label={<><Icon d={ICONS.filter} /><span>{f?.pill ?? f?.title}</span><Chevron /></>} title={`Filter: ${f?.title}`} align="right">
               {filters.map(x => <MenuItem key={x.id} on={x.id === filter} onClick={() => choose(x.id)}>{x.title}</MenuItem>)}
@@ -298,17 +298,11 @@ export function VaultScreen({ ctx, desk = false }) {
       {loaded && newCount > 0 && <NewPostsPill count={newCount} onShow={showHeld} text={n => `${n} new`} />}
       {!loaded ? <VaultSkeleton mode={mode} /> : <List ctx={ctx} mode={mode} filter={filter} items={items} me={me} followers={followers} notes={notes} trusted={trusted} unreadSince={unreadSince.current} refreshes={refreshes} fetched={ready} page={{ shown, onMore, busy: paging, older: older.own || older.inbound }} onFollowers={() => pick("followers")} />}
       </>}
-      {!desk && <a class={`vault-status ${reach || "idle"}`} href="#/relay" aria-label={`Vault Dashboard: ${REACH[reach || "idle"]}`} title={REACH[reach || "idle"]}><LockStack /><b>Vault</b></a>}
+      <VaultButton desk={desk} />
     </main>
   )
 }
 
-// The status capsule's lock.rectangle.stack (VaultDashboard.symbol), drawn as the tab bar's Vault glyph (TabBar.jsx).
-const LockStack = () => <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path d="M7.4 3.2h9.2M5.8 5.6h12.4" /><rect x="3.8" y="8" width="16.4" height="13" rx="3.4" />
-  <path d="M10.4 13.6v-1.2a1.6 1.6 0 0 1 3.2 0v1.2" /><rect x="9.4" y="13.4" width="5.2" height="4.2" rx="1" fill="currentColor" stroke="none" />
-</svg>
-const REACH = { idle: "Reading your vault", checking: "Checking your relays", up: "Relays answered", down: "Couldn't reach your relays" }
 
 /** The list's shape while the relay is read: tiles for media, people rows for followers, cards otherwise. */
 function VaultSkeleton({ mode }) {

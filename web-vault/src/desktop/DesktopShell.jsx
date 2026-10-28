@@ -29,7 +29,7 @@ import { ContextMenu } from "./ContextMenu.jsx"
 import "../styles/desktop.css"
 
 const HEX = /^[0-9a-f]{64}$/
-const LABEL = { feed: "Feed", search: "Search", profile: "Profile", vault: "Vault", messages: "Messages", notifications: "Notifications", settings: "Settings", wot: "WoT", relay: "Dashboard" }
+const LABEL = { feed: "Feed", search: "Search", profile: "Profile", vault: "Vault", messages: "Messages", notifications: "Notifications", settings: "Settings", wot: "WoT", relay: "Who Can Reach You" }
 const ROW = ".note, .dm-row, .person-row, .settings-row, .media-tile, .vault-thumb"
 const OVERLAY = "dialog[open], .ctx-menu, .side-pop, .vault-menu-list, .more-menu, .zap-picker, #mention-picker"
 
