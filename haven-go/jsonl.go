@@ -338,6 +338,12 @@ func exportDB(ctx context.Context, db DBBackend, w io.Writer) error {
 			lastTimestamp = event.CreatedAt
 		}
 
+		// Close cuts an open query short without an error; a short page
+		// would read as the end of the database and save a partial backup.
+		if g, ok := db.(*gatedDB); ok && g.isClosing() {
+			return errDBClosing
+		}
+
 		if count == initialCount && len(eventBuffer) == initialBufferSize {
 			break
 		}

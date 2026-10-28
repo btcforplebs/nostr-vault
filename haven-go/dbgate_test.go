@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -121,3 +123,40 @@ func TestGatedDBCloseStopsUncancelledAbandonedQuery(t *testing.T) {
 		t.Fatal("store closed while its query was still sending")
 	}
 }
+
+// A backup whose query close cut short must fail, not save a partial file.
+func TestExportDBFailsWhenCloseCutsQuery(t *testing.T) {
+	store := &cutStore{}
+	g := newGatedDB(store)
+	store.g = g
+	if err := exportDB(context.Background(), g, io.Discard); err != errDBClosing {
+		t.Fatalf("exportDB = %v, want errDBClosing", err)
+	}
+}
+
+// cutStore returns one page of events, then has its relay cycle begin
+// closing during the second query, which close cuts off before any event.
+type cutStore struct {
+	DBBackend
+	g     *gatedDB
+	calls int
+}
+
+func (s *cutStore) QueryEvents(context.Context, nostr.Filter) (chan *nostr.Event, error) {
+	s.calls++
+	ch := make(chan *nostr.Event, 3)
+	if s.calls == 1 {
+		for i := 3; i > 0; i-- {
+			ch <- &nostr.Event{ID: strconv.Itoa(i), CreatedAt: nostr.Timestamp(i * 10)}
+		}
+	} else {
+		go s.g.beginClose() // the gate is held by this query, so it only marks closing
+		for !s.g.isClosing() {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (s *cutStore) Close() {}

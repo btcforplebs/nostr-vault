@@ -78,6 +78,14 @@ func (g *gatedDB) beginClose() {
 	}
 }
 
+// isClosing reports whether close has begun. A query cut short by close
+// ends without an error, so a caller that needs every event checks this.
+func (g *gatedDB) isClosing() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.closing
+}
+
 // Done is closed once the underlying store has been closed.
 func (g *gatedDB) Done() <-chan struct{} { return g.closed }
 
