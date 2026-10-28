@@ -32,3 +32,14 @@ class FeedOpenRowKeyTest {
 
     @Test fun aPostNoLongerInTheFeedHasNoRow() = assertNull(openRowKey("gone", isThreaded = true, threads))
 }
+
+/** The tap-line room: kept while the open row is on screen or above it, dropped once it is below (Tron #1282). */
+class FeedTapRoomTest {
+    @Test fun keptWhileTheOpenRowIsOnScreen() = org.junit.Assert.assertTrue(keepsTapRoom(openRowIndex = 4, lastVisibleIndex = 9))
+
+    @Test fun keptAfterItScrollsOffTheTop() = org.junit.Assert.assertTrue(keepsTapRoom(openRowIndex = 4, lastVisibleIndex = 30))
+
+    @Test fun droppedOnceTheReaderScrollsBackUpPastIt() = org.junit.Assert.assertFalse(keepsTapRoom(openRowIndex = 12, lastVisibleIndex = 9))
+
+    @Test fun droppedWhenTheRowIsGone() = org.junit.Assert.assertFalse(keepsTapRoom(openRowIndex = -1, lastVisibleIndex = 9))
+}

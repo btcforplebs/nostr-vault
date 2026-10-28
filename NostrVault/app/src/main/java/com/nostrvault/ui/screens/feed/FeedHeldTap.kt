@@ -61,3 +61,13 @@ internal fun openRowKey(openId: String?, isThreaded: Boolean, threads: List<Feed
     !isThreaded -> openId
     else -> threads.firstOrNull { t -> t.rootId == openId || t.entries.any { it.note.id == openId } }?.rootId
 }
+
+/**
+ * Whether the room under the list for the open post stays. It stays while the
+ * open row is on screen or scrolled off the top: dropping it there, at the
+ * true end of the feed, clamped the list back until the row showed again and
+ * the room came back, a rubber-band wall. It goes once the reader scrolls back
+ * up past the row, so it is below the screen. Index -1: the row is gone.
+ */
+internal fun keepsTapRoom(openRowIndex: Int, lastVisibleIndex: Int): Boolean =
+    openRowIndex in 0..lastVisibleIndex
