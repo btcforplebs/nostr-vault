@@ -13,7 +13,7 @@ import { imageItem } from "../net/note-media.js"
 import { ago } from "../components/time.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { useDmTrust } from "../components/useDmTrust.js"
-import { readSince, unreadFrom } from "../net/notify-watch.js"
+import { readSince, unreadFrom, getVaultUnread } from "../net/notify-watch.js"
 import { Faces, Who as Names } from "../components/ActivityFaces.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { formatSats, fetchNotes, reactionEmojiSummary } from "../net/notifications.js"
@@ -61,6 +61,7 @@ const FILTER_ICONS = { all: "stack", mentions: "at", tagged: "at", mine: "person
 const filterIcon = (mode, id) => ICONS[mode === "followers" && id === "all" ? "followers" : FILTER_ICONS[id]]
 const Icon = ({ d, size = 16, width = 1.8 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
+const nowSec = () => Math.floor(Date.now() / 1000)
 const scroller = el => el?.closest(".desk-list") ?? null
 const modeOf = (hash = location.hash) => { const m = /^#\/?vault\/([a-z]+)/.exec(hash)?.[1]; return isMode(m) ? m : null }
 
@@ -72,8 +73,9 @@ export function VaultScreen({ ctx, desk = false }) {
   // Coming back to the tab finds it as it was left (the phone keeps VaultTabView alive): list, mode, filter, scroll.
   const [k] = useState(() => keptVault(me))
   const link = modeOf()
-  // The phone opens on "Vault"; "#/vault/notes" opens a list straight from a link.
-  const [mode, setMode] = useState(() => link ?? k?.mode ?? "activity")
+  // The phone opens on "Vault"; "#/vault/notes" opens a list straight from a link. The tab's dot goes to where the
+  // news is, not to the list you left (BottomTabBar opensNewActivity).
+  const [mode, setMode] = useState(() => link ?? (getVaultUnread() > 0 ? "activity" : k?.mode ?? "activity"))
   const [filter, setFilter] = useState(() => k && mode === k.mode ? k.filter : defaultFilter(mode))
   const [own, setOwn] = useState(() => k?.own ?? [])
   const [inboundAll, setInbound] = useState(() => k?.inbound ?? [])
@@ -223,10 +225,18 @@ export function VaultScreen({ ctx, desk = false }) {
   const newest = newestByMode(inbound, me, blocked)
   useEffect(() => {
     if (!loaded || (!seen && !fetched)) return
-    let next = seen ?? baseline(newest)
+    let next = (seen && readSeen(me)) ?? seen ?? baseline(newest) // the stored marks: leaving the Vault list moves them
     if (newest[mode]) next = markSeen(next, mode, newest[mode])
+    // The Vault list shows every line, follows and held arrivals included, so a look at it sees all of them up to now
+    // (the iPhone's activityVisit marks now): the tab's dot and the title's count clear (useNotifyWatch).
+    if (mode === "activity") next = markSeen(next, "activity", nowSec())
     if (JSON.stringify(next) !== JSON.stringify(seen)) { setSeen(next); writeSeen(me, next) }
   }, [loaded, fetched, mode, newest[mode], seen === null])
+  // Leaving the Vault list moves its mark to now too, as the iPhone's does: what came in while it was open was seen.
+  useEffect(() => {
+    if (mode !== "activity") return
+    return () => { const s = readSeen(me); if (s) writeSeen(me, markSeen(s, "activity", nowSec())) }
+  }, [mode, me])
   const followersSeen = followersSeenAt(me)
   const fresh = loaded && seen ? newModes(newest, seen, { current: mode, followersAt: followers[0]?.at, followersSeen: followersSeen || Infinity }) : new Set()
 
