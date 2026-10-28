@@ -5,7 +5,11 @@ const C = "nv-web-vault-v2"
 // A first install starts at once. A new build waits beside the worker serving open pages (whose lazy chunks
 // activate's prune would drop) until a page asks: "Update ready, tap to reload" (src/sw-update.js).
 self.addEventListener("install", e => e.waitUntil(precache().then(() => self.registration?.active ? undefined : self.skipWaiting())))
-self.addEventListener("message", e => { if (e.data === "skip-waiting") self.skipWaiting() })
+self.addEventListener("message", e => {
+  if (e.data === "skip-waiting") self.skipWaiting()
+  // The page asks before showing notifications through this worker: an older worker has no notificationclick.
+  if (e.data === "nv-notify-ping") e.source?.postMessage({ type: "nv-notify-ready" })
+})
 self.addEventListener("activate", e => e.waitUntil(migrate().then(prune).then(() => self.clients.claim())))
 // The first visit's page and scripts were fetched before this worker existed, so nothing above would have stored
 // them: a reload offline right after the first visit fails. Stores the app shell now: index.html (served at the
@@ -93,3 +97,21 @@ async function store(req, res) {
 // "/vault/assets/haven-CQm0vJnR.wasm" -> "/vault/assets/haven.wasm". Only .wasm: one build can hold two
 // index-<hash>.js chunks, but not two haven-<hash>.wasm, and the wasm files are the ones worth pruning.
 const hashed = p => p.includes("/assets/") && p.match(/^(.*)-[\w-]{8}(\.wasm)$/)?.slice(1).join("") || null
+
+// A notification the page showed (src/net/notify-show.js; no push, the page was open): a click focuses an open tab of
+// the app and tells it where to go, or opens the app there when no tab is left.
+self.addEventListener("notificationclick", e => {
+  e.notification.close()
+  const href = e.notification.data?.href
+  const route = typeof href === "string" && href.startsWith("#/") ? href : ""
+  e.waitUntil((async () => {
+    const tabs = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    const tab = tabs.find(c => new URL(c.url).pathname.startsWith(new URL("./", location).pathname))
+    if (tab) {
+      await tab.focus().catch(() => {})
+      if (route) tab.postMessage({ type: "nv-open", href: route })
+      return
+    }
+    await self.clients.openWindow(new URL(`./${route}`, location).href)
+  })())
+})

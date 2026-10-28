@@ -165,6 +165,7 @@ a.settings-row:hover { background: var(--s2); }
 .follow-backup-open { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 0; min-height: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
 .mesh-photos-switch { margin-top: 20px; cursor: pointer; }
 .notify-switch { cursor: pointer; }
+.notify-type .settings-title { padding-left: 12px; }
 
 /* Search's header (iPhone SearchView): an icon pill of result tabs on the left, the filter circle on the right, then
    the field with its glass. Section headers are Title case, as the phone's. */
