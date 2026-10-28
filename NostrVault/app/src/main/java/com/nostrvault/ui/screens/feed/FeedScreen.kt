@@ -239,7 +239,14 @@ fun FeedScreen(
 
     FeedScrollTrackingEffects(listState, notes, viewModel)
 
-    FeedAutoApplyEffect(viewModel, pendingCount = { pendingCount }, autoLoad = { autoLoad }, isAtTop = { isAtTop })
+    // Not while a tapped post is open: new posts landing on top would push it
+    // off the tap line. They apply once it closes.
+    FeedAutoApplyEffect(
+        viewModel,
+        pendingCount = { pendingCount },
+        autoLoad = { autoLoad && expandedNoteId == null },
+        isAtTop = { isAtTop },
+    )
 
     FeedRevealEffect(listState, isThreaded = { isThreaded }, feedThreads = { feedThreads }, notes = { notes }, isAtTop = { isAtTop })
 
@@ -304,7 +311,7 @@ fun FeedScreen(
         isLoadingFeed = isLoadingFeed,
         hasNotes = hasAnyNotes,
     )
-    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop) &&
+    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop || expandedNoteId != null) &&
         feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()

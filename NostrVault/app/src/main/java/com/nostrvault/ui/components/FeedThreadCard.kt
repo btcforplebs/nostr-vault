@@ -5,6 +5,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
@@ -339,12 +340,13 @@ private fun ThreadFoldButton(
 }
 
 /**
- * Keeps a tapped thread line where it was tapped. Opening a line closes the
- * one that was open; when that sat above — often a photo — everything below
- * moved up, and the line you tapped could open off screen. The feed records
- * where each line's top is, and for a moment after a tap scrolls by however
- * far the tapped line moves, so it stays put. A line whose top was above the
- * list is brought to its top edge. iOS: ThreadLineTops in FeedThreadCard.swift.
+ * Brings a tapped thread line to the tap line (TapAnchor), the list's top edge
+ * inside its padding. Opening a line closes the one that was open; when that
+ * sat above (often a photo) everything below moved up, and the line you tapped
+ * could open off screen. The feed records where each line's top is, and for a
+ * moment after a tap scrolls by however far the tapped line is from the tap
+ * line: the first move glides, later ones follow the closing card frame by
+ * frame. iOS: ThreadLineTops in FeedThreadCard.swift.
  *
  * The cards animate their height, so the line moves over several frames, not
  * one; the hold follows it for [HOLD_MS] rather than correcting once. Each
@@ -359,19 +361,21 @@ class ThreadLineAnchor(
     /** Each line's top, in root coordinates, as last laid out. */
     private val tops = HashMap<String, Float>()
 
-    /** The list's top edge in root coordinates, inside its content padding. */
+    /** The list's top edge in root coordinates, inside its content padding: the tap line. */
     var viewportTop: Float = 0f
 
     private var holdId: String? = null
     private var holdY = 0f
     private var holdUntil = 0L
     private var correcting = false
+    private var glideNext = false
 
     internal fun lineTapped(noteId: String) {
         val y = tops[noteId] ?: return
         holdId = noteId
-        holdY = maxOf(y, viewportTop)
+        holdY = viewportTop
         holdUntil = SystemClock.uptimeMillis() + HOLD_MS
+        glideNext = true
     }
 
     internal fun linePositioned(noteId: String, y: Float) {
@@ -387,7 +391,12 @@ class ThreadLineAnchor(
         scope.launch {
             try {
                 val top = holdId?.let { tops[it] } ?: return@launch
-                listState.scrollBy(top - holdY)
+                if (glideNext) {
+                    glideNext = false
+                    listState.animateScrollBy(top - holdY)
+                } else {
+                    listState.scrollBy(top - holdY)
+                }
             } finally {
                 correcting = false
             }

@@ -24,10 +24,13 @@ import com.nostrvault.ui.components.CondensedQuoteActions
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.RankedCompactNoteCard
+import com.nostrvault.ui.components.ScrollChrome
+import com.nostrvault.ui.components.TapAnchor
 import com.nostrvault.ui.components.ThreadLineAnchor
 import com.nostrvault.ui.components.rememberCondensedQuotes
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.launch
 import com.nostrvault.ui.theme.*
 
 /**
@@ -73,6 +76,15 @@ internal fun FeedNoteList(
     var broadcastNoteId by sheets::broadcastNoteId
     var trustWebAuthor by sheets::trustWebAuthor
     val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    var viewportHeight by remember { mutableStateOf(0.dp) }
+    // The tap line (TapAnchor) is where a row's card starts: the content's
+    // top plus the row's own top padding. The first post sits on it at rest,
+    // and a tapped post glides to it.
+    val listTop = padding.calculateTopPadding() + TapAnchor.BELOW_TOOLBAR - FeedRowGap
+    val listBottom = padding.calculateBottomPadding() + 88.dp + meterLift
+    // A tap always lands under the buttons, so folded bars come back with it.
+    val onTapOpen = { ScrollChrome.expand(scope) }
     // A condensed line's quote opens the quoted note, as the expanded row's does.
     val quoteActions = remember(viewModel, onNoteClick, onArticleClick) {
         CondensedQuoteActions(
@@ -83,15 +95,12 @@ internal fun FeedNoteList(
     }
     LazyColumn(
         state = listState,
-        contentPadding = PaddingValues(
-            top = padding.calculateTopPadding(),
-            bottom = padding.calculateBottomPadding() + 88.dp + meterLift,
-        ),
+        contentPadding = PaddingValues(top = listTop, bottom = listBottom),
         modifier = Modifier
             .fillMaxSize()
             .onGloballyPositioned {
-                threadLineAnchor.viewportTop = it.positionInRoot().y +
-                    with(density) { padding.calculateTopPadding().toPx() }
+                threadLineAnchor.viewportTop = it.positionInRoot().y + with(density) { (listTop + FeedRowGap).toPx() }
+                viewportHeight = with(density) { it.size.height.toDp() }
             },
     ) {
         if (isThreaded) {
@@ -101,7 +110,10 @@ internal fun FeedNoteList(
                     profileFor = { pubkey -> allProfiles[pubkey] },
                     profiles = allProfiles,
                     openNoteId = expandedNoteId,
-                    onOpenNoteChange = { id -> expandedNoteId = id },
+                    onOpenNoteChange = { id ->
+                        if (id != null) onTapOpen()
+                        expandedNoteId = id
+                    },
                     isExpanded = threadFolds[thread.rootId] ?: false,
                     onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
                     onProfileClick = openProfile,
@@ -115,7 +127,7 @@ internal fun FeedNoteList(
                     quotesFor = { note -> rememberCondensedQuotes(note, viewModel.quotedNotesCache, viewModel::quotedNoteFor) },
                     quoteActions = quoteActions,
                     // iOS: 12pt sides in threaded mode, 12pt between rows.
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = FeedRowGap),
                     expandedRow = { note, _ ->
                         FeedFullNoteRow(
                             note = note,
@@ -203,9 +215,11 @@ internal fun FeedNoteList(
                     engagement = engagement,
                     onNoteClick = { id ->
                         // Expand inline first instead of navigating
+                        onTapOpen()
                         listState.openHoldingTappedRow(note.id, expandedNoteId, notes) {
                             expandedNoteId = id
                         }
+                        scope.launch { listState.glideToTapLine(note.id) }
                     },
                     onProfileClick = openProfile,
                     avatarMenu = feedAvatarMenu,
@@ -213,7 +227,7 @@ internal fun FeedNoteList(
                     quotes = quotes,
                     quoteActions = quoteActions,
                     // iOS: 8pt sides for a compact row, 12pt between rows.
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = FeedRowGap),
                 )
             } else {
                 FeedFullNoteRow(
@@ -235,10 +249,18 @@ internal fun FeedNoteList(
                     onDelete = { id -> deleteNoteId = id },
                     onLongPressLike = { id -> emojiPickerNoteId = id },
                     // iOS: 16pt sides, 12pt between rows.
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = FeedRowGap),
                 )
             }
         }
+        }
+
+        // While a post is open, room under the last rows so they can reach
+        // the tap line too.
+        if (expandedNoteId != null) {
+            item(key = "tap_line_room") {
+                Spacer(Modifier.height(TapAnchor.roomBelow(viewportHeight, listTop, listBottom)))
+            }
         }
 
         if (isLoadingMore) {
@@ -269,3 +291,6 @@ internal fun FeedNoteList(
         }
     }
 }
+
+/** Space above and below each feed row (iOS: 12 pt between rows). */
+private val FeedRowGap = 6.dp

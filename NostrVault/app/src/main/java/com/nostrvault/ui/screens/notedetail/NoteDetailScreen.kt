@@ -245,9 +245,9 @@ fun NoteDetailScreen(
         }
     }
 
-    // Puts the note you opened a little below the top (12% down, so the end
-    // of the post it answers shows above it), with the rest of the posts it
-    // answers scrollable above. Runs again whenever the content above it
+    // Puts the note you opened on the tap line (TapAnchor: 20 dp under the
+    // top buttons, the list's top padding), with the posts it answers
+    // scrollable above. A root note already sits there at rest. Runs again whenever the content above it
     // changes (history arriving, the layout switching, the screen size
     // settling), until the reader scrolls: a single jump was undone by
     // whatever loaded next, and the opened reply ended up down the screen.
@@ -258,12 +258,11 @@ fun NoteDetailScreen(
         if (readerTookOver || isLoadingParents || note == null || heroIndex == 0) return@LaunchedEffect
         suspend fun land() {
             if (readerTookOver || heroIndex >= listState.layoutInfo.totalItemsCount) return
-            val offset = -(viewportHeight * THREAD_LANDING_ANCHOR).toInt()
-            // A negative scroll offset puts the item that far below the top.
-            val there = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == heroIndex }?.offset == -offset
+            // Offset 0 is the top of the list's content: the tap line.
+            val there = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == heroIndex }?.offset == 0
             if (there) return
-            if (hasLanded) listState.animateScrollToItem(heroIndex, offset)
-            else listState.scrollToItem(heroIndex, offset)
+            if (hasLanded) listState.animateScrollToItem(heroIndex)
+            else listState.scrollToItem(heroIndex)
             hasLanded = true
         }
         // Next frame, once the revealed history has laid out, and once more
@@ -274,7 +273,7 @@ fun NoteDetailScreen(
         land()
     }
 
-    // A note picked in the thread becomes the hero and scrolls to the top.
+    // A note picked in the thread becomes the hero and scrolls to the tap line.
     LaunchedEffect(focusedNoteId) {
         if (!readerTookOver) return@LaunchedEffect // the opened note: the landing above handles it
         // Allow layout to settle after recomposition
@@ -437,12 +436,15 @@ fun NoteDetailScreen(
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
+            // The tap line is where the hero card starts: the content's top plus
+            // the card's own gap. Clear of the bottom bar, which a pushed note keeps.
+            val listTop = padding.calculateTopPadding() + TapAnchor.BELOW_TOOLBAR - HeroCardGap
+            val listBottom = padding.calculateBottomPadding() + FloatingNavBarInset.height.value
             LazyColumn(
                 state = listState,
-                // Clear of the bottom bar, which a pushed note keeps.
                 contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding(),
-                    bottom = padding.calculateBottomPadding() + FloatingNavBarInset.height.value,
+                    top = listTop,
+                    bottom = listBottom,
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -673,12 +675,12 @@ fun NoteDetailScreen(
                 }
 
                 // Bottom spacer, and room under a short thread so the opened
-                // note can scroll to the top with the posts it answers above
+                // note can scroll to the tap line with the posts it answers above
                 // it. Without it a reply with few replies of its own stayed at
                 // the bottom of the screen: there was nothing below to scroll into.
                 item(key = "bottom_room") {
                     val room = if (shownParents.isNotEmpty()) {
-                        with(density) { viewportHeight.toDp() - 200.dp }.coerceAtLeast(32.dp)
+                        TapAnchor.roomBelow(with(density) { viewportHeight.toDp() }, listTop, listBottom, min = 32.dp)
                     } else {
                         32.dp
                     }
@@ -774,6 +776,3 @@ private const val KEY_CONDENSED_REPLIES = "condensedReplies"
  * the focused card (iOS pads both .horizontal 16).
  */
 internal val ThreadSideInset = 16.dp
-
-/** Where the opened note lands in the thread view, as a share of its height from the top (iOS #306). */
-private const val THREAD_LANDING_ANCHOR = 0.12f
