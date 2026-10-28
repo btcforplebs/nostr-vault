@@ -8,6 +8,7 @@ import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
 import { latestList, publishList, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 import { MeshPhotosSwitch } from "../components/MeshPhotosSwitch.jsx"
+import { SuggestedServers } from "../components/SuggestedServers.jsx"
 
 const loopback = url => { try { return /^(localhost|127\.|\[::1\])/.test(new URL(url).hostname) } catch { return false } }
 
@@ -82,6 +83,7 @@ export function MediaServersPage({ ctx }) {
             </div>
           )}
           {dirty && problem && <p class="settings-note small error">{problem}</p>}
+          <SuggestedServers urls={urls} disabled={busy} onAdd={url => { setUrls(addServer(urls, url)); setErr(""); setStatus("") }} />
         </>
       )}
       {status && <p class="settings-note muted small">{status}</p>}
