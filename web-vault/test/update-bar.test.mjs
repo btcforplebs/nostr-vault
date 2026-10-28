@@ -127,3 +127,25 @@ test("a tab coming back into view asks for a new build at most every 30 minutes"
   p.env.doc.emit("visibilitychange")
   assert.equal(p.reg.updates, 1)
 })
+
+// The page's own timers, as a browser has them: setInterval and setTimeout throw "Illegal invocation" when called as a
+// method of anything but the window. Every case above passes its own env, so the default one is checked here.
+test("with no env given, the page's timers are called as functions, not as methods of env (Illegal invocation)", async () => {
+  const m = await fresh(), p = page()
+  const saved = { setInterval: globalThis.setInterval, setTimeout: globalThis.setTimeout, document: globalThis.document, location: globalThis.location }
+  const intervals = [], timeouts = []
+  const strict = list => function (f, ms) { if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation"); list.push([f, ms]); return list.length }
+  globalThis.setInterval = strict(intervals)
+  globalThis.setTimeout = strict(timeouts)
+  globalThis.document = p.env.doc
+  globalThis.location = { reload: () => {} }
+  try {
+    assert.doesNotThrow(() => m.watchUpdates(p.reg, p.sw))
+    assert.equal(intervals.length, 1, "the half-hourly check is scheduled")
+    assert.equal(intervals[0][1], 30 * 60_000)
+    assert.equal(p.env.doc.l.visibilitychange?.length, 1, "and the check on coming back to the tab")
+    p.install()
+    assert.doesNotThrow(() => m.applyUpdate())
+    assert.equal(timeouts.length, 1, "the fallback reload is scheduled")
+  } finally { Object.assign(globalThis, saved) }
+})
