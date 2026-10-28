@@ -196,7 +196,8 @@ class RelayProcessManager: ObservableObject {
 
     /// On iOS the app restarts the relay on foreground only when it is idle.
     /// A relay whose socket died during suspension still reads as running, so
-    /// check that it answers, and restart it if it does not.
+    /// check that it answers; if not, reopen its port, and restart it only
+    /// if that does not bring it back.
     func observeForegroundOnce() {
         guard foregroundObserver == nil else { return }
         foregroundObserver = NotificationCenter.default.addObserver(
@@ -211,7 +212,15 @@ class RelayProcessManager: ObservableObject {
         // A few tries: right after resume the process is still thawing.
         if await waitForHTTP(timeout: 4) { return }
         guard state == .running else { return }  // stopped or restarting meanwhile
-        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay is not answering after the app came back; restarting it"))
+        // Suspension took the listening socket; the rest of the relay is
+        // fine. Reopen just the port and keep databases and sync running.
+        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay is not answering after the app came back; reopening its port"))
+        let reopened = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            DispatchQueue.global().async { continuation.resume(returning: RelistenRelayC() == 0) }
+        }
+        if reopened, await waitForHTTP(timeout: 2) { return }
+        guard state == .running, inFlightRestart == nil else { return }
+        logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay still not answering after reopening its port; restarting it"))
         _ = await gracefulRestart()
     }
     #endif

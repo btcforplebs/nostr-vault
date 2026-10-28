@@ -21,7 +21,10 @@ import (
 
 // TestRelayRestartUnderTraffic drives the real exported StartRelayC /
 // StopRelayC the way the iOS app does on every return to the foreground,
-// while WebSocket clients keep publishing and querying. Run with -race:
+// while WebSocket clients keep publishing and querying. Inside each cycle
+// it also kills the listening ports (as iOS suspension does) and reopens
+// them with RelistenRelayC, which must keep the same cycle and databases.
+// Run with -race:
 //
 //	go test -tags cshared -race -run TestRelayRestartUnderTraffic .
 //
@@ -44,6 +47,9 @@ func TestRelayRestartUnderTraffic(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := freePort(t)
+	meshPort := freePort(t)
+	t.Cleanup(func() { meshWanted.Store(false) })
+	meshWanted.Store(true) // sharing on: relisten must bring the mesh port back too
 	wd, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(wd) })
 	for k, v := range map[string]string{
@@ -57,6 +63,7 @@ func TestRelayRestartUnderTraffic(t *testing.T) {
 		"DM_RELAYS_FILE":          empty,
 		"FEED_SYNC_RELAYS_FILE":   empty,
 		"WOT_CACHE_PATH":          filepath.Join(dir, "wot_cache.json"),
+		"HAVEN_MESH_PLAIN_PORT":   strconv.Itoa(meshPort),
 	} {
 		t.Setenv(k, v)
 	}
@@ -88,6 +95,31 @@ func TestRelayRestartUnderTraffic(t *testing.T) {
 		if published.Load() == before {
 			t.Fatalf("cycle %d: no event reached the relay", i)
 		}
+
+		cycle := relayLC.current.Load()
+		for r := 0; r < 3; r++ {
+			if r%2 == 0 {
+				// The phone's case: the ports died under a live cycle.
+				killListeners(cycle)
+				waitForPortClosed(t, port)
+			} // else: reopen a port that is still fine
+			if rc := RelistenRelayC(); rc != 0 {
+				t.Fatalf("cycle %d relisten %d: RelistenRelayC = %d", i, r, rc)
+			}
+			if relayLC.current.Load() != cycle {
+				t.Fatalf("cycle %d relisten %d: relisten replaced the cycle", i, r)
+			}
+			waitForPort(t, port)
+			waitForPort(t, meshPort)
+			before := published.Load()
+			deadline := time.Now().Add(5 * time.Second)
+			for published.Load()-before < 4 && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if published.Load() == before {
+				t.Fatalf("cycle %d relisten %d: no event reached the reopened port", i, r)
+			}
+		}
 		StopRelayC() // mid-traffic, as on a return to the foreground
 
 		// Stopped means stopped: no client may still be writing through a
@@ -112,6 +144,41 @@ func TestRelayRestartUnderTraffic(t *testing.T) {
 		t.Fatalf("no traffic reached the relay (published %d, queried %d)", published.Load(), queried.Load())
 	}
 	t.Logf("%d cycles, %d events published, %d queries answered", cycles, published.Load(), queried.Load())
+}
+
+// TestRelistenWithoutRelay: with nothing running there is no port to
+// reopen, and the host must hear that so it falls back to a full start.
+func TestRelistenWithoutRelay(t *testing.T) {
+	if relayLC.current.Load() != nil {
+		t.Fatal("relay unexpectedly running")
+	}
+	if rc := RelistenRelayC(); rc == 0 {
+		t.Fatal("RelistenRelayC with no relay = 0, want failure")
+	}
+}
+
+// killListeners closes the cycle's listening sockets the way iOS defuncts
+// them in suspension, leaving everything else running.
+func killListeners(c *relayCycle) {
+	relayLC.mu.Lock()
+	defer relayLC.mu.Unlock()
+	c.listener.Close()
+	if c.meshServer != nil {
+		c.meshServer.Close()
+	}
+}
+
+func waitForPortClosed(t *testing.T, port int) {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			return
+		}
+		c.Close()
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("relay port %d never closed", port)
 }
 
 // trafficLoop keeps one client connected and busy, reconnecting whenever a
