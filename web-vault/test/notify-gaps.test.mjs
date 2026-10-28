@@ -4,7 +4,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { TYPES, readTypes, setType, lineWanted, typeOfLine } from "../src/net/notify-prefs.js"
-import { noticesFor, getVaultUnread, setVaultUnread, onVaultUnread } from "../src/net/notify-watch.js"
+import { noticesFor, getVaultUnread, setVaultUnread, onVaultUnread, unreadLines, unreadFrom } from "../src/net/notify-watch.js"
 import { dmNotices, readDmMark, dmOnScreen, DM_BODY } from "../src/net/dm-notify.js"
 import { showNotice, listenNoticeClicks } from "../src/net/notify-show.js"
 
@@ -110,4 +110,15 @@ test("the Vault tab's dot follows the unread count", () => {
   setVaultUnread(3); setVaultUnread(3); setVaultUnread(0)
   off()
   assert.equal(heard, 2); assert.equal(getVaultUnread(), 0)
+})
+
+test("a look at the Vault list clears the dot, follow lines included", () => {
+  // A new follower's line is dated by their list, which no inbound event matches: the list's mark goes to now
+  // (the iPhone's activityVisit), on the way in and on the way out.
+  const screen = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
+  assert.match(screen, /if \(mode === "activity"\) next = markSeen\(next, "activity", nowSec\(\)\)/)
+  assert.match(screen, /return \(\) => \{ const s = readSeen\(me\); if \(s\) writeSeen\(me, markSeen\(s, "activity", nowSec\(\)\)\) \}/)
+  const lines = [{ id: "follow-1", kind: "follow", created_at: 2_000 }, { id: "r", kind: "reply", created_at: 1_500 }]
+  assert.equal(unreadLines(lines, unreadFrom(1_500, 1)).length, 1) // the old mark: newest inbound only
+  assert.equal(unreadLines(lines, unreadFrom(2_100, 1)).length, 0) // marked at now
 })
