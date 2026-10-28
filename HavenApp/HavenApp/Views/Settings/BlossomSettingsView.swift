@@ -155,10 +155,10 @@ struct BlossomSettingsView: View {
                         .keyboardType(.URL)
                         #endif
                         .onSubmit {
-                            addMirror()
+                            addMirror(newMirrorURL)
                         }
                     
-                    Button(action: addMirror) {
+                    Button(action: { addMirror(newMirrorURL) }) {
                         Image(systemName: "plus.circle.fill")
                             .foregroundColor(.havenOnline)
                             .font(.appTitle3)
@@ -169,6 +169,10 @@ struct BlossomSettingsView: View {
                 .padding(.top, 4)
             } header: {
                 Text("Other Servers").settingInfo(.shareMediaServers)
+            }
+
+            SuggestedMediaServersSection(servers: configService.config.blossomMirrors) { url in
+                addMirror(url)
             }
             
             // Section 3: Media Sync & Mirroring
@@ -279,8 +283,8 @@ struct BlossomSettingsView: View {
     }
     #endif
     
-    private func addMirror() {
-        var trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func addMirror(_ typed: String) {
+        var trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             if !trimmed.lowercased().hasPrefix("https://") && !trimmed.lowercased().hasPrefix("http://") {
                 trimmed = "https://" + trimmed
@@ -294,7 +298,8 @@ struct BlossomSettingsView: View {
                 configService.config.blossomMirrorsUpdatedAt = Int64(Date().timeIntervalSince1970)
                 configService.save()
                 NostrService.shared.publishServerList()
-                newMirrorURL = ""
+                // A tapped suggestion leaves a half-typed address alone.
+                if typed == newMirrorURL { newMirrorURL = "" }
             }
         }
     }
