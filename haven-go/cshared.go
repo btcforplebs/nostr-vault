@@ -370,11 +370,14 @@ func StartRelayC(importMode bool) {
 
 		// Start server in background and give it a moment to bind before continuing
 		cycle.spawn("http-server", func() {
-			var err error
-			if certPath != "" && keyPath != "" {
-				err = cycle.server.ListenAndServeTLS(certPath, keyPath)
-			} else {
-				err = cycle.server.ListenAndServe()
+			ln, err := net.Listen("tcp", addr)
+			if err == nil {
+				ln = cycle.trackConns(ln)
+				if certPath != "" && keyPath != "" {
+					err = cycle.server.ServeTLS(ln, certPath, keyPath)
+				} else {
+					err = cycle.server.Serve(ln)
+				}
 			}
 			if err != nil && err != http.ErrServerClosed {
 				// e.g. "bind: address already in use" — the host app's log

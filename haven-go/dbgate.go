@@ -26,13 +26,14 @@ type gatedDB struct {
 	inner DBBackend
 
 	mu      sync.Mutex
-	active  int  // calls in flight, including open query channels
-	closing bool // no new calls; inner closes when active reaches 0
+	active  int           // calls in flight, including open query channels
+	closing bool          // no new calls; inner closes when active reaches 0
+	stop    chan struct{} // closed with closing: open queries stop forwarding
 	closed  chan struct{}
 }
 
 func newGatedDB(inner DBBackend) *gatedDB {
-	return &gatedDB{inner: inner, closed: make(chan struct{})}
+	return &gatedDB{inner: inner, stop: make(chan struct{}), closed: make(chan struct{})}
 }
 
 func (g *gatedDB) enter() bool {
@@ -69,6 +70,7 @@ func (g *gatedDB) beginClose() {
 		return
 	}
 	g.closing = true
+	close(g.stop)
 	idle := g.active == 0
 	g.mu.Unlock()
 	if idle {
@@ -125,7 +127,9 @@ func (g *gatedDB) ReplaceEvent(ctx context.Context, evt *nostr.Event) error {
 // closed its channel. The store's goroutine keeps a read transaction open
 // while it sends, so the forwarder always drains it to the end — even when
 // ctx is cancelled and nobody reads out any more — instead of leaving it
-// blocked inside the transaction.
+// blocked inside the transaction. Once close begins it stops forwarding
+// too: a reader that walked away without cancelling ctx (a backup that
+// hit a write error, say) must not hold the store open forever.
 func (g *gatedDB) QueryEvents(ctx context.Context, f nostr.Filter) (chan *nostr.Event, error) {
 	if !g.enter() {
 		return nil, errDBClosing
@@ -143,6 +147,10 @@ func (g *gatedDB) QueryEvents(ctx context.Context, f nostr.Filter) (chan *nostr.
 			select {
 			case out <- ev:
 			case <-ctx.Done():
+				for range ch {
+				}
+				return
+			case <-g.stop:
 				for range ch {
 				}
 				return

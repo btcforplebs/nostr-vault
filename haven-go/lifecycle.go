@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log"
 	"net"
@@ -85,11 +86,16 @@ func spawnFromCtx(ctx context.Context, name string, fn func()) {
 }
 
 // trackHijacked makes srv report the connections it hands to handlers, so
-// stop can close them.
+// stop can close them. Serve srv on a listener from trackConns so each
+// connection leaves the set again when it closes; otherwise a long-running
+// relay keeps every WebSocket it ever accepted until the next stop.
 func (c *relayCycle) trackHijacked(srv *http.Server) {
 	srv.ConnState = func(conn net.Conn, state http.ConnState) {
 		if state != http.StateHijacked {
 			return
+		}
+		if tc, ok := conn.(*tls.Conn); ok {
+			conn = tc.NetConn()
 		}
 		c.hijackedMu.Lock()
 		if c.hijacked == nil {
@@ -98,6 +104,37 @@ func (c *relayCycle) trackHijacked(srv *http.Server) {
 		c.hijacked[conn] = struct{}{}
 		c.hijackedMu.Unlock()
 	}
+}
+
+// trackConns wraps ln so a hijacked connection drops out of the cycle's
+// set when it closes.
+func (c *relayCycle) trackConns(ln net.Listener) net.Listener {
+	return &trackedListener{Listener: ln, cycle: c}
+}
+
+type trackedListener struct {
+	net.Listener
+	cycle *relayCycle
+}
+
+func (l *trackedListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &trackedConn{Conn: conn, cycle: l.cycle}, nil
+}
+
+type trackedConn struct {
+	net.Conn
+	cycle *relayCycle
+}
+
+func (t *trackedConn) Close() error {
+	t.cycle.hijackedMu.Lock()
+	delete(t.cycle.hijacked, t)
+	t.cycle.hijackedMu.Unlock()
+	return t.Conn.Close()
 }
 
 // closeHijacked closes every handed-over connection. khatru's read loop
@@ -171,7 +208,7 @@ func (c *relayCycle) startMeshServer() {
 	c.trackHijacked(srv)
 	c.meshServer = srv
 	c.spawn("mesh-http-server", func() {
-		if err := srv.Serve(newMeshListener(ln)); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(c.trackConns(newMeshListener(ln))); err != nil && err != http.ErrServerClosed {
 			log.Printf("🚫 mesh HTTP server exited: %v", err)
 		}
 	})
@@ -207,7 +244,7 @@ func (c *relayCycle) startOwnServer() {
 	c.trackHijacked(srv)
 	c.ownServer = srv
 	c.spawn("mesh-own-http-server", func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(c.trackConns(ln)); err != nil && err != http.ErrServerClosed {
 			log.Printf("🚫 mesh own-devices HTTP server exited: %v", err)
 		}
 	})

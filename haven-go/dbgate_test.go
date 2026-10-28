@@ -66,19 +66,22 @@ func TestGatedDBCloseWaitsForAbandonedQuery(t *testing.T) {
 	}
 }
 
-// After close begins, new calls are refused, and a query still being read
-// keeps the store open until it is drained.
-func TestGatedDBRefusesAfterCloseAndDefersToLastReader(t *testing.T) {
-	store := newFakeStore(3)
+// After close begins, new calls are refused, and a query still open is cut
+// short: its channel ends, the store finishes its own send, then closes.
+// Every CloseDBs caller is end of life (relay stop, or a deferred close
+// after a backup/import), so nobody needs the rest of those results.
+func TestGatedDBRefusesAfterCloseAndCutsOpenQuery(t *testing.T) {
+	store := newFakeStore(100)
 	g := newGatedDB(store)
 	ch, err := g.QueryEvents(context.Background(), nostr.Filter{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	<-ch // reader is mid-query
 
-	allClosed, inTime := closeGatedDBs([]*gatedDB{g}, 50*time.Millisecond)
-	if inTime {
-		t.Fatal("store closed while a reader still held it")
+	allClosed, inTime := closeGatedDBs([]*gatedDB{g}, 2*time.Second)
+	if !inTime {
+		t.Fatal("store not closed in time: open query still holds the gate")
 	}
 	if err := g.SaveEvent(context.Background(), &nostr.Event{}); err != errDBClosing {
 		t.Fatalf("SaveEvent after close = %v, want errDBClosing", err)
@@ -86,13 +89,33 @@ func TestGatedDBRefusesAfterCloseAndDefersToLastReader(t *testing.T) {
 	if _, err := g.QueryEvents(context.Background(), nostr.Filter{}); err != errDBClosing {
 		t.Fatalf("QueryEvents after close = %v, want errDBClosing", err)
 	}
-
+	n := 0
 	for range ch {
+		n++
 	}
-	select {
-	case <-allClosed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("store did not close after its last reader finished")
+	if n > 1 {
+		t.Fatalf("reader got %d more events after close, want at most 1", n)
+	}
+	<-allClosed
+	if store.closedMidSend {
+		t.Fatal("store closed while its query was still sending")
+	}
+}
+
+// A reader that stops reading without ever cancelling ctx (exportDB after a
+// write error, with context.Background) must not keep the store open past
+// close.
+func TestGatedDBCloseStopsUncancelledAbandonedQuery(t *testing.T) {
+	store := newFakeStore(100)
+	g := newGatedDB(store)
+	ch, err := g.QueryEvents(context.Background(), nostr.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-ch // reader takes one event, then walks away; ctx is never cancelled
+
+	if _, inTime := closeGatedDBs([]*gatedDB{g}, 2*time.Second); !inTime {
+		t.Fatal("store not closed in time: abandoned query still holds the gate")
 	}
 	if store.closedMidSend {
 		t.Fatal("store closed while its query was still sending")
