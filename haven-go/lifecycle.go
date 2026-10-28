@@ -39,6 +39,12 @@ type relayCycle struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	server *http.Server // nil in import mode
+	// listener is the relay port server is serving on, and addr/certPath/
+	// keyPath how to open another one. relisten swaps in a fresh listener
+	// on the same server. Guarded by relayLC.mu.
+	listener          net.Listener
+	addr              string
+	certPath, keyPath string
 	// meshServer is the loopback port the FIPS mesh tunnel forwards to:
 	// plain HTTP, blob reads plus owner-signed uploads and events (meshHandler).
 	meshServer *http.Server
@@ -164,6 +170,68 @@ func (c *relayCycle) stillRunning() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// listenRelay binds the relay port and serves c.server on it. The bind is
+// synchronous so the caller knows whether the port is open. Caller holds
+// relayLC.mu or is inside startCycle's setup.
+func (c *relayCycle) listenRelay() error {
+	ln, err := net.Listen("tcp", c.addr)
+	if err != nil {
+		return err
+	}
+	ln = c.trackConns(ln)
+	c.listener = ln
+	srv, certPath, keyPath := c.server, c.certPath, c.keyPath
+	c.spawn("http-server", func() {
+		var err error
+		if certPath != "" && keyPath != "" {
+			err = srv.ServeTLS(ln, certPath, keyPath)
+		} else {
+			err = srv.Serve(ln)
+		}
+		// ErrClosed: relisten closed this listener to open a fresh one.
+		if err != nil && err != http.ErrServerClosed && !errors.Is(err, net.ErrClosed) {
+			log.Printf("🚫 relay HTTP server exited: %v", err)
+		}
+	})
+	return nil
+}
+
+var errNotServing = errors.New("relay is not running")
+
+var errMeshNotReopened = errors.New("mesh port did not reopen")
+
+// relistenRelay reopens the live cycle's listening ports without touching
+// anything else: iOS defuncts listening sockets while the app is
+// suspended, and a full stop/start just to get the port back closes and
+// reopens every database. The old listener is closed first so its port is
+// free; open WebSockets and keep-alive connections are left alone. With
+// sharing on, the mesh ports are reopened too, since suspension takes them
+// the same way.
+func relistenRelay() error {
+	relayLC.mu.Lock()
+	defer relayLC.mu.Unlock()
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil { // server == nil means import cycle
+		return errNotServing
+	}
+	if c.listener != nil {
+		c.listener.Close()
+		c.listener = nil
+	}
+	if err := c.listenRelay(); err != nil {
+		return err
+	}
+	if meshWanted.Load() {
+		c.stopMeshServer()
+		c.startMeshServer()
+		if c.meshServer == nil { // startMeshServer only logs; let the host fall back to a full restart
+			return errMeshNotReopened
+		}
+	}
+	log.Printf("🔗 relay port reopened at %s", c.addr)
+	return nil
 }
 
 // meshWanted is the host's last SetMeshServingC, kept across relay restarts.

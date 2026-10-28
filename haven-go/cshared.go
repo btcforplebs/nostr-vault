@@ -368,31 +368,17 @@ func StartRelayC(importMode bool) {
 			}
 		}
 
-		// Start server in background and give it a moment to bind before continuing
-		cycle.spawn("http-server", func() {
-			ln, err := net.Listen("tcp", addr)
-			if err == nil {
-				ln = cycle.trackConns(ln)
-				if certPath != "" && keyPath != "" {
-					err = cycle.server.ServeTLS(ln, certPath, keyPath)
-				} else {
-					err = cycle.server.Serve(ln)
-				}
-			}
-			if err != nil && err != http.ErrServerClosed {
-				// e.g. "bind: address already in use" — the host app's log
-				// parser watches for this to surface port conflicts.
-				log.Printf("🚫 relay HTTP server exited: %v", err)
-			}
-		})
+		cycle.addr, cycle.certPath, cycle.keyPath = addr, certPath, keyPath
+		if err := cycle.listenRelay(); err != nil {
+			// e.g. "bind: address already in use" — the host app's log
+			// parser watches for this to surface port conflicts.
+			log.Printf("🚫 relay HTTP server exited: %v", err)
+		}
 
 		// Sharing was on before this start (relay restart): reopen the mesh port.
 		if meshWanted.Load() {
 			cycle.startMeshServer()
 		}
-
-		// Brief delay to ensure server binds to port before returning
-		time.Sleep(100 * time.Millisecond)
 
 		protocol := "http"
 		if certPath != "" {
@@ -465,6 +451,25 @@ func runImportCycle() {
 		return
 	}
 	log.Println("✅ Import completed in C-Shared mode")
+}
+
+//export RelistenRelayC
+func RelistenRelayC() C.int {
+	// The host calls this when the relay stopped answering after the app
+	// came back (iOS defuncts listening sockets during suspension). Only
+	// the listening ports are reopened; databases, sync and open
+	// WebSockets keep running. Non-zero means the host should fall back
+	// to a full stop/start.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 HAVEN recovered from panic in RelistenRelayC: %v", r)
+		}
+	}()
+	if err := relistenRelay(); err != nil {
+		log.Printf("🚫 relay re-listen failed: %v", err)
+		return 1
+	}
+	return 0
 }
 
 //export StopRelayC
