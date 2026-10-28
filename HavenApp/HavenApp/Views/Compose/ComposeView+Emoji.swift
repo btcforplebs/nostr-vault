@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Custom emoji (NIP-30) in the composer: `:name` suggestions, the emoji
-/// button, and the post's `emoji` tags. Android: `ComposeNoteViewModelEmoji.kt`.
+/// Custom emoji (NIP-30) in the composer: `:name` suggestions and the
+/// post's `emoji` tags. Android: `ComposeNoteViewModelEmoji.kt`.
 extension ComposeView {
     /// One strip of custom emoji for the `:name` being typed, like `mentionPopup`.
     var emojiPopup: some View {
@@ -45,7 +45,6 @@ extension ComposeView {
     /// Finds the `:name` at the caret after an edit and fills `emojiSuggestions`.
     func updateEmojiQuery(old: String, new text: String) {
         let caret = text.distance(from: text.startIndex, to: caretIndex(old: old, new: text))
-        lastCaretOffset = caret
         let query = ComposeEmoji.query(in: text, caret: caret)
         emojiQuery = query
         emojiSuggestions = query.map { ComposeEmoji.suggestions($0.text, known: knownCustomEmoji()) } ?? []
@@ -59,15 +58,6 @@ extension ComposeView {
         emojiQuery = nil
         emojiSuggestions = []
         content = out.text
-        lastCaretOffset = out.caret
-    }
-
-    /// The emoji button's pick (Unicode or custom), put in where the last edit left the caret.
-    func insertPickedEmoji(_ pick: ReactionPick) {
-        EmojiPaletteStore.shared.recordUse(pick)
-        let out = ComposeEmoji.insert(pick.content, at: lastCaretOffset, in: content)
-        content = out.text
-        lastCaretOffset = out.caret
     }
 
     /// The `emoji` tags for the custom emoji `text` uses (images the account knows).
