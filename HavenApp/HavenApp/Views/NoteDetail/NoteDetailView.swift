@@ -75,9 +75,11 @@ struct NoteDetailView: View {
     /// (history still loading) animates rather than jumps.
     @State private var isSettled = true
     private static let settleCap: TimeInterval = 0.6
-    /// Where the opened note sits: a little below the top, so the end of the
-    /// post it answers shows above it as context.
-    private static let landingAnchor = UnitPoint(x: 0.5, y: 0.12)
+    /// Where the opened note's top sits: on the tap landing line, 20 pt
+    /// under the toolbar buttons. The scroll content's top margin is the gap
+    /// to that line, so a top anchor puts every note there, short or long;
+    /// the old 12% anchor put a short reply lower than a long one.
+    private static let landingAnchor = UnitPoint.top
     /// Height of the scroll view, for the room left under a short thread.
     @State private var viewportHeight: CGFloat = 0
 
@@ -161,8 +163,8 @@ struct NoteDetailView: View {
         (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
     }
 
-    /// Puts the note you opened at the top, with the posts it answers
-    /// scrollable above. Runs again whenever the content above it changes
+    /// Puts the note you opened on the landing line, with the posts it
+    /// answers scrollable above. Runs again whenever the content above it changes
     /// (history arriving, images in it loading, the screen size settling),
     /// until the reader scrolls: a single jump was undone by whatever loaded
     /// next, and the opened reply ended up down the screen.
@@ -244,11 +246,11 @@ struct NoteDetailView: View {
                     }
 
                     // Room under a short thread, so the opened note can scroll
-                    // to the top with the posts it answers above it. Without
-                    // it a reply with few replies of its own stayed at the
-                    // bottom of the screen: there was nothing below to scroll into.
+                    // up to the landing line with the posts it answers above it.
+                    // Without it a reply with few replies of its own stayed at
+                    // the bottom of the screen: there was nothing below to scroll into.
                     if !dynamicParents.isEmpty {
-                        Color.clear.frame(height: max(0, viewportHeight - 200))
+                        Color.clear.frame(height: TapLandingLine.bottomRoom(viewportHeight: viewportHeight))
                     }
                 }
                 // Makes the opened note (a direct child with its id) a scroll
@@ -256,7 +258,6 @@ struct NoteDetailView: View {
                 // Without this the pin was ignored, and the posts loading in
                 // above pushed the opened reply down out of view.
                 .scrollTargetLayout()
-                .padding(.top, 16)
                 .padding(.bottom, 90)
                 // iPad: a note's text runs to a readable measure down the
                 // middle of the pane rather than the full 13in. The scroll
@@ -264,6 +265,10 @@ struct NoteDetailView: View {
                 .readableWidthCap()
                 .opacity(isSettled ? 1 : 0)
             }
+            // The gap to the landing line. A margin rather than padding, so
+            // top-anchored scrolls stop on the line instead of the bar's edge,
+            // and a note with nothing above it sits on the line too.
+            .contentMargins(.top, TapLandingLine.gap, for: .scrollContent)
             .scrollPosition(id: $pinnedScrollId, anchor: Self.landingAnchor)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
             // The reader took over: stop putting the opened note back on top.

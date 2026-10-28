@@ -285,7 +285,7 @@ extension FeedView {
         let work = DispatchWorkItem { [self] in
             guard !feedService.pendingNotes.isEmpty,
                   configService.config.autoLoadNewPosts,
-                  isAtTop else { return }
+                  isAtTop, expandedNoteId == nil else { return }
             feedService.applyPendingNotes()
         }
         autoLoadWork = work
