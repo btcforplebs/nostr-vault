@@ -99,6 +99,29 @@ extension FeedView {
         }
     }
 
+    /// Glides a tapped row's top onto the tap landing line, 20 pt under the
+    /// toolbar buttons, the same line note detail lands on. Runs a moment
+    /// after the tap, once the hold above has landed, so the row first stays
+    /// where it was tapped and then moves once, up or down, to the line.
+    /// Folded bars come back with it: the post lands under the buttons.
+    /// Moves only the list, not `scrolledNoteID`, so a layout switch still
+    /// restores the row the reader was on. `stillOpen` skips the move when
+    /// another tap has closed or replaced the row in the meantime.
+    func glideToLandingLine(_ noteId: String, proxy: ScrollViewProxy, stillOpen: @escaping () -> Bool) {
+        ChromeCollapse.shared.reset()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [threadLineTops] in
+            let height = threadLineTops.viewportHeight
+            guard height > 0, stillOpen() else { return }
+            // The hold kept the row still through the close above; left on,
+            // it would put the row back where it was tapped.
+            if threadLineTops.hold?.noteId == noteId { threadLineTops.hold = nil }
+            withAnimation(Motion.scrollJump) {
+                proxy.scrollTo(ThreadLineTops.anchorId(for: noteId),
+                               anchor: UnitPoint(x: 0.5, y: TapLandingLine.anchorY(viewportHeight: height)))
+            }
+        }
+    }
+
     /// Opens or closes a note in the condensed feed. Opening one closes the
     /// note that was open; when that sat above, it shrank and everything
     /// under it slid up with it, the tapped row too, as far as off screen.
@@ -109,6 +132,9 @@ extension FeedView {
         guard expandedNoteId != noteId else {
             expandedNoteId = nil
             return
+        }
+        if let proxy {
+            glideToLandingLine(noteId, proxy: proxy) { expandedNoteId == noteId }
         }
         let notes = feedService.filteredNotes
         guard let proxy, let openId = expandedNoteId,
@@ -257,10 +283,20 @@ extension FeedView {
                             }
                         }
 
+                        // Room under the last posts while one is open, so a
+                        // tapped post near the end still reaches the line.
+                        if expandedNoteId != nil {
+                            Color.clear
+                                .frame(height: TapLandingLine.bottomRoom(viewportHeight: threadLineTops.viewportHeight))
+                        }
+
                     }
                     .environment(\.feedActions, feedActionsValue)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    // The first post sits on the tap landing line at rest, so
+                    // tapping it does not move the list. Less the 1 pt top anchor.
+                    .padding(.top, TapLandingLine.gap - 1)
+                    .padding(.bottom, 16)
                     }
                     }
                     .tabBarBottomPadding()
@@ -320,14 +356,25 @@ extension FeedView {
                     // Auto-apply pending notes when autoLoad is on, but only
                     // if the user is at the top of the feed to avoid disrupting
                     // their scroll position. Debounced to prevent duplicate calls.
-                    if count > 0 && configService.config.autoLoadNewPosts && !feedService.isLoadingFeed && isAtTop {
+                    // Not while a tapped post is open: posts added above
+                    // would push it off the landing line.
+                    if count > 0 && configService.config.autoLoadNewPosts && !feedService.isLoadingFeed && isAtTop
+                        && expandedNoteId == nil {
                         scheduleAutoLoad(delay: 1.5)
                     }
                 }
                 .onChange(of: isAtTop) { _, atTop in
                     // When the user scrolls back to the top, auto-apply any
                     // accumulated pending notes if auto-load is enabled.
-                    if atTop && configService.config.autoLoadNewPosts && feedService.visiblePendingCount > 0 && !feedService.isLoadingFeed {
+                    if atTop && configService.config.autoLoadNewPosts && feedService.visiblePendingCount > 0 && !feedService.isLoadingFeed
+                        && expandedNoteId == nil {
+                        scheduleAutoLoad(delay: 0.5)
+                    }
+                }
+                .onChange(of: expandedNoteId) { _, openId in
+                    // Closing a tapped post releases the auto-load it held back.
+                    if openId == nil && isAtTop && configService.config.autoLoadNewPosts
+                        && feedService.visiblePendingCount > 0 && !feedService.isLoadingFeed {
                         scheduleAutoLoad(delay: 0.5)
                     }
                 }

@@ -300,7 +300,10 @@ extension FeedView {
             rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
             lineTops: proxy == nil ? nil : threadLineTops,
             onOpenedInPlace: proxy.map { proxy in
-                { id, y in holdThreadLine(id, at: y, proxy: proxy) }
+                { id, y in
+                    holdThreadLine(id, at: y, proxy: proxy)
+                    glideToLandingLine(id, proxy: proxy) { [threadLineTops] in threadLineTops.justOpened == id }
+                }
             }
         )
     }

@@ -379,6 +379,7 @@
 		443513AFB69CE37E9C30FA03 /* NoteDetailView+Parents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6F3DA371A22E888542EB92 /* NoteDetailView+Parents.swift */; };
 		44CD4B45BB1992B54B6B594B /* FeedService+Follow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C28CF4FEF54D4C0FE1E90 /* FeedService+Follow.swift */; };
 		44E16F1E6747845181FD3F3A /* PushNotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */; };
+		44E2BD75001F0D52E431364C /* TapLandingLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC4C2DFE093087D6AA0047DC /* TapLandingLine.swift */; };
 		44E80A628D1FFA5E86841553 /* MediaCopyFileRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC94C3AA61FEF07180139DD /* MediaCopyFileRow.swift */; };
 		44F1646379AB87C0FA885525 /* MirrorStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B779245F219AC33231205A4 /* MirrorStatusSheet.swift */; };
 		4588E6C2BB47FACE97191F2E /* ProfileContent+Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74DC08C4C796F5023B17EB8 /* ProfileContent+Header.swift */; };
@@ -1023,6 +1024,7 @@
 		B6A088A376BCD2B2695FC0B6 /* GlobeStorm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E33934D682D87D02C55AFF1 /* GlobeStorm.swift */; };
 		B6AE8AA4F41D4F016CC076AF /* View+SoftTopScrollEdge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA565C1761FBC06F35A11553 /* View+SoftTopScrollEdge.swift */; };
 		B6C549A8E6CCC14B2BF88F41 /* VaultBackupQuestionStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B96E4901C4F833B586D1D89 /* VaultBackupQuestionStep.swift */; };
+		B7622AE4CFF8F61AEBB4CA98 /* TapLandingLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC4C2DFE093087D6AA0047DC /* TapLandingLine.swift */; };
 		B764BF0A8BA3B90BCBD9B52E /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
 		B7D3B0FD8FE59052EA736319 /* GlobeScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2E0E2740A5B3C348F5DE28 /* GlobeScene.swift */; };
 		B7E31155A74F89CE22520C4F /* HashtagSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20041DCF1B7AF43B56CF7E9 /* HashtagSuggestions.swift */; };
@@ -2128,6 +2130,7 @@
 		DAA728904A7FCC83C21D5998 /* CustomEmojiImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomEmojiImage.swift; sourceTree = "<group>"; };
 		DB9B0CBB4AB1F2FE5C7A8F4B /* MediaUploadNotificationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaUploadNotificationBanner.swift; sourceTree = "<group>"; };
 		DBFCD52C53864BA74263D0E7 /* ProfileActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileActions.swift; sourceTree = "<group>"; };
+		DC4C2DFE093087D6AA0047DC /* TapLandingLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapLandingLine.swift; sourceTree = "<group>"; };
 		DC5A48EC3F65D58FED0264EA /* NoteDetailView+Sections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+Sections.swift"; sourceTree = "<group>"; };
 		DC6553829D621A65D21C14F7 /* RelayStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayStatusCard.swift; sourceTree = "<group>"; };
 		DC89BDDBB2688F79D256888B /* WavlakeTrackCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WavlakeTrackCard.swift; sourceTree = "<group>"; };
@@ -3037,6 +3040,7 @@
 				0CB3928B13EED1E152C1D081 /* SetupReferral.swift */,
 				C9E0F271DFC0731ABBC9E938 /* StarterPack.swift */,
 				B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */,
+				DC4C2DFE093087D6AA0047DC /* TapLandingLine.swift */,
 				86B6DE9563AEAC1E8BF203EA /* ThreadEngagementQuery.swift */,
 				6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */,
 				F8222A5F6E491EA57892ADC3 /* TrustMap.swift */,
@@ -4273,6 +4277,7 @@
 				6224CB5CF33FB1A934BF1FA8 /* SupportedMediaFormats.swift in Sources */,
 				6C896FDD3AD5B03A82D8BAC2 /* SwiftNIP46Handshake.swift in Sources */,
 				5FD02A9E59A159252E3D0D1B /* TabButton.swift in Sources */,
+				44E2BD75001F0D52E431364C /* TapLandingLine.swift in Sources */,
 				ABB23DEEB52B702E90352B9E /* TenorGifService.swift in Sources */,
 				4672FF7145096D1FF96848F9 /* Theming.swift in Sources */,
 				3E132F275589C18543105D96 /* ThreadEngagementQuery.swift in Sources */,
@@ -4993,6 +4998,7 @@
 				38CA6F090B09B24A5CB3AFAC /* SupportedMediaFormats.swift in Sources */,
 				9EBACE9543A3F1BC4C3C054D /* SwiftNIP46Handshake.swift in Sources */,
 				A8DBC53F2A3635DFA615C75D /* TabButton.swift in Sources */,
+				B7622AE4CFF8F61AEBB4CA98 /* TapLandingLine.swift in Sources */,
 				7A31799E988CDADE27DACA06 /* TenorGifService.swift in Sources */,
 				00119641B62DB2BBCEB963B0 /* Theming.swift in Sources */,
 				372DC81DD5E2474177F0AE1B /* ThreadEngagementQuery.swift in Sources */,
