@@ -200,6 +200,8 @@ func (c *relayCycle) listenRelay() error {
 
 var errNotServing = errors.New("relay is not running")
 
+var errMeshNotReopened = errors.New("mesh port did not reopen")
+
 // relistenRelay reopens the live cycle's listening ports without touching
 // anything else: iOS defuncts listening sockets while the app is
 // suspended, and a full stop/start just to get the port back closes and
@@ -221,9 +223,12 @@ func relistenRelay() error {
 	if err := c.listenRelay(); err != nil {
 		return err
 	}
-	if c.meshServer != nil {
+	if meshWanted.Load() {
 		c.stopMeshServer()
 		c.startMeshServer()
+		if c.meshServer == nil { // startMeshServer only logs; let the host fall back to a full restart
+			return errMeshNotReopened
+		}
 	}
 	log.Printf("🔗 relay port reopened at %s", c.addr)
 	return nil

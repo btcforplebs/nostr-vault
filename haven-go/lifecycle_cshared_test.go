@@ -120,6 +120,25 @@ func TestRelayRestartUnderTraffic(t *testing.T) {
 				t.Fatalf("cycle %d relisten %d: no event reached the reopened port", i, r)
 			}
 		}
+		if i == 0 {
+			// Mesh port taken while the relay port reopens fine: the host
+			// must hear a failure so it falls back to a full restart.
+			killListeners(cycle)
+			waitForPortClosed(t, meshPort)
+			squat, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(meshPort)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			rc := RelistenRelayC()
+			squat.Close()
+			if rc == 0 {
+				t.Fatal("RelistenRelayC = 0 with the mesh port taken, want failure")
+			}
+			if rc := RelistenRelayC(); rc != 0 {
+				t.Fatalf("RelistenRelayC after mesh port freed = %d", rc)
+			}
+			waitForPort(t, meshPort)
+		}
 		StopRelayC() // mid-traffic, as on a return to the foreground
 
 		// Stopped means stopped: no client may still be writing through a
