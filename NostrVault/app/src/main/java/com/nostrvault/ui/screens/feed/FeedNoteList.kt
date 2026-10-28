@@ -43,8 +43,8 @@ import com.nostrvault.ui.theme.*
 internal fun FeedNoteList(
     viewModel: FeedViewModel,
     listState: LazyListState,
-    /** Whether the open post's row is on screen; only then is there room for it below the list. */
-    openRowShown: () -> Boolean,
+    /** Whether there is room for the open post below the list (keepsTapRoom). */
+    keepsTapRoom: () -> Boolean,
     padding: PaddingValues,
     meterLift: Dp,
     threadLineAnchor: ThreadLineAnchor,
@@ -284,10 +284,10 @@ internal fun FeedNoteList(
             }
         }
 
-        // While the open post is on screen, room under the last rows so they
-        // can reach the tap line too. After the loading row, so the end of
+        // While a post is open, room under the last rows so they can reach
+        // the tap line too, until the reader scrolls back up past it. After the loading row, so the end of
         // the feed never shows a screen of blank before "Loading...".
-        if (openRowShown()) {
+        if (keepsTapRoom()) {
             item(key = "tap_line_room") {
                 Spacer(Modifier.height(TapAnchor.roomBelow(viewportHeight, listTop, listBottom)))
             }

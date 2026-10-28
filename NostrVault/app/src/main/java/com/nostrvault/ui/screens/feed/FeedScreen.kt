@@ -248,6 +248,16 @@ fun FeedScreen(
             listState.layoutInfo.visibleItemsInfo.any { it.key == key }
         }
     }
+    // The room under the list follows its own rule (keepsTapRoom).
+    val keepsRoom by remember {
+        derivedStateOf {
+            val key = currentOpenRowKey ?: return@derivedStateOf false
+            val info = listState.layoutInfo
+            val index = info.visibleItemsInfo.firstOrNull { it.key == key }?.index
+                ?: if (isThreaded) feedThreads.indexOfFirst { it.rootId == key } else notes.indexOfFirst { it.id == key }
+            keepsTapRoom(index, info.visibleItemsInfo.lastOrNull()?.index ?: -1)
+        }
+    }
 
     // Not while a tapped post is on screen: new posts landing on top would
     // push it off the tap line. They apply once it has scrolled away.
@@ -583,7 +593,7 @@ fun FeedScreen(
                 FeedNoteList(
                     viewModel = viewModel,
                     listState = listState,
-                    openRowShown = { openRowShown },
+                    keepsTapRoom = { keepsRoom },
                     padding = padding,
                     meterLift = meterLift,
                     threadLineAnchor = threadLineAnchor,
