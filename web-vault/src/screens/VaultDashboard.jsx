@@ -63,6 +63,14 @@ export function VaultDashboard({ ctx }) {
     mediaServers(ctx).then(l => setServers(l.length)).catch(() => {})
   }
   useEffect(look, [me])
+  // Escape closes the sheet wherever focus is (the HUD that opened it keeps focus), unless a dialog over it has it.
+  // The desktop shell leaves the keys to the sheet while it is open (DesktopShell's OVERLAY), so l/r/j/k can't act
+  // on the note behind it.
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) { e.preventDefault(); closeDashboard() } }
+    addEventListener("keydown", onKey)
+    return () => removeEventListener("keydown", onKey)
+  }, [])
 
   const job = (key, fn) => async () => {
     setJobs(j => ({ ...j, [key]: true, status: null }))
@@ -102,7 +110,7 @@ export function VaultDashboard({ ctx }) {
   // Building who can reach you: the trust list is empty while follows' lists are still being read.
   const syncing = trusted.size === 0 && (account.follows?.length ?? 0) > 0
   return (
-    <div class="dash-sheet" role="dialog" aria-modal="true" aria-labelledby="dash-title" onKeyDown={e => { if (e.key === "Escape") closeDashboard() }}>
+    <div class="dash-sheet" role="dialog" aria-modal="true" aria-labelledby="dash-title">
       <div class="dash-scrim" onClick={closeDashboard} />
       <div class="dash-panel">
         <header class="dash-bar-top">
