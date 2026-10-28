@@ -3,26 +3,37 @@ package com.nostrvault.ui.screens.music
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.music.WavlakeArtist
 import com.nostrvault.data.music.WavlakeTrack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 /** Music tray (iOS #1084): sharing a song mentions its artist, and the tray can zap them. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class MusicArtistKeyTest {
     private val npub = "npub1artist"
     private fun song(npub: String? = null, artistId: String? = "a1") =
         WavlakeTrack(id = "t1", title = "Song", artist = "Band", artistId = artistId, mediaUrl = "https://x/t1.mp3", artistNpub = npub)
+
+    // MusicArtistKey runs on Dispatchers.Main; a JVM test has none unless set.
+    @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
 
     @After fun reset() {
         MusicArtistKey.forget()
         MusicArtistKey.fetchArtist = { null }
         MusicArtistKey.knownArtists = { emptyList() }
         MusicArtistKey.shareWaitMs = 3_000L
+        Dispatchers.resetMain()
     }
 
     @Test fun `the song's own key, then a known artist, then Wavlake once`() = runBlocking {

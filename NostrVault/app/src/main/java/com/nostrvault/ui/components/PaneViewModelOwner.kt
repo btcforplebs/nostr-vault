@@ -7,7 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.hilt.navigation.HiltViewModelFactory
+import androidx.hilt.lifecycle.viewmodel.HiltViewModelFactory
 import androidx.lifecycle.DEFAULT_ARGS_KEY
 import androidx.lifecycle.HasDefaultViewModelProviderFactory
 import androidx.lifecycle.ViewModelProvider
@@ -47,7 +47,7 @@ private class PaneViewModelOwner(
 
     override val defaultViewModelProviderFactory: ViewModelProvider.Factory =
         if (parent is NavBackStackEntry) {
-            HiltViewModelFactory(context, parent)
+            HiltViewModelFactory(context, parent.defaultViewModelProviderFactory)
         } else {
             checkNotNull(parentDefaults) { "A pane needs a Hilt view model factory" }
                 .defaultViewModelProviderFactory

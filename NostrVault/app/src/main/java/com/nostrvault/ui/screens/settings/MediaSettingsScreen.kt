@@ -26,7 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.ui.screens.dashboard.formatSize
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.NostrVaultIcons

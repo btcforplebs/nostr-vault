@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.nostrvault.ui.notification.LocalNotificationManager
 import com.nostrvault.ui.screens.DeleteBlobConfirmDialog

@@ -50,7 +50,7 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
     var scrub by remember { mutableStateOf<Float?>(null) }
     var showingQueue by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
-    val zapModel: MusicZapViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val zapModel: MusicZapViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
     val profiles by zapModel.profiles.collectAsState()
     // The playing song's artist on Nostr, once known; Zap needs it (iOS #1084).
     var artistHex by remember { mutableStateOf<String?>(null) }

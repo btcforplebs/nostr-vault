@@ -4,11 +4,19 @@ import android.content.Context
 import com.nostrvault.fips.MeshAuthor
 import com.nostrvault.ui.screens.profile.profileTileImageModel
 import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 
 /** Vault → Media and profile Media tiles ask the mesh for the note's author, as the feed does (#1011). */
+@OptIn(ExperimentalCoroutinesApi::class)
 class VaultMediaMeshAuthorTest {
     private val context = mockk<Context>(relaxed = true)
     private val owner = "c".repeat(64)
@@ -19,6 +27,10 @@ class VaultMediaMeshAuthorTest {
         sha256 = "f".repeat(64), displayUrl = url, localFile = null, mimeType = "image/jpeg",
         size = null, uploaded = null, lastModified = null, isLocal = false,
     )
+
+    // Coil's request builder reads Dispatchers.Main; a JVM test has none unless set.
+    @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
+    @After fun tearDown() = Dispatchers.resetMain()
 
     @Test
     fun vaultTileOfSomeoneElsesNoteAsksThem() {

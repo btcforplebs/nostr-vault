@@ -46,7 +46,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.fips.FipsStatus

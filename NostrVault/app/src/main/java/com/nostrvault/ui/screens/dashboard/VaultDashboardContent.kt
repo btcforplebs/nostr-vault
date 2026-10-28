@@ -49,7 +49,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.nostrvault.data.model.WotRefreshProgress
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.LogStore
