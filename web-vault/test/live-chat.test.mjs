@@ -125,3 +125,10 @@ test("Tron #1309: one real zap request wrapped in forged receipts is one row, an
   assert.equal(withReal[0].who, ALICE, "the receipt the host's zap service published names the payer")
   assert.equal(withReal[0].sats, 21)
 })
+
+test("Tron #1309 NIT: a muted payer's zap stays out even when a forged copy of the request is around", () => {
+  const gm = finalizeEvent({ kind: 9734, created_at: NOW, content: "gm", tags: [["p", HOST], ["a", stream.address]] }, alice)
+  const real = finalizeEvent({ kind: 9735, created_at: NOW + 1, content: "", tags: [["p", HOST], ["a", stream.address], ["bolt11", "lnbc210n1x"], ["description", JSON.stringify(gm)]] }, service)
+  const forged = finalizeEvent({ kind: 9735, created_at: NOW + 2, content: "", tags: [["p", HOST], ["a", stream.address], ["bolt11", "lnbc210n1x"], ["description", JSON.stringify(gm)]] }, generateSecretKey())
+  assert.deepEqual(chatRows([real, forged], stream.address, new Set([ALICE]), 200, PUB), [])
+})

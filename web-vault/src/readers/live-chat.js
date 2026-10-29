@@ -71,12 +71,12 @@ export function chatRows(evs, address, hidden = new Set(), max = 200, publishers
   const by = new Map()
   const rows = evs.map(ev => chatRow(ev, address, publishers)).filter(Boolean).sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
   for (const r of rows) {
-    if (r.who && hidden.has(r.who)) continue
     const key = r.request ? `req:${r.request}` : r.id
     const have = by.get(key)
     if (!have || (!have.who && r.who)) by.set(key, r)
   }
-  return [...by.values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)).slice(-max)
+  // Muted people leave after the dedupe, so a forged copy of a muted payer's request can't stand in as Someone.
+  return [...by.values()].filter(r => !(r.who && hidden.has(r.who))).sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)).slice(-max)
 }
 
 /** A link the chat shows as a picture, GIF or video. */
