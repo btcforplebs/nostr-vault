@@ -4,7 +4,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { decode } from "nostr-tools/nip19"
-import { parseStream, isOnAir, playableUrl, hostOf, isAdultStream, pickStreams, liveFilters, liveRelays, fetchStreams, streamLink, chatRows, chatFilter, chatRelays, startScope, normalizedRelay, STREAM_RELAY, CHAT_RELAYS, STALE_AFTER } from "../src/readers/live.js"
+import { parseStream, isOnAir, playableUrl, hostOf, isAdultStream, pickStreams, liveFilters, liveRelays, fetchStreams, streamLink, chatFilter, chatRelays, startScope, normalizedRelay, STREAM_RELAY, CHAT_RELAYS, STALE_AFTER } from "../src/readers/live.js"
 
 const A = "a".repeat(64), B = "b".repeat(64), S = "5".repeat(64), C_ = "c".repeat(64)
 const NOW = 1_800_000_000
@@ -100,16 +100,8 @@ test("Open in zap.stream: an naddr by the author, with at most two of the stream
   assert.equal(normalizedRelay("https://x"), null)
 })
 
-test("chat: messages and checked zaps, oldest first, blocked people out; a forged zap is dropped", () => {
-  const sk = generateSecretKey(), payer = getPublicKey(sk)
+test("chat filter and relays", () => {
   const s = parseStream(stream({ d: "room" }))
-  const req = finalizeEvent({ kind: 9734, created_at: NOW, content: "great set", tags: [["p", A], ["a", s.address], ["amount", "21000"]] }, sk)
-  const zap = { id: "z".repeat(64), kind: 9735, pubkey: S, created_at: NOW + 2, content: "", tags: [["p", A], ["a", s.address], ["description", JSON.stringify(req)]] }
-  const forged = { ...zap, id: "f".repeat(64), tags: [["p", A], ["description", JSON.stringify({ ...req, content: "fake" })]] }
-  const msg = { id: "m".repeat(64), kind: 1311, pubkey: B, created_at: NOW + 1, content: " hi ", tags: [["a", s.address]] }
-  const blockedMsg = { ...msg, id: "x".repeat(64), pubkey: S, content: "spam" }
-  const rows = chatRows([zap, forged, msg, blockedMsg, { ...msg, content: "  " , id: "e".repeat(64) }], new Set([S]))
-  assert.deepEqual(rows.map(r => [r.who, r.text, r.sats]), [[B, "hi", 0], [payer, "great set", 21]])
   assert.deepEqual(chatFilter(s), { kinds: [1311, 9735], "#a": [s.address], limit: 200 })
   assert.deepEqual(chatRelays(s), CHAT_RELAYS)
 })

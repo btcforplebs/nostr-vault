@@ -133,16 +133,16 @@ export const receiptRelays = account =>
   uniq([...account.relays.read, ...account.relays.write, ...DEFAULT_RELAYS].map(u => u.trim().replace(/\/+$/, ""))).filter(isPublicRelay).slice(0, 10)
 
 /** The kind 9734 zap request, tagged as the iPhone tags it. A profile zap has no `e` tag. */
-export const zapRequestTemplate = ({ recipient, noteId, amountMsat, relays, lnurl, content = ZAP_MESSAGE }) => ({
+export const zapRequestTemplate = ({ recipient, noteId, address, amountMsat, relays, lnurl, content = ZAP_MESSAGE }) => ({
   kind: 9734, created_at: Math.floor(Date.now() / 1000), content,
-  tags: [["p", recipient], ["relays", ...relays], ["amount", String(amountMsat)], ...(noteId ? [["e", noteId]] : []), ["lnurl", lnurl]],
+  tags: [["p", recipient], ["relays", ...relays], ["amount", String(amountMsat)], ...(noteId ? [["e", noteId]] : []), ...(address ? [["a", address]] : []), ["lnurl", lnurl]],
 })
 
 /**
  * Zap `recipient` (and `note`, when it is a note zap) `sats` from the connected wallet. Nothing is paid unless the
  * invoice asks for exactly the amount the user chose. -> { preimage }
  */
-export async function zap(ctx, { recipient, note, sats }, { fetchImpl = globalThis.fetch, pay = payInvoice, wallet = walletState(), lnOf = pk => lightningAddressOf(ctx, pk) } = {}) {
+export async function zap(ctx, { recipient, note, sats, address, comment }, { fetchImpl = globalThis.fetch, pay = payInvoice, wallet = walletState(), lnOf = pk => lightningAddressOf(ctx, pk) } = {}) {
   if (wallet.status !== "ready") throw new Error("Connect a wallet first.")
   if (!(Number.isInteger(sats) && sats >= 1 && sats <= MAX_ZAP_SATS)) throw new Error("A zap is 1 to 10,000,000 sats.")
   const ln = await lnOf(recipient)
@@ -151,7 +151,8 @@ export async function zap(ctx, { recipient, note, sats }, { fetchImpl = globalTh
   const lnurl = await resolvePay(ln, fetchImpl)
   if (amountMsat < lnurl.minMsat || amountMsat > lnurl.maxMsat)
     throw new Error(`Their zap service takes ${Math.ceil(lnurl.minMsat / 1000)} to ${Math.floor(lnurl.maxMsat / 1000)} sats.`)
-  const template = zapRequestTemplate({ recipient, noteId: note?.id, amountMsat, relays: receiptRelays(ctx.account), lnurl: lnurl.lnurl })
+  // `address`: a live stream's (NIP-53), so its chat shows the zap and names the payer; `comment`, said with it.
+  const template = zapRequestTemplate({ recipient, noteId: note?.id, address, amountMsat, relays: receiptRelays(ctx.account), lnurl: lnurl.lnurl, ...(comment?.trim() ? { content: comment.trim() } : {}) })
   const request = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const cb = new URL(lnurl.callback)
   cb.searchParams.set("amount", String(amountMsat))
