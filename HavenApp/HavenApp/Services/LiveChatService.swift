@@ -174,7 +174,8 @@ final class LiveChatService: ObservableObject {
     /// Runs on `verifyQueue`. A row only exists if its event is signed by the
     /// pubkey it claims: the stream chooses the first relays this chat reads,
     /// so a hostile stream could otherwise put words, and a Mute button, under
-    /// anyone's name. A zap's payer needs the embedded request's signature too.
+    /// anyone's name. A zap's payer needs the embedded request's signature
+    /// too, on a request made for this stream.
     nonisolated private static func verifiedRow(message: String, address: String) -> LiveChatMessage? {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
@@ -196,7 +197,7 @@ final class LiveChatService: ObservableObject {
         else { return nil }
 
         return LiveChat.message(id: id, pubkey: pubkey, kind: kind, createdAt: createdAt,
-                                content: content, tags: tags,
+                                content: content, tags: tags, streamAddress: address,
                                 verifyRequest: NostrEventVerifier.isValid(json:))
     }
 

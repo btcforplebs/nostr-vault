@@ -166,8 +166,10 @@ enum LiveChat {
     /// The event's own signature must already be checked. `verifyRequest` is
     /// `NostrEventVerifier.isValid(json:)` in the app; it checks the zap
     /// request embedded in a receipt, which nothing else signs.
+    /// `streamAddress` is the stream the chat is for: a zap names its payer
+    /// only if their signed request was made for it.
     static func message(id: String, pubkey: String, kind: Int, createdAt: Int64,
-                        content: String, tags: [[String]],
+                        content: String, tags: [[String]], streamAddress: String? = nil,
                         verifyRequest: (String) -> Bool = { _ in false }) -> LiveChatMessage? {
         guard !id.isEmpty else { return nil }
 
@@ -184,10 +186,16 @@ enum LiveChat {
         // The receipt is signed by the LNURL provider, so the payer can only
         // come from the embedded request, and only when that request carries
         // the payer's own signature. The receipt's `P` tag and the request's
-        // unsigned pubkey are whatever the receipt's signer wrote.
+        // unsigned pubkey are whatever the receipt's signer wrote. The
+        // request must also name this stream: every request is public, so
+        // a real one from another note could be wrapped in a fresh receipt
+        // (Tron, PR 1306).
         let description = tags.first { $0.count >= 2 && $0[0] == "description" }?[1]
-        let payer = request.flatMap { request in
-            description.map(verifyRequest) == true ? request.pubkey : nil
+        let payer = request.flatMap { request -> String? in
+            guard let streamAddress,
+                  request.tags.contains(where: { $0.count >= 2 && $0[0] == "a" && $0[1] == streamAddress }),
+                  description.map(verifyRequest) == true else { return nil }
+            return request.pubkey
         }
         let sats = zapAmountSats(receiptTags: tags, requestTags: request?.tags ?? [])
         let comment = (request?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
