@@ -16,21 +16,40 @@ import (
 // offline, or the relay stopped mid-blast). They are kept on disk and retried
 // until one relay takes them, so a kiosk that loses its internet still sends
 // the owner's notes out once it is back.
+//
+// Each note waits longer after every failed try (1 min, 2 min, 4 min, ... up
+// to 6 h), and the wait is saved with it. A note that every relay refused is
+// dropped: the old fixed one-minute retry re-sent a refused note to every
+// relay 1,440 times a day for seven days.
 
 var (
 	blastPendingFile    = "blast_queue.json" // in the relay data root, like wot_cache.json
-	blastRetryInterval  = time.Minute
+	blastRetryInterval  = time.Minute        // how often the queue is checked for notes that are due
 	blastRetryFirstWait = 10 * time.Second
+	blastClock          = time.Now // tests move it forward
 )
 
 const (
 	blastPendingMax    = 500
 	blastPendingMaxAge = 7 * 24 * time.Hour
+	blastBackoffFirst  = time.Minute
+	blastBackoffMax    = 6 * time.Hour
 )
 
 type pendingBlast struct {
 	Event    nostr.Event `json:"event"`
 	QueuedAt int64       `json:"queued_at"` // unix seconds; age counts from here, not created_at
+	Attempts int         `json:"attempts,omitempty"`
+	NextAt   int64       `json:"next_at,omitempty"` // unix seconds; not tried again before this
+}
+
+// blastBackoff is the wait after the attempts-th failed try (1-based).
+func blastBackoff(attempts int) time.Duration {
+	wait := blastBackoffFirst
+	for i := 1; i < attempts && wait < blastBackoffMax; i++ {
+		wait *= 2
+	}
+	return min(wait, blastBackoffMax)
 }
 
 // blastQueue belongs to one relay start: initRelays opens it with the
@@ -88,7 +107,9 @@ func (q *blastQueue) add(ev *nostr.Event) {
 		slog.Warn("⚠️ blast queue full, not keeping note", "id", ev.ID)
 		return
 	}
-	q.items = append(q.items, pendingBlast{Event: *ev, QueuedAt: time.Now().Unix()})
+	now := blastClock()
+	q.items = append(q.items, pendingBlast{Event: *ev, QueuedAt: now.Unix(), Attempts: 1,
+		NextAt: now.Add(blastBackoff(1)).Unix()})
 	q.saveLocked()
 	slog.Info("📮 note kept for a later blast", "id", ev.ID, "pending", len(q.items))
 }
@@ -105,19 +126,37 @@ func (q *blastQueue) remove(id string) {
 	}
 }
 
+// failed records one more failed try for id and pushes its next try back.
+func (q *blastQueue) failed(id string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for i := range q.items {
+		if q.items[i].Event.ID == id {
+			q.items[i].Attempts++
+			q.items[i].NextAt = blastClock().Add(blastBackoff(q.items[i].Attempts)).Unix()
+			q.saveLocked()
+			return
+		}
+	}
+}
+
 func (q *blastQueue) snapshot() []pendingBlast {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return append([]pendingBlast(nil), q.items...)
 }
 
-// blastOrKeep blasts ev and queues it if no relay took it.
+// blastOrKeep blasts ev and queues it if no relay took it and at least one
+// could not be reached. A note every relay refused is not queued.
 func blastOrKeep(ctx context.Context, q *blastQueue, ev *nostr.Event) {
 	if len(config.BlastrRelays) == 0 {
 		return
 	}
-	if blast(ctx, ev) == 0 {
+	res := blast(ctx, ev)
+	if res.accepted == 0 && res.failed > 0 {
 		q.add(ev)
+	} else if res.accepted == 0 {
+		slog.Warn("🗑️ every relay refused the note, not keeping it", "id", ev.ID)
 	}
 }
 
@@ -139,7 +178,8 @@ func retryPendingOnce(ctx context.Context, q *blastQueue) {
 	if len(config.BlastrRelays) == 0 {
 		return
 	}
-	cutoff := time.Now().Add(-blastPendingMaxAge).Unix()
+	now := blastClock().Unix()
+	cutoff := blastClock().Add(-blastPendingMaxAge).Unix()
 	for _, p := range q.snapshot() {
 		if ctx.Err() != nil {
 			return
@@ -158,8 +198,17 @@ func retryPendingOnce(ctx context.Context, q *blastQueue) {
 			q.remove(ev.ID)
 			continue
 		}
-		if blast(ctx, &ev) > 0 {
+		if p.NextAt > now {
+			continue
+		}
+		switch res := blast(ctx, &ev); {
+		case res.accepted > 0:
 			q.remove(ev.ID)
+		case res.failed == 0:
+			slog.Warn("🗑️ every relay refused a queued note, dropping it", "id", ev.ID)
+			q.remove(ev.ID)
+		case ctx.Err() == nil:
+			q.failed(ev.ID)
 		}
 	}
 }

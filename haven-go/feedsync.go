@@ -233,9 +233,16 @@ func syncFeed(ctx context.Context) {
 
 	wdbFeed := eventstore.RelayWrapper{Store: feedDB}
 
+	windowSince := func() nostr.Timestamp {
+		return nostr.Timestamp(time.Now().Add(-time.Duration(config.FeedSyncWindowDays) * 24 * time.Hour).Unix())
+	}
+	// Both watermarks are saved after every round (see syncstate.go), so a
+	// restart resumes from the last round instead of the fixed start points.
+	state := openSyncState(fs, feedSyncStateFile)
+
 	// Fallback watermark for non-NIP-77 relays, same shape as the inbox one.
 	var lastSeenFeed atomic.Int64
-	lastSeenFeed.Store(time.Now().Add(-24 * time.Hour).Unix())
+	lastSeenFeed.Store(state.mark("feed", time.Now().Add(-24*time.Hour).Unix(), int64(windowSince())))
 	advance := func(ts nostr.Timestamp) {
 		for {
 			cur := lastSeenFeed.Load()
@@ -245,16 +252,12 @@ func syncFeed(ctx context.Context) {
 		}
 	}
 
-	windowSince := func() nostr.Timestamp {
-		return nostr.Timestamp(time.Now().Add(-time.Duration(config.FeedSyncWindowDays) * 24 * time.Hour).Unix())
-	}
-
 	// The rare kinds' watermark starts at the window's edge: a fresh cache
 	// gets the whole window of articles and polls in its first round, which
 	// is a few dozen events, not the hours of notes the common pull starts
 	// with.
 	var lastSeenRare atomic.Int64
-	lastSeenRare.Store(int64(windowSince()))
+	lastSeenRare.Store(state.mark("feed_rare", int64(windowSince()), int64(windowSince())))
 
 	runFeedSync := func() {
 		// Captured before any fetching so events arriving mid-round aren't
@@ -374,6 +377,9 @@ func syncFeed(ctx context.Context) {
 			if rareDone {
 				lastSeenRare.Store(int64(roundStart))
 			}
+			state.setMark("feed", lastSeenFeed.Load())
+			state.setMark("feed_rare", lastSeenRare.Load())
+			state.save()
 		}
 		// Same rationale as runCatchup: the vector build materializes the whole
 		// windowed feed cache per relay; return the spike to the OS promptly.

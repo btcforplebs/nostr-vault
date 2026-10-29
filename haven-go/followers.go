@@ -25,6 +25,9 @@ const (
 	followerSweepEvery = 6 * time.Hour
 	// followerSweepBatch bounds the authors per REQ; relays cap filter size.
 	followerSweepBatch = 250
+	// followerSweepOverlap reaches back past the last sweep for lists a
+	// relay received late.
+	followerSweepOverlap = time.Hour
 	// followerFetchTimeout bounds the startup backfill and each sweep batch.
 	followerFetchTimeout = 60 * time.Second
 	followerFlushEvery   = 30 * time.Second
@@ -235,6 +238,12 @@ func backfillRelay(ctx context.Context, url string, owners []string) bool {
 // sweepFollowers re-reads the latest list of every current follower, so a
 // list that dropped the owner is recorded as an unfollow. Reports whether
 // every batch ran (ctx not cancelled).
+//
+// Only lists published since the last sweep (less an hour) are asked for: a
+// list that has not changed since then cannot hold a new unfollow, and new
+// follows arrive on the inbox's #p subscription. Asking for every list again
+// downloaded each follower's whole follow list from every seed relay every
+// six hours.
 func sweepFollowers(ctx context.Context, l *followers.Ledger, owners []string) bool {
 	seen := make(map[string]struct{})
 	var authors []string
@@ -251,7 +260,7 @@ func sweepFollowers(ctx context.Context, l *followers.Ledger, owners []string) b
 			return false
 		}
 		bctx, cancel := context.WithTimeout(ctx, followerFetchTimeout)
-		filter := nostr.Filter{Kinds: []int{nostr.KindFollowList}, Authors: batch}
+		filter := followerSweepFilter(batch, l.LastSweep())
 		for ev := range pool.FetchMany(bctx, config.ImportSeedRelays, filter) {
 			observeFollowList(ev.Event)
 		}
@@ -269,4 +278,15 @@ func followersSnapshot(ctx context.Context, owner string) (followers.Snapshot, b
 	model := wot.GetInstance()
 	snap := l.Snapshot(owner, func(pk string) bool { return model != nil && model.Has(ctx, pk) })
 	return snap.Without(isBlacklisted), true
+}
+
+// followerSweepFilter asks for the kind-3 lists of authors published since
+// lastSweep less followerSweepOverlap; every list when there was no sweep.
+func followerSweepFilter(authors []string, lastSweep int64) nostr.Filter {
+	f := nostr.Filter{Kinds: []int{nostr.KindFollowList}, Authors: authors}
+	if lastSweep > 0 {
+		since := nostr.Timestamp(lastSweep - int64(followerSweepOverlap/time.Second))
+		f.Since = &since
+	}
+	return f
 }
