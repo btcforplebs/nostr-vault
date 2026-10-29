@@ -15,7 +15,10 @@ import com.nostrvault.ui.screens.BlossomPickerMedia
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -35,7 +38,63 @@ class LiveStreamViewModel @Inject constructor(
     private val blossomPickerMedia: BlossomPickerMedia,
     private val liveFeedService: LiveFeedService,
     private val configStore: ConfigStore,
+    private val chatMediaUpload: LiveChatMediaUpload,
 ) : ViewModel() {
+
+    /** Who this account follows, for the host's Follow button. */
+    val followed: StateFlow<List<String>> = feedService.followedPubkeys
+
+    /** Follows the host, or unfollows them if followed. A failure shows in the status line. */
+    fun toggleFollow(pubkey: String) {
+        val following = feedService.isFollowing(pubkey)
+        val result = if (following) feedService.unfollowUser(pubkey) else feedService.followUser(pubkey)
+        result.exceptionOrNull()?.let { _status.value = followFailure(it) }
+    }
+
+    private fun followFailure(e: Throwable): String = when (e) {
+        is com.nostrvault.service.FollowActionError.ReadOnly ->
+            "This account can't sign. Add its key in Settings to follow."
+        is com.nostrvault.service.FollowActionError.ContactsNotLoaded,
+        is com.nostrvault.service.ContactManager.FollowActionError.ListUnavailable ->
+            "Your follow list hasn't loaded yet. Try again in a moment."
+        else -> e.message ?: "Couldn't change the follow"
+    }
+
+    /** Mutes a chatter: the app's block, which hides them everywhere, chat included. */
+    fun muteChatter(pubkey: String) {
+        viewModelScope.launch { feedService.blockUser(pubkey) }
+    }
+
+    /** The active account's muted people, so their chat lines disappear as they are muted. */
+    val blocked: StateFlow<Set<String>> = configStore.config
+        .map { feedService.blockedHexForActiveAccount() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
+
+    /** The GIF picker's "Save to my Blossom", shared with the composer. */
+    val saveGifsToBlossom: StateFlow<Boolean> = configStore.config
+        .map { it.saveGifsToBlossom }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.saveGifsToBlossom)
+
+    fun setSaveGifsToBlossom(on: Boolean) = configStore.update { it.copy(saveGifsToBlossom = on) }
+
+    fun showStatus(message: String?) { _status.value = message }
+
+    private val _uploading = MutableStateFlow(false)
+    val uploading: StateFlow<Boolean> = _uploading.asStateFlow()
+
+    /** Puts a photo, video or GIF on the user's media servers; [onLink] gets its URL. */
+    fun uploadChatMedia(uri: android.net.Uri, onLink: (String) -> Unit) {
+        if (_uploading.value) return
+        viewModelScope.launch {
+            _uploading.value = true
+            _status.value = "Uploading…"
+            when (val out = chatMediaUpload.upload(uri)) {
+                is LiveChatMediaUpload.Outcome.Hosted -> { _status.value = null; onLink(out.url) }
+                is LiveChatMediaUpload.Outcome.Failed -> _status.value = out.message
+            }
+            _uploading.value = false
+        }
+    }
 
     /** Wallet settings' default zap, in sats: where the zap sheet starts. */
     fun defaultZapAmount(): Int = configStore.config.value.defaultZapAmount

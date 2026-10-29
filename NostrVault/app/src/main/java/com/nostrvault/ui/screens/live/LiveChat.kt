@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens.live
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +40,12 @@ internal fun LiveChat(
     profiles: Map<String, FeedProfile>,
     /** Long-press a line to report it. */
     onReport: (LiveChatService.ChatEntry) -> Unit,
+    /** A tap on a name or picture, and View profile in the line's menu. */
+    onOpenProfile: (String) -> Unit = {},
+    /** Mute in the line's menu: the app's mute, so the chatter is hidden everywhere. */
+    onMute: (String) -> Unit = {},
+    /** Lines drawn over the video in full screen: no padding of their own to spare. */
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -78,7 +85,7 @@ internal fun LiveChat(
                             onLongClick = { showMenu = true },
                             onLongClickLabel = "Message options",
                         )
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .padding(horizontal = if (compact) 8.dp else 16.dp, vertical = if (compact) 2.dp else 4.dp)
                         .then(
                             if (isZap) {
                                 Modifier
@@ -91,8 +98,9 @@ internal fun LiveChat(
                     AvatarImage(
                         url = profiles[entry.pubkey]?.pictureURL,
                         pubkey = entry.pubkey,
-                        size = 26.dp,
+                        size = if (compact) 20.dp else 26.dp,
                         displayName = name,
+                        modifier = Modifier.clickable(onClickLabel = "Open $name's profile") { onOpenProfile(entry.pubkey) },
                     )
                     // Image links come out of the text and show as pictures
                     // under it, whoever sent them.
@@ -123,7 +131,9 @@ internal fun LiveChat(
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .clickable(onClickLabel = "Open $name's profile") { onOpenProfile(entry.pubkey) },
                             )
                             Text(
                                 text = remember(entry.createdAt) { chatTime(entry.createdAt) },
@@ -153,6 +163,22 @@ internal fun LiveChat(
                     }
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("View profile") },
+                        leadingIcon = { Icon(NostrVaultIcons.Profile, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onOpenProfile(entry.pubkey)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Mute $name") },
+                        leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onMute(entry.pubkey)
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text("Report message") },
                         leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
