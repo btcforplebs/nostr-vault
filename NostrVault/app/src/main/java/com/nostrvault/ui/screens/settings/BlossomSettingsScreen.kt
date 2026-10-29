@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.QueuedMediaPost
+import com.nostrvault.data.model.WaitingPostStopReason
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.NostrService
@@ -59,7 +60,7 @@ class BlossomSettingsViewModel @Inject constructor(
 
     fun discardWaitingPost(id: String) = mediaPostQueue.discard(id)
 
-    fun retryWaitingPosts() = mediaPostQueue.retryAll("user")
+    fun retryWaitingPosts() = mediaPostQueue.sendNow()
 
     private val _mirrors = MutableStateFlow<List<String>>(emptyList())
     val mirrors = _mirrors.asStateFlow()
@@ -558,6 +559,9 @@ private fun WaitingPostsSection(
                         color = SecondaryText,
                         fontSize = 12.sp,
                     )
+                    WaitingPostStopReason.of(post)?.let { reason ->
+                        Text(text = reason, color = ErrorRed, fontSize = 12.sp)
+                    }
                 }
                 IconButton(onClick = { onDiscard(post.id) }) {
                     Icon(

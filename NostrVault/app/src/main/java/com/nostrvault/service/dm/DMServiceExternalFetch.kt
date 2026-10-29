@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import java.io.File
 import java.util.UUID
+import com.nostrvault.service.DMService.Companion.EXTERNAL_FETCH_LIMIT
 import com.nostrvault.service.DMService.Companion.EXTERNAL_FETCH_MAX_RELAYS
 import com.nostrvault.service.DMService.Companion.EXTERNAL_FETCH_OVERLAP_MS
 import com.nostrvault.service.DMService.Companion.GIFT_WRAP_BACKDATE_SECONDS
@@ -19,6 +20,8 @@ import com.nostrvault.service.DMService.Companion.TAG
 
     fun DMService.fetchFromExternalRelays() {
         backfillSentCopiesIfNeeded()
+        // A foreground and a refresh close together asked every relay twice.
+        if (!externalFetchRunning.compareAndSet(false, true)) return
         scope.launch(Dispatchers.IO) {
             val ownerHex = nostrService.activeHexPubkey
             val dmRelays = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
@@ -50,7 +53,9 @@ import com.nostrvault.service.DMService.Companion.TAG
                         val client = WebSocketClient(url = relayUrl, scope = scope)
                         val subId = "dm-ext-${UUID.randomUUID().toString().take(8)}"
 
-                        launch {
+                        // Cancelled after the pass: a collector never ends by itself, and
+                        // left running it held this pass open (externalFetchRunning) for good.
+                        val collector = launch {
                             client.messages.collect { msg ->
                                 if (switchGeneration != generation) return@collect
                                 launch(Dispatchers.Default) {
@@ -65,19 +70,22 @@ import com.nostrvault.service.DMService.Companion.TAG
                         // randomized up to 2 days into the past, so the 1-hour
                         // overlap above would miss most new ones.
                         val wrapSince = minOf(since, System.currentTimeMillis() / 1000 - GIFT_WRAP_BACKDATE_SECONDS)
-                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince}"""
+                        // A limit, so a relay holding a flood of wraps can't
+                        // send all of them every pass; the live sockets cover the rest.
+                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince,"limit":$EXTERNAL_FETCH_LIMIT}"""
                         client.send("[\"REQ\",\"$subId-17\",$nip17Filter]")
 
                         // NIP-04 incoming (kind 4)
-                        val nip04InFilter = """{"kinds":[4],"#p":["$ownerHex"],"since":$since}"""
+                        val nip04InFilter = """{"kinds":[4],"#p":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
                         client.send("[\"REQ\",\"$subId-04in\",$nip04InFilter]")
 
                         // NIP-04 outgoing (kind 4)
-                        val nip04OutFilter = """{"kinds":[4],"authors":["$ownerHex"],"since":$since}"""
+                        val nip04OutFilter = """{"kinds":[4],"authors":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
                         client.send("[\"REQ\",\"$subId-04out\",$nip04OutFilter]")
 
                         delay(10_000)
                         client.disconnect()
+                        collector.cancel()
                     } catch (e: Exception) {
                         Log.w(TAG, "External DM fetch from $relayUrl failed: ${e.message}")
                     }
@@ -85,7 +93,7 @@ import com.nostrvault.service.DMService.Companion.TAG
             }
 
             lastExternalFetchTimestamp = System.currentTimeMillis()
-        }
+        }.invokeOnCompletion { externalFetchRunning.set(false) }
     }
 
     /**

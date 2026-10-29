@@ -42,6 +42,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import com.nostrvault.ui.components.VideoCache.cachedFor
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.nostrvault.ui.theme.NostrVaultIcons
 import kotlinx.coroutines.delay
@@ -251,6 +252,7 @@ private fun ActiveInlineVideo(url: String, onFailed: () -> Unit) {
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun buildInlinePlayer(context: Context, url: String): ExoPlayer =
     ExoPlayer.Builder(context)
+        .cachedFor(context, url)
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(2_000, 8_000, 1_000, 1_000)

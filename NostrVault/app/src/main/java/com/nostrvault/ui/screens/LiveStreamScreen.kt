@@ -41,6 +41,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.nostrvault.ui.components.setSoundOnly
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.nostrvault.data.model.FeedProfile
@@ -156,9 +157,7 @@ fun LiveStreamScreen(
         val p = sharedPlayer ?: return@LaunchedEffect
         // Minimized, the stream played sound only (MiniPlayerBar); the window
         // shows the picture, so the video track goes back on.
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, false)
-            .build()
+        p.setSoundOnly(false)
         if (!p.playWhenReady) {
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()
@@ -169,10 +168,29 @@ fun LiveStreamScreen(
     // carries on with the broadcast where it is now. Paused by the owner, the
     // stream stays paused.
     val lifecycleOwner = LocalLifecycleOwner.current
+    // The mini player's stream plays on in the background: that is what
+    // minimizing is for. Off screen it goes sound only (the smallest variant),
+    // and the picture comes back with the screen.
+    DisposableEffect(sharedPlayer, lifecycleOwner) {
+        val p = sharedPlayer ?: return@DisposableEffect onDispose {}
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> p.setSoundOnly(true)
+                Lifecycle.Event.ON_START -> p.setSoundOnly(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     // The mini player's own player does this itself (MusicPlayer.setAppInForeground).
+    // This screen's own player stops off screen: a live stream left open
+    // behind a locked phone downloaded 1.5–3 Mbps around the clock. Back on
+    // screen it rejoins the broadcast where it is now.
     DisposableEffect(ownPlayer, lifecycleOwner) {
         val p = ownPlayer ?: return@DisposableEffect onDispose {}
         var pausedByOtherApp = false
+        var pausedOffScreen = false
         val listener = object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 pausedByOtherApp = !playWhenReady &&
@@ -180,8 +198,12 @@ fun LiveStreamScreen(
             }
         }
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START && pausedByOtherApp) {
+            if (event == Lifecycle.Event.ON_STOP && p.playWhenReady) {
+                pausedOffScreen = true
+                p.pause()
+            } else if (event == Lifecycle.Event.ON_START && (pausedByOtherApp || pausedOffScreen)) {
                 pausedByOtherApp = false
+                pausedOffScreen = false
                 p.rejoinLiveEdge()
                 p.play()
             }

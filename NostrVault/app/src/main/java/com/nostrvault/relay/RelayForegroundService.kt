@@ -314,6 +314,8 @@ class RelayForegroundService : Service() {
     @Volatile internal var lifecycleState = LifecycleState.IDLE
     @Volatile internal var isShuttingDown = false
     internal var retryCount = 0
+    /** When the health watchdog restarted the relay ([WatchdogRestartPolicy]). */
+    internal val watchdogRestarts = mutableListOf<Long>()
     internal var currentRelayPort = 3355
 
     internal val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -397,6 +399,8 @@ class RelayForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // Someone started the relay: the watchdog's restart count starts over.
+        synchronized(watchdogRestarts) { watchdogRestarts.clear() }
 
         try {
             // ServiceCompat drops the type argument below API 29, where the

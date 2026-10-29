@@ -41,6 +41,8 @@ class DMService @Inject constructor(
     companion object {
         internal const val TAG = "DMService"
         internal const val EXTERNAL_FETCH_MAX_RELAYS = 15
+        /** Events per filter per relay in one catch-up pass. */
+        internal const val EXTERNAL_FETCH_LIMIT = 500
         internal const val LIVE_EXTERNAL_MAX_RELAYS = 8
         internal const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
         private const val FIRE_AND_FORGET_TIMEOUT_MS = 3_000L
@@ -207,6 +209,7 @@ class DMService @Inject constructor(
     internal var lastBlockedSize = -1
     internal var switchGeneration = 0
     internal var lastExternalFetchTimestamp = 0L
+    internal val externalFetchRunning = java.util.concurrent.atomic.AtomicBoolean(false)
     internal var hasStarted = false
     internal var saveJob: Job? = null
     internal var pendingSaveJob: Job? = null

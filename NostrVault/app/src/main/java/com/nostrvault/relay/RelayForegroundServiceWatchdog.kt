@@ -54,15 +54,26 @@ import kotlinx.coroutines.withContext
                     consecutiveFailures++
                     Log.w(TAG, "Health watchdog: probe failed ($consecutiveFailures/$WATCHDOG_MAX_FAILURES)")
                     if (consecutiveFailures >= WATCHDOG_MAX_FAILURES) {
-                        Log.e(TAG, "Health watchdog: relay unresponsive, triggering restart")
                         _relayStatus.value = RelayStatus.OFFLINE
                         updateNotification(RelayStatus.OFFLINE)
                         lifecycleState = LifecycleState.IDLE
+                        val now = System.currentTimeMillis()
+                        val wait = synchronized(watchdogRestarts) {
+                            WatchdogRestartPolicy.waitBeforeRestart(watchdogRestarts, now)
+                                ?.also { watchdogRestarts.add(now) }
+                        }
+                        if (wait == null) {
+                            Log.e(TAG, "Health watchdog: relay unresponsive after ${WatchdogRestartPolicy.MAX_RESTARTS} restarts in 6 h — leaving it offline until the app starts it")
+                            break
+                        }
+                        Log.e(TAG, "Health watchdog: relay unresponsive, restarting in ${wait / 1000}s")
                         val relayDataDir = File(filesDir, "relay_data")
                         clearDatabaseLocks(relayDataDir)
                         retryCount = 0
                         // Enqueue restart through serviceScope to serialize with other lifecycle ops
                         serviceScope.launch {
+                            delay(wait)
+                            // Skips itself if someone started the relay while we waited.
                             startGoRelay()
                         }
                         break

@@ -117,6 +117,12 @@ import com.nostrvault.service.BlossomService.UploadSource
                 val errorBody = response.body?.string()?.take(500) ?: ""
                 Log.w(TAG, "Mirror $serverUrl returned HTTP ${response.code}: $errorBody")
                 lastError = IOException("HTTP ${response.code}: $errorBody")
+                BlossomRefusals.record(sha256, serverUrl, response.code)
+                // The server refuses this file (too big, payment, forbidden):
+                // sending all of it again gets the same answer.
+                if (com.nostrvault.data.model.MediaPostRetry.isPermanentRefusal(response.code)) {
+                    return@withContext null
+                }
 
                 if (attempt < MAX_UPLOAD_RETRIES - 1) {
                     delay(1000L * (attempt + 1)) // Linear backoff
