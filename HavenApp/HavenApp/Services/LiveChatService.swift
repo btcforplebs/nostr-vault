@@ -20,6 +20,8 @@ final class LiveChatService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var collected: [String: LiveChatMessage] = [:]
     private var address: String?
+    /// Muted from this chat while it was open.
+    private var hidden = Set<String>()
 
     deinit {
         clients.forEach { $0.disconnect() }
@@ -145,6 +147,14 @@ final class LiveChatService: ObservableObject {
         return true
     }
 
+    /// Takes someone's rows out after they are muted from the chat, and
+    /// keeps their later ones out: the block list was read once, at connect.
+    func hide(authorPubkey: String) {
+        hidden.insert(authorPubkey)
+        collected = collected.filter { $0.value.authorPubkey != authorPubkey }
+        messages.removeAll { $0.authorPubkey == authorPubkey }
+    }
+
     // MARK: - Private
 
     /// The stream's own answer first, then the relays that actually carry live
@@ -176,7 +186,7 @@ final class LiveChatService: ObservableObject {
 
         guard let row = LiveChat.message(id: id, pubkey: pubkey, kind: kind, createdAt: createdAt,
                                          content: content, tags: tags),
-              !blocked.contains(row.authorPubkey)
+              !blocked.contains(row.authorPubkey), !hidden.contains(row.authorPubkey)
         else { return }
 
         guard collected[row.id] == nil else { return }

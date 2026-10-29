@@ -10,27 +10,31 @@ struct LiveStreamPlayerView: View {
 
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var chat = LiveChatService()
+    @Environment(\.dismiss) var dismiss
+    @StateObject var chat = LiveChatService()
 
     @State private var showingReportDialog = false
     @State private var showingBlockConfirm = false
-    @State private var reportingMessage: LiveChatMessage?
+    @State var reportingMessage: LiveChatMessage?
     @State private var draft = ""
     @State private var zapSheet: ZapSheetContext?
     @State private var zapFailure: String?
     @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @State private var noLightningAddress = false
-    @FocusState private var composerFocused: Bool
-    @State private var showingBlossomPicker = false
-    @State private var blossomMedia: [MediaItem] = []
-    @State private var isLoadingBlossomMedia = false
+    @FocusState var composerFocused: Bool
+    @State var sheet: LivePlayerSheet?
+    @State var mutingMessage: LiveChatMessage?
+    @State private var attachFailure: String?
+    /// The video fills the screen, sideways on a phone; see `LiveFullScreen`.
+    @State var isFullScreen = false
+    /// In full screen, the chat laid over the right of the video.
+    @State var showsChatOverlay = false
     /// The mini player's player, when this is the stream it has minimized —
     /// read once, as the window opens. The window shows that player's video
     /// instead of opening the stream again: a second player meant the sound
     /// stopped, reconnected and skipped on every pop-out and swipe away
     /// (Logen, 2026-10-05).
-    @State private var miniPlayer: AVPlayer?
+    @State var miniPlayer: AVPlayer?
 
     init(stream: LiveStream, onBlocked: ((String) -> Void)? = nil) {
         self.stream = stream
@@ -39,8 +43,8 @@ struct LiveStreamPlayerView: View {
         _miniPlayer = State(initialValue: mini.liveStream?.address == stream.address ? mini.livePlayer : nil)
     }
 
-    private var profile: FeedProfile? { nostrService.profiles[stream.hostPubkey] }
-    private var hostName: String {
+    var profile: FeedProfile? { nostrService.profiles[stream.hostPubkey] }
+    var hostName: String {
         profile?.bestName ?? "npub…" + String(stream.hostPubkey.suffix(6))
     }
 
@@ -54,53 +58,57 @@ struct LiveStreamPlayerView: View {
                                       sharedPlayer: miniPlayer,
                                       onSharedResume: { MusicPlayerService.shared.resume() })
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                    .overlay(alignment: .topLeading) {
-                        // Minimize: the stream's sound carries on in the mini
-                        // player and on the lock screen while you browse; tap
-                        // Watch in the player to get the video back.
-                        Button(action: listenInBackground) {
-                            Image(systemName: "chevron.down")
-                                .font(.appSystem(size: 16, weight: .bold))
-                                .foregroundColor(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Circle().fill(Color.black.opacity(0.45)))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(6)
-                        .accessibilityLabel("Minimize")
-                        .accessibilityHint("Keeps playing the sound while you browse")
-                    }
+                    .overlay(alignment: .topLeading) { if !isFullScreen { videoControlsLeading } }
+                    .overlay(alignment: .topTrailing) { if !isFullScreen { videoControlsTrailing } }
                     // A 16:9 video sized to the width of a phone in landscape
                     // is taller than the screen, and a VStack that cannot fit
                     // its children pushes the last one — the composer — off the
                     // bottom. Cap the video instead; the chat takes the rest.
-                    .frame(maxWidth: .infinity, maxHeight: 320)
+                    // Full screen lifts the cap: the video is all there is.
+                    .frame(maxWidth: .infinity, maxHeight: isFullScreen ? .infinity : 320)
                     .background(Color.black)
+                    // Only the picture runs under the notch and the corners;
+                    // the controls and the chat over it keep to the safe area.
+                    .ignoresSafeArea(.container, edges: isFullScreen ? .all : [])
             }
 
-            header
-            Divider()
-            chatColumn
+            // Kept after the video in the same stack, so entering full screen
+            // leaves the player where it is instead of building a new one.
+            if !isFullScreen {
+                header
+                Divider()
+                chatColumn
+            }
         }
         // The composer is an inset rather than the last row of the stack, so it
         // is laid out against the safe area and rides above the keyboard
         // instead of being something the rest of the screen can push away.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                composer
+            if !isFullScreen {
+                VStack(spacing: 0) {
+                    Divider()
+                    composer
+                }
+                .background(.regularMaterial)
             }
-            .background(.regularMaterial)
         }
-        .background(Color.platformWindowBackground)
+        .overlay(alignment: .trailing) {
+            if isFullScreen && showsChatOverlay { chatOverlay }
+        }
+        .overlay(alignment: .topLeading) { if isFullScreen { videoControlsLeading } }
+        .overlay(alignment: .topTrailing) { if isFullScreen { videoControlsTrailing } }
+        .background(isFullScreen ? Color.black : Color.platformWindowBackground)
+        #if os(iOS)
+        .statusBarHidden(isFullScreen)
+        .persistentSystemOverlays(isFullScreen ? .hidden : .automatic)
+        #endif
         .onAppear {
             nostrService.fetchMissingProfiles(for: [stream.hostPubkey])
             chat.connect(to: stream)
         }
         .onDisappear {
             chat.disconnect()
+            if isFullScreen { LiveFullScreen.exit() }
             // A shared player is the mini player's, which carries on.
             if miniPlayer == nil { releaseVideo() }
         }
@@ -125,17 +133,8 @@ struct LiveStreamPlayerView: View {
             .environmentObject(nostrService)
             .environmentObject(configService)
         }
-        .sheet(isPresented: $showingBlossomPicker) {
-            BlossomMediaPickerSheet(
-                blossomMedia: $blossomMedia,
-                isLoading: $isLoadingBlossomMedia,
-                onSelect: { item in
-                    insertMedia(item)
-                    showingBlossomPicker = false
-                },
-                onAppearLoad: { loadBlossomMedia() }
-            )
-            .environmentObject(configService)
+        .sheet(item: $sheet) { item in
+            sheetContent(item)
         }
         .sheet(item: $zapSheet) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
@@ -162,6 +161,20 @@ struct LiveStreamPlayerView: View {
         } message: {
             Text("Their streams and posts stop appearing for you.")
         }
+        .alert(muteTitle, isPresented: Binding(get: { mutingMessage != nil }, set: { if !$0 { mutingMessage = nil } })) {
+            Button("Mute", role: .destructive) {
+                if let message = mutingMessage { mute(message.authorPubkey) }
+                mutingMessage = nil
+            }
+            Button("Cancel", role: .cancel) { mutingMessage = nil }
+        } message: {
+            Text("Their messages and posts stop appearing for you. Undo it in Settings, Blocked.")
+        }
+        .alert("Couldn't add that", isPresented: Binding(get: { attachFailure != nil }, set: { if !$0 { attachFailure = nil } })) {
+            Button("OK", role: .cancel) { attachFailure = nil }
+        } message: {
+            Text(attachFailure ?? "")
+        }
         .alert("No Lightning address", isPresented: $noLightningAddress) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -185,48 +198,31 @@ struct LiveStreamPlayerView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-                AvatarView(url: profile?.pictureURL, pubkey: stream.hostPubkey, size: 24)
-                Text(hostName)
-                    .font(.appSystem(size: 12, weight: .semibold))
-                    .lineLimit(1)
+                Button { sheet = .profile(stream.hostPubkey) } label: {
+                    HStack(spacing: 8) {
+                        AvatarView(url: profile?.pictureURL, pubkey: stream.hostPubkey, size: 24)
+                        Text(hostName)
+                            .font(.appSystem(size: 12, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens their profile")
                 if let participants = stream.participants {
                     Text("· \(participants) watching")
                         .font(.appSystem(size: 11))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Menu {
-                    if let link = stream.webLink {
-                        OpenInWebButton(link: link)
-                        Divider()
-                    }
-                    Button {
-                        showingReportDialog = true
-                    } label: {
-                        Label("Report stream", systemImage: "flag")
-                    }
-                    Button(role: .destructive) {
-                        showingBlockConfirm = true
-                    } label: {
-                        Label("Block host", systemImage: "hand.raised")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.appSystem(size: 16))
-                        .foregroundColor(.havenPurple)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                #if os(macOS)
-                // .borderlessButton flattens the label's tint on the Mac.
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .help("More")
-                #else
-                .menuStyle(.borderlessButton)
-                #endif
-                .fixedSize()
+                LiveHostFollowButton(pubkey: stream.hostPubkey, name: hostName)
+                LiveStreamMoreMenu(
+                    stream: stream, hostName: hostName,
+                    onShareAsNote: { sheet = .shareNote(shareNoteText) },
+                    onShareProfile: { sheet = .shareProfile(stream.hostPubkey) },
+                    onReport: { showingReportDialog = true },
+                    onBlock: { showingBlockConfirm = true })
             }
         }
         .padding(.horizontal, 16)
@@ -235,7 +231,7 @@ struct LiveStreamPlayerView: View {
 
     // MARK: - Chat
 
-    private var chatColumn: some View {
+    var chatColumn: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
@@ -248,15 +244,13 @@ struct LiveStreamPlayerView: View {
                     }
                     ForEach(chat.messages) { message in
                         LiveChatRowView(message: message,
-                                        profile: nostrService.profiles[message.authorPubkey])
+                                        profile: nostrService.profiles[message.authorPubkey],
+                                        onOpenProfile: { sheet = .profile($0) },
+                                        // Full screen keeps the phone sideways;
+                                        // the media viewer turns it back upright.
+                                        onOpenMedia: isFullScreen ? nil : { sheet = .media($0) })
                             .id(message.id)
-                            .contextMenu {
-                                Button {
-                                    reportingMessage = message
-                                } label: {
-                                    Label("Report message", systemImage: "flag")
-                                }
-                            }
+                            .contextMenu { chatRowMenu(message) }
                     }
                     // Anchor: scrolling to the last message leaves its bottom
                     // edge flush with the composer, which reads as truncated.
@@ -281,19 +275,12 @@ struct LiveStreamPlayerView: View {
 
     // MARK: - Composer
 
-    private var composer: some View {
+    var composer: some View {
         HStack(spacing: 10) {
-            // Media from your relay's Blossom store, sent as its link.
-            Button {
-                composerFocused = false
-                showingBlossomPicker = true
-            } label: {
-                Image(systemName: "photo.on.rectangle")
-                    .font(.appSystem(size: 17, weight: .semibold))
-                    .foregroundColor(.havenPurple)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add media from your relay")
+            // A photo, video or GIF, sent as its link.
+            LiveChatAttachMenu(onLink: insertMedia(_:),
+                               onError: { attachFailure = $0 },
+                               beforeOpening: { composerFocused = false })
 
             TextField("Say something…", text: $draft)
                 .textFieldStyle(.plain)
@@ -345,30 +332,15 @@ struct LiveStreamPlayerView: View {
         }
     }
 
-    /// The picked file's link goes into the message, on its own line after
-    /// anything already typed, ready to send.
-    private func insertMedia(_ item: MediaItem) {
-        let link = item.shareURL(with: configService).absoluteString
+    /// The picked file's link goes into the message after anything already
+    /// typed, ready to send.
+    private func insertMedia(_ url: URL) {
+        let link = url.absoluteString
         let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = typed.isEmpty ? link : typed + " " + link
     }
 
-    private func loadBlossomMedia() {
-        guard !isLoadingBlossomMedia else { return }
-        let relay = RelayProcessManager.shared
-        guard relay.isRunning && !relay.isBooting else {
-            blossomMedia = []
-            return
-        }
-        isLoadingBlossomMedia = true
-        Task {
-            blossomMedia = await ComposeView.relayBlossomMedia(
-                relayManager: relay, configService: configService, nostrService: nostrService)
-            isLoadingBlossomMedia = false
-        }
-    }
-
-    private func listenInBackground() {
+    func listenInBackground() {
         // Already the mini player's stream: it plays on as it is.
         if miniPlayer != nil { dismiss(); return }
         MusicPlayerService.shared.playLive(stream: stream, item: PlayerTrack(

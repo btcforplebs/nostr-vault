@@ -5,6 +5,10 @@ import SwiftUI
 struct LiveChatRowView: View {
     let message: LiveChatMessage
     let profile: FeedProfile?
+    /// Tapping the avatar or the name opens that person's profile.
+    var onOpenProfile: (String) -> Void = { _ in }
+    /// Tapping a photo, GIF or video opens it large; nil leaves it in place.
+    var onOpenMedia: ((URL) -> Void)? = nil
 
     private var displayName: String {
         profile?.bestName ?? String(message.authorPubkey.prefix(8))
@@ -12,7 +16,11 @@ struct LiveChatRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            AvatarView(url: profile?.pictureURL, pubkey: message.authorPubkey, size: 26)
+            Button { onOpenProfile(message.authorPubkey) } label: {
+                AvatarView(url: profile?.pictureURL, pubkey: message.authorPubkey, size: 26)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(displayName)'s profile")
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -25,23 +33,32 @@ struct LiveChatRowView: View {
                             .foregroundColor(.black)
                             .clipShape(Capsule())
                     }
-                    Text(displayName)
-                        .font(.appSystem(size: 12, weight: .semibold))
-                        .lineLimit(1)
+                    Button { onOpenProfile(message.authorPubkey) } label: {
+                        Text(displayName)
+                            .font(.appSystem(size: 12, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens their profile")
                     Text(Self.timeFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.createdAt))))
                         .font(.appSystem(size: 10))
                         .foregroundColor(.secondary)
                 }
 
-                let parts = Self.split(message.text)
+                let parts = LiveChatMedia.split(message.text)
                 if !parts.text.isEmpty {
                     Text(parts.text)
                         .font(.appSystem(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                ForEach(parts.images, id: \.self) { url in
-                    RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 400, height: 400))
+                // Photos, GIFs and videos at one size, so a busy chat keeps
+                // its rhythm; a GIF plays, a video shows its frame and plays
+                // muted when the owner autoplays videos.
+                ForEach(parts.media, id: \.self) { url in
+                    FeedMediaView(url: url, onTap: onOpenMedia.map { open in { open(url) } },
+                                  isThumbnail: true, animatesThumbnail: true)
                         .frame(width: 180, height: 180)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
@@ -60,21 +77,4 @@ struct LiveChatRowView: View {
         formatter.dateStyle = .none
         return formatter
     }()
-
-    /// Image links come out of the text and show as pictures under it.
-    static func split(_ text: String) -> (text: String, images: [URL]) {
-        var images: [URL] = []
-        var kept: [Substring] = []
-        for word in text.split(separator: " ", omittingEmptySubsequences: false) {
-            let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("https://") || trimmed.hasPrefix("http://"),
-               let url = URL(string: trimmed),
-               SupportedMediaFormats.imageExtensions.contains(url.pathExtension.lowercased()) {
-                if !images.contains(url) { images.append(url) }
-            } else {
-                kept.append(word)
-            }
-        }
-        return (kept.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines), images)
-    }
 }
