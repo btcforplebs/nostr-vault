@@ -18,8 +18,11 @@ struct LiveChatMessage: Identifiable, Equatable {
 
     let id: String
     /// The person to attribute the row to. For a zap that is the payer taken
-    /// from the embedded request, never the receipt's own pubkey.
-    let authorPubkey: String
+    /// from the embedded request, never the receipt's own pubkey. Nil when a
+    /// zap's request is unsigned: then nothing names who paid, and the row
+    /// gets no name, profile or Mute, since a hostile stream could write any
+    /// victim's key there (Tron, PR 1306).
+    let authorPubkey: String?
     let createdAt: Int64
     let text: String
     let payload: Payload
@@ -159,8 +162,15 @@ enum LiveChat {
     }
 
     /// Builds a row from a relay event, or nil if it is not one we render.
+    ///
+    /// The event's own signature must already be checked. `verifyRequest` is
+    /// `NostrEventVerifier.isValid(json:)` in the app; it checks the zap
+    /// request embedded in a receipt, which nothing else signs.
+    /// `streamAddress` is the stream the chat is for: a zap names its payer
+    /// only if their signed request was made for it.
     static func message(id: String, pubkey: String, kind: Int, createdAt: Int64,
-                        content: String, tags: [[String]]) -> LiveChatMessage? {
+                        content: String, tags: [[String]], streamAddress: String? = nil,
+                        verifyRequest: (String) -> Bool = { _ in false }) -> LiveChatMessage? {
         guard !id.isEmpty else { return nil }
 
         if kind == 1311 {
@@ -173,12 +183,20 @@ enum LiveChat {
         guard kind == 9735 else { return nil }
 
         let request = zapRequest(from: tags)
-        // The receipt is signed by the LNURL provider. The payer is in the
-        // embedded request; NIP-57's optional `P` tag is the only other place
-        // it appears, and plenty of providers set neither.
-        let payer = request?.pubkey
-            ?? tags.first { $0.count >= 2 && $0[0] == "P" && !$0[1].isEmpty }?[1]
-            ?? pubkey
+        // The receipt is signed by the LNURL provider, so the payer can only
+        // come from the embedded request, and only when that request carries
+        // the payer's own signature. The receipt's `P` tag and the request's
+        // unsigned pubkey are whatever the receipt's signer wrote. The
+        // request must also name this stream: every request is public, so
+        // a real one from another note could be wrapped in a fresh receipt
+        // (Tron, PR 1306).
+        let description = tags.first { $0.count >= 2 && $0[0] == "description" }?[1]
+        let payer = request.flatMap { request -> String? in
+            guard let streamAddress,
+                  request.tags.contains(where: { $0.count >= 2 && $0[0] == "a" && $0[1] == streamAddress }),
+                  description.map(verifyRequest) == true else { return nil }
+            return request.pubkey
+        }
         let sats = zapAmountSats(receiptTags: tags, requestTags: request?.tags ?? [])
         let comment = (request?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return LiveChatMessage(id: id, authorPubkey: payer, createdAt: createdAt,

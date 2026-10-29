@@ -6,8 +6,11 @@ final class LiveChatTests: XCTestCase {
     private let service = String(repeating: "b2", count: 32)
     private let payer = String(repeating: "c3", count: 32)
 
-    private func zapRequestJSON(pubkey: String, content: String, amountMsat: String?) -> String {
-        var tags: [[String]] = [["p", host]]
+    private var stream: String { LiveChat.address(authorPubkey: host, identifier: "show") }
+
+    private func zapRequestJSON(pubkey: String, content: String, amountMsat: String?,
+                                address: String? = nil) -> String {
+        var tags: [[String]] = [["p", host], ["a", address ?? stream]]
         if let amountMsat { tags.append(["amount", amountMsat]) }
         let object: [String: Any] = ["pubkey": pubkey, "content": content, "tags": tags]
         let data = try! JSONSerialization.data(withJSONObject: object)
@@ -169,20 +172,54 @@ final class LiveChatTests: XCTestCase {
     func testZapIsAttributedToThePayerFromTheEmbeddedRequest() {
         let tags = [["description", zapRequestJSON(pubkey: payer, content: "nice stream", amountMsat: "21000")]]
         let message = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5,
-                                       content: "", tags: tags)
+                                       content: "", tags: tags, streamAddress: stream,
+                                       verifyRequest: { _ in true })
         XCTAssertEqual(message?.authorPubkey, payer)
         XCTAssertEqual(message?.zapSats, 21)
         XCTAssertEqual(message?.text, "nice stream")
     }
 
-    func testZapWithoutADescriptionFallsBackToTheCapitalPTagThenTheReceipt() {
+    /// Whoever signs the receipt writes the request inside it. Unless the
+    /// payer signed that request, it can name anyone, and the row's Mute
+    /// would mute them (Tron, PR 1306).
+    func testZapWithAnUnsignedRequestNamesNobody() {
+        let request = zapRequestJSON(pubkey: payer, content: "https://a.example/x.gif", amountMsat: "21000")
+        var checked: String?
+        let message = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5, content: "",
+                                       tags: [["description", request], ["P", payer]], streamAddress: stream,
+                                       verifyRequest: { checked = $0; return false })
+        XCTAssertEqual(checked, request)
+        XCTAssertNil(message?.authorPubkey)
+        XCTAssertEqual(message?.zapSats, 21)
+        XCTAssertEqual(message?.text, "https://a.example/x.gif")
+    }
+
+    /// Every zap request is public. A real one made for some other note or
+    /// stream, wrapped in a fresh receipt tagged with this stream, must not
+    /// put its payer's name and old comment here (Tron, PR 1306).
+    func testZapWithASignedRequestForAnotherAddressNamesNobody() {
+        let other = LiveChat.address(authorPubkey: host, identifier: "other-show")
+        let request = zapRequestJSON(pubkey: payer, content: "old comment", amountMsat: "21000", address: other)
+        let message = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5, content: "",
+                                       tags: [["description", request], ["a", stream]], streamAddress: stream,
+                                       verifyRequest: { _ in true })
+        XCTAssertNil(message?.authorPubkey)
+
+        let noAddress = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5, content: "",
+                                         tags: [["description", zapRequestJSON(pubkey: payer, content: "", amountMsat: nil)]],
+                                         verifyRequest: { _ in true })
+        XCTAssertNil(noAddress?.authorPubkey)
+    }
+
+    /// Neither the receipt's `P` tag nor its signer is the payer's word.
+    func testZapWithoutADescriptionNamesNobody() {
         let withP = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5, content: "",
-                                     tags: [["P", payer], ["amount", "5000"]])
-        XCTAssertEqual(withP?.authorPubkey, payer)
+                                     tags: [["P", payer], ["amount", "5000"]], verifyRequest: { _ in true })
+        XCTAssertNil(withP?.authorPubkey)
         XCTAssertEqual(withP?.zapSats, 5)
 
         let bare = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5, content: "", tags: [])
-        XCTAssertEqual(bare?.authorPubkey, service)
+        XCTAssertNil(bare?.authorPubkey)
         XCTAssertEqual(bare?.zapSats, 0)
     }
 
@@ -192,7 +229,8 @@ final class LiveChatTests: XCTestCase {
         let dirty = zapRequestJSON(pubkey: payer, content: "hi", amountMsat: "1000")
             .replacingOccurrences(of: "\"hi\"", with: "\"h\u{0007}i\"")
         let message = LiveChat.message(id: "z", pubkey: service, kind: 9735, createdAt: 5,
-                                       content: "", tags: [["description", dirty]])
+                                       content: "", tags: [["description", dirty]], streamAddress: stream,
+                                       verifyRequest: { _ in true })
         XCTAssertEqual(message?.authorPubkey, payer)
         XCTAssertEqual(message?.text, "hi")
     }
