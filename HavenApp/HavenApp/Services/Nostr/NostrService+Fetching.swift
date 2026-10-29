@@ -99,13 +99,18 @@ extension NostrService {
                     guard let self = self else { return }
                     self.updateAggregatedStatus()
                     if state == .connected {
-                        // Reset backoff on successful connection
-                        self.relayReconnectAttempts[urlString] = 0
+                        // The backoff resets when this connection drops after
+                        // staying up long enough (stableConnectionTime), not here.
+                        self.relayConnectedAt[urlString] = Date()
                         self.relaysReconnecting.remove(urlString)
                         self.sendRequest(to: client!, url: url, until: until, since: since, authors: authors)
                     } else if state == .error {
                         self.relaysReconnecting.remove(urlString)
 
+                        if let openedAt = self.relayConnectedAt.removeValue(forKey: urlString),
+                           Date().timeIntervalSince(openedAt) >= self.stableConnectionTime {
+                            self.relayReconnectAttempts[urlString] = 0
+                        }
                         // Increment backoff counter
                         let attempts = (self.relayReconnectAttempts[urlString] ?? 0) + 1
                         self.relayReconnectAttempts[urlString] = attempts
@@ -137,7 +142,7 @@ extension NostrService {
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                             guard let self = self else { return }
                             guard self.clients[urlString] != nil else { return }
-                            self.fetchNotes(from: [url], until: until, authors: authors)
+                            self.fetchNotes(from: [url], until: until, since: since, authors: authors)
                         }
                     }
                 }

@@ -29,6 +29,13 @@ final class FipsMeshService: ObservableObject {
         /// This phone's mesh IP.
         var address: String?
 
+        /// Bytes strangers pulled through the mesh door (own-devices mode).
+        var strangers: Strangers?
+
+        struct Strangers: Decodable {
+            var tx: UInt64
+        }
+
         struct Counters: Decodable {
             var served_open: UInt64
             var served_total: UInt64
@@ -41,14 +48,15 @@ final class FipsMeshService: ObservableObject {
     @Published private(set) var starting = false
     @Published private(set) var status: Status?
     @Published private(set) var lastError: String?
-    /// The mesh used up the serve limit; kiosk mode stays on and shares
-    /// again at this time (KioskCapPause).
+    /// Strangers used up today's serve limit; kiosk mode stays on, My Devices
+    /// keep full access, and strangers are served again at this time
+    /// (KioskCapPause, KioskDailyBudget).
     @Published private(set) var pausedUntil: Date?
-    /// A share-again call is in flight.
-    private var resuming = false
-    /// The relay port kiosk mode shares, kept from the start so a share-again
-    /// call reuses the port that was checked and working.
-    private var kioskPort: UInt16?
+    /// What strangers pulled today, across sessions and launches.
+    private var budget = FipsMeshService.loadBudget()
+    /// The day the running kiosk session started, and took its limit from.
+    private var sessionDay = ""
+    private static let budgetKey = "fipsMesh.kioskDailyBudget"
 
     private var pollTimer: Timer?
     private var resignObserver: NSObjectProtocol?
@@ -139,10 +147,13 @@ final class FipsMeshService: ObservableObject {
         // Own-devices mode, as on the Mac: only My Devices get answers (the
         // home IP goes to no one else) and strangers get the mesh door,
         // capped. Never open: with no other device listed, sharing does not start.
+        // Strangers get only what is left of today (KioskDailyBudget).
+        budget.roll(to: Date())
         guard let options = MeshDevicesLogic.kioskEngineOptions(
             devices: FipsMeshDevices.current(ConfigService.shared.config), ownNpub: ownMeshNpub ?? Self.meshNpubFromKey(),
             relays: FipsMeshSettings.finderRelays, meshDoorPort: door,
-            seeds: FipsMeshSettings.middleServer == .publicSeeds) else {
+            seeds: FipsMeshSettings.middleServer == .publicSeeds,
+            serveBytes: budget.sessionLimit) else {
             lastError = "Add your other phone or your Mac under My Devices first: kiosk mode serves your own devices in full, and anyone else only the photos you post."
             return
         }
@@ -160,7 +171,9 @@ final class FipsMeshService: ObservableObject {
         startGen += 1
         let gen = startGen
         lastError = nil
-        kioskPort = UInt16(exactly: port)
+        budget.engineStarted()
+        sessionDay = budget.day
+        saveBudget()
         let optionsJSON = Self.startOptions(options)
         let previous = engineOp
         engineOp = Task.detached(priority: .userInitiated) {
@@ -189,7 +202,6 @@ final class FipsMeshService: ObservableObject {
         guard kioskActive else { return }
         kioskActive = false
         pausedUntil = nil
-        resuming = false
         UIApplication.shared.isIdleTimerDisabled = false
         pollTimer?.invalidate()
         pollTimer = nil
@@ -311,7 +323,10 @@ final class FipsMeshService: ObservableObject {
             UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
             // print reaches relay.log (stdout), the file pulled off a device.
-            print("FipsMesh: kiosk live, My Devices only, strangers at the mesh door")
+            print("FipsMesh: kiosk live, My Devices only, strangers at the mesh door (\(budget.remaining) bytes left today)")
+            // Today's budget was used up before this start: strangers wait
+            // for tomorrow from the first poll on.
+            if budget.spent { pausedUntil = KioskDailyBudget.nextDay(after: Date()) }
             // Leaving the app ends kiosk mode: iOS would suspend the mesh anyway.
             // A banner or Control Center (willResignActive) does not.
             resignObserver = NotificationCenter.default.addObserver(
@@ -611,52 +626,54 @@ final class FipsMeshService: ObservableObject {
         status = try? JSONDecoder().decode(Status.self, from: Data(String(cString: raw).utf8))
         if let npub = status?.npub { UserDefaults.standard.set(npub, forKey: Self.ownNpubKey) }
         guard kioskActive else { return }
-        // At the limit the engine stops serving by itself. Kiosk mode stays on
-        // and shares again after the cool-down: turning it off would let anyone
-        // who uses up the limit keep the kiosk off until the owner came back.
-        switch KioskCapPause.step(capReached: status?.cap_reached == true, pausedUntil: pausedUntil, resuming: resuming, now: Date()) {
+        if let tx = status?.strangers?.tx {
+            let before = budget
+            budget.record(engineTx: tx, now: Date())
+            if budget != before { saveBudget() }
+        }
+        // At the limit the engine stops serving strangers by itself. Kiosk
+        // mode stays on and shares again when the budget allows: turning it
+        // off would let anyone who uses up the limit keep the kiosk off until
+        // the owner came back.
+        let now = Date()
+        switch KioskCapPause.step(capReached: status?.cap_reached == true, pausedUntil: pausedUntil, now: now, shareAgainAt: {
+            let at = budget.capReached(sessionDay: sessionDay, now: now)
+            saveBudget()
+            return at
+        }) {
         case .none:
             break
         case .pause(let until):
-            let limit = ByteCountFormatter.string(fromByteCount: Int64(status?.max_serve_bytes ?? 0), countStyle: .file)
-            print("FipsMesh: kiosk paused, serve limit \(limit) reached")
+            print("FipsMesh: kiosk paused for strangers, today's serve limit reached, sharing again at \(until)")
             pausedUntil = until
         case .resume:
-            resumeSharing()
+            shareAgain()
         }
     }
 
-    /// Starts a new sharing session on the running engine: a new count, so
-    /// the full limit applies again.
-    private func resumeSharing() {
-        let gen = startGen
-        // startAndShare refused a port that does not fit, so kiosk mode is not live without one.
-        guard let port = kioskPort else { return }
-        resuming = true
-        let previous = engineOp
-        let op = Task.detached(priority: .userInitiated) { () -> Int32 in
-            await previous?.value
-            return NvFipsExport(port)
+    /// Strangers may be served again: a new session, which takes its limit
+    /// from the budget at start, so this is a fresh start rather than the
+    /// engine's share-again (that would keep the old session's limit).
+    private func shareAgain() {
+        print("FipsMesh: kiosk starting a new session for strangers")
+        stopKiosk(republish: false)
+        UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
+        restartingKiosk = true
+        startKiosk()
+        if !starting { kioskRestartFailed() }
+    }
+
+    private static func loadBudget() -> KioskDailyBudget {
+        if let data = UserDefaults.standard.data(forKey: budgetKey),
+           let saved = try? JSONDecoder().decode(KioskDailyBudget.self, from: data) {
+            return saved
         }
-        engineOp = Task { _ = await op.value }
-        Task { @MainActor in
-            let rc = await op.value
-            // Kiosk mode was turned off (or on again) while this ran.
-            guard resuming, gen == startGen, kioskActive else { return }
-            resuming = false
-            if rc == 0 {
-                print("FipsMesh: kiosk sharing again after the cool-down")
-                pausedUntil = nil
-                lastError = nil
-                refresh()
-            } else {
-                // Kiosk mode stays on and tries again after another cool-down:
-                // turning it off here would let a stranger keep it off again.
-                print("FipsMesh: share again failed (\(rc)), trying again after the cool-down")
-                pausedUntil = Date().addingTimeInterval(KioskCapPause.coolDown)
-                lastError = "Could not start sharing again (\(rc)). Trying again in a few minutes."
-            }
-        }
+        return KioskDailyBudget(day: KioskDailyBudget.dayKey(Date()))
+    }
+
+    private func saveBudget() {
+        guard let data = try? JSONEncoder().encode(budget) else { return }
+        UserDefaults.standard.set(data, forKey: Self.budgetKey)
     }
 
     struct MeshError: Error {

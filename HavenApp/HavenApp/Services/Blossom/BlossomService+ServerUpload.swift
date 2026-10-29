@@ -90,6 +90,7 @@ extension BlossomService {
                     return nil
                 } else {
                     let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    BlossomRefusals.shared.record(sha256: sha256, server: url, status: statusCode)
                     let responseBody = String(data: responseData, encoding: .utf8) ?? "(binary)"
                     logger.warning("Upload to \(url) attempt \(attempt + 1)/\(maxRetries) failed with status: \(statusCode), response: \(responseBody)")
                     appLog("upload to \(url) attempt \(attempt + 1)/\(maxRetries) — HTTP \(statusCode): \(responseBody.prefix(200))", level: "WARN")
@@ -207,6 +208,7 @@ extension BlossomService {
                     appLog("preflight inconclusive for \(url) — HTTP \(httpResponse.statusCode), attempting upload anyway", level: "WARN")
                     return true
                 }
+                BlossomRefusals.shared.record(sha256: sha256, server: url, status: httpResponse.statusCode)
                 logger.info("BUD-06: Preflight rejected by \(url) — status \(httpResponse.statusCode), reason: \(reason)")
                 appLog("preflight rejected by \(url) — HTTP \(httpResponse.statusCode), reason: \(reason)", level: "WARN")
                 return false

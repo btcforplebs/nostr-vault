@@ -7,6 +7,10 @@ extension DMService {
     func fetchFromExternalRelays() {
         let ownPubkey = loadedAccountPubkey
         guard !ownPubkey.isEmpty else { return }
+        // A fetch is still running (each relay stays open up to 15 s). The
+        // app's foreground ran this twice, 3 s apart: refresh(), then
+        // syncOnForeground() before the first had stamped its time.
+        guard externalClients.isEmpty else { return }
         backfillSentCopiesIfNeeded()
 
         let generation = self.switchGeneration
@@ -43,6 +47,10 @@ extension DMService {
                 }
             }
         }
+
+        // The cap covers every list above, not only the counterparts': a long
+        // Read or 10002 list used to open them all, each asking for 2 days of wraps.
+        relays = Array(relays.prefix(maxRelays))
 
         #if DEBUG
         print("🌐 Fetching DMs from \(relays.count) external relays...")

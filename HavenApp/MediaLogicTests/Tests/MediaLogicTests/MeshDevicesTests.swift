@@ -228,6 +228,14 @@ final class MeshDevicesTests: XCTestCase {
         XCTAssertNil(opts["peers"])
     }
 
+    func testKioskSendsWhatIsLeftOfTodayAndNeverZero() throws {
+        let devices = [MeshDevice(npub: "npub1mac", name: "Mac", role: .mac)]
+        let left = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: "npub1kiosk", relays: [], meshDoorPort: 4869, serveBytes: 300 << 20))
+        XCTAssertEqual(left["max_serve_bytes"] as? Int64, 300 << 20)
+        let spent = try XCTUnwrap(MeshDevicesLogic.kioskEngineOptions(devices: devices, ownNpub: "npub1kiosk", relays: [], meshDoorPort: 4869, serveBytes: 0))
+        XCTAssertEqual(spent["max_serve_bytes"] as? Int64, 1)
+    }
+
     /// Never an open kiosk: with no other device listed it does not start.
     func testNoDevicesMeansTheKioskDoesNotStart() {
         XCTAssertNil(MeshDevicesLogic.kioskEngineOptions(devices: [], ownNpub: page, relays: [], meshDoorPort: 3356))

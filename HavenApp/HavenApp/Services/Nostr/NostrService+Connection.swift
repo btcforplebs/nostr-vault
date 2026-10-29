@@ -184,6 +184,7 @@ extension NostrService {
         // 5. Clear reconnect backoff state
         relayReconnectAttempts.removeAll()
         relayLastReconnectTime.removeAll()
+        relayConnectedAt.removeAll()
 
         // 6. Notify UI of cleared state
         eventUpdateSubject.send()

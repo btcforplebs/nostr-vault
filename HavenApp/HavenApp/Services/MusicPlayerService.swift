@@ -327,13 +327,22 @@ final class MusicPlayerService: ObservableObject {
     /// A live HLS stream plays through `HLSLowLatencyStripper`: zap.stream's
     /// low-latency playlists fail outright in AVPlayer, and plain live HLS
     /// plays everywhere, a couple of seconds further behind.
+    ///
+    /// Live here is sound only, but a stream's HLS variants carry its video,
+    /// and AVPlayer picks the best one the network allows: 1.5–3 Mbps, 16–32 GB
+    /// a day, kept running by the audio background mode. `SoundOnlyStream`
+    /// holds it to the smallest variant (often audio only).
     private func makeItem(url: URL, isLive: Bool) -> AVPlayerItem {
+        let item: AVPlayerItem
         if isLive, url.pathExtension.lowercased() == "m3u8", let wrapped = HLSLowLatencyStripper.wrap(url) {
             let asset = AVURLAsset(url: wrapped)
             asset.resourceLoader.setDelegate(HLSLowLatencyStripper.shared, queue: HLSLowLatencyStripper.shared.queue)
-            return AVPlayerItem(asset: asset)
+            item = AVPlayerItem(asset: asset)
+        } else {
+            item = AVPlayerItem(url: url)
         }
-        return AVPlayerItem(url: url)
+        if isLive { SoundOnlyStream.limit(item) }
+        return item
     }
 
     private func trackEnded() {

@@ -204,6 +204,12 @@ class NostrService: ObservableObject {
     var relayReconnectAttempts: [String: Int] = [:]
     var relayLastReconnectTime: [String: Date] = [:]
     var relaysReconnecting = Set<String>() // Guard against concurrent reconnects
+    /// When each relay's socket last opened. The backoff resets only for a
+    /// connection that stayed up `stableConnectionTime`: a relay that accepts
+    /// and then drops used to reset it on every open, so it was redialled
+    /// every few seconds forever and sent the whole request each time.
+    var relayConnectedAt: [String: Date] = [:]
+    let stableConnectionTime: TimeInterval = 60
     let maxReconnectAttempts = 10
     let baseReconnectDelay: TimeInterval = 2.0
     let maxReconnectDelay: TimeInterval = 30.0  // Cap at 30s instead of 60s to reduce freeze perception

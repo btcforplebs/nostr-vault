@@ -229,21 +229,22 @@ enum MeshDevicesLogic {
     /// offers, so the home's addresses go to no one else, and are dialed at
     /// start; strangers reach the kiosk through the public seeds, capped,
     /// and get only Haven's mesh door, which serves blobs public notes name.
-    /// `max_serve_bytes` is what strangers together may pull per sharing
+    /// `max_serve_bytes` is what strangers together may pull this sharing
     /// session (own devices are uncapped): a phone's data may be metered,
-    /// and 1 MiB/s alone is 3.6 GB an hour (strangers.rs).
+    /// and 1 MiB/s alone is 3.6 GB an hour (strangers.rs). The kiosk passes
+    /// what is left of today's `KioskDailyBudget`.
     /// Nil with no other device listed: an empty `own_devices` would leave
     /// the kiosk open to anyone, so it does not start.
     /// `seeds` false (middle server None): no seeds, so no visitors reach
     /// the kiosk and follows' vaults are out of reach; own devices still are.
-    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int, seeds: Bool = true) -> [String: Any]? {
+    static func kioskEngineOptions(devices: [MeshDevice], ownNpub: String?, relays: [String], meshDoorPort: Int, seeds: Bool = true, serveBytes: Int64 = kioskStrangersTotal) -> [String: Any]? {
         guard var options = macEngineOptions(devices: devices, ownNpub: ownNpub, relays: relays, meshDoorPort: meshDoorPort) else { return nil }
-        options["max_serve_bytes"] = kioskStrangersTotal
+        options["max_serve_bytes"] = max(1, serveBytes)
         options["public_seeds"] = seeds
         return options
     }
 
-    /// Strangers' total per kiosk sharing session.
+    /// Strangers' total per day, all kiosk sharing sessions together.
     static let kioskStrangersTotal: Int64 = 1 << 30
 
     /// Start options for an iPhone that reads: the Mac and the vaults of

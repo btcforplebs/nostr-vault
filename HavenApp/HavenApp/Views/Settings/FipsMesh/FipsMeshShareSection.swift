@@ -43,7 +43,7 @@ struct FipsMeshShareSection: View {
         } header: {
             Text("Share With Others")
         } footer: {
-            Text("Kiosk mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, at most 1 GB per session (then they wait 3 minutes), and 256 MB each. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
+            Text("Kiosk mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, at most 1 GB a day (then they wait until the next day), and 256 MB each. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
         }
     }
 
@@ -59,7 +59,7 @@ struct FipsMeshShareSection: View {
         }
         .accessibilityElement(children: .combine)
         if let until = mesh.pausedUntil {
-            Text("Paused: the mesh downloaded your limit for one session. Sharing starts again at \(until.formatted(date: .omitted, time: .shortened)).")
+            Text("Paused for others: the mesh downloaded today's limit. Your own devices still reach this vault. Others can read again \(until.formatted(date: .abbreviated, time: .shortened)).")
                 .font(.appCaption)
                 .foregroundColor(.orange)
         }
