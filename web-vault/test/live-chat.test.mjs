@@ -35,6 +35,7 @@ const alice = generateSecretKey(), ALICE = getPublicKey(alice)
 const stream = parseStream(finalizeEvent({ kind: 30311, created_at: NOW, content: "", tags: [["d", "room"], ["title", "Late set"], ["streaming", "https://cdn.example/live/index.m3u8"], ["image", "https://cdn.example/cover.jpg"], ["relays", "wss://relay.example"], ["p", HOST, "", "Host"]] }, service))
 const msg = (sk, text, extra = [], at = NOW) => finalizeEvent({ kind: 1311, created_at: at, content: text, tags: [["a", stream.address], ...extra] }, sk)
 const receipt = (req, over = {}) => finalizeEvent({ kind: 9735, created_at: NOW + 1, content: "", tags: [["p", HOST], ["a", stream.address], ["bolt11", "lnbc210n1x"], ["description", JSON.stringify(req)]], ...over }, service)
+const PUB = new Map([[HOST, SERVICE]]) // the host's zap service publishes their receipts
 const request = (sk, tags = [["a", stream.address]], content = "great set") => finalizeEvent({ kind: 9734, created_at: NOW, content, tags: [["p", HOST], ["amount", "21000"], ...tags] }, sk)
 
 test("every chat event's own signature is checked, and it must be tagged with this stream", () => {
@@ -49,18 +50,18 @@ test("every chat event's own signature is checked, and it must be tagged with th
 })
 
 test("a zap names its payer only when the signed request was made for this stream; else Someone", () => {
-  const ok = chatRow(receipt(request(alice)), stream.address)
+  const ok = chatRow(receipt(request(alice)), stream.address, PUB)
   assert.equal(ok.who, ALICE); assert.equal(ok.sats, 21); assert.equal(ok.text, "great set"); assert.equal(ok.zap, true)
-  const other = chatRow(receipt(request(alice, [["e", "c".repeat(64)]])), stream.address)
+  const other = chatRow(receipt(request(alice, [["e", "c".repeat(64)]])), stream.address, PUB)
   assert.equal(other.who, null, "a real request made for another note, rewrapped for this stream")
   const forged = request(alice); forged.content = "I paid"
-  assert.equal(chatRow(receipt(forged), stream.address).who, null, "a request that no longer verifies")
+  assert.equal(chatRow(receipt(forged), stream.address, PUB).who, null, "a request that no longer verifies")
   const claimed = { ...request(alice), pubkey: HOST }
-  assert.equal(chatRow(receipt(claimed), stream.address).who, null, "a request naming a victim's key it isn't signed by")
+  assert.equal(chatRow(receipt(claimed), stream.address, PUB).who, null, "a request naming a victim's key it isn't signed by")
   assert.equal(payerRequest(receipt(request(alice)), stream.address).pubkey, ALICE)
   assert.equal(chatRow({ ...receipt(request(alice)), content: "x" }, stream.address), null, "the receipt itself is checked too")
   // Someone is never hidden as anyone's, and has nothing to open, mute or report.
-  const rows = chatRows([receipt(claimed), msg(alice, "hi")], stream.address, new Set([HOST]))
+  const rows = chatRows([receipt(claimed), msg(alice, "hi")], stream.address, new Set([HOST]), 200, PUB)
   assert.equal(rows.length, 2, "a blocked host doesn't hide a zap that names nobody")
   assert.ok(rows.some(r => r.who === null))
   assert.deepEqual(rowOffers(rows.find(r => r.who === null), ALICE), { label: "Someone", profile: null, mute: false, report: false })
@@ -106,4 +107,21 @@ test("sharing: the nostrvault.app link by naddr, the host's profile page, and th
   assert.equal(noteText({ hostName: "Ann" }), "Ann is live now")
   const text = shareNoteText(stream)
   assert.match(text, /^Late set, live now with /); assert.match(text, /\nhttps:\/\/cdn\.example\/cover\.jpg\nhttps:\/\/cdn\.example\/live\/index\.m3u8\nnostr:naddr1/)
+})
+
+test("Tron #1309: one real zap request wrapped in forged receipts is one row, and names nobody unless the host's zap service published it", () => {
+  // A public "gm" zap for this stream with no amount tag: whoever wraps it writes any bolt11 they like.
+  const gm = finalizeEvent({ kind: 9734, created_at: NOW, content: "gm", tags: [["p", HOST], ["a", stream.address]] }, alice)
+  const forge = i => { const k = generateSecretKey(); return finalizeEvent({ kind: 9735, created_at: NOW + i, content: "", tags: [["p", HOST], ["a", stream.address], ["bolt11", "lnbc100m1forged"], ["description", JSON.stringify(gm)]] }, k) }
+  const forged = [forge(1), forge(2), forge(3)]
+  const unresolved = chatRows(forged, stream.address, new Set(), 200, new Map([[HOST, null]]))
+  assert.equal(unresolved.length, 1, "three receipts for one request are one zap")
+  assert.equal(unresolved[0].who, null, "no resolved zap service: Someone")
+  const resolved = chatRows(forged, stream.address, new Set(), 200, PUB)
+  assert.equal(resolved.length, 1); assert.equal(resolved[0].who, null, "receipts the host's zap service didn't publish name nobody")
+  const real = finalizeEvent({ kind: 9735, created_at: NOW + 9, content: "", tags: [["p", HOST], ["a", stream.address], ["bolt11", "lnbc210n1x"], ["description", JSON.stringify(gm)]] }, service)
+  const withReal = chatRows([...forged, real], stream.address, new Set(), 200, PUB)
+  assert.equal(withReal.length, 1, "still one row for the request")
+  assert.equal(withReal[0].who, ALICE, "the receipt the host's zap service published names the payer")
+  assert.equal(withReal[0].sats, 21)
 })

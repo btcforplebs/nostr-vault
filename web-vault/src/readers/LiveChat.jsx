@@ -13,7 +13,7 @@ import { useWallet } from "../components/ZapButton.jsx"
 import { fetchProfiles, getProfile } from "../net/profiles.js"
 import { pool } from "../net/pool.js"
 import { formatSats } from "../net/notifications.js"
-import { receiptTrust, zap, PRESET_SATS } from "../net/zaps.js"
+import { receiptTrust, zap, zapPublisherOf, PRESET_SATS } from "../net/zaps.js"
 import { setBlock } from "../net/blocks.js"
 import { mediaServers, uploadPhoto } from "../net/upload.js"
 import { appendClientTag } from "../net/client-tag.js"
@@ -45,8 +45,11 @@ export function useLiveChat(ctx, s) {
     const redraw = async () => {
       // Receipts also have to come from the payee's zap service (net/zaps.js trustedReceipts) to count at all.
       const ok = await trust([...evs.values()])
+      // Each payee's zap service, resolved once: a zap names its payer only from a receipt that service published.
+      const payees = [...new Set(ok.filter(ev => ev.kind === 9735).map(ev => ev.tags.find(t => t[0] === "p")?.[1]).filter(Boolean))]
+      const publishers = new Map(await Promise.all(payees.map(async pk => [pk, await zapPublisherOf(ctx, pk).catch(() => null)])))
       if (!live) return
-      const shown = chatRows(ok, s.address, blocked)
+      const shown = chatRows(ok, s.address, blocked, 200, publishers)
       setRows(shown)
       fetchProfiles(ctx.vault, shown.map(r => r.who).filter(Boolean), ctx.account.relays.read, { save: false }).catch(() => {})
     }

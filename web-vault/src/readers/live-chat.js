@@ -2,7 +2,10 @@
 // with Tron's must-fixes from that review:
 // - every chat event's own signature is checked, and it must carry this stream's exact `a` tag;
 // - a zap names its payer only when the zap request inside the receipt is signed by them AND was made for this stream
-//   (its own `a` tag), else the row says "Someone" and has no profile, Mute or Report;
+//   (its own `a` tag) AND the receipt comes from the payee's own zap service (their LNURL's nostrPubkey), else the row
+//   says "Someone" and has no profile, Mute or Report;
+// - one row per zap request: a real public request wrapped in any number of forged receipts is still one zap (Tron,
+//   PR 1309: three forged 9735s around one "gm" request gave three rows at 10,000,000 sats each);
 // - a message shows at most MAX_MEDIA pictures or videos, and any further links stay as text.
 import { verifyEvent } from "nostr-tools/pure"
 import { naddrEncode, npubEncode } from "nostr-tools/nip19"
@@ -37,30 +40,41 @@ export function payerRequest(receipt, address) {
   return req
 }
 
+/** The zap request a receipt carries, parsed but not trusted, or null. */
+const requestIn = receipt => { try { const r = JSON.parse((receipt.tags ?? []).find(t => t[0] === "description")?.[1] ?? ""); return r && typeof r === "object" ? r : null } catch { return null } }
+const payeeOf = ev => (ev.tags ?? []).find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))?.[1] ?? null
+
 /**
  * A chat row from a relay event, or null when it doesn't belong: unsigned or mis-signed, not tagged with this
- * stream's address, or not a message or zap. -> { id, who: pubkey | null, at, text, sats, zap, event }
+ * stream's address, or not a message or zap. `publishers` maps a payee to their zap service's pubkey (zaps.js
+ * zapPublisherOf), null when it didn't resolve: a zap names its payer only from a receipt that service published.
+ * -> { id, who: pubkey | null, at, text, sats, zap, request: id | null, event }
  */
-export function chatRow(ev, address) {
+export function chatRow(ev, address, publishers = new Map()) {
   if (!ev?.id || !forStream(ev.tags, address) || !signed(ev)) return null
   if (ev.kind === CHAT_KIND) {
     const text = String(ev.content ?? "").trim()
-    return text ? { id: ev.id, who: ev.pubkey, at: ev.created_at, text, sats: 0, zap: false, event: ev } : null
+    return text ? { id: ev.id, who: ev.pubkey, at: ev.created_at, text, sats: 0, zap: false, request: null, event: ev } : null
   }
   if (ev.kind !== 9735) return null
-  const req = payerRequest(ev, address)
-  let comment = ""
-  try { comment = String(JSON.parse((ev.tags ?? []).find(t => t[0] === "description")?.[1] ?? "{}")?.content ?? "").trim() } catch {}
-  return { id: ev.id, who: req?.pubkey ?? null, at: ev.created_at, text: req ? String(req.content ?? "").trim() : comment, sats: zapSats(ev), zap: true, event: ev }
+  const raw = requestIn(ev)
+  const publisher = publishers.get(payeeOf(ev))
+  const req = publisher && publisher === ev.pubkey ? payerRequest(ev, address) : null
+  return { id: ev.id, who: req?.pubkey ?? null, at: ev.created_at, text: String(raw?.content ?? "").trim(), sats: zapSats(ev), zap: true,
+    request: typeof raw?.id === "string" ? raw.id : null, event: ev }
 }
 
-/** Rows oldest first, once each, blocked and muted people left out, the newest `max` kept. A zap naming nobody is
- *  never hidden as anyone's. */
-export function chatRows(evs, address, hidden = new Set(), max = 200) {
+/** Rows oldest first, once each (a zap once per zap request), blocked and muted people left out, the newest `max`
+ *  kept. A zap naming nobody is never hidden as anyone's. Of several receipts for one request, the one that names its
+ *  payer is kept, else the earliest. */
+export function chatRows(evs, address, hidden = new Set(), max = 200, publishers = new Map()) {
   const by = new Map()
-  for (const ev of evs) {
-    const r = chatRow(ev, address)
-    if (r && !(r.who && hidden.has(r.who)) && !by.has(r.id)) by.set(r.id, r)
+  const rows = evs.map(ev => chatRow(ev, address, publishers)).filter(Boolean).sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
+  for (const r of rows) {
+    if (r.who && hidden.has(r.who)) continue
+    const key = r.request ? `req:${r.request}` : r.id
+    const have = by.get(key)
+    if (!have || (!have.who && r.who)) by.set(key, r)
   }
   return [...by.values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)).slice(-max)
 }

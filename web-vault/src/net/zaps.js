@@ -249,6 +249,9 @@ export async function trustedReceipts(events, lnOf, fetchImpl = globalThis.fetch
 }
 /** How many payees' zap services trustedReceipts asks at once. */
 export const TRUST_PARALLEL = 8
+/** The zap service pubkey that publishes `recipient`'s receipts (their LNURL's nostrPubkey), or null when it doesn't
+ *  resolve. Asked once per recipient per session. */
+export const zapPublisherOf = (ctx, recipient, fetchImpl = globalThis.fetch) => publisherOf(recipient, pk => lightningAddressOf(ctx, pk), fetchImpl)
 /** trustedReceipts for this account's screens. */
 export const receiptTrust = ctx => evs => trustedReceipts(evs, pk => lightningAddressOf(ctx, pk))
 
