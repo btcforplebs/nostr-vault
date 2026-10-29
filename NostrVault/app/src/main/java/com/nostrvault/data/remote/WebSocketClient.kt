@@ -62,6 +62,16 @@ class WebSocketClient(
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val INITIAL_BACKOFF_MS = 1000L
         private const val SLOW_RETRY_INTERVAL_MS = 120_000L // 2 minutes between slow retries
+        /**
+         * A connection counts as healthy, and the backoff starts over, only
+         * once it has stayed up this long. Resetting on open made a relay that
+         * accepts and then drops get redialled every second, forever.
+         */
+        internal const val STABLE_CONNECTION_MS = 60_000L
+
+        /** Whether a socket that opened at [openedAtMs] and closed at [nowMs] earns a fresh backoff. */
+        internal fun stayedUp(openedAtMs: Long, nowMs: Long): Boolean =
+            openedAtMs > 0 && nowMs - openedAtMs >= STABLE_CONNECTION_MS
 
         /** Hosts [sharedLocalhostClient]'s hostname verifier accepts. */
         fun isLocalOrLanHost(url: String): Boolean {
@@ -108,6 +118,7 @@ class WebSocketClient(
     private val socketLock = Any()
     private var webSocket: WebSocket? = null
     private var reconnectAttempts = 0
+    @Volatile private var openedAtMs = 0L
     private var reconnectJob: Job? = null
     private var shouldReconnect = true
     @Volatile private var refusedByBlocklist = false
@@ -192,7 +203,7 @@ class WebSocketClient(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (BuildConfig.DEBUG) Log.d(TAG, "Connected to $url")
                 _connectionState.value = ConnectionState.CONNECTED
-                reconnectAttempts = 0
+                openedAtMs = System.currentTimeMillis()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -235,6 +246,8 @@ class WebSocketClient(
     }
 
     private fun scheduleReconnect() {
+        if (stayedUp(openedAtMs, System.currentTimeMillis())) reconnectAttempts = 0
+        openedAtMs = 0L
         if (!shouldReconnect || !autoReconnect) return
 
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {

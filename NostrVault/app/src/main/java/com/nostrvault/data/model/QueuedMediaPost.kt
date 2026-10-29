@@ -49,6 +49,11 @@ data class QueuedMediaPost(
     val attempts: Int = 0,
     /** Epoch milliseconds of the last retry, if any. */
     val lastAttempt: Long? = null,
+    /**
+     * The HTTP code with which every mirror refused the file on the last try.
+     * Set, the post no longer retries by itself ([MediaPostRetry]).
+     */
+    val refusedStatus: Int? = null,
 ) {
     @Serializable
     data class Media(

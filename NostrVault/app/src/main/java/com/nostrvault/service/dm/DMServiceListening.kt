@@ -167,16 +167,24 @@ import com.nostrvault.service.DMService.Companion.TAG
     }
 
     /**
-     * Periodic catch-up safety net. Runs on the scope's default dispatcher
-     * (Main.immediate) so all access to liveExternalClients stays single-threaded;
-     * fetchFromExternalRelays() offloads its own heavy work to Dispatchers.IO.
+     * Periodic catch-up safety net while the app is on screen. Runs on the
+     * scope's default dispatcher (Main.immediate) so all access to
+     * liveExternalClients stays single-threaded; fetchFromExternalRelays()
+     * offloads its own heavy work to Dispatchers.IO.
+     *
+     * In the background it skips: each pass re-asks up to 15 relays for two
+     * days of gift wraps, which around the clock came to gigabytes a month.
+     * The live sockets still bring new DMs, and coming back to the app runs a
+     * catch-up (MainActivity.onStart).
      */
     private fun DMService.startPeriodicSync() {
         periodicSyncJob?.cancel()
         periodicSyncJob = scope.launch {
             while (isActive) {
                 delay(PERIODIC_SYNC_INTERVAL_MS)
-                syncOnForeground()
+                val onScreen = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                    .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                if (onScreen) syncOnForeground()
             }
         }
     }

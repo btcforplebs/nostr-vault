@@ -6,9 +6,15 @@ import android.net.Network
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.MediaPostRetry
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
 import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.QueuedMediaPost
+import com.nostrvault.data.model.isDue
+import com.nostrvault.data.model.needsUser
+import com.nostrvault.data.model.nextAttemptAt
+import com.nostrvault.data.model.resetForUserRetry
+import com.nostrvault.data.model.waitsForWifi
 import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -36,8 +42,11 @@ import javax.inject.Singleton
  *
  * Retries whenever there is a reason to think a server might now answer: the
  * app comes to the foreground ([MainActivity.onStart]), a network becomes
- * available, and every minute while anything is waiting. The queue is on disk,
- * so a relaunch keeps it. Port of `MediaPostQueue.swift`.
+ * available, or the post's wait is over. Each try uploads the whole file, so
+ * the wait doubles up to six hours, the post stops by itself after ten tries or
+ * a refusal, and a big post waits for Wi-Fi ([MediaPostRetry]); the user can
+ * send it again ([sendNow]). The queue is on disk, so a relaunch keeps it.
+ * Port of `MediaPostQueue.swift`.
  */
 @Singleton
 class MediaPostQueue @Inject constructor(
@@ -51,7 +60,8 @@ class MediaPostQueue @Inject constructor(
     companion object {
         private const val TAG = "MediaPostQueue"
         private const val FILE_NAME = "queued_media_posts.json"
-        private const val RETRY_INTERVAL_MS = 60_000L
+        /** The longest the timer sleeps between looks for a post whose wait is over; a look costs nothing. */
+        private const val TICK_MS = 60_000L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -95,14 +105,18 @@ class MediaPostQueue @Inject constructor(
 
     @Synchronized
     private fun updateTimer() {
-        if (_posts.value.isEmpty()) {
+        if (_posts.value.none { it.nextAttemptAt != null }) {
             timerJob?.cancel()
             timerJob = null
         } else if (timerJob?.isActive != true) {
             timerJob = scope.launch {
                 while (isActive) {
-                    delay(RETRY_INTERVAL_MS)
-                    if (_posts.value.isEmpty()) break
+                    // Wake when the next post is due (a fixed tick landed a few
+                    // ms early and added a minute to every wait); a post already
+                    // due is waiting for Wi-Fi, so look again in a minute.
+                    val next = _posts.value.mapNotNull { it.nextAttemptAt }.minOrNull() ?: break
+                    val wait = next - System.currentTimeMillis()
+                    delay(if (wait <= 0) TICK_MS else wait.coerceAtMost(TICK_MS))
                     retryAll("timer")
                 }
             }
@@ -121,6 +135,13 @@ class MediaPostQueue @Inject constructor(
         start()
     }
 
+    /** The user asked: every post tries now, including ones that stopped or wait for Wi-Fi. */
+    fun sendNow() {
+        _posts.update { list -> list.map { it.resetForUserRetry() } }
+        saveToDisk()
+        retryAll("user")
+    }
+
     fun discard(id: String) {
         _posts.update { list -> list.filterNot { it.id == id } }
         saveToDisk()
@@ -128,18 +149,30 @@ class MediaPostQueue @Inject constructor(
         log("discarded waiting post ${id.take(8)}")
     }
 
+    /** True on a metered network (cellular, a phone hotspot), where big uploads wait. */
+    private fun onMeteredNetwork(): Boolean = try {
+        (context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).isActiveNetworkMetered
+    } catch (e: Exception) {
+        false
+    }
+
     /**
-     * Try every waiting post once. Posts are sent one at a time, oldest first,
-     * so they reach relays in the order they were written.
+     * Try every post whose wait is over once ([reason] "user" tries them all,
+     * on any network). Posts are sent one at a time, oldest first, so they
+     * reach relays in the order they were written.
      */
     fun retryAll(reason: String) {
-        if (_posts.value.isEmpty()) return
+        val userAsked = reason == "user"
+        val now = System.currentTimeMillis()
+        val metered = !userAsked && onMeteredNetwork()
+        val due = _posts.value.filter { userAsked || (it.isDue(now) && !it.waitsForWifi(metered)) }
+        if (due.isEmpty()) return
         if (!retrying.compareAndSet(false, true)) return
         scope.launch {
             try {
-                log("retrying ${_posts.value.size} waiting post(s) — $reason")
+                log("retrying ${due.size} of ${_posts.value.size} waiting post(s) — $reason")
                 val activeNpub = configStore.config.value.activeOrOwnerNpub()
-                for (post in _posts.value.sortedBy { it.createdAt }) {
+                for (post in due.sortedBy { it.createdAt }) {
                     // Another account's post waits for that account; it must not
                     // hold up the active account's posts behind it.
                     if (post.accountNpub != activeNpub) continue
@@ -172,8 +205,22 @@ class MediaPostQueue @Inject constructor(
         for ((index, item) in post.media.withIndex()) {
             if (item.url != null) continue
             val sha256 = item.sha256 ?: continue
+            BlossomRefusals.clear(sha256)
             val url = blossomService.hostWaitingBlob(sha256, item.mimeType ?: "application/octet-stream")
-                ?: return false
+            if (url == null) {
+                val statuses = BlossomRefusals.take(sha256)
+                val mirrors = configStore.config.value.activeBlossomMirrors
+                if (MediaPostRetry.allRefused(mirrors, statuses)) {
+                    post = post.copy(refusedStatus = mirrors.firstNotNullOfOrNull { statuses[it] })
+                    log("waiting post ${id.take(8)}: every media server refused the file ($statuses) — stopped, waiting for you", Log.WARN)
+                } else if (post.needsUser) {
+                    log("waiting post ${id.take(8)}: stopped after ${post.attempts} tries — waiting for you", Log.WARN)
+                } else {
+                    log("waiting post ${id.take(8)}: try ${post.attempts} failed — next in ${MediaPostRetry.delayMs(post.attempts) / 60_000} min")
+                }
+                update(post)
+                return false
+            }
             post = post.copy(media = post.media.toMutableList().also { it[index] = item.copy(url = url) })
             // Persist each hosted URL at once, so a crash between two
             // attachments doesn't upload the first one again.

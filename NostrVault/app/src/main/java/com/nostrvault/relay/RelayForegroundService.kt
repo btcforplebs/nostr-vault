@@ -62,8 +62,9 @@ class RelayForegroundService : Service() {
         internal const val SHUTDOWN_TIMEOUT_MS = 5_000L
         private const val CRASH_RESTART_WINDOW_MS = 30_000L
         private const val CRASH_RESTART_DELAY_MS = 3_000L
-        private const val PREFS_NAME = "relay_lifecycle"
-        private const val PREF_LAST_START_TIME = "last_start_time"
+        internal const val PREFS_NAME = "relay_lifecycle"
+        internal const val PREF_WATCHDOG_RESTARTS = "watchdog_restarts"
+        internal const val PREF_LAST_START_TIME = "last_start_time"
 
         internal const val WATCHDOG_INTERVAL_MS = 30_000L   // check every 30s
         internal const val WATCHDOG_PROBE_TIMEOUT_MS = 2_000 // TCP probe timeout
@@ -314,6 +315,8 @@ class RelayForegroundService : Service() {
     @Volatile internal var lifecycleState = LifecycleState.IDLE
     @Volatile internal var isShuttingDown = false
     internal var retryCount = 0
+    /** When the health watchdog restarted the relay ([WatchdogRestartPolicy]). */
+    internal val watchdogRestarts = mutableListOf<Long>()
     internal var currentRelayPort = 3355
 
     internal val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -397,6 +400,14 @@ class RelayForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // Someone started the relay: the watchdog's restart count starts over.
+        // A START_STICKY restart (null intent) is the system, not someone.
+        val stickyWait = if (intent != null) {
+            clearWatchdogRestarts()
+            0L
+        } else {
+            stickyRestartWait(CRASH_RESTART_WINDOW_MS)
+        }
 
         try {
             // ServiceCompat drops the type argument below API 29, where the
@@ -425,6 +436,12 @@ class RelayForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (stickyWait == null) {
+            Log.e(TAG, "Relay restarted itself ${WatchdogRestartPolicy.MAX_RESTARTS} times in 6 h — leaving it offline until the app starts it")
+            _relayStatus.value = RelayStatus.OFFLINE
+            stopSelf()
+            return START_NOT_STICKY
+        }
         acquireWakeLock()
 
         // If relay is already running (e.g. service restarted by the system or
@@ -448,6 +465,10 @@ class RelayForegroundService : Service() {
             if (elapsed in 1 until CRASH_RESTART_WINDOW_MS) {
                 Log.w(TAG, "Rapid restart detected (last start ${elapsed}ms ago), delaying ${CRASH_RESTART_DELAY_MS}ms")
                 delay(CRASH_RESTART_DELAY_MS)
+            }
+            if (stickyWait > 0) {
+                Log.w(TAG, "Crash-loop restart, waiting ${stickyWait / 1000}s first")
+                delay(stickyWait)
             }
             prefs.edit().putLong(PREF_LAST_START_TIME, System.currentTimeMillis()).apply()
 

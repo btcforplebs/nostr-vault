@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.music
 
+import com.nostrvault.ui.components.setSoundOnly
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,13 +52,11 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     val livePlayer = minimizedStream?.takeIf { windowOpen == null }?.let { MusicPlayer.livePlayer(it.address) }
     // Minimized, the stream plays sound only: decoding its picture for the
     // corner made the feed unscrollable on the Moto (Logen, 2026-10-23). The
-    // video track is switched off, so nothing is decoded; the stream window
-    // switches it back on when it takes the stream back (LiveStreamScreen).
+    // video track is switched off, so nothing is decoded, and the smallest
+    // variant is fetched; the stream window switches both back when it takes
+    // the stream back (LiveStreamScreen).
     LaunchedEffect(livePlayer) {
-        val p = livePlayer ?: return@LaunchedEffect
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_VIDEO, true)
-            .build()
+        livePlayer?.setSoundOnly(true)
     }
 
     Box(

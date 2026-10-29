@@ -40,6 +40,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import com.nostrvault.ui.components.VideoCache.cachedFor
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.nostrvault.MainActivity
 import com.nostrvault.ui.theme.Motion
@@ -138,6 +139,29 @@ fun VideoPlayer(
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
+    }
+
+    // Off screen it stops: a looping video kept playing (and downloading)
+    // behind a locked phone. A PiP window keeps the activity started, so PiP
+    // plays on. Back on screen, a video this paused plays again.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(exoPlayer, lifecycleOwner) {
+        var pausedOffScreen = false
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> if (exoPlayer.playWhenReady) {
+                    pausedOffScreen = true
+                    exoPlayer.pause()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_START -> if (pausedOffScreen) {
+                    pausedOffScreen = false
+                    exoPlayer.play()
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // With sound, the video takes it over and the mini player pauses; muted,
@@ -374,7 +398,7 @@ internal fun buildLoopingExoPlayer(
     /** MIME from the event — lets an extensionless HLS link be opened as one. */
     mimeType: String? = null,
 ): ExoPlayer =
-    ExoPlayer.Builder(context).build().apply {
+    ExoPlayer.Builder(context).cachedFor(context, uri, mimeType).build().apply {
         setMediaItem(
             MediaItem.Builder()
                 .setUri(Uri.parse(uri))
