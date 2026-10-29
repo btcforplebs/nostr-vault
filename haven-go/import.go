@@ -292,16 +292,28 @@ func subscribeInboxAndChat(ctx context.Context) {
 
 	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
 
+	// The negentropy reconciliation window. Wider than the watermark on
+	// purpose: NIP-59 gift wraps randomize created_at up to 2 days into the
+	// past, and a relay that was down during earlier pulls may hold events the
+	// watermark has already moved past. ID-set reconciliation makes the wide
+	// window cheap — already-known IDs transfer as fingerprints, not events.
+	syncSince := func() nostr.Timestamp {
+		return nostr.Timestamp(time.Now().Add(-time.Duration(config.SyncWindowDays+2) * 24 * time.Hour).Unix())
+	}
+
 	// Watermarks of the newest event we've stored, one for tagged/inbox events
 	// and one for the owner's own (outbox) events. Both the live subscription
 	// and the periodic/on-demand catch-up resume from here, so a dropped
 	// connection no longer loses events: on reconnect we backfill from the
-	// watermark instead of a fixed 24h window.
+	// watermark instead of a fixed 24h window. They are saved after every
+	// round, so a restart resumes from the last round rather than replaying
+	// the last 24 h.
+	state := openSyncState(fs, inboxSyncStateFile)
 	startTs := time.Now().Add(-24 * time.Hour).Unix()
 	var lastSeen atomic.Int64      // tagged / inbox events
 	var lastSeenOwner atomic.Int64 // owner-authored events
-	lastSeen.Store(startTs)
-	lastSeenOwner.Store(startTs)
+	lastSeen.Store(state.mark("inbox", startTs, int64(syncSince())))
+	lastSeenOwner.Store(state.mark("owner", startTs, int64(syncSince())))
 	advance := func(wm *atomic.Int64, ts nostr.Timestamp) {
 		for {
 			cur := wm.Load()
@@ -331,10 +343,13 @@ func subscribeInboxAndChat(ctx context.Context) {
 	// this (notifier=nil ⇒ notify immediately).
 	notifier := &batchNotifier{}
 
-	// In-memory record of WoT/blacklist rejects, folded into the negentropy
-	// vector so they aren't re-downloaded every round. Not persisted: a restart
-	// clears it exactly when the WoT is rebuilt and rejects deserve re-checking.
+	// Record of WoT/blacklist rejects, folded into the negentropy vector so
+	// they aren't re-downloaded every round. Saved with the watermarks: each
+	// round's reevaluate re-offers any whose author the WoT has since
+	// admitted, so keeping them across a restart loses nothing, and dropping
+	// them made every start re-download the whole window's rejects.
 	rejects := &tempRejects{}
+	state.loadRejects(rejects, syncSince())
 
 	inboxStore := &inboxNegStore{
 		inbox:    wdbInbox,
@@ -353,53 +368,41 @@ func subscribeInboxAndChat(ctx context.Context) {
 	// inboxCatchup re-fetches tagged events (replies, reactions, zaps, reposts,
 	// mentions, gift-wrap DMs) published since the inbox watermark. Fallback
 	// path for relays without NIP-77.
-	inboxCatchup := func(relayList []string) {
-		since := nostr.Timestamp(lastSeen.Load() - 60) // 60s overlap to avoid boundary misses
-		// Widen to cover backdated gift-wrap DMs on relays without NIP-77 (the
-		// negentropy path already covers them with its wide window).
-		if floor := nostr.Timestamp(time.Now().Add(-giftWrapBackdateSlack).Unix()); floor < since {
-			since = floor
-		}
+	//
+	// It reports whether any relay answered (EOSE). deep reaches back at least
+	// 24 h, the recovery the in-memory watermark used to get from every
+	// restart: a relay that was down while the others answered may hold
+	// events the watermark has moved past.
+	firstFallback := true
+	inboxCatchup := func(relayList []string, deep bool) bool {
+		since := fallbackInboxSince(lastSeen.Load(), firstFallback, deep, time.Now())
+		firstFallback = false
 		filter := nostr.Filter{
 			Tags:  nostr.TagMap{"p": pTags},
 			Since: &since,
 		}
 		log.Println("📢 inbox catch-up pull since", time.Unix(int64(since), 0).Format(time.RFC3339), "on", len(relayList), "relays")
-		for ev := range pool.FetchMany(ctx, relayList, filter) {
-			if ctx.Err() != nil {
-				return
-			}
+		return fetchAnswered(ctx, relayList, filter, func(ev nostr.RelayEvent) {
 			processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
-		}
+		}) > 0
 	}
 
 	// ownerCatchup re-fetches the owner's own events (notes, profile, follow
 	// list, reactions, reposts) published since the owner watermark — e.g. posts
 	// made from another client under the same key — into the outbox DB.
-	ownerCatchup := func(relayList []string) {
-		since := nostr.Timestamp(lastSeenOwner.Load() - 60)
+	// Same answer and deep rules as inboxCatchup.
+	ownerCatchup := func(relayList []string, deep bool) bool {
+		since := fallbackInboxSince(lastSeenOwner.Load(), false, deep, time.Now())
 		filter := nostr.Filter{
 			Authors: pTags,
 			Since:   &since,
 		}
 		log.Println("📢 owner catch-up pull since", time.Unix(int64(since), 0).Format(time.RFC3339), "on", len(relayList), "relays")
-		for ev := range pool.FetchMany(ctx, relayList, filter) {
-			if ctx.Err() != nil {
-				return
-			}
+		return fetchAnswered(ctx, relayList, filter, func(ev nostr.RelayEvent) {
 			processOwnerEvent(ctx, ev, wdbOutbox)
 			advance(&lastSeenOwner, ev.CreatedAt)
-		}
-	}
-
-	// The negentropy reconciliation window. Wider than the watermark on
-	// purpose: NIP-59 gift wraps randomize created_at up to 2 days into the
-	// past, and a relay that was down during earlier pulls may hold events the
-	// watermark has already moved past. ID-set reconciliation makes the wide
-	// window cheap — already-known IDs transfer as fingerprints, not events.
-	syncSince := func() nostr.Timestamp {
-		return nostr.Timestamp(time.Now().Add(-time.Duration(config.SyncWindowDays+2) * 24 * time.Hour).Unix())
+		}) > 0
 	}
 
 	isSeedRelay := func(url string) bool {
@@ -498,16 +501,31 @@ func subscribeInboxAndChat(ctx context.Context) {
 		} else {
 			fallback = relays
 		}
+		// The watermarks only move to roundStart when the plain pulls were
+		// answered: an offline phone's rounds reach no relay, and moving them
+		// anyway would skip that gap once it is back online.
+		fallbackAnswered := true
+		deep := dailyDue(state, "fallback_deep", time.Now())
 		if len(fallback) > 0 && ctx.Err() == nil {
-			inboxCatchup(fallback)
-			ownerCatchup(fallback)
+			inboxOK := inboxCatchup(fallback, deep)
+			ownerOK := ownerCatchup(fallback, deep)
+			fallbackAnswered = inboxOK && ownerOK
+			if fallbackAnswered && deep {
+				state.setMark("fallback_deep", int64(roundStart))
+			}
 		}
 		// Receipts for zaps you sent tag you with `P`, which neither the
 		// negentropy filter nor the catch-up above asks for.
+		givenDone := false
+		givenFull := dailyDue(state, "given_zaps_full", time.Now())
 		if ctx.Err() == nil {
-			givenSince := syncSince()
-			for ev := range pool.FetchMany(ctx, relays, givenZapsFilter(pTags, &givenSince)) {
+			givenSince := givenZapsSince(state, syncSince(), givenFull)
+			answered := fetchAnswered(ctx, relays, givenZapsFilter(pTags, &givenSince), func(ev nostr.RelayEvent) {
 				processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects, false)
+			})
+			givenDone = ctx.Err() == nil && answered > 0
+			if givenDone && givenFull {
+				state.setMark("given_zaps_full", int64(roundStart))
 			}
 		}
 		// Advance both watermarks to the start of this round regardless of
@@ -517,7 +535,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 		// and every cycle re-queried an ever-widening historical window —
 		// expanding downloads and 100% CPU. advance() is monotonic, so this only
 		// ever moves the watermarks forward.
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && fallbackAnswered {
 			advance(&lastSeen, roundStart)
 			advance(&lastSeenOwner, roundStart)
 		}
@@ -525,6 +543,13 @@ func subscribeInboxAndChat(ctx context.Context) {
 		// without limit over the process's lifetime (stubs older than the window
 		// are never offered anyway).
 		rejects.prune(syncSince())
+		state.setMark("inbox", lastSeen.Load())
+		state.setMark("owner", lastSeenOwner.Load())
+		if givenDone {
+			state.setMark("given_zaps", int64(roundStart))
+		}
+		state.keepRejects(rejects)
+		state.save()
 		notifier.flush(announce)
 		// A round materializes the full windowed local set per relay (the
 		// negentropy vector build); hand the spike back to the OS instead of
@@ -690,6 +715,50 @@ func subscribeInboxAndChat(ctx context.Context) {
 	}
 }
 
+// fallbackInboxSince is where a plain (non-NIP-77) pull starts: the
+// watermark less a minute's overlap. The first inbox pull of a relay start
+// widens it to cover gift-wrap DMs backdated up to two days; after that the
+// live gift-wrap subscription, which replays those two days on every reopen,
+// catches them. Widening every round re-downloaded two days of tagged events
+// from these relays every 15 minutes. A deep pull (once a day, see
+// dailyDue) reaches back at least 24 h.
+func fallbackInboxSince(lastSeen int64, first, deep bool, now time.Time) nostr.Timestamp {
+	since := nostr.Timestamp(lastSeen - 60)
+	if floor := nostr.Timestamp(now.Add(-giftWrapBackdateSlack).Unix()); first && floor < since {
+		since = floor
+	}
+	if floor := nostr.Timestamp(now.Add(-dailyPullEvery).Unix()); deep && floor < since {
+		since = floor
+	}
+	return since
+}
+
+// dailyPullEvery is how often a watermarked pull goes back over the whole of
+// its window, for relays that were down while others answered.
+const dailyPullEvery = 24 * time.Hour
+
+// dailyDue reports whether the once-a-day pull saved under key is due. The
+// caller saves roundStart under key once such a pull was answered.
+func dailyDue(state *syncState, key string, now time.Time) bool {
+	last := state.mark(key, 0, 0)
+	return now.Unix()-last >= int64(dailyPullEvery/time.Second)
+}
+
+// givenZapsSince is where the pull of receipts for zaps you sent starts: the
+// whole window when full (first pull, then once a day), else the last
+// answered round less 10 minutes. It used to fetch the whole 32 days from
+// every relay every round.
+func givenZapsSince(state *syncState, window nostr.Timestamp, full bool) nostr.Timestamp {
+	if full {
+		return window
+	}
+	since := nostr.Timestamp(state.mark("given_zaps", int64(window), int64(window)))
+	if since > window {
+		since -= 600
+	}
+	return since
+}
+
 // liveWrapSettle is how long a gift-wrap subscription waits for every relay's
 // EOSE before treating what arrives as live. A dead relay in the set never
 // sends EOSE, and without a cap no new DM would ever count as live.
@@ -703,7 +772,7 @@ const liveWrapSettle = 30 * time.Second
 // Duplicates are skipped in processInboxEvent, so the overlap with the main
 // subscription and with each reconnect's re-sent window costs nothing.
 func subscribeLiveGiftWraps(ctx context.Context, relays, pTags []string, wdbInbox, wdbChat eventstore.RelayWrapper, rejects *tempRejects) {
-	backoff := time.Second
+	var backoff time.Duration
 	for ctx.Err() == nil {
 		since := nostr.Timestamp(time.Now().Add(-giftWrapBackdateSlack).Unix())
 		filter := nostr.Filter{
@@ -714,9 +783,8 @@ func subscribeLiveGiftWraps(ctx context.Context, relays, pTags []string, wdbInbo
 		eose := make(chan struct{})
 		settled := time.After(liveWrapSettle)
 		live := false
-		sawEvent := false
+		opened := time.Now()
 		for ev := range pool.SubscribeManyNotifyEOSE(ctx, slices.Clone(relays), filter, eose) {
-			sawEvent = true
 			if !live {
 				select {
 				case <-eose:
@@ -731,17 +799,16 @@ func subscribeLiveGiftWraps(ctx context.Context, relays, pTags []string, wdbInbo
 		if ctx.Err() != nil {
 			return
 		}
-		if sawEvent {
-			backoff = time.Second
-		}
-		log.Println("📢 gift-wrap subscription closed, reconnecting in", backoff)
+		// Every reopen re-sends the two-day window, so a relay that replays
+		// it and drops the socket must back off like the inbox one does:
+		// resetting on "saw an event" kept this at one second forever.
+		var wait time.Duration
+		wait, backoff = nextResubscribeBackoff(backoff, time.Since(opened))
+		log.Println("📢 gift-wrap subscription closed, reconnecting in", wait)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
-		}
-		if backoff < 60*time.Second {
-			backoff *= 2
+		case <-time.After(wait):
 		}
 	}
 }

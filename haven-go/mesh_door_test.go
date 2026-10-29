@@ -270,12 +270,18 @@ func TestBlastQueueSurvivesRestart(t *testing.T) {
 	srv := httptest.NewServer(live)
 	defer srv.Close()
 
+	// Each try waits out the note's backoff, so move the clock past it.
+	clock := time.Now()
+	blastClock = func() time.Time { return clock }
+	t.Cleanup(func() { blastClock = time.Now })
+	clock = clock.Add(blastBackoffMax)
 	retryPendingOnce(ctx, q) // still offline: stays queued
 	if len(q.snapshot()) != 1 {
 		t.Fatal("note dropped while every relay was down")
 	}
 
 	config.BlastrRelays = []string{"ws" + strings.TrimPrefix(srv.URL, "http")}
+	clock = clock.Add(blastBackoffMax)
 	retryPendingOnce(ctx, q)
 	select {
 	case id := <-got:

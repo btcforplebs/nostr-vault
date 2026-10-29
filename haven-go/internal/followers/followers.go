@@ -268,6 +268,14 @@ func (l *Ledger) SweepDue(every time.Duration) bool {
 	return l.now().Unix()-l.lastSweep >= int64(every/time.Second)
 }
 
+// LastSweep is when the last unfollow sweep finished (unix seconds, 0 if
+// never).
+func (l *Ledger) LastSweep() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.lastSweep
+}
+
 // MarkSwept records a finished unfollow sweep.
 func (l *Ledger) MarkSwept() {
 	l.mu.Lock()
