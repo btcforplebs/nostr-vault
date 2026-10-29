@@ -59,6 +59,19 @@ import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.screens.dm.DMAttachment
 import com.nostrvault.ui.theme.*
+import android.net.Uri
+import com.nostrvault.ui.screens.live.LiveChat
+import com.nostrvault.ui.screens.live.LiveChatMediaButton
+import com.nostrvault.ui.screens.live.LiveFollowButton
+import com.nostrvault.ui.screens.live.LiveFullScreen
+import com.nostrvault.ui.screens.live.LiveMuteConfirm
+import com.nostrvault.ui.screens.live.LiveShareButton
+import com.nostrvault.ui.screens.live.LiveStreamLeave
+import com.nostrvault.ui.screens.live.LiveStreamShare
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.Fullscreen
+import com.nostrvault.ui.screens.live.LiveStreamViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,8 +109,16 @@ fun LiveStreamScreen(
     var showReportStream by remember { mutableStateOf(false) }
     var showBlockConfirm by remember { mutableStateOf(false) }
     var reportingMessage by remember { mutableStateOf<LiveChatService.ChatEntry?>(null) }
-    var showBlossomPicker by remember { mutableStateOf(false) }
+    val followed by viewModel.followed.collectAsState()
+    val blocked by viewModel.blocked.collectAsState()
+    val uploading by viewModel.uploading.collectAsState()
+    val saveGifsToBlossom by viewModel.saveGifsToBlossom.collectAsState()
+    var fullScreen by rememberSaveable { mutableStateOf(false) }
+    // Muting publishes the mute list, so it asks first.
+    var muting by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
+    // Muted chatters drop out of the room as soon as they are muted.
+    val shownMessages = remember(messages, blocked) { messages.filter { it.pubkey !in blocked } }
 
     // Chat is joined for exactly as long as this screen is up.
     DisposableEffect(stream?.address) {
@@ -173,6 +194,42 @@ fun LiveStreamScreen(
         }
     }
 
+    // Somewhere else in the app (a profile, the composer): the stream carries on
+    // in the mini player, the player closes, and the nav host opens the route.
+    fun leaveFor(open: () -> Unit) {
+        val s = stream ?: return
+        LiveStreamLeave.minimize(s, hostName, chatProfiles[s.hostPubkey]?.pictureURL, alreadyMini = sharedPlayer != null)
+        open()
+        onBack()
+    }
+    // Only a real key leaves the player: a route is built from it.
+    val openProfile: (String) -> Unit = { pk ->
+        if (LiveStreamLeave.isPubkey(pk)) leaveFor { LiveStreamLeave.openProfile(pk) }
+    }
+
+    if (fullScreen && stream != null && player != null) {
+        LiveFullScreen(
+            player = player,
+            messages = shownMessages,
+            profiles = chatProfiles,
+            onExit = { fullScreen = false },
+            onOpenProfile = openProfile,
+            onMute = { muting = it },
+            onReport = { reportingMessage = it },
+        )
+        muting?.let { pk -> LiveMuteConfirm(chatProfiles[pk]?.bestName, onConfirm = { muting = null; viewModel.muteChatter(pk) }, onDismiss = { muting = null }) }
+        reportingMessage?.let { entry ->
+            UGCReportDialog(
+                onReport = { reason, description ->
+                    reportingMessage = null
+                    viewModel.reportMessage(entry, reason, description)
+                },
+                onDismiss = { reportingMessage = null },
+            )
+        }
+        return
+    }
+
     Scaffold(
         containerColor = WindowBackground,
         topBar = {
@@ -224,20 +281,8 @@ fun LiveStreamScreen(
                 IconButton(
                     onClick = {
                         // Already the mini player's stream: it plays on as it is.
-                        if (sharedPlayer == null) MusicPlayer.playLive(
-                            stream,
-                            PlayerTrack(
-                                id = "live:${stream.address}",
-                                title = stream.title ?: "Live stream",
-                                artist = hostName ?: ("npub…" + stream.hostPubkey.takeLast(6)),
-                                artworkUrl = stream.imageUrl
-                                    ?: stream.previewImageUrls.firstOrNull()
-                                    ?: chatProfiles[stream.hostPubkey]?.pictureURL,
-                                audioUrl = stream.streamingUrl ?: return@IconButton,
-                                durationSec = null,
-                                isLive = true,
-                                hostPubkey = stream.hostPubkey,
-                            ),
+                        LiveStreamLeave.minimize(
+                            stream, hostName, chatProfiles[stream.hostPubkey]?.pictureURL, alreadyMini = sharedPlayer != null,
                         )
                         onBack()
                     },
@@ -256,6 +301,24 @@ fun LiveStreamScreen(
                         )
                     }
                 }
+                // Sideways and edge to edge, the chat hidden or over the video.
+                IconButton(
+                    onClick = { focusManager.clearFocus(); fullScreen = true },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                    ) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Filled.Fullscreen,
+                            contentDescription = "Full screen",
+                            tint = Color.White,
+                        )
+                    }
+                }
             }
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -269,15 +332,34 @@ fun LiveStreamScreen(
                             maxLines = 2,
                         )
                         Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = buildString {
-                                append(hostName ?: stream.hostPubkey.take(8))
-                                stream.participants?.let { append(" · $it watching") }
-                            },
-                            color = SecondaryText,
-                            fontSize = 13.sp,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = buildString {
+                                    append(hostName ?: stream.hostPubkey.take(8))
+                                    stream.participants?.let { append(" · $it watching") }
+                                },
+                                color = SecondaryText,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .clickable(onClickLabel = "Open the streamer's profile") { openProfile(stream.hostPubkey) },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            LiveFollowButton(
+                                following = stream.hostPubkey in followed,
+                                onToggle = { viewModel.toggleFollow(stream.hostPubkey) },
+                            )
+                        }
                     }
+                    LiveShareButton(
+                        stream = stream,
+                        hostName = hostName,
+                        onShareAsNote = { leaveFor { LiveStreamLeave.compose(LiveStreamShare.noteText(stream)) } },
+                        onOpenHost = { openProfile(stream.hostPubkey) },
+                        onCopied = { viewModel.showStatus("Link copied") },
+                    )
                     // The report and block affordances any surface showing
                     // third-party video needs. iOS: LiveStreamPlayerView header.
                     Box {
@@ -328,9 +410,11 @@ fun LiveStreamScreen(
             HorizontalDivider(color = colors.primary.copy(alpha = 0.12f))
 
             LiveChat(
-                messages = messages,
+                messages = shownMessages,
                 profiles = chatProfiles,
                 onReport = { reportingMessage = it },
+                onOpenProfile = openProfile,
+                onMute = { muting = it },
                 // Touching the chat, to tap or drag it, puts the keyboard away.
                 modifier = Modifier
                     .weight(1f)
@@ -352,19 +436,24 @@ fun LiveStreamScreen(
                     // no room is kept for it.
                     .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             ) {
-                // Media from your relay's Blossom store, sent as its link.
-                IconButton(
-                    onClick = {
-                        focusManager.clearFocus()
-                        showBlossomPicker = true
-                    },
-                ) {
-                    Icon(
-                        imageVector = NostrVaultIcons.Media,
-                        contentDescription = "Add media from your relay",
-                        tint = colors.primary,
-                    )
+                // A photo, video or GIF, or something from your Vault, sent as its link.
+                val addLink: (String) -> Unit = { link ->
+                    val typed = chatInput.trim()
+                    chatInput = if (typed.isEmpty()) link else "$typed $link"
                 }
+                LiveChatMediaButton(
+                    uploading = uploading,
+                    onBeforeOpen = { focusManager.clearFocus() },
+                    onLink = addLink,
+                    upload = { uri -> viewModel.uploadChatMedia(uri, addLink) },
+                    uploadFile = { file, mime ->
+                        viewModel.uploadChatMedia(Uri.fromFile(file), addLink, mimeType = mime, deleteAfter = file)
+                    },
+                    saveGifsToBlossom = saveGifsToBlossom,
+                    onSaveGifsToBlossomChange = viewModel::setSaveGifsToBlossom,
+                    onError = { viewModel.showStatus(it) },
+                    loadVaultItems = viewModel::loadBlossomMedia,
+                )
                 OutlinedTextField(
                     value = chatInput,
                     onValueChange = { chatInput = it },
@@ -412,6 +501,7 @@ fun LiveStreamScreen(
                 onDismiss = { reportingMessage = null },
             )
         }
+        muting?.let { pk -> LiveMuteConfirm(chatProfiles[pk]?.bestName, onConfirm = { muting = null; viewModel.muteChatter(pk) }, onDismiss = { muting = null }) }
         if (showBlockConfirm) {
             AlertDialog(
                 onDismissRequest = { showBlockConfirm = false },
@@ -430,20 +520,6 @@ fun LiveStreamScreen(
             )
         }
 
-        if (showBlossomPicker) {
-            BlossomMediaPickerSheet(
-                onDismiss = { showBlossomPicker = false },
-                onSelect = { item ->
-                    // The link goes after anything already typed, ready to send.
-                    val typed = chatInput.trim()
-                    val link = blossomShareLink(item)
-                    chatInput = if (typed.isEmpty()) link else "$typed $link"
-                    showBlossomPicker = false
-                },
-                loadItems = viewModel::loadBlossomMedia,
-            )
-        }
-
         if (showZapSheet) {
             // The shared zap sheet, starting on the Wallet default (iOS
             // LiveFeedViews CustomZapSheet(defaultAmount:)).
@@ -456,254 +532,6 @@ fun LiveStreamScreen(
                     viewModel.zap(stream, sats)
                 },
             )
-        }
-    }
-}
-/**
- * The room. Chat lines and zaps share one list because that is how a live
- * audience experiences them — a 5,000 sat zap is a louder message, not a
- * separate feature.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun LiveChat(
-    messages: List<LiveChatService.ChatEntry>,
-    profiles: Map<String, FeedProfile>,
-    /** Long-press a line to report it. */
-    onReport: (LiveChatService.ChatEntry) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = LocalNostrVaultColors.current
-    val listState = rememberLazyListState()
-
-    // Follow the conversation, the way every chat does.
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-    }
-
-    if (messages.isEmpty()) {
-        Box(contentAlignment = Alignment.Center, modifier = modifier.fillMaxWidth()) {
-            Text("No messages yet. Say hello.", color = SecondaryText, fontSize = 13.sp)
-        }
-        return
-    }
-
-    // iOS: 8 between rows, 10 above and below the list.
-    LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(vertical = 6.dp),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        items(messages, key = { it.id }) { entry ->
-            val name = profiles[entry.pubkey]?.bestName ?: entry.pubkey.take(8)
-            var showMenu by remember { mutableStateOf(false) }
-            Box {
-                // iOS LiveChatRowView: a 26 avatar, then the name and time over
-                // the text, with a zap shown as an orange capsule on a tinted row.
-                val isZap = entry.zapSats != null
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = { showMenu = true },
-                            onLongClickLabel = "Message options",
-                        )
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .then(
-                            if (isZap) {
-                                Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(ZapOrange.copy(alpha = 0.12f))
-                                    .padding(8.dp)
-                            } else Modifier,
-                        ),
-                ) {
-                    AvatarImage(
-                        url = profiles[entry.pubkey]?.pictureURL,
-                        pubkey = entry.pubkey,
-                        size = 26.dp,
-                        displayName = name,
-                    )
-                    // Image links come out of the text and show as pictures
-                    // under it, whoever sent them.
-                    val parts = remember(entry.content) { DMAttachment.split(entry.content) }
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (entry.zapSats != null) {
-                                Text(
-                                    // A zap whose amount the receipt did not carry still
-                                    // happened — show the bolt, not a zero.
-                                    text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
-                                    color = Color.Black,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .clip(CircleShape)
-                                        .background(ZapOrange.copy(alpha = 0.9f))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
-                            Text(
-                                text = name,
-                                color = PrimaryText,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                            Text(
-                                text = remember(entry.createdAt) { chatTime(entry.createdAt) },
-                                color = SecondaryText,
-                                fontSize = 10.sp,
-                            )
-                        }
-                        if (parts.text.isNotEmpty()) {
-                            Text(
-                                text = parts.text,
-                                color = PrimaryText,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp,
-                            )
-                        }
-                        parts.images.forEach { url ->
-                            AsyncImage(
-                                model = url,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(top = 4.dp)
-                                    .size(180.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                            )
-                        }
-                    }
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Report message") },
-                        leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
-                        onClick = {
-                            showMenu = false
-                            onReport(entry)
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** A chat line's time, short style in the phone's locale (iOS `timeStyle = .short`). */
-private fun chatTime(createdAtSecs: Long): String =
-    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(createdAtSecs * 1000))
-
-/**
- * Chat and zaps for the stream on screen.
- *
- * Joining connects to the streaming relays for as long as this screen is up;
- * leaving disconnects. A live room's traffic is not something to keep a socket
- * open for behind a screen nobody is watching.
- */
-@HiltViewModel
-class LiveStreamViewModel @Inject constructor(
-    private val liveChatService: LiveChatService,
-    private val zapSendService: ZapSendService,
-    private val nostrService: NostrService,
-    private val feedService: FeedService,
-    private val blossomPickerMedia: BlossomPickerMedia,
-    private val liveFeedService: LiveFeedService,
-    private val configStore: ConfigStore,
-) : ViewModel() {
-
-    /** Wallet settings' default zap, in sats: where the zap sheet starts. */
-    fun defaultZapAmount(): Int = configStore.config.value.defaultZapAmount
-
-    val messages: StateFlow<List<LiveChatService.ChatEntry>> = liveChatService.messages
-
-    /** Media for the chat's Blossom picker, the same list the composer shows. */
-    suspend fun loadBlossomMedia(): List<BlossomMediaItem> = blossomPickerMedia.load()
-    val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
-
-    private val _status = MutableStateFlow<String?>(null)
-    val status: StateFlow<String?> = _status.asStateFlow()
-
-    private val _sending = MutableStateFlow(false)
-    val sending: StateFlow<Boolean> = _sending.asStateFlow()
-
-    fun join(stream: LiveStream) {
-        // One view model serves every stream opened (LiveStreamHost sits
-        // outside the nav graph), so the last stream's "Zapped" must not carry over.
-        _status.value = null
-        liveChatService.join(stream)
-    }
-
-    fun leave() = liveChatService.leave()
-
-    fun send(stream: LiveStream, text: String) {
-        viewModelScope.launch {
-            _sending.value = true
-            val ok = liveChatService.send(stream, text)
-            _sending.value = false
-            if (!ok) _status.value = "Could not send — no relay accepted it"
-        }
-    }
-
-    /**
-     * Zap the stream's host. The stream address goes on the zap request so the
-     * receipt lands in this room's chat rather than only in the host's notes.
-     */
-    fun zap(stream: LiveStream, sats: Int) {
-        viewModelScope.launch {
-            _status.value = "Zapping $sats sats…"
-            val result = zapSendService.zapNote(
-                noteId = "",
-                notePubkey = stream.hostPubkey,
-                amountSats = sats,
-                message = "Zap from Nostr Vault",
-                addressTag = stream.address,
-            )
-            _status.value = result.fold(
-                onSuccess = { "Zapped $sats sats" },
-                onFailure = { it.message ?: "Zap failed" },
-            )
-        }
-    }
-
-    fun clearStatus() { _status.value = null }
-
-    /**
-     * NIP-56 report of the stream's host (the stream event has no id to hand),
-     * then a block, as reporting does everywhere else in the app.
-     */
-    fun reportHost(stream: LiveStream, reason: String, description: String) {
-        viewModelScope.launch {
-            nostrService.reportUser(stream.hostPubkey, reason, description.ifBlank { null })
-            feedService.blockUser(stream.hostPubkey)
-            liveFeedService.removeStreams(byHost = stream.hostPubkey)
-        }
-    }
-
-    fun blockHost(stream: LiveStream) {
-        viewModelScope.launch {
-            feedService.blockUser(stream.hostPubkey)
-            liveFeedService.removeStreams(byHost = stream.hostPubkey)
-        }
-    }
-
-    /**
-     * Reports the event that carries the text — the receipt, for a zap line,
-     * which is attributed to the payer — and blocks its author.
-     */
-    fun reportMessage(entry: LiveChatService.ChatEntry, reason: String, description: String) {
-        viewModelScope.launch {
-            nostrService.reportEvent(entry.id, entry.pubkey, reason, description.ifBlank { null })
-            feedService.blockUser(entry.pubkey)
         }
     }
 }
