@@ -335,6 +335,7 @@ fun FeedScreen(
         feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()
+        viewModel.resortThreads()
         // Scroll toward the top right away; if the animation
         // outruns the prepend, the reveal effect snaps the
         // last bit once the new first note composes.
