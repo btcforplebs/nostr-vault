@@ -9,9 +9,6 @@ struct BlossomSettingsView: View {
     @ObservedObject private var waitingPosts = MediaPostQueue.shared
 
     @State private var newMirrorURL = ""
-    #if os(iOS)
-    @State private var isVPNActive = false
-    #endif
     
     var body: some View {
         Form {
@@ -240,15 +237,7 @@ struct BlossomSettingsView: View {
             }
             #else
             Section {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(isVPNActive ? Color.havenOnline : Color.gray)
-                        .frame(width: 8, height: 8)
-                    Text(isVPNActive ? "VPN active" : "No VPN detected")
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
-                }
-                Text("To access media from .fips servers, enable your FIPS VPN (e.g. nostr-vpn) and add the server's .fips address as an Additional Server above.")
+                Text("To load media from a .fips server, turn on Mesh under FIPS Mesh, then add the server's .fips address under Other Servers above.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
                 FipsMeshLinkRow()
@@ -259,29 +248,9 @@ struct BlossomSettingsView: View {
         }
         .groupedFormStyleCompat()
         #if os(iOS)
-        .onAppear { isVPNActive = Self.checkVPNActive() }
-        #endif
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
     }
-
-    #if os(iOS)
-    static func checkVPNActive() -> Bool {
-        var addrs: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addrs) == 0 else { return false }
-        defer { freeifaddrs(addrs) }
-        var ptr = addrs
-        while let addr = ptr {
-            let name = String(cString: addr.pointee.ifa_name)
-            if name.hasPrefix("utun") || name.hasPrefix("ipsec") || name.hasPrefix("ppp") {
-                return true
-            }
-            ptr = addr.pointee.ifa_next
-        }
-        return false
-    }
-    #endif
     
     private func addMirror(_ typed: String) {
         var trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)

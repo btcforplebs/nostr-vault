@@ -3101,10 +3101,10 @@
     "This will stop the relay, delete all data (database, logs), and reset settings to default." : {
 
     },
-    "To access media from .fips servers, enable your FIPS VPN (e.g. nostr-vpn) and add the server's .fips address as an Additional Server above." : {
+    "To keep the tunnel running in the background, use `brew services start cloudflared` or add it to your login items." : {
 
     },
-    "To keep the tunnel running in the background, use `brew services start cloudflared` or add it to your login items." : {
+    "To load media from a .fips server, turn on Mesh under FIPS Mesh, then add the server's .fips address under Other Servers above." : {
 
     },
     "To report objectionable content or abusive users, contact the developer via Nostr" : {
