@@ -70,6 +70,11 @@ extension FeedNoteRow {
             // The plain path drew the passage as if the highlighter wrote it,
             // with nothing saying where it came from.
             HighlightInlineBody(note: bodySource, isFocused: isFocused)
+        } else if bodySource.kind == SnoObject.kind {
+            // A DECK-0003 3D object: its content is geometry JSON, which the
+            // plain-text path printed raw. Only the thread page turns it by
+            // hand; anywhere else a drag belongs to the scroll.
+            SnoObjectView(note: bodySource, interactive: isFocused)
         } else if let poll = bodySource.poll {
             // A NIP-88 poll's question is its content and its options are
             // tags, so the plain-text path drew the question with nothing
