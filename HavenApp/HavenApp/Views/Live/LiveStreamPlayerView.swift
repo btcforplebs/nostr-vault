@@ -126,7 +126,8 @@ struct LiveStreamPlayerView: View {
         .sheet(item: $reportingMessage) { message in
             // A zap row is attributed to the payer, so report the id of the
             // event that actually carries the text — the receipt, for a zap.
-            UGCReportingDialog(eventId: message.id, pubkey: message.authorPubkey,
+            // The menu only offers Report on a row with a proven author.
+            UGCReportingDialog(eventId: message.id, pubkey: message.authorPubkey ?? "",
                                onDismiss: { reportingMessage = nil }) {
                 reportingMessage = nil
             }
@@ -163,7 +164,7 @@ struct LiveStreamPlayerView: View {
         }
         .alert(muteTitle, isPresented: Binding(get: { mutingMessage != nil }, set: { if !$0 { mutingMessage = nil } })) {
             Button("Mute", role: .destructive) {
-                if let message = mutingMessage { mute(message.authorPubkey) }
+                if let author = mutingMessage?.authorPubkey { mute(author) }
                 mutingMessage = nil
             }
             Button("Cancel", role: .cancel) { mutingMessage = nil }
@@ -244,7 +245,7 @@ struct LiveStreamPlayerView: View {
                     }
                     ForEach(chat.messages) { message in
                         LiveChatRowView(message: message,
-                                        profile: nostrService.profiles[message.authorPubkey],
+                                        profile: message.authorPubkey.flatMap { nostrService.profiles[$0] },
                                         onOpenProfile: { sheet = .profile($0) },
                                         // Full screen keeps the phone sideways;
                                         // the media viewer turns it back upright.

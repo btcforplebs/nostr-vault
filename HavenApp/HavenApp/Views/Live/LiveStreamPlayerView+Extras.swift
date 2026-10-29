@@ -92,19 +92,23 @@ extension LiveStreamPlayerView {
 
     // MARK: - Chat rows
 
+    /// Empty for a zap whose payer is unproven: there is nobody to open,
+    /// mute or report.
     @ViewBuilder
     func chatRowMenu(_ message: LiveChatMessage) -> some View {
-        let name = nostrService.profiles[message.authorPubkey]?.bestName ?? "this person"
-        Button { sheet = .profile(message.authorPubkey) } label: {
-            Label("View \(name)'s profile", systemImage: "person.crop.circle")
-        }
-        if message.authorPubkey != configService.activeAccountHexPubkey {
-            Button { mutingMessage = message } label: {
-                Label("Mute \(name)", systemImage: "speaker.slash")
+        if let author = message.authorPubkey {
+            let name = nostrService.profiles[author]?.bestName ?? "this person"
+            Button { sheet = .profile(author) } label: {
+                Label("View \(name)'s profile", systemImage: "person.crop.circle")
             }
-        }
-        Button { reportingMessage = message } label: {
-            Label("Report message", systemImage: "flag")
+            if author != configService.activeAccountHexPubkey {
+                Button { mutingMessage = message } label: {
+                    Label("Mute \(name)", systemImage: "speaker.slash")
+                }
+            }
+            Button { reportingMessage = message } label: {
+                Label("Report message", systemImage: "flag")
+            }
         }
     }
 

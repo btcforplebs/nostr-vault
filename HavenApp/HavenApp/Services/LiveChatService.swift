@@ -22,6 +22,9 @@ final class LiveChatService: ObservableObject {
     private var address: String?
     /// Muted from this chat while it was open.
     private var hidden = Set<String>()
+    /// Signatures are checked here, not on main: a busy stream answers with
+    /// a hundred events from each of five relays.
+    private static let verifyQueue = DispatchQueue(label: "com.haven.live-chat-verify", qos: .userInitiated)
 
     deinit {
         clients.forEach { $0.disconnect() }
@@ -50,13 +53,16 @@ final class LiveChatService: ObservableObject {
             client.isTemporary = true
             clients.append(client)
 
-            // Every relay's messages land on the main actor before they touch
-            // `collected`, which is what keeps five simultaneous answers from
-            // racing on one dictionary.
+            // Rows are parsed and verified on `verifyQueue`, then land on the
+            // main actor before they touch `collected`, which is what keeps
+            // five simultaneous answers from racing on one dictionary.
+            let address = stream.address
             client.messageSubject
+                .receive(on: Self.verifyQueue)
+                .compactMap { Self.verifiedRow(message: $0, address: address) }
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] message in
-                    self?.handle(message: message, blocked: blocked)
+                .sink { [weak self] row in
+                    self?.handle(row: row, address: address, blocked: blocked)
                 }
                 .store(in: &cancellables)
 
@@ -165,9 +171,12 @@ final class LiveChatService: ObservableObject {
             .compactMap { URL(string: $0) }
     }
 
-    private func handle(message: String, blocked: Set<String>) {
-        guard let address,
-              let data = message.data(using: .utf8),
+    /// Runs on `verifyQueue`. A row only exists if its event is signed by the
+    /// pubkey it claims: the stream chooses the first relays this chat reads,
+    /// so a hostile stream could otherwise put words, and a Mute button, under
+    /// anyone's name. A zap's payer needs the embedded request's signature too.
+    nonisolated private static func verifiedRow(message: String, address: String) -> LiveChatMessage? {
+        guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String,
               type == "EVENT", json.count >= 3,
@@ -178,17 +187,25 @@ final class LiveChatService: ObservableObject {
               let kind = event["kind"] as? Int,
               let tags = event["tags"] as? [[String]],
               let content = event["content"] as? String
-        else { return }
+        else { return nil }
 
         // A relay is free to answer a `#a` filter loosely; only rows tagged with
         // this exact stream belong in this chat.
-        guard tags.contains(where: { $0.count >= 2 && $0[0] == "a" && $0[1] == address }) else { return }
+        guard tags.contains(where: { $0.count >= 2 && $0[0] == "a" && $0[1] == address }),
+              NostrEventVerifier.isValid(event)
+        else { return nil }
 
-        guard let row = LiveChat.message(id: id, pubkey: pubkey, kind: kind, createdAt: createdAt,
-                                         content: content, tags: tags),
-              !blocked.contains(row.authorPubkey), !hidden.contains(row.authorPubkey)
-        else { return }
+        return LiveChat.message(id: id, pubkey: pubkey, kind: kind, createdAt: createdAt,
+                                content: content, tags: tags,
+                                verifyRequest: NostrEventVerifier.isValid(json:))
+    }
 
+    private func handle(row: LiveChatMessage, address: String, blocked: Set<String>) {
+        // A late answer from the stream that was open before.
+        guard self.address == address else { return }
+        if let author = row.authorPubkey {
+            guard !blocked.contains(author), !hidden.contains(author) else { return }
+        }
         guard collected[row.id] == nil else { return }
         collected[row.id] = row
         publish()
@@ -204,6 +221,6 @@ final class LiveChatService: ObservableObject {
             collected = Dictionary(uniqueKeysWithValues: sorted.map { ($0.id, $0) })
         }
         messages = sorted
-        NostrService.shared.fetchMissingProfiles(for: Array(Set(sorted.suffix(60).map(\.authorPubkey))))
+        NostrService.shared.fetchMissingProfiles(for: Array(Set(sorted.suffix(60).compactMap(\.authorPubkey))))
     }
 }

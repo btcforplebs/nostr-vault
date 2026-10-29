@@ -60,6 +60,14 @@ final class LiveStreamShareTests: XCTestCase {
         XCTAssertTrue(parts.media.isEmpty)
     }
 
+    /// Every tile is a fetch by every viewer from a host the sender picked.
+    func testMediaStopsAtTheCapAndTheRestStaysText() {
+        let links = (1...6).map { "https://h\($0).example/p.jpg" }
+        let parts = LiveChatMedia.split(links.joined(separator: " "))
+        XCTAssertEqual(parts.media.map(\.absoluteString), Array(links.prefix(LiveChatMedia.maxMedia)))
+        XCTAssertEqual(parts.text, links.dropFirst(LiveChatMedia.maxMedia).joined(separator: " "))
+    }
+
     func testRepeatedLinkShowsOnce() {
         let parts = LiveChatMedia.split("https://a.example/x.png https://a.example/x.png")
         XCTAssertEqual(parts.media.count, 1)

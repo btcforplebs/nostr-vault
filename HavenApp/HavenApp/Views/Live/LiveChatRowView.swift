@@ -11,16 +11,26 @@ struct LiveChatRowView: View {
     var onOpenMedia: ((URL) -> Void)? = nil
 
     private var displayName: String {
-        profile?.bestName ?? String(message.authorPubkey.prefix(8))
+        guard let author = message.authorPubkey else { return "Someone" }
+        return profile?.bestName ?? String(author.prefix(8))
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Button { onOpenProfile(message.authorPubkey) } label: {
-                AvatarView(url: profile?.pictureURL, pubkey: message.authorPubkey, size: 26)
+            // A zap with an unproven payer names nobody and opens nothing.
+            if let author = message.authorPubkey {
+                Button { onOpenProfile(author) } label: {
+                    AvatarView(url: profile?.pictureURL, pubkey: author, size: 26)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(displayName)'s profile")
+            } else {
+                Image(systemName: "bolt.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundColor(.orange)
+                    .frame(width: 26, height: 26)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open \(displayName)'s profile")
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -33,14 +43,21 @@ struct LiveChatRowView: View {
                             .foregroundColor(.black)
                             .clipShape(Capsule())
                     }
-                    Button { onOpenProfile(message.authorPubkey) } label: {
+                    if let author = message.authorPubkey {
+                        Button { onOpenProfile(author) } label: {
+                            Text(displayName)
+                                .font(.appSystem(size: 12, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens their profile")
+                    } else {
                         Text(displayName)
                             .font(.appSystem(size: 12, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens their profile")
                     Text(Self.timeFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.createdAt))))
                         .font(.appSystem(size: 10))
                         .foregroundColor(.secondary)

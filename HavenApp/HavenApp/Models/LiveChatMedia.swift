@@ -5,6 +5,10 @@ import Foundation
 ///
 /// Kept free of SwiftUI so `MediaLogicTests` can compile it.
 enum LiveChatMedia {
+    /// Tiles per message. Each one is a fetch from whatever host the sender
+    /// chose, made by every viewer, so links past this stay text (Tron, PR 1306).
+    static let maxMedia = 4
+
     static func split(_ text: String) -> (text: String, media: [URL]) {
         var media: [URL] = []
         var kept: [String] = []
@@ -14,7 +18,7 @@ enum LiveChatMedia {
             var words: [Substring] = []
             for word in line.split(separator: " ", omittingEmptySubsequences: false) {
                 let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let url = mediaURL(trimmed) {
+                if let url = mediaURL(trimmed), media.contains(url) || media.count < maxMedia {
                     if !media.contains(url) { media.append(url) }
                 } else {
                     words.append(word)
