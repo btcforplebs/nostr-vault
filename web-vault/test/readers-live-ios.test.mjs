@@ -31,7 +31,8 @@ test("empty Live says who was asked about, as the iPhone does", () => {
 
 test("chat lines carry a short time", () => {
   assert.match(chatTime(1_800_000_000, "en-US"), /^\d{1,2}:\d{2}\s?[AP]M$/)
-  assert.match(src, /<time class="live-time"[^>]*>\{chatTime\(r\.at\)\}<\/time>/)
+  const chat = readFileSync(new URL("../src/readers/LiveChat.jsx", import.meta.url), "utf8")
+  assert.match(chat, /<time class="live-time"[^>]*>\{chatTime\(r\.at\)\}<\/time>/)
 })
 
 test("tiles: Untitled stream, LIVE and viewers together top-left; Global without follows says it's unfiltered; a failed load ends", () => {

@@ -1,22 +1,24 @@
 // The Live feed (the iPhone's LiveStreamCardView grid and LiveStreamPlayerView): streams on air now, Following or
 // Global (your web of trust; everyone but adult streams until you follow someone), as tiles with a LIVE badge and
 // viewers. A tile opens the stream: the video (Safari's own HLS player, hls.js in other browsers, a link out when
-// neither can play it), then the chat and its zaps, read-only. Nothing is stored.
+// neither can play it), the host with Follow, the ⋯ menu (sharing), full screen with the chat over the video, and the
+// chat (LiveChat.jsx). Nothing about the stream is stored.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles, getProfile } from "../net/profiles.js"
-import { pool } from "../net/pool.js"
-import { formatSats } from "../net/notifications.js"
-import { receiptTrust } from "../net/zaps.js"
 import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
 import { attachHls, playMode } from "./hls.js"
 import { PlayerBar } from "./PlayerBar.jsx"
 import { liveAt, playLive, stop } from "./player.js"
-import { LIVE_SCOPES, chatFilter, chatRelays, chatRows, fetchStreams, loadScope, saveScope, startScope, streamLink } from "./live.js"
-import { SkeletonGrid, Spinner } from "../components/Loading.jsx"
+import { LIVE_SCOPES, fetchStreams, loadScope, saveScope, startScope, streamLink } from "./live.js"
+import { LiveChat, chatTime, useLiveChat } from "./LiveChat.jsx"
+import { FollowHost, LiveMoreMenu } from "./LiveActions.jsx"
+
+export { chatTime }
+import { SkeletonGrid } from "../components/Loading.jsx"
 
 if (import.meta.env) import("./readers.css")
 
@@ -97,28 +99,47 @@ export function LiveTile({ stream: s, onOpen }) {
   )
 }
 
-/** The stream: video (or the link out), host, title and summary, Open in zap.stream, then the chat. */
+/** The stream: video (or the link out) with Full screen, title, host with Follow, summary, then the chat. Full screen
+ *  takes the video and the chat together, the chat down the right over the picture (LiveStreamFullScreen); Chat in
+ *  the corner hides or shows it. */
 export function LivePlayer({ ctx, stream: s, onBack }) {
   const link = streamLink(s)
+  const stage = useRef(null)
+  const [full, setFull] = useState(false)
+  const [chatOver, setChatOver] = useState(true)
+  const chat = useLiveChat(ctx, s)
   // Back from minimized: the window takes the sound over, so it isn't playing twice.
   useEffect(() => { if (liveAt(s.address)) stop() }, [s.address])
+  useEffect(() => {
+    const f = () => setFull(document.fullscreenElement === stage.current && !!stage.current)
+    document.addEventListener("fullscreenchange", f)
+    return () => document.removeEventListener("fullscreenchange", f)
+  }, [])
   const p = getProfile(s.host)
   const minimize = () => { playLive(s, p?.display_name || p?.name || ""); onBack() }
+  const toggleFull = () => (document.fullscreenElement ? document.exitFullscreen() : stage.current?.requestFullscreen?.())?.catch?.(() => {})
+  const canFull = !!globalThis.document?.fullscreenEnabled
   return (
     <div class="reader live-player">
       <div class="reader-bar">
         <button type="button" class="small" onClick={onBack}>‹ Back</button>
         {s.streaming && <button type="button" class="small" onClick={minimize} title="Keep listening while you browse">Minimize</button>}
-        <a class="reader-web small" href={link} target="_blank" rel="noopener noreferrer">Open in zap.stream</a>
+        <LiveMoreMenu ctx={ctx} stream={s} />
       </div>
-      <LiveVideo stream={s} link={link} />
+      <div class={`live-stage${full ? " full" : ""}${full && chatOver ? " with-chat" : ""}`} ref={stage}>
+        <LiveVideo stream={s} link={link} />
+        {canFull && <button type="button" class="live-full-btn" aria-label={full ? "Exit full screen" : "Full screen"} onClick={toggleFull}>{full ? "⤡" : "⤢"}</button>}
+        {full && <button type="button" class="live-chat-btn" aria-pressed={chatOver} onClick={() => setChatOver(c => !c)}>{chatOver ? "Hide chat" : "Chat"}</button>}
+        {full && chatOver && <LiveChat ctx={ctx} stream={s} chat={chat} overlay />}
+      </div>
       <h1 class="reader-title">{s.title || "Untitled stream"}</h1>
-      <a class="reader-byline muted small" href={`#/profile/${s.host}`}>
-        <Avatar pubkey={s.host} size={24} /><AuthorName pubkey={s.host} />
+      <div class="reader-byline muted small">
+        <a class="live-host" href={`#/profile/${s.host}`}><Avatar pubkey={s.host} size={24} /><AuthorName pubkey={s.host} /></a>
+        <FollowHost ctx={ctx} pubkey={s.host} />
         {s.viewers != null && <><span>·</span><span>{s.viewers} watching</span></>}
-      </a>
+      </div>
       {s.summary && <p class="reader-summary">{s.summary}</p>}
-      <LiveChat ctx={ctx} stream={s} />
+      {!full && <LiveChat ctx={ctx} stream={s} chat={chat} />}
     </div>
   )
 }
@@ -140,53 +161,3 @@ export function LiveVideo({ stream: s, link, mode: forced }) {
   return <video ref={ref} class="live-video" src={mode === "native" ? s.streaming : undefined} poster={s.image ?? undefined} controls autoplay playsinline />
 }
 
-/** "9:41 PM": the iPhone's short time on each chat line. */
-export const chatTime = (at, locale) => new Date(at * 1000).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })
-
-/** The stream's chat and zaps, read-only, newest at the bottom, live while open. Zap receipts only count once their
- *  zap request checks out and the payee's zap service published them (net/zaps.js trustedReceipts). */
-function LiveChat({ ctx, stream: s }) {
-  const [rows, setRows] = useState(null)
-  const { blocked } = useBlocks(ctx)
-  const box = useRef(null)
-  useEffect(() => {
-    const evs = new Map()
-    const trust = receiptTrust(ctx)
-    let live = true, sub
-    const redraw = async () => {
-      const ok = await trust([...evs.values()])
-      if (!live) return
-      const shown = chatRows(ok, blocked)
-      setRows(shown)
-      fetchProfiles(ctx.vault, shown.map(r => r.who), ctx.account.relays.read, { save: false }).catch(() => {})
-    }
-    pool.querySync(chatRelays(s), chatFilter(s), { maxWait: 8000 }).then(list => {
-      if (!live) return
-      for (const ev of list) evs.set(ev.id, ev)
-      redraw()
-      sub = pool.subscribeMany(chatRelays(s), chatFilter(s, Math.floor(Date.now() / 1000)), {
-        onevent: ev => { if (!evs.has(ev.id)) { evs.set(ev.id, ev); redraw() } },
-      })
-    }).catch(() => live && setRows([]))
-    return () => { live = false; sub?.close() }
-  }, [s.address, blocked.size])
-  useEffect(() => { const el = box.current; if (el) el.scrollTop = el.scrollHeight }, [rows?.length])
-  return (
-    <section class="live-chat" aria-label="Live chat">
-      <h2 class="live-chat-head">Chat</h2>
-      <div class="live-chat-rows" ref={box}>
-        {rows === null ? <p class="muted small"><Spinner /> Loading chat…</p>
-          : !rows.length ? <p class="muted small">No messages yet.</p>
-          : rows.map(r => (
-            <div key={r.id} class={r.sats ? "live-row zap" : "live-row"}>
-              <Avatar pubkey={r.who} size={22} load={false} />
-              <span class="live-who"><AuthorName pubkey={r.who} /></span>
-              {r.sats > 0 && <span class="live-sats">⚡ {formatSats(r.sats)}</span>}
-              <time class="live-time" datetime={new Date(r.at * 1000).toISOString()}>{chatTime(r.at)}</time>
-              {r.text && <span class="live-msg">{r.text}</span>}
-            </div>
-          ))}
-      </div>
-    </section>
-  )
-}

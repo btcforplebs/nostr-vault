@@ -3,7 +3,6 @@
 // pulled on 2026-09-05, 478 had already ended).
 import { naddrEncode } from "nostr-tools/nip19"
 import { pool, uniq } from "../net/pool.js"
-import { zapRequest, zapSats } from "../net/notifications.js"
 import { globalTrust } from "./trust.js"
 
 export const LIVE_KIND = 30311
@@ -139,22 +138,4 @@ export function streamLink(s) {
 export const chatRelays = s => uniq([...s.chatRelays, ...CHAT_RELAYS])
 export const chatFilter = (s, since) => ({ kinds: [CHAT_KIND, 9735], "#a": [s.address], limit: 200, ...(since ? { since } : {}) })
 
-/** A chat row from a 1311 or a 9735 (the payer and comment come from its checked zap request), or null. */
-export function chatRow(ev) {
-  if (!ev?.id) return null
-  if (ev.kind === CHAT_KIND) {
-    const text = String(ev.content ?? "").trim()
-    return text ? { id: ev.id, who: ev.pubkey, at: ev.created_at, text, sats: 0 } : null
-  }
-  if (ev.kind !== 9735) return null
-  const req = zapRequest(ev)
-  if (!req) return null
-  return { id: ev.id, who: req.pubkey, at: ev.created_at, text: String(req.content ?? "").trim(), sats: zapSats(ev) }
-}
-
-/** Rows oldest first, once each, blocked people left out, the newest `max` kept. */
-export function chatRows(evs, blocked = new Set(), max = 200) {
-  const by = new Map()
-  for (const ev of evs) { const r = chatRow(ev); if (r && !blocked.has(r.who) && !by.has(r.id)) by.set(r.id, r) }
-  return [...by.values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)).slice(-max)
-}
+// A chat row is read in live-chat.js (chatRow), which checks each event's signature and its stream.
