@@ -9,6 +9,10 @@ import Foundation
 enum PullDownToCloseRule {
     /// How far past the top (points) the pull has to go when the finger lifts.
     static let closeDistance: Double = 90
+    /// How far the finger has to travel when the content stayed put. In a
+    /// sheet the sheet's own drag takes the pull, so the content never runs
+    /// past its top; the finger's travel is the measure there instead.
+    static let closeDrag: Double = 180
     /// Slack for "at the top": rounding in the scroll offset.
     static let topSlack: Double = 1
 
@@ -18,7 +22,11 @@ enum PullDownToCloseRule {
         overscroll >= -topSlack
     }
 
-    static func shouldClose(startedAtTop: Bool, overscrollAtRelease: Double) -> Bool {
-        startedAtTop && overscrollAtRelease >= closeDistance
+    /// `dragAtRelease` is the finger's downward travel since the pull began.
+    static func shouldClose(startedAtTop: Bool, overscrollAtRelease: Double,
+                            dragAtRelease: Double) -> Bool {
+        guard startedAtTop else { return false }
+        if overscrollAtRelease >= closeDistance { return true }
+        return isAtTop(overscroll: overscrollAtRelease) && dragAtRelease >= closeDrag
     }
 }

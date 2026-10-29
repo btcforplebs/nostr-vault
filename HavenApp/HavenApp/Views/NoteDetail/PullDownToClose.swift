@@ -64,7 +64,8 @@ private struct PullDownToCloseProbe: UIViewRepresentable {
                 startedAtTop = PullDownToCloseRule.isAtTop(overscroll: overscroll(scroll))
             case .ended:
                 if PullDownToCloseRule.shouldClose(startedAtTop: startedAtTop,
-                                                   overscrollAtRelease: overscroll(scroll)) {
+                                                   overscrollAtRelease: overscroll(scroll),
+                                                   dragAtRelease: recognizer.translation(in: scroll.superview).y) {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     close()
                 }
