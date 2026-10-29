@@ -29,10 +29,12 @@ object MediaPostRetry {
 
     /**
      * An HTTP answer that will be the same next time: the server refuses this
-     * file (too big, wrong type, payment or login needed, forbidden). 408 and
-     * 429 are the server being busy, so they are worth another try.
+     * file (too big, wrong type, payment needed, forbidden). 408 and 429 are
+     * the server being busy, so they are worth another try. So is 401: the auth
+     * is signed again on every pass, so a signer hiccup or clock skew can clear.
      */
-    fun isPermanentRefusal(status: Int): Boolean = status in 400..499 && status != 408 && status != 429
+    fun isPermanentRefusal(status: Int): Boolean =
+        status in 400..499 && status != 401 && status != 408 && status != 429
 
     /**
      * True when every mirror answered with a permanent refusal. [statuses] has

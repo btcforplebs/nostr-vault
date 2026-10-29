@@ -24,4 +24,12 @@ class WatchdogRestartPolicyTest {
         assertEquals(0L, WatchdogRestartPolicy.waitBeforeRestart(old, now))
         assertEquals(60_000L, WatchdogRestartPolicy.waitBeforeRestart(old + (now - hour), now))
     }
+
+    @Test fun `saved times survive a round trip and drop once out of the window`() {
+        val times = listOf(now - 7 * hour, now - 2 * hour, now - 1)
+        val saved = WatchdogRestartPolicy.encode(times, now)
+        assertEquals(listOf(now - 2 * hour, now - 1), WatchdogRestartPolicy.decode(saved))
+        assertEquals(emptyList<Long>(), WatchdogRestartPolicy.decode(null))
+        assertEquals(listOf(5L), WatchdogRestartPolicy.decode("x,5,"))
+    }
 }

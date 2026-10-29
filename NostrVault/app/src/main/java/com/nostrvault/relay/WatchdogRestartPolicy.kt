@@ -8,6 +8,10 @@ package com.nostrvault.relay
  * the watchdog now waits longer before each restart in a [WINDOW_MS] window
  * and gives up after [MAX_RESTARTS] of them: the relay shows Offline and waits
  * for someone to open the app or tap Start (which clears the count).
+ *
+ * The times are kept in prefs, so a process that dies does not clear them, and
+ * a START_STICKY restart that comes soon after the last start (the sign of a
+ * crash loop) counts as a restart too.
  */
 object WatchdogRestartPolicy {
     const val WINDOW_MS = 6 * 60 * 60 * 1000L
@@ -24,4 +28,11 @@ object WatchdogRestartPolicy {
         if (recent >= MAX_RESTARTS) return null
         return WAITS_MS[recent.coerceAtMost(WAITS_MS.size - 1)]
     }
+
+    /** Prefs form of [restartsAtMs]: comma-separated times, only those still in the window. */
+    fun encode(restartsAtMs: List<Long>, nowMs: Long): String =
+        restartsAtMs.filter { nowMs - it < WINDOW_MS }.joinToString(",")
+
+    fun decode(saved: String?): List<Long> =
+        saved.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
 }

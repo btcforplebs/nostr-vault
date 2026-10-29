@@ -64,28 +64,31 @@ import com.nostrvault.service.DMService.Companion.TAG
                             }
                         }
 
-                        client.connect()
+                        try {
+                            client.connect()
 
-                        // NIP-17 (kind 1059). A gift wrap's created_at is
-                        // randomized up to 2 days into the past, so the 1-hour
-                        // overlap above would miss most new ones.
-                        val wrapSince = minOf(since, System.currentTimeMillis() / 1000 - GIFT_WRAP_BACKDATE_SECONDS)
-                        // A limit, so a relay holding a flood of wraps can't
-                        // send all of them every pass; the live sockets cover the rest.
-                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince,"limit":$EXTERNAL_FETCH_LIMIT}"""
-                        client.send("[\"REQ\",\"$subId-17\",$nip17Filter]")
+                            // NIP-17 (kind 1059). A gift wrap's created_at is
+                            // randomized up to 2 days into the past, so the 1-hour
+                            // overlap above would miss most new ones.
+                            val wrapSince = minOf(since, System.currentTimeMillis() / 1000 - GIFT_WRAP_BACKDATE_SECONDS)
+                            // A limit, so a relay holding a flood of wraps can't
+                            // send all of them every pass; the live sockets cover the rest.
+                            val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince,"limit":$EXTERNAL_FETCH_LIMIT}"""
+                            client.send("[\"REQ\",\"$subId-17\",$nip17Filter]")
 
-                        // NIP-04 incoming (kind 4)
-                        val nip04InFilter = """{"kinds":[4],"#p":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
-                        client.send("[\"REQ\",\"$subId-04in\",$nip04InFilter]")
+                            // NIP-04 incoming (kind 4)
+                            val nip04InFilter = """{"kinds":[4],"#p":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
+                            client.send("[\"REQ\",\"$subId-04in\",$nip04InFilter]")
 
-                        // NIP-04 outgoing (kind 4)
-                        val nip04OutFilter = """{"kinds":[4],"authors":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
-                        client.send("[\"REQ\",\"$subId-04out\",$nip04OutFilter]")
+                            // NIP-04 outgoing (kind 4)
+                            val nip04OutFilter = """{"kinds":[4],"authors":["$ownerHex"],"since":$since,"limit":$EXTERNAL_FETCH_LIMIT}"""
+                            client.send("[\"REQ\",\"$subId-04out\",$nip04OutFilter]")
 
-                        delay(10_000)
-                        client.disconnect()
-                        collector.cancel()
+                            delay(10_000)
+                        } finally {
+                            client.disconnect()
+                            collector.cancel()
+                        }
                     } catch (e: Exception) {
                         Log.w(TAG, "External DM fetch from $relayUrl failed: ${e.message}")
                     }

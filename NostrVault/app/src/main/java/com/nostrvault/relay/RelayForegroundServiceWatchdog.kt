@@ -58,10 +58,7 @@ import kotlinx.coroutines.withContext
                         updateNotification(RelayStatus.OFFLINE)
                         lifecycleState = LifecycleState.IDLE
                         val now = System.currentTimeMillis()
-                        val wait = synchronized(watchdogRestarts) {
-                            WatchdogRestartPolicy.waitBeforeRestart(watchdogRestarts, now)
-                                ?.also { watchdogRestarts.add(now) }
-                        }
+                        val wait = recordWatchdogRestart(now)
                         if (wait == null) {
                             Log.e(TAG, "Health watchdog: relay unresponsive after ${WatchdogRestartPolicy.MAX_RESTARTS} restarts in 6 h — leaving it offline until the app starts it")
                             break

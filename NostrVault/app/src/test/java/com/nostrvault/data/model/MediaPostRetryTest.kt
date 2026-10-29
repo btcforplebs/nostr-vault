@@ -38,8 +38,8 @@ class MediaPostRetryTest {
     }
 
     @Test fun `client errors are final except busy answers`() {
-        for (code in listOf(400, 401, 402, 403, 404, 413, 415)) assertTrue("$code", MediaPostRetry.isPermanentRefusal(code))
-        for (code in listOf(408, 429, 500, 502, 503, 200, -1)) assertFalse("$code", MediaPostRetry.isPermanentRefusal(code))
+        for (code in listOf(400, 402, 403, 404, 413, 415)) assertTrue("$code", MediaPostRetry.isPermanentRefusal(code))
+        for (code in listOf(401, 408, 429, 500, 502, 503, 200, -1)) assertFalse("$code", MediaPostRetry.isPermanentRefusal(code))
     }
 
     @Test fun `all refused needs a final answer from every mirror`() {
