@@ -98,3 +98,17 @@ internal fun LiveShareButton(
         else ShareProfileSheet(npub = npub, name = hostName, onDismiss = { shareProfile = false })
     }
 }
+
+/** Mute asks first: it publishes the account's mute list. */
+@Composable
+internal fun LiveMuteConfirm(name: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Mute ${name ?: "this person"}?") },
+        text = { Text("Their messages and posts stop showing for you. You can unmute them in Settings → Blocked.") },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onConfirm) { Text("Mute", color = com.nostrvault.ui.theme.ErrorRed) }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

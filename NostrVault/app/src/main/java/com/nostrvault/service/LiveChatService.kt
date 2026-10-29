@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.util.Bolt11
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +44,7 @@ class LiveChatService @Inject constructor(
     companion object {
         private const val TAG = "LiveChatService"
         const val CHAT_KIND = 1311
-        private const val ZAP_RECEIPT_KIND = 9735
+        const val ZAP_RECEIPT_KIND = 9735
         private const val BACKLOG = 100
 
         /**
@@ -132,7 +133,7 @@ class LiveChatService @Inject constructor(
                 clients.add(client)
                 launch {
                     client.messages.collect { raw ->
-                        val entry = parseEntry(raw, subId) ?: return@collect
+                        val entry = parseChatEntry(raw, subId, json) { HavenBridge.verifyEvent(it) } ?: return@collect
                         val snapshot = seenLock.withLock {
                             if (seen.containsKey(entry.id)) null
                             else {
@@ -214,72 +215,96 @@ class LiveChatService @Inject constructor(
         return """{"id":"${event.id}","pubkey":"${event.pubkey}","created_at":${event.createdAt},""" +
             """"kind":${event.kind},"tags":[$tags],"content":"$content","sig":"${event.sig}"}"""
     }
+}
 
-    private fun parseEntry(raw: String, expectedSubId: String): ChatEntry? = try {
-        val array = json.parseToJsonElement(raw) as? JsonArray
-        if (array == null || array.size < 3 ||
-            array[0].jsonPrimitive.content != "EVENT" ||
-            array[1].jsonPrimitive.content != expectedSubId
+private val HEX64 = Regex("[0-9a-f]{64}")
+
+/**
+ * One chat line from a relay message, or null. Every event is checked before
+ * it becomes a line ([verify] is the id and signature check): the relays this
+ * reads include the ones the stream's own `relays` tag names, so whoever
+ * publishes a stream picks them, and a line says who wrote it only if its
+ * signature does. That matters because a line's author can be muted (which
+ * publishes the mute list) and opened as a profile route.
+ *
+ * A zap receipt is signed by the zap provider, and the zapper and their
+ * message sit in the embedded request. The request has to verify on its own
+ * too; when it doesn't, the zap is still shown, under the provider's key and
+ * without the request's text.
+ */
+internal fun parseChatEntry(
+    raw: String,
+    expectedSubId: String,
+    json: Json,
+    verify: (String) -> Boolean,
+): LiveChatService.ChatEntry? = try {
+    val array = json.parseToJsonElement(raw) as? JsonArray
+    if (array == null || array.size < 3 ||
+        array[0].jsonPrimitive.content != "EVENT" ||
+        array[1].jsonPrimitive.content != expectedSubId
+    ) {
+        null
+    } else {
+        val event = array[2].jsonObject
+        val kind = event["kind"]?.jsonPrimitive?.content?.toIntOrNull()
+        val id = event["id"]?.jsonPrimitive?.content
+        val pubkey = event["pubkey"]?.jsonPrimitive?.content
+        val createdAt = event["created_at"]?.jsonPrimitive?.content?.toLongOrNull()
+        if (id == null || pubkey == null || createdAt == null ||
+            !HEX64.matches(id) || !HEX64.matches(pubkey) || !verify(event.toString())
         ) {
             null
         } else {
-            val event = array[2].jsonObject
-            val kind = event["kind"]?.jsonPrimitive?.content?.toIntOrNull()
-            val id = event["id"]?.jsonPrimitive?.content
-            val pubkey = event["pubkey"]?.jsonPrimitive?.content
-            val createdAt = event["created_at"]?.jsonPrimitive?.content?.toLongOrNull()
-            if (id == null || pubkey == null || createdAt == null) {
-                null
-            } else {
-                val tags = event["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } }
-                    ?: emptyList()
-                when (kind) {
-                    CHAT_KIND -> ChatEntry(
-                        id = id,
-                        pubkey = pubkey,
-                        content = event["content"]?.jsonPrimitive?.content.orEmpty(),
-                        createdAt = createdAt,
-                    )
-                    ZAP_RECEIPT_KIND -> {
-                        // The receipt is signed by the provider, so the zapper
-                        // and the message are in the embedded request, not on
-                        // the receipt. Fall back to the receipt's own author
-                        // rather than dropping a zap we cannot fully read.
-                        val request = tags.firstOrNull { it.size >= 2 && it[0] == "description" }
+            val tags = event["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } }
+                ?: emptyList()
+            when (kind) {
+                LiveChatService.CHAT_KIND -> LiveChatService.ChatEntry(
+                    id = id,
+                    pubkey = pubkey,
+                    content = event["content"]?.jsonPrimitive?.content.orEmpty(),
+                    createdAt = createdAt,
+                )
+                LiveChatService.ZAP_RECEIPT_KIND -> {
+                    // The zapper and the message are in the embedded request,
+                    // which counts only if it verifies too.
+                    val request = tags.firstOrNull { it.size >= 2 && it[0] == "description" }
+                        ?.get(1)
+                        ?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+                        ?.takeIf { req ->
+                            val reqPubkey = req["pubkey"]?.jsonPrimitive?.content
+                            reqPubkey != null && HEX64.matches(reqPubkey) && verify(req.toString())
+                        }
+                    val requestTags = request?.get("tags")?.jsonArray
+                        ?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } }
+                        ?: emptyList()
+                    // Rung order: the request's amount tag, then the
+                    // receipt's, then the invoice itself. The invoice is
+                    // the one that actually answers most of the time.
+                    val sats = (requestTags + tags)
+                        .firstOrNull { it.size >= 2 && it[0] == "amount" }
+                        ?.get(1)?.toLongOrNull()
+                        ?.takeIf { it > 0 }
+                        ?.let { it / 1000 }
+                        ?: tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }
                             ?.get(1)
-                            ?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
-                        val requestTags = request?.get("tags")?.jsonArray
-                            ?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } }
-                            ?: emptyList()
-                        // Rung order: the request's amount tag, then the
-                        // receipt's, then the invoice itself. The invoice is
-                        // the one that actually answers most of the time.
-                        val sats = (requestTags + tags)
-                            .firstOrNull { it.size >= 2 && it[0] == "amount" }
-                            ?.get(1)?.toLongOrNull()
-                            ?.takeIf { it > 0 }
-                            ?.let { it / 1000 }
-                            ?: tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }
-                                ?.get(1)
-                                ?.let { satsFromBolt11(it) }
-                        ChatEntry(
-                            id = id,
-                            pubkey = request?.get("pubkey")?.jsonPrimitive?.content ?: pubkey,
-                            content = request?.get("content")?.jsonPrimitive?.content.orEmpty(),
-                            createdAt = createdAt,
-                            // 0 means "this receipt did not say", not "zero
-                            // sats". Showing a 0 next to a bolt states an
-                            // amount that was never in the event; the UI shows
-                            // the bolt alone instead.
-                            zapSats = sats ?: 0L,
-                        )
-                    }
-                    else -> null
+                            ?.let { Bolt11.satsOrNull(it) }
+                    LiveChatService.ChatEntry(
+                        id = id,
+                        pubkey = request?.get("pubkey")?.jsonPrimitive?.content ?: pubkey,
+                        content = request?.get("content")?.jsonPrimitive?.content.orEmpty(),
+                        createdAt = createdAt,
+                        // 0 means "this receipt did not say", not "zero
+                        // sats". Showing a 0 next to a bolt states an
+                        // amount that was never in the event; the UI shows
+                        // the bolt alone instead.
+                        zapSats = sats ?: 0L,
+                    )
                 }
+                else -> null
             }
         }
-    } catch (e: Exception) {
-        Log.w(TAG, "unparseable chat message: ${e.message}")
-        null
     }
+} catch (e: Exception) {
+    Log.w("LiveChatService", "unparseable chat message: ${e.message}")
+    null
 }

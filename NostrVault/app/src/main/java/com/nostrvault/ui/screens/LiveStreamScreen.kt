@@ -59,10 +59,12 @@ import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.screens.dm.DMAttachment
 import com.nostrvault.ui.theme.*
+import android.net.Uri
 import com.nostrvault.ui.screens.live.LiveChat
 import com.nostrvault.ui.screens.live.LiveChatMediaButton
 import com.nostrvault.ui.screens.live.LiveFollowButton
 import com.nostrvault.ui.screens.live.LiveFullScreen
+import com.nostrvault.ui.screens.live.LiveMuteConfirm
 import com.nostrvault.ui.screens.live.LiveShareButton
 import com.nostrvault.ui.screens.live.LiveStreamLeave
 import com.nostrvault.ui.screens.live.LiveStreamShare
@@ -112,6 +114,8 @@ fun LiveStreamScreen(
     val uploading by viewModel.uploading.collectAsState()
     val saveGifsToBlossom by viewModel.saveGifsToBlossom.collectAsState()
     var fullScreen by rememberSaveable { mutableStateOf(false) }
+    // Muting publishes the mute list, so it asks first.
+    var muting by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
     // Muted chatters drop out of the room as soon as they are muted.
     val shownMessages = remember(messages, blocked) { messages.filter { it.pubkey !in blocked } }
@@ -198,7 +202,10 @@ fun LiveStreamScreen(
         open()
         onBack()
     }
-    val openProfile: (String) -> Unit = { pk -> leaveFor { LiveStreamLeave.openProfile(pk) } }
+    // Only a real key leaves the player: a route is built from it.
+    val openProfile: (String) -> Unit = { pk ->
+        if (LiveStreamLeave.isPubkey(pk)) leaveFor { LiveStreamLeave.openProfile(pk) }
+    }
 
     if (fullScreen && stream != null && player != null) {
         LiveFullScreen(
@@ -207,9 +214,10 @@ fun LiveStreamScreen(
             profiles = chatProfiles,
             onExit = { fullScreen = false },
             onOpenProfile = openProfile,
-            onMute = viewModel::muteChatter,
+            onMute = { muting = it },
             onReport = { reportingMessage = it },
         )
+        muting?.let { pk -> LiveMuteConfirm(chatProfiles[pk]?.bestName, onConfirm = { muting = null; viewModel.muteChatter(pk) }, onDismiss = { muting = null }) }
         reportingMessage?.let { entry ->
             UGCReportDialog(
                 onReport = { reason, description ->
@@ -406,7 +414,7 @@ fun LiveStreamScreen(
                 profiles = chatProfiles,
                 onReport = { reportingMessage = it },
                 onOpenProfile = openProfile,
-                onMute = viewModel::muteChatter,
+                onMute = { muting = it },
                 // Touching the chat, to tap or drag it, puts the keyboard away.
                 modifier = Modifier
                     .weight(1f)
@@ -438,6 +446,9 @@ fun LiveStreamScreen(
                     onBeforeOpen = { focusManager.clearFocus() },
                     onLink = addLink,
                     upload = { uri -> viewModel.uploadChatMedia(uri, addLink) },
+                    uploadFile = { file, mime ->
+                        viewModel.uploadChatMedia(Uri.fromFile(file), addLink, mimeType = mime, deleteAfter = file)
+                    },
                     saveGifsToBlossom = saveGifsToBlossom,
                     onSaveGifsToBlossomChange = viewModel::setSaveGifsToBlossom,
                     onError = { viewModel.showStatus(it) },
@@ -490,6 +501,7 @@ fun LiveStreamScreen(
                 onDismiss = { reportingMessage = null },
             )
         }
+        muting?.let { pk -> LiveMuteConfirm(chatProfiles[pk]?.bestName, onConfirm = { muting = null; viewModel.muteChatter(pk) }, onDismiss = { muting = null }) }
         if (showBlockConfirm) {
             AlertDialog(
                 onDismissRequest = { showBlockConfirm = false },

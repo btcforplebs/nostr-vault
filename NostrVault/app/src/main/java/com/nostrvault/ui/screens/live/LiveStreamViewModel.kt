@@ -83,12 +83,19 @@ class LiveStreamViewModel @Inject constructor(
     val uploading: StateFlow<Boolean> = _uploading.asStateFlow()
 
     /** Puts a photo, video or GIF on the user's media servers; [onLink] gets its URL. */
-    fun uploadChatMedia(uri: android.net.Uri, onLink: (String) -> Unit) {
-        if (_uploading.value) return
+    fun uploadChatMedia(
+        uri: android.net.Uri,
+        onLink: (String) -> Unit,
+        mimeType: String? = null,
+        /** A temporary copy the app made (a downloaded GIF), deleted once it is up or has failed. */
+        deleteAfter: java.io.File? = null,
+    ) {
+        if (_uploading.value) { deleteAfter?.delete(); return }
         viewModelScope.launch {
             _uploading.value = true
             _status.value = "Uploading…"
-            when (val out = chatMediaUpload.upload(uri)) {
+            val result = try { chatMediaUpload.upload(uri, mimeType) } finally { deleteAfter?.delete() }
+            when (val out = result) {
                 is LiveChatMediaUpload.Outcome.Hosted -> { _status.value = null; onLink(out.url) }
                 is LiveChatMediaUpload.Outcome.Failed -> _status.value = out.message
             }

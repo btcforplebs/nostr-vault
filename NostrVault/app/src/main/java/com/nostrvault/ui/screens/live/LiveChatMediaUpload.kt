@@ -30,8 +30,12 @@ class LiveChatMediaUpload @Inject constructor(
         data class Failed(val message: String) : Outcome()
     }
 
-    suspend fun upload(uri: Uri): Outcome = withContext(Dispatchers.IO) {
-        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+    /**
+     * [mimeType] is for a file the app made itself (a downloaded GIF): a
+     * `file://` URI has no type the content resolver can tell.
+     */
+    suspend fun upload(uri: Uri, mimeType: String? = null): Outcome = withContext(Dispatchers.IO) {
+        val mime = mimeType ?: context.contentResolver.getType(uri) ?: "application/octet-stream"
         val temp = File.createTempFile("livechat_", ".tmp", context.cacheDir)
         try {
             val input = context.contentResolver.openInputStream(uri)

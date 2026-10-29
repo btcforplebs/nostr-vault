@@ -45,6 +45,8 @@ internal fun LiveChatMediaButton(
     onBeforeOpen: () -> Unit,
     onLink: (String) -> Unit,
     upload: (Uri) -> Unit,
+    /** A GIF the app downloaded: its type, and the file to delete after. */
+    uploadFile: (java.io.File, String) -> Unit,
     saveGifsToBlossom: Boolean,
     onSaveGifsToBlossomChange: (Boolean) -> Unit,
     onError: (String) -> Unit,
@@ -111,11 +113,11 @@ internal fun LiveChatMediaButton(
                 } else {
                     scope.launch {
                         try {
-                            val file = withContext(Dispatchers.IO) {
+                            val (file, mime) = withContext(Dispatchers.IO) {
                                 val (bytes, mime) = NostrBuildGifs.download(gif.url)
-                                GifCache.newFile(context.cacheDir, mime).apply { writeBytes(bytes) }
+                                GifCache.newFile(context.cacheDir, mime).apply { writeBytes(bytes) } to mime
                             }
-                            upload(Uri.fromFile(file))
+                            uploadFile(file, mime)
                         } catch (e: Exception) {
                             onError("Couldn't fetch that GIF: ${e.message ?: "unknown error"}")
                         }

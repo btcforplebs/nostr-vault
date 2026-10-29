@@ -40,8 +40,13 @@ internal object LiveStreamLeave {
 
     /** Opens [pubkey]'s profile behind the player. The caller closes the player after. */
     fun openProfile(pubkey: String) {
+        // A route is built from it, so only a real key: anything else would match no route.
+        if (!isPubkey(pubkey)) return
         PendingDeepLink.post(DeepLinkTarget(Screen.Profile.createRoute(pubkey)))
     }
+
+    /** 64 lowercase hex characters: the only shape a profile route takes. */
+    fun isPubkey(value: String): Boolean = value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
 
     /** Opens the composer with [text] in it. Nothing is posted until the user taps Post. */
     fun compose(text: String) {
