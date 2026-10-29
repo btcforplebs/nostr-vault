@@ -4,6 +4,8 @@ import { useEffect, useState } from "preact/hooks"
 import { Avatar } from "./Avatar.jsx"
 import { AuthorName } from "./NoteCard.jsx"
 import { NoteText } from "./NoteText.jsx"
+import { SnoCard } from "./SnoObject.jsx"
+import { SNO_KIND } from "../readers/sno.js"
 import { ago } from "./time.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { getBlocks, isBlockedNote, onBlocks } from "../net/blocks.js"
@@ -66,8 +68,10 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
         <AuthorName pubkey={ev.pubkey} />
         <time class="note-time" datetime={new Date(ev.created_at * 1000).toISOString()}>{ago(ev.created_at)}</time>
       </div>
+      {ev.kind === SNO_KIND ? <SnoCard event={ev} /> : <>
       {title && <strong class="quote-title">{title}</strong>}
       <NoteText content={title ? ev.tags.find(t => t[0] === "summary")?.[1] || ev.content : ev.content} tags={title ? undefined : ev.tags} author={ev.pubkey} depth={depth + 1} memoryOnly={memoryOnly} />
+      </>}
     </div>
   )
 }
