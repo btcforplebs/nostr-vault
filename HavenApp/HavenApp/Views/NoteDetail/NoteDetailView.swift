@@ -264,6 +264,9 @@ struct NoteDetailView: View {
                 // view and its background stay full width.
                 .readableWidthCap()
                 .opacity(isSettled ? 1 : 0)
+                // No refresh pull: the page updates live. Pulling down from
+                // the top closes it instead, like a sheet.
+                .pullDownToClose { presentationMode.wrappedValue.dismiss() }
             }
             // The gap to the landing line. A margin rather than padding, so
             // top-anchored scrolls stop on the line instead of the bar's edge,
@@ -307,16 +310,6 @@ struct NoteDetailView: View {
             }
         }
         .background(Color.platformWindowBackground)
-        .refreshable {
-            #if os(iOS)
-            // Pull replies that only reached the Mac relay into the local one.
-            if !RelayConfiguration.macRelayURL(config: ConfigService.shared.config).isEmpty {
-                RequestRelaySyncC()
-            }
-            #endif
-            fetchParents()
-            fetchReplies()
-        }
         .navigationTitle("")
         .environment(\.feedActions, noteDetailFeedActions)
         .hashtagLinks()
