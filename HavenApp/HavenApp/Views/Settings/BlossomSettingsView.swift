@@ -10,6 +10,18 @@ struct BlossomSettingsView: View {
 
     @State private var newMirrorURL = ""
     
+    private func waitingLine(_ post: QueuedMediaPost) -> String {
+        if let status = post.refusedStatus {
+            return "Your media servers refused this file (HTTP \(status)). Change servers below, then tap Try sending now."
+        }
+        if post.needsUser {
+            return "Stopped trying after \(post.attempts) tries. Tap Try sending now."
+        }
+        let since = "Waiting for a media server since \(post.createdAt.formatted(date: .abbreviated, time: .shortened))"
+        guard post.attempts > 0, let next = post.nextAttempt else { return since }
+        return since + ". Next try \(next.formatted(date: .omitted, time: .shortened))."
+    }
+
     var body: some View {
         Form {
             // Posts whose media is on this device but on no outside server
@@ -26,9 +38,9 @@ struct BlossomSettingsView: View {
                                 Text(post.body.isEmpty ? "Post with \(post.media.count) attachment(s)" : post.body)
                                     .font(.appSubheadline)
                                     .lineLimit(2)
-                                Text("Waiting for a media server since \(post.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                Text(waitingLine(post))
                                     .font(.appCaption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(post.needsUser ? .orange : .secondary)
                             }
                             Spacer()
                             Button(role: .destructive) {
@@ -41,12 +53,12 @@ struct BlossomSettingsView: View {
                         .padding(.vertical, 4)
                     }
                     Button("Try sending now") {
-                        waitingPosts.retryAll(reason: "user")
+                        waitingPosts.sendNow()
                     }
                 } header: {
                     Text("Waiting to send")
                 } footer: {
-                    Text("The photos are saved on this device. These posts send themselves as soon as a media server below answers.")
+                    Text("The photos are saved on this device. These posts try again by themselves, less often each time, and stop after a while so they don't use up your data.")
                 }
             }
 

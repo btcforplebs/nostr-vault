@@ -11,8 +11,10 @@ import AppKit
 /// Blossom server. See `QueuedMediaPost` for why they wait instead of failing.
 ///
 /// Retries whenever there is a reason to think a server might now answer: the
-/// app comes to the foreground, the network changes, and every minute while
-/// anything is waiting. The queue is on disk, so a relaunch keeps it.
+/// app comes to the foreground, the network changes, or the post's wait is
+/// over. Each try uploads the whole file, so the wait doubles up to six hours
+/// and the post stops by itself after ten tries or a refusal (`MediaPostRetry`);
+/// the user can send it again. The queue is on disk, so a relaunch keeps it.
 @MainActor
 final class MediaPostQueue: ObservableObject {
     static let shared = MediaPostQueue()
@@ -82,6 +84,13 @@ final class MediaPostQueue: ObservableObject {
         start()
     }
 
+    /// The user asked: every post tries now, including ones that stopped.
+    func sendNow() {
+        for index in posts.indices { posts[index].resetForUserRetry() }
+        saveToDisk()
+        retryAll(reason: "user")
+    }
+
     func discard(id: String) {
         posts.removeAll { $0.id == id }
         saveToDisk()
@@ -89,15 +98,17 @@ final class MediaPostQueue: ObservableObject {
         log("discarded waiting post \(id.prefix(8))")
     }
 
-    /// Try every waiting post once. Posts are sent one at a time, oldest first,
-    /// so they reach relays in the order they were written.
+    /// Try every post whose wait is over once. Posts are sent one at a time,
+    /// oldest first, so they reach relays in the order they were written.
     func retryAll(reason: String) {
-        guard !posts.isEmpty, !isRetrying else { return }
+        let now = Date()
+        let due = posts.filter { $0.isDue(at: now) }.map(\.id)
+        guard !due.isEmpty, !isRetrying else { return }
         isRetrying = true
         Task { @MainActor in
             defer { isRetrying = false; updateTimer() }
-            log("retrying \(posts.count) waiting post(s) — \(reason)")
-            for id in posts.map(\.id) {
+            log("retrying \(due.count) of \(posts.count) waiting post(s) — \(reason)")
+            for id in due {
                 let sent = await attempt(id: id)
                 // The servers are the same for every post; if the first could
                 // not be hosted, the rest won't be either this round.
@@ -122,10 +133,22 @@ final class MediaPostQueue: ObservableObject {
 
         for index in post.media.indices where post.media[index].url == nil {
             guard let sha256 = post.media[index].sha256 else { continue }
+            BlossomRefusals.shared.clear(sha256: sha256)
             guard let url = await blossom.hostLocalBlob(
                 sha256: sha256,
                 contentType: post.media[index].mimeType ?? "application/octet-stream"
             ) else {
+                let statuses = BlossomRefusals.shared.take(sha256: sha256)
+                let mirrors = ConfigService.shared.config.activeBlossomMirrors
+                if MediaPostRetry.allRefused(mirrors: mirrors, statuses: statuses) {
+                    post.refusedStatus = mirrors.compactMap { statuses[$0] }.first
+                    log("waiting post \(id.prefix(8)): every media server refused the file (\(statuses)) — stopped, waiting for you", level: "WARN")
+                } else if post.needsUser {
+                    log("waiting post \(id.prefix(8)): stopped after \(post.attempts) tries — waiting for you", level: "WARN")
+                } else {
+                    let next = MediaPostRetry.delay(afterAttempts: post.attempts)
+                    log("waiting post \(id.prefix(8)): try \(post.attempts) failed — next in \(Int(next / 60)) min")
+                }
                 update(post)
                 return false
             }
