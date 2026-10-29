@@ -60,7 +60,7 @@ class MediaPostQueue @Inject constructor(
     companion object {
         private const val TAG = "MediaPostQueue"
         private const val FILE_NAME = "queued_media_posts.json"
-        /** How often the timer looks for a post whose wait is over; a look costs nothing. */
+        /** The longest the timer sleeps between looks for a post whose wait is over; a look costs nothing. */
         private const val TICK_MS = 60_000L
     }
 
@@ -111,8 +111,12 @@ class MediaPostQueue @Inject constructor(
         } else if (timerJob?.isActive != true) {
             timerJob = scope.launch {
                 while (isActive) {
-                    delay(TICK_MS)
-                    if (_posts.value.none { it.nextAttemptAt != null }) break
+                    // Wake when the next post is due (a fixed tick landed a few
+                    // ms early and added a minute to every wait); a post already
+                    // due is waiting for Wi-Fi, so look again in a minute.
+                    val next = _posts.value.mapNotNull { it.nextAttemptAt }.minOrNull() ?: break
+                    val wait = next - System.currentTimeMillis()
+                    delay(if (wait <= 0) TICK_MS else wait.coerceAtMost(TICK_MS))
                     retryAll("timer")
                 }
             }
