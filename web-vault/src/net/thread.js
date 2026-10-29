@@ -156,7 +156,7 @@ export async function readThread(vault, rootId) {
 }
 
 /** Fetch the note, its root and the replies from the network into Haven /feed. Read-only on the network: nothing
- *  is signed. -> { rootId, stored } */
+ *  is signed. `note` is the opened one as found, which /feed may refuse (a 3D object). -> { rootId, stored, note } */
 export async function syncThread(vault, id, relays, { maxWait = 6000 } = {}) {
   const urls = uniq(relays)
   const store = async evs => { let n = 0; for (const ev of evs) if ((await vault.feed.event(ev)).ok) n++; return n }
@@ -184,5 +184,5 @@ export async function syncThread(vault, id, relays, { maxWait = 6000 } = {}) {
     more.forEach(e => seen.add(e.id))
     frontier = uniq(more.map(e => e.id))
   }
-  return { rootId, stored }
+  return { rootId, stored, note }
 }

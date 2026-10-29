@@ -131,3 +131,5 @@ For detailed instructions, see [BUILD_MAC.md](docs/BUILD_MAC.md), [BUILD_IOS.md]
 ## Credit
 
 Built on top of the incredible work by [bitvora](https://github.com/bitvora/haven) and [barrydeen](https://github.com/barrydeen/haven).
+
+3D objects (kind 33331) follow [arkin0x](https://github.com/arkin0x)'s SNO format, [DECK-0003](https://github.com/arkin0x/cyberspace/blob/master/decks/DECK-0003-sno.md) of the Cyberspace protocol, including its 256-colour palette. The web vault reads them with his [sno-core](https://github.com/arkin0x/sno-core), used with his permission (`web-vault/src/vendor/sno-core`).

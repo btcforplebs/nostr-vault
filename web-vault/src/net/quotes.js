@@ -40,6 +40,9 @@ const cache = new Map() // key -> event | null (null: looked everywhere, not fou
 const inflight = new Map() // key -> promise
 const listeners = new Set()
 export const getQuote = key => cache.get(key)
+/** A quoted event already fetched, by its id (a 3D object, kind 33331, which Haven /feed doesn't keep, opens its thread
+ *  from here). -> event | undefined */
+export const quotedById = id => [...cache.values()].find(ev => ev?.id === id)
 export const hasQuote = key => cache.has(key)
 /** Drop a "not found" so the next fetch asks again: Retry on a reply whose parent never came. */
 export const forgetQuote = key => { if (cache.get(key) == null) cache.delete(key) }

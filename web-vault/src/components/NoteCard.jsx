@@ -14,6 +14,8 @@ import { replyRefs, replyToPubkey, repostInner, repostedId } from "../net/thread
 import { Badges } from "./Badges.jsx"
 import { ParentPreview } from "./ParentPreview.jsx"
 import { KindBody, hasKindBody } from "./FeedKinds.jsx"
+import { SnoBody } from "./SnoObject.jsx"
+import { SNO_KIND } from "../readers/sno.js"
 import { GENERIC_REPOST_KIND, SHOWN_REPOST_KINDS, commentParentAuthor, genericRepostInner, repostRef } from "../net/feed-kinds.js"
 import { TranslateButton } from "./TranslateButton.jsx"
 import { EventInfoButton } from "./EventInfo.jsx"
@@ -138,7 +140,7 @@ function NoteBody({ event, memoryOnly, showParent = false }) {
           {replyTo && <div class="reply-to"><ReplyIcon />reply to <Mention pubkey={replyTo} memoryOnly={memoryOnly} /></div>}
         </div>
       </div>
-      {hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards />}
+      {event.kind === SNO_KIND ? <SnoBody event={event} /> : hasKindBody(event) ? <KindBody event={event} memoryOnly={memoryOnly} /> : <NoteText content={event.content} tags={event.tags} author={event.pubkey} memoryOnly={memoryOnly} linkCards />}
       {event.kind === 1 && <TranslateButton id={event.id} content={event.content} />}
     </>
   )

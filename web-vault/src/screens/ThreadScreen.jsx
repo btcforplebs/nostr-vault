@@ -10,6 +10,8 @@ import { useBlocks } from "../components/useBlocks.js"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
 import { compose } from "../net/actions.js"
+import { quotedById } from "../net/quotes.js"
+import { SNO_KIND } from "../readers/sno.js"
 
 if (import.meta.env) import("../styles/thread.css")
 
@@ -23,6 +25,9 @@ const LOADING = "Loading replies…"
 export async function threadStart(vault, id) {
   const [stored] = await vault.feed.query({ ids: [id] })
   if (stored) return { rootId: selfRooted(stored) ? stored.id : rootIdOf(stored), extra: [] }
+  // A 3D object opened from its quote card: Haven /feed doesn't keep kind 33331, the quote cache has it.
+  const quoted = quotedById(id)
+  if (quoted?.kind === SNO_KIND) return { rootId: id, extra: [quoted] }
   const carried = await repostedNote(vault, id)
   if (!carried) return { rootId: id, extra: [] }
   const rid = rootIdOf(carried)
@@ -62,7 +67,9 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
       if (!isLive()) return
       // An article, poll or highlight is its own thread's root, whatever notes it tags.
       const [self] = await vault.feed.query({ ids: [id] })
-      const rid = selfRooted(self) ? id : synced.rootId
+      // A 3D object isn't kept in /feed: the one the relays returned is carried in memory, as a repost's note is.
+      if (!self && synced.note?.id === id && synced.note.kind === SNO_KIND && !extra.current.some(e => e.id === id)) extra.current = [...extra.current, synced.note]
+      const rid = selfRooted(self ?? (synced.note?.id === id ? synced.note : null)) ? id : synced.rootId
       setRootId(rid)
       await reload(rid, isLive)
       if (isLive()) setStatus("")

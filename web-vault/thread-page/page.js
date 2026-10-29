@@ -8,6 +8,7 @@ import { decode, neventEncode, naddrEncode, npubEncode } from "nostr-tools/nip19
 import { buildThread, flattenThread, replyRefs } from "../src/net/thread.js"
 import { displayTitle, longFormMeta, parseInline, parseMarkdown, plainText, LONG_FORM_KIND } from "../src/readers/longform.js"
 import { mediaType } from "../src/net/media.js"
+import { readSno, SNO_KIND } from "../src/readers/sno.js"
 
 export const SITE = "https://nostrvault.app"
 const HEX64 = /^[0-9a-f]{64}$/
@@ -140,6 +141,14 @@ export function previewMeta(post, profiles, url) {
       url, type: "article", author,
     }
   }
+  if (post.kind === SNO_KIND) {
+    const o = readSno(post)
+    return {
+      title: `${o.name || "A 3D object"}, by ${author}`,
+      description: o.alt || (o.ok ? `A 3D object, ${o.vertices} vertices. Open it to turn it.` : "A 3D object."),
+      image: profiles.get(post.pubkey)?.picture ?? `${SITE}/assets/og-image.jpg`, imageIsMedia: false, url, type: "article", author,
+    }
+  }
   const { media } = noteParts(post.content, post.tags)
   const photo = media.find(m => m.type === "image")?.url
   const text = plainNoteText(post.content, profiles)
@@ -191,6 +200,13 @@ function noteHtml(ev, profiles) {
   return `${text ? `<div class="text">${text}</div>` : ""}${mediaHtml ? `<div class="media">${mediaHtml}</div>` : ""}`
 }
 
+/** A 3D object (kind 33331): its name and alt text, never its JSON; the web app (where the page sends a browser) draws it. */
+function snoHtml(ev) {
+  const o = readSno(ev)
+  const what = o.ok ? `3D object · ${o.vertices} vertices` : `3D object · can't be shown: ${o.reason}`
+  return `<h1 class="title">${esc(o.name || "A 3D object")}</h1><div class="text">${esc(what)}${o.alt ? `<br>${esc(o.alt)}` : ""}</div>`
+}
+
 function articleHtml(ev) {
   const meta = longFormMeta(ev)
   const blocks = parseMarkdown(ev.content).map(b => {
@@ -222,7 +238,7 @@ export function renderPost({ post, replies, profiles, code, hints = [] }) {
 <article class="post">
   ${parent ? `<a class="up" href="/thread/${esc(neventEncode({ id: parent }))}">↑ Replying to an earlier post</a>` : ""}
   ${byline(post, profiles, 48)}
-  ${post.kind === LONG_FORM_KIND ? articleHtml(post) : noteHtml(post, profiles)}
+  ${post.kind === LONG_FORM_KIND ? articleHtml(post) : post.kind === SNO_KIND ? snoHtml(post) : noteHtml(post, profiles)}
 </article>
 ${hex ? actionRow(hex) : ""}
 <div class="join">
