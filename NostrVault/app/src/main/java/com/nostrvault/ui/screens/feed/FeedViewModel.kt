@@ -14,6 +14,7 @@ import com.nostrvault.data.model.MediaFeedMode
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.FeedThreadOrderFreeze
 import com.nostrvault.data.model.FeedThreadReplies
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.Reel
@@ -388,6 +389,7 @@ class FeedViewModel @Inject constructor(
             feedService.setShowReplies(true)
         }
         _layoutModeToggle.value++
+        resortThreads()
     }
 
     /**
@@ -430,6 +432,33 @@ class FeedViewModel @Inject constructor(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
 
+    /** Holds thread cards where they are on screen until [resortThreads] (FeedThreadOrderFreeze). */
+    private val threadOrder = FeedThreadOrderFreeze()
+    private val threadResorts = MutableStateFlow(0)
+
+    /** The pill, pull to refresh, the Feed tab, a feed/layout/account switch and returning to the app. */
+    fun resortThreads() {
+        threadOrder.resort()
+        threadResorts.value++
+    }
+
+    // Every return to the app sorts afresh (the process, not this screen:
+    // coming back from a note you replied in must not move its card), and so
+    // does another account's feed.
+    private val resortOnAppStart = object : androidx.lifecycle.DefaultLifecycleObserver {
+        override fun onStart(owner: androidx.lifecycle.LifecycleOwner) = resortThreads()
+    }
+
+    init {
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(resortOnAppStart)
+        viewModelScope.launch { activeHexPubkey.drop(1).collect { resortThreads() } }
+    }
+
+    override fun onCleared() {
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(resortOnAppStart)
+        super.onCleared()
+    }
+
     val feedThreads: StateFlow<List<FeedThread>> = combine(
         filteredNotes,
         threadedModeEnabled,
@@ -437,10 +466,11 @@ class FeedViewModel @Inject constructor(
         // Blocking can hide a thread's root or an ancestor without changing
         // the visible note list, so regroup on it directly.
         configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
-        feedService.feedThreadReplies,
+        // A resort() bump re-runs this with the frozen order dropped.
+        feedService.feedThreadReplies.combine(threadResorts) { replies, _ -> replies },
     ) { notes, threaded, _, _, fetchedReplies ->
         // Hashtags groups its own sections (HashtagsFeed).
-        if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList() else {
+        if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList<FeedThread>().also { threadOrder.resort() } else {
             val blocked = feedService.blockedHexForActiveAccount()
             // Popular holds only top-level posts, and Global's stream rarely
             // carries the replies to what it shows, so their replies are
@@ -453,13 +483,15 @@ class FeedViewModel @Inject constructor(
             } else {
                 notes
             }
-            FeedThreadGrouping.withoutBlocked(
+            val threads = FeedThreadGrouping.withoutBlocked(
                 FeedThreadGrouping.build(pool, keepFeedOrder = fetchesReplies) { id ->
                     // A blocked author's post is never pulled in as context.
                     feedService.findNote(id)?.takeIf { it.pubkey !in blocked }
                 },
                 blocked,
             ) { id -> feedService.findNote(id) }
+            // Popular and Global already keep the feed's order.
+            if (fetchesReplies) threads else threadOrder.apply(threads)
         }
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -602,6 +634,7 @@ class FeedViewModel @Inject constructor(
     private fun showFeed(mode: FeedMode) {
         val previous = _feedMode.value
         _feedMode.value = mode
+        resortThreads()
         if (previous == FeedMode.REELS && mode != FeedMode.REELS) {
             // A page still in flight has no one left to show it to.
             reelsFeedService.disconnect()
@@ -638,6 +671,7 @@ class FeedViewModel @Inject constructor(
         // Refreshing takes in the posts waiting behind the New Posts pill, the
         // only way to reach them with the pill switched off (iOS #276).
         feedService.applyPendingNotes()
+        resortThreads()
         viewModelScope.launch {
             _isRefreshing.value = true
             feedService.refresh()

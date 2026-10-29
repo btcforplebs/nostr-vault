@@ -208,6 +208,7 @@ internal fun FeedTabEffects(
             if (isAtTop()) {
                 viewModel.refresh()
             } else {
+                viewModel.resortThreads()
                 listState.scrollToItem(0) // Instant scroll for better performance
             }
         }
