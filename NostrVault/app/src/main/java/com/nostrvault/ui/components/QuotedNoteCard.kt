@@ -138,6 +138,10 @@ fun QuotedNoteCard(
             if (meta != null) {
                 Spacer(Modifier.height(6.dp))
                 QuotedArticleBody(meta)
+            } else if (note.kind == com.nostrvault.data.model.SnoObject.KIND) {
+                // A 3D object (SNO): its content is geometry, not text to print.
+                Spacer(Modifier.height(8.dp))
+                com.nostrvault.ui.components.sno.SnoQuoteBody(note)
             } else {
                 // Content
                 if (note.content.isNotBlank()) {
