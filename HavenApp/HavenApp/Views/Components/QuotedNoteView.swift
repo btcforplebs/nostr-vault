@@ -72,6 +72,9 @@ struct QuotedNoteView: View {
 
             if isLongForm {
                 articleBody
+            } else if note.kind == SnoObject.kind {
+                // A quoted 3D object: drawn, not its geometry JSON as text.
+                SnoObjectView(note: note, compact: true)
             } else {
                 noteBody
             }
