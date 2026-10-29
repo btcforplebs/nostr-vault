@@ -14,7 +14,7 @@ enum LiveFullScreen {
         #if os(iOS)
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         AppDelegate.allowLandscape = true
-        windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        turn(to: .landscapeRight)
         #endif
     }
 
@@ -22,11 +22,30 @@ enum LiveFullScreen {
         #if os(iOS)
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         AppDelegate.allowLandscape = false
-        windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        turn(to: .portrait)
         #endif
     }
 
     #if os(iOS)
+    /// UIKit reads the allowed orientations again only when told to, from
+    /// every controller up to the sheet on top; until then a request for
+    /// landscape is refused against the old, upright-only answer.
+    private static func turn(to orientations: UIInterfaceOrientationMask) {
+        guard let scene = windowScene else { return }
+        for window in scene.windows {
+            var controller = window.rootViewController
+            while let current = controller {
+                current.setNeedsUpdateOfSupportedInterfaceOrientations()
+                controller = current.presentedViewController
+            }
+        }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations)) { error in
+            #if DEBUG
+            print("LiveFullScreen: orientation refused: \(error)")
+            #endif
+        }
+    }
+
     private static var windowScene: UIWindowScene? {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
