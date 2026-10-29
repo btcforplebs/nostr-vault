@@ -237,7 +237,7 @@ func backfillRelay(ctx context.Context, url string, owners []string) bool {
 
 // sweepFollowers re-reads the latest list of every current follower, so a
 // list that dropped the owner is recorded as an unfollow. Reports whether
-// every batch ran (ctx not cancelled).
+// every batch ran (ctx not cancelled) and was answered by a seed relay.
 //
 // Only lists published since the last sweep (less an hour) are asked for: a
 // list that has not changed since then cannot hold a new unfollow, and new
@@ -261,10 +261,15 @@ func sweepFollowers(ctx context.Context, l *followers.Ledger, owners []string) b
 		}
 		bctx, cancel := context.WithTimeout(ctx, followerFetchTimeout)
 		filter := followerSweepFilter(batch, l.LastSweep())
-		for ev := range pool.FetchMany(bctx, config.ImportSeedRelays, filter) {
+		answered := fetchAnswered(bctx, config.ImportSeedRelays, filter, func(ev nostr.RelayEvent) {
 			observeFollowList(ev.Event)
-		}
+		})
 		cancel()
+		if answered == 0 {
+			// No seed relay was reached: marking this sweep done would make
+			// the next one's since filter skip this gap for good.
+			return false
+		}
 	}
 	return ctx.Err() == nil
 }

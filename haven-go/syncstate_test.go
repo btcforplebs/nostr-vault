@@ -71,15 +71,15 @@ func TestFallbackInboxSinceWidensOnlyOnce(t *testing.T) {
 	now := time.Now()
 	wm := now.Add(-15 * time.Minute).Unix()
 	floor := nostr.Timestamp(now.Add(-giftWrapBackdateSlack).Unix())
-	if got := fallbackInboxSince(wm, true, now); got != floor {
+	if got := fallbackInboxSince(wm, true, false, now); got != floor {
 		t.Fatalf("first pull since %d, want the gift-wrap floor %d", got, floor)
 	}
-	if got := fallbackInboxSince(wm, false, now); got != nostr.Timestamp(wm-60) {
+	if got := fallbackInboxSince(wm, false, false, now); got != nostr.Timestamp(wm-60) {
 		t.Fatalf("later pull since %d, want watermark-60 %d", got, wm-60)
 	}
 	// A watermark older than the floor is never narrowed.
 	old := now.Add(-5 * 24 * time.Hour).Unix()
-	if got := fallbackInboxSince(old, true, now); got != nostr.Timestamp(old-60) {
+	if got := fallbackInboxSince(old, true, false, now); got != nostr.Timestamp(old-60) {
 		t.Fatalf("old watermark since %d, want %d", got, old-60)
 	}
 }
@@ -89,12 +89,44 @@ func TestFallbackInboxSinceWidensOnlyOnce(t *testing.T) {
 func TestGivenZapsSinceUsesSavedMark(t *testing.T) {
 	s := openSyncState(afero.NewMemMapFs(), "s.json")
 	window := nostr.Timestamp(time.Now().Add(-32 * 24 * time.Hour).Unix())
-	if got := givenZapsSince(s, window); got != window {
+	if got := givenZapsSince(s, window, false); got != window {
 		t.Fatalf("first pull since %d, want the window %d", got, window)
 	}
 	last := time.Now().Add(-15 * time.Minute).Unix()
 	s.setMark("given_zaps", last)
-	if got := givenZapsSince(s, window); got != nostr.Timestamp(last-600) {
+	if got := givenZapsSince(s, window, false); got != nostr.Timestamp(last-600) {
 		t.Fatalf("later pull since %d, want %d", got, last-600)
+	}
+}
+
+// A deep pull reaches back at least 24 h, however fresh the watermark.
+func TestFallbackInboxSinceDeep(t *testing.T) {
+	now := time.Now()
+	wm := now.Add(-15 * time.Minute).Unix()
+	day := nostr.Timestamp(now.Add(-dailyPullEvery).Unix())
+	if got := fallbackInboxSince(wm, false, true, now); got != day {
+		t.Fatalf("deep pull since %d, want %d", got, day)
+	}
+}
+
+// The daily pulls are due with nothing saved, not due right after one was
+// answered, and due again a day later; a full given-zaps pull uses the window.
+func TestDailyDue(t *testing.T) {
+	s := openSyncState(afero.NewMemMapFs(), "s.json")
+	now := time.Now()
+	if !dailyDue(s, "given_zaps_full", now) {
+		t.Fatal("not due with nothing saved")
+	}
+	s.setMark("given_zaps_full", now.Add(-time.Hour).Unix())
+	if dailyDue(s, "given_zaps_full", now) {
+		t.Fatal("due an hour after the last one")
+	}
+	if !dailyDue(s, "given_zaps_full", now.Add(dailyPullEvery)) {
+		t.Fatal("not due a day later")
+	}
+	window := nostr.Timestamp(now.Add(-32 * 24 * time.Hour).Unix())
+	s.setMark("given_zaps", now.Add(-15*time.Minute).Unix())
+	if got := givenZapsSince(s, window, true); got != window {
+		t.Fatalf("full pull since %d, want the window %d", got, window)
 	}
 }

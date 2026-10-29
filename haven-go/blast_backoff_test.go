@@ -152,6 +152,11 @@ func TestRateLimitIsNotARejection(t *testing.T) {
 	if !isRejection(errorString("msg: blocked: no")) {
 		t.Fatal("blocked not counted as a rejection")
 	}
+	for _, msg := range []string{"msg: error: db busy", "msg: auth-required: sign in"} {
+		if isRejection(errorString(msg)) {
+			t.Fatalf("%q counted as a final rejection", msg)
+		}
+	}
 	if isRejection(context.DeadlineExceeded) {
 		t.Fatal("timeout counted as a rejection")
 	}

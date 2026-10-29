@@ -31,11 +31,21 @@ const (
 )
 
 // isRejection reports whether a publish error is the relay's own OK false.
-// go-nostr reports those as "msg: <reason>". A rate limit is the one answer
-// that changes with time, so it counts as a failure to retry later.
+// go-nostr reports those as "msg: <reason>". A relay error, rate limit or
+// AUTH request changes with time, so those count as failures to retry later.
 func isRejection(err error) bool {
-	msg := err.Error()
-	return strings.HasPrefix(msg, "msg: ") && !strings.Contains(msg, "rate-limited")
+	reason, ok := strings.CutPrefix(err.Error(), "msg: ")
+	if !ok {
+		return false
+	}
+	// NIP-01 prefixes that say "not now" rather than "never": a relay
+	// error, a rate limit, or a relay that wants AUTH first.
+	for _, transient := range []string{"error:", "rate-limited:", "auth-required:"} {
+		if strings.HasPrefix(reason, transient) {
+			return false
+		}
+	}
+	return !strings.Contains(reason, "rate-limited")
 }
 
 // blast publishes ev to every blastr relay and reports how they answered.
