@@ -321,6 +321,7 @@ extension FeedView {
                     // Posts pill, the only way to reach them with it switched off.
                     if !feedService.pendingNotes.isEmpty { feedService.applyPendingNotes() }
                     feedService.refresh()
+                    resortThreads()
                     // Hold the indicator until loading finishes
                     while feedService.isLoadingFeed {
                         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -401,7 +402,7 @@ extension FeedView {
                 // layout. Regroup immediately rather than waiting on the next
                 // filteredNotes change, which a cached feed may not produce.
                 .onChange(of: feedService.feedMode) { _, _ in
-                    rebuildThreadsIfNeeded(immediate: true)
+                    resortThreads(immediate: true)
                 }
                 .onChange(of: feedService.feedThreadReplies.count) { _, _ in
                     rebuildThreadsIfNeeded()
@@ -440,14 +441,22 @@ extension FeedView {
                     // Inside a note detail — pop back to feed list (keeps scroll position)
                     navigationPath = NavigationPath()
                 } else if !isAtTop {
-                    // At feed root but scrolled down — scroll to top
+                    // At feed root but scrolled down — scroll to top, with
+                    // the threads re-sorted by latest activity.
+                    resortThreads(immediate: true)
                     withAnimation(Motion.scrollJump) {
                         proxy.scrollTo("top", anchor: .top)
                     }
                 } else {
                     // Already at feed root and at top — refresh
                     FeedService.shared.refresh()
+                    resortThreads()
                 }
+            }
+            // Every return to the app re-sorts the threads; while the feed
+            // stays on screen their order holds (frozenThreadKeys).
+            .onReceive(NotificationCenter.default.publisher(for: Self.appReturnNotification)) { _ in
+                resortThreads()
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToTop"))) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -466,7 +475,7 @@ extension FeedView {
                 isAtTop = true
                 ChromeCollapse.shared.reset()
                 rebuildRowDataCache()
-                rebuildThreadsIfNeeded()
+                resortThreads()
             }
             .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
                 guard (note.object as? Int) == 0, configService.activeAccountCanSign else { return }
@@ -476,6 +485,7 @@ extension FeedView {
             .modifier(RefreshesOnTabCommand(tab: 0, isActive: { !feedService.isLoadingFeed }) {
                 if !feedService.pendingNotes.isEmpty { feedService.applyPendingNotes() }
                 feedService.refresh()
+                resortThreads()
             })
         }
         .overlay(alignment: .bottomTrailing) {

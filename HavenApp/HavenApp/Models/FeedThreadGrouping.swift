@@ -203,6 +203,31 @@ enum FeedThreadGrouping {
         }
     }
 
+    /// Order threads by the sort key each had when it was first shown, so a
+    /// reply (yours or anyone's) fills its card in place instead of lifting
+    /// it to the top under the reader. A thread with no key yet sorts by its
+    /// own latest activity: a newly active conversation goes above, an older
+    /// page goes below. Clearing `frozenKeys` is a full re-sort.
+    ///
+    /// - Returns: the ordered threads and the keys to keep for the next build
+    ///   (only threads still shown, so the map can't outgrow the feed).
+    static func applyFrozenOrder<Note: ThreadGroupable>(
+        _ threads: [FeedThread<Note>],
+        frozenKeys: [String: Date]
+    ) -> (threads: [FeedThread<Note>], keys: [String: Date]) {
+        var keys: [String: Date] = [:]
+        keys.reserveCapacity(threads.count)
+        for thread in threads {
+            keys[thread.rootId] = frozenKeys[thread.rootId] ?? thread.latestActivity
+        }
+        let ordered = threads.enumerated().sorted { lhs, rhs in
+            let l = keys[lhs.element.rootId] ?? .distantPast
+            let r = keys[rhs.element.rootId] ?? .distantPast
+            return l != r ? l > r : lhs.offset < rhs.offset
+        }.map(\.element)
+        return (ordered, keys)
+    }
+
     /// Depth-first walk from the root, oldest sibling first, so a thread reads
     /// top to bottom the way it was written.
     private static func flatten<Note: ThreadGroupable>(members: [Note], rootId: String) -> [FeedThreadEntry<Note>] {
