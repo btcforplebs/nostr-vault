@@ -19,6 +19,7 @@ extension FeedView {
         guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
             if !feedThreads.isEmpty { feedThreads = [] }
+            frozenThreadKeys = [:]
             return
         }
 
@@ -33,7 +34,7 @@ extension FeedView {
                 feedService.loadFeedThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
             }
             let notes = fetchesReplies ? feedService.filteredNotes + feedService.feedThreadReplies : feedService.filteredNotes
-            feedThreads = FeedThreadGrouping.build(notes: notes, keepFeedOrder: fetchesReplies) { id in
+            let built = FeedThreadGrouping.build(notes: notes, keepFeedOrder: fetchesReplies) { id in
                 // Ancestors the timeline never showed still live in the feed
                 // service's caches; pulling them in keeps a conversation whole.
                 // A blocked author's post is never pulled in as context.
@@ -47,6 +48,14 @@ extension FeedView {
                 guard thread.root == nil,
                       let root = feedService.findNote(id: thread.rootId) else { return true }
                 return !blocked.contains(root.pubkey)
+            }
+            // Order by activity, but frozen while the feed is on screen. A
+            // loading feed sorts freely: it is being refilled anyway.
+            if fetchesReplies || feedService.isLoadingFeed {
+                feedThreads = built
+                frozenThreadKeys = [:]
+            } else {
+                (feedThreads, frozenThreadKeys) = FeedThreadGrouping.applyFrozenOrder(built, frozenKeys: frozenThreadKeys)
             }
             // Ask for every missing root now, in one batch, rather than from
             // each card's onAppear: a fast scroll reaches cards faster than a
@@ -63,6 +72,20 @@ extension FeedView {
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
+    }
+
+    #if os(iOS)
+    static let appReturnNotification = UIApplication.willEnterForegroundNotification
+    #else
+    static let appReturnNotification = NSApplication.didBecomeActiveNotification
+    #endif
+
+    /// Re-sort the threaded feed by latest activity. Only on the reader's
+    /// say-so: pull, the New Posts pill, the Feed tab, a feed, layout or
+    /// account switch, and every return to the app.
+    func resortThreads(immediate: Bool = false) {
+        frozenThreadKeys = [:]
+        rebuildThreadsIfNeeded(immediate: immediate)
     }
 
     func rebuildRowDataCache(immediate: Bool = false) {

@@ -87,6 +87,10 @@ struct FeedView: View {
     /// the same signals as the row-data cache and left empty in the other two
     /// layouts so nothing is grouped that will never be drawn.
     @State var feedThreads: [FeedThread<FeedNote>] = []
+    /// Each shown thread's sort key when it was first shown. Threads keep
+    /// that place while the feed is on screen, so a reply doesn't lift its
+    /// card from under the reader; `resortThreads()` clears it.
+    @State var frozenThreadKeys: [String: Date] = [:]
     @State var threadRebuildWork: DispatchWorkItem?
     /// A gap-fill regroup is already queued; see regroupIfGapFilled.
     @State var gapRegroupScheduled = false

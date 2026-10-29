@@ -97,7 +97,7 @@ extension FeedView {
         configService.save()
         expandedNoteId = nil
         if needsRefilter { feedService.recomputeFilteredNotes() }
-        rebuildThreadsIfNeeded(immediate: true)
+        resortThreads(immediate: true)
         }
         if let readingNoteId { pendingLayoutAnchor = rowId(showing: readingNoteId) }
     }

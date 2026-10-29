@@ -93,6 +93,45 @@ final class FeedThreadGroupingTests: XCTestCase {
         XCTAssertEqual(threads[0].latestActivity, Date(timeIntervalSince1970: 900))
     }
 
+    /// Replying from Threaded View: the card you answered keeps its place
+    /// until a re-sort (pull, pill, tab, return to the app).
+    func testFrozenOrderKeepsARepliedThreadInPlace() {
+        let before = FeedThreadGrouping.build(notes: [
+            TestNote("a", at: 300), TestNote("b", at: 200), TestNote("c", at: 100),
+        ])
+        let frozen = FeedThreadGrouping.applyFrozenOrder(before, frozenKeys: [:])
+        XCTAssertEqual(frozen.threads.map(\.rootId), ["a", "b", "c"])
+
+        let after = FeedThreadGrouping.build(notes: [
+            TestNote("mine", at: 900, parent: "c", root: "c", author: "me"),
+            TestNote("a", at: 300), TestNote("b", at: 200), TestNote("c", at: 100),
+        ])
+        XCTAssertEqual(after.map(\.rootId), ["c", "a", "b"], "the plain sort lifts it")
+
+        let held = FeedThreadGrouping.applyFrozenOrder(after, frozenKeys: frozen.keys)
+        XCTAssertEqual(held.threads.map(\.rootId), ["a", "b", "c"])
+        XCTAssertEqual(held.threads[2].entries.map(\.id), ["c", "mine"], "the reply shows in the card")
+
+        let resorted = FeedThreadGrouping.applyFrozenOrder(after, frozenKeys: [:])
+        XCTAssertEqual(resorted.threads.map(\.rootId), ["c", "a", "b"])
+    }
+
+    /// Unseen threads place by their own activity: a newly active one above,
+    /// an older page below. Keys drop threads no longer shown.
+    func testFrozenOrderPlacesNewThreadsByActivity() {
+        let first = FeedThreadGrouping.applyFrozenOrder(
+            FeedThreadGrouping.build(notes: [TestNote("a", at: 300), TestNote("b", at: 200)]),
+            frozenKeys: [:])
+        let next = FeedThreadGrouping.build(notes: [
+            TestNote("new", at: 800),
+            TestNote("late", at: 700, parent: "b", root: "b", author: "bob"),
+            TestNote("a", at: 300), TestNote("b", at: 200), TestNote("old", at: 50),
+        ])
+        let held = FeedThreadGrouping.applyFrozenOrder(next, frozenKeys: first.keys.merging(["gone": Date()]) { a, _ in a })
+        XCTAssertEqual(held.threads.map(\.rootId), ["new", "a", "b", "old"])
+        XCTAssertEqual(Set(held.keys.keys), ["new", "a", "b", "old"])
+    }
+
     func testMissingRootIsResolvedThroughTheCallback() {
         let missingRoot = TestNote("root", at: 100)
         let notes = [TestNote("r1", at: 200, parent: "root", root: "root", author: "bob")]

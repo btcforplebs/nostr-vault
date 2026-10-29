@@ -82,6 +82,7 @@ extension FeedView {
     func newPostsButton(compact: Bool, scrollToTop: @escaping () -> Void) -> some View {
         Button(action: {
             feedService.applyPendingNotes()
+            resortThreads()
             scrollToTop()
         }) {
             HStack(spacing: compact ? 4 : 8) {
