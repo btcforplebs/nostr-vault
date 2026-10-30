@@ -186,6 +186,9 @@ func TestStartWaitsForLastCycleToDrain(t *testing.T) {
 	}
 	drained := make(chan struct{})
 	lc.stopCycle(func(c *relayCycle) { lc.setDrained(drained) })
+	if !lc.isDraining() {
+		t.Fatal("isDraining = false while the last cycle holds the databases")
+	}
 
 	setupRan := false
 	if err := lc.startCycle(func(c *relayCycle) error { setupRan = true; return nil }); err != errStillDraining {
@@ -195,6 +198,9 @@ func TestStartWaitsForLastCycleToDrain(t *testing.T) {
 		t.Fatal("setup ran while the last cycle was still draining")
 	}
 	close(drained)
+	if lc.isDraining() {
+		t.Fatal("isDraining = true after the drain finished")
+	}
 	if err := lc.startCycle(func(c *relayCycle) error { return nil }); err != nil {
 		t.Fatalf("start after drain = %v", err)
 	}

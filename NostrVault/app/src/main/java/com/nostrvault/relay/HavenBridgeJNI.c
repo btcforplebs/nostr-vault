@@ -105,6 +105,7 @@ extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
 extern int ActiveConnectionsC(void);
+extern int RelayDrainingC(void);
 
 // Helper: Convert Go C.CString result to jstring (and free the C memory)
 static jstring goStringToJstring(JNIEnv *env, char *goStr) {
@@ -138,6 +139,11 @@ Java_com_nostrvault_relay_HavenBridge_startRelay(JNIEnv *env, jobject thiz, jboo
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_stopRelay(JNIEnv *env, jobject thiz) {
     StopRelayC();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_relayDraining(JNIEnv *env, jobject thiz) {
+    return RelayDrainingC() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

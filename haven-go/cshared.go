@@ -525,6 +525,18 @@ func StopRelayC() {
 	})
 }
 
+// RelayDrainingC returns 1 while the last stopped relay cycle is still
+// shutting down (its databases open, every start refused), else 0. The host
+// asks this instead of reading the log, which carries remote text.
+//
+//export RelayDrainingC
+func RelayDrainingC() C.int {
+	if relayLC.isDraining() {
+		return 1
+	}
+	return 0
+}
+
 //export RequestRelaySyncC
 func RequestRelaySyncC() {
 	// Triggers an immediate inbox + owner catch-up pull in the running relay

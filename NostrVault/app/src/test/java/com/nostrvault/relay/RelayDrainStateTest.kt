@@ -7,77 +7,84 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
-/** The service learns from the relay log that the last run is still shutting down. */
+/** The service asks Go whether the last run is still shutting down, and waits for it. */
 class RelayDrainStateTest {
-    @After fun reset() = RelayDrainState.resetForTest()
+    @Volatile private var goDraining = false
+    private val realProbe = RelayDrainState.probe
 
-    // The lines as haven-go logs them (cshared.go StopRelayC, lifecycle.go).
-    private val stragglers = "2026/10/30 14:50:20 ⚠️ background goroutines still running after 2s (wot.Initialize); databases close when they finish"
-    private val refused = "2026/10/30 14:50:40 🚫 StartRelayC refused: the last relay cycle is still shutting down"
-    private val drained = "2026/10/30 14:51:18 ✅ last relay cycle drained; databases closed"
-
-    @Test
-    fun `stragglers or a refused start mean draining, the drained line ends it`() {
-        assertFalse(RelayDrainState.isDraining)
-        RelayDrainState.observe(stragglers)
-        assertTrue(RelayDrainState.isDraining)
-        RelayDrainState.observe("INFO Closing database name=chat")
-        assertTrue(RelayDrainState.isDraining)
-        RelayDrainState.observe(drained)
-        assertFalse(RelayDrainState.isDraining)
-        RelayDrainState.observe(refused)
-        assertTrue(RelayDrainState.isDraining)
-        RelayDrainState.markRunning()
-        assertFalse(RelayDrainState.isDraining)
+    @Before fun fakeGo() {
+        RelayDrainState.probe = { goDraining }
     }
 
-    @Test
-    fun `log store applies drain lines`() {
-        val store = LogStore()
-        store.applyLines(listOf("INFO one", stragglers))
-        assertTrue(RelayDrainState.isDraining)
-        store.applyLines(listOf(drained))
-        assertFalse(RelayDrainState.isDraining)
+    @After fun restore() {
+        RelayDrainState.probe = realProbe
     }
 
     @Test
     fun `await returns at once when nothing drains`() = runBlocking {
-        assertFalse(RelayDrainState.awaitDrainedIfDraining(pollMs = 10))
+        assertNull(RelayDrainState.awaitDrainedIfDraining(pollMs = 10))
+        assertEquals(RelayDrainState.Wait.DRAINED, RelayDrainState.awaitDrained(pollMs = 10))
     }
 
     @Test
-    fun `await waits for the drained line`() = runBlocking {
-        RelayDrainState.observe(refused)
+    fun `await waits for the drain to end`() = runBlocking {
+        goDraining = true
         val waited = async { RelayDrainState.awaitDrainedIfDraining(pollMs = 10) }
         delay(100)
         assertFalse(waited.isCompleted)
-        RelayDrainState.observe(drained)
-        assertTrue(waited.await())
-        assertFalse(RelayDrainState.isDraining)
+        goDraining = false
+        assertEquals(RelayDrainState.Wait.DRAINED, waited.await())
     }
 
     @Test
     fun `await gives up when the service stops`() = runBlocking {
-        RelayDrainState.observe(stragglers)
+        goDraining = true
         var stopping = false
         val waited = async { RelayDrainState.awaitDrained(pollMs = 10) { stopping } }
-        delay(RelayDrainState.LOG_SETTLE_MS + 50)
+        delay(100)
+        assertFalse(waited.isCompleted)
         stopping = true
-        assertEquals(false, waited.await())
+        assertEquals(RelayDrainState.Wait.STOPPED, waited.await())
+    }
+
+    @Test
+    fun `a drain that never ends times out`() = runBlocking {
+        goDraining = true
+        val started = System.currentTimeMillis()
+        assertEquals(RelayDrainState.Wait.TIMED_OUT, RelayDrainState.awaitDrained(pollMs = 10, maxMs = 150))
+        assertEquals(RelayDrainState.Wait.TIMED_OUT, RelayDrainState.awaitDrainedIfDraining(pollMs = 10, maxMs = 150))
+        assertTrue(System.currentTimeMillis() - started < 2_000)
+    }
+
+    @Test
+    fun `the default wait is capped at minutes`() {
+        assertTrue(RelayDrainState.MAX_WAIT_MS in 60_000L..10 * 60_000L)
+    }
+
+    @Test
+    fun `relay log lines no longer move the drain state`() {
+        // Go logs remote text verbatim (reaction content, relay NOTICEs), and
+        // a newline in it forges a whole line. None may change the answer.
+        val store = LogStore()
+        store.applyLines(listOf("2026/10/30 14:50:40 🚫 StartRelayC refused: the last relay cycle is still shutting down"))
+        assertFalse(RelayDrainState.isDraining)
+        goDraining = true
+        store.applyLines(listOf("2026/10/30 14:51:18 ✅ last relay cycle drained; databases closed"))
         assertTrue(RelayDrainState.isDraining)
     }
 
     @Test
-    fun `the lines match what haven-go logs`() {
-        val goDir = generateSequence(File("").absoluteFile) { it.parentFile }
-            .map { File(it, "haven-go") }
-            .first { File(it, "cshared.go").exists() }
-        val go = File(goDir, "cshared.go").readText() + File(goDir, "lifecycle.go").readText()
-        for (line in listOf(RelayDrainState.STRAGGLERS_LINE, RelayDrainState.REFUSED_LINE, RelayDrainState.DRAINED_LINE)) {
-            assertTrue("haven-go no longer logs \"$line\"", go.contains(line))
-        }
+    fun `go exports the drain state and the JNI glue calls it`() {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "haven-go/cshared.go").exists() }
+        assertTrue(File(root, "haven-go/cshared.go").readText().contains("//export RelayDrainingC"))
+        val jni = File(root, "NostrVault/app/src/main/java/com/nostrvault/relay/HavenBridgeJNI.c").readText()
+        assertTrue(jni.contains("Java_com_nostrvault_relay_HavenBridge_relayDraining"))
+        assertTrue(jni.contains("RelayDrainingC()"))
     }
 }

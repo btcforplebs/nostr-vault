@@ -159,6 +159,9 @@ func TestRelayRestartUnderTraffic(t *testing.T) {
 	if !ok {
 		t.Fatal("last cycle never drained")
 	}
+	if RelayDrainingC() != 0 {
+		t.Fatal("RelayDrainingC = 1 after the last cycle drained")
+	}
 	if published.Load() == 0 || queried.Load() == 0 {
 		t.Fatalf("no traffic reached the relay (published %d, queried %d)", published.Load(), queried.Load())
 	}
