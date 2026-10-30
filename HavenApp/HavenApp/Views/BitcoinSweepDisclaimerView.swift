@@ -6,6 +6,7 @@ struct BitcoinSweepDisclaimerView: View {
     @EnvironmentObject var configService: ConfigService
     @State private var showSweepFlow = false
     @State private var balance: Int = 0
+    @State private var utxoCount: Int = 1
     @State private var isLoadingBalance = true
     @State private var currentStep: Int = 0
 
@@ -16,7 +17,7 @@ struct BitcoinSweepDisclaimerView: View {
                 .ignoresSafeArea()
 
             if showSweepFlow {
-                BitcoinSweepView(balanceSats: balance, onDismiss: onDismiss)
+                BitcoinSweepView(balanceSats: balance, utxoCount: utxoCount, onDismiss: onDismiss)
                     .transition(.move(edge: .trailing))
             } else {
                 switch currentStep {
@@ -375,27 +376,14 @@ struct BitcoinSweepDisclaimerView: View {
                 return
             }
 
-            struct TxoStats: Decodable {
-                let funded_txo_sum: Int
-                let spent_txo_sum: Int
-            }
-            struct AddressStats: Decodable {
-                let chain_stats: TxoStats
-                let mempool_stats: TxoStats
-            }
-
-            do {
-                let stats = try JSONDecoder().decode(AddressStats.self, from: data)
-                let funded = stats.chain_stats.funded_txo_sum + stats.mempool_stats.funded_txo_sum
-                let spent = stats.chain_stats.spent_txo_sum + stats.mempool_stats.spent_txo_sum
-                let total = funded - spent
-
-                await MainActor.run {
-                    self.balance = max(0, total)
-                    self.isLoadingBalance = false
-                }
-            } catch {
+            guard let funds = BitcoinSweepEstimate.AddressFunds(mempoolJSON: data) else {
                 await MainActor.run { isLoadingBalance = false }
+                return
+            }
+            await MainActor.run {
+                self.balance = funds.balanceSats
+                self.utxoCount = max(1, funds.utxoCount)
+                self.isLoadingBalance = false
             }
         }
     }

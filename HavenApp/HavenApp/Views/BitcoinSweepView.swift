@@ -2,6 +2,8 @@ import SwiftUI
 
 struct BitcoinSweepView: View {
     let balanceSats: Int
+    /// Unspent outputs the sweep will spend; the fee grows with each.
+    var utxoCount: Int = 1
     var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
@@ -66,10 +68,9 @@ struct BitcoinSweepView: View {
         return max(1, selectedTier.rate(from: e))
     }
 
-    // Rough vsize for a 1-in 1-out P2TR key-path sweep
-    private var estimatedVsize: Int { 111 }
+    private var estimatedVsize: Int { BitcoinSweepEstimate.vsize(utxoCount: utxoCount) }
 
-    private var estimatedFee: Int { estimatedVsize * currentFeeRate }
+    private var estimatedFee: Int { BitcoinSweepEstimate.fee(utxoCount: utxoCount, feeRate: currentFeeRate) }
 
     private var sendAmount: Int { max(0, balanceSats - estimatedFee) }
 
@@ -77,7 +78,7 @@ struct BitcoinSweepView: View {
 
     private var canSweep: Bool {
         validAddress != nil
-            && sendAmount > 546
+            && sendAmount > BitcoinSweepEstimate.dustLimit
             && sweepState.isIdle
     }
 
@@ -195,7 +196,7 @@ struct BitcoinSweepView: View {
                 Divider()
                 feePreviewRow(label: "You'll send",
                               value: formatSats(max(0, sendAmount)),
-                              color: sendAmount > 546 ? .white : .red)
+                              color: sendAmount > BitcoinSweepEstimate.dustLimit ? .white : .red)
             }
             .padding(14)
             .background(Color.secondary.opacity(0.06))
@@ -232,7 +233,7 @@ struct BitcoinSweepView: View {
             .buttonStyle(.plain)
             .disabled(!canSweep)
 
-            if sendAmount <= 546 && sendAmount > 0 {
+            if sendAmount <= BitcoinSweepEstimate.dustLimit && sendAmount > 0 {
                 Text("Insufficient funds after fees")
                     .font(.appSystem(size: 12))
                     .foregroundColor(.secondary)
