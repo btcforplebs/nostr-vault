@@ -1,12 +1,15 @@
 // The public post page's server: GET /thread/<nevent|note|naddr> -> the post and its replies as HTML (page.js), read
 // from public relays (fetch.js). GET /p/<npub> -> the profile page (profile-page.js), from the same relays. nginx proxies /thread/ here (website/nginx.conf); run it with `npm run thread`.
-// Pages are kept in memory for a while, so a link pasted into a busy chat costs the relays one read.
+// Pages are kept in memory for a while, so a link pasted into a busy chat costs the relays one read. The relays are
+// kept connected between pages (one pool for the service), and a read never waits on the slowest of them
+// (relay-read.js): a cold link was 7.2 s, two rounds held to the full timeout by a relay that never answers.
 // A browser is sent on into the web app (page.js appLink); the page itself is for link previews.
 import http from "node:http"
 import { SimplePool } from "nostr-tools/pool"
 import { parseTarget, renderMissing, renderPost, replyList } from "./page.js"
 import { loadProfile, loadThread, safeRelay } from "./fetch.js"
 import { parseProfileTarget, renderProfile, renderProfileMissing } from "./profile-page.js"
+import { relayRead } from "./relay-read.js"
 
 const PORT = Number(process.env.PORT || 8790)
 const WAIT_MS = Number(process.env.THREAD_WAIT_MS || 3500) // per relay read; chat unfurlers give up after ~5-10 s
@@ -28,21 +31,22 @@ export function closeOnce(Base) {
 
 export const newPool = (Base = globalThis.WebSocket) => new SimplePool({ websocketImplementation: closeOnce(Base) })
 
+// One pool for the service, so a page doesn't pay a TLS handshake per relay; SimplePool reconnects a dropped relay.
+let shared = null
+const pool = () => (shared ??= newPool())
+/** A page read through relay-read.js on the shared pool: each relay asked on its own, ending early. */
+export const pageQuery = (p = pool()) => (relays, filter, opts = {}) =>
+  relayRead((url, f, h) => p.subscribeMany([url], f, { ...h, maxWait: opts.maxWait ?? WAIT_MS }), relays, filter, { maxWait: WAIT_MS, ...opts })
+
 const cache = new Map() // code -> { at, ttl, status, html }
 const inflight = new Map() // code -> Promise
 
 async function build(code) {
   const target = parseTarget(code)
   if (!target) return { status: 404, html: renderMissing({ code, valid: false }), ttl: FOUND_TTL }
-  const pool = newPool()
-  try {
-    const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
-    const { post, events, profiles } = await loadThread(target, query)
-    if (!post) return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL }
-    return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, hints: (target.relays ?? []).map(safeRelay).filter(Boolean) }), ttl: FOUND_TTL }
-  } finally {
-    pool.destroy()
-  }
+  const { post, events, profiles } = await loadThread(target, pageQuery())
+  if (!post) return { status: 404, html: renderMissing({ code, valid: true }), ttl: MISSING_TTL }
+  return { status: 200, html: renderPost({ post, replies: replyList(post, events), profiles, code, hints: (target.relays ?? []).map(safeRelay).filter(Boolean) }), ttl: FOUND_TTL }
 }
 
 /** A profile page. One that no relay had a kind 0 for is still a working page (its link opens the app on that key),
@@ -50,14 +54,8 @@ async function build(code) {
 async function buildProfile(code) {
   const target = parseProfileTarget(code)
   if (!target) return { status: 404, html: renderProfileMissing({ code }), ttl: FOUND_TTL }
-  const pool = newPool()
-  try {
-    const query = (relays, filter) => pool.querySync(relays, filter, { maxWait: WAIT_MS }).catch(() => [])
-    const profile = await loadProfile(target, query)
-    return { status: 200, html: renderProfile({ target, profile }), ttl: profile ? FOUND_TTL : MISSING_TTL }
-  } finally {
-    pool.destroy()
-  }
+  const profile = await loadProfile(target, pageQuery())
+  return { status: 200, html: renderProfile({ target, profile }), ttl: profile ? FOUND_TTL : MISSING_TTL }
 }
 
 /** `key`: "thread:<code>" or "p:<code>", so a post and a profile never share a cache entry. */

@@ -1,5 +1,6 @@
 // The relay half of the public post page: the post, its replies and the profiles to name them, from public relays.
-// Every event is signature-checked before it is drawn. `query(relays, filter)` is injectable for tests.
+// Every event is signature-checked before it is drawn. `query(relays, filter, opts)` is injectable for tests; `opts`
+// says when a read may end early (relay-read.js): `first(event)` for the post itself, `maxWait` for the rest.
 import { verifiedCopy } from "../src/net/thread.js"
 import { mentionedPubkeys, profileOf } from "./page.js"
 
@@ -8,6 +9,8 @@ export const READ_RELAYS = ["wss://relay.damus.io", "wss://relay.primal.net", "w
 export const PROFILE_RELAYS = ["wss://purplepag.es", "wss://relay.primal.net", "wss://relay.damus.io"]
 const MAX_HINTS = 3
 const REPLY_LIMIT = 300
+/** How long the page waits on the replies and the names once the post is in hand: never on the slowest relay. */
+export const REPLY_WAIT_MS = 1500, PROFILE_WAIT_MS = 1200
 
 /** A link's relay hint, if it is one the server may dial: wss:// to a public host name. The server reaches out to
  *  these, so an IP literal, localhost or a single-label name (anything on the server's own network) is refused. */
@@ -40,9 +43,12 @@ export async function loadThread(target, query) {
   const replyFilters = address
     ? [{ kinds: [1, 1111], "#a": [address], limit: REPLY_LIMIT }, { kinds: [1111], "#A": [address], limit: REPLY_LIMIT }]
     : [{ kinds: [1], "#e": [target.id], limit: REPLY_LIMIT }]
+  // A note by id: the first copy that checks out ends the read. An address may have newer versions on other relays,
+  // so it waits for most of them (relay-read.js).
+  const isPost = ev => ev?.id === target.id && !!verifiedCopy(ev)
   const [postEvents, ...replySets] = await Promise.all([
-    query(relays, address ? { kinds: [target.kind], authors: [target.author], "#d": [target.identifier], limit: 5 } : { ids: [target.id] }),
-    ...replyFilters.map(f => query(relays, f)),
+    query(relays, address ? { kinds: [target.kind], authors: [target.author], "#d": [target.identifier], limit: 5 } : { ids: [target.id] }, address ? {} : { first: isPost }),
+    ...replyFilters.map(f => query(relays, f, { maxWait: REPLY_WAIT_MS })),
   ])
   const found = verified(postEvents)
     .filter(ev => (address ? ev.kind === target.kind && ev.pubkey === target.author && ev.tags.some(t => t[0] === "d" && t[1] === target.identifier) : ev.id === target.id))
@@ -55,13 +61,13 @@ export async function loadThread(target, query) {
   const readProfiles = async pubkeys => {
     const want = [...new Set(pubkeys)].filter(pk => !profiles.has(pk)).slice(0, 200)
     if (!want.length) return
-    const kind0s = verified(await query(PROFILE_RELAYS, { kinds: [0], authors: want }))
+    const kind0s = verified(await query(PROFILE_RELAYS, { kinds: [0], authors: want }, { maxWait: PROFILE_WAIT_MS }))
     for (const ev of kind0s.sort((a, b) => a.created_at - b.created_at)) profiles.set(ev.pubkey, profileOf(ev)) // newest wins
   }
 
   // Deep replies that tag only their parent (old positional tags) take one more hop, beside the profile read.
   const deeper = !address && events.length
-    ? query(relays, { kinds: [1], "#e": events.map(e => e.id).slice(0, 100), limit: REPLY_LIMIT })
+    ? query(relays, { kinds: [1], "#e": events.map(e => e.id).slice(0, 100), limit: REPLY_LIMIT }, { maxWait: PROFILE_WAIT_MS })
     : Promise.resolve([])
   const [more] = await Promise.all([deeper, readProfiles(peopleOf([post, ...events]))])
   const have = new Set(events.map(e => e.id))
@@ -78,7 +84,7 @@ export async function loadThread(target, query) {
 export async function loadProfile(target, query) {
   const hints = (target.relays ?? []).map(safeRelay).filter(Boolean).slice(0, MAX_HINTS)
   const relays = [...new Set([...hints, ...PROFILE_RELAYS, ...READ_RELAYS])]
-  const found = verified(await query(relays, { kinds: [0], authors: [target.pubkey], limit: 5 }))
+  const found = verified(await query(relays, { kinds: [0], authors: [target.pubkey], limit: 5 }, { maxWait: REPLY_WAIT_MS }))
     .filter(ev => ev.kind === 0 && ev.pubkey === target.pubkey)
   return found.sort((a, b) => b.created_at - a.created_at)[0] ?? null
 }
