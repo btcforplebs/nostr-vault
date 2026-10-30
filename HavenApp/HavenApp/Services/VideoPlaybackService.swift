@@ -149,7 +149,9 @@ final class VideoPlaybackService: @unchecked Sendable {
     /// extensionless remote URLs before building the player. Prefer this from
     /// views — it is the whole "detect then set up" dance in one call.
     func preparedPlayer(for url: URL, mimeHint: String? = nil, intent: Intent) async -> AVPlayer {
-        if url.pathExtension.isEmpty && !url.isFileURL {
+        if BlossomURI.isURI(url) {
+            _ = await MediaCacheService.shared.blossomURIFile(url, author: nil)
+        } else if url.pathExtension.isEmpty && !url.isFileURL {
             _ = await MediaTypeDetector.shared.detectContentTypeAsync(for: url)
         }
         // Candidate resolution sha256-verifies the cached blob (up to 64 MB of
@@ -233,6 +235,12 @@ final class VideoPlaybackService: @unchecked Sendable {
 
         // A `.fips` vault is reachable only over the mesh: a cached copy or nothing.
         if MediaCacheService.isMeshOnly(url) { return out }
+        // A `blossom:` link plays only from its hash-checked file. Until that
+        // is read, a candidate AVFoundation refuses, so the ladder fails
+        // into the view's failure state instead of an empty ladder.
+        if BlossomURI.isURI(url) {
+            return out.isEmpty ? [Candidate(assetURL: url, mimeOverride: nil, label: "blossom: link, not read yet")] : out
+        }
 
         if url.isFileURL {
             out.append(Candidate(assetURL: url, mimeOverride: nil, label: "file"))

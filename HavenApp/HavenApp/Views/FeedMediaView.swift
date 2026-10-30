@@ -527,6 +527,9 @@ struct MediaFailedPlaceholder: View {
 
     var body: some View {
         let vault = MediaVaultLink.isVault(url)
+        // A `blossom:` link names no server of its own: none of the ones
+        // tried had it, which the line says plainly.
+        let blossom = BlossomURI.isURI(url)
         VStack(spacing: 6) {
             Image(systemName: vault ? "externaldrive.badge.xmark" : "photo.badge.exclamationmark")
                 .font(.appSystem(size: compact ? 18 : 26))
@@ -534,6 +537,9 @@ struct MediaFailedPlaceholder: View {
                 Text(MediaVaultLink.unreachedText)
                     .font(.appSystem(size: 13, weight: .medium))
                     .multilineTextAlignment(.center)
+            } else if blossom && !compact {
+                Text("Media unavailable")
+                    .font(.appSystem(size: 13, weight: .medium))
             }
         }
         .foregroundColor(.secondary)
@@ -541,7 +547,7 @@ struct MediaFailedPlaceholder: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minHeight: compact ? nil : 120)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(vault ? MediaVaultLink.unreachedText : "Image unavailable")
+        .accessibilityLabel(vault ? MediaVaultLink.unreachedText : blossom ? "Media unavailable" : "Image unavailable")
     }
 }
 

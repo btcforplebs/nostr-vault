@@ -138,6 +138,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         let highlightSource = kind == Self.highlightKind ? FeedHighlight.sourceReference(tags: resolvedTags) : nil
         self.quotedEventIds = Self.parseQuotedEventIds(from: resolvedContent) + [highlightSource].compactMap { $0 }
         MediaHints.shared.register(tags: resolvedTags)
+        BlossomURIFetcher.register(self.mediaURLs, author: resolvedPubkey)
     }
 
     var replyCount: Int {
