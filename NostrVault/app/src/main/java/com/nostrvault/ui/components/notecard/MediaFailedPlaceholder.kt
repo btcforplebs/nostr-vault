@@ -38,11 +38,19 @@ object MediaVaultLink {
     }
 }
 
+internal const val MEDIA_UNAVAILABLE_TEXT = "Media unavailable"
+
 /** What a photo shows when it could not be loaded (iOS `MediaFailedPlaceholder`). */
 @Composable
 internal fun MediaFailedPlaceholder(url: String, compact: Boolean = false, modifier: Modifier = Modifier) {
     val vault = MediaVaultLink.isVault(url)
-    val label = if (vault) MediaVaultLink.UNREACHED_TEXT else "Image unavailable"
+    // A blossom: link no server had the right bytes for (iOS and web say the same).
+    val blossom = com.nostrvault.data.model.BlossomUri.isUri(url)
+    val label = when {
+        vault -> MediaVaultLink.UNREACHED_TEXT
+        blossom -> MEDIA_UNAVAILABLE_TEXT
+        else -> "Image unavailable"
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
@@ -54,8 +62,8 @@ internal fun MediaFailedPlaceholder(url: String, compact: Boolean = false, modif
             tint = SecondaryText,
             modifier = Modifier.size(if (compact) 20.dp else 28.dp),
         )
-        if (vault && !compact) {
-            Text(MediaVaultLink.UNREACHED_TEXT, color = SecondaryText, fontSize = 13.sp, textAlign = TextAlign.Center)
+        if ((vault || blossom) && !compact) {
+            Text(label, color = SecondaryText, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
     }
 }

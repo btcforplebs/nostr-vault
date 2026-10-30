@@ -106,7 +106,7 @@ internal fun MediaCarousel(
                     // Photos fill the frame edge to edge (iOS #286). A video is shown whole: its
                     // player fits, and a cropped poster would show a different picture.
                     contentScale = if (isVideoUrl(url)) ContentScale.Fit else ContentScale.Crop,
-                    onError = { if (!isVideoUrl(url)) failed = true },
+                    onError = { if (!isVideoUrl(url) || com.nostrvault.data.model.BlossomUri.isUri(url)) failed = true },
                     onSuccess = { result ->
                         loaded = true
                         failed = false

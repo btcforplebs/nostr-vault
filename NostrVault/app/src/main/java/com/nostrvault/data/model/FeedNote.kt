@@ -394,6 +394,7 @@ data class FeedNote(
             }
             val seen = mutableSetOf<String>()
             val mediaURLs = (contentMediaUrls + imetaUrls).filter { seen.add(it) }
+            BlossomUri.register(mediaURLs, resolvedPubkey)
 
             val linkURLs = parseLinkURLs(resolvedContent, mediaURLs.toSet())
             // A highlight's source rides the quote path: fetched, drawn and
@@ -426,7 +427,10 @@ data class FeedNote(
             val urls = mutableListOf<String>()
             urls += MEDIA_REGEX.findAllOnce(content).map { it.value }
             urls += BLOSSOM_REGEX.findAllOnce(content).map { it.value }
-            return urls.filter(::isMediaUrl)
+            // BUD-10 `blossom:` links with a media extension; a `.pdf` stays text.
+            val bud10 = BlossomUri.TOKEN.findAllOnce(content).map { it.value }
+                .filter { BlossomUri.parse(it)?.ext?.let { ext -> ext in MEDIA_EXTENSIONS } == true }
+            return urls.filter(::isMediaUrl) + bud10
         }
 
         /** Every non-media http(s) URL in [content], in order, each once. */

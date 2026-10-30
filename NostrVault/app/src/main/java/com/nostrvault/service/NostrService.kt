@@ -290,6 +290,9 @@ class NostrService @Inject constructor(
         FipsMediaRouter.serverLists = { _serverLists.value }
         FipsMediaRouter.requestServerList = { fetchServerList(it) }
         FipsMediaRouter.ownerHex = { ownerHexPubkey }
+        BlossomUriLoader.serverLists = { _serverLists.value }
+        BlossomUriLoader.requestServerList = { fetchServerList(it) }
+        BlossomUriLoader.ownServers = { configStore.config.value.blossomMirrors }
         homeVault.ownerHex = { ownerHexPubkey }
         homeVault.ownerIsActive = { ownerHexPubkey.isNotEmpty() && activeHexPubkey == ownerHexPubkey }
         homeVault.signerIsLocal = {

@@ -94,6 +94,20 @@ fun VideoPlayer(
     uri: String,
     modifier: Modifier = Modifier,
     autoplay: Boolean = true,
+    controls: MutableState<Boolean>? = null,
+) {
+    // A blossom: link plays from its checked file, once there is one.
+    when (val playable = rememberPlayable(uri).value) {
+        is Playable.Ready -> UrlVideoPlayer(playable.uri, modifier, autoplay, controls)
+        else -> PlayableStatus(playable, modifier)
+    }
+}
+
+@Composable
+private fun UrlVideoPlayer(
+    uri: String,
+    modifier: Modifier = Modifier,
+    autoplay: Boolean = true,
     /**
      * Whether the control rail shows, owned by the caller. The media viewers
      * pass one and take taps themselves (one tap toggles it, a double tap

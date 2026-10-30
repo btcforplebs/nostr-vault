@@ -28,6 +28,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
     private val mediaSaveService: MediaSaveService,
     private val nostrService: com.nostrvault.service.NostrService,
     private val notificationManager: com.nostrvault.ui.notification.NotificationManager,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
 
     enum class SaveState { Idle, Saving, Saved }
@@ -50,7 +51,14 @@ class FeedMediaMirrorViewModel @Inject constructor(
             // Feed videos are recognised by extension, so that names the type
             // when the server only says application/octet-stream.
             val hint = if (isVideoUrl(url)) MediaSaveService.mimeTypeForExtension(url) else null
-            val result = mediaSaveService.saveToGallery(url, hint)
+            // A blossom: link saves the file that hashed to it, not a URL.
+            val result = if (com.nostrvault.data.model.BlossomUri.isUri(url)) {
+                com.nostrvault.service.BlossomUriLoader.file(appContext, url)
+                    ?.let { mediaSaveService.saveToGallery(it, hint) }
+                    ?: Result.failure(Exception("Media unavailable"))
+            } else {
+                mediaSaveService.saveToGallery(url, hint)
+            }
             if (openUrl == url) {
                 _saveState.value = if (result.isSuccess) SaveState.Saved else SaveState.Idle
             }

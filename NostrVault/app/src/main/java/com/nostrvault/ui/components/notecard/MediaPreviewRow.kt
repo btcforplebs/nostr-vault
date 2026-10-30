@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.nostrvault.data.model.BlossomUri
 import com.nostrvault.fips.MeshMediaStatus
 import com.nostrvault.fips.meshAuthor
 import androidx.compose.ui.semantics.contentDescription
@@ -144,7 +145,8 @@ private fun SingleMediaPreview(
 
     val loaded = painter.state is AsyncImagePainter.State.Success
     // A photo that failed says so (MediaFailedPlaceholder); a video keeps its play icon.
-    val failed = !isVideo && painter.state is AsyncImagePainter.State.Error
+    // A blossom: video whose file no server had says so as well.
+    val failed = (!isVideo || BlossomUri.isUri(url)) && painter.state is AsyncImagePainter.State.Error
     val meshPhases by MeshMediaStatus.phases.collectAsState()
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -190,9 +192,9 @@ private fun SingleMediaPreview(
             if (failed && MeshMediaStatus.phaseFor(meshPhases, feedImageModel(tags, url)) == null) {
                 MediaFailedPlaceholder(url = url)
             }
-            if (isVideo && autoplay) {
+            if (isVideo && autoplay && !failed) {
                 InlineFeedVideo(key = sourceKey, url = url, modifier = Modifier.matchParentSize())
-            } else if (isVideo) {
+            } else if (isVideo && !failed) {
                 Icon(
                     imageVector = NostrVaultIcons.PlayCircle,
                     contentDescription = "Video",
