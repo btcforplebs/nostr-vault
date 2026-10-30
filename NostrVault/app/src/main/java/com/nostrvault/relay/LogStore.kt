@@ -130,6 +130,7 @@ class LogStore @Inject constructor() {
             }
             entries.add(RelayLogParser.LogEntry.parse(line))
             RelayLogParser.collectStateChanges(line, batch)
+            RelayDrainState.observe(line)
         }
         addEntries(entries)
         when {
