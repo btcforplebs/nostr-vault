@@ -11,6 +11,7 @@ extension MediaCacheService {
     ///   user is looking at. A later, higher-priority request for the same URL
     ///   promotes the queued transfer.
     func fetchData(url: URL, priority: Operation.QueuePriority = .normal) async -> Data? {
+        if BlossomURI.isURI(url) { return await fetchBlossomURI(url, author: nil) }
         // Bypass cache for local relay Blossom URLs to avoid redundant storage and preserve MIME handling
         if isLocalURL(url) {
             do {

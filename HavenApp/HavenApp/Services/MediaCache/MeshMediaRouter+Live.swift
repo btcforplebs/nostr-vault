@@ -141,6 +141,7 @@ extension MediaCacheService {
     /// so the view can say "Loading image over FIPS…" as the web does.
     func fetchData(url: URL, meshAuthor: String?, imetaSha256: String?,
                    onLookup: (@MainActor @Sendable () -> Void)? = nil) async -> (data: Data, cacheKey: URL)? {
+        if BlossomURI.isURI(url) { return await fetchBlossomURI(url, author: meshAuthor).map { ($0, url) } }
         guard let author = meshAuthor,
               let plan = MeshMediaRouter.plan(url: url, imetaSha256: imetaSha256)
         else { return await fetchData(url: url).map { ($0, url) } }
@@ -215,6 +216,10 @@ extension MediaCacheService {
     /// memory by a plain download here.
     func meshVideoFile(url: URL, note: MeshMediaNote?,
                        onLookup: (@MainActor @Sendable () -> Void)? = nil) async -> URL? {
+        if BlossomURI.isURI(url) {
+            guard await blossomURIFile(url, author: note?.author) != nil else { return nil }
+            return preparePlayableURL(for: url, extensionHint: url.pathExtension)
+        }
         guard let note,
               let plan = MeshMediaRouter.plan(url: url, imetaSha256: note.imetaSha256[url.absoluteString])
         else { return nil }

@@ -75,7 +75,8 @@ extension MediaCacheService {
         // contexts pass allowFullDownload:false so generating a small preview never
         // autoloads an entire video; renderThumbnail then extracts the frame directly
         // from the remote asset via byte-range requests.
-        if allowFullDownload, internalLocalFileURL(for: url) == nil, !isLocalURL(url) {
+        // A `blossom:` link has no server to range-read: it is read whole.
+        if allowFullDownload || BlossomURI.isURI(url), internalLocalFileURL(for: url) == nil, !isLocalURL(url) {
             _ = await fetchData(url: url)
         }
 
