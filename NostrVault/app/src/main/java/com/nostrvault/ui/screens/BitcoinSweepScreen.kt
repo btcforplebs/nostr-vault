@@ -44,6 +44,41 @@ import javax.inject.Inject
 data class SweepFeeEstimates(val economy: Int, val normal: Int, val fast: Int)
 data class SweepSuccess(val txid: String, val amount: Long, val fee: Long)
 
+/**
+ * What the confirm step shows and then sends: exactly this address at exactly
+ * this rate, even if fee estimates land while it is open. iOS: PendingSweep.
+ */
+data class PendingSweep(val address: String, val feeRate: Int, val amount: Long, val fee: Long) {
+    companion object {
+        /** Outputs at or under this are dust and would not relay. */
+        const val DUST_LIMIT = 546L
+
+        /**
+         * Size of the sweep, which spends every unspent output, confirmed or not,
+         * into one taproot output. Same as estimateSweepVsize in haven-go/bitcoin.go:
+         * 111 vB for one input, 169 for two.
+         */
+        fun estimatedVsize(utxoCount: Int): Long {
+            val inputs = utxoCount.coerceAtLeast(1).toLong()
+            val nonWitness = 10 + 41 * inputs + 43
+            val witness = 2 + 66 * inputs
+            return (nonWitness * 4 + witness + 3) / 4
+        }
+
+        /**
+         * The sweep the form describes, or null when the address is not a valid
+         * mainnet address or what is left after the fee is dust.
+         */
+        fun from(destination: String, balanceSats: Long?, utxoCount: Int, feeRate: Int): PendingSweep? {
+            val address = BitcoinAddress.normalizedMainnet(destination) ?: return null
+            val fee = estimatedVsize(utxoCount) * feeRate
+            val amount = ((balanceSats ?: 0L) - fee).coerceAtLeast(0L)
+            if (amount <= DUST_LIMIT) return null
+            return PendingSweep(address, feeRate, amount, fee)
+        }
+    }
+}
+
 enum class SweepFeeTier(val label: String) { ECONOMY("Economy"), NORMAL("Normal"), FAST("Fast") }
 
 @HiltViewModel
@@ -57,6 +92,10 @@ class BitcoinSweepViewModel @Inject constructor(
 
     private val _balanceSats = MutableStateFlow<Long?>(null)
     val balanceSats = _balanceSats.asStateFlow()
+
+    /** Unspent outputs the sweep will spend; the fee grows with each. */
+    private val _utxoCount = MutableStateFlow(1)
+    val utxoCount = _utxoCount.asStateFlow()
 
     private val _feeEstimates = MutableStateFlow<SweepFeeEstimates?>(null)
     val feeEstimates = _feeEstimates.asStateFlow()
@@ -77,7 +116,11 @@ class BitcoinSweepViewModel @Inject constructor(
 
     fun refreshBalance() {
         val addr = fromAddress ?: return
-        viewModelScope.launch { _balanceSats.value = mempoolApi.fetchAddressBalanceSats(addr) }
+        viewModelScope.launch {
+            val funds = mempoolApi.fetchAddressFunds(addr)
+            _utxoCount.value = funds?.utxoCount ?: 1
+            _balanceSats.value = funds?.balanceSats
+        }
     }
 
     private fun loadFees() {
@@ -105,8 +148,15 @@ class BitcoinSweepViewModel @Inject constructor(
         }.coerceAtLeast(1)
     }
 
-    fun sweep(destAddr: String, feeRate: Int) {
+    /** Sends [sweep] after the confirm step; only an address that still checks out goes. */
+    fun sweep(sweep: PendingSweep) {
         if (_busy.value) return
+        val destAddr = sweep.address
+        if (BitcoinAddress.normalizedMainnet(destAddr) != destAddr) {
+            _error.value = "Not a valid Bitcoin mainnet address."
+            return
+        }
+        val feeRate = sweep.feeRate
         viewModelScope.launch {
             _busy.value = true
             _error.value = null
@@ -117,7 +167,7 @@ class BitcoinSweepViewModel @Inject constructor(
                     return@launch
                 }
                 val json = withContext(Dispatchers.IO) {
-                    HavenBridge.sweepToAddress(nsecHex, destAddr.trim(), feeRate)
+                    HavenBridge.sweepToAddress(nsecHex, destAddr, feeRate)
                 }
                 parseResult(json)
             } catch (e: Exception) {
@@ -160,6 +210,7 @@ fun BitcoinSweepScreen(
     val error by viewModel.error.collectAsState()
     val success by viewModel.success.collectAsState()
     val balance by viewModel.balanceSats.collectAsState()
+    val utxoCount by viewModel.utxoCount.collectAsState()
     val feeEstimates by viewModel.feeEstimates.collectAsState()
 
     // 0 = warning page 1, 1 = warning page 2, 2 = disclaimer, 3 = sweep form
@@ -195,6 +246,7 @@ fun BitcoinSweepScreen(
                 )
                 else -> SweepForm(
                     balance = balance,
+                    utxoCount = utxoCount,
                     feeEstimates = feeEstimates,
                     busy = busy,
                     error = error,
@@ -368,21 +420,53 @@ private fun SweepWarningCard(
 @Composable
 private fun SweepForm(
     balance: Long?,
+    utxoCount: Int,
     feeEstimates: SweepFeeEstimates?,
     busy: Boolean,
     error: String?,
     rateFor: (SweepFeeTier) -> Int,
-    onSweep: (String, Int) -> Unit,
+    onSweep: (PendingSweep) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     var dest by remember { mutableStateOf("") }
     var tier by remember { mutableStateOf(SweepFeeTier.NORMAL) }
+    // Sweep sends everything, so the button only opens a confirm step that
+    // shows the amount and the full address.
+    var pending by remember { mutableStateOf<PendingSweep?>(null) }
 
-    val estimatedVsize = 111
+    val estimatedVsize = PendingSweep.estimatedVsize(utxoCount)
     val currentRate = rateFor(tier)
-    val estimatedFee = (estimatedVsize * currentRate).toLong()
+    val estimatedFee = estimatedVsize * currentRate
     val sendAmount = ((balance ?: 0L) - estimatedFee).coerceAtLeast(0L)
-    val canSweep = dest.isNotBlank() && sendAmount > 546 && !busy
+    val invalidAddress = dest.isNotBlank() && BitcoinAddress.normalizedMainnet(dest) == null
+    val canSweep = !busy && PendingSweep.from(dest, balance, utxoCount, currentRate) != null
+
+    pending?.let { sweep ->
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("Send entire balance?") },
+            text = {
+                Column {
+                    Text("About ${formatSats(sweep.amount)} to:", color = PrimaryText, fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(sweep.address, color = PrimaryText, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Fee about ${formatSats(sweep.fee)} at ${sweep.feeRate} sat/vB. This cannot be undone.",
+                        color = SecondaryText, fontSize = 13.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pending = null; onSweep(sweep) }) {
+                    Text("Send", color = ErrorRed, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pending = null }) { Text("Cancel") }
+            },
+        )
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -421,6 +505,10 @@ private fun SweepForm(
                 cursorColor = colors.primary, focusedBorderColor = colors.primary,
             ),
         )
+        if (invalidAddress) {
+            Spacer(Modifier.height(6.dp))
+            Text("Not a valid Bitcoin mainnet address", color = ErrorRed, fontSize = 12.sp)
+        }
 
         Spacer(Modifier.height(16.dp))
         Text("Fee rate", color = SecondaryText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -454,7 +542,7 @@ private fun SweepForm(
             SweepPreviewRow(
                 label = "You'll send",
                 value = formatSats(sendAmount),
-                color = if (sendAmount > 546) PrimaryText else ErrorRed,
+                color = if (sendAmount > PendingSweep.DUST_LIMIT) PrimaryText else ErrorRed,
             )
         }
 
@@ -468,13 +556,13 @@ private fun SweepForm(
 
         Spacer(Modifier.height(16.dp))
         Button(
-            onClick = { onSweep(dest, currentRate) },
+            onClick = { pending = PendingSweep.from(dest, balance, utxoCount, currentRate) },
             enabled = canSweep,
             colors = ButtonDefaults.buttonColors(containerColor = ZapOrange),
             modifier = Modifier.fillMaxWidth().height(50.dp),
         ) { Text(if (busy) "Broadcasting…" else "Sweep", fontWeight = FontWeight.SemiBold) }
 
-        if (sendAmount in 1..546) {
+        if (sendAmount in 1..PendingSweep.DUST_LIMIT) {
             Spacer(Modifier.height(8.dp))
             Text("Insufficient funds after fees", color = SecondaryText, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
