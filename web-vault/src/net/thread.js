@@ -155,34 +155,120 @@ export async function readThread(vault, rootId) {
   return evs
 }
 
+// How long a step waits for the other relays once one has answered (EOSE). A relay that never sends EOSE used to
+// hold every step to maxWait: three steps in a row put a 3-reply thread on screen after 18 s. A relay that answers
+// later is still listened to until maxWait; what it sends is stored and drawn as it lands.
+export const SETTLE_MS = 700
+
+/** Asks each relay on its own and hands every event to `onevent` as it arrives. -> { settled, done, close }:
+ *  `settled` resolves once every relay has answered, SETTLE_MS after the first EOSE, or as soon as `enough(events)`;
+ *  `done` once every relay has answered or given up (maxWait). Events after `settled` still reach `onevent`. */
+export function streamQuery(urls, filter, { maxWait = 6000, settle = SETTLE_MS, onevent = () => {}, enough } = {}) {
+  const events = [], ends = []
+  let left = urls.length, timer = null, settledDone = false, resolveSettled, resolveDone
+  const settled = new Promise(r => { resolveSettled = r }), done = new Promise(r => { resolveDone = r })
+  const finishSettle = () => { if (settledDone) return; settledDone = true; clearTimeout(timer); resolveSettled(events) }
+  const relayDone = answered => {
+    if (--left === 0) { finishSettle(); resolveDone(events); return }
+    if (answered && timer === null) timer = setTimeout(finishSettle, settle)
+  }
+  if (!left) { finishSettle(); resolveDone(events) }
+  for (const url of urls) {
+    let closed = false, sub = null
+    const close = reasons => {
+      if (closed) return
+      closed = true
+      relayDone([reasons].flat().some(r => /eose/i.test(r?.reason ?? r ?? "")))
+    }
+    // Only a subscription still open is closed: nostr-tools counts a relay's operations down on every close, so
+    // closing one that already ended on EOSE would count it down twice and its idle timer would never fire.
+    ends.push(() => { if (closed) return; try { sub?.close() } catch {} close("closed by caller") })
+    try {
+      sub = pool.subscribeEose([url], filter, {
+        maxWait,
+        onevent: ev => { events.push(ev); onevent(ev); if (enough?.(events)) finishSettle() },
+        onclose: close,
+      })
+    } catch { close() }
+  }
+  // Closing counts every relay still open as done, so `done` can't wait on a subscription that was dropped.
+  return { settled, done, close: () => ends.forEach(end => end()) }
+}
+
 /** Fetch the note, its root and the replies from the network into Haven /feed. Read-only on the network: nothing
- *  is signed. `note` is the opened one as found, which /feed may refuse (a 3D object). -> { rootId, stored, note } */
-export async function syncThread(vault, id, relays, { maxWait = 6000 } = {}) {
+ *  is signed. What arrives is stored at once and `onProgress()` called, so the screen can draw it straight away;
+ *  `onRoot(rootId, note)` fires as soon as the root is known. Resolves when every step has settled (streamQuery);
+ *  a slower relay's late answers keep arriving through `onProgress` until maxWait, and the replies they bring are
+ *  chased once more. `note` is the opened one as found, which /feed may refuse (a 3D object).
+ *  -> { rootId, stored, note, done }, `done` resolving when the late answers are in too. */
+export async function syncThread(vault, id, relays, { maxWait = 6000, settle = SETTLE_MS, onProgress = () => {}, onRoot = () => {} } = {}) {
   const urls = uniq(relays)
-  const store = async evs => { let n = 0; for (const ev of evs) if ((await vault.feed.event(ev)).ok) n++; return n }
+  const seen = new Set(), chased = new Set(), replyIds = new Set(), tails = []
+  let stored = 0, queue = Promise.resolve(), batch = null
+  // What lands in one tick is written as one batch, all at once as storeAll does (one at a time, 118 replies took
+  // 8 s to write at a phone's speed after the relays had sent them all in 1.4 s), then drawn once.
+  const put = ev => {
+    if (!ev?.id || seen.has(ev.id)) return
+    seen.add(ev.id)
+    if (batch) return batch.push(ev)
+    batch = [ev]
+    queue = queue.then(() => new Promise(r => setTimeout(r))).then(async () => {
+      const evs = batch
+      batch = null
+      const rs = await Promise.all(evs.map(e => vault.feed.event(e).catch(() => ({}))))
+      const n = rs.filter(r => r?.ok).length
+      stored += n
+      if (n) onProgress()
+    })
+  }
+  const ask = (filter, opts = {}) => {
+    const q = streamQuery(urls, filter, { maxWait, settle, ...opts })
+    tails.push(q.done)
+    return q
+  }
+  const replies = ev => { if (ev.kind === 1) { replyIds.add(ev.id); put(ev) } }
 
   const local = await vault.feed.query({ ids: [id] })
-  const [note] = local.length ? local : await pool.querySync(urls, { ids: [id] }, { maxWait })
-  const rootId = note ? rootIdOf(note) : id
-  let stored = note && !local.length ? await store([note]) : 0
-
-  const ids = uniq([id, rootId])
-  const [roots, replies] = await Promise.all([
-    rootId === id ? [] : pool.querySync(urls, { ids: [rootId] }, { maxWait }),
-    pool.querySync(urls, { kinds: [1], "#e": ids, limit: 500 }, { maxWait }),
-  ])
-  stored += await store([...roots, ...replies])
-
-  const seen = new Set([...ids, ...replies.map(e => e.id)])
-  let frontier = replies.map(e => e.id)
-  for (let i = 0; i < ROUNDS && frontier.length; i++) {
-    const more = []
-    for (let j = 0; j < frontier.length; j += 100) {
-      more.push(...(await pool.querySync(urls, { kinds: [1], "#e": frontier.slice(j, j + 100), limit: 500 }, { maxWait })).filter(e => !seen.has(e.id)))
-    }
-    stored += await store(more)
-    more.forEach(e => seen.add(e.id))
-    frontier = uniq(more.map(e => e.id))
+  // Replies to the opened note itself don't wait for the note: ask for them while it is being found.
+  const own = ask({ kinds: [1], "#e": [id], limit: 500 }, { onevent: replies })
+  let note = local[0]
+  if (!note) {
+    const found = ask({ ids: [id] }, { onevent: ev => { if (ev.id === id) put(ev) }, enough: evs => evs.some(e => e.id === id) })
+    note = (await found.settled).find(e => e.id === id)
+    if (note) found.close()
   }
-  return { rootId, stored, note }
+  const rootId = note ? rootIdOf(note) : id
+  onRoot(rootId, note ?? null)
+
+  const steps = [own.settled]
+  if (rootId !== id) {
+    steps.push(ask({ ids: [rootId] }, { onevent: put, enough: evs => evs.some(e => e.id === rootId) }).settled)
+    steps.push(ask({ kinds: [1], "#e": [rootId], limit: 500 }, { onevent: replies }).settled)
+  }
+  await Promise.all(steps)
+
+  // Deep replies that tag only their parent (old positional tags): follow them, a hop at a time.
+  const chase = async rounds => {
+    for (let i = 0; i < rounds; i++) {
+      const frontier = [...replyIds].filter(r => !chased.has(r))
+      if (!frontier.length) return
+      frontier.forEach(r => chased.add(r))
+      const asks = []
+      for (let j = 0; j < frontier.length; j += 100) asks.push(ask({ kinds: [1], "#e": frontier.slice(j, j + 100), limit: 500 }, { onevent: replies }).settled)
+      await Promise.all(asks)
+    }
+  }
+  chased.add(id).add(rootId)
+  await chase(ROUNDS)
+  await queue
+
+  // The late answers: once every relay has answered or timed out, chase what they brought, then wait for the writes.
+  const done = (async () => {
+    for (let n = 0; n < tails.length; n = tails.length) await Promise.all(tails.slice(n))
+    await chase(1)
+    for (let n = 0; n < tails.length; n = tails.length) await Promise.all(tails.slice(n))
+    await queue
+    return { stored }
+  })()
+  return { rootId, get stored() { return stored }, note: note ?? null, done }
 }

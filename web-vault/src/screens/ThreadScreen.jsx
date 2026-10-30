@@ -17,6 +17,9 @@ if (import.meta.env) import("../styles/thread.css")
 
 const MAX_INDENT = 4 // deeper replies line up with depth 4, so a long chain still fits a phone
 const LOADING = "Loading replies…"
+const REDRAW_MS = 150 // at most one redraw per this while replies stream in
+const PROFILE_BATCH_MS = 250
+const CHUNK = 30 // replies drawn per frame on a long thread, so the first ones show without waiting for the rest
 
 /** Where the thread for `id` opens, from Haven /feed alone (so offline too). A stored note opens under its root.
  *  A reposted note is not stored, only the kind 6 carrying it: it opens under its real root when /feed has that
@@ -50,29 +53,53 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
   const { blocked } = useBlocks(ctx)
 
   // Each run is for one id: once the screen has moved on, `isLive()` is false and the run touches nothing, so a late
-  // read or sync for the previous thread can't take over this one's root, extra or status.
+  // read or sync for the previous thread can't take over this one's root, extra or status. Reads can also overlap
+  // while replies stream in: only the latest one started is drawn, so an older, shorter read finishing late can't
+  // take replies back off the screen.
+  const reads = useRef(0)
   const reload = async (rid, isLive) => {
+    if (!isLive()) return
+    const n = ++reads.current
     const evs = await readThread(vault, rid)
+    if (n !== reads.current) return
     const all = [...evs, ...extra.current]
     const t = buildThread(rid, all)
     // buildThread roots only notes; an article, poll or highlight is the root of its own thread.
     if (!t.root) t.root = all.find(e => e.id === rid && selfRooted(e)) ?? null
     if (isLive()) setThread(t)
   }
+  // What the relays send is stored as it lands and drawn at most every REDRAW_MS, so replies stream in.
+  const redraw = useRef(null)
+  const scheduleReload = (rid, isLive) => {
+    if (redraw.current) return
+    redraw.current = setTimeout(() => { redraw.current = null; if (isLive()) reload(rid, isLive).catch(() => {}) }, REDRAW_MS)
+  }
+  // An article, poll or highlight is its own thread's root, whatever notes it tags.
+  const rootFor = (self, note, rootId) => selfRooted(self ?? (note?.id === id ? note : null)) ? id : rootId
   const sync = async isLive => {
     if (!navigator.onLine) return setStatus("Offline: showing the saved thread")
     setStatus(LOADING)
+    let rid = null
     try {
-      const synced = await syncThread(vault, id, relays)
+      const synced = await syncThread(vault, id, relays, {
+        onRoot: async (rootId, note) => {
+          if (!isLive()) return
+          const [self] = await vault.feed.query({ ids: [id] })
+          rid = rootFor(self, note, rootId)
+          if (isLive()) { setRootId(rid); scheduleReload(rid, isLive) }
+        },
+        onProgress: () => { if (rid && isLive()) scheduleReload(rid, isLive) },
+      })
       if (!isLive()) return
-      // An article, poll or highlight is its own thread's root, whatever notes it tags.
       const [self] = await vault.feed.query({ ids: [id] })
       // A 3D object isn't kept in /feed: the one the relays returned is carried in memory, as a repost's note is.
       if (!self && synced.note?.id === id && synced.note.kind === SNO_KIND && !extra.current.some(e => e.id === id)) extra.current = [...extra.current, synced.note]
-      const rid = selfRooted(self ?? (synced.note?.id === id ? synced.note : null)) ? id : synced.rootId
+      rid = rootFor(self, synced.note, synced.rootId)
       setRootId(rid)
       await reload(rid, isLive)
       if (isLive()) setStatus("")
+      // A slower relay's late replies: draw them once they are in.
+      synced.done.then(() => isLive() && reload(rid, isLive)).catch(() => {})
     } catch (e) { if (isLive()) setStatus(`Couldn't load replies (${e?.message ?? e}): showing the saved thread`) }
   }
 
@@ -88,18 +115,33 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
       await reload(rid, isLive)
       if (live) await sync(isLive)
     })().catch(e => { if (live) setStatus(String(e?.message ?? e)) })
-    return () => { live = false }
+    return () => { live = false; clearTimeout(redraw.current); redraw.current = null }
   }, [id])
 
+  // Names and pictures: the authors not yet asked, in one batch at most every PROFILE_BATCH_MS, so replies streaming in
+  // make a few profile requests, not one per redraw, and the first names don't wait for the stream to end.
+  const asked = useRef(new Set()), authorsNow = useRef([]), profileTimer = useRef(null)
+  useEffect(() => { asked.current = new Set() }, [id])
+  useEffect(() => () => clearTimeout(profileTimer.current), [])
   useEffect(() => {
     if (!thread) return
-    const authors = [thread.root?.pubkey, ...flattenThread(thread.replies).map(r => r.event.pubkey)]
-    fetchProfiles(ctx.vault, authors.filter(Boolean), relays).catch(() => {})
-    onAuthors?.(authors.filter(Boolean))
+    const authors = uniq([thread.root?.pubkey, ...flattenThread(thread.replies).map(r => r.event.pubkey)].filter(Boolean))
+    onAuthors?.(authors)
+    authorsNow.current = authors
+    const ask = () => {
+      const fresh = authorsNow.current.filter(pk => !asked.current.has(pk))
+      if (!fresh.length) return
+      fresh.forEach(pk => asked.current.add(pk))
+      // A failed ask is forgotten, so the next change asks again.
+      fetchProfiles(ctx.vault, fresh, relays).catch(() => fresh.forEach(pk => asked.current.delete(pk)))
+      profileTimer.current = setTimeout(() => { profileTimer.current = null; ask() }, PROFILE_BATCH_MS)
+    }
+    if (!profileTimer.current) ask()
   }, [thread])
 
   // Blocked people's replies are left out when drawn, not when stored, so unblocking brings them back.
   const rows = thread ? flattenThread(visibleReplies(thread.replies, blocked)) : []
+  const shown = useChunks(rows.length, rows.findIndex(r => r.event.id === id), id)
   const rootBlocked = thread?.root && isBlockedNote(thread.root, blocked)
   // While the relays are asked, a missing root or an empty reply list may still arrive: placeholders, not "none".
   const syncing = status === LOADING
@@ -128,7 +170,7 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
               : syncing ? <SkeletonRows count={1} label="Finding the note this thread starts from…" />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
             {(rows.length > 0 || thread.root) && <h3 class="thread-replies-label">Replies</h3>}
-            {rows.map(({ event, depth }) => (
+            {rows.slice(0, shown).map(({ event, depth }) => (
               <div key={event.id} style={{ paddingLeft: `${Math.min(depth - 1, MAX_INDENT) * 16}px` }}>
                 <Focus on={event.id === focused?.id} summary={<ReactionSummary ctx={ctx} note={event} relays={relays} />}><NoteCard event={event} /></Focus>
               </div>
@@ -137,6 +179,22 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
           </>}
     </main>
   )
+}
+
+/** How many of `total` rows to draw: CHUNK more each frame until all are in, and at least up to the focused row, so a
+ *  reply opened deep in a long thread is drawn at once and can scroll into view. Starts over for a new thread. */
+function useChunks(total, focusAt, key) {
+  const [n, setN] = useState(CHUNK)
+  useEffect(() => setN(CHUNK), [key])
+  const want = Math.max(n, focusAt + 1)
+  useEffect(() => {
+    if (want >= total) return
+    const next = () => setN(Math.max(want, n) + CHUNK)
+    const raf = globalThis.requestAnimationFrame
+    const h = raf ? raf(next) : setTimeout(next, 16)
+    return () => (raf ? globalThis.cancelAnimationFrame(h) : clearTimeout(h))
+  }, [want, total])
+  return Math.min(want, total)
 }
 
 // The focused note (the iPhone's orange border and glow, styled as `.note-card.focused` with the note rows), with its

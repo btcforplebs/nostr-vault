@@ -173,8 +173,15 @@ test("a network sync still running for the previous note doesn't take over the n
   // Every relay query waits until the test answers it, so which sync finishes when is set by the test, not by timing.
   const held = []
   let holding = true
-  const querySync = pool.querySync
-  pool.querySync = async (_, f) => holding ? new Promise(resolve => held.push({ f, answer: () => resolve([]) })) : []
+  const querySync = pool.querySync, subscribeEose = pool.subscribeEose
+  pool.querySync = async () => [] // the focused note's reaction summary
+  // The sync asks each relay with its own subscription; one ends when the test answers it (EOSE, no events).
+  const eose = p => p.onclose?.(["closed automatically on eose"])
+  pool.subscribeEose = (_, f, p) => {
+    if (holding) held.push({ f, answer: () => eose(p) })
+    else queueMicrotask(() => eose(p))
+    return { close: () => {} }
+  }
   const el = document.createElement("div")
   try {
     // First a stored note, then a reposted reply whose root is stored: the second thread shows that reply only from
@@ -184,13 +191,13 @@ test("a network sync still running for the previous note doesn't take over the n
     const ctx = { vault: { feed: { query: feedOf(events).feed.query, event: async () => ({ ok: true }) } }, account: { relays: { read: [] } } }
 
     render(h(ThreadScreen, { ctx, id: first.id }), el)
-    await until(() => held.some(q => q.f["#e"]?.[0] === first.id && !q.f.kinds?.includes(7)), "the first note's sync asking relays for replies")
+    await until(() => held.some(q => q.f["#e"]?.[0] === first.id), "the first note's sync asking relays for replies")
     render(h(ThreadScreen, { ctx, id: replyToOriginal.id }), el)
     await until(() => /a reposted reply/.test(el.textContent), "the second thread on screen")
 
     // The first sync's relays answer now. Everything it would still do after that (store, setRootId, reload from the
     // in-memory /feed) is promise work, so one timer turn runs all of it; the second turn lets preact render it.
-    held.find(q => q.f["#e"]?.[0] === first.id && !q.f.kinds?.includes(7)).answer()
+    held.filter(q => q.f["#e"]?.[0] === first.id).forEach(q => q.answer())
     await tick()
     await tick()
     assert.match(el.textContent, /the reposted note/)
@@ -203,5 +210,6 @@ test("a network sync still running for the previous note doesn't take over the n
     held.forEach(q => q.answer())
     await tick()
     pool.querySync = querySync
+    pool.subscribeEose = subscribeEose
   }
 })
