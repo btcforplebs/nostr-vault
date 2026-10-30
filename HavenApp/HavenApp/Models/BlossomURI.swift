@@ -8,7 +8,7 @@ import CryptoKit
 /// author whose kind 10063 server list may hold it, and `sz` its size. A
 /// reader tries the servers in turn, GETs `/<sha256>.<ext>` and keeps the
 /// bytes only when they hash to the link's sha256, since any server may answer.
-/// Web: none yet. Android: none yet.
+/// Web: `web-vault/src/net/blossom-uri.js`. Android: none yet.
 struct BlossomURI: Equatable {
     var sha256: String
     /// Lowercase, no dot: "jpg", "mp4".
