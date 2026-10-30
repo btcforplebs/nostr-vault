@@ -23,6 +23,11 @@ import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -75,6 +80,13 @@ class ArticleReaderViewModel @Inject constructor(
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
     val likedEventIds: StateFlow<Set<String>> = feedService.likedEventIds
 
+    /**
+     * The active account's blocked people (hex), kept current so a block made
+     * while the article is open takes their highlights and comments out at once.
+     */
+    private val blockedPubkeys: StateFlow<Set<String>> = configStore.config
+        .map { feedService.blockedHexForActiveAccount() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
 
     private val _zapped = MutableStateFlow(false)
     val zapped: StateFlow<Boolean> = _zapped.asStateFlow()
@@ -133,9 +145,12 @@ class ArticleReaderViewModel @Inject constructor(
 
     // ── Highlights from the network ──────────────────────────────────
 
+    /** Everyone's highlights, blocked people's included, so an unblock brings them back. */
     private val _highlights = MutableStateFlow<List<ArticleHighlight>>(emptyList())
-    /** Other people's highlights of this article, newest first. */
-    val highlights: StateFlow<List<ArticleHighlight>> = _highlights.asStateFlow()
+    /** Other people's highlights of this article, newest first, blocked people's left out. */
+    val highlights: StateFlow<List<ArticleHighlight>> = combine(_highlights, blockedPubkeys) { found, blocked ->
+        ArticleBlockFilter.visibleHighlights(found, blocked)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * The article's relay, the feed relays and the author's outbox: where a
@@ -172,7 +187,8 @@ class ArticleReaderViewModel @Inject constructor(
             // An earlier, smaller snapshot can finish after a later one.
             _highlights.update { if (found.size >= it.size) found else it }
             val profiles = nostrService.profiles.value
-            val missing = found.map { it.pubkey }.distinct().filter { it !in profiles }
+            val shown = ArticleBlockFilter.visibleHighlights(found, blockedPubkeys.value)
+            val missing = shown.map { it.pubkey }.distinct().filter { it !in profiles }
             if (missing.isNotEmpty()) nostrService.fetchMissingProfiles(missing)
             return found
         }
@@ -206,8 +222,24 @@ class ArticleReaderViewModel @Inject constructor(
 
     // ── Likes, zaps and comments from the network ────────────────────
 
-    private val _tally = MutableStateFlow(ArticleTally())
-    val tally: StateFlow<ArticleTally> = _tally.asStateFlow()
+    /** The last likes, zaps and comments found, blocked people's included. */
+    private data class Engagement(
+        val events: List<ArticleEngagementEvent> = emptyList(),
+        val articleId: String = "",
+        val coordinate: String? = null,
+        /** Size of the tally with nobody blocked, so a block never makes a newer snapshot look smaller. */
+        val size: Int = 0,
+    )
+    private val engagement = MutableStateFlow(Engagement())
+
+    /** Counted after blocked people's are taken out, again whenever the block list changes. */
+    val tally: StateFlow<ArticleTally> = combine(engagement, blockedPubkeys) { found, blocked ->
+        tallyShown(found, blocked)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, ArticleTally())
+
+    private fun tallyShown(found: Engagement, blocked: Set<String>): ArticleTally =
+        if (found.events.isEmpty()) ArticleTally()
+        else ArticleTallies.tally(ArticleBlockFilter.visibleEvents(found.events, blocked), found.articleId, found.coordinate)
 
     /**
      * Fetch the article's likes, zaps and comments from the relays highlights
@@ -219,11 +251,12 @@ class ArticleReaderViewModel @Inject constructor(
         // Each event is checked once, however many snapshots it appears in.
         val checked = ConcurrentHashMap<String, Optional<ArticleEngagementEvent>>()
         fun show(events: List<ArticleEngagementEvent>) {
-            val found = ArticleTallies.tally(events, note.id, coordinate)
+            val found = Engagement(events, note.id, coordinate, ArticleTallies.tally(events, note.id, coordinate).size)
             // An earlier, smaller snapshot can finish after a later one.
-            _tally.update { if (found.size >= it.size) found else it }
+            engagement.update { if (found.size >= it.size) found else it }
             val profiles = nostrService.profiles.value
-            val missing = found.topLevelComments.map { it.pubkey }.distinct().filter { it !in profiles }
+            val shown = tallyShown(found, blockedPubkeys.value)
+            val missing = shown.topLevelComments.map { it.pubkey }.distinct().filter { it !in profiles }
             if (missing.isNotEmpty()) nostrService.fetchMissingProfiles(missing)
         }
         fun parsed(raw: List<JsonObject>) = raw.mapNotNull { ev ->
