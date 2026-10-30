@@ -157,6 +157,33 @@ function videoSize(file) {
 
 let nextPhoto = 0
 
+// An on-screen keyboard shrinks only the visual viewport, so 100vh can't see it, and iOS Safari scrolls the page to
+// the caret instead: the sheet's bar went up under the status bar and the tools down under the keyboard. While a
+// keyboard is up, the sheet is pinned to what's visible. Zoom shrinks the visual viewport too, so the keyboard is
+// what's left of the layout viewport once zoom is cancelled (height * scale).
+const KEYBOARD_MIN = 120
+export function keyboardFrame(vv, layoutHeight) {
+  if (!vv || layoutHeight - vv.height * vv.scale < KEYBOARD_MIN) return null
+  return { top: vv.offsetTop, height: vv.height }
+}
+
+function useKeyboardFrame(on) {
+  const [frame, setFrame] = useState(null)
+  useEffect(() => {
+    const vv = globalThis.visualViewport
+    if (!on || !vv) return
+    const update = () => setFrame(f => {
+      const next = keyboardFrame(vv, document.documentElement.clientHeight)
+      return f?.top === next?.top && f?.height === next?.height ? f : next
+    })
+    update()
+    vv.addEventListener("resize", update)
+    vv.addEventListener("scroll", update)
+    return () => { vv.removeEventListener("resize", update); vv.removeEventListener("scroll", update) }
+  }, [on])
+  return frame
+}
+
 /** `fixed`: the reply or quote to write, instead of the one in the address (the desktop's inline reply under a thread).
  *  `inline`: drawn small, with no title and no copy of the note above it, since the thread is right there. */
 export function ComposeScreen({ ctx, fixed = null, inline = false }) {
@@ -302,9 +329,11 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
 
   const title = !target ? "New Note" : target.mode === "reply" ? "Reply" : "Quote"
   const postLabel = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : `${SEND_ACTIONS[sendAction(target)].label}…`) : uploading ? "Uploading…" : target?.mode === "reply" ? "Reply" : "Post"
+  const keyboard = useKeyboardFrame(!inline)
   const postButton = cls => <button class={cls} disabled={!canPost} onClick={post} aria-busy={busy || uploading || undefined}>{postLabel}</button>
   return (
-    <main class={inline ? "screen compose-inline" : "screen compose-sheet"}>
+    <main class={inline ? "screen compose-inline" : keyboard ? "screen compose-sheet keyboard" : "screen compose-sheet"}
+      style={keyboard ? { "--kb-top": `${keyboard.top}px`, "--kb-height": `${keyboard.height}px` } : undefined}>
       {pending && <SendPill pending={pending} onUndo={undo} />}
       {/* The iPhone's compose sheet: Cancel, the title, and Post at the top right (ComposeView+Chrome). */}
       {!inline && <header class="compose-bar">
