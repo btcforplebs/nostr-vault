@@ -46,10 +46,11 @@ object RelayDrainState {
         maxMs: Long = MAX_WAIT_MS,
         stop: () -> Boolean = { false },
     ): Wait {
-        val deadline = System.currentTimeMillis() + maxMs
+        // Monotonic: a wall clock set back would stretch the wait.
+        val deadline = System.nanoTime() + maxMs * 1_000_000
         while (isDraining) {
             if (stop()) return Wait.STOPPED
-            if (System.currentTimeMillis() >= deadline) return Wait.TIMED_OUT
+            if (System.nanoTime() - deadline >= 0) return Wait.TIMED_OUT
             delay(pollMs)
         }
         return Wait.DRAINED
