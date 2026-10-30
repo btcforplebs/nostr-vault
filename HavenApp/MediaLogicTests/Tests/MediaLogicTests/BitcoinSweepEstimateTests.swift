@@ -18,6 +18,12 @@ final class BitcoinSweepEstimateTests: XCTestCase {
         XCTAssertEqual(BitcoinSweepEstimate.vsize(utxoCount: -4), 111)
     }
 
+    func testHugeCountIsCappedInsteadOfTrapping() {
+        let capped = BitcoinSweepEstimate.vsize(utxoCount: BitcoinSweepEstimate.maxUTXOCount)
+        XCTAssertEqual(BitcoinSweepEstimate.vsize(utxoCount: Int.max), capped)
+        XCTAssertEqual(BitcoinSweepEstimate.fee(utxoCount: Int.max, feeRate: 1_000), capped * 1_000)
+    }
+
     func testFeeScalesWithInputs() {
         XCTAssertEqual(BitcoinSweepEstimate.fee(utxoCount: 1, feeRate: 5), 555)
         XCTAssertEqual(BitcoinSweepEstimate.fee(utxoCount: 2, feeRate: 5), 845)
@@ -41,6 +47,14 @@ final class BitcoinSweepEstimateTests: XCTestCase {
         let funds = try XCTUnwrap(BitcoinSweepEstimate.AddressFunds(mempoolJSON: Data(json.utf8)))
         XCTAssertEqual(funds.balanceSats, 3_000_000_000)
         XCTAssertEqual(funds.utxoCount, 2)
+    }
+
+    func testRejectsReplyWhoseSumsOverflow() {
+        let json = """
+        {"chain_stats":{"funded_txo_count":9223372036854775807,"funded_txo_sum":1,"spent_txo_count":0,"spent_txo_sum":0},
+         "mempool_stats":{"funded_txo_count":9223372036854775807,"funded_txo_sum":0,"spent_txo_count":0,"spent_txo_sum":0}}
+        """
+        XCTAssertNil(BitcoinSweepEstimate.AddressFunds(mempoolJSON: Data(json.utf8)))
     }
 
     func testRejectsNonAddressReply() {
