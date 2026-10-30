@@ -14,8 +14,11 @@ import { noteMedia } from "../net/note-media.js"
 import { NoteMedia } from "./NoteMedia.jsx"
 import { inlineMarks } from "../net/inline-md.js"
 import { LinkCard } from "./LinkCard.jsx"
+import { BlossomMedia } from "./BlossomMedia.jsx"
+import { parseBlossomUri } from "../net/blossom-uri.js"
 
-const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+)/gi
+// A BUD-10 blossom:<sha256>.<ext>?… link is one token too, so its query never reads as text (BlossomMedia).
+const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+|blossom:[0-9a-fA-F]{64}\.[A-Za-z0-9]{1,10}(?:\?[^\s<>"]*)?)/gi
 const MAX_QUOTE_DEPTH = 1
 
 /** `dm`: the text is a private message, so nothing in it reaches the network on its own: video links stay links
@@ -36,7 +39,8 @@ export function NoteText({ content, tags, author, depth = 0, dm = false, memoryO
     parts[i + 1] = parts[i].slice(url.length) + parts[i + 1]
     parts[i] = url
   }
-  const media = !dm && images ? noteMedia(parts.filter((_, i) => i % 2), tags) : []
+  // blossom: links are drawn where they stand (BlossomMedia), never as an https picture in the carousel.
+  const media = !dm && images ? noteMedia(parts.filter((p, i) => i % 2 && /^https?:\/\//i.test(p)), tags) : []
   if (media.length) parts = withoutLinks(parts, new Set(media.map(m => m.url)))
   const cards = linkCards && !dm ? cardLinks(parts) : []
   if (cards.length) parts = withoutLinks(parts, new Set(cards))
@@ -45,6 +49,7 @@ export function NoteText({ content, tags, author, depth = 0, dm = false, memoryO
       {parts.map((s, i) => {
         if (i % 2 === 0) return withMarks(s, i)
         if (s.startsWith("nostr:")) return nostrRef(s.slice(6), i, depth, dm, memoryOnly)
+        if (/^blossom:/i.test(s)) { const b = parseBlossomUri(s); return b ? <BlossomMedia key={i} b={b} author={author} images={images} dm={dm} /> : <span key={i}>{s}</span> }
         // A .fips link left in the text (a DM, or images off) stays plain text: as an <img>, <video> or <a> it would
         // send the name to DNS.
         if (meshHost(s)) return <span key={i}>{s}</span>
