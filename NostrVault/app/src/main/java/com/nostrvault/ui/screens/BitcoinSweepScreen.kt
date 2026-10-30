@@ -50,18 +50,28 @@ data class SweepSuccess(val txid: String, val amount: Long, val fee: Long)
  */
 data class PendingSweep(val address: String, val feeRate: Int, val amount: Long, val fee: Long) {
     companion object {
-        /** ~1-in-1-out taproot spend. */
-        const val ESTIMATED_VSIZE = 111
         /** Outputs at or under this are dust and would not relay. */
         const val DUST_LIMIT = 546L
+
+        /**
+         * Size of the sweep, which spends every unspent output, confirmed or not,
+         * into one taproot output. Same as estimateSweepVsize in haven-go/bitcoin.go:
+         * 111 vB for one input, 169 for two.
+         */
+        fun estimatedVsize(utxoCount: Int): Long {
+            val inputs = utxoCount.coerceAtLeast(1).toLong()
+            val nonWitness = 10 + 41 * inputs + 43
+            val witness = 2 + 66 * inputs
+            return (nonWitness * 4 + witness + 3) / 4
+        }
 
         /**
          * The sweep the form describes, or null when the address is not a valid
          * mainnet address or what is left after the fee is dust.
          */
-        fun from(destination: String, balanceSats: Long?, feeRate: Int): PendingSweep? {
+        fun from(destination: String, balanceSats: Long?, utxoCount: Int, feeRate: Int): PendingSweep? {
             val address = BitcoinAddress.normalizedMainnet(destination) ?: return null
-            val fee = ESTIMATED_VSIZE.toLong() * feeRate
+            val fee = estimatedVsize(utxoCount) * feeRate
             val amount = ((balanceSats ?: 0L) - fee).coerceAtLeast(0L)
             if (amount <= DUST_LIMIT) return null
             return PendingSweep(address, feeRate, amount, fee)
@@ -83,6 +93,10 @@ class BitcoinSweepViewModel @Inject constructor(
     private val _balanceSats = MutableStateFlow<Long?>(null)
     val balanceSats = _balanceSats.asStateFlow()
 
+    /** Unspent outputs the sweep will spend; the fee grows with each. */
+    private val _utxoCount = MutableStateFlow(1)
+    val utxoCount = _utxoCount.asStateFlow()
+
     private val _feeEstimates = MutableStateFlow<SweepFeeEstimates?>(null)
     val feeEstimates = _feeEstimates.asStateFlow()
 
@@ -102,7 +116,11 @@ class BitcoinSweepViewModel @Inject constructor(
 
     fun refreshBalance() {
         val addr = fromAddress ?: return
-        viewModelScope.launch { _balanceSats.value = mempoolApi.fetchAddressBalanceSats(addr) }
+        viewModelScope.launch {
+            val funds = mempoolApi.fetchAddressFunds(addr)
+            _utxoCount.value = funds?.utxoCount ?: 1
+            _balanceSats.value = funds?.balanceSats
+        }
     }
 
     private fun loadFees() {
@@ -192,6 +210,7 @@ fun BitcoinSweepScreen(
     val error by viewModel.error.collectAsState()
     val success by viewModel.success.collectAsState()
     val balance by viewModel.balanceSats.collectAsState()
+    val utxoCount by viewModel.utxoCount.collectAsState()
     val feeEstimates by viewModel.feeEstimates.collectAsState()
 
     // 0 = warning page 1, 1 = warning page 2, 2 = disclaimer, 3 = sweep form
@@ -227,6 +246,7 @@ fun BitcoinSweepScreen(
                 )
                 else -> SweepForm(
                     balance = balance,
+                    utxoCount = utxoCount,
                     feeEstimates = feeEstimates,
                     busy = busy,
                     error = error,
@@ -400,6 +420,7 @@ private fun SweepWarningCard(
 @Composable
 private fun SweepForm(
     balance: Long?,
+    utxoCount: Int,
     feeEstimates: SweepFeeEstimates?,
     busy: Boolean,
     error: String?,
@@ -413,12 +434,12 @@ private fun SweepForm(
     // shows the amount and the full address.
     var pending by remember { mutableStateOf<PendingSweep?>(null) }
 
-    val estimatedVsize = PendingSweep.ESTIMATED_VSIZE
+    val estimatedVsize = PendingSweep.estimatedVsize(utxoCount)
     val currentRate = rateFor(tier)
-    val estimatedFee = (estimatedVsize * currentRate).toLong()
+    val estimatedFee = estimatedVsize * currentRate
     val sendAmount = ((balance ?: 0L) - estimatedFee).coerceAtLeast(0L)
     val invalidAddress = dest.isNotBlank() && BitcoinAddress.normalizedMainnet(dest) == null
-    val canSweep = !busy && PendingSweep.from(dest, balance, currentRate) != null
+    val canSweep = !busy && PendingSweep.from(dest, balance, utxoCount, currentRate) != null
 
     pending?.let { sweep ->
         AlertDialog(
@@ -535,7 +556,7 @@ private fun SweepForm(
 
         Spacer(Modifier.height(16.dp))
         Button(
-            onClick = { pending = PendingSweep.from(dest, balance, currentRate) },
+            onClick = { pending = PendingSweep.from(dest, balance, utxoCount, currentRate) },
             enabled = canSweep,
             colors = ButtonDefaults.buttonColors(containerColor = ZapOrange),
             modifier = Modifier.fillMaxWidth().height(50.dp),
