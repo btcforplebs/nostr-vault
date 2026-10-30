@@ -69,6 +69,17 @@ body:has(.compose-sheet) .tabbar { display: none; }
 .compose-sheet .compose-add-photo { width: 52px; height: 52px; min-height: 0; padding: 0; display: grid; place-items: center;
   border-radius: 50%; border: 0; background: var(--accent-pale); color: var(--accent); }
 .compose-sheet .compose-add-photo svg { width: 24px; height: 24px; }
+/* Keyboard up (ComposeScreen useKeyboardFrame gives the visible area as --kb-top and --kb-height): the bar stays at the top, the
+   tools sit on the keyboard, and the editor takes what's between and scrolls. Phone layout only: the desktop's compose
+   is a dialog. */
+.app:not(.desk-app) .compose-sheet.keyboard { position: fixed; top: var(--kb-top); left: 0; right: 0; height: var(--kb-height); z-index: 20; min-height: 0; box-sizing: border-box;
+  display: flex; flex-direction: column; padding-bottom: 8px; overflow: hidden; }
+.app:not(.desk-app) .compose-sheet.keyboard > * { flex: none; }
+.app:not(.desk-app) .compose-sheet.keyboard .compose-area { flex: 1 1 auto; min-height: 0; margin-bottom: 0;
+  grid-template-rows: minmax(0, 1fr); align-content: stretch; }
+.app:not(.desk-app) .compose-sheet.keyboard .compose-area .compose { min-height: 48px; height: 100%; overflow-y: auto; }
+/* Behind Safari's keyboard bar, where the pinned sheet ends: the sheet's colour, as before, not the black page. */
+:is(html, body):has(.app:not(.desk-app) .compose-sheet.keyboard) { background: var(--s1); }
 .compose-sheet .compose-add-photo-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* The send countdown (PostActionPill): an accent capsule at the top, "Posting in 5s", a 60 px bar, Undo. */

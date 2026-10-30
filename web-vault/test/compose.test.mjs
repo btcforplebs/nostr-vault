@@ -22,7 +22,7 @@ registerHooks({
   },
 })
 const { mentionAt, mentionedPubkeys, rankPeople, resolveMentions, toNostr, uniqueToken } = await import("../src/components/MentionPicker.jsx")
-const { buildPost, draftKey, draftOf, isMedia, isVideo } = await import("../src/screens/ComposeScreen.jsx")
+const { buildPost, draftKey, draftOf, isMedia, isVideo, keyboardFrame } = await import("../src/screens/ComposeScreen.jsx")
 
 const me = generateSecretKey(), other = generateSecretKey()
 const pk = sk => getPublicKey(sk)
@@ -243,4 +243,16 @@ test("a size refusal says so, with the file's size and the server's reason", asy
   assert.equal(megabytes(12.6e6), "13 MB")
   const fetch = async () => fail(413, "file too big")
   await assert.rejects(uploadPhoto(photo(), { ctx: ctxFor(), servers: ["https://a.example"], fetch }), /a\.example: too large \(0\.0 MB\), file too big/)
+})
+
+test("the sheet is pinned to the visible area only while a keyboard is up, not when zoomed", () => {
+  // iPhone 17 Pro Safari: 714 px tall, the keyboard leaves 380 and Safari has scrolled the page 60 px to the caret.
+  assert.equal(keyboardFrame({ height: 714, scale: 1, offsetTop: 0 }, 714), null)
+  assert.deepEqual(keyboardFrame({ height: 380, scale: 1, offsetTop: 60 }, 714), { top: 60, height: 380 })
+  // Pinch zoom shrinks the visual viewport just as much, with no keyboard: height * scale is still the whole screen.
+  assert.equal(keyboardFrame({ height: 357, scale: 2, offsetTop: 120 }, 714), null)
+  assert.equal(keyboardFrame({ height: 476.6, scale: 1.4981, offsetTop: 9.5 }, 714), null)
+  // Zoomed and typing: what's left after cancelling the zoom is the keyboard.
+  assert.deepEqual(keyboardFrame({ height: 190, scale: 2, offsetTop: 30 }, 714), { top: 30, height: 190 })
+  assert.equal(keyboardFrame(undefined, 714), null)
 })
