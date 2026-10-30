@@ -74,6 +74,13 @@ object HavenBridge {
     external fun stopRelay()
 
     /**
+     * Whether the last stopped run is still shutting down: its databases
+     * are open and every start is refused until it ends ([RelayDrainState]).
+     * Maps to Go: RelayDrainingC()
+     */
+    external fun relayDraining(): Boolean
+
+    /**
      * Trigger an immediate inbox + owner catch-up pull in the running relay,
      * fetching newly tagged events (replies, reactions, zaps, reposts, mentions,
      * DMs) and the owner's own notes from external relays into the local DBs.

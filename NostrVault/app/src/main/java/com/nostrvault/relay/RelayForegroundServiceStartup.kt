@@ -26,8 +26,15 @@ import kotlinx.coroutines.withTimeoutOrNull
      * Delete stale BadgerDB LOCK files that persist after a Go crash.
      * Without this, the next start fails immediately with "Cannot acquire
      * directory lock" and the relay never comes up.
+     *
+     * Never while the last run is still shutting down ([RelayDrainState]):
+     * those LOCK files belong to databases that are still open.
      */
     internal fun RelayForegroundService.clearDatabaseLocks(relayDataDir: File) {
+        if (RelayDrainState.isDraining) {
+            Log.w(TAG, "Not clearing database locks: the last relay run is still shutting down")
+            return
+        }
         var cleared = 0
         for (sub in RelayConfiguration.dbSubdirs) {
             for (prefix in listOf("db", "data")) {
@@ -81,6 +88,22 @@ import kotlinx.coroutines.withTimeoutOrNull
      * Gives up after [MAX_RETRY_ATTEMPTS] and sets status to OFFLINE.
      */
     private suspend fun RelayForegroundService.attemptRetry(relayDataDir: File) {
+        // A start refused because the last run still holds the databases is
+        // not a failed start: wait for that run to let go, then start again
+        // with a fresh count. Giving up here left the vault offline for good
+        // seconds before the drain finished.
+        when (RelayDrainState.awaitDrainedIfDraining { isShuttingDown }) {
+            null -> Unit
+            RelayDrainState.Wait.STOPPED -> return
+            RelayDrainState.Wait.TIMED_OUT -> return leaveOfflineAfterDrainTimeout()
+            RelayDrainState.Wait.DRAINED -> {
+                Log.i(TAG, "Last relay run has shut down; starting again")
+                lifecycleState = LifecycleState.IDLE
+                retryCount = 0
+                startGoRelay()
+                return
+            }
+        }
         if (retryCount >= MAX_RETRY_ATTEMPTS || isShuttingDown) {
             Log.e(TAG, "Giving up: retries=$retryCount/$MAX_RETRY_ATTEMPTS, shuttingDown=$isShuttingDown")
             lifecycleState = LifecycleState.IDLE
@@ -111,6 +134,46 @@ import kotlinx.coroutines.withTimeoutOrNull
 
         clearDatabaseLocks(relayDataDir)
         startGoRelay()
+    }
+
+    // ── Stop before a restart ──────────────────────────────────────
+
+    /**
+     * Stops the Go relay and waits until its last run has really shut down
+     * (its databases closed), so a restart neither gets "already running"
+     * nor opens the databases beside the old run. Returns false if the
+     * service is shutting down meanwhile, or if the old run is still going
+     * after [RelayDrainState.MAX_WAIT_MS] (the relay is then left offline).
+     */
+    internal suspend fun RelayForegroundService.stopGoRelayAndAwaitDrain(): Boolean {
+        try {
+            if (HavenBridge.isLoaded) {
+                withContext(Dispatchers.IO) {
+                    withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) { HavenBridge.stopRelay() }
+                } ?: Log.w(TAG, "stopRelay() timed out before a restart")
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Error stopping relay before a restart: ${e.message}")
+        }
+        return when (RelayDrainState.awaitDrained { isShuttingDown }) {
+            RelayDrainState.Wait.DRAINED -> !isShuttingDown
+            RelayDrainState.Wait.STOPPED -> false
+            RelayDrainState.Wait.TIMED_OUT -> {
+                leaveOfflineAfterDrainTimeout()
+                false
+            }
+        }
+    }
+
+    /**
+     * The old run never let go: leave the relay offline until the app starts
+     * it again, rather than wait in STOPPING or BOOTING for good.
+     */
+    private fun RelayForegroundService.leaveOfflineAfterDrainTimeout() {
+        Log.e(TAG, "Last relay run still shutting down after ${RelayDrainState.MAX_WAIT_MS / 1000}s; leaving the relay offline")
+        lifecycleState = LifecycleState.IDLE
+        _relayStatus.value = RelayStatus.OFFLINE
+        updateNotification(RelayStatus.OFFLINE)
     }
 
     // ── Main relay start ───────────────────────────────────────────
@@ -238,16 +301,9 @@ import kotlinx.coroutines.withTimeoutOrNull
         _readyForConnections.value = false
         _relayStatus.value = RelayStatus.BOOTING
         updateNotification(RelayStatus.BOOTING)
-        try {
-            withContext(Dispatchers.IO) {
-                withTimeoutOrNull(SHUTDOWN_TIMEOUT_MS) {
-                    if (HavenBridge.isLoaded) HavenBridge.stopRelay()
-                }
-            } ?: Log.w(TAG, "stopRelay() timed out during settings restart")
-        } catch (e: Throwable) {
-            Log.w(TAG, "Error stopping relay for settings restart: ${e.message}")
-        }
-        if (isShuttingDown) return
+        // Wait for the old run to close its databases: deleting their LOCK
+        // files while they are still open is what the drain check prevents.
+        if (!stopGoRelayAndAwaitDrain()) return
 
         lifecycleState = LifecycleState.IDLE
         retryCount = 0

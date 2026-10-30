@@ -5,10 +5,10 @@ import com.nostrvault.relay.RelayForegroundService.Companion.TAG
 import com.nostrvault.relay.RelayForegroundService.Companion.WATCHDOG_INTERVAL_MS
 import com.nostrvault.relay.RelayForegroundService.Companion.WATCHDOG_MAX_FAILURES
 import com.nostrvault.relay.RelayForegroundService.Companion.WATCHDOG_PROBE_TIMEOUT_MS
+import com.nostrvault.relay.RelayForegroundService.Companion._readyForConnections
 import com.nostrvault.relay.RelayForegroundService.Companion._relayStatus
 import com.nostrvault.relay.RelayForegroundService.LifecycleState
 import com.nostrvault.relay.RelayForegroundService.RelayStatus
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -56,19 +56,23 @@ import kotlinx.coroutines.withContext
                     if (consecutiveFailures >= WATCHDOG_MAX_FAILURES) {
                         _relayStatus.value = RelayStatus.OFFLINE
                         updateNotification(RelayStatus.OFFLINE)
-                        lifecycleState = LifecycleState.IDLE
+                        // Go is alive but not answering: stop it and let its
+                        // last run shut down before anything starts a new one
+                        // or touches the database LOCK files.
+                        lifecycleState = LifecycleState.STOPPING
+                        _readyForConnections.value = false
                         val now = System.currentTimeMillis()
                         val wait = recordWatchdogRestart(now)
-                        if (wait == null) {
-                            Log.e(TAG, "Health watchdog: relay unresponsive after ${WatchdogRestartPolicy.MAX_RESTARTS} restarts in 6 h — leaving it offline until the app starts it")
-                            break
-                        }
-                        Log.e(TAG, "Health watchdog: relay unresponsive, restarting in ${wait / 1000}s")
-                        val relayDataDir = File(filesDir, "relay_data")
-                        clearDatabaseLocks(relayDataDir)
-                        retryCount = 0
-                        // Enqueue restart through serviceScope to serialize with other lifecycle ops
+                        // Enqueue the stop and restart through serviceScope to serialize with other lifecycle ops
                         serviceScope.launch {
+                            if (!stopGoRelayAndAwaitDrain()) return@launch
+                            lifecycleState = LifecycleState.IDLE
+                            if (wait == null) {
+                                Log.e(TAG, "Health watchdog: relay unresponsive after ${WatchdogRestartPolicy.MAX_RESTARTS} restarts in 6 h — leaving it offline until the app starts it")
+                                return@launch
+                            }
+                            Log.e(TAG, "Health watchdog: relay unresponsive, restarting in ${wait / 1000}s")
+                            retryCount = 0
                             delay(wait)
                             // Skips itself if someone started the relay while we waited.
                             startGoRelay()

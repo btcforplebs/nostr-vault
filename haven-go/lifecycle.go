@@ -381,7 +381,12 @@ type lifecycleManager struct {
 	// drained is closed once the last stopped cycle's goroutines have all
 	// returned and its databases have really closed. Guarded by mu.
 	drained <-chan struct{}
+	// drainSig is drained again, readable without mu (which a start holds
+	// while it waits for the drain) so the host can ask (RelayDrainingC).
+	drainSig atomic.Pointer[drainSignal]
 }
+
+type drainSignal struct{ ch <-chan struct{} }
 
 var relayLC lifecycleManager
 
@@ -394,7 +399,29 @@ var drainWait = 10 * time.Second
 
 // setDrained records when the cycle being torn down will be fully gone.
 // Caller holds mu.
-func (l *lifecycleManager) setDrained(ch <-chan struct{}) { l.drained = ch }
+func (l *lifecycleManager) setDrained(ch <-chan struct{}) {
+	l.drained = ch
+	if ch == nil {
+		l.drainSig.Store(nil)
+		return
+	}
+	l.drainSig.Store(&drainSignal{ch})
+}
+
+// isDraining reports whether the last stopped cycle still holds the
+// databases. Lock-free; safe to call from any thread.
+func (l *lifecycleManager) isDraining() bool {
+	s := l.drainSig.Load()
+	if s == nil {
+		return false
+	}
+	select {
+	case <-s.ch:
+		return false
+	default:
+		return true
+	}
+}
 
 // awaitDrained waits, up to d, for the last cycle to be fully gone. No new
 // cycle, import, backup or restore may open the databases or touch the
