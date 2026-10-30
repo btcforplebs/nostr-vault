@@ -52,7 +52,12 @@ enum NoteURLs {
         let wanted = Set(urls.map(\.absoluteString))
         var result = text
         let ns = text as NSString
-        for match in cardRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+        let all = NSRange(location: 0, length: ns.length)
+        // BUD-10 `blossom:` links are media too, drawn from their hash.
+        let matches = ([cardRegex] + [BlossomURI.regex].compactMap { $0 })
+            .flatMap { $0.matches(in: text, range: all) }
+            .sorted { $0.range.location > $1.range.location }
+        for match in matches {
             let found = ns.substring(with: match.range)
             let key = URL(string: found)?.absoluteString ?? found
             guard wanted.contains(key), let range = Range(match.range, in: result) else { continue }

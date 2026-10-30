@@ -76,7 +76,8 @@ actor BlossomURIFetcher {
     private static func download(_ uri: BlossomURI, author: String?, to path: URL) async -> URL? {
         let own = uri.candidates(authorServers: [], fallbackServers: [])
         if let file = await firstMatch(uri, in: Array(own.prefix(maxServers)), to: path) { return file }
-        let authorServers = await author.map(serverList) ?? []
+        var authorServers: [String] = []
+        if let author { authorServers = await serverList(author) }
         let ours = await MainActor.run { ConfigService.shared.config.blossomMirrors }
         let rest = uri.candidates(authorServers: authorServers,
                                   fallbackServers: ours + HavenConfig.newAccountBlossomMirrors)

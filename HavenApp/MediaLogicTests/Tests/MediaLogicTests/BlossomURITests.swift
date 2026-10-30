@@ -35,6 +35,15 @@ final class BlossomURITests: XCTestCase {
         XCTAssertTrue(testNote.hasSuffix(urls[0].absoluteString))
     }
 
+    func testTheNoteTextLosesTheLinkAndKeepsTheWords() {
+        let urls = SupportedMediaFormats.mediaURLs(in: testNote)
+        XCTAssertEqual(NoteURLs.strip(urls, from: testNote),
+                       "This is a test of BUD-10. Can you see this image? What client are you using?")
+        // A link the note doesn't draw (a .pdf) stays as written.
+        let pdf = "see blossom:\(sha).pdf?xs=a.example"
+        XCTAssertEqual(NoteURLs.strip(urls, from: pdf), pdf)
+    }
+
     func testABareLinkWithNoHintsIsStillMedia() throws {
         let url = try XCTUnwrap(SupportedMediaFormats.mediaURLs(in: "look blossom:\(sha.uppercased()).MP4 ok").first)
         let uri = try XCTUnwrap(BlossomURI(url))
