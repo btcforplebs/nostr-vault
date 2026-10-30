@@ -135,9 +135,16 @@ internal fun InlineFeedVideo(
             FeedVideoAutoplay.report(key, fraction)
         },
     ) {
-        if (wantsToPlay && settled) {
+        val playable = if (wantsToPlay && settled) rememberPlayable(url).value else null
+        if (playable is Playable.Unavailable) {
+            LaunchedEffect(url) {
+                FeedVideoAutoplay.failed.add(url)
+                failed = true
+            }
+        }
+        if (playable is Playable.Ready) {
             ActiveInlineVideo(
-                url = url,
+                url = playable.uri,
                 onFailed = {
                     FeedVideoAutoplay.failed.add(url)
                     failed = true

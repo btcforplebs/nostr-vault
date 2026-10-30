@@ -94,6 +94,8 @@ object AppModule {
                 // Before the built-in HTTP fetcher, which would download a whole
                 // video to read one frame of it.
                 add(com.nostrvault.service.RemoteVideoFrameFetcher.Factory())
+                // BUD-10 blossom: links, drawn only from bytes that hash to the link.
+                add(com.nostrvault.service.BlossomUriLoader.Fetcher.Factory())
                 // ImageDecoder (API 28+) decodes animated GIF/WebP natively and
                 // draws through AnimatedImageDrawable on the render thread;
                 // GifDecoder is the old software Movie path, which decodes every

@@ -313,6 +313,13 @@ internal fun parseContentSegments(
         }
     }
 
+    // BUD-10 `blossom:` links drawn as media are dropped too; others stay text.
+    for (m in com.nostrvault.data.model.BlossomUri.TOKEN.findAllOnce(content)) {
+        if (m.value !in strippedURLs) continue
+        if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
+        matches.add(Match(m.range, ContentSegment.MediaUrl(m.value)))
+    }
+
     // Hashtags
     for (m in HASHTAG_REGEX.findAllOnce(content)) {
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
