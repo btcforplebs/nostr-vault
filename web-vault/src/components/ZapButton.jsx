@@ -5,12 +5,39 @@ import { ensureWallet, onWallet, walletState } from "../net/wallet.js"
 import { MAX_ZAP_SATS, PRESET_SATS, onZapTotals, wantTotals, zap, zapTotal } from "../net/zaps.js"
 import { ZappersList } from "./ZappersList.jsx"
 import { useProfile } from "./useProfile.js"
+import { showToast } from "./Toast.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
 
 const BOLT = "M13 2 4.5 13.5H11L10 22l8.5-11.5H12z"
 const HOLD_MS = 500
+
+/** A zap's pill (ZapNotificationBanner ZapPill): "Zapping Name" with the sats while it goes, "Zapped Name" for 3 s once
+ *  paid, "Zap failed" for 5 s. `name` is the profile's name, else the first 8 of the pubkey (ZapService). */
+export function zapFeedback(status, name, sats) {
+  const amount = `${Number(sats).toLocaleString("en-US")} sats`
+  const label = status === "sending" ? `Zapping ${name}` : status === "sent" ? `Zapped ${name}` : "Zap failed"
+  return {
+    message: `${label} · ${amount}`, label: `${label}, ${amount}`, icon: status === "failed" ? "warn" : "bolt",
+    tone: status === "sending" ? "accent" : status === "sent" ? "success" : "error", seconds: status === "sending" ? 0 : status === "sent" ? 3 : 5,
+  }
+}
+let zapsShown = 0
+
+/** zap(), with its pill from "Zapping" to "Zapped" or "Zap failed". Each zap keeps its own pill, as two zaps in a row
+ *  each get theirs on the iPhone. Throws what zap() threw. `pay` is for tests. */
+export async function zapWithFeedback(ctx, { recipient, note, sats, name }, pay = zap) {
+  const key = `zap:${++zapsShown}`, who = name || recipient.slice(0, 8)
+  showToast({ key, ...zapFeedback("sending", who, sats) })
+  try {
+    await pay(ctx, { recipient, note, sats })
+    showToast({ key, ...zapFeedback("sent", who, sats) })
+  } catch (e) {
+    showToast({ key, ...zapFeedback("failed", who, sats) })
+    throw e
+  }
+}
 
 /** The signed-in account's wallet, read on first use and re-rendering when it changes. */
 export function useWallet() {
@@ -68,7 +95,7 @@ export function ZapButton({ note, pubkey }) {
     setPicking(false)
     setState("busy")
     try {
-      await zap(ctx, { recipient, note, sats: amount })
+      await zapWithFeedback(ctx, { recipient, note, sats: amount, name: profile?.name })
       setState("sent")
     } catch (e) {
       setState({ error: String(e?.message ?? e) })

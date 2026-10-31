@@ -16,6 +16,7 @@ registerHooks({ load(url, context, next) {
 } })
 const { showToast, hideToast, currentToasts } = await import("../src/components/Toast.jsx")
 const { likeFeedback, likeWithFeedback } = await import("../src/components/ReactionButton.jsx")
+const { zapFeedback, zapWithFeedback } = await import("../src/components/ZapButton.jsx")
 
 const me = generateSecretKey(), author = generateSecretKey()
 let n0 = 0
@@ -88,5 +89,50 @@ test("a like no relay took says Like failed, in red", async t => {
   clear()
   await likeWithFeedback(ctxFor(), note())
   assert.deepEqual(currentToasts().map(x => [x.message, x.tone]), [["Like failed: no relay took it", "error"]])
+  clear()
+})
+
+test("the zap's words, as ZapPill says them", () => {
+  assert.deepEqual(zapFeedback("sending", "Alice", 21), { message: "Zapping Alice · 21 sats", label: "Zapping Alice, 21 sats", icon: "bolt", tone: "accent", seconds: 0 })
+  assert.deepEqual([zapFeedback("sent", "Alice", 5000).message, zapFeedback("sent", "Alice", 5000).tone, zapFeedback("sent", "Alice", 5000).seconds], ["Zapped Alice · 5,000 sats", "success", 3])
+  assert.deepEqual([zapFeedback("failed", "Alice", 21).message, zapFeedback("failed", "Alice", 21).tone, zapFeedback("failed", "Alice", 21).seconds], ["Zap failed · 21 sats", "error", 5])
+})
+
+test("a zap's pill goes Zapping, then Zapped in the same place, then away after 3 s", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  clear()
+  let paid
+  const pay = () => new Promise(r => { paid = r })
+  const recipient = getPublicKey(author)
+  const going = zapWithFeedback(ctxFor(), { recipient, sats: 21, name: "Alice" }, pay)
+  assert.deepEqual(currentToasts().map(x => x.message), ["Zapping Alice · 21 sats"])
+  t.mock.timers.tick(10_000)
+  assert.equal(currentToasts().length, 1) // stays while the wallet pays
+  paid()
+  await going
+  assert.deepEqual(currentToasts().map(x => [x.message, x.tone]), [["Zapped Alice · 21 sats", "success"]])
+  t.mock.timers.tick(3000)
+  assert.equal(currentToasts().length, 0)
+})
+
+test("a failed zap says Zap failed in red, and the caller still gets the error; no name falls back to the pubkey", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  clear()
+  const recipient = getPublicKey(author)
+  await assert.rejects(zapWithFeedback(ctxFor(), { recipient, sats: 21 }, async () => { throw new Error("wallet said no") }), /wallet said no/)
+  assert.deepEqual(currentToasts().map(x => [x.message, x.tone]), [["Zap failed · 21 sats", "error"]])
+  clear()
+  zapWithFeedback(ctxFor(), { recipient, sats: 21 }, () => new Promise(() => {}))
+  assert.equal(currentToasts()[0].message, `Zapping ${recipient.slice(0, 8)} · 21 sats`)
+  clear()
+})
+
+test("two zaps in a row each keep their own pill", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  clear()
+  const recipient = getPublicKey(author)
+  zapWithFeedback(ctxFor(), { recipient, sats: 21, name: "A" }, () => new Promise(() => {}))
+  zapWithFeedback(ctxFor(), { recipient, sats: 100, name: "B" }, () => new Promise(() => {}))
+  assert.deepEqual(currentToasts().map(x => x.message), ["Zapping A · 21 sats", "Zapping B · 100 sats"])
   clear()
 })
