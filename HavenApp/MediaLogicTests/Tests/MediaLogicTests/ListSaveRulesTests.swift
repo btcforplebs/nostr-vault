@@ -6,12 +6,14 @@ import XCTest
 /// agree, not one of them.
 final class ListSaveRulesTests: XCTestCase {
 
+    /// `asked` relays, all of them the account's own; the first `answered` answered and sent `event`.
     private func lookup(_ event: Int64?, asked: Int, answered: Int) -> ReplaceableLookup<Int64> {
-        ReplaceableLookup(event: event, asked: asked, answered: answered)
+        let heard = Set((0..<answered).map { "wss://own\($0).example" })
+        return ReplaceableLookup(event: event, asked: asked, answered: answered, answeredBy: heard, from: event == nil ? [] : heard)
     }
 
     private func base(_ l: ReplaceableLookup<Int64>, held: Int64? = nil) -> String {
-        switch ListMerge.editBase(l, held: held, createdAt: { $0 }) {
+        switch ListMerge.editBase(l, held: held, own: (0..<l.asked).map { "wss://own\($0).example" }, createdAt: { $0 }) {
         case .list(let e): return "list \(e)"
         case .none: return "none"
         case .unknown: return "unknown"
@@ -74,4 +76,31 @@ final class ListSaveRulesTests: XCTestCase {
         var dmSilent = opened; dmSilent.dmListKnown = false
         XCTAssertEqual(RelayDraft.saveCheck(opened: opened, fresh: dmSilent, plan: dmOnly), .unknown)
     }
+
+    /// Every edit in the app names the account's write relays as `own`, so a
+    /// copy from purplepag.es or a read relay alone never becomes the base
+    /// (Tron #1459: kind 3, 10063 and publishMergedList passed none).
+    func testEveryEditBaseCallSiteNamesTheOwnRelays() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("HavenApp")
+        var sites: [String] = []
+        let walk = try XCTUnwrap(FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil))
+        for case let url as URL in walk where url.pathExtension == "swift" && url.lastPathComponent != "ListMerge.swift" {
+            let src = try String(contentsOf: url, encoding: .utf8)
+            var rest = src[...]
+            while let call = rest.range(of: "ListMerge.editBase(") {
+                let tail = rest[call.upperBound...]
+                let end = try XCTUnwrap(tail.range(of: "createdAt:")).lowerBound
+                let args = tail[..<end]
+                sites.append(url.lastPathComponent)
+                XCTAssertTrue(args.contains("own: Self.ownListRelays()") || args.contains("own: NostrService.ownListRelays()"),
+                              "\(url.lastPathComponent): editBase without the own relays: \(args)")
+                rest = tail[end...]
+            }
+        }
+        XCTAssertEqual(sites.sorted(), ["FeedService+Follow.swift", "NostrService+ListPublishing.swift",
+                                        "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift"])
+    }
+
 }

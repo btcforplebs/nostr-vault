@@ -26,7 +26,7 @@ extension NostrService {
             let lookup = await lookupNewestReplaceable(kind: 10000, for: author, alsoAsk: alsoAsk)
             let base: (tags: [[String]], content: String)
             switch ListMerge.editBase(lookup, held: MuteListStore.shared.storedEvent(forHex: author),
-                                            own: ConfigService.shared.config.writeRelays.filter { !Self.isLoopbackRelay($0) }, createdAt: { $0.created_at }) {
+                                            own: Self.ownListRelays(), createdAt: { $0.created_at }) {
             case .list(let event):
                 base = (event.tags, event.content)
             case .none:
@@ -89,7 +89,7 @@ extension NostrService {
         // The newest list, or "none" only when the relays agree there is none:
         // one relay saying none may just not hold it (Logen 2026-10-31).
         let published: NostrEvent?
-        switch ListMerge.editBase(lookup, held: nil, createdAt: { $0.created_at }) {
+        switch ListMerge.editBase(lookup, held: nil, own: Self.ownListRelays(), createdAt: { $0.created_at }) {
         case .list(let event): published = event
         case .none: published = nil
         case .unknown:
@@ -204,7 +204,7 @@ extension NostrService {
             // account's servers as another.
             guard owner == activeHexPubkey else { return }
             let existing: [String]
-            switch ListMerge.editBase(lookup, held: nil, createdAt: { $0.created_at }) {
+            switch ListMerge.editBase(lookup, held: nil, own: Self.ownListRelays(), createdAt: { $0.created_at }) {
             case .list(let newest):
                 // lookupNewestReplaceable keeps only events whose author and signature it checked.
                 if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id, signedByAuthor: true) {
@@ -257,6 +257,12 @@ extension NostrService {
                 #endif
             }
         }
+    }
+
+    /// The relays that decide whether a list edit knows the newest copy
+    /// (ListMerge.editBase): the account's write relays, loopback dropped.
+    static func ownListRelays() -> [String] {
+        ConfigService.shared.config.writeRelays.filter { !isLoopbackRelay($0) }
     }
 
     /// A loopback address means "this machine". Advertising one to the network,

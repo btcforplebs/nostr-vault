@@ -116,21 +116,23 @@ enum ListMerge {
     }
 
     /// The newest of the list the relays returned and the one this device
-    /// already `held`. Unknown when no relay answered, when no list turned up
-    /// and some relay didn't answer, or when none of the account's `own`
-    /// relays was heard from: neither sent the list nor every one answered.
-    /// A copy on another relay alone can be older than the one on `own`.
-    static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String] = [],
+    /// already `held`, by the web's kind-3 rule (follows.js findLatestList,
+    /// list-edit.js listKnown): only the account's `own` relays (its write
+    /// relays, loopback dropped) count. A list is the base when one of them
+    /// sent it or most of them answered; "none" needs knowsNone and every one
+    /// of them answering. A copy from purplepag.es or a read relay alone, with
+    /// the own relays silent, can be older than theirs. No own relays: unknown.
+    /// `own` has no default, so every call site has to name them (Tron #1459).
+    static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
                                 createdAt: (Event) -> Int64) -> EditBase<Event> {
-        guard lookup.answered > 0 else { return .unknown }
         let mine = Set(own.map(relayKey))
-        let ownHeard = mine.isEmpty || mine.isSubset(of: Set(lookup.answeredBy.map(relayKey)))
-            || lookup.from.contains { mine.contains(relayKey($0)) }
-        guard ownHeard else { return .unknown }
+        guard !mine.isEmpty, lookup.answered > 0 else { return .unknown }
+        let ownAnswered = mine.intersection(Set(lookup.answeredBy.map(relayKey))).count
         if let newest = [lookup.event, held].compactMap({ $0 }).max(by: { createdAt($0) < createdAt($1) }) {
-            return .list(newest)
+            let vouched = lookup.from.contains { mine.contains(relayKey($0)) } || ownAnswered * 2 > mine.count
+            return vouched ? .list(newest) : .unknown
         }
-        return knowsNone(asked: lookup.asked, answered: lookup.answered) ? .none : .unknown
+        return knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
     }
 
     /// "You have no list" is known only when at least two relays answered and

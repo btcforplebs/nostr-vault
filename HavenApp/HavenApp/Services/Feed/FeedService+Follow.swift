@@ -135,7 +135,7 @@ extension FeedService {
                 kind: 3, for: owner, alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
             guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(nil); return }
             let base: (tags: [[String]], content: String, createdAt: Int64)
-            switch ListMerge.editBase(lookup, held: Self.lastSignedContactList[owner], createdAt: { $0.created_at }) {
+            switch ListMerge.editBase(lookup, held: Self.lastSignedContactList[owner], own: NostrService.ownListRelays(), createdAt: { $0.created_at }) {
             case .unknown:
                 #if DEBUG
                 print("FeedService: follow list not published — relays didn't answer (\(lookup.answered)/\(lookup.asked))")
