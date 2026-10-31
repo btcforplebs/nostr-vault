@@ -36,3 +36,13 @@ test("Share is on your own profile and beside the ••• on anyone else's; th
   assert.match(sheet, /Copy link/)
   assert.match(sheet, /navigator\.share\(/)
 })
+
+test("Follow changes at once, toasts once the list is out, and a tap while your list loads waits for it", () => {
+  const s = src("screens/PersonScreen.jsx")
+  assert.match(s, /const shown = want \?\? iFollow/)
+  assert.match(s, /class=\{shown \? "follow-btn on" : "follow-btn"\} disabled=\{busy \|\| ctx\.signer\?\.readOnly\}/, "not disabled while the list loads")
+  assert.match(s, /if \(account\.loaded\) run\(follow\)/)
+  assert.match(s, /useEffect\(\(\) => \{ if \(account\.loaded && want != null && !busy\) run\(want\) \}, \[account\.loaded\]\)/)
+  assert.match(s, /setToast\(follow \? `Following \$\{name\}` : `Unfollowed \$\{name\}`\)/)
+  assert.match(s, /finally \{ setBusy\(false\); setWant\(null\) \}/, "a failed follow goes back to what your list says")
+})
