@@ -30,6 +30,9 @@ struct ImportNotesStep: View {
     @State private var restoreCompleted = false
     @State private var restoreError: String?
     @State private var showRestoreError = false
+    /// Their own servers (kind 10002 write relays), read for this import
+    /// only: never saved or published.
+    @State private var ownRelays: [String] = []
 
     var body: some View {
         VStack(spacing: 24) {
@@ -76,6 +79,7 @@ struct ImportNotesStep: View {
             Spacer().frame(height: 8)
         }
         .onAppear { appeared = true }
+        .task { await loadOwnRelays() }
         // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
         .keepsScreenAwake()
         .fileImporter(
@@ -100,7 +104,7 @@ struct ImportNotesStep: View {
         .alert(String(localized: "setup.import.alert.portConflict"), isPresented: $relayManager.isPortConflict) {
             Button(String(localized: "setup.import.alert.retry")) {
                 relayManager.isPortConflict = false
-                relayManager.importNotes(config: configService.config)
+                relayManager.importNotes(config: configService.config, alsoFrom: ownRelays)
             }
             Button(String(localized: "setup.action.cancel"), role: .cancel) {
                 relayManager.isPortConflict = false
@@ -185,6 +189,8 @@ struct ImportNotesStep: View {
                         .foregroundColor(WizardColors.textPrimary)
 
                     RelayListEditor(relays: $configService.config.importSeedRelays)
+
+                    ownRelaysNote
                         .frame(minHeight: 80, maxHeight: 120)
                         .cornerRadius(8)
                 }
@@ -195,7 +201,7 @@ struct ImportNotesStep: View {
 
                 WizardPrimaryButton(title: String(localized: "setup.import.action")) {
                     configService.save()
-                    relayManager.importNotes(config: configService.config)
+                    relayManager.importNotes(config: configService.config, alsoFrom: ownRelays)
                 }
             }
         }
@@ -264,6 +270,26 @@ struct ImportNotesStep: View {
                     .foregroundColor(WizardColors.textMuted)
             }
         }
+    }
+
+    @ViewBuilder
+    private var ownRelaysNote: some View {
+        if !ownRelays.isEmpty {
+            Text("Also reading from your servers: " + ownRelays.map { RelayMatrix.label($0) }.joined(separator: ", "))
+                .font(.appSystem(size: 12))
+                .foregroundColor(WizardColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Reads the owner's relay list (kind 10002) for the servers their
+    /// notes are on. Nothing is written to it.
+    private func loadOwnRelays() async {
+        guard let pubkey = NpubValidation.hexPubkey(fromNpub: configService.config.ownerNpub) else { return }
+        let list = await NostrService.shared.fetchNewestReplaceable(
+            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays
+        )
+        ownRelays = RelayCheck.ownWriteRelays(relayListTags: list?.tags ?? [])
     }
 
     private func restoreBackup(from url: URL) {

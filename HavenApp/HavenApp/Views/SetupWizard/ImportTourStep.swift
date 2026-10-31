@@ -11,6 +11,9 @@ struct ImportTourStep: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     let isReadOnly: Bool
+    /// Their own servers picked in the relay check, read for this import
+    /// only (not saved).
+    var alsoFrom: [String] = []
     /// `keptRunning`: they left with the import still going.
     let onEnter: (_ keptRunning: Bool) -> Void
 
@@ -243,7 +246,7 @@ struct ImportTourStep: View {
         guard !relayManager.isImporting else { return }
         configService.config.importStartDate = Self.importStartDate
         configService.save()
-        relayManager.importNotes(config: configService.config)
+        relayManager.importNotes(config: configService.config, alsoFrom: alsoFrom)
     }
 
     /// Seeing every lesson card finishes the tour (and covers Vault and

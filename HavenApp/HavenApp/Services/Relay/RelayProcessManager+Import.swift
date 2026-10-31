@@ -44,7 +44,9 @@ extension RelayProcessManager {
     // or we can remove it. For now, we will use forceCleanLocks() instead.
     // The usages below will be updated.
     
-    func importNotes(config: HavenConfig) {
+    /// `alsoFrom`: relays read for this import only, on top of
+    /// `config.importSeedRelays`; not saved (setup's own-servers read).
+    func importNotes(config: HavenConfig, alsoFrom: [String] = []) {
         logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
         
         // Strict guard: Must be idle and NOT running
@@ -52,6 +54,7 @@ extension RelayProcessManager {
             if (state == .running || state == .booting) && isRunning {
                 logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
                 self.pendingImportConfig = config
+                self.pendingImportAlsoFrom = alsoFrom
                 stopRelay()
             } else {
                 logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(isRunning))"))
@@ -78,7 +81,7 @@ extension RelayProcessManager {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
-        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir, alsoFrom: alsoFrom)
         if let data = try? encoder.encode(config.activeBlastrRelays.isEmpty ? [] : config.activeBlastrRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.blastrRelaysFile)) }
         if let data = try? encoder.encode(config.dmRelays) { try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json")) }
         if let data = try? encoder.encode(config.whitelistedNpubs) { try? data.write(to: relayDataDir.appendingPathComponent("whitelisted_npubs.json")) }

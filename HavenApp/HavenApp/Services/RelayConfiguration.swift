@@ -35,10 +35,13 @@ enum RelayConfiguration {
     /// relay). Writers that disagreed about including it used to make the Mac
     /// drop out after a settings save, and a merged list read back by
     /// ConfigService.loadRelayLists leaked the Mac into the user's own list.
-    static func writeImportSeedRelays(config: HavenConfig, under root: URL) {
+    /// `alsoFrom`: extra relays for this one import only (setup's read of
+    /// the person's own servers). The next relay start rewrites the file
+    /// from the saved list, so they are never kept.
+    static func writeImportSeedRelays(config: HavenConfig, under root: URL, alsoFrom: [String] = []) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(config.importSeedRelays) {
+        if let data = try? encoder.encode(RelayCheck.importSeeds(fixed: config.importSeedRelays, own: alsoFrom)) {
             try? data.write(to: root.appendingPathComponent(config.importSeedRelaysFile))
         }
     }
