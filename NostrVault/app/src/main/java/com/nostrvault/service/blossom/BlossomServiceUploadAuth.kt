@@ -5,6 +5,7 @@ import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import com.nostrvault.service.BlossomService.Companion.AUTH_KIND
 import com.nostrvault.service.BlossomService.Companion.AUTH_SIGN_ATTEMPTS
 import com.nostrvault.service.BlossomService.Companion.AUTH_SIGN_RETRY_DELAY_MS
@@ -144,7 +145,9 @@ internal object BlossomDeleteAuth {
         operations: List<String> = listOf("delete"),
         servers: List<String> = emptyList(),
     ): List<List<String>> {
-        val host = if (deleteUrl.isBlank()) null else try { java.net.URI(deleteUrl.trim()).host } catch (_: Exception) { null }
+        // OkHttp's parser, the one that sends the request: java.net.URI gives no host for a name
+        // with "_" (my_mirror.example.com), which signed a token naming no server (Tron, PR 1403).
+        val host = deleteUrl.trim().toHttpUrlOrNull()?.host
         val hosts = (listOfNotNull(host) + servers).map { it.lowercase().trimEnd('.') }.filter { it.isNotEmpty() }.distinct()
         return operations.map { listOf("t", it) } +
             listOf(listOf("x", sha256)) +

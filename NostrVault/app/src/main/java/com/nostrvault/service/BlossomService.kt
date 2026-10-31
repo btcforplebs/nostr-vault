@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -659,6 +660,8 @@ class BlossomService @Inject constructor(
                 }
                 mirror to try {
                     val deleteUrl = "${mirror.trimEnd('/')}/$sha256"
+                    // A URL whose host can't be named in the token is not sent one: it could be replayed.
+                    if (deleteUrl.toHttpUrlOrNull() == null) return@async mirror to false
                     val authHeader = createDeleteAuthHeader(sha256, deleteUrl)
                     val request = Request.Builder()
                         .url(deleteUrl)
