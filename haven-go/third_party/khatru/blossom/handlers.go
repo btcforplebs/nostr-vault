@@ -325,11 +325,13 @@ func (bs BlossomServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if auth != nil {
-		if auth.Tags.FindWithValue("t", "delete") == nil {
-			blossomError(w, "invalid \"Authorization\" event \"t\" tag", 403)
-			return
-		}
+	if auth == nil {
+		blossomError(w, "missing \"Authorization\" header", 401)
+		return
+	}
+	if auth.Tags.FindWithValue("t", "delete") == nil {
+		blossomError(w, "invalid \"Authorization\" event \"t\" tag", 403)
+		return
 	}
 
 	spl := strings.SplitN(r.URL.Path, ".", 2)
