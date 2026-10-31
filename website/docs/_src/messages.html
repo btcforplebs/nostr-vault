@@ -11,7 +11,7 @@
   "labels": {
     "ios": ["Messages", "New Message", "Attach photo", "Paste Photo", "Message", "Message seller", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Switch", "Retry", "No DM relay", "Only one DM relay", "Follow Distance", "Mentions", "All", "Notifications", "New Notes in Your Feed", "Sound", "Replies", "Direct Messages", "Zaps", "Reactions", "Reposts", "New Followers"],
     "android": ["Messages", "New Message", "Mark all read", "Attach image", "Paste Photo", "NIP-17 (encrypted)", "NIP-04 (legacy)", "Mentions", "Notifications", "New Notes in Your Feed", "Direct Messages", "New Followers", "Missed while open"],
-    "web": ["Messages", "Notifications", "Photo", "Open", "Mentions"]
+    "web": ["Messages", "Notifications", "Photo", "Open", "Mentions", "Browser notifications"]
   }
 }
 -->
@@ -121,6 +121,9 @@
     <li><strong>While the app is open,</strong> new things show as a pill at the top instead of a system alert.
         When you come back after a while, one pill sums it up, like "5 mentions · 2 zaps · 1 DM". Android files
         pills you didn't see under "Missed while open".</li>
-    <li><strong>The web app</strong> doesn't send notifications.</li>
+    <li><strong>The web app</strong> shows browser notifications only while a tab is open. Turn them on with
+        <strong>Browser notifications</strong> under <span class="path">Settings &rarr; Notifications</span>.</li>
 </ul>
+<p>What wakes the app, and what to allow, is different on each device:
+    <a class="inline" href="/docs/notifications/">How notifications arrive</a>.</p>
 </section>

@@ -1,0 +1,129 @@
+<!--page
+{
+  "title": "How notifications arrive",
+  "nav": "How notifications arrive",
+  "section": "use",
+  "order": 2.5,
+  "eyebrow": "Using the app",
+  "h1": "How notifications <span>arrive</span>",
+  "lede": "Nostr Vault doesn't use Apple's or Google's push servers. Your own vault makes your notifications, so they only come while it can run. Here is what that means on each device.",
+  "description": "How Nostr Vault notifications work without APNs or FCM push on iPhone, Android, Mac and the web app: what wakes the app, when alerts arrive while it is open, in the background or closed, what to allow, and the limits.",
+  "checked": "the apps and web app on master, October 2026",
+  "labels": {
+    "ios": ["Notifications"],
+    "android": ["Notifications", "Enable Notifications", "Nostr Vault Relay", "Relay running", "Stop Relay", "Start Relay Automatically", "Missed while open"],
+    "mac": ["Notifications", "Launch at Login", "Start Relay Automatically"],
+    "web": ["Notifications", "Browser notifications"]
+  }
+}
+-->
+
+<section id="why">
+<h2>Why there is no push</h2>
+<p>Most apps get their alerts from a company server, which hands them to Apple (APNs) or Google (FCM) to send to
+    your phone. That server sees who wrote to you and when. Nostr Vault has no such server. The relay inside the app
+    collects what tags you, and the app makes the notification itself on your device.</p>
+<p>So an alert can only come while that relay is running. How often it can run is different on each device.</p>
+<p>On every device:</p>
+<ul>
+    <li>Only people in your <a class="inline" href="/docs/web-of-trust/">web of trust</a> set off an alert. New
+        followers from outside it are counted ("3 new followers") instead of named.</li>
+    <li>You choose the kinds under <span class="path">Settings &rarr; Notifications</span>
+        (<a class="inline" href="/docs/messages/#settings">more</a>). Likes and reposts are off until you turn
+        them on.</li>
+    <li>While the app is open, new things show as a pill at the top, not as a system alert.</li>
+    <li>Something older than 24 hours never sets off an alert. When the vault catches up after being away, the first
+        five items alert and the rest fold into one summary.</li>
+</ul>
+</section>
+
+<section id="iphone">
+<p class="eyebrow">iPhone and iPad</p>
+<h2>iPhone: when iOS lets it run</h2>
+<p><strong>What wakes it:</strong> iOS's Background App Refresh. The app asks to be woken every 15 minutes at the
+    earliest. iOS decides when that actually happens, based on how often you use the app, your battery and your
+    connection. There is also a longer check that iOS only runs while the phone is charging and online.</p>
+<ul>
+    <li><strong>Open:</strong> things arrive right away and show as a pill at the top. They are also listed in
+        Notification Center.</li>
+    <li><strong>In the background:</strong> the app keeps going for about 30 seconds after you leave it, then iOS
+        pauses it. After that, alerts come only when iOS wakes the app. That can be minutes later or much longer.</li>
+    <li><strong>Swiped away:</strong> this stops your vault. iOS may not wake an app you swiped away until you open
+        it again, so alerts wait until then.</li>
+    <li><strong>With a Mac:</strong> if your Mac is your vault, each wake asks it for what came in while the phone
+        was asleep. The Mac is always listening, so less is missed.</li>
+</ul>
+<p><strong>What to allow:</strong> notifications (the app asks during setup), and
+    <span class="path">iOS Settings &rarr; General &rarr; Background App Refresh</span> on for Nostr Vault. The app
+    doesn't check that second one for you. Low Power Mode pauses Background App Refresh.</p>
+<p><strong>The honest limit:</strong> an iPhone without a Mac vault is not instant. If you need alerts right away,
+    keep a Mac vault running or open the app.</p>
+</section>
+
+<section id="android">
+<p class="eyebrow">Android</p>
+<h2>Android: your vault keeps running</h2>
+<p><strong>What wakes it:</strong> nothing has to. Your vault runs as a service you can see: the
+    <strong>Nostr Vault Relay</strong> notification, which says <strong>Relay running</strong> and has a
+    <strong>Stop Relay</strong> button. It listens to your relays all the time and checks for anything it missed
+    every 15 minutes.</p>
+<ul>
+    <li><strong>Open:</strong> new things show as a pill. Pills you didn't look at are filed quietly under
+        <strong>Missed while open</strong>.</li>
+    <li><strong>In the background or swiped away:</strong> alerts come right away, because the vault keeps
+        running.</li>
+    <li><strong>After a restart or an app update:</strong> the vault starts again by itself, as long as
+        <strong>Start Relay Automatically</strong> is on (it is unless you turned it off, under
+        <span class="path">Settings &rarr; Your Vault Relay</span>).</li>
+    <li><strong>Force stopped or Stop Relay:</strong> no alerts until you open the app again.</li>
+    <li><strong>Using another app's relay</strong> (such as Citrine) instead of the built-in one: Nostr Vault makes
+        no alerts.</li>
+</ul>
+<p><strong>What to allow:</strong> notifications. On Android 13 and newer, setup asks with
+    <strong>Enable Notifications</strong>, and turning on <span class="path">Settings &rarr; Notifications</span>
+    asks again if you said no.</p>
+<p><strong>The honest limit:</strong> some phones' battery savers close background apps anyway, and the app
+    doesn't ask to be left alone. If alerts stop, set Nostr Vault's battery use to Unrestricted in Android's
+    settings. If the vault keeps failing, it stops restarting itself after four tries in six hours; opening the app
+    starts it again.</p>
+</section>
+
+<section id="mac">
+<p class="eyebrow">Mac</p>
+<h2>Mac: always on while it's running</h2>
+<p><strong>What wakes it:</strong> nothing has to. Nostr Vault lives in the menu bar, with no Dock icon, and your
+    vault keeps running when you close its window. It listens to your relays all the time.</p>
+<ul>
+    <li><strong>Running:</strong> alerts come right away, as normal Mac notifications. You won't get a banner
+        while the Nostr Vault window is in front of you.</li>
+    <li><strong>Asleep:</strong> nothing arrives while the Mac sleeps. When it wakes, the vault catches up.</li>
+    <li><strong>Quit:</strong> no alerts until you open it again.</li>
+</ul>
+<p><strong>What to allow:</strong> notifications (the app asks as setup finishes). To have your vault running
+    after a restart, turn on <strong>Launch at Login</strong> under
+    <span class="path">Settings &rarr; Startup</span>. It is off until you turn it on.
+    <strong>Start Relay Automatically</strong> is there too.</p>
+<p><strong>The honest limit:</strong> a Mac is the best always-on vault you have, but only while it's awake. It
+    also helps your iPhone: each time iOS wakes the phone, it asks the Mac what came in.</p>
+</section>
+
+<section id="web">
+<p class="eyebrow">Web app</p>
+<h2>Web: only while a tab is open</h2>
+<p><strong>What wakes it:</strong> nothing. There is no Web Push. While Nostr Vault is open in a tab, even a
+    background tab, it asks your relays about once a minute what tags you.</p>
+<ul>
+    <li><strong>Open:</strong> the tab's title shows how many new things are in your Vault list. If you're looking
+        at that list, no alert pops up.</li>
+    <li><strong>In a background tab:</strong> each new thing is a browser notification. More than three at once
+        become one ("5 new in your Vault"). Clicking one opens it in the app.</li>
+    <li><strong>Every tab closed:</strong> nothing arrives. The next time you open the app, your Vault list has it
+        all, but there is no alert for it.</li>
+</ul>
+<p><strong>What to allow:</strong> turn on <strong>Browser notifications</strong> under
+    <span class="path">Settings &rarr; Notifications</span>. It is off until you do, and turning it on is when your
+    browser asks for permission. The kinds to alert on are listed below the switch. On iPhone and iPad, add Nostr
+    Vault to the Home Screen first: Safari can't show notifications from an ordinary tab.</p>
+<p><strong>The honest limit:</strong> the web app is for checking in, not for being reached. Message alerts need a
+    signer that can open messages, so a read-only sign-in gets none.</p>
+</section>
