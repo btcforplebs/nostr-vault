@@ -15,3 +15,7 @@
 }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
 @keyframes toast-pulse { to { opacity: .4; } }
+/* A pill with a button (the send delay's Undo, PostActionPill): it takes taps, the rest of the row doesn't. */
+.toast-has-action { pointer-events: auto; padding-right: 4px; gap: 10px; }
+.toast-action { min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .22); color: #fff;
+  font: 600 13px/1 var(--font); cursor: pointer; }

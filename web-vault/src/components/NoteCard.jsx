@@ -9,6 +9,7 @@ import { ZapButton } from "./ZapButton.jsx"
 import { zapButtonOn } from "../net/post-buttons.js"
 import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
+import { repostWithUndo } from "./repost-undo.js"
 import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
 import { rememberNote } from "../desktop/noteIndex.js"
 import { replyRefs, replyToPubkey, repostInner, repostedId } from "../net/thread.js"
@@ -171,7 +172,7 @@ function NoteActions({ note }) {
   return (
     <div class="note-actions" role="group" aria-label="Note actions">
       <ActionButton label="Reply" off={off} icon={ICONS.reply} onClick={() => compose("reply", note)} />
-      <ActionButton label="Repost" off={off} doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => act(ctx, "repost", note)} />
+      <ActionButton label="Repost" off={off} doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => repostWithUndo(ctx, note)} />
       <ActionButton label="Quote" off={off} icon={ICONS.quote} onClick={() => compose("quote", note)} />
       <ReactionButton ctx={ctx} note={note} state={s.like} off={off} />
       {zapButtonOn() && <ZapButton note={note} />}
@@ -180,15 +181,16 @@ function NoteActions({ note }) {
   )
 }
 
-// state: undefined | "busy" | "sent" | { error, unlike? }. Sent stays pressed; with `undo` (Like) a tap on it takes it back.
+// state: undefined | "busy" | "pending" | "sent" | { error, unlike? }. Sent stays pressed; with `undo` (Like) a tap on it
+// takes it back. "pending" (a repost counting down, its Undo in the pill) can't be tapped again.
 function ActionButton({ label, doneLabel, kind, state, icon, onClick, off = "", undo = false }) {
-  const sent = state === "sent", busy = state === "busy", error = state?.error
+  const sent = state === "sent", busy = state === "busy", pending = state === "pending", error = state?.error
   if (off) onClick = undefined
-  const name = off ? `${label}. ${off}` : sent ? doneLabel : error ? `${state.unlike ? "Unlike" : label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
+  const name = off ? `${label}. ${off}` : sent ? doneLabel : pending ? `${label}: going out after the countdown. Undo is in the pill` : error ? `${state.unlike ? "Unlike" : label} didn't go out: ${error}. Try again` : busy ? `${label}: sending` : label
   return (
     <button type="button" class={`note-action${kind ? " " + kind : ""}${sent ? " sent" : ""}${error ? " failed" : ""}${off ? " off" : ""}`}
       aria-label={name} title={name} aria-pressed={kind ? sent : undefined} aria-busy={busy || undefined}
-      aria-disabled={(sent && !undo) || busy || !!off || undefined} onClick={(sent && !undo) || busy ? undefined : onClick}>
+      aria-disabled={(sent && !undo) || busy || pending || !!off || undefined} onClick={(sent && !undo) || busy || pending ? undefined : onClick}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill={sent && kind === "like" ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d={icon} />
       </svg>

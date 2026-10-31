@@ -29,6 +29,7 @@ export const SEND_ACTIONS = {
   newPost: { label: "Posting", done: "Posted" },
   reply: { label: "Replying", done: "Replied" },
   quote: { label: "Quoting", done: "Quoted" },
+  repost: { label: "Reposting", done: "Reposted" }, // PendingPostManager.startRepost, a repost button's countdown
 }
 export const sendAction = target => (target?.mode === "reply" ? "reply" : target?.mode === "quote" ? "quote" : "newPost")
 
