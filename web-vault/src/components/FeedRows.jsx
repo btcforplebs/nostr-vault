@@ -50,13 +50,36 @@ function Threads({ notes, keepFeedOrder, fetchRoots, memoryOnly, openId, setOpen
     rootUnavailable={!t.root && fetched.has(t.rootId)} />)
 }
 
+// Roots asked for this page load, id -> { ev (null when nobody had it), at }: coming back to the Feed draws them from
+// here rather than asking the relays for the same roots again. One nobody had is asked again after ROOT_RETRY_MS.
+const roots = new Map()
+export const ROOT_RETRY_MS = 5 * 60_000
+export const forgetRoots = () => roots.clear() // tests
+
 /**
- * Fetch thread roots for the Feed: Haven's outbox, then the read relays; the roots are written nowhere. Their authors
- * are often not followed, so their names are fetched too: `save: false` keeps those in memory (Global, Popular).
+ * Fetch thread roots for the Feed: this page load's, then Haven /feed (often a follow's note) and outbox, then the
+ * read relays; the roots are written nowhere. Their authors are often not followed, so their names are fetched too:
+ * `save: false` keeps those in memory (Global, Popular).
  */
-export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles } = {}) => async ids => {
-  const found = await fetchNotes(vault, ids, relays)
-  const authors = [...found.values()].map(ev => ev.pubkey)
+export const rootFetcher = (vault, relays, { save = true, names = fetchProfiles, now = Date.now } = {}) => async ids => {
+  const t = now()
+  const found = new Map(), ask = []
+  for (const id of new Set(ids)) {
+    const r = roots.get(id)
+    if (r?.ev) found.set(id, r.ev)
+    else if (!r || t - r.at >= ROOT_RETRY_MS) ask.push(id)
+  }
+  if (!ask.length) return found
+  const local = new Map()
+  try { for (const ev of await vault.feed.query({ ids: ask })) local.set(ev.id, ev) } catch {}
+  const rest = ask.filter(id => !local.has(id))
+  const got = new Map([...local, ...(rest.length ? await fetchNotes(vault, rest, relays) : [])])
+  for (const id of ask) {
+    const ev = got.get(id) ?? null
+    roots.set(id, { ev, at: t })
+    if (ev) found.set(id, ev)
+  }
+  const authors = [...got.values()].map(ev => ev.pubkey)
   if (authors.length) names(vault, authors, relays, { save }).catch(() => {})
   return found
 }

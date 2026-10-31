@@ -9,6 +9,7 @@ import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { backgroundFill } from "../net/vault-ready.js"
+import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
@@ -35,6 +36,7 @@ const dropTag = () => history.replaceState(history.state, "", withParam(location
 export function FeedScreen({ ctx }) {
   const { vault, account } = ctx
   const follows = account.follows
+  const me = ctx.session?.pubkey
   const relays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
   const [notes, setNotes] = useState(null)
   const [status, setStatus] = useState("")
@@ -77,13 +79,17 @@ export function FeedScreen({ ctx }) {
     return () => removeEventListener("hashchange", take)
   }, [])
 
-  const reload = async () => { setNotes(await readFeed(vault, follows, { limit: Math.max(shownNow.current.page, shownNow.current.have) })); setPending([]) }
-  const sync = async () => {
+  const reload = async () => { const read = await readFeed(vault, follows, { limit: Math.max(shownNow.current.page, shownNow.current.have) }); setNotes(read); setPending([]); return read }
+  // `have`: how many notes are on screen, when the caller has just read them (the render that shows them may not have run).
+  const sync = async ({ have } = {}) => {
     // No follow list yet (still loading, or nobody followed): there is nothing to sync, so nothing is "up to date".
     const say = sayer()
     if (!follows.length) return say("")
     if (!navigator.onLine) return say("Offline: showing your saved feed")
-    say("Syncing…")
+    // Counting follows only while the feed is still filling (nothing shown yet, or a first sign-in's fill): once notes
+    // show, a sync is just a check for newer ones.
+    const filling = !(have ?? shownNow.current.have) || !!backgroundFill()
+    say(filling ? "Syncing…" : "Checking for new notes…")
     setSyncing(true)
     // Show notes as each chunk of follows lands, not after the last one. One read at a time, so an older read can't
     // land after a newer one, and at most one waiting: each read is of every follow, and a queue of one per answer
@@ -96,7 +102,7 @@ export function FeedScreen({ ctx }) {
     }
     try {
       const onProgress = p => {
-        say(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
+        if (filling) say(`Syncing ${p.done}/${p.of} follows · ${p.stored} saved`)
         if (p.stored > seen) { seen = p.stored; show() }
       }
       // A first sign-in opens on the first page while its fill carries on: draw from that one, don't start another.
@@ -104,6 +110,7 @@ export function FeedScreen({ ctx }) {
       const n = await (fill ? fill.join(onProgress) : syncFeed(vault, follows, relays, { onProgress }))
       await shown
       await reload()
+      markSynced(me, follows)
       say(n ? `${n} notes saved to your relay` : "Up to date")
     } catch (e) { say(`Sync failed (${e?.message ?? e}): showing your saved feed`) }
     finally { setSyncing(false) }
@@ -141,6 +148,7 @@ export function FeedScreen({ ctx }) {
       if (document.hidden || !navigator.onLine || !notesNow.current) return
       try {
         await syncFeed(vault, follows, relays, {})
+        markSynced(me, follows)
         const fresh = newerNotes(notesNow.current, await readFeed(vault, follows, { limit: PAGE }))
         if (!fresh.length) return
         if (filters.autoLoad && scrollY < 80) setNotes(prev => [...fresh, ...(prev ?? [])])
@@ -173,7 +181,9 @@ export function FeedScreen({ ctx }) {
     } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
   }
 
-  useEffect(() => { if (following) reload().then(sync) }, [follows.length, following])
+  // Back on the Feed soon after a sync (from another screen, or a reload): show Haven's notes and ask nothing; the
+  // background sync and Refresh bring newer ones.
+  useEffect(() => { if (following) reload().then(read => (syncedRecently(me, follows) ? undefined : sync({ have: read.length }))) }, [follows.length, following])
   // Following and Media share the notes read from /feed; Media reads a bigger page, so switching to it reads again.
   useEffect(() => { if (following && notes) reload() }, [media])
   useEffect(() => { if (!Reader && !following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), needsWeb && follows.length > 0])
