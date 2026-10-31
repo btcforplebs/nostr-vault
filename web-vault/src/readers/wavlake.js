@@ -120,6 +120,21 @@ export async function artist(id, get = getJson) {
   rememberArtist(page.artist)
   return page
 }
+/** The artist's Nostr key (hex) for a song, or null (MusicArtistKey.hex): the npub the song carries, else one a page
+ *  named this session, else the artist's own page, the only one Wavlake names it on. One lookup per artist. */
+const artistKeys = new Map() // Wavlake artist id -> Promise<hex | null>
+export function artistKey(t, get = getJson) {
+  if (t?.artistNpub) return Promise.resolve(hexOf(t.artistNpub))
+  if (!t?.artistId) return Promise.resolve(null)
+  if (knownArtists.has(t.artistId)) return Promise.resolve(hexOf(knownArtists.get(t.artistId)))
+  if (!artistKeys.has(t.artistId)) {
+    const p = artist(t.artistId, get).then(page => (page.artist?.npub ? hexOf(page.artist.npub) : null)).catch(() => null)
+    artistKeys.set(t.artistId, p)
+    p.then(hex => { if (!hex) artistKeys.delete(t.artistId) }) // try again on the next song by them
+  }
+  return artistKeys.get(t.artistId)
+}
+
 /** Every track on these albums, album by album in order; an album that fails is left out. */
 export async function tracksOnAlbums(albums, get = getJson) {
   const pages = await Promise.all(albums.map(a => album(a.id, get).catch(() => ({ tracks: [] }))))

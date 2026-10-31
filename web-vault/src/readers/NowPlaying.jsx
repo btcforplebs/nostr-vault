@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { AuthorName } from "../components/NoteCard.jsx"
 import * as wl from "./wavlake.js"
 import { UpNext } from "./UpNext.jsx"
+import { ArtistZap } from "./ArtistZap.jsx"
 import { DOWN, Glyph, QUEUE, REPEAT, REPEAT_LABEL, SHUFFLE } from "./PlayerIcons.jsx"
 import { current, cycleRepeat, hasNext, next, previous, seek, stop, toggle, toggleShuffle } from "./player.js"
 
@@ -67,7 +68,8 @@ export function NowPlaying({ state: s, onClose, onOpen, onOpenLive }) {
           {t.live
             ? <>{onOpenLive && <button type="button" class="small" onClick={() => onOpenLive(t.stream)}>Back to the stream</button>}
                 <button type="button" class="small" onClick={stop}>Stop</button></>
-            : <button type="button" class={`small ${queue ? "on" : ""}`} onClick={() => setQueue(!queue)} aria-pressed={queue}><Glyph d={QUEUE} size={16} /> Up Next</button>}
+            : <><button type="button" class={`small ${queue ? "on" : ""}`} onClick={() => setQueue(!queue)} aria-pressed={queue}><Glyph d={QUEUE} size={16} /> Up Next</button>
+                <ArtistZap track={t} /></>}
         </div>
         {queue && !t.live && <UpNext state={s} />}
       </div>

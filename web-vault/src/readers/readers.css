@@ -247,3 +247,6 @@ body:not(:has(.tabbar)) .music-player.floating { bottom: calc(16px + env(safe-ar
 .live-tile.ended { opacity: .75; cursor: default; }
 .live-badge.live-ended { color: rgb(255 255 255 / .8); background: rgb(0 0 0 / .55); }
 .live-embed-sheet { position: fixed; inset: 0; z-index: 50; overflow: auto; background: var(--bg); }
+
+/* The artist zap beside Up Next (ArtistZapPill): the notes' bolt capsule, without its row's top margin. */
+.now-playing-actions .note-actions.artist-zap { margin: 0; display: inline-flex; }
