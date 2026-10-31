@@ -34,6 +34,8 @@ class BlossomDeleteReportTest {
 
     private val sha = "b".repeat(64)
     private val servers = mutableListOf<ServerSocket>()
+    /** The tags of every token the service asked to have signed. */
+    private val signedTags = mutableListOf<List<List<String>>>()
     private val tempDirs = mutableListOf<File>()
 
     init {
@@ -114,10 +116,13 @@ class BlossomDeleteReportTest {
         val signer = mockk<NostrService>(relaxed = true)
         every { signer.ownerHexPubkey } returns "o".repeat(64)
         every { signer.serverLists } returns MutableStateFlow(mapOf("o".repeat(64) to published))
-        coEvery { signer.signEventAsync(any(), any(), any(), any(), any()) } returns NostrEvent(
+        coEvery { signer.signEventAsync(any(), any(), any(), any(), any()) } answers {
+            synchronized(signedTags) { signedTags += arg<List<List<String>>>(2) }
+            NostrEvent(
             id = "e".repeat(64), pubkey = "p".repeat(64), createdAt = 1_700_000_000L,
             kind = 24242, tags = listOf(listOf("t", "delete")), content = "Blossom delete", sig = "s".repeat(128),
-        )
+            )
+        }
         return BlossomService(configStore, signer, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
     }
 
@@ -316,6 +321,35 @@ class BlossomDeleteReportTest {
         assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(infoServer(404, ""), owner))
         assertEquals(BlossomService.ServerOwner.UNKNOWN, svc.askServerOwner(infoServer(502, ""), owner))
         assertEquals(BlossomService.ServerOwner.UNKNOWN, svc.askServerOwner("http://127.0.0.1:9", owner))
+    }
+
+    // ── Delete tokens name their server ─────────────────────────
+    // Tron on PR 1403: a token naming no server, sent to a public mirror, could
+    // be replayed by that mirror against the home vault at its public name.
+
+    @Test
+    fun `each mirror gets its own token naming it`() = runTest {
+        val a = mirror(200); val b = mirror(200)
+        val before = System.currentTimeMillis() / 1000
+        assertTrue(service(listOf(a, b)).deleteFromServers(sha, photoUrl = null, includeHomeVault = true).allDeleted)
+        val byUrl = signedTags.associateBy { tags -> tags.first { it[0] == "u" }[1] }
+        assertEquals(setOf("$a/$sha", "$b/$sha"), byUrl.keys)
+        for (tags in byUrl.values) {
+            assertEquals(listOf(listOf("server", "127.0.0.1")), tags.filter { it[0] == "server" })
+            assertTrue(listOf("x", sha) in tags)
+            val expires = tags.first { it[0] == "expiration" }[1].toLong()
+            assertTrue(expires <= System.currentTimeMillis() / 1000 + 300 && expires >= before + 300)
+        }
+    }
+
+    @Test
+    fun `the mesh token names every mesh vault`() = runTest {
+        val svc = service(emptyList(), macs = listOf(mac))
+        svc.meshIngress = { meshVault() }
+        assertTrue(svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true).allDeleted)
+        val tags = signedTags.single()
+        assertEquals(listOf(listOf("server", "$macNpub.fips")), tags.filter { it[0] == "server" })
+        assertTrue(tags.none { it[0] == "u" })  // the ingress URL carries a token: never signed into an event
     }
 
     // ── This device ─────────────────────────────────────────────

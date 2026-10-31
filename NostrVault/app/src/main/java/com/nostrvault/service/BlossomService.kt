@@ -658,9 +658,10 @@ class BlossomService @Inject constructor(
                     ServerOwner.OTHER -> Unit
                 }
                 mirror to try {
-                    val authHeader = createAuthHeader("delete", sha256)
+                    val deleteUrl = "${mirror.trimEnd('/')}/$sha256"
+                    val authHeader = createDeleteAuthHeader(sha256, deleteUrl)
                     val request = Request.Builder()
-                        .url("${mirror.trimEnd('/')}/$sha256")
+                        .url(deleteUrl)
                         .delete()
                         .addHeader("Authorization", "Nostr $authHeader")
                         .build()
@@ -677,7 +678,12 @@ class BlossomService @Inject constructor(
             }
         }
         // One owner signature for every mesh device, covering the DELETE and the HEAD after it.
-        val meshAuth = if (mesh.isEmpty()) "" else createAuthHeader(listOf("delete", "get"), sha256)
+        // Names every mesh vault (`<npub>.fips`, which a vault takes as itself) so it is never a
+        // token without a server; it only ever goes to the owner's own devices.
+        val meshAuth = if (mesh.isEmpty()) "" else signAuthHeader(
+            "delete+get", sha256,
+            BlossomDeleteAuth.tags(sha256, "", operations = listOf("delete", "get"), servers = mesh.map { "${it.npub}.fips" }),
+        )
         val meshOutcomes = mesh.map { target ->
             async { target.key to (meshAuth.isNotEmpty() && deleteOverMesh(target.npub, sha256, meshAuth)) }
         }
