@@ -4,14 +4,14 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
-import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
+import { listBlobs, deleteBlob, deleteTargets, isHomeNetworkHost, vaultCheckVerdict, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const signs = []
 const ctx = { session: { pubkey: ME }, signer: { signEvent: async t => { signs.push(t); return finalizeEvent(t, SK) } } }
 const H = c => c.repeat(64)
 const A = "https://a.example", B = "https://b.example", C = "https://c.example", D = "https://d.example"
-const res = (status, body, reason) => ({ ok: status >= 200 && status < 300, status, json: async () => body, headers: { get: k => k === "X-Reason" ? reason : null } })
+const res = (status, body, reason) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body ?? null), headers: { get: k => k === "X-Reason" ? reason : null } })
 const authOf = h => JSON.parse(atob(h.replace(/^Nostr /, "")))
 
 test("lists merge by hash with the servers that hold each, newest first; bad entries and servers are reported", async () => {
@@ -78,7 +78,7 @@ test("a read-only account isn't asked to sign; the server just shows as refusing
 test("delete goes to every server holding the file with a delete auth for its hash; 404 counts as gone", async () => {
   const seen = []
   const blob = { sha256: H("a"), url: `${A}/${H("a")}`, servers: [A, B] }
-  const r = await deleteBlob(blob, { ctx, fetch: async (url, opt) => { seen.push([url, opt.method, authOf(opt.headers.Authorization)]); return url.startsWith(A) ? res(200) : res(404) } })
+  const r = await deleteBlob(blob, { ctx, fetch: async (url, opt) => { if (!opt.method) return res(200, { name: "public media" }); seen.push([url, opt.method, authOf(opt.headers.Authorization)]); return url.startsWith(A) ? res(200) : res(404) } })
   assert.deepEqual(seen.map(s => [s[0], s[1]]), [[`${A}/${H("a")}`, "DELETE"], [`${B}/${H("a")}`, "DELETE"]])
   const auth = seen[0][2]
   assert.ok(verifyEvent(auth) && auth.kind === 24242 && auth.pubkey === ME)
@@ -144,9 +144,57 @@ test("Delete from mirrors goes to every media server, any other that listed the 
   assert.deepEqual(deleteTargets({ ...blob, url: `http://evil.example/${H("e")}` }, [A]), [A, B], "only https (or this machine) hosts")
   assert.deepEqual(deleteTargets({ ...blob, url: "not a url" }, [A]), [A, B])
   const seen = []
-  const r = await deleteBlob(blob, { ctx, servers: [A, C], fetch: async (url, opt) => { seen.push([url, opt.method, authOf(opt.headers.Authorization).tags[1]]); return url.startsWith(C) ? res(500, null, "busy") : res(url.startsWith(D) ? 404 : 200) } })
+  const r = await deleteBlob(blob, { ctx, servers: [A, C], fetch: async (url, opt) => { if (!opt.method) return res(200, { name: "public media" }); seen.push([url, opt.method, authOf(opt.headers.Authorization).tags[1]]); return url.startsWith(C) ? res(500, null, "busy") : res(url.startsWith(D) ? 404 : 200) } })
   assert.deepEqual(seen.map(x => x[0]), [A, C, B, D].map(s => `${s}/${H("e")}`))
   assert.ok(seen.every(x => x[1] === "DELETE" && x[2][1] === H("e")), "each delete auth is scoped to the file")
   assert.deepEqual(r.map(x => [x.server, x.ok]), [[A, true], [C, false], [B, true], [D, true]])
   assert.match(outcome(r, "Deleted"), /^Deleted on 3 of 4 servers\. c\.example: busy/)
+})
+
+// Tron's release check (10-31): "Delete from mirrors" must never reach the owner's own vault. The apps' fix is
+// #1403/#1404; this is the web's.
+test("Delete from mirrors never targets a home-network or mesh server", () => {
+  const home = ["http://localhost:3355", "http://127.0.0.1:3355", "http://[::1]:3355", "https://studio-mac.local:3355",
+    "https://mac.tail1234.ts.net", "https://192.168.1.20:3355", "https://10.44.194.35", "https://100.105.71.2",
+    "https://172.20.0.5", "https://[fd00::20]:3355", "https://[fe80::1]", "https://box.lan", "https://vault.home.arpa",
+    "http://npub1abc.fips:3355", "fipsmesh://npub1abc/"]
+  const blob = { sha256: H("f"), url: `https://192.168.1.20:3355/${H("f")}`, servers: ["https://mac.tail1234.ts.net"] }
+  assert.deepEqual(deleteTargets(blob, [...home, A]), [A])
+  for (const h of ["localhost", "127.0.0.1", "::1", "[::1]", "::ffff:192.168.1.2", "x.local", "x.local.", "x.ts.net", "10.1.2.3", "172.31.0.1", "192.168.0.1", "169.254.1.1", "100.64.0.1", "fd12::1", "fe80::1"])
+    assert.ok(isHomeNetworkHost(h), h)
+  for (const h of ["blossom.primal.net", "172.32.0.1", "100.128.0.1", "8.8.8.8", "2606:4700::1", "localhost.example.com", "fdroid.org"])
+    assert.ok(!isHomeNetworkHost(h), h)
+})
+
+test("the vault check: the owner's key is a vault, anything else a mirror, no answer is unknown", () => {
+  assert.equal(vaultCheckVerdict(JSON.stringify({ pubkey: ME.toUpperCase() + " " }), ME), "ownVault")
+  assert.equal(vaultCheckVerdict(JSON.stringify({ pubkey: H("9") }), ME), "mirror")
+  assert.equal(vaultCheckVerdict("<html>Welcome</html>", ME), "mirror")
+  assert.equal(vaultCheckVerdict(JSON.stringify({ name: "no key" }), ME), "mirror")
+  assert.equal(vaultCheckVerdict(null, ME), "unknown")
+  assert.equal(vaultCheckVerdict(JSON.stringify({ pubkey: ME }), ""), "unknown", "no owner to compare with")
+})
+
+test("Delete from mirrors asks each server first: the owner's vault under a public name keeps its copy, a silent one gets nothing", async () => {
+  // A is a public mirror, B is the owner's Mac reached through its public https name (in the 10063), C doesn't answer
+  // the check, D answers with a server error (a tunnel whose vault is down).
+  const blob = { sha256: H("e"), url: `${A}/${H("e")}`, servers: [A, B, C, D] }
+  const asked = [], deleted = []
+  const fetch = async (url, opt = {}) => {
+    if (opt.method === "DELETE") { deleted.push(url); return res(200) }
+    asked.push([url, opt.headers?.Accept])
+    if (url === A) return { ...res(200), text: async () => "Welcome to a Blossom server" }
+    if (url === B) return res(200, { name: "Haven", pubkey: ME })
+    if (url === C) throw new TypeError("Failed to fetch")
+    return res(502)
+  }
+  const r = await deleteBlob(blob, { ctx, fetch })
+  assert.deepEqual(asked, [A, B, C, D].map(s => [s, "application/nostr+json"]))
+  assert.deepEqual(deleted, [`${A}/${H("e")}`], "only the public mirror gets a DELETE")
+  assert.deepEqual(r.map(x => [x.server, x.ok, !!x.kept]), [[A, true, false], [B, false, true], [C, false, false], [D, false, false]])
+  assert.match(outcome(r, "Deleted"), /^Deleted on 1 of 3 servers\. c\.example: couldn't check it isn't your vault.* · d\.example: .* Your vault keeps its copy: b\.example\.$/)
+  // Nothing is signed for a server that isn't sent a delete.
+  signs.length = 0
+  await deleteBlob({ ...blob, servers: [B] , url: `${B}/${H("e")}` }, { ctx, fetch })
+  assert.equal(signs.filter(t => t.tags[0][1] === "delete").length, 0)
 })
