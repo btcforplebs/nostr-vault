@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
-import { latestList, publishList, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
+import { latestList, publishList, ListNotSaved, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 import { MeshPhotosSwitch } from "../components/MeshPhotosSwitch.jsx"
 import { SuggestedServers } from "../components/SuggestedServers.jsx"
@@ -27,13 +27,15 @@ export function MediaServersPage({ ctx }) {
     setHealth(h => ({ ...h, [url]: { ...r, at: Date.now() } }))
   }
 
-  // With no list of its own, the account uploads to the defaults, so an edit starts from them.
-  const start = ev => ev ? serverEntries(ev) : DEFAULT_MEDIA_SERVERS
+  // An edit starts from the account's own list. Only when the relays answered that it has none does it start from the
+  // defaults (what it uploads to meanwhile); a list nobody could read starts empty, so the defaults are never saved
+  // over a list that exists.
+  const start = r => r?.event ? serverEntries(r.event) : r?.checked ? DEFAULT_MEDIA_SERVERS : []
   useEffect(() => {
-    latestList(ctx, 10063).then(r => { setLoaded(r); setUrls(start(r.event)); start(r.event).forEach(test) }).catch(e => { setLoaded({ event: undefined, checked: false }); setUrls(start()); setErr(String(e?.message ?? e)) })
+    latestList(ctx, 10063).then(r => { setLoaded(r); setUrls(start(r)); start(r).forEach(test) }).catch(e => { setLoaded({ event: undefined, checked: false }); setUrls([]); setErr(String(e?.message ?? e)) })
   }, [])
 
-  const saved = start(loaded?.event)
+  const saved = start(loaded)
   const dirty = !!loaded && !sameRows(urls, saved)
   const problem = serverProblem(urls)
 
@@ -49,7 +51,10 @@ export function MediaServersPage({ ctx }) {
       const { event, relays } = await publishList(ctx, 10063, serverTags(urls, loaded.event), { previous: loaded.event })
       setLoaded({ event, checked: true }); setUrls(serverEntries(event))
       setStatus(`Published to ${relays.filter(r => r.ok).length} of ${relays.length} relays. New photos go to ${serverEntries(event)[0]} first.`)
-    } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+    } catch (e) {
+      if (e instanceof ListNotSaved && e.checked) { const r = { event: e.latest, checked: true }; setLoaded(r); setUrls(start(r)) }
+      setErr(String(e?.message ?? e))
+    } finally { setBusy(false) }
   }
 
   if (!loaded) return <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your media servers…" />
@@ -63,7 +68,7 @@ export function MediaServersPage({ ctx }) {
           <span class="settings-title mono" title={url}>{url}<Health h={health[url]} /></span>
           <span class="settings-tags">
             {i === 0 && <span class="tag">first</span>}
-            {!loaded.event && DEFAULT_MEDIA_SERVERS.includes(url) && <span class="tag">default</span>}
+            {!loaded.event && loaded.checked && DEFAULT_MEDIA_SERVERS.includes(url) && <span class="tag">default</span>}
             {serverUrl(url) === null && <span class="tag">not used</span>}
             {saved.includes(url) && <button type="button" class="small relay-remove" disabled={health[url] === "checking"} aria-label={`Test ${url}`} onClick={() => test(url)}>{health[url] === "checking" ? "Testing…" : "Test"}</button>}
             {!readOnly && <button type="button" class="small relay-remove" disabled={busy} aria-label={`Remove ${url}`} onClick={() => setUrls(removeServer(urls, url))}>Remove</button>}

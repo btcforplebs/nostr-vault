@@ -12,34 +12,72 @@ const now = () => Math.floor(Date.now() / 1000)
 const listRelays = ctx => uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
 
 /**
- * The newest `kind` list the account signed. -> { event, checked }; `checked` is false when the relays weren't
- * asked (offline), so the page can say its copy may be old. A newer copy from the relays is kept in Haven.
+ * Ask one relay: -> its events, or throws when it didn't answer (no connection, closed, or no EOSE within `wait`). An
+ * empty answer and a relay that never answered are different things: only the first says "nothing here". querySync
+ * can't tell them apart (both resolve []), so the EOSE is watched here and the relay's own EOSE timer is set past ours.
+ */
+export function askRelay(relay, filter, wait = 5000) {
+  return new Promise((resolve, reject) => {
+    const events = []
+    let sub, done = false
+    const finish = answered => {
+      if (done) return
+      done = true; clearTimeout(timer); sub?.close("done")
+      answered ? resolve(events) : reject(new Error(`${relay} didn't answer`))
+    }
+    const timer = setTimeout(() => finish(false), wait)
+    sub = pool.subscribe([relay], filter, { maxWait: wait + 2000, onevent: e => events.push(e), oneose: () => finish(true), onclose: () => finish(false) })
+  })
+}
+
+/** How many relays must answer before the list is known: one if a copy turned up, two to say there is none. */
+export const knownFrom = (answered, found) => answered >= (found ? 1 : 2)
+
+/**
+ * The newest `kind` list the account signed. -> { event, checked, answered }; `checked` is true only when relays
+ * answered: at least one when a copy was found, at least two to say there is none (one "none" may be a relay that lost
+ * it). Offline, or with every relay failing, it is false, and a page must not save: its copy may be old, or "no list"
+ * may be a list nobody could reach. A newer copy from the relays is kept in Haven.
  * Each relay is asked on its own: `on({ event })` gets Haven's copy at once and each newer one as a relay sends it, so
  * a page can draw before the slowest relay answers. The promise still waits for every relay (or its 5 s), because an
  * edit must start from the newest copy anywhere.
  */
-export async function latestList(ctx, kind, { query = (r, f, o) => pool.querySync(r, f, o), online = globalThis.navigator?.onLine !== false, on } = {}) {
+export async function latestList(ctx, kind, { query = (r, f) => askRelay(r[0], f), online = globalThis.navigator?.onLine !== false, on } = {}) {
   const me = ctx.session.pubkey
   const filter = { kinds: [kind], authors: [me] }
   const mine = evs => evs.filter(e => e?.kind === kind && e.pubkey === me)
   const local = newest(mine(await ctx.vault.outbox.query(filter).catch(() => [])))
-  if (!online) return { event: local, checked: false }
+  if (!online) return { event: local, checked: false, answered: 0 }
   if (local) on?.({ event: local })
-  let best = local
+  let best = local, answered = 0
   await Promise.all(listRelays(ctx).map(relay => query([relay], filter, { maxWait: 5000 }).then(evs => {
-    const ev = newest(mine(evs))
+    answered++
+    const ev = newest(mine(evs ?? []))
     if (ev && (!best || ev.created_at > best.created_at)) { best = ev; on?.({ event: ev }) }
   }).catch(() => {})))
   if (best && best !== local) await ctx.vault.outbox.event(best).catch(() => {})
-  return { event: best, checked: true }
+  return { event: best, checked: knownFrom(answered, !!best), answered }
+}
+
+/** Thrown by publishList instead of signing: the list couldn't be read just now, or it changed since the page read it.
+ *  `latest` is the newest copy found (to start the edit again from), `checked` whether it can be trusted. */
+export class ListNotSaved extends Error {
+  constructor(message, latest, checked) { super(message); this.name = "ListNotSaved"; this.latest = latest; this.checked = checked }
 }
 
 /**
- * Sign the list with `tags` (the old copy's other tags kept) and send it out. Its time is after the old copy's, so
- * relays take it as the newer one even with a slow clock. Kept in Haven once a relay took it.
- * -> { event, relays: [{ url, ok, message }] }; throws when signing fails or no relay took it.
+ * Sign the list with `tags` (the old copy's other tags kept) and send it out. Only on a Save tap, never by itself.
+ * Right before signing it reads the list again: if the relays don't answer it refuses, and if a newer copy than
+ * `previous` turned up (another app saved meanwhile) it refuses with that copy, so the edit is made again on top of
+ * it rather than signed over it. Its time is after the old copy's, so relays take it as the newer one even with a slow
+ * clock. Kept in Haven once a relay took it.
+ * -> { event, relays: [{ url, ok, message }] }; throws ListNotSaved, or when signing fails or no relay took it.
  */
-export async function publishList(ctx, kind, tags, { previous, also = [] } = {}) {
+export async function publishList(ctx, kind, tags, { previous, also = [], latest } = {}) {
+  const fresh = latest ? await latest(ctx, kind) : await latestList(ctx, kind)
+  if (!fresh.checked) throw new ListNotSaved("Not saved: your relays didn't answer, so your newest list couldn't be read. Nothing was changed. Try again when you're online.", fresh.event, false)
+  if ((fresh.event?.id ?? null) !== (previous?.id ?? null))
+    throw new ListNotSaved("Not saved: this list changed in another app since the page opened. It's reloaded below; make your change again.", fresh.event, true)
   const template = { kind, content: previous?.content ?? "", tags, created_at: Math.max(now(), (previous?.created_at ?? 0) + 1) }
   const event = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const urls = uniq([...publishRelays([...ctx.account.relays.write, ...also]).network, ...PROFILE_RELAYS])

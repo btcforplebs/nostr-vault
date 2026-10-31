@@ -31,7 +31,7 @@ test("add goes last and only once; remove; an empty list can't be saved", () => 
 test("each saved server is tested as the page opens, and its line says when (the phone's statusLine)", async () => {
   const { readFileSync } = await import("node:fs")
   const src = readFileSync(new URL("../src/screens/MediaServersPage.jsx", import.meta.url), "utf8")
-  assert.match(src, /setUrls\(start\(r\.event\)\); start\(r\.event\)\.forEach\(test\)/)
+  assert.match(src, /setUrls\(start\(r\)\); start\(r\)\.forEach\(test\)/)
   assert.match(src, / · checked \{checkedAgo\(h\.at\)\}/)
   // checkedAgo is plain JS after the component; evaluate just it.
   const fn = src.slice(src.indexOf("export function checkedAgo")).replace("export ", "")

@@ -5,7 +5,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { pool } from "../src/net/pool.js"
-import { latestList, publishList, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem } from "../src/net/list-edit.js"
+import { latestList, publishList, askRelay, knownFrom, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem } from "../src/net/list-edit.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const OTHER_SK = generateSecretKey()
@@ -102,10 +102,77 @@ test("Haven's copy stands when it's newer or the relays have none; offline it is
   const mine = list(SK, 300, [["r", "wss://mine.example"]])
   const ctx = fakeCtx({ outbox: [mine] })
   assert.equal((await latestList(ctx, 10002, { online: true, query: async () => [list(SK, 100, [])] })).event.id, mine.id)
-  assert.equal((await latestList(ctx, 10002, { online: true, query: async () => { throw new Error("down") } })).event.id, mine.id)
+  const down = await latestList(ctx, 10002, { online: true, query: async () => { throw new Error("down") } })
+  assert.deepEqual([down.event.id, down.checked], [mine.id, false], "every relay failed: Haven's copy shown, not checked")
   const off = await latestList(ctx, 10002, { online: false, query: () => assert.fail("asked offline") })
   assert.deepEqual([off.event.id, off.checked], [mine.id, false])
   assert.deepEqual(ctx.stored, [])
+})
+
+/** A Save-time read that finds the same copy the page had. */
+const same = event => async () => ({ event, checked: true })
+
+test("a relay that never answered is not a relay that has none: the list is known only when relays answered", async () => {
+  const mine = list(SK, 100, [["r", "wss://mine.example"]])
+  const ctx = fakeCtx()
+  const empty = async () => []
+  const fail = async () => { throw new Error("down") }
+  // Every relay failed and there's no copy: unknown, not "you have none".
+  assert.deepEqual(await latestList(ctx, 10002, { online: true, query: fail }), { event: undefined, checked: false, answered: 0 })
+  // One relay said "none", the rest failed: still unknown.
+  let first = true
+  const one = await latestList(ctx, 10002, { online: true, query: async () => { if (first) { first = false; return [] } throw new Error("down") } })
+  assert.deepEqual([one.event, one.checked, one.answered], [undefined, false, 1])
+  // Two relays said "none": known to have none.
+  let n = 0
+  const two = await latestList(ctx, 10002, { online: true, query: async () => { if (n++ < 2) return []; throw new Error("down") } })
+  assert.deepEqual([two.event, two.checked, two.answered], [undefined, true, 2])
+  // One relay sent a copy: known, that copy.
+  let k = 0
+  const found = await latestList(ctx, 10002, { online: true, query: async () => { if (k++ === 0) return [mine]; throw new Error("down") } })
+  assert.deepEqual([found.event.id, found.checked], [mine.id, true])
+  assert.deepEqual([knownFrom(0, true), knownFrom(1, true), knownFrom(1, false), knownFrom(2, false)], [false, true, false, true])
+  assert.ok(await latestList(ctx, 10002, { online: true, query: empty }).then(r => r.checked && !r.event), "every relay answered none")
+})
+
+test("askRelay: an EOSE is an answer (even an empty one); a closed or silent relay is not", async t => {
+  const ev = list(SK, 1, [])
+  let opts
+  const fake = how => t.mock.method(pool, "subscribe", (relays, filter, o) => { opts = o; setTimeout(() => how(o)); return { close: () => {} } })
+  fake(o => { o.onevent(ev); o.oneose() })
+  assert.deepEqual((await askRelay("wss://a.example", {})).map(e => e.id), [ev.id])
+  assert.ok(opts.maxWait > 5000, "the pool's own EOSE timer runs past ours, so a timeout can't pass as an answer")
+  pool.subscribe.mock.restore(); fake(o => o.oneose())
+  assert.deepEqual(await askRelay("wss://a.example", {}), [])
+  pool.subscribe.mock.restore(); fake(o => o.onclose("connection failed"))
+  await assert.rejects(askRelay("wss://a.example", {}), /didn't answer/)
+  pool.subscribe.mock.restore(); fake(() => {})
+  await assert.rejects(askRelay("wss://a.example", {}, 20), /didn't answer/)
+})
+
+test("Save reads the list again: refuses when relays don't answer, or when it changed since the page opened", async t => {
+  const previous = list(SK, 100, [["r", "wss://old.example"]])
+  const elsewhere = list(SK, 200, [["r", "wss://other-app.example"]])
+  const ctx = fakeCtx()
+  t.mock.method(pool, "publish", () => assert.fail("published"))
+  const signed = []
+  ctx.signer = { signEvent: async tpl => { signed.push(tpl); return finalizeEvent(tpl, SK) } }
+  const unknown = await publishList(ctx, 10002, [["r", "wss://a.example"]], { previous, latest: async () => ({ event: previous, checked: false }) }).catch(e => e)
+  assert.ok(unknown instanceof ListNotSaved && unknown.checked === false && /didn't answer/.test(unknown.message))
+  const newer = await publishList(ctx, 10002, [["r", "wss://a.example"]], { previous, latest: same(elsewhere) }).catch(e => e)
+  assert.ok(newer instanceof ListNotSaved && newer.checked === true && /changed in another app/.test(newer.message))
+  assert.equal(newer.latest.id, elsewhere.id, "the page gets the newer copy to edit")
+  // A page that saw no list, but one exists now: refused, not signed over it.
+  const appeared = await publishList(ctx, 10002, [["r", "wss://a.example"]], { latest: same(elsewhere) }).catch(e => e)
+  assert.ok(appeared instanceof ListNotSaved && appeared.latest.id === elsewhere.id)
+  assert.deepEqual(signed, [], "nothing was signed")
+  // With no `latest` given it reads through latestList and askRelay itself (every relay refusing here): refused.
+  const asked = []
+  t.mock.method(pool, "subscribe", ([relay], filter, o) => { asked.push(relay); setTimeout(() => o.onclose("connection failed")); return { close: () => {} } })
+  const real = await publishList(ctx, 10002, [], { previous }).catch(e => e)
+  assert.ok(real instanceof ListNotSaved && real.checked === false, String(real))
+  assert.ok(asked.includes("wss://r.example") && asked.includes("wss://purplepag.es"), "it asked the relays at Save")
+  assert.deepEqual(signed, [], "nothing was signed")
 })
 
 test("publishing signs after the old copy, keeps its content, goes to the new write relays and lands in Haven", async t => {
@@ -114,7 +181,7 @@ test("publishing signs after the old copy, keeps its content, goes to the new wr
   let sentTo
   t.mock.method(pool, "publish", (urls, ev) => { sentTo = urls; return urls.map(u => u === "wss://dead.example" ? Promise.reject(new Error("no")) : Promise.resolve("")) })
   const tags = [["r", "wss://new.example"]]
-  const { event, relays } = await publishList(ctx, 10002, tags, { previous, also: ["wss://new.example", "wss://dead.example"] })
+  const { event, relays } = await publishList(ctx, 10002, tags, { previous, also: ["wss://new.example", "wss://dead.example"], latest: same(previous) })
   assert.equal(event.created_at, previous.created_at + 1)
   assert.deepEqual(event.tags, tags)
   assert.ok(sentTo.includes("wss://new.example") && sentTo.includes("wss://w.example") && sentTo.includes("wss://purplepag.es"))
@@ -125,14 +192,14 @@ test("publishing signs after the old copy, keeps its content, goes to the new wr
 test("no relay took it: an error, and Haven keeps the old copy", async t => {
   const ctx = fakeCtx()
   t.mock.method(pool, "publish", urls => urls.map(() => Promise.reject(new Error("refused"))))
-  await assert.rejects(publishList(ctx, 10002, [["r", "wss://a.example"]]), /No relay took it/)
+  await assert.rejects(publishList(ctx, 10002, [["r", "wss://a.example"]], { latest: same(undefined) }), /No relay took it/)
   assert.deepEqual(ctx.stored, [])
 })
 
 test("a signer that signs as someone else is refused", async t => {
   const ctx = { ...fakeCtx(), signer: { signEvent: async tpl => finalizeEvent(tpl, OTHER_SK) } }
   t.mock.method(pool, "publish", () => assert.fail("published"))
-  await assert.rejects(publishList(ctx, 10002, [["r", "wss://a.example"]]), /different account/)
+  await assert.rejects(publishList(ctx, 10002, [["r", "wss://a.example"]], { latest: same(undefined) }), /different account/)
 })
 
 test("plain relay lists (10050, 10006): relay tags in order, each once, other tags kept", async () => {

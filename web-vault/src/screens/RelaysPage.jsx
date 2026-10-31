@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { isDead } from "../net/pool.js"
 import { RelayUrlList } from "./RelayUrlList.jsx"
-import { latestList, publishList, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem, sameRows } from "../net/list-edit.js"
+import { latestList, publishList, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 
 export function RelaysPage({ ctx }) {
@@ -38,7 +38,10 @@ export function RelaysPage({ ctx }) {
       const { event, relays } = await publishList(ctx, 10002, relayTags(rows, loaded.event), { previous: loaded.event, also: rows.filter(r => r.write).map(r => r.url) })
       setLoaded({ event, checked: true }); setRows(relayEntries(event))
       setStatus(`Published to ${relays.filter(r => r.ok).length} of ${relays.length} relays. Reload to use the new list here.`)
-    } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+    } catch (e) {
+      if (e instanceof ListNotSaved && e.checked) { setLoaded({ event: e.latest, checked: true }); setRows(relayEntries(e.latest)) }
+      setErr(String(e?.message ?? e))
+    } finally { setBusy(false) }
   }
 
   return (
