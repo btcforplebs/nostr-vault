@@ -17,6 +17,7 @@ import { UnblockDialog } from "../components/Moderation.jsx"
 import { useProfile } from "../components/useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
+import { ownPostRelays } from "../net/own-relays.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
 import { NotifySwitch } from "../components/NotifySwitch.jsx"
@@ -251,7 +252,7 @@ function Import({ ctx }) {
     if (!navigator.onLine) { setState("You're offline."); return }
     setBusy(true); setProgress(0); setState("Connecting to relays...")
     try {
-      const relays = uniq([...ctx.account.relays.write, ...ctx.account.relays.read, ...DEFAULT_RELAYS])
+      const relays = ownPostRelays(ctx.account)
       const { found, stored } = await importOwn(ctx.vault, ctx.session.pubkey, relays, {
         startDate,
         onProgress: p => { setProgress(p.progress); setState(`${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)`) },

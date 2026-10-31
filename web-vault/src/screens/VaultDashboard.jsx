@@ -22,8 +22,9 @@ import { snapshotStore } from "../net/follow-backup.js"
 import { mediaServers } from "../net/upload.js"
 import { exportNotes, zip } from "../net/backup.js"
 import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
+import { ownPostRelays } from "../net/own-relays.js"
 import { saveFile } from "../net/save-file.js"
-import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
+import { uniq } from "../net/pool.js"
 import { APP_VERSION, APP_COMMIT } from "../net/settings.js"
 import { closeDashboard } from "../net/dashboard-route.js"
 import "../styles/dashboard.css"
@@ -96,7 +97,7 @@ export function VaultDashboard({ ctx }) {
   })
   const importNotes = job("importing", async () => {
     setJobs(j => ({ ...j, importing: { progress: 0, text: "Connecting to relays..." } }))
-    const relays = uniq([...account.relays.write, ...account.relays.read, ...DEFAULT_RELAYS])
+    const relays = ownPostRelays(account)
     const { found, stored } = await importOwn(vault, me, relays, { startDate: IMPORT_START_DATE,
       onProgress: p => setJobs(j => ({ ...j, importing: { progress: p.progress, text: `${p.empty ? "Looking through" : "Found"} notes from ${p.from}... (${p.found} found)` } })) })
     markRan(me, "notesImport")
