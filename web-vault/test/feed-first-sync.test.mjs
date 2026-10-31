@@ -24,7 +24,7 @@ class Node {
   remove() { this.parentNode?.removeChild(this) }
   setAttribute(k, v) { this.attributes[k] = String(v) }
   removeAttribute(k) { delete this.attributes[k] }
-  addEventListener() {}
+  addEventListener(type, fn) { (this.on ??= {})[type] = fn } // kept, so a test can click
   removeEventListener() {}
   get textContent() { return this.nodeType === 3 ? this.data : this.childNodes.map(c => c.textContent).join("") }
   set textContent(v) { this.childNodes = []; if (v) this.appendChild(document.createTextNode(v)) }
@@ -202,4 +202,38 @@ test("a follow's new note arrives live, is saved and waits behind the pill; leav
   render(null, m.el)
   for (const k of Object.keys(window)) delete globalThis[k]
   assert.ok(relays.live.every(s => s.closed), "every live REQ closed")
+})
+
+test("Hashtag's new notes arrive live and wait behind the pill; a tap shows them on top; nothing is saved", async () => {
+  const tagNote = (id, at, content) => ({ id: hex(id), pubkey: hex(70_000 + id), kind: 1, created_at: at, tags: [["t", "bitcoin"]], content, sig: "" })
+  pool.ensureRelay = async () => ({})
+  pool.querySync = async (_, f) => (f["#t"]?.[0] === "bitcoin" ? [tagNote(1, now - 100, "an older tagged note")] : [])
+  const live = []
+  pool.subscribeMany = (urls, filter, params) => { const sub = { filter, params, closed: false, close() { sub.closed = true } }; live.push(sub); return sub }
+  const store = new Map([["nv-feed", JSON.stringify({ mode: "hashtag", tag: "bitcoin" })]])
+  const window = { addEventListener() {}, removeEventListener() {}, requestAnimationFrame() { return 0 }, cancelAnimationFrame() {}, scrollY: 0, scrollTo() {}, localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) } }
+  Object.assign(globalThis, window)
+  try {
+    const m = mount({ follows, relays: { read: ["wss://r"] }, loaded: true })
+    await until(() => /an older tagged note/.test(text(m.el)), "the first page")
+    await until(() => live.some(s => !s.closed), "the live REQ")
+    const sub = live.find(s => !s.closed)
+    assert.deepEqual(sub.filter["#t"], ["bitcoin"])
+    assert.ok(sub.filter.since >= now - 5 && !sub.filter.limit)
+    sub.params.onevent(tagNote(2, now + 30, "a new tagged note"))
+    sub.params.onevent({ ...tagNote(3, now + 31, "untagged"), tags: [] }) // a relay that ignored #t: dropped
+    for (let i = 0; i < 100 && !/1 New Post(?!s)/.test(text(m.el)); i++) await tick(50)
+    assert.match(text(m.el), /1 New Post(?!s)/)
+    assert.doesNotMatch(text(m.el), /a new tagged note/)
+    const find = (n, pred) => pred(n) ? n : n.childNodes?.map(c => find(c, pred)).find(Boolean)
+    const pill = find(m.el, n => n.attributes?.class?.startsWith("new-posts"))
+    const [type, onClick] = Object.entries(pill.on).find(([k]) => /^click$/i.test(k))
+    onClick.call(pill, { type }) // preact keys the handler by the event name it registered
+    await until(() => /a new tagged note/.test(text(m.el)), "the new note shown")
+    assert.ok(text(m.el).indexOf("a new tagged note") < text(m.el).indexOf("an older tagged note"), "on top")
+    assert.doesNotMatch(text(m.el), /New Post/)
+    assert.deepEqual(await m.ctx.vault.feed.query({ kinds: [1], authors: [hex(70_002)], limit: 5 }), [], "a stranger's note is not saved")
+    render(null, m.el)
+    assert.ok(live.every(s => s.closed), "the live REQ closed")
+  } finally { for (const k of Object.keys(window)) delete globalThis[k] }
 })

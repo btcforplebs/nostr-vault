@@ -145,6 +145,29 @@ export async function fetchStrangerFeed(choice, relays, { limit = 100, until, tr
   return global ? filterGlobal(notes, trust) : notes
 }
 
+/** What a stranger feed keeps open for its New posts pill (net/feed-live.js watchLive), or [] when nothing can come:
+ *  Global as its pages ask (trusted authors, then open; `trust` needed), Hashtag's tag, Discover's `network` in REQs of
+ *  250. Popular is a ranked page, not a stream, so it has none. */
+export function liveFilters(choice, { trust = null, network = null } = {}) {
+  if (globalLike(choice)) return trust?.size ? trustedFilters({ kinds: FEED_KINDS }, trust) : []
+  if (choice.mode === "hashtag") return choice.tag ? [{ kinds: [1], "#t": [choice.tag] }] : []
+  if (choice.mode === "discovery") {
+    const out = []
+    for (let i = 0; i < (network?.length ?? 0); i += 250) out.push({ kinds: FEED_KINDS, authors: network.slice(i, i + 250) })
+    return out
+  }
+  return []
+}
+
+/** Whether a note that came in live belongs on a stranger feed: Global keeps what its pages keep (global-trust.js),
+ *  Discover only its network's, Hashtag a kind 1 with the tag. */
+export function liveKeeps(choice, ev, { trust = null, network = null } = {}) {
+  if (globalLike(choice)) return !!trust && FEED_KINDS.includes(ev.kind) && filterGlobal([ev], trust).length === 1
+  if (choice.mode === "hashtag") return ev.kind === 1 && (ev.tags ?? []).some(t => t[0] === "t" && String(t[1]).toLowerCase() === choice.tag)
+  if (choice.mode === "discovery") return FEED_KINDS.includes(ev.kind) && !!network?.includes(ev.pubkey)
+  return false
+}
+
 /** Add a page to what is shown, dropping notes already there. */
 export function mergePage(have, more) {
   const ids = new Set(have.map(e => e.id))
