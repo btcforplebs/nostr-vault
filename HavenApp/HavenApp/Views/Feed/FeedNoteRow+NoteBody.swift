@@ -44,6 +44,18 @@ extension FeedNoteRow {
         return FeedService.shared.unavailableNoteIds.contains(refId)
     }
 
+    /// The body's text, media and links, without the links a live stream it
+    /// embeds already draws in its card. Unchanged for any other note.
+    var liveCleanBody: LiveNoteCleanup.Body {
+        let source = bodySource
+        let body = LiveNoteCleanup.Body(content: source.content, mediaURLs: source.mediaURLs, linkURLs: source.linkURLs)
+        let liveIds = LiveNoteCleanup.liveQuoteIds(in: source.content)
+        guard !liveIds.isEmpty else { return body }
+        let streams = liveIds.compactMap { actions.findNote($0) }
+        let urls = streams.reduce(into: Set<String>()) { $0.formUnion(LiveNoteCleanup.streamURLs(tags: $1.tags)) }
+        return LiveNoteCleanup.clean(body, streamURLs: urls)
+    }
+
     @ViewBuilder
     var noteBodyContent: some View {
         // Content Body — for empty-content reposts this is the reposted note.
@@ -102,17 +114,20 @@ extension FeedNoteRow {
             }
             .padding(.top, 4)
         } else {
-            let invoices = NoteInvoices.find(in: bodySource.content)
+            // A live stream's card draws its own picture and player; the links
+            // written beside its naddr leave the text (LiveNoteCleanup).
+            let body = liveCleanBody
+            let invoices = NoteInvoices.find(in: body.content)
             // Each link's card sits where the link was written, between the
             // text before and after it.
-            let segments = NoteURLs.segments(bodySource.content, cards: LinkCards.shown(bodySource.linkURLs))
+            let segments = NoteURLs.segments(body.content, cards: LinkCards.shown(body.linkURLs))
             // NIP-30: only a note that tags custom emoji takes the image path.
-            let emojis = bodySource.content.contains(":") ? CustomEmoji.byShortcode(bodySource.tags) : [:]
+            let emojis = body.content.contains(":") ? CustomEmoji.byShortcode(bodySource.tags) : [:]
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     switch segment {
                     case .text(let piece):
-                        noteText(NostrContentFormatter.format(piece, mediaURLs: bodySource.mediaURLs, invoices: invoices),
+                        noteText(NostrContentFormatter.format(piece, mediaURLs: body.mediaURLs, invoices: invoices),
                                  emojis: emojis)
                             .font(.appSystem(size: 17, weight: .regular, design: .default))
                             .foregroundColor(Color(red: 1, green: 1, blue: 1))
@@ -128,8 +143,8 @@ extension FeedNoteRow {
             .padding(.top, 4)
 
             // Media previews
-            if !bodySource.mediaURLs.isEmpty {
-                feedMediaCarousel(urls: bodySource.mediaURLs)
+            if !body.mediaURLs.isEmpty {
+                feedMediaCarousel(urls: body.mediaURLs)
                     .padding(.top, 4)
             }
 
