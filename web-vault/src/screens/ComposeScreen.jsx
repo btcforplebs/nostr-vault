@@ -18,6 +18,7 @@ import { Avatar } from "../components/Avatar.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { PostResult } from "./compose/PostResult.jsx"
+import { canGoBack } from "../components/nav-depth.js"
 import { draftKey, idbDrafts } from "./compose/drafts.js"
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
@@ -159,6 +160,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
+  const [finished, setFinished] = useState(false) // sent, with no page of this app to go back to: Done shows
   const [err, setErr] = useState("")
   // The send counting down: { action, total, remaining }. Nothing is signed until it ends; Undo drops it.
   const [pending, setPending] = useState(null)
@@ -283,11 +285,19 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     history.back()
   }
   const undo = () => { if (countdown.current?.cancel()) { countdown.current = null; setPending(null); setUndone(true); box.current?.focus() } }
+  // Once a relay has the note, the composer closes back to where it was opened, as the iPhone's sheet does. Opened as
+  // the first page there's nowhere to go back to, so the result stays with a Done button. A note no relay took stays
+  // here with its errors; the reply box under a thread (inline) just clears.
   const send = async ({ content, tags }) => {
     setBusy(true)
     try {
-      setResult(await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags))
+      const sent = await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, content, ctx.account.relays.write, tags)
+      setResult(sent)
       setText(""); setMentions({}); setPhotos([]); setMention(null)
+      if (!inline && reachedRelay(sent)) {
+        if (canGoBack()) history.back()
+        else setFinished(true)
+      }
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
@@ -377,9 +387,13 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
       {undone && !pending && !result && <p class="muted small compose-undone" role="status">Not sent. Nothing was signed, and your note is still here.</p>}
       {err && <p class="error">{err}</p>}
       {result && <PostResult result={result} />}
+      {finished && <button type="button" class="primary compose-done" onClick={() => { location.hash = "#/feed" }}>Done</button>}
     </main>
   )
 }
+
+/** Whether any relay other than this machine's own took the note. */
+export const reachedRelay = result => !!result?.relays?.some(r => !r.local && r.ok)
 
 /** Writing one attachment's NIP-92 alt (ComposeView+Chrome altEditorSheet). */
 function AltDialog({ value, video, onSave, onClose }) {

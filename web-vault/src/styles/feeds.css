@@ -1,7 +1,11 @@
-/* The Feed's header (components/FeedPickerMenu.jsx): a solid black bar, posts start under it and scroll under it, never
-   through it. One pill on the left that opens the feeds, one capsule of icon toggles on the right, both 44px tall
-   (FeedPickerMenu.swift, FeedView+Toolbar.swift). No glass: over moving posts it smeared them and made the labels soft. */
-.feed-head { gap: 8px; background: var(--bg); border-bottom: 1px solid var(--hair); margin-bottom: 10px; }
+/* The Feed's header (components/FeedPickerMenu.jsx), as on the iPhone: posts scroll up behind it under a fade, black
+   under the status bar and clear at its foot, with a short tail below so a post fades in rather than meeting an edge.
+   One pill on the left that opens the feeds, one capsule of icon toggles on the right, both solid and 44px tall
+   (FeedPickerMenu.swift, FeedView+Toolbar.swift), so their labels stay sharp over moving posts. No blur: it smeared them. */
+.feed-head { gap: 8px; margin-bottom: 10px;
+  background: linear-gradient(to bottom, var(--bg) 40%, color-mix(in srgb, var(--bg) 55%, transparent)); }
+.feed-head::after { content: ""; position: absolute; inset: 100% 0 auto; height: 16px; pointer-events: none;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 55%, transparent), transparent); }
 .feed-mode-menu { position: relative; min-width: 0; }
 .feed-mode-pill { display: flex; align-items: center; gap: 6px; height: 44px; max-width: 100%; padding: 0 14px 0 8px; border-radius: 999px;
   background: var(--s1); border: 1px solid var(--hair);
