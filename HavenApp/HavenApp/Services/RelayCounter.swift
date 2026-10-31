@@ -16,8 +16,33 @@ final class RelayCounter {
         let needsAuth = RelayCountSession.needsAuth(url)
         // Watch-only: nothing to sign the AUTH with, so this route can't be counted.
         if needsAuth && !ownerCanAuth() { return nil }
-        return await RelayCounter(filters: filters, url: url, needsAuth: needsAuth).run(timeout: timeout)
+        guard needsAuth else {
+            return await RelayCounter(filters: filters, url: url, needsAuth: false).run(timeout: timeout)
+        }
+
+        // A kept socket is still logged in: count with no new AUTH.
+        let owner = ConfigService.shared.config.ownerNpub
+        if let socket = kept.socket(owner: owner, url: url) {
+            let counter = RelayCounter(filters: filters, url: url, needsAuth: false, client: socket)
+            if let counts = await counter.run(timeout: timeout) { return counts }
+            // Dead or refused: close it and log in again on a new one.
+            kept.drop(socket, owner: owner, url: url)
+            socket.disconnect()
+        }
+
+        let counter = RelayCounter(filters: filters, url: url, needsAuth: true)
+        let counts = await counter.run(timeout: timeout)
+        if counts != nil {
+            counter.keepOpen(owner: owner)
+        } else {
+            counter.client.disconnect()
+        }
+        return counts
     }
+
+    /// Logged-in /private and /chat sockets, reused by the next count.
+    private static var kept = KeptCountSockets<WebSocketClient>()
+    private static var keptWatches: [ObjectIdentifier: AnyCancellable] = [:]
 
     /// Whether the owner can sign the AUTH /private and /chat need, whichever
     /// account is active (`HavenConfig.ownerCanSign`, the rule DM's /chat AUTH
@@ -30,19 +55,39 @@ final class RelayCounter {
 
     private let filters: [String: [String: Any]]
     private let url: URL
-    private let client = WebSocketClient()
+    private let client: WebSocketClient
+    /// Counting on a kept socket that is already open and logged in.
+    private let reused: Bool
     private var session: RelayCountSession
     private var watches = Set<AnyCancellable>()
     private var continuation: CheckedContinuation<[String: Int]?, Never>?
 
-    private init(filters: [String: [String: Any]], url: URL, needsAuth: Bool) {
+    private init(filters: [String: [String: Any]], url: URL, needsAuth: Bool, client: WebSocketClient? = nil) {
         self.filters = filters
         self.url = url
+        self.reused = client != nil
+        self.client = client ?? WebSocketClient()
         session = RelayCountSession(
             keys: Set(filters.keys),
             prefix: "vc-\(UUID().uuidString.prefix(6))-",
             needsAuth: needsAuth)
-        client.isTemporary = true
+        self.client.isTemporary = true
+    }
+
+    /// Keeps this logged-in socket for the next count, until it drops.
+    private func keepOpen(owner: String) {
+        let socket = client
+        Self.kept.keep(socket, owner: owner, url: url)?.disconnect()
+        let id = ObjectIdentifier(socket)
+        Self.keptWatches[id] = socket.$connectionState
+            .dropFirst()
+            .filter { $0 != .connected }
+            .receive(on: DispatchQueue.main)
+            .sink { _ in
+                Self.kept.forget(socket)
+                Self.keptWatches[id] = nil
+                socket.disconnect()
+            }
     }
 
     private func run(timeout: TimeInterval) async -> [String: Int]? {
@@ -62,15 +107,18 @@ final class RelayCounter {
                 .sink { [weak self] state in
                     guard let self else { return }
                     if state == .connected { self.apply(self.session.connected()) }
-                    if state == .error { self.end(nil) }
+                    if state == .error || (self.reused && state == .disconnected) { self.end(nil) }
                 }
                 .store(in: &watches)
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 self?.end(nil)
             }
-            client.connect(url: url)
+            // A kept socket is open already: its state publishes .connected
+            // to the watch above at once, which sends the counts.
+            if !reused { client.connect(url: url) }
         }
-        client.disconnect()
+        // `count` decides whether a logged-in socket stays open.
+        if !session.needsAuth && !reused { client.disconnect() }
         return result
     }
 

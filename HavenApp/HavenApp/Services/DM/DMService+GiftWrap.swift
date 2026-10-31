@@ -46,6 +46,11 @@ extension DMService {
     }
 
     private func processGiftWrap(_ event: NostrEvent, generation: UInt64) async {
+        // The signer is not answering: wait with the others, no request.
+        guard signerGate.mayAsk(event.id) else {
+            waitForSigner(event, autoRetry: true)
+            return
+        }
         do {
             // Verify account hasn't switched since we started processing
             guard self.switchGeneration == generation else { return }
@@ -57,6 +62,8 @@ extension DMService {
 
             // Re-check after async decryption
             guard self.switchGeneration == generation else { return }
+            // Before any early return below: a probe that opened releases the rest.
+            signerAnswered(event.id)
 
             let ownPubkey = self.loadedAccountPubkey
             let isFromMe = senderPubkey == ownPubkey
@@ -134,14 +141,25 @@ extension DMService {
             #endif
             guard self.switchGeneration == generation else { return }
             rememberUnreadableGiftWrap(event.id)
+            signerAnswered(event.id)
         } catch {
             // Signer offline, timed out or refused: keep it and try again.
             #if DEBUG
             print("Failed to unwrap gift wrap: \(error)")
             #endif
             guard self.switchGeneration == generation else { return }
-            waitForSigner(event, autoRetry: Self.signerMayAnswerLater(error))
+            let mayAnswerLater = Self.signerMayAnswerLater(error)
+            if mayAnswerLater { signerGate.noAnswer() } else { signerAnswered(event.id) }
+            waitForSigner(event, autoRetry: mayAnswerLater)
         }
+    }
+
+    /// The probe got an answer, so the signer is back: send every waiting
+    /// wrap to it again.
+    private func signerAnswered(_ id: String) {
+        guard signerGate.answered(id) else { return }
+        signerRetryAttempt = 0
+        releaseWaitingForSigner()
     }
 
     /// No answer (offline, not connected, timed out) is worth asking again on
@@ -193,6 +211,20 @@ extension DMService {
         // Asked for (Retry, refresh): once the automatic rounds are used up,
         // this allows one more, so a signer that comes back still gets asked.
         if signerRetryTask == nil { signerRetryAttempt = min(signerRetryAttempt, Self.maxSignerRetries - 1) }
+        // Parked after a timeout: ask about the newest wrap only. Its answer
+        // releases the rest; no answer parks them all for the next round.
+        if signerGate.parked,
+           let newest = signerWaiting.values.max(by: { $0.created_at < $1.created_at }) {
+            signerGate.probe(newest.id)
+            signerWaiting.removeValue(forKey: newest.id)
+            waitingForSignerCount = signerWaiting.count
+            handleIncomingGiftWrap(newest)
+            return
+        }
+        releaseWaitingForSigner()
+    }
+
+    private func releaseWaitingForSigner() {
         let waiting = Array(signerWaiting.values)
         signerWaiting.removeAll()
         waitingForSignerCount = 0
@@ -205,6 +237,7 @@ extension DMService {
         signerRetryTask?.cancel()
         signerRetryTask = nil
         signerRetryAttempt = 0
+        signerGate.reset()
         signerWaiting.removeAll()
         waitingForSignerCount = 0
     }

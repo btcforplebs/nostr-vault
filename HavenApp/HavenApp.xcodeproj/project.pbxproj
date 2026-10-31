@@ -423,6 +423,7 @@
 		4B5D58DCD57393A28797C9F4 /* NostrVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */; };
 		4BE74F42C56394DDD4DC8B80 /* NpubValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131AAC224239A2C64C2579FC /* NpubValidation.swift */; };
+		4C000491129B78530A08D23C /* KeptCountSockets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84FB263473431623112FF0F /* KeptCountSockets.swift */; };
 		4C01A0C02F7DB9B62F71CDBD /* ZappersListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDB3FEB452DBB79FE900D89B /* ZappersListView.swift */; };
 		4C0F49BD399D9137BD219F4E /* NWCService+MakeInvoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = D657C19C2BFB504A4167445B /* NWCService+MakeInvoice.swift */; };
 		4C1835A1E50204B035354B6D /* BlossomSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FEFBCD65FD1B5DD5E43FD3 /* BlossomSettingsView.swift */; };
@@ -436,6 +437,7 @@
 		4D3432B398C464F3FF5BAB5C /* NoteTranslateButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4493729F7433BDFA267BF611 /* NoteTranslateButton.swift */; };
 		4D3E84359AF0633335C904A1 /* VaultExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF57E75767BD80C1504D555C /* VaultExporter.swift */; };
 		4D4F65FFA3B6C568ACC21D09 /* DMService+GiftWrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC759260F54CE352A66B934 /* DMService+GiftWrap.swift */; };
+		4DBA35F131CB3140A800A69A /* SignerWaitGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */; };
 		4E32F63C7DA97AC6ADA36BBB /* SuggestedMediaServers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2FAE9D93A33F91E3E22BEDA /* SuggestedMediaServers.swift */; };
 		4E41FEE7D01279C5CAEACDAD /* NoteDetailViewWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB55D0A09A0123F9C8A2B32 /* NoteDetailViewWrapper.swift */; };
 		4E6051FB6C74323D6FF53A61 /* GatedArticleBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0909C6301A67A52A5CA1E250 /* GatedArticleBody.swift */; };
@@ -1040,6 +1042,7 @@
 		B37F480EFFD00673761D5DD1 /* FeedView+RootContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE40C4040B7017248832CFDC /* FeedView+RootContent.swift */; };
 		B3A065D965688DBC83174179 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
 		B40BA85ED93F41D32CE93858 /* NoteDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDDBB29FDB253D22C3F8452 /* NoteDeletion.swift */; };
+		B4458685AE82CBDC247405F4 /* SignerWaitGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */; };
 		B47625D1EBF2AD53AF3E7BBD /* BlossomService+Download.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50F86F7EE1F2369C32106CFE /* BlossomService+Download.swift */; };
 		B49F235F60DAF9E5CBC8109C /* InlineFeedVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B26FA9FB12D24E9BB3B6A76 /* InlineFeedVideoPlayer.swift */; };
 		B506ECECE9F95658914E48EB /* HavenConfig+ActiveRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC519F29A70073D2E13FFEC /* HavenConfig+ActiveRelays.swift */; };
@@ -1106,6 +1109,7 @@
 		C02CC6435D4B18A90EAD18EC /* SoundOnlyStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4EE3A08A385329682E48B6 /* SoundOnlyStream.swift */; };
 		C0868BFDDD8279ABD3D6990E /* BlossomService+Presence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E342C8296FB88060B9FC675 /* BlossomService+Presence.swift */; };
 		C0A88A1192D0E3D0770B605B /* FeedService+NoteBatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCC058D0D2E82973E7CFE31 /* FeedService+NoteBatching.swift */; };
+		C0B8F15369B62D89EA141A13 /* KeptCountSockets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84FB263473431623112FF0F /* KeptCountSockets.swift */; };
 		C0B9F2FE9E1B16B2EDA3FA29 /* QuotedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AB87D6F419A5756C1655631 /* QuotedEventsView.swift */; };
 		C0CFE203CCC8B542BFD2541C /* OtherResponseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14FAD736D401196122276352 /* OtherResponseCard.swift */; };
 		C0E6400FEDD07B023CE4D154 /* PostActionNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F67B70956B68FD2DA8E0598 /* PostActionNotificationBanner.swift */; };
@@ -2113,6 +2117,7 @@
 		B589B40DCA89EA8C175FEF32 /* EmojiPaletteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPaletteStore.swift; sourceTree = "<group>"; };
 		B5A945B5727F35AAE72E9985 /* TrustWebSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustWebSheet.swift; sourceTree = "<group>"; };
 		B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+Reconnect.swift"; sourceTree = "<group>"; };
+		B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignerWaitGate.swift; sourceTree = "<group>"; };
 		B69E44634D34050365EEF1A8 /* FeedMediaViewer+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedMediaViewer+Actions.swift"; sourceTree = "<group>"; };
 		B6EEA633D3639AB7EE2C3BFC /* InlinePlayerLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlinePlayerLayer.swift; sourceTree = "<group>"; };
 		B7AE5C3CB89D22373BCC0664 /* libnvfips.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libnvfips.a; path = build/ios/libnvfips.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2197,6 +2202,7 @@
 		D6E037E60F09160D6697CB3C /* NostrService+ListPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ListPublishing.swift"; sourceTree = "<group>"; };
 		D76A00C84747256991A76CA7 /* FeedNoteRow+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedNoteRow+Media.swift"; sourceTree = "<group>"; };
 		D7D56F5AAF9F6D61DDAF4893 /* TrustWebView+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+Search.swift"; sourceTree = "<group>"; };
+		D84FB263473431623112FF0F /* KeptCountSockets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeptCountSockets.swift; sourceTree = "<group>"; };
 		D9046B45F84FD6F8C6FC6AF7 /* KioskDailyBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskDailyBudget.swift; sourceTree = "<group>"; };
 		D905B09C965B0356FE1B3469 /* NostrURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrURI.swift; sourceTree = "<group>"; };
 		D90F258B03CA96463A4353B3 /* ConnectSignerSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectSignerSheetView.swift; sourceTree = "<group>"; };
@@ -3077,6 +3083,7 @@
 				54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */,
 				B3912DD3B5132A5A7C5402A0 /* ImportTourStage.swift */,
 				381DC5D952C2744229EB2046 /* InterestList.swift */,
+				D84FB263473431623112FF0F /* KeptCountSockets.swift */,
 				3D922513ACBA3CDE4D557891 /* KioskCapPause.swift */,
 				D9046B45F84FD6F8C6FC6AF7 /* KioskDailyBudget.swift */,
 				9DB502B6992F3E77F294CA5D /* LightningPayTarget.swift */,
@@ -3139,6 +3146,7 @@
 				556F8A537ED16749390E20E4 /* ServerListAdoption.swift */,
 				7507E56424A5CF8EA46857DA /* SettingsHelp.swift */,
 				0CB3928B13EED1E152C1D081 /* SetupReferral.swift */,
+				B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */,
 				9C76774A7C1421B8D5ECFCE5 /* SnoObject.swift */,
 				A04E0F5ADF9DEBE1B0772D48 /* SnoScene.swift */,
 				C9E0F271DFC0731ABBC9E938 /* StarterPack.swift */,
@@ -4095,6 +4103,7 @@
 				7AE5DD105681A89C13BE7E22 /* InlinePlayerLayer.swift in Sources */,
 				D977A7ED44CBAEA08DAA2E9F /* InterestList.swift in Sources */,
 				50B817762C47EA0CC1EEC4A7 /* InterestListService.swift in Sources */,
+				C0B8F15369B62D89EA141A13 /* KeptCountSockets.swift in Sources */,
 				14AEBCF2AFEC15F67E1FF9B8 /* KeyPasswordStep.swift in Sources */,
 				BE9AE08E7FC80EA8A259583D /* KioskCapPause.swift in Sources */,
 				89603671680AE49EB1036296 /* KioskDailyBudget.swift in Sources */,
@@ -4416,6 +4425,7 @@
 				545AD9E60A65336AC87469B6 /* SidebarTabButton.swift in Sources */,
 				F34E2131558134F8708AB50E /* SignInWithClaveView.swift in Sources */,
 				2D64BAF82A0A8FF79F93CF1B /* SignerRequestGate.swift in Sources */,
+				B4458685AE82CBDC247405F4 /* SignerWaitGate.swift in Sources */,
 				F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */,
 				CE09C2DE853C0503379AD064 /* SnoObject.swift in Sources */,
 				8B934BB78D24822FC72CF081 /* SnoObjectView.swift in Sources */,
@@ -4855,6 +4865,7 @@
 				80CD34C18669E6058254A790 /* InlinePlayerLayer.swift in Sources */,
 				B0CCD220B12D223F5CC9860F /* InterestList.swift in Sources */,
 				71ED54075DC0C0DE0469B00E /* InterestListService.swift in Sources */,
+				4C000491129B78530A08D23C /* KeptCountSockets.swift in Sources */,
 				EB768E6AF0FC0E50D4DC8894 /* KeyPasswordStep.swift in Sources */,
 				6EACDE1A659F03977F85E76B /* KioskCapPause.swift in Sources */,
 				7E358EC657C6EAA1BDEE1220 /* KioskDailyBudget.swift in Sources */,
@@ -5165,6 +5176,7 @@
 				DF334F134363929C956118D8 /* SidebarTabButton.swift in Sources */,
 				D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */,
 				A3F1C6042EDEF326CAFB8963 /* SignerRequestGate.swift in Sources */,
+				4DBA35F131CB3140A800A69A /* SignerWaitGate.swift in Sources */,
 				DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */,
 				CA8DFE048D6F57D3792197C5 /* SnoObject.swift in Sources */,
 				C8D4226C9C55AFA64A6B7CB2 /* SnoObjectView.swift in Sources */,
