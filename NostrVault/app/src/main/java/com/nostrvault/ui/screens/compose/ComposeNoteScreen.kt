@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import com.nostrvault.R
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
@@ -58,7 +59,7 @@ internal fun composeNeedsDraftPrompt(content: String): Boolean {
     return trimmed.isNotEmpty() && (trimmed.contains(' ') || trimmed.length > 10)
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ComposeNoteScreen(
     replyToNoteId: String? = null,
@@ -150,21 +151,16 @@ fun ComposeNoteScreen(
         )
     }
 
-    // Emoji button: the reaction picker, inserting at the caret instead (NIP-30).
-    var showEmojiPicker by remember { mutableStateOf(false) }
-    if (showEmojiPicker) {
-        val insert: (String) -> Unit = { insertion ->
-            showEmojiPicker = false
-            val (text, caret) = viewModel.insertPickedEmoji(insertion, textFieldValue.selection.start)
-            textFieldValue = TextFieldValue(text, TextRange(caret))
-        }
-        com.nostrvault.ui.components.EmojiPickerSheet(
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            onDismiss = { showEmojiPicker = false },
-            onSelectEmoji = insert,
-            onSelectCustom = { insert(it.content) },
-        )
+    // Emoji button: the emoji panel docked under the toolbar, inserting at
+    // the caret (ComposeEmojiPanel.kt). The keyboard coming back closes it.
+    var showEmojiPanel by remember { mutableStateOf(false) }
+    var emojiSearchFocused by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(imeVisible, emojiSearchFocused) {
+        if (imeVisible && !emojiSearchFocused) showEmojiPanel = false
     }
+    BackHandler(enabled = showEmojiPanel) { showEmojiPanel = false }
 
     var showGifPicker by remember { mutableStateOf(false) }
     if (showGifPicker) {
@@ -538,16 +534,25 @@ fun ComposeNoteScreen(
                     }
                 }
 
-                // Emoji: your custom emoji and sets, or any emoji, at the caret.
+                // Emoji: opens the panel below; while it is open, back to the keyboard.
                 IconButton(
-                    onClick = { showEmojiPicker = true },
+                    onClick = {
+                        if (showEmojiPanel) {
+                            showEmojiPanel = false
+                            runCatching { editorFocus.requestFocus() }
+                            keyboard?.show()
+                        } else {
+                            keyboard?.hide()
+                            showEmojiPanel = true
+                        }
+                    },
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.EmojiEmotions,
-                        contentDescription = "Add emoji",
+                        imageVector = if (showEmojiPanel) Icons.Default.Keyboard else Icons.Default.EmojiEmotions,
+                        contentDescription = if (showEmojiPanel) "Show keyboard" else "Add emoji",
                         tint = colors.primary,
                         modifier = Modifier.size(20.dp)
                     )
@@ -569,6 +574,17 @@ fun ComposeNoteScreen(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+            }
+
+            if (showEmojiPanel) {
+                ComposeEmojiPanel(
+                    viewModel = viewModel,
+                    onPick = { pick ->
+                        val (newText, caret) = viewModel.insertPanelEmoji(pick, textFieldValue.selection.start)
+                        textFieldValue = TextFieldValue(newText, TextRange(caret))
+                    },
+                    onSearchFocusChange = { emojiSearchFocused = it },
+                )
             }
         }
         }
