@@ -43,8 +43,8 @@ export const HEALTH = {
   problem: { pill: "Problem", banner: "Something needs your attention" },
 }
 
-/** The banner's second line: "Your relay is running normally." or the newest item that isn't good. */
-export const bannerDetail = items => [...items].reverse().find(i => i.level !== "good")?.text ?? "Your relay is running normally."
+/** The banner's second line: "Your vault is running normally." or the newest item that isn't good. */
+export const bannerDetail = items => [...items].reverse().find(i => i.level !== "good")?.text ?? "Your vault is running normally."
 
 /** Keys, ids, IP addresses and file paths out of a line (RelayActivityModel's redaction). */
 export function redact(s) {

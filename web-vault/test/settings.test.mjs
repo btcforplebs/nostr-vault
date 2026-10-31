@@ -29,7 +29,7 @@ const OTHER_SK = generateSecretKey(), OTHER = getPublicKey(OTHER_SK)
 const signed = (sk, kind, content, created_at = 1000) => finalizeEvent({ kind, content, tags: [], created_at }, sk)
 
 test("groups are the phone's, each row with a page or a screen to go to; every settings page is a row", () => {
-  assert.deepEqual(SETTINGS_GROUPS.map(g => g.title), ["Account", "Relays", "Your Vault Relay", "Advanced"])
+  assert.deepEqual(SETTINGS_GROUPS.map(g => g.title), ["Account", "Relays", "Your Vault", "Advanced"])
   const rows = SETTINGS_GROUPS.flatMap(g => g.rows)
   assert.equal(rows.find(r => r.id === "accounts").href, "#/accounts")
   // The phone's row titles and tile colours (SettingsView.SettingsTab, iconBackgroundColor)

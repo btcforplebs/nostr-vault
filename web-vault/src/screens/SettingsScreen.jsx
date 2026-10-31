@@ -52,7 +52,7 @@ const ICONS = {
   people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
 }
 // SettingsView.swift iOSBody's sections, top to bottom. The web has no Feed & Display, Mesh or Help rows yet.
-const ORDER = ["Account", "Feed & Display", "Relays", "Your Vault Relay", "Mesh", "Help", "Advanced"]
+const ORDER = ["Account", "Feed & Display", "Relays", "Your Vault", "Mesh", "Help", "Advanced"]
 const rank = g => { const i = ORDER.indexOf(g.title); return i < 0 ? ORDER.length : i }
 const GROUPS = [...SETTINGS_GROUPS].sort((a, b) => rank(a) - rank(b))
 const Icon = ({ d, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
@@ -172,7 +172,7 @@ function RelayStatusCard({ ctx }) {
       <div class="relay-card-head">
         <span class="settings-icon big"><Icon d={ICONS.server} size={20} /></span>
         <div class="relay-card-text">
-          <div class="relay-card-title">Your Vault Relay</div>
+          <div class="relay-card-title">Your Vault</div>
           <div class="mono muted">in this browser · {count === null ? "…" : `${count} event${count === 1 ? "" : "s"}`}</div>
         </div>
         <span class="relay-card-state"><span class="dot on" />Running</span>
@@ -304,7 +304,7 @@ function Database({ ctx }) {
     <div class="card">
       <h3>This browser's copy</h3>
       <div class="stats"><div><div class="k">storage</div><div class="v">{usage ?? "–"} MB</div></div></div>
-      <p class="muted small">Your relay's data lives in this browser's storage. Signing out deletes it all: notes, messages, keys and paired vaults. Your phone's vault is untouched.</p>
+      <p class="muted small">Your vault's data lives in this browser's storage. Signing out deletes it all: notes, messages, keys and paired vaults. Your phone's vault is untouched.</p>
       <button onClick={() => resetBrowser(ctx)}>Sign out and delete this browser's copy</button>
       <h3 class="danger-zone">Danger Zone</h3>
       <p class="muted small">Reset Everything signs every account on this browser out and deletes all of it, keys kept here included, and puts every setting back.</p>

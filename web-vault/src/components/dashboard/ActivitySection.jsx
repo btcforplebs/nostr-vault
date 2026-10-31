@@ -8,7 +8,7 @@ export const SHOWN_ITEMS = 3
 const time = at => new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
 
 const Empty = () => (
-  <div class="dash-act-empty"><b>Nothing to report yet</b><span>Relay activity and any problems will show up here.</span></div>
+  <div class="dash-act-empty"><b>Nothing to report yet</b><span>Vault activity and any problems will show up here.</span></div>
 )
 const Item = ({ item }) => (
   <div class={`dash-act-item ${item.level}`}><i aria-hidden="true" /><span>{item.text}</span><time>{time(item.at)}</time></div>
@@ -20,7 +20,7 @@ const Header = ({ h, children }) => (
 export function ActivitySection({ items, onViewAll }) {
   const h = health(items)
   return (
-    <section class="dash-section dash-activity" aria-label="Relay activity">
+    <section class="dash-section dash-activity" aria-label="Vault activity">
       <div class="dash-card">
         <Header h={h}><button type="button" class="dash-link" onClick={onViewAll}>View All</button></Header>
         {items.length ? items.slice(-SHOWN_ITEMS).map((it, i) => <Item key={i} item={it} />) : <Empty />}

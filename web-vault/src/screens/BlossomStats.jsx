@@ -41,7 +41,7 @@ export const health = (st, pending = false) => (st === "ok" ? "Healthy" : !st &&
 
 export function BlossomStats({ blobs, servers, status, pending = false }) {
   const s = galleryStats(blobs, servers, status)
-  const tiles = [["Total Files", s.totalFiles.toLocaleString()], ["Storage Used", formatBytes(s.size)], ["Active Mirrors", `${s.answering}/${s.mirrors}`], ["Backed Up", pending ? "…" : s.percent == null ? "?" : `${s.percent}%`]]
+  const tiles = [["Total Files", s.totalFiles.toLocaleString()], ["Storage Used", formatBytes(s.size)], ["Active Servers", `${s.answering}/${s.mirrors}`], ["Backed Up", pending ? "…" : s.percent == null ? "?" : `${s.percent}%`]]
   return (
     <section class="blossom-stats" aria-label="Media servers" style={S.wrap}>
       <div class="blossom-stat-grid" style={S.grid}>{tiles.map(([t, v]) => <div key={t} class="blossom-stat" style={S.stat}><span class="muted small">{t}</span><strong style={S.value}>{v}</strong></div>)}</div>

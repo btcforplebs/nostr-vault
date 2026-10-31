@@ -110,7 +110,7 @@ test("the first chunk of follows is asked alone and its notes show; the other ch
   assert.doesNotMatch(text(m.el), /No notes saved yet\./)
 
   relays.releaseChunk()
-  await until(() => /9 notes saved to your relay/.test(text(m.el)), "the finished sync")
+  await until(() => /9 notes saved to your vault/.test(text(m.el)), "the finished sync")
   assert.equal((text(m.el).match(/note from/g) ?? []).length, 9, "a note both relays sent is saved once")
   render(null, m.el)
 })
@@ -129,7 +129,7 @@ test("the first relay's notes show while a slower relay is still answering", asy
   await until(() => relays.pending() > 0, "the next chunks' queries")
   assert.equal((text(m.el).match(/note from/g) ?? []).length, 3, "the slow relay's copies aren't saved twice")
   relays.releaseChunk()
-  await until(() => /notes saved to your relay/.test(text(m.el)), "the finished sync")
+  await until(() => /notes saved to your vault/.test(text(m.el)), "the finished sync")
   render(null, m.el)
 })
 
@@ -155,7 +155,7 @@ test("answers landing while the feed is being read wait for one more read, not o
   await tick(100)
   const before = reads
   relays.releaseChunk() // 2N answers, each saving notes, all inside one read
-  await until(() => new RegExp(`${9 * N} notes saved to your relay`).test(text(m.el)), "the finished sync")
+  await until(() => new RegExp(`${9 * N} notes saved to your vault`).test(text(m.el)), "the finished sync")
   assert.ok(reads - before <= 3, `${reads - before} reads for ${2 * N} answers`)
   render(null, m.el)
 })
@@ -189,7 +189,7 @@ test("a follow's new note arrives live, is saved and waits behind the pill; leav
   relays.releaseChunk()
   await until(() => relays.pending() === 2 * R, "chunks 2 and 3 asked")
   relays.releaseChunk()
-  await until(() => /notes saved to your relay/.test(text(m.el)), "the finished sync")
+  await until(() => /notes saved to your vault/.test(text(m.el)), "the finished sync")
   // One REQ per 250 follows, from now on, for the feed's kinds.
   const open = relays.live.filter(s => !s.closed)
   assert.deepEqual(open.map(s => s.filter.authors.length), [250, 250, 195])

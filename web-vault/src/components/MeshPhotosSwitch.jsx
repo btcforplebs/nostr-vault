@@ -9,10 +9,10 @@ export function MeshPhotosSwitch() {
   return (
     <>
       <label class="settings-row static mesh-photos-switch">
-        <span class="settings-title">Load photos over FIPS mesh</span>
+        <span class="settings-title">Load photos over the mesh</span>
         <input type="checkbox" role="switch" checked={on} onChange={flip} />
       </label>
-      <p class="settings-note muted small">When a photo is on a .fips vault, or its server is down and the author lists a mesh vault, this browser fetches it over the FIPS mesh with a throwaway key. Only for your notes and people you follow.</p>
+      <p class="settings-note muted small">When a photo is on a mesh vault, or its server is down and the author lists a mesh vault, this browser fetches it over the mesh with a throwaway key. Only for your notes and people you follow.</p>
     </>
   )
 }

@@ -161,13 +161,13 @@ function RelayFoot({ ctx, rail }) {
   const state = online ? "Running" : "Running · offline"
   return (
     <div class="side-foot">
-      <a class="side-relay" href="#/relay" title={rail ? `Relay: ${state}${count != null ? ` · ${count.toLocaleString()} events` : ""}` : "Vault Dashboard"} aria-label={`Relay ${state}`}>
+      <a class="side-relay" href="#/relay" title={rail ? `Vault: ${state}${count != null ? ` · ${count.toLocaleString()} events` : ""}` : "Vault Dashboard"} aria-label={`Vault ${state}`}>
         <span class={online ? "dot on" : "dot booting"} />
         <span class="side-label">{state}</span>
       </a>
       <div class="side-label side-relay-row">
         <span class="muted small">{count == null ? "…" : `${count.toLocaleString()} events`}</span>
-        <button type="button" class="small side-restart" title="Reload the page, which restarts your relay" onClick={() => location.reload()}>Restart</button>
+        <button type="button" class="small side-restart" title="Reload the page, which restarts your vault" onClick={() => location.reload()}>Restart</button>
       </div>
     </div>
   )

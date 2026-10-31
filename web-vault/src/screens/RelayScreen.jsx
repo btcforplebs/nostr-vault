@@ -28,15 +28,15 @@ export function RelayScreen({ ctx, log }) {
     <main class="screen">
       <header class="screen-head"><h2>Who Can Reach You</h2></header>
       <section class="card">
-        <h3>FIPS</h3>
-        <p class="muted small">NIP-01 on port 7447, only for the vaults listed below. FIPS uses this relay's own mesh key, not your Nostr account.</p>
-        <div class="k">This relay's mesh address</div>
+        <h3>Mesh</h3>
+        <p class="muted small">Only the vaults listed below can reach this browser vault over the mesh. It uses its own mesh key, not your Nostr account.</p>
+        <div class="k">This vault's mesh address</div>
         <pre class="fips-address">{address || "…"}</pre>
         <div class="row"><button onClick={copy} disabled={!address}>{copied ? "Copied" : "Copy address"}</button></div>
-        <div class="k">Who can reach this relay</div>
-        <p class="muted small">Add each vault's mesh address, from Mesh settings in Nostr Vault. It's the vault's own FIPS key, not your account. Then start FIPS, and the vault connects to this relay's mesh address on port 7447.</p>
+        <div class="k">Who can reach this vault</div>
+        <p class="muted small">Add each vault's mesh address, from Mesh settings in Nostr Vault. It's the vault's own mesh key, not your account. Then start the mesh, and that vault connects to this one.</p>
         <textarea id="fipsOwners" rows={2} placeholder="Vault mesh address (one per line)" />
-        <div class="row"><button id="fipsSave">Save vaults</button><button id="fipsStart" class="primary">Start FIPS</button></div>
+        <div class="row"><button id="fipsSave">Save vaults</button><button id="fipsStart" class="primary">Start mesh</button></div>
         <pre id="fipsStatus" />
         <span id="sfips" hidden />
       </section>

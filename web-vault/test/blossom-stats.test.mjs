@@ -58,7 +58,7 @@ const walk = (node, out = []) => {
 test("the header shows the four numbers and each server's health", () => {
   const text = st => walk(BlossomStats({ blobs, servers: [A, B], status: st })).filter(x => typeof x === "string").join(" ")
   const t = text({ [A]: "ok", [B]: "ok" })
-  for (const w of ["Total Files", "Storage Used", "Active Mirrors", "Backed Up", "2/2", "66%", "2 MB", "a.example", "Healthy", "1 not on every server"]) assert.ok(t.includes(w), w)
+  for (const w of ["Total Files", "Storage Used", "Active Servers", "Backed Up", "2/2", "66%", "2 MB", "a.example", "Healthy", "1 not on every server"]) assert.ok(t.includes(w), w)
   const d = text({ [A]: "ok", [B]: "HTTP 401" })
   for (const w of ["1/2", "?", "Refused · HTTP 401", "1 didn't list your files, so Backed Up can't be told"]) assert.ok(d.includes(w), w)
   assert.equal(d.includes("0%"), false)

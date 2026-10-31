@@ -85,13 +85,13 @@ test("a second visit draws the last list at once; the servers last used are aske
   m.set("nv-gallery-servers:pk", "nope"); assert.equal(rememberedServers("pk", st), null)
 })
 
-test("the delete button says Delete from mirrors, names every server it goes to, and says the home vault keeps its copy", () => {
+test("the delete button says Delete from media servers, names every server it goes to, and says the home vault keeps its copy", () => {
   const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
-  assert.match(src, /"Deleting…" : "Delete from mirrors"/)
+  assert.match(src, /"Deleting…" : "Delete from media servers"/)
   assert.doesNotMatch(src, /"Delete everywhere"/)
   assert.match(src, /deleteBlob\(blob, \{ ctx, servers \}\)/)
   assert.match(src, /targets\.map\(hostOf\)\.join/)
-  assert.match(src, /home vault \(Nostr Vault on your Mac\) has a copy, it stays: the web can't delete from it/)
+  assert.match(src, /If your home vault has a copy, it stays: the web can't delete from it/)
 })
 
 test("opening Media again in the same visit draws the kept list without asking the servers; Refresh or an old list asks", () => {

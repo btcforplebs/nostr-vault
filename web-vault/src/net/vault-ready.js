@@ -12,7 +12,7 @@ import { ownPostRelays } from "./own-relays.js"
 
 /** The steps, in the order the screen lists them. */
 export const STEPS = [
-  { id: "relay", title: "Starting your relay" },
+  { id: "relay", title: "Starting your vault" },
   { id: "account", title: "Finding your account" },
   { id: "notes", title: "Fetching your notes" },
   { id: "feed", title: "Fetching notes from people you follow" },

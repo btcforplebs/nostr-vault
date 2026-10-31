@@ -74,7 +74,7 @@ test("status, storage, mesh, My Devices and Update all show from the box", async
   assert.match(t, /\/data/)
   assert.match(t, /Connected/)
   assert.match(t, /Approved/)
-  assert.match(t, /add this box as a Home vault/)
+  assert.match(t, /add this box as a home vault \(Home vault · new posts\)/)
   assert.ok(button(el, "Move vault to…"))
   render(null, el)
 })

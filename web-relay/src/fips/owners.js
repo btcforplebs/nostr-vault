@@ -77,8 +77,8 @@ export function loadOwners({
       // One prompt per key: Haven's owner is the first saved key, so a batch prompt would let a link put a
       // stranger's key ahead of the reader's own and have both accepted with one OK.
       const fresh = [...parseOwners(frag, { account })].filter(k => !owners.has(k))
-      const added = fresh.filter(k => confirm(`This link wants to let a vault reach this relay over FIPS. Its mesh address:\n\n  ${npubEncode(k)}\n\n` +
-        "That vault can write to this relay and read everything on it. Only continue if this is your own vault."))
+      const added = fresh.filter(k => confirm(`This link wants to let a vault reach this browser vault over the mesh. Its mesh address:\n\n  ${npubEncode(k)}\n\n` +
+        "That vault can write to this browser vault and read everything on it. Only continue if this is your own vault."))
       if (added.length) {
         owners = new Set([...owners, ...added])
         saveOwners(owners, storage)

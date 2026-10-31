@@ -15,7 +15,7 @@ import "../styles/welcome.css"
 const SEARCH = "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"
 // The iPhone's chips, SF Symbols drawn on a 24 grid: externaldrive.connected.to.line.below, lock.shield, bolt.fill.
 const CHIPS = [
-  ["Own relay", <><rect x="3" y="3.5" width="18" height="9" rx="2.5" /><path d="M7 8h.01M12 12.5V17M3 20.5h6M15 20.5h6" /><circle cx="12" cy="19.5" r="1.6" /></>],
+  ["Own vault", <><rect x="3" y="3.5" width="18" height="9" rx="2.5" /><path d="M7 8h.01M12 12.5V17M3 20.5h6M15 20.5h6" /><circle cx="12" cy="19.5" r="1.6" /></>],
   ["Private DMs", <><path d="M12 2.8 4.5 5.6v6c0 4.6 3.1 8.2 7.5 9.6 4.4-1.4 7.5-5 7.5-9.6v-6z" /><rect x="9" y="11" width="6" height="4.6" rx="1" /><path d="M10.2 11V9.6a1.8 1.8 0 0 1 3.6 0V11" /></>],
   ["Zaps", <path d="M13.4 2.5 5 13.6h6l-1.4 7.9L18 10.4h-6z" fill="currentColor" />],
 ]
@@ -28,7 +28,7 @@ export function WelcomeScreen({ onSignIn, onCreate }) {
         <span class="welcome-mark"><img src="./icon.svg" alt="" width="112" height="112" /></span>
         <h1>Nostr Vault</h1>
         <p class="welcome-line">Your posts, messages and media,<br />kept on your own device.</p>
-        <ul class="welcome-chips" aria-label="Includes your own relay, private DMs and zaps">
+        <ul class="welcome-chips" aria-label="Includes your own vault, private DMs and zaps">
           {CHIPS.map(([label, d]) => (
             <li key={label} aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{d}</svg>{label}</li>
           ))}

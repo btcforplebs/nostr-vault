@@ -23,12 +23,12 @@ const kids = n => [n?.props?.children].flat(Infinity).filter(Boolean)
 const text = n => (typeof n === "string" ? n : kids(n).map(text).join(""))
 const item = { url: "https://media.example/x.png", width: 4, height: 3 }
 
-test("loading: a status box with a spinner and 'Loading image over FIPS…', in the photo's own shape", () => {
+test("loading: a status box with a spinner and 'Loading image over the mesh…', in the photo's own shape", () => {
   const v = MeshBox({ state: "wait", item })
   assert.equal(v.type, "span")
   assert.equal(v.props.role, "status")
-  assert.equal(text(v), "Loading image over FIPS…")
-  assert.equal(LOADING_TEXT, "Loading image over FIPS…")
+  assert.equal(text(v), "Loading image over the mesh…")
+  assert.equal(LOADING_TEXT, "Loading image over the mesh…")
   assert.ok(kids(v).some(k => k.type === Spinner), "a spinner")
   assert.deepEqual(v.props.style, { aspectRatio: "4 / 3" })
   assert.doesNotMatch(v.props.class, /failed/)

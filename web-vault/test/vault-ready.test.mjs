@@ -223,7 +223,7 @@ test("the screen lists every step with its state, an accessible bar, and Open no
   for (const { title } of STEPS) assert.ok(text.includes(title), title)
   assert.match(text, /Following 1,038/)
   assert.match(text, /250 of 1,038 people · 412 notes saved/)
-  assert.match(text, /Starting your relay, done/)
+  assert.match(text, /Starting your vault, done/)
   assert.match(text, /Fetching notes from people you follow, in progress/)
   assert.match(text, /Loading names and pictures, waiting/)
   const bar = find(tree, n => n.props?.role === "progressbar")

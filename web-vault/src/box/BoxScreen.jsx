@@ -6,7 +6,7 @@ import { boxApi } from "./api.js"
 import { bytes, uptime, share, ago, shortNpub } from "./format.js"
 if (import.meta.env) import("./box.css")
 
-const ROLE = { mac: "Vault on Mac", phone: "Phone", homeVault: "Home vault", browser: "Browser page" }
+const ROLE = { mac: "Home vault · full history", phone: "Phone", homeVault: "Home vault · new posts", browser: "Browser vault" }
 
 /** `api`: a boxApi; built from the signer when not given (tests and the harness pass one over a mock). */
 export function BoxScreen({ ctx, api: given }) {
@@ -120,7 +120,7 @@ function Devices({ devices }) {
   return (
     <div class="settings-rows">
       <Row label="This box" value={shortNpub(box.npub)} copy={box.npub} />
-      <p class="muted small box-pad">To approve it, open My Devices on your phone or Mac and add this box as a Home vault. The box has no key of yours; it only stores and passes on what you sign.</p>
+      <p class="muted small box-pad">To approve it, open My Devices on your phone or Mac and add this box as a home vault (Home vault · new posts). The box has no key of yours; it only stores and passes on what you sign.</p>
       {list.length === 0 && <p class="muted small box-pad">No devices of yours have reached the box yet.</p>}
       {list.map(d => (
         <div key={d.npub} class="settings-row box-row">
