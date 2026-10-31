@@ -23,11 +23,17 @@ function remember(pubkey, evs) {
 }
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 
-/** Their kind 10002 and kind 3 from the user's read relays and the index relays. -> { relays: {read, write}, contacts } */
+/** Their kind 10002 and kind 3 from the user's read relays and the index relays. When no 10002 comes back (a busy
+ *  relay, a socket slot not free in time), asked once more before falling back to the defaults: their notes live on
+ *  their write relays, and a stranger's often aren't on the defaults at all (2 of 10, Tara's probe 2026-10-31).
+ *  -> { relays: {read, write}, contacts, found } (found: a 10002 came back) */
 export async function fetchPersonLists(pubkey, hintRelays, { query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const evs = await query(uniq([...hintRelays, ...DEFAULT_RELAYS, ...PROFILE_RELAYS]), { kinds: [3, 10002], authors: [pubkey] }, { maxWait: 6000 })
-  const mine = evs.filter(e => e.pubkey === pubkey)
-  return { relays: relayLists(newest(mine.filter(e => e.kind === 10002))), contacts: newestList(mine, pubkey) }
+  const relays = uniq([...hintRelays, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
+  const filter = { kinds: [3, 10002], authors: [pubkey] }
+  let mine = (await query(relays, filter, { maxWait: 6000 })).filter(e => e.pubkey === pubkey)
+  if (!mine.some(e => e.kind === 10002)) mine = [...mine, ...(await query(relays, filter, { maxWait: 8000 }).catch(() => [])).filter(e => e.pubkey === pubkey)]
+  const list = newest(mine.filter(e => e.kind === 10002))
+  return { relays: relayLists(list), contacts: newestList(mine, pubkey), found: !!list }
 }
 
 /** Their notes and reposts from Haven /feed and from what this page fetched, newest first, once each. */
@@ -41,11 +47,30 @@ export async function readPersonNotes(vault, pubkey, { limit = PERSON_PAGE, unti
 
 /** One page of their notes and reposts (at or before `until`, if set) from their write relays and, unless `defaults`
  *  is false, the default relays, kept in memory. -> how many the network had */
-export async function syncPersonNotes(vault, pubkey, writeRelays, { until, limit = PERSON_PAGE, defaults = true, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
-  const evs = await query(uniq([...writeRelays, ...(defaults ? DEFAULT_RELAYS : [])]), { kinds: NOTE_KINDS, authors: [pubkey], limit, ...(until ? { until } : {}) }, { maxWait: 8000 })
+export async function syncPersonNotes(vault, pubkey, writeRelays, { until, limit = PERSON_PAGE, defaults = true, maxWait = 8000, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  const evs = await query(uniq([...writeRelays, ...(defaults ? DEFAULT_RELAYS : [])]), { kinds: NOTE_KINDS, authors: [pubkey], limit, ...(until ? { until } : {}) }, { maxWait })
   const theirs = evs.filter(e => e.pubkey === pubkey && NOTE_KINDS.includes(e.kind))
   remember(pubkey, theirs)
   return theirs.length
+}
+
+/** A profile's opening notes: Haven's first, then the default relays at once (shown as they come), then their own
+ *  write relays once their relay list has answered. The load counts as done only when all of those have replied, and
+ *  if it still found nothing it asks everything once more with a longer wait (one 8 s try lost a stranger's notes to
+ *  a busy relay). Their list may name no write relays (no 10002): then the defaults (primal, snort and the rest) are
+ *  their whole set. nos.lol is not added: the pool refuses it (DEAD_RELAY_HOSTS).
+ *  -> their notes, newest first */
+export async function openPersonNotes(vault, pubkey, listsP, { show = () => {}, limit = PERSON_PAGE, sync = syncPersonNotes, read = readPersonNotes } = {}) {
+  const early = sync(vault, pubkey, []).catch(() => 0).then(async () => show(await read(vault, pubkey, { limit })))
+  const l = await listsP
+  const theirs = l.relays.write.filter(u => !DEFAULT_RELAYS.includes(u))
+  await Promise.all([early, theirs.length && sync(vault, pubkey, theirs, { defaults: false }).catch(() => 0)])
+  let got = await read(vault, pubkey, { limit })
+  if (!got.length) {
+    await sync(vault, pubkey, l.relays.write, { maxWait: 12000 }).catch(() => 0)
+    got = await read(vault, pubkey, { limit })
+  }
+  return got
 }
 
 const articles = new Map() // pubkey -> [kind 30023], for the same profiles as `fetched`
