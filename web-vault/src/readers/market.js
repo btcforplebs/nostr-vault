@@ -114,6 +114,16 @@ export function priceLabel({ price, currency }) {
   return `${price} ${unit}`
 }
 
+/** The opening line of a message to the seller (MarketplaceListingSheet.messageToSeller): which listing, and its
+ *  Plebeian link only when that is the listing's own page (a seller's profile says nothing about which item). */
+export function sellerMessage(l) {
+  const title = l.title ? `“${l.title}”` : "your listing"
+  return `Hi! I'm interested in ${title}.` + (hasPlebeianPage(l) ? `\n${plebeianUrl(l)}` : "")
+}
+
+/** The DM with the seller, the message typed in for you to edit or send (dmPrefill reads ?text=). */
+export const messageSellerHash = l => `#/dm/${l.pubkey}?text=${encodeURIComponent(sellerMessage(l))}`
+
 /** Whether the listing has its own Plebeian page. The new Plebeian Market loads only 30402 products, by event id;
  *  it has no auction route and no NIP-15 product page (iOS MarketListing.hasPlebeianPage). */
 export const hasPlebeianPage = l => l.kind === CLASSIFIED

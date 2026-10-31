@@ -1,7 +1,7 @@
 // The Marketplace (the iPhone's MarketplaceCardView grid, MarketplaceCategoryBar and MarketplaceListingSheet):
 // Global (sellers your web of trust vouches for) or Following, category chips for the categories present, square tiles with price and an auction badge.
 // A tile opens the listing: photos, price, category and location, description, the seller, and Buy (or Bid) on
-// Plebeian. Nothing is stored. Messaging a seller signs a DM, so it is not here yet.
+// Plebeian, or Message seller: the DM with them, a line about the listing typed in for you to send. Nothing is stored.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
@@ -9,7 +9,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
-import { MARKET_SCOPES, fetchListings, hasPlebeianPage, loadScope, marketCategories, plebeianUrl, priceLabel, saveScope } from "./market.js"
+import { MARKET_SCOPES, fetchListings, hasPlebeianPage, loadScope, marketCategories, messageSellerHash, plebeianUrl, priceLabel, saveScope } from "./market.js"
 import { SkeletonGrid } from "../components/Loading.jsx"
 import { followsDep, heldResults } from "./held.js"
 
@@ -93,7 +93,7 @@ export function MarketTile({ listing: l, onOpen }) {
 /** The listing, in the iPhone's order: photos with previous/next, then title, price (with Auction beside it), category
  *  and location, then the seller, then the description as plain text, then Buy (Bid) on Plebeian, where checkout
  *  happens. */
-export function ListingView({ listing: l, onBack }) {
+export function ListingView({ ctx, listing: l, onBack }) {
   const [at, setAt] = useState(0)
   useEffect(() => { globalThis.scrollTo?.(0, 0) }, [l.id])
   const details = [l.category !== "Other" && `🏷 ${l.category}`, l.location && `📍 ${l.location}`].filter(Boolean)
@@ -116,6 +116,8 @@ export function ListingView({ listing: l, onBack }) {
       </a>
       {l.summary && <p class="market-description">{l.summary}</p>}
       <a class="market-buy" href={plebeianUrl(l)} target="_blank" rel="noopener noreferrer">{hasPlebeianPage(l) ? "Buy on Plebeian" : "Seller on Plebeian"}</a>
+      {/* Not on your own listing, and not read-only (a DM is signed), as the iPhone's Message seller. */}
+      {ctx && l.pubkey !== ctx.session?.pubkey && !ctx.signer?.readOnly && <a class="market-message" href={messageSellerHash(l)}>Message seller</a>}
       <p class="muted small">Checkout happens on Plebeian Market. Nostr Vault doesn't take payments for listings.</p>
     </article>
   )

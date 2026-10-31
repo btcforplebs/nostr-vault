@@ -146,6 +146,8 @@
 .market-seller { margin: 16px 0; color: var(--text); }
 .market-buy { display: block; text-align: center; padding: 13px; border-radius: var(--radius); background: var(--accent); color: #fff;
   font: 700 15px/1.3 var(--font); text-decoration: none; max-width: 560px; }
+.market-message { display: block; margin-top: 10px; text-align: center; padding: 12px; border-radius: var(--radius); border: 1.5px solid var(--accent);
+  color: var(--accent-light); font: 600 15px/1.3 var(--font); text-decoration: none; max-width: 560px; }
 
 /* Locked (gated) articles */
 .reader-locked { color: var(--accent-light); font-weight: 600; }
