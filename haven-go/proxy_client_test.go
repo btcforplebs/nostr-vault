@@ -80,3 +80,35 @@ func TestClientFromProxyTrustsOnlyTheDoor(t *testing.T) {
 		t.Fatalf("spoofed X-Forwarded-For honoured: %q", got.RemoteAddr)
 	}
 }
+
+// A zoned link-local IPv6 client (as Go reports one on a LAN) is its own
+// client, not the shared 0.0.0.0 bucket that unparsable addresses get.
+func TestClientFromProxyZonedIPv6(t *testing.T) {
+	via := func(xff string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = "127.0.0.1:41000"
+		r.Header.Set("X-Forwarded-For", xff)
+		return clientFromProxy(r)
+	}
+	if got := via("fe80::1%eth0").RemoteAddr; got != "[fe80::1]:0" {
+		t.Fatalf("zoned client: %q", got)
+	}
+	if got := via("::ffff:192.168.1.50").RemoteAddr; got != "192.168.1.50:0" {
+		t.Fatalf("mapped IPv4: %q", got)
+	}
+	lim := bypassLocalhostConnectionLimiter(policies.ConnectionRateLimiter(3, 5*time.Minute, 9))
+	for i := 0; i < 9; i++ {
+		if lim(via("fe80::1%eth0")) {
+			t.Fatalf("fe80::1 limited at %d", i)
+		}
+	}
+	if !lim(via("fe80::1%eth0")) {
+		t.Fatal("fe80::1 not limited after its burst")
+	}
+	if lim(via("fe80::2%eth0")) {
+		t.Fatal("fe80::2 shares fe80::1's bucket")
+	}
+	if lim(via("not-an-ip")) {
+		t.Fatal("unknown bucket already spent by zoned clients")
+	}
+}
