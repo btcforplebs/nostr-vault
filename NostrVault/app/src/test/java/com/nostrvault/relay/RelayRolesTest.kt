@@ -1,6 +1,7 @@
 package com.nostrvault.relay
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -30,8 +31,26 @@ class RelayRolesTest {
     }
 
     @Test
-    fun `writes fall back to the default broadcast list`() {
-        assertEquals(base.copy().blastrRelays, RelayConfiguration.FALLBACK_WRITE_RELAYS)
+    fun `an emptied write list falls back`() {
+        assertEquals(RelayConfiguration.FALLBACK_WRITE_RELAYS, base.copy(blastrRelays = emptyList()).writeRelays)
+    }
+
+    /** A new account's kind 10002 marks all five read servers write, so it writes to all five. */
+    @Test
+    fun `a new install writes to the five read relays`() {
+        val config = HavenConfig.newInstall()
+        assertEquals(HavenConfig.DEFAULT_READ_RELAYS, config.blastrRelays)
+        assertEquals(5, config.blastrRelays.size)
+        assertEquals(config.feedRelays, config.blastrRelays)
+        assertTrue(config.publicRelayListTags.all { it.size == 2 })
+    }
+
+    /** Defaults are not written to config.json, so an old install that never set its broadcast list keeps three. */
+    @Test
+    fun `an old config without a broadcast list keeps the three`() {
+        val old = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .decodeFromString(HavenConfig.serializer(), """{"ownerNpub":"npub1owner"}""")
+        assertEquals(RelayConfiguration.FALLBACK_WRITE_RELAYS, old.blastrRelays)
     }
 
     @Test

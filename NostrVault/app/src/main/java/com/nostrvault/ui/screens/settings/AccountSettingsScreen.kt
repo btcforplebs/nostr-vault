@@ -77,6 +77,7 @@ fun AccountSettingsScreen(
                     pictureURL = viewModel.profileFor(npub)?.pictureURL,
                     mode = config.signingMode(npub),
                     hasBunker = config.bunkerConfig(npub) != null,
+                    hasLocalKey = remember(config, keysChanged) { viewModel.hasLocalKey(npub, config) },
                     isOwner = isOwner,
                     isActive = isActive,
                     connected = isActive && nip46Connected,
@@ -112,6 +113,7 @@ private fun AccountRow(
     pictureURL: String?,
     mode: String,
     hasBunker: Boolean,
+    hasLocalKey: Boolean,
     isOwner: Boolean,
     isActive: Boolean,
     connected: Boolean,
@@ -135,11 +137,7 @@ private fun AccountRow(
                     Badge2("Owner", colorPrimaryFor(mode = "owner"))
                 }
             }
-            val modeLabel = when {
-                hasBunker || mode == "nip46" -> "Remote Signer"
-                mode == "amber" -> "Amber"
-                else -> "Local Key"
-            }
+            val modeLabel = signingModeLabel(mode, hasBunker, hasLocalKey)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(modeLabel, color = SecondaryText, fontSize = 12.sp)
                 if ((hasBunker || mode == "nip46") && isActive) {
@@ -177,4 +175,16 @@ private fun colorPrimaryFor(mode: String): Color = when (mode) {
     "amber" -> Color(0xFF4CAF50)
     "nip46" -> Color(0xFF2196F3)
     else -> Color(0xFFF59E0B)
+}
+
+/**
+ * The account row's signer line. A read-only (public key only) account has no
+ * way to sign, so it says "No signing key" rather than "Local Key", like iOS
+ * AccountsSettingsView.
+ */
+internal fun signingModeLabel(mode: String, hasBunker: Boolean, hasLocalKey: Boolean): String = when {
+    hasBunker || mode == "nip46" -> "Remote Signer"
+    mode == "amber" -> "Amber"
+    hasLocalKey -> "Local Key"
+    else -> "No signing key"
 }
