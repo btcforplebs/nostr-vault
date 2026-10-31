@@ -4,6 +4,7 @@
 // URL that goes in the note, with a NIP-92 imeta tag (NoteTagging.imetaTag).
 import { pool, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
+import { withoutLocation } from "./media-privacy.js"
 
 /** HavenConfig.newAccountBlossomMirrors: nostr.build first (Logen's call), Primal second. */
 export const DEFAULT_MEDIA_SERVERS = ["https://blossom.nostr.build", "https://blossom.primal.net"]
@@ -66,9 +67,10 @@ const hostOf = url => { try { return new URL(url).host } catch { return url } }
 /**
  * Hash, sign and upload one photo or video to the first server that takes it. -> { url, sha256, mime, size, server };
  * throws with every server's reason when none did. A server whose answer names another hash, or none, is not used.
+ * Where it was taken is removed first (media-privacy.js); one whose location can't be removed isn't uploaded.
  */
 export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch }) {
-  const bytes = new Uint8Array(await file.arrayBuffer())
+  const bytes = withoutLocation(new Uint8Array(await file.arrayBuffer()))
   const sha256 = await sha256Hex(bytes)
   const template = uploadAuthTemplate(sha256)
   const auth = authHeader(checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey))
