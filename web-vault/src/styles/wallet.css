@@ -9,7 +9,14 @@
 .wallet-sats { width: 110px; text-align: right; }
 .wallet-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
 .wallet-row > span:first-child { flex: 1; }
-.wallet-balance { font: 600 15px var(--mono); }
+/* The balance as the hero (WalletLightningTab balanceCard): a small bold caption, the sats at 28 px rounded. */
+.wallet-hero { gap: 8px; }
+.wallet-hero-head { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.wallet-bolt { color: #ff9f0a; font-size: 14px; }
+.wallet-hero-label { flex: 1; color: var(--text-2); font: 700 12px var(--font-round); letter-spacing: .02em; }
+.wallet-refresh { width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; background: none; color: var(--text-2); font-weight: 600; }
+.wallet-balance { display: flex; align-items: baseline; gap: 4px; margin: 0; font: 500 14px var(--font-round); }
+.wallet-sats-big { font: 700 28px/1.1 var(--font-round); color: var(--text); font-variant-numeric: tabular-nums; }
 button.danger { color: var(--danger); }
 
 .zap { position: relative; display: inline-flex; }
