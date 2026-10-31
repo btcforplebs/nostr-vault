@@ -163,7 +163,8 @@
                 <p>The same steps as on the iPhone: <span class="ui">Create My Account</span>, save your secret key on
                     <strong>Your Keys</strong> and tick <span class="ui">I saved my secret key</span>, choose a password on
                     <strong>Protect Your Key</strong>, then a photo and name on <strong>Your Profile</strong> (or
-                    <span class="ui">Skip for Now</span>), and <span class="ui">Start Exploring</span>. The details are on
+                    <span class="ui">Skip for Now</span>), the relays your posts go to on <strong>Your posts will be shared through
+                    these servers</strong>, <a href="#who-told-you">who told you</a>, and <span class="ui">Start Exploring</span>. The details are on
                     <a href="/docs/start/iphone/#new">Get started on iPhone</a>.</p>
                 <p>About the password on <strong>Protect Your Key</strong>: This password locks the secret key you just saved.
                     It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.</p>
@@ -177,12 +178,17 @@
                             <li><span class="ui">Remote Signer</span>: <span class="ui">Connect with Clave on your iPhone</span> shows a
                                 code to scan with Clave. Or paste a bunker link from any signer app. Your key stays in the signer.</li>
                         </ul>
-                        No account yet? <span class="ui">New to Nostr? Generate Keys</span> makes one here.</li>
+                        No account yet? <span class="ui">New to Nostr? Generate Keys</span> makes one here. A key made this way skips
+                        the servers step and the profile, so set your relays later in Settings &rarr; Relays.</li>
                     <li><strong>Your Personal Relay.</strong> Your relay runs on this Mac either way. A
                         <span class="ui">Relay Domain (optional)</span> makes it reachable from your other devices.
                         Leave it blank for local only, or tap <span class="ui">Skip — configure later</span>.</li>
+                    <li><strong>Do you have a Vault backup?</strong> <span class="ui">Yes, restore my backup</span> restores a Nostr
+                        Vault backup .zip and skips the relay import. <span class="ui">No, import from my relays</span> goes on to the
+                        import.</li>
                     <li><strong>Bring Your Notes Home.</strong> <span class="ui">From Network</span> copies your notes from public
-                        relays to this Mac; <span class="ui">From Backup</span> restores a Nostr Vault backup. Tap
+                        relays to this Mac, and also reads the write relays you published yourself (it says <em>Also reading from
+                        your servers</em>); <span class="ui">From Backup</span> restores a Nostr Vault backup. Tap
                         <span class="ui">Import Notes</span>, or <span class="ui">Skip — I'll start fresh</span>.</li>
                     <li><strong>Mirror Your Media.</strong> Copies your photos and videos from a Blossom media server, or from a
                         backup, to this Mac. Tap <span class="ui">Sync Media</span> or <span class="ui">Skip Media</span>.</li>
@@ -206,7 +212,8 @@
                     <a href="/docs/start/iphone/#who-told-you">Get started on iPhone</a>.</p>
 
                 <h2 id="browse">Just look around</h2>
-                <p><strong>Enter Your Public Key</strong> (your npub or name@domain), import your notes if you like, and
+                <p><strong>Enter Your Public Key</strong> (your npub or name@domain), answer <strong>Do you have a Vault
+                    backup?</strong>, import your notes if you like, and
                     <strong>Ready to Browse</strong> opens the app. Re-run setup later to post, DM and zap.</p>
 
                 <h2 id="find-your-way-around">Find your way around</h2>
@@ -230,7 +237,7 @@
                     <li><a href="/docs/keys/">Your keys and accounts</a></li>
                 </ul>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41) for macOS.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.0.1 (51) for macOS.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/start/android/"><span>Previous</span>Android</a>
                 <a class="next" href="/docs/start/web/"><span>Next</span>Web browser</a>

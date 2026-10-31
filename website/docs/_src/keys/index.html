@@ -5,16 +5,16 @@
   "section": "keys",
   "order": 1,
   "description": "What your Nostr keys are, where Nostr Vault keeps them, and how to add accounts, switch between them, back up your secret key and remove a key.",
-  "checked": "Nostr Vault 3.0.0 (41) and the web app",
+  "checked": "Nostr Vault 3.0.1 (51) and the web app",
   "labels": {
     "ios": ["Accounts & Keys", "Add Account", "Npub", "Owner", "Remote Signer", "Local Key", "Switch to This Account", "Sign With",
             "Reveal Key", "Reveal Private Key", "Import Private Key", "Import Key", "Encrypt with Password", "Connect Remote Signer",
-            "Disconnect Remote Signer", "Remove Local Key", "Publish Relay List", "Remove Account", "Tutorials"],
+            "Disconnect Remote Signer", "Remove Local Key", "Remove Account", "Tutorials", "Relays", "Save", "No signing key"],
     "android": ["Accounts & Keys", "Add Account", "Owner", "Remote Signer", "Amber", "Local Key", "Switch to this account", "Signing",
                 "Reveal Private Key", "Import Private Key", "Encrypt with Password", "Connect Remote Signer (NIP-46)", "Connect Remote Signer",
-                "Disconnect Remote Signer", "Remove Local Key", "Publish Relay List (NIP-65)", "Remove Account"],
+                "Disconnect Remote Signer", "Remove Local Key", "Remove Account", "Relays"],
     "mac": ["Accounts & Keys", "Add Account", "Switch account"],
-    "web": ["Accounts & Keys", "Add Account", "Switch to This Account", "Sign out", "Remove Account"]
+    "web": ["Accounts & Keys", "Add Account", "Switch to This Account", "Sign out", "Remove Account", "Save and publish"]
   }
 }
 -->
@@ -45,7 +45,7 @@
     <tr><td>Web</td><td>Settings &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
 </table></div>
 <p>Each account shows how it signs: <span class="ui">Local Key</span>, <span class="ui">Remote Signer</span>,
-    <span class="ui">Amber</span> (Android), or no signing key at all (read-only). The first account you set up is the
+    <span class="ui">Amber</span> (Android), or <span class="ui">No signing key</span> (read-only). The first account you set up is the
     <span class="ui">Owner</span>: it's the one your vault relay belongs to.</p>
 <p>Tap an account to manage it. On iPhone, iPad and Mac it opens its own page; on Android its row opens in place.</p>
 
@@ -118,9 +118,11 @@
         Nothing on the relays changes, but you need the key again to sign back in.</li>
 </ul>
 
-<h2 id="relay-list">Publish Relay List</h2>
-<p><span class="ui">Publish Relay List</span> tells other Nostr apps which relays you read from and write to, so they
-    can find your posts and reach you. Your own relay is always included.</p>
+<h2 id="relay-list">Your relay list</h2>
+<p>Your relay list (NIP-65) tells other Nostr apps which relays you read from and write to, so they can find your
+    posts and reach you. There is no separate publish button any more: the list is published only when you tap
+    <span class="ui">Save</span> in Settings → <span class="ui">Relays</span> (on the web,
+    <span class="ui">Save and publish</span>). Your DM inbox list is published by the same Save.</p>
 
 <h2>Next</h2>
 <ul>

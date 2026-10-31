@@ -10,8 +10,9 @@
 }
 -->
 <p>The mesh address is one new entry form, <code>fipsmesh://&lt;npub&gt;/</code>, in lists you already use:
-    the media server list (<code>kind:10063</code>) and, later, the relay list (<code>kind:10002</code>).
-    No new event kinds. Requests are plain Blossom <code>GET /&lt;sha256&gt;</code>, with the same hash
+    the media server list (<code>kind:10063</code>) and, later, the relay list (<code>kind:10002</code>). In a
+    relay list it goes in its own <code>fipsmesh</code> tag, not an <code>r</code> entry, so clients without mesh
+    support never try to connect to it; Nostr Vault doesn't publish that tag yet. No new event kinds. Requests are plain Blossom <code>GET /&lt;sha256&gt;</code>, with the same hash
     check.</p>
 <p>A client that doesn't know the form skips it and carries on with the other servers in the list. A client that
     does can ask the device for the photo by its fingerprint, the same way it asks any media server, and throws the
@@ -24,3 +25,17 @@
     <span class="teaser-cta">Read the draft &rarr;</span>
 </a>
 <p>How it works for people using the app is on <a href="/docs/mesh/">The mesh</a>.</p>
+
+<h2 id="build">Build Nostr Vault</h2>
+<p>Everything is in one repository, <a href="https://github.com/btcforplebs/nostr-vault">btcforplebs/nostr-vault</a>:</p>
+<ul>
+    <li><code>HavenApp/</code>: the iPhone, iPad and Mac app (Swift). <code>just ios-build</code> or
+        <code>just macos-build</code>.</li>
+    <li><code>NostrVault/</code>: the Android app (Kotlin). <code>just android-build</code>.</li>
+    <li><code>haven-go/</code>: the relay (Go), compiled into the apps as <code>libhaven</code>.</li>
+    <li><code>web-vault/</code>: the web app. <code>npm ci</code>, then <code>npm run dev</code> or
+        <code>npm run build</code>.</li>
+    <li><code>web-relay/</code>: the <a href="/docs/browser-relay/">browser relay</a>.</li>
+    <li><code>linux/</code>: a <code>Dockerfile</code> to build the vault for a Linux box yourself (no published image yet).</li>
+    <li><code>docs/</code>: the NIP drafts, including NIP-F1.</li>
+</ul>

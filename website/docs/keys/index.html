@@ -131,7 +131,7 @@
         <main class="docs-main">
             <p class="eyebrow">Keys and accounts</p>
             <h1>Your keys and accounts</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#two-keys">Two keys</a></li><li><a href="#where">Where to find them</a></li><li><a href="#add">Add another account</a></li><li><a href="#switch">Switch accounts</a></li><li><a href="#backup">Back up your secret key</a></li><li><a href="#method">Change how an account signs</a></li><li><a href="#remove">Remove a key or an account</a></li><li><a href="#relay-list">Publish Relay List</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#two-keys">Two keys</a></li><li><a href="#where">Where to find them</a></li><li><a href="#add">Add another account</a></li><li><a href="#switch">Switch accounts</a></li><li><a href="#backup">Back up your secret key</a></li><li><a href="#method">Change how an account signs</a></li><li><a href="#remove">Remove a key or an account</a></li><li><a href="#relay-list">Your relay list</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
                 <p>A Nostr account is a pair of keys. Nostr Vault keeps them on your device, or leaves the secret one with a signer
@@ -161,7 +161,7 @@
                     <tr><td>Web</td><td>Settings &rarr; <span class="path">Accounts &amp; Keys</span></td></tr>
                 </table></div>
                 <p>Each account shows how it signs: <span class="ui">Local Key</span>, <span class="ui">Remote Signer</span>,
-                    <span class="ui">Amber</span> (Android), or no signing key at all (read-only). The first account you set up is the
+                    <span class="ui">Amber</span> (Android), or <span class="ui">No signing key</span> (read-only). The first account you set up is the
                     <span class="ui">Owner</span>: it's the one your vault relay belongs to.</p>
                 <p>Tap an account to manage it. On iPhone, iPad and Mac it opens its own page; on Android its row opens in place.</p>
 
@@ -234,16 +234,18 @@
                         Nothing on the relays changes, but you need the key again to sign back in.</li>
                 </ul>
 
-                <h2 id="relay-list">Publish Relay List</h2>
-                <p><span class="ui">Publish Relay List</span> tells other Nostr apps which relays you read from and write to, so they
-                    can find your posts and reach you. Your own relay is always included.</p>
+                <h2 id="relay-list">Your relay list</h2>
+                <p>Your relay list (NIP-65) tells other Nostr apps which relays you read from and write to, so they can find your
+                    posts and reach you. There is no separate publish button any more: the list is published only when you tap
+                    <span class="ui">Save</span> in Settings → <span class="ui">Relays</span> (on the web,
+                    <span class="ui">Save and publish</span>). Your DM inbox list is published by the same Save.</p>
 
                 <h2 id="next">Next</h2>
                 <ul>
                     <li><a href="/docs/keys/signers/">Signers</a>: Amber, Clave, bunker links and browser extensions.</li>
                 </ul>
             </article>
-            <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41) and the web app.</p>
+            <p class="docs-checked">Checked against Nostr Vault 3.0.1 (51) and the web app.</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/start/web/"><span>Previous</span>Web browser</a>
                 <a class="next" href="/docs/keys/signers/"><span>Next</span>Signers</a>

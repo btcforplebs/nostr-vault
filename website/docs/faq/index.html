@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAQ — Nostr Vault Docs</title>
-    <meta name="description" content="Nostr Vault FAQ: which version is current, can I use my existing Nostr account, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
+    <meta name="description" content="Nostr Vault FAQ: which version is current, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
     <link rel="canonical" href="https://nostrvault.app/docs/faq/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/faq/">
     <meta property="og:title" content="FAQ — Nostr Vault Docs">
-    <meta property="og:description" content="Nostr Vault FAQ: which version is current, can I use my existing Nostr account, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
+    <meta property="og:description" content="Nostr Vault FAQ: which version is current, can I use my existing Nostr account, which relays my posts go to, do I need a Mac, is my home IP public, who can see my photos, losing a phone, what the web app does, is it free.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -132,7 +132,7 @@
             <p class="eyebrow">Help</p>
             <h1>Questions, <span>answered</span></h1>
             <p class="docs-lede">Short answers to what people ask most.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#which-version-is-current">Which version is current?</a></li><li><a href="#is-it-free-is-it-open-source">Is it free? Is it open source?</a></li><li><a href="#what-is-the-vault">What is the vault?</a></li><li><a href="#can-i-use-my-existing-nostr-account">Can I use my existing Nostr account?</a></li><li><a href="#do-i-need-a-mac">Do I need a Mac?</a></li><li><a href="#why-does-posting-a-photo-still-need-a-server">Why does posting a photo still need a server?</a></li><li><a href="#is-my-home-ip-public">Is my home IP public?</a></li><li><a href="#who-can-see-my-photos-over-the-mesh">Who can see my photos over the mesh?</a></li><li><a href="#what-if-i-lose-my-phone">What if I lose my phone?</a></li><li><a href="#what-can-the-web-app-do">What can the web app do?</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#which-version-is-current">Which version is current?</a></li><li><a href="#is-it-free-is-it-open-source">Is it free? Is it open source?</a></li><li><a href="#what-is-the-vault">What is the vault?</a></li><li><a href="#can-i-use-my-existing-nostr-account">Can I use my existing Nostr account?</a></li><li><a href="#which-relays-do-my-posts-go-to">Which relays do my posts go to?</a></li><li><a href="#do-i-need-a-mac">Do I need a Mac?</a></li><li><a href="#why-does-posting-a-photo-still-need-a-server">Why does posting a photo still need a server?</a></li><li><a href="#is-my-home-ip-public">Is my home IP public?</a></li><li><a href="#who-can-see-my-photos-over-the-mesh">Who can see my photos over the mesh?</a></li><li><a href="#what-if-i-lose-my-phone">What if I lose my phone?</a></li><li><a href="#what-can-the-web-app-do">What can the web app do?</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="version">
@@ -163,9 +163,21 @@
                     <li><strong>Android:</strong> paste a key or bunker link, <strong>Use Amber</strong>, or
                         <strong>Use a signer app</strong>.</li>
                     <li><strong>Web:</strong> <strong>Sign in with extension</strong> or <strong>Connect bunker</strong>. The web
-                        app never takes your nsec.</li>
+                        app never takes the nsec of an account you already have.</li>
                 </ul>
                 <p>An npub or name@domain also works, read-only: you can look around but not post.</p>
+                </section>
+
+                <section id="relays">
+                <h2 id="which-relays-do-my-posts-go-to">Which relays do my posts go to?</h2>
+                <p>The Write relays in <span class="path">Settings &rarr; Relays</span>. A new account starts with five, for reading
+                    and writing, on iPhone, Mac, Android and the web: relay.primal.net, relay.damus.io, relay.snort.social,
+                    relay.btcforplebs.com and nostr-pub.wellorder.net. If your list has no Write relay, posts still go out, to those
+                    defaults. Your own vault always keeps a copy.</p>
+                <p>The web app also sends every post to relay.btcforplebs.com, relay.damus.io and relay.snort.social, so a short
+                    write list still reaches the wider network.</p>
+                <p>Edits to your relays are kept only when you tap <strong>Save</strong> (on the web, <strong>Save and
+                    publish</strong>), which also publishes your relay list for other apps.</p>
                 </section>
 
                 <section id="mac">
@@ -192,7 +204,7 @@
                 <section id="photos">
                 <h2 id="who-can-see-my-photos-over-the-mesh">Who can see my photos over the mesh?</h2>
                 <p>Your own devices get everything. Anyone else gets only photos that are in your posts, and only within limits:
-                    1 MB/s in total, 1 GB per session and 256 MB per file. Nobody else can read your notes. Your posted photos are
+                    1 MB/s in total, 1 GB a day on an iPhone (1 GB per sharing session on other devices) and 256 MB per file. Nobody else can read your notes. Your posted photos are
                     on public media servers too, so treat them as public.</p>
                 </section>
 
@@ -208,9 +220,10 @@
                 <section id="web">
                 <h2 id="what-can-the-web-app-do">What can the web app do?</h2>
                 <p>The web app at <a href="https://nostrvault.app/vault/">nostrvault.app/vault/</a> reads your feeds, posts,
-                    including photos, and has a WoT tab. It signs in only with a browser extension, a bunker or
-                    read-only. It keeps a copy of your notes in the browser, which the browser may clear; your phone's vault is
-                    the real one. It doesn't have Edit Feeds or the trust settings.</p>
+                    including photos, and has a WoT tab and Edit Feeds. It signs in with a browser extension, a bunker or
+                    read-only, and <strong>Create an account</strong> makes a new account with a key kept in this browser. It keeps
+                    a copy of your notes in the browser, which the browser may clear; your phone's vault is the real one. It
+                    doesn't have the trust settings.</p>
                 </section>
             </article>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
