@@ -40,7 +40,7 @@ extension HavenConfig {
 
     /// Where the owner's events go when there are no write relays: the
     /// default broadcast list (`blastrRelays`).
-    static let fallbackWriteRelays = ["wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social"]
+    static let fallbackWriteRelays = starterRelays
 
     /// The relays features read other people's events from: the feed relays
     /// (Mac relay first), or `fallbackRelays` when there are none. Ask this
