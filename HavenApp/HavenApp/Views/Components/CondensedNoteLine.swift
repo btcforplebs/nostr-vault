@@ -152,10 +152,11 @@ struct CondensedNoteLine: View, Equatable {
     }
 
     /// The body as plain text with no URLs: media shows as the thumbnail and
-    /// links as the chip, and a raw URL would spend the line limit.
+    /// links as the chip, and a raw URL would spend the line limit. Blank
+    /// lines go too, for the same reason.
     private var bodyPlainText: String {
         let text = NostrContentFormatter.stripURLs(mediaURLs + linkURLs, from: displayContent)
-        return NostrContentFormatter.resolveMentionsPlainText(text)
+        return CondensedText.squeezeBlankLines(NostrContentFormatter.resolveMentionsPlainText(text))
     }
 
     var body: some View {

@@ -187,7 +187,8 @@ extension ComposeView {
                 // `nostr:nevent1…` of a quoted note, bare media URLs and raw
                 // npubs into the preview, so replying to a quote-post buried
                 // the actual words under a wall of bech32.
-                let parentPreview = NostrContentFormatter.format(parent.content,
+                // Blank lines squeezed out, or they use up the three lines.
+                let parentPreview = NostrContentFormatter.format(CondensedText.squeezeBlankLines(parent.content),
                                                                  mediaURLs: parent.mediaURLs)
                 // A note that is nothing but a quote strips to empty; the
                 // "Replying to …" line above already carries the context, so
