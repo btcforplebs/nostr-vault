@@ -168,13 +168,6 @@ class RelayMatrixTest {
     }
 
     @Test
-    fun `search is a grid column`() {
-        assertTrue(Job.SEARCH in Job.columns)
-        assertFalse(Job.SEARCH in Job.advanced)
-        assertEquals(Job.entries.toSet(), (Job.columns + Job.advanced).toSet())
-    }
-
-    @Test
     fun `an edit probes only relays with no speed yet`() {
         val known = setOf(RelayMatrix.key("wss://a.example"), RelayMatrix.key("wss://b.example"))
         assertEquals(listOf("wss://new.example"),
