@@ -185,6 +185,19 @@ class TutorialProgressTest {
         }
     }
 
+    /** Tips use the user words (Vault, Home vault, Relays, Media servers,
+     *  Mesh, My Devices) and never claim nobody else can reach the vault:
+     *  your own devices in My Devices can (nv-tutorial 2026-10-31). */
+    @Test fun copyUsesTheGlossary() {
+        TutorialID.entries.forEach { id ->
+            val text = (listOf(id.title, id.summary) + id.steps.flatMap { listOf(it.title, it.body) })
+                .joinToString(" ").lowercase()
+            listOf("can connect to it", "blossom", "fips", "personal relay", "in your pocket").forEach { word ->
+                assertFalse("${id.name}: $word", text.contains(word))
+            }
+        }
+    }
+
     @Test fun importTourCoversVaultAndPocketRelay() {
         val progress = TutorialProgress(MemoryStore())
         progress.skip(TutorialID.IMPORT_TOUR, alice)

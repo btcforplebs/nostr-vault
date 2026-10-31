@@ -185,6 +185,19 @@ final class TutorialProgressTests: XCTestCase {
         }
     }
 
+    /// Tips use the user words (Vault, Home vault, Relays, Media servers,
+    /// Mesh, My Devices) and never claim nobody else can reach the vault:
+    /// your own devices in My Devices can (nv-tutorial 2026-10-31).
+    func testCopyUsesTheGlossary() {
+        for id in TutorialID.allCases {
+            let text = ([id.title, id.summary] + id.steps.flatMap { [$0.title, $0.body] })
+                .joined(separator: " ").lowercased()
+            for word in ["can connect to it", "blossom", "fips", "personal relay", "in your pocket"] {
+                XCTAssertFalse(text.contains(word), "\(id): \(word)")
+            }
+        }
+    }
+
     /// Only a tutorial that can run is offered as next, so the last card
     /// never starts one with nothing to draw.
     func testNextSkipsTutorialsWithoutCards() {

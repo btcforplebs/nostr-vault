@@ -13,7 +13,7 @@ val TutorialID.title: String
         TutorialID.WOT -> "Your Web of Trust"
         TutorialID.VAULT -> "Your Vault"
         TutorialID.WALLET_CONNECT -> "Wallet Connect"
-        TutorialID.POCKET_RELAY -> "Vault in Your Pocket"
+        TutorialID.POCKET_RELAY -> "Your Vault at Work"
         TutorialID.IMPORT_TOUR -> "How Your Vault Works"
     }
 
@@ -24,8 +24,8 @@ val TutorialID.summary: String
         TutorialID.WOT -> "The people you follow, how anyone reaches you, and keeping it fresh."
         TutorialID.VAULT -> "Everything you've posted, kept on this device."
         TutorialID.WALLET_CONNECT -> "Link a wallet so you can send zaps."
-        TutorialID.POCKET_RELAY -> "A personal relay and media server, and how it differs from public relays."
-        TutorialID.IMPORT_TOUR -> "Your own copy, your relay, and public relays."
+        TutorialID.POCKET_RELAY -> "What your vault keeps, and how it differs from public relays."
+        TutorialID.IMPORT_TOUR -> "Your own copy, your vault, and public relays."
     }
 
 /** The cards, in order. Empty for Fill your vault, which draws its own guide. */
@@ -132,8 +132,8 @@ object TutorialContent {
             "Everything you post, like, zap and save, kept right here on your phone. Tap here to choose what you see.",
         ),
         TutorialStep(
-            VAULT_RELAY, "Your relay",
-            "Your vault is a real relay, running on this phone. Tap Vault to watch it work.",
+            VAULT_RELAY, "A real relay",
+            "Your vault is a real Nostr relay, running on this phone. Tap Vault to watch it work.",
         ),
     )
 
@@ -166,8 +166,8 @@ object TutorialContent {
 
     val pocketRelay = listOf(
         TutorialStep(
-            RELAY_STATUS, "Your vault, in your pocket",
-            "Your vault is a personal Nostr relay and a Blossom media server, running on this phone. It keeps a full copy of your notes and media.",
+            RELAY_STATUS, "Your vault, on this phone",
+            "Your vault runs on this phone. It keeps a full copy of your notes and media.",
         ),
         TutorialStep(
             RELAY_ACTIVITY, "It sends your posts out",
@@ -175,7 +175,7 @@ object TutorialContent {
         ),
         TutorialStep(
             RELAY_ADDRESS, "Personal vs public",
-            "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional.",
+            "Public relays are shared servers that anyone can post to. Your vault is personal: only you can use it, from this phone and your own devices in My Devices. Want it always on? Set up a home vault, a computer, box or spare phone that stays on. That part is optional.",
         ),
     )
 
@@ -189,16 +189,16 @@ object TutorialContent {
             "Your notes sit on relays you don't own, and any of those relays can delete them. Importing saves your own copy on this device.",
         ),
         TutorialStep(
-            null, "A vault in your pocket",
-            "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it.",
+            null, "A vault on your phone",
+            "Nostr Vault keeps your vault on your phone, with all your notes and media. It sends your posts out to the relays you pick. Only you can use it: this phone, and your own devices in My Devices.",
         ),
         TutorialStep(
             null, "Personal vs public relays",
             "Public relays are shared servers that everyone posts to. Your vault is personal and belongs to you alone. You post to it, and it sends your posts out to the public relays.",
         ),
         TutorialStep(
-            null, "Want a public address?",
-            "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your vault works fine on its own.",
+            null, "Want it always on?",
+            "Set up a home vault: a computer, box or spare phone that stays on and keeps a copy of your vault. This is optional: your vault works fine on its own.",
         ),
         TutorialStep(
             null, "Your feed, your rules",
