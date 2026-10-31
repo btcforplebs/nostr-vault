@@ -1,6 +1,7 @@
 package com.nostrvault.ui.components
 
 import androidx.compose.animation.core.animate
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -325,3 +326,21 @@ fun Modifier.blockedWhen(blocked: Boolean): Modifier =
  */
 @Composable
 fun rememberChromeFolded(): State<Boolean> = remember { derivedStateOf { ScrollChrome.isFolded } }
+
+/**
+ * [content] in a box that takes no taps while the chrome is folded
+ * ([whenFolded] true) or shown ([whenFolded] false). The fold is read here,
+ * so its flip halfway through a drag recomposes only this box: never the
+ * screen, the bar or the [content] around it. Prefer it to reading
+ * [rememberChromeFolded] in a large composable for [blockedWhen].
+ * iOS parity: BottomTabBarFold (#1410), which alone reads the fold.
+ */
+@Composable
+fun FoldBlocked(
+    whenFolded: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val folded by rememberChromeFolded()
+    Box(modifier.blockedWhen(folded == whenFolded)) { content() }
+}
