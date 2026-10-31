@@ -539,15 +539,15 @@ struct SetupWizardView: View {
     }
 
     /// The servers step 17 shows: this device's Write relays others can
-    /// reach, so Change (Relays) updates it. relay.damus.io is left out
-    /// (Logen 1C: it bans busy IPs).
+    /// reach, so Change (Relays) updates it. By default the five starter
+    /// relays, the same as the read relays (Logen 2026-10-31).
     private var starterRelays: [String] {
         RelayConfiguration.newAccountRelayListTags(
             broadcastRelays: RelayConfiguration.directBroadcastRelays(
                 kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
             )
         ).map { $0[1] }
-            .filter { RelayDraft.listable($0) && RelayMatrix.key($0) != RelayMatrix.key("wss://relay.damus.io") }
+            .filter { RelayDraft.listable($0) }
     }
 
     /// Publishes what a brand-new account needs to exist for other people:

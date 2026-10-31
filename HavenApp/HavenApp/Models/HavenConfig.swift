@@ -194,24 +194,25 @@ struct HavenConfig: Codable, Equatable {
 
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
-    // Default broadcast relays (Logen, 2026-10-07). nos.lol and nostr.mom
-    // were timing out on connect.
-    var blastrRelays: [String] = [
-        "wss://relay.btcforplebs.com",
-        "wss://relay.damus.io",
-        "wss://relay.snort.social"
-    ]
-    
-    // Feed Reading
-    // nos.lol and nostr.mom dropped (2026-10-12: both time out on connect).
-    // Damus and Snort keep the first three read relays all live.
-    var feedRelays: [String] = [
+    // Default broadcast relays: the same five as the read relays (Logen,
+    // 2026-10-31), so a new account publishes, and advertises in its relay
+    // list, the servers it reads from.
+    var blastrRelays: [String] = HavenConfig.starterRelays
+
+    /// A new account's starter relays, read and write (Logen 2026-10-31).
+    /// The read and broadcast defaults are both this list.
+    static let starterRelays = [
         "wss://relay.primal.net",
         "wss://relay.damus.io",
         "wss://relay.snort.social",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net"
     ]
+    
+    // Feed Reading
+    // nos.lol and nostr.mom dropped (2026-10-12: both time out on connect).
+    // Damus and Snort keep the first three read relays all live.
+    var feedRelays: [String] = HavenConfig.starterRelays
 
     // NIP-17: DM Relays (kind 10050)
     var dmRelays: [String] = [
