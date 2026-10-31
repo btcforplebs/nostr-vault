@@ -19,6 +19,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { PostResult } from "./compose/PostResult.jsx"
 import { canGoBack } from "../components/nav-depth.js"
+import { takeKeyboard } from "./compose/keyboard.js"
 import { draftKey, idbDrafts } from "./compose/drafts.js"
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
@@ -241,6 +242,14 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
 
   // Mentions: the "@query" at the caret opens the picker; picking swaps it for the person's "@Name" token.
   const box = useRef(null)
+  // Opened from Reply or Quote: the composer starts at its top (not at the thread's scroll, which hid the "Replying
+  // to" strip) and the cursor goes in the box with the keyboard up (compose/keyboard.js). The reply box under a thread
+  // (inline) waits to be tapped.
+  useEffect(() => {
+    if (inline) return
+    globalThis.scrollTo?.(0, 0)
+    takeKeyboard(box.current)
+  }, [target?.mode, target?.id])
   const track = el => setMention(mentionAt(el.value, el.selectionStart))
   const pick = useCallback(pk => {
     const el = box.current, at = mentionAt(el.value, el.selectionStart)
