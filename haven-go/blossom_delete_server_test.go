@@ -66,7 +66,17 @@ func deleteToken(t *testing.T, sk, hash string, expires time.Time, servers ...st
 
 func sendDelete(t *testing.T, base, hash, auth string) int {
 	t.Helper()
+	return sendDeleteAs(t, base, "", hash, auth)
+}
+
+// sendDeleteAs sends the delete with Host set to host (the name the client
+// used to reach the vault); "" keeps the test server's address.
+func sendDeleteAs(t *testing.T, base, host, hash, auth string) int {
+	t.Helper()
 	req, _ := http.NewRequest(http.MethodDelete, base+"/"+hash, nil)
+	if host != "" {
+		req.Host = host
+	}
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
@@ -104,6 +114,40 @@ func TestDeleteAcceptsTokenNamingThisVault(t *testing.T) {
 				t.Fatal("blob still there")
 			}
 		})
+	}
+}
+
+// A Mac's RELAY_URL is 127.0.0.1:<port> (setup wizard) or empty; the iPhone
+// reaches it by its tunnel, LAN or tailnet name and names that in the token.
+func TestDeleteAcceptsTokenNamingTheHostItCameIn(t *testing.T) {
+	for _, relayURL := range []string{"", "127.0.0.1:3355"} {
+		for _, host := range []string{"mac.example", "mac.tailnet.ts.net", "192.168.1.5:3355"} {
+			t.Run(relayURL+"/"+host, func(t *testing.T) {
+				base, sk, hash, deleted := deleteServerVault(t)
+				config.RelayURL = relayURL
+				auth := deleteToken(t, sk, hash, time.Now().Add(5*time.Minute), serverTagHost(host))
+				if got := sendDeleteAs(t, base, host, hash, auth); got != 200 {
+					t.Fatalf("Host %s, token naming it: %d, want 200", host, got)
+				}
+				if !deleted() {
+					t.Fatal("blob still there")
+				}
+			})
+		}
+	}
+}
+
+// The replay still fails on a Mac: the mirror's token arrives with the
+// Mac's own Host.
+func TestDeleteRefusesMirrorTokenAtTheHostItCameIn(t *testing.T) {
+	base, sk, hash, deleted := deleteServerVault(t)
+	config.RelayURL = "127.0.0.1:3355"
+	auth := deleteToken(t, sk, hash, time.Now().Add(5*time.Minute), "blossom.primal.net")
+	if got := sendDeleteAs(t, base, "mac.example", hash, auth); got != 403 {
+		t.Fatalf("Host mac.example, token for blossom.primal.net: %d, want 403", got)
+	}
+	if deleted() {
+		t.Fatal("blob deleted with another server's token")
 	}
 }
 

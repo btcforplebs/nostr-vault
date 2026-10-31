@@ -1,6 +1,7 @@
 package blossom
 
 import (
+	"context"
 	"mime"
 	"net/http"
 )
@@ -36,4 +37,13 @@ func getExtension(mimetype string) string {
 	}
 
 	return ""
+}
+
+type requestHostKey struct{}
+
+// RequestHost is the Host header of the request a RejectDelete hook is
+// judging (the name the client used to reach this server), or "".
+func RequestHost(ctx context.Context) string {
+	h, _ := ctx.Value(requestHostKey{}).(string)
+	return h
 }

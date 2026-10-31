@@ -17,6 +17,12 @@ import (
 // home vault too. Now each token names the one server it is for (BUD-11
 // "server" tag), and the vault refuses a token that names only other servers.
 //
+// A tag names this vault when it is the host the request came in on (the
+// iPhone reaches a Mac by its tunnel, LAN or .ts.net name, which the Mac
+// itself never learns: its RELAY_URL is 127.0.0.1) or one isOwnBlossomServer
+// knows. A mirror replaying its token arrives with this vault's Host, not its
+// own: behind a tunnel or on a tailnet it cannot choose the Host header.
+//
 // A token with no "server" tag is still accepted: Android and other Blossom
 // apps do not send one yet, and refusing them would break their deletes.
 // Flip deleteNeedsServerTag once Android signs with the tag.
@@ -27,17 +33,18 @@ func guardDeleteServer(bs *blossom.BlossomServer) {
 	bs.RejectDelete = append(bs.RejectDelete, rejectDeleteForOtherServer)
 }
 
-func rejectDeleteForOtherServer(_ context.Context, auth *nostr.Event, sha256 string, _ string) (bool, string, int) {
+func rejectDeleteForOtherServer(ctx context.Context, auth *nostr.Event, sha256 string, _ string) (bool, string, int) {
 	if auth == nil {
 		return true, "missing \"Authorization\" event", 401
 	}
+	reachedAs := serverTagHost(blossom.RequestHost(ctx))
 	named := false
 	for _, tag := range auth.Tags {
 		if len(tag) < 2 || tag[0] != "server" {
 			continue
 		}
 		named = true
-		if isOwnBlossomServer(tag[1]) {
+		if host := serverTagHost(tag[1]); (host != "" && host == reachedAs) || isOwnBlossomServer(tag[1]) {
 			return false, "", 0
 		}
 	}
