@@ -6,6 +6,7 @@ import { ProfileHeader } from "../components/ProfileHeader.jsx"
 import { ProfileTabs, useNoteStream } from "./ProfileTabs.jsx"
 import { ZapButton, useWallet } from "../components/ZapButton.jsx"
 import { MoreMenu, UnblockDialog } from "../components/Moderation.jsx"
+import { ShareProfileButton } from "../components/ShareProfile.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { useProfile } from "../components/useProfile.js"
 import { npubEncode } from "nostr-tools/nip19"
@@ -117,6 +118,7 @@ export function PersonScreen({ ctx, pubkey }) {
           {/* Only with a wallet to pay from and an address to pay to (PersonProfileView.actionButtons). */}
           {wallet.status === "ready" && !ctx.signer?.readOnly && !!(p?.lud16 || p?.lud06) && <ZapButton pubkey={pubkey} />}
           <WotButton pubkey={pubkey} hint="Shows how you're connected to them" />
+          <ShareProfileButton pubkey={pubkey} />
           <MoreMenu pubkey={pubkey} className="more-btn" />
         </div>
         {err && <p class="error person-error" role="alert">{err}</p>}

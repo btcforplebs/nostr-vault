@@ -13,6 +13,7 @@ import { fetchShop } from "../net/profile-tabs.js"
 import { parseHash } from "../desktop/routes.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import "../styles/person.css"
+import { ShareProfileButton } from "../components/ShareProfile.jsx"
 
 const GEAR = "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
 const PERSON = "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"
@@ -87,6 +88,7 @@ export function ProfileScreen({ ctx }) {
           {/* A read-only sign-in can't sign a kind 0, so it gets no Edit Profile. */}
           {!ctx.signer?.readOnly && <button type="button" class="follow-btn" onClick={() => { setEditing(true); scrollTo({ top: 0 }) }}><Icon d={PERSON} />Edit Profile</button>}
           <WotButton hint="Shows your web of trust" />
+          <ShareProfileButton pubkey={me} own />
         </div>
       </ProfileHeader>
       <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} own pubkey={me} blocked={blocked} />
