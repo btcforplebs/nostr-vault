@@ -107,11 +107,12 @@ class Node {
   removeEventListener(type) { delete this.on[type.toLowerCase()] }
   fire(name, extra = {}) { const { type, fn } = this.on[name]; fn.call(this, { type, currentTarget: this, target: this, stopPropagation() {}, preventDefault() {}, ...extra }) }
   click() { this.fire("click") }
-  focus() {}
+  focus() { focusedNode = this }
   setSelectionRange() {}
   get textContent() { return this.nodeType === 3 ? this.data : this.childNodes.map(c => c.textContent).join("") }
   all(pred) { return [...(pred(this) ? [this] : []), ...this.childNodes.flatMap(c => c.all?.(pred) ?? [])] }
 }
+let focusedNode = null
 globalThis.document = {
   body: new Node(1, "body"),
   createElement: name => new Node(1, name),
@@ -340,4 +341,15 @@ test("only a relay other than this machine's own counts as sent", () => {
   assert.equal(reachedRelay({ relays: [{ url: "ws://127.0.0.1", local: true, ok: true }, { url: "wss://a", ok: false }] }), false)
   assert.equal(reachedRelay({ relays: [{ url: "wss://a", ok: true }] }), true)
   assert.equal(reachedRelay(null), false)
+})
+
+test("opened from Reply, the box has the focus at once; the reply box under a thread doesn't take it", async () => {
+  local.clear(); focusedNode = null
+  const c = await composer()
+  assert.equal(focusedNode, c.box, "the cursor is in the box, so the phone's keyboard comes up")
+  c.unmount()
+  focusedNode = null
+  const d = await composer({ inline: true })
+  assert.notEqual(focusedNode, d.box)
+  d.unmount()
 })
