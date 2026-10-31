@@ -8,8 +8,8 @@ const memStorage = () => { const m = new Map(); return { getItem: k => m.get(k) 
 const ids = list => list.map(f => f.id)
 
 test("a saved order keeps its order, drops feeds no longer offered and duplicates", () => {
-  assert.deepEqual(menuOrder(["media", "global", "gone", "media", "following", "hashtag", "popular"], ids(FEEDS)),
-    ["media", "global", "following", "hashtag", "popular"])
+  assert.deepEqual(menuOrder(["media", "global", "gone", "media", "following", "discovery", "hashtag", "popular"], ids(FEEDS)),
+    ["media", "global", "following", "discovery", "hashtag", "popular"])
 })
 
 test("a feed the saved order doesn't know goes in after its default neighbour, or first", () => {
@@ -32,11 +32,11 @@ test("nothing saved, or junk, means the default order with nothing hidden", () =
 
 test("hiding and reordering is saved and shapes the picker; Following can't be hidden", () => {
   const s = memStorage()
-  const order = moveItem(ids(FEEDS), 4, 0) // Media to the top
+  const order = moveItem(ids(FEEDS), 5, 0) // Media to the top
   saveMenu({ order, hidden: ["popular", "following"] }, FEEDS, s)
   const menu = loadMenu(s)
-  assert.deepEqual(menu, { order: ["media", "following", "global", "hashtag", "popular"], hidden: ["popular"] })
-  assert.deepEqual(ids(visibleFeeds(FEEDS, menu)), ["media", "following", "global", "hashtag"])
+  assert.deepEqual(menu, { order: ["media", "following", "discovery", "global", "hashtag", "popular"], hidden: ["popular"] })
+  assert.deepEqual(ids(visibleFeeds(FEEDS, menu)), ["media", "following", "discovery", "global", "hashtag"])
   assert.deepEqual(menuFeeds(FEEDS, { order: [], hidden: ["following"] })[0], { id: "following", label: "Following", shown: true })
   assert.equal(visibleFeeds(FEEDS, menu)[0].shown, undefined)
 })
@@ -56,6 +56,11 @@ test("a saved feed that has been hidden opens Following", () => {
   s.setItem("nv-feed", JSON.stringify({ mode: "popular" }))
   assert.equal(loadChoice(s, visibleFeeds(FEEDS, { order: [], hidden: ["popular"] })).mode, "following")
   assert.equal(loadChoice(s, visibleFeeds(FEEDS, { order: [], hidden: [] })).mode, "popular")
+})
+
+test("Discover, new in this version, joins a saved order after Following", () => {
+  const saved = { order: ["media", "following", "global", "hashtag", "popular"], hidden: [] }
+  assert.deepEqual(ids(visibleFeeds(FEEDS, saved)), ["media", "following", "discovery", "global", "hashtag", "popular"])
 })
 
 test("moveItem moves one item up or down", () => {

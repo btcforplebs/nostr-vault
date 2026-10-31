@@ -16,6 +16,7 @@ import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
+import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
 import { mediaTiles } from "../net/media.js"
 import { READERS } from "../readers/index.js"
@@ -61,8 +62,15 @@ export function FeedScreen({ ctx }) {
   // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
   const Reader = readerFor(choice.mode)?.Screen
   const following = fromHaven(choice.mode), media = choice.mode === "media", popular = choice.mode === "popular"
-  // Global and Popular are both read through your web of trust, so both wait for your follows.
-  const global = choice.mode === "global", needsWeb = popular || global
+  // Global, Popular and Discover are all read through your web of trust, so they wait for your follows.
+  const global = choice.mode === "global", discover = choice.mode === "discovery", needsWeb = popular || global || discover
+  // Discover's network (net/discover.js), worked out once per follow list and kept for Older: { key, people }.
+  const network = useRef(null)
+  const discoverPeople = async () => {
+    const key = `${me}:${follows.length}:${blocked.size}`
+    if (network.current?.key !== key || !network.current.people.length) network.current = { key, people: await discoverNetwork(me, follows, { blocked }) }
+    return network.current.people
+  }
   const page = media ? MEDIA_PAGE : PAGE
   // A sync started on Following reloads when it ends, maybe after a switch to Media: it reads with the page size
   // and note count of the feed shown then, not of the render that started it.
@@ -176,12 +184,14 @@ export function FeedScreen({ ctx }) {
   const loadStrange = async (c, until) => {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
-    if ((c.mode === "popular" || c.mode === "global") && !follows.length) return setStatus("")
+    if ((c.mode === "popular" || c.mode === "global" || c.mode === "discovery") && !follows.length) return setStatus("")
     if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode).label} needs the network`)
-    setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…" : "Loading…")
+    setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…"
+      : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…" : "Loading…")
     try {
       const page = c.mode === "popular"
         ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked })).notes
+        : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
         : await fetchStrangerFeed(c, account.relays.read, { until, trust: c.mode === "global" ? await globalTrust(ctx.session?.pubkey, follows) : null })
       if (n !== seq.current) return
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
@@ -252,7 +262,11 @@ export function FeedScreen({ ctx }) {
         : choice.mode === "hashtag" && !choice.tag ? <p class="empty">Type a hashtag to see notes tagged with it.</p>
           : popular && !follows.length ? <p class="empty">{account.loaded ? "Popular counts what the people you follow, and the people they follow, liked. Follow someone first." : "Loading your follows…"}</p>
           : global && !follows.length ? <p class="empty">{account.loaded ? "Follow people to build your web of trust" : "Loading your follows…"}</p>
+          : discover && !follows.length ? account.loaded ? <DiscoverEmpty text="Follow more people on Nostr to build your extended network" />
+            : <p class="empty">Loading your follows…</p>
           : strange === null ? navigator.onLine ? <SkeletonRows /> : <p class="empty">This feed needs the network.</p>
+          : !strange.length && discover ? <DiscoverEmpty onRefresh={refresh} text={network.current?.people.length
+              ? "No notes from your extended network on these relays yet." : "No follow lists came back from your relays. Try refreshing."} />
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
           : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}
@@ -278,6 +292,18 @@ export function Media({ tiles, blockedAll, onOlder, olderState }) {
       : <p class="empty">{blockedAll ? "Every note loaded here is from someone you blocked." : "No photos or videos in the notes loaded so far."}</p>}
     <OlderButton onOlder={onOlder} state={olderState} />
   </>
+}
+
+/** Discover with nothing to show, as the iPhone's empty state (FeedView+EmptyStates.swift): why, and Refresh when that
+ *  can help. */
+function DiscoverEmpty({ text, onRefresh }) {
+  return (
+    <div class="discover-empty">
+      <strong>No Discovery Feed</strong>
+      <p>{text}</p>
+      {onRefresh && <button type="button" class="small" onClick={onRefresh}>Refresh</button>}
+    </div>
+  )
 }
 
 /** The tag box, under the header when Hashtag is picked. */

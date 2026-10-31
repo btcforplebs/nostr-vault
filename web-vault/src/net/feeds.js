@@ -1,5 +1,5 @@
-// The Feed's picker: Following (Haven /feed, see sync.js), Global (recent notes from the user's read relays),
-// Hashtag (`#t` notes), Popular (net/popular.js) and Media (Following's image and video notes, net/media.js). Global and Hashtag notes are strangers': they are held in memory only and never written
+// The Feed's picker: Following (Haven /feed, see sync.js), Discover (your extended network's notes, net/discover.js), Global (recent notes from the user's read relays),
+// Hashtag (`#t` notes), Popular (net/popular.js) and Media (Following's image and video notes, net/media.js). Discover, Global and Hashtag notes are strangers': they are held in memory only and never written
 // to Haven /feed, which is the Following feed's store. Their names and pictures, and the quotes and @names inside
 // their notes, stay in memory too: FeedScreen passes `memoryOnly` to their cards and `save: false` to fetchProfiles.
 import { pool, uniq } from "./pool.js"
@@ -12,6 +12,7 @@ export const FEED_ORDER = ["following", "discovery", "global", "hashtag", "popul
   "marketplace", "live", "polls", "music"]
 export const FEEDS = [
   { id: "following", label: "Following" },
+  { id: "discovery", label: "Discover" },
   { id: "global", label: "Global" },
   { id: "hashtag", label: "Hashtag" },
   { id: "popular", label: "Popular" },

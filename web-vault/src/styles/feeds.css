@@ -126,3 +126,9 @@
 .desk-app .tap-room { display: none; }
 /* Edit Feeds, the picker's last item (components/EditFeeds.jsx). */
 .feed-mode-sep { height: 1px; margin: 4px 6px; background: var(--hair); }
+
+/* Discover with nothing to show (FeedScreen DiscoverEmpty), as the iPhone's empty state. */
+.discover-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px var(--gutter); text-align: center; }
+.discover-empty strong { font: var(--t-title2); }
+.discover-empty p { margin: 0; max-width: 32ch; color: var(--text-2); font: var(--t-foot); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.discover-empty button { margin-top: 6px; }
