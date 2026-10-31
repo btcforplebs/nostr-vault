@@ -7,11 +7,34 @@ extension VaultView {
     /// The Vault tab's first list: replies, mentions, likes, zaps, reposts and
     /// follows from everyone, newest first, the way a notifications page reads.
     var activityList: some View {
-        // Already filtered (All / Mentions, and likes in Zaps Only).
+        // Already filtered (All / Mentions, and likes in Zaps Only). With more
+        // than one account a chip can widen it to other accounts' lines.
+        let others = showsOtherAccounts
+        let tagged = others ? accountLines : []
         let lines = displayActivity
-        let isLoading = nostrService.isFetching || relayManager.isBooting || !activityHasLoadedOnce
-        return Group {
-            if lines.isEmpty && isLoading {
+        let isEmpty = others ? tagged.isEmpty : lines.isEmpty
+        let isLoading = others
+            ? otherAccountLoading || (currentAccountChip == .all && (nostrService.isFetching || !activityHasLoadedOnce))
+            : nostrService.isFetching || relayManager.isBooting || !activityHasLoadedOnce
+        return VStack(spacing: 10) {
+            if !accountChips.isEmpty {
+                accountChipRow
+            }
+            activityBody(lines: lines, tagged: tagged, others: others, isEmpty: isEmpty, isLoading: isLoading)
+        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
+        .onChange(of: followersOwnerHex) { _, _ in resetAccountChip() }
+        .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
+            // A notification came in for some account: top the others up.
+            if showsOtherAccounts { loadOtherAccountActivity() }
+        }
+    }
+
+    @ViewBuilder
+    private func activityBody(lines: [VaultActivity], tagged: [VaultAccountLine], others: Bool,
+                              isEmpty: Bool, isLoading: Bool) -> some View {
+        Group {
+            if isEmpty && isLoading {
                 VStack(spacing: 16) {
                     ProgressView()
                         .controlSize(.large)
@@ -22,7 +45,7 @@ extension VaultView {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.top, 80)
-            } else if lines.isEmpty {
+            } else if isEmpty {
                 VStack(spacing: 24) {
                     Image(systemName: VaultMode.activity.symbol)
                         .font(.appSystem(size: 48, weight: .thin))
@@ -47,6 +70,17 @@ extension VaultView {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.top, 80)
+            } else if others {
+                LazyVStack(spacing: 10) {
+                    ForEach(tagged) { item in
+                        activityLink(item.line, account: item.account)
+                            .padding(.horizontal, 16)
+                            .onAppear {
+                                if item.id == tagged.last?.id { loadMoreActivity() }
+                            }
+                    }
+                }
+                .frame(maxWidth: .infinity)
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(lines) { line in
@@ -60,20 +94,26 @@ extension VaultView {
                 .frame(maxWidth: .infinity)
             }
         }
-        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
     }
 
     /// A line opens what it's about: the post (theirs, or yours they reacted
     /// to), the person when it's a follow or a zap on your profile, or the
     /// Followers list when several followed you that day.
+    /// `account` is set when the list holds other accounts' lines too: the
+    /// row then says whose it is, and opening it clears that account's count.
     @ViewBuilder
-    private func activityLink(_ line: VaultActivity) -> some View {
-        let row = VaultActivityRow(line: line, isUnread: line.createdAt > activityUnreadSince) { url, all in
+    private func activityLink(_ line: VaultActivity, account: String? = nil) -> some View {
+        let unreadSince = account.map(accountUnreadSince) ?? activityUnreadSince
+        let row = VaultActivityRow(line: line, isUnread: line.createdAt > unreadSince, account: account) { url, all in
             showingMediaUrl = IdentifiableURL(url: url, allURLs: all)
         }
             .relayFocusOutline(line.openId != nil && focusedEventId == line.openId)
+        let isOtherAccount = account.map { $0 != followersOwnerHex.lowercased() } ?? false
         #if os(iOS)
-        if let id = line.openId, let event = nostrService.events.first(where: { $0.id == id }) {
+        if isOtherAccount {
+            Button { openActivity(line, account: account) } label: { row }
+                .buttonStyle(.plain)
+        } else if let id = line.openId, let event = nostrService.events.first(where: { $0.id == id }) {
             NoteNavigationLink(note: FeedNote(
                 id: event.id,
                 pubkey: event.pubkey,
@@ -88,15 +128,17 @@ extension VaultView {
                 .buttonStyle(.plain)
         }
         #else
-        Button { openActivity(line) } label: { row }
+        Button { openActivity(line, account: account) } label: { row }
             .buttonStyle(.plain)
         #endif
     }
 
-    private func openActivity(_ line: VaultActivity) {
+    private func openActivity(_ line: VaultActivity, account: String? = nil) {
+        let isOtherAccount = account.map { $0 != followersOwnerHex.lowercased() } ?? false
+        if let account { openedAccountLine(VaultAccountLine(account: account, line: line)) }
         if let id = line.openId {
             openNote(id)
-        } else if line.kind == .follow && line.actors.count > 1 {
+        } else if line.kind == .follow && line.actors.count > 1 && !isOtherAccount {
             withAnimation(Motion.toggle) { viewMode = .followers }
         } else if let who = line.actors.first {
             showingProfilePubkey = who
@@ -113,22 +155,17 @@ extension VaultView {
         }
     }
 
-    /// The account's "seen up to" time for the Vault list's unread dots.
-    private var activitySeenKey: String { "vaultActivitySeenAt.\(followersOwnerHex)" }
-
     /// Called when the Vault list comes on screen or leaves it. Arriving keeps
     /// the last visit's time, so lines newer than it show as unread; both
     /// move the mark to now and empty the account's switcher count.
     func activityVisit(arriving: Bool) {
         let now = Date().timeIntervalSince1970
+        // The account switcher's count for this account starts over with it.
+        let last = AccountUnreadStore.shared.markVaultSeen(hex: followersOwnerHex, at: now)
         if arriving {
-            let last = UserDefaults.standard.double(forKey: activitySeenKey)
             // A first visit marks nothing: everything would be "new".
             activityUnreadSince = Int64(last > 0 ? last : now)
         }
-        UserDefaults.standard.set(now, forKey: activitySeenKey)
-        // The account switcher's count for this account starts over with it.
-        AccountUnreadStore.shared.markSeen(hex: followersOwnerHex)
     }
 }
 
@@ -138,6 +175,9 @@ extension VaultView {
 struct VaultActivityRow: View {
     let line: VaultActivity
     var isUnread = false
+    /// The account the line is for, when the list holds more than one
+    /// account's lines; nil draws the row as with one account.
+    var account: String? = nil
     /// A tapped thumbnail: the picture, and the line's pictures to swipe.
     var onImage: ((URL, [URL]) -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
@@ -151,6 +191,7 @@ struct VaultActivityRow: View {
         HStack(alignment: .top, spacing: 12) {
             badge
             VStack(alignment: .leading, spacing: 8) {
+                if let account { accountTag(account) }
                 HStack(alignment: .center, spacing: 8) {
                     avatars
                     Spacer(minLength: 4)
@@ -198,6 +239,17 @@ struct VaultActivityRow: View {
     }
 
     // MARK: Pieces
+
+    /// "For <account>": whose notification this is, with that account's picture.
+    private func accountTag(_ hex: String) -> some View {
+        HStack(spacing: 5) {
+            AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 16)
+            Text("For \(name(hex))")
+                .font(.appSystem(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+    }
 
     private var badge: some View {
         Image(systemName: style.icon)

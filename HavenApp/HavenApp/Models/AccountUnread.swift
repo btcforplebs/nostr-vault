@@ -72,6 +72,10 @@ struct AccountUnread: Equatable {
         return accounts.contains { $0.lowercased() != active && count(for: $0) > 0 }
     }
 
+    /// Where an account's Vault list keeps the time it was last viewed (unix
+    /// seconds); lines newer than it draw as unread.
+    static func vaultSeenKey(_ hex: String) -> String { "vaultActivitySeenAt.\(hex)" }
+
     /// The badge text: nothing at zero, "99+" past 99.
     static func badge(_ count: Int) -> String? {
         count <= 0 ? nil : count > 99 ? "99+" : String(count)

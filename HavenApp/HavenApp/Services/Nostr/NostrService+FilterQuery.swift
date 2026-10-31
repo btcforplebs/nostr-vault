@@ -5,9 +5,12 @@ extension NostrService {
     /// Every signature-checked event matching `filter` that `relays` send
     /// before each has answered EOSE or `timeout` passes, each once. Opens its
     /// own sockets, so it works before the device's relay or the feed is up
-    /// (setup's referrer step runs before either).
-    func fetchEvents(filter: [String: Any], from relays: [String], timeout: TimeInterval = 6) async -> [NostrEvent] {
-        let targets = relays.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
+    /// (setup's referrer step runs before either). The device's own relay is
+    /// skipped unless `includeLoopback` asks for it (the Vault tab reading
+    /// another account's lines from it).
+    func fetchEvents(filter: [String: Any], from relays: [String], timeout: TimeInterval = 6,
+                     includeLoopback: Bool = false) async -> [NostrEvent] {
+        let targets = relays.filter { includeLoopback || !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
         guard !targets.isEmpty else { return [] }
 
         return await withCheckedContinuation { (continuation: CheckedContinuation<[NostrEvent], Never>) in

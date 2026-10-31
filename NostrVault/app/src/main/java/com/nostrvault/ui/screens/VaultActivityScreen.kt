@@ -65,6 +65,10 @@ import com.nostrvault.data.local.FollowersSeenStore
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FollowerSnapshot
 import com.nostrvault.data.model.VaultActivity
+import com.nostrvault.data.model.AccountUnread
+import com.nostrvault.data.model.VaultAccountChip
+import com.nostrvault.data.model.VaultAccountChips
+import com.nostrvault.data.model.VaultAccountLine
 import com.nostrvault.data.model.VaultContentFilter
 import com.nostrvault.data.model.VaultMode
 import com.nostrvault.data.model.VaultNoteScope
@@ -101,6 +105,10 @@ import com.nostrvault.ui.theme.ZapOrange
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -195,6 +203,38 @@ class VaultActivityViewModel @Inject constructor(
 
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
 
+    // Every account's notifications (VaultAccountChips): with more than one
+    // account on the device, chips over the list widen it to the others.
+
+    /** Every account on the device, by hex, in switcher order. */
+    val accountHexes: StateFlow<List<String>> = configStore.config
+        .map { c -> c.allAccountNpubs().mapNotNull { nostrService.npubToHex(it)?.lowercase() } }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _activeHex = MutableStateFlow(nostrService.activeHexPubkey.lowercase())
+    val activeHex: StateFlow<String> = _activeHex.asStateFlow()
+
+    private val _accountChip = MutableStateFlow<VaultAccountChip?>(null)
+    /** The picked chip; null is the active account's own list, as with one account. */
+    val accountChip: StateFlow<VaultAccountChip?> = _accountChip.asStateFlow()
+
+    private val _otherLines = MutableStateFlow<Map<String, List<VaultActivity>>>(emptyMap())
+    /** The other accounts' lines, by account hex, before filtering. */
+    val otherLines: StateFlow<Map<String, List<VaultActivity>>> = _otherLines.asStateFlow()
+
+    private val _otherUnreadSince = MutableStateFlow<Map<String, Long>>(emptyMap())
+    /** Per other account: its lines newer than this are new since its last visit. */
+    val otherUnreadSince: StateFlow<Map<String, Long>> = _otherUnreadSince.asStateFlow()
+
+    private val _otherLoading = MutableStateFlow(false)
+    val otherLoading: StateFlow<Boolean> = _otherLoading.asStateFlow()
+
+    /** The switcher's per-account counts, for the chips. */
+    val accountUnreadState: StateFlow<AccountUnread> = accountUnread.state
+
+    private var otherJob: Job? = null
+
     init {
         // As the Vault's lists: load once the local relay takes connections.
         viewModelScope.launch {
@@ -206,6 +246,7 @@ class VaultActivityViewModel @Inject constructor(
             RelayForegroundService.inboxActivityTick.drop(1).collectLatest {
                 delay(1_500)
                 refresh()
+                if (_accountChip.value != null) loadOtherAccounts()
             }
         }
         viewModelScope.launch {
@@ -218,6 +259,8 @@ class VaultActivityViewModel @Inject constructor(
                 _hasLoadedOnce.value = false
                 _unreadSince.value = Long.MAX_VALUE
                 follows = emptyList()
+                _activeHex.value = nostrService.activeHexPubkey.lowercase()
+                resetAccountChip()
                 refresh()
             }
         }
@@ -297,17 +340,18 @@ class VaultActivityViewModel @Inject constructor(
     private suspend fun fetch(filters: List<String>): Int {
         val gen = generation
         val raw = runCatching { nostrService.queryRawEvents(filters, relays(), QUERY_TIMEOUT_MS) }.getOrDefault(emptyList())
-        val parsed = raw.mapNotNull(::parse)
-        val valid = parsed.filter { event ->
-            // NIP-57: only a receipt from the publisher your LNURL names (as the Zaps list).
-            if (event.kind != VaultActivity.ZAP_KIND) return@filter true
-            val recipient = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: return@filter false
-            ZapValidationService.isValidReceipt(event.pubkey, recipient, nostrService.profiles.value)
-        }
+        val valid = raw.mapNotNull(::parse).filter { keepsZap(it) }
         if (gen != generation) return 0
         val added = eventsMutex.withLock { valid.count { events.put(it.id, it) == null } }
         if (added > 0 || !_hasLoadedOnce.value) scheduleRebuild()
         return added
+    }
+
+    /** NIP-57: only a receipt from the publisher your LNURL names (as the Zaps list). */
+    private suspend fun keepsZap(event: VaultActivity.Event): Boolean {
+        if (event.kind != VaultActivity.ZAP_KIND) return true
+        val recipient = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: return false
+        return ZapValidationService.isValidReceipt(event.pubkey, recipient, nostrService.profiles.value)
     }
 
     private fun parse(obj: JsonObject): VaultActivity.Event? {
@@ -372,12 +416,108 @@ class VaultActivityViewModel @Inject constructor(
     fun visit(arriving: Boolean) {
         val owner = nostrService.activeHexPubkey
         val now = System.currentTimeMillis() / 1000
-        if (arriving) {
-            val last = seenStore.activitySeenAt(owner)
-            _unreadSince.value = if (last > 0) last else now
+        val last = markAccountSeen(owner, now)
+        if (arriving) _unreadSince.value = if (last > 0) last else now
+    }
+
+    /**
+     * An account's Vault list was viewed: its seen mark moves to [now] and its
+     * switcher count empties, together. Returns the mark it replaced (0 for a
+     * first visit). The Vault list and the account chips both clear through here.
+     */
+    private fun markAccountSeen(hex: String, now: Long): Long {
+        val last = seenStore.activitySeenAt(hex)
+        seenStore.markActivitySeen(hex, now)
+        accountUnread.markSeen(hex)
+        return last
+    }
+
+    /**
+     * A chip was picked: each other account it shows counts as viewed, the way
+     * opening that account's Vault list would, then its lines load.
+     */
+    fun pickAccountChip(chip: VaultAccountChip) {
+        val me = _activeHex.value
+        val now = System.currentTimeMillis() / 1000
+        val since = _otherUnreadSince.value.toMutableMap()
+        for (hex in VaultAccountChips.accounts(chip, accountHexes.value)) {
+            if (hex == me) continue
+            val last = markAccountSeen(hex, now)
+            // A first visit marks nothing: everything would be "new".
+            since[hex] = if (last > 0) last else now
         }
-        seenStore.markActivitySeen(owner, now)
-        accountUnread.markSeen(owner)
+        _otherUnreadSince.value = since
+        _accountChip.value = if (VaultAccountChips.isDefault(chip, me)) null else chip
+        loadOtherAccounts()
+    }
+
+    /** A line for [account] was opened: that account's count empties. */
+    fun openedLine(account: String) {
+        if (account != _activeHex.value) markAccountSeen(account, System.currentTimeMillis() / 1000)
+    }
+
+    private fun resetAccountChip() {
+        otherJob?.cancel()
+        _accountChip.value = null
+        _otherLines.value = emptyMap()
+        _otherUnreadSince.value = emptyMap()
+        _otherLoading.value = false
+    }
+
+    /**
+     * Reads the picked chip's other accounts from the same relays and builds
+     * their lines with the same rules as the active account's. The device's
+     * relay serves every account, so nothing else needs asking.
+     */
+    fun loadOtherAccounts() {
+        val me = _activeHex.value
+        val accounts = accountHexes.value
+        val chip = VaultAccountChips.resolve(_accountChip.value, accounts, me)
+        val wanted = VaultAccountChips.accounts(chip, accounts).filter { it != me }
+        otherJob?.cancel()
+        if (wanted.isEmpty()) {
+            _otherLoading.value = false
+            return
+        }
+        val gen = generation
+        _otherLoading.value = _otherLines.value.isEmpty()
+        otherJob = viewModelScope.launch {
+            val built = wanted.map { hex -> async { hex to linesFor(hex) } }.awaitAll()
+            if (gen != generation) return@launch
+            _otherLines.value = _otherLines.value + built
+            _otherLoading.value = false
+            nostrService.fetchMissingProfiles(built.flatMap { (_, lines) -> lines.take(SHOW_STEP).flatMap { it.actors.take(6) } }.distinct())
+        }
+    }
+
+    private suspend fun linesFor(hex: String): List<VaultActivity> {
+        val raw = runCatching {
+            nostrService.queryRawEvents(
+                listOf(
+                    """{"kinds":${kindsJson(VaultMode.RELAY_TAB_NOTE_KINDS)},"authors":["$hex"],"limit":$PAGE}""",
+                    """{"kinds":${kindsJson(TAGGED_KINDS)},"#p":["$hex"],"limit":$PAGE}""",
+                ),
+                relays(), QUERY_TIMEOUT_MS,
+            )
+        }.getOrDefault(emptyList())
+        val events = raw.mapNotNull(::parse).filter { keepsZap(it) }.distinctBy { it.id }
+        return withContext(Dispatchers.Default) {
+            val config = configStore.config.value
+            val npub = config.allAccountNpubs().firstOrNull { nostrService.npubToHex(it)?.lowercase() == hex }
+            val blocked = npub?.let { config.blockedFor(it) }.orEmpty().mapNotNull { nostrService.npubToHex(it) }.toSet()
+            val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
+            val trusted = feedService.relayTabTrustedPubkeys()
+            val news = runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(hex)) }.getOrNull()
+                ?.current.orEmpty().filter { it.isNews }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
+            VaultActivity.build(
+                events = events,
+                owner = hex,
+                noteKinds = VaultMode.RELAY_TAB_NOTE_KINDS,
+                follows = news,
+                isBlocked = { it in blocked },
+                isOutside = { VaultContentFilter.isOutside(it, hex, whitelist, trusted) },
+            )
+        }
     }
 
     /** Followers seen here, as on the Followers list. */
@@ -396,7 +536,8 @@ internal fun VaultActivityScreen(
     dashboardColor: Color,
     onSelect: (VaultMode) -> Unit,
     onOpenDashboard: () -> Unit,
-    onOpenLine: (VaultActivity) -> Unit,
+    /** A line was tapped; the flag is true when it is for an account you are not on. */
+    onOpenLine: (VaultActivity, Boolean) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     val all by activity.lines.collectAsState()
@@ -414,6 +555,28 @@ internal fun VaultActivityScreen(
         // Filtered before the page cap, so a page of likes doesn't hide the
         // mentions behind it.
         all.filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }.take(shownCount)
+    }
+    // More than one account: "All · <acct> · <acct>" chips widen the list.
+    val accountHexes by activity.accountHexes.collectAsState()
+    val activeHex by activity.activeHex.collectAsState()
+    val pickedChip by activity.accountChip.collectAsState()
+    val otherLines by activity.otherLines.collectAsState()
+    val otherUnreadSince by activity.otherUnreadSince.collectAsState()
+    val otherLoading by activity.otherLoading.collectAsState()
+    val unreadCounts by activity.accountUnreadState.collectAsState()
+    val chips = remember(accountHexes, activeHex) { VaultAccountChips.chips(accountHexes, activeHex) }
+    val currentChip = VaultAccountChips.resolve(pickedChip, accountHexes, activeHex)
+    val others = !VaultAccountChips.isDefault(currentChip, activeHex)
+    val rows: List<VaultAccountLine> = remember(lines, all, otherLines, currentChip, accountHexes, activeHex, shownCount, zapsOnly, filter) {
+        if (!others) {
+            lines.map { VaultAccountLine(activeHex, it) }
+        } else {
+            val perAccount = VaultAccountChips.accounts(currentChip, accountHexes).associateWith { hex ->
+                (if (hex == activeHex) all else otherLines[hex].orEmpty())
+                    .filter { filter.includes(it.kind) && !(zapsOnly && it.kind == VaultActivity.Kind.REACTION) }
+            }
+            VaultAccountChips.merge(perAccount, accountHexes, shownCount)
+        }
     }
     val filterNote = rememberFilterNoteState()
     fun pick(next: VaultActivityFilter) {
@@ -435,7 +598,7 @@ internal fun VaultActivityScreen(
             last >= listState.layoutInfo.totalItemsCount - 3
         }
     }
-    LaunchedEffect(atEnd, lines.size) { if (atEnd && lines.isNotEmpty()) activity.loadMore() }
+    LaunchedEffect(atEnd, rows.size) { if (atEnd && rows.isNotEmpty()) activity.loadMore() }
 
     ScrollCondenseEffect(
         scrollKey = listState,
@@ -447,11 +610,11 @@ internal fun VaultActivityScreen(
     }
     // New lines (a refresh on coming back to the tab, a tick) land above the
     // top line: show them rather than keep the old top line in place.
-    RevealNewestEffect(listState) { lines.map { it.id } }
+    RevealNewestEffect(listState) { rows.map { if (others) it.key else it.line.id } }
 
     GlassScaffold(
         toolbar = {
-            Box {
+            Column {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -483,6 +646,17 @@ internal fun VaultActivityScreen(
                             onClick = { pick(VaultActivityFilter.MENTIONS) },
                         )
                     }
+                }
+                if (chips.isNotEmpty()) {
+                    AccountChipRow(
+                        chips = chips,
+                        selected = currentChip,
+                        activeHex = activeHex,
+                        profiles = profiles,
+                        counts = unreadCounts,
+                        onPick = activity::pickAccountChip,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
                 }
             }
         },
@@ -522,7 +696,10 @@ internal fun VaultActivityScreen(
         ) {
             val booting = relayStatus != RelayForegroundService.RelayStatus.RUNNING
             when {
-                lines.isEmpty() && (!hasLoadedOnce || isRefreshing || booting) -> Column(
+                rows.isEmpty() && (
+                    if (others) otherLoading || (currentChip == VaultAccountChip.All && !hasLoadedOnce)
+                    else !hasLoadedOnce || isRefreshing || booting
+                    ) -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
@@ -534,7 +711,7 @@ internal fun VaultActivityScreen(
                         color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                     )
                 }
-                lines.isEmpty() -> Column(
+                rows.isEmpty() -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
@@ -561,12 +738,19 @@ internal fun VaultActivityScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(lines, key = { it.id }) { line ->
+                    items(rows, key = { if (others) it.key else it.line.id }) { row ->
+                        val line = row.line
+                        val isOther = row.account != activeHex
+                        val since = if (isOther) otherUnreadSince[row.account] ?: Long.MAX_VALUE else unreadSince
                         VaultActivityRow(
                             line = line,
-                            isUnread = line.createdAt > unreadSince,
+                            isUnread = line.createdAt > since,
                             profiles = profiles,
-                            onClick = { onOpenLine(line) },
+                            account = if (others) row.account else null,
+                            onClick = {
+                                activity.openedLine(row.account)
+                                onOpenLine(line, isOther)
+                            },
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
@@ -586,6 +770,8 @@ private fun VaultActivityRow(
     profiles: Map<String, FeedProfile>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The account the line is for, when the list holds more than one account's lines. */
+    account: String? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val (icon, tint) = activityStyle(line.kind, colors.primary)
@@ -603,7 +789,7 @@ private fun VaultActivityRow(
             .clickable(onClick = onClick)
             .padding(14.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$who $verb. $preview"
+                contentDescription = (account?.let { "For ${name(it)}. " } ?: "") + "$who $verb. $preview"
                 if (isUnread) stateDescription = "New"
             },
     ) {
@@ -615,6 +801,24 @@ private fun VaultActivityRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
+            if (account != null) {
+                // "For <account>": whose notification this is.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AvatarImage(
+                        url = profiles[account]?.pictureURL,
+                        pubkey = account,
+                        size = 16.dp,
+                        displayName = profiles[account]?.bestName,
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "For ${name(account)}",
+                        color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f)) {
                     line.actors.take(AVATAR_LIMIT).forEachIndexed { index, pubkey ->
