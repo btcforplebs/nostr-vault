@@ -70,7 +70,7 @@ extension FeedView {
 
     /// Turning Everyone on: the sensitive-content warning, or while the
     /// account follows too few people, why it is locked (`TrustScopeLock`).
-    private func requestEveryone() {
+    func requestEveryone() {
         if TrustScopeLock.isLocked(followCount: feedService.trustLockFollowCount, everyoneIsOn: false) {
             showingTrustLock = true
         } else {
