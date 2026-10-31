@@ -184,7 +184,10 @@ class ConfigStore @Inject constructor(
         // list that names them stays saved, so they are removed here, once.
         loaded = DeadRelays.droppingOnce(loaded, File(context.filesDir, "dead_relays_pruned"))
         // And relay.damus.io from an untouched default import list (it bans busy IPs).
+        // Saved below: the marker means it never runs again, so the file must change too.
+        val beforeDamus = loaded
         loaded = DamusDefaults.droppingOnce(loaded, File(context.filesDir, "damus_import_dropped"))
+        val droppedDamus = loaded !== beforeDamus
 
         // Multi-account migration: seed the owner's signing mode so
         // activeSigningMode() is stable for legacy single-owner configs. The
@@ -217,7 +220,7 @@ class ConfigStore @Inject constructor(
         }
 
         setConfig(loaded)
-        if (removedStarterPicks || keyInFile != null) CoroutineScope(Dispatchers.IO).launch { save() }
+        if (removedStarterPicks || droppedDamus || keyInFile != null) CoroutineScope(Dispatchers.IO).launch { save() }
 
     }
 
