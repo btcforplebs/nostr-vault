@@ -70,7 +70,7 @@ internal fun CompleteStep(
                         )
                         CompleteExplainerRow(
                             Icons.Default.PhotoLibrary,
-                            "Blossom does the same for photos and videos: they're kept here and copied to public media servers.",
+                            "Your vault does the same for photos and videos: they're kept here and copied to your media servers.",
                         )
                     }
                     Spacer(Modifier.height(16.dp))
@@ -102,7 +102,7 @@ internal fun CompleteStep(
                 else -> {
                     WizardCheckItem("Your relay is running locally")
                     WizardCheckItem("Encrypted DMs enabled")
-                    WizardCheckItem("Blossom media hosting active")
+                    WizardCheckItem("Your vault keeps your photos and videos")
                     WizardCheckItem("Posts broadcast to the Nostr network")
                 }
             }

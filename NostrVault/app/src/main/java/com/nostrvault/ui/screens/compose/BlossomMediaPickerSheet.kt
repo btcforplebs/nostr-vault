@@ -91,7 +91,7 @@ internal fun BlossomMediaPickerSheet(
                 .padding(vertical = 16.dp)
         ) {
             Text(
-                text = "Pick from Blossom",
+                text = "Pick from your media",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = PrimaryText,
@@ -168,7 +168,7 @@ internal fun BlossomMediaPickerSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (blossomMedia.isEmpty()) "No media on Blossom" else "Nothing of this type",
+                        text = if (blossomMedia.isEmpty()) "No media on your media servers" else "Nothing of this type",
                         color = SecondaryText,
                         fontSize = 14.sp
                     )

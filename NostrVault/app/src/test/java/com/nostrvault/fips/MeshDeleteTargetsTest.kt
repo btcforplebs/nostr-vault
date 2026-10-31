@@ -30,7 +30,7 @@ class MeshDeleteTargetsTest {
     @Test
     fun `an unnamed mac is your mac`() {
         assertEquals(
-            listOf(MeshDeleteTarget(mac, "your Mac")),
+            listOf(MeshDeleteTarget(mac, "your home vault")),
             MeshDeleteTargets.of(config(listOf(FipsDevice(mac, DeviceRole.MAC, name = "  "))), includeHomeVault = true),
         )
     }

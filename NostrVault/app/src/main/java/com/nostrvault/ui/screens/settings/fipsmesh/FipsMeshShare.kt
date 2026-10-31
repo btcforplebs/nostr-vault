@@ -47,7 +47,7 @@ internal fun SyncSection(viewModel: FipsMeshViewModel, mac: HavenRelaySettingsVi
         if (configuredMac.isNotEmpty()) {
             MacSyncSection(MacSync.view(macSync, configuredMac, checkRequested, pollNow), checkRequested, relayReady, mac::checkSyncWithMac, showHeader = false)
         } else if (!hasHome) {
-            Text("Nothing to sync yet. Set up Sync with Vault on Mac, or add a home vault under My Devices.", color = SecondaryText, fontSize = 13.sp)
+            Text("Nothing to sync yet. Set up Home vault sync, or add a home vault under My Devices.", color = SecondaryText, fontSize = 13.sp)
         }
         if (hasHome) {
             if (configuredMac.isNotEmpty()) Spacer(Modifier.height(10.dp))
@@ -60,7 +60,7 @@ internal fun SyncSection(viewModel: FipsMeshViewModel, mac: HavenRelaySettingsVi
 
 internal fun homeVaultLine(s: HomeVaultSender.State): String = when {
     s.waiting > 0 -> "Home vault: ${s.waiting} waiting until it's in reach" + (s.lastProblem?.let { " ($it)" } ?: "")
-    s.publicPending > 0 -> "Home vault: ${s.publicPending} on the home vault only until a public server takes a copy"
+    s.publicPending > 0 -> "Home vault: ${s.publicPending} on the home vault only until a media server takes a copy"
     s.lastSentAt != null -> "Home vault: everything sent"
     else -> "Home vault: nothing to send yet"
 }
@@ -76,7 +76,7 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
         "Share With Others",
         footer = "Sharing pauses once the mesh has downloaded the amount above; one visitor gets at most 256 MB of it.",
     ) {
-        MeshSwitchRow("Kiosk mode", "Share this vault on the mesh", shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
+        MeshSwitchRow("Home vault mode", "Share this vault on the mesh", shareRelay, enabled = viewModel.isAvailable, onChange = viewModel::setShareRelay)
         MeshDivider()
         // The library takes the limit at start, so it is fixed while sharing.
         Picker("Pause after", serveLimit, SERVE_LIMITS.map { it to bytesLabel(it) }, enabled = !shareRelay && !busy) { viewModel.setServeLimit(it) }
@@ -92,8 +92,8 @@ internal fun ShareSection(viewModel: FipsMeshViewModel, status: FipsStatus) {
 }
 
 internal val PHOTOS_GO_TO = listOf(
-    FipsMeshSettings.PHOTOS_PUBLIC to "Public server",
-    FipsMeshSettings.PHOTOS_MAC to "My Mac",
+    FipsMeshSettings.PHOTOS_PUBLIC to "Media servers",
+    FipsMeshSettings.PHOTOS_MAC to "Home vault",
     FipsMeshSettings.PHOTOS_BOTH to "Both",
 )
 

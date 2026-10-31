@@ -162,7 +162,7 @@ fun HavenRelaySettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sync with Vault on Mac") },
+                title = { Text("Home vault sync") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -270,7 +270,7 @@ fun HavenRelaySettingsScreen(
                         "Feed Relays" to wss,
                         "Import Relays" to wss,
                         "Blastr Relays" to wss,
-                        "Blossom Mirror" to savedConfig.macRelayHttpsURL,
+                        "Media server" to savedConfig.macRelayHttpsURL,
                     ),
                 )
             }
@@ -373,7 +373,7 @@ internal fun MacSyncSection(
         ) {
             Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Check sync with Vault on Mac", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Check home vault sync", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

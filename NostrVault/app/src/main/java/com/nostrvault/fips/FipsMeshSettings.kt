@@ -51,10 +51,10 @@ data class FipsDevice(
 @Serializable
 enum class DeviceRole(val label: String, val blurb: String) {
     // Labels and lines as iOS MeshDeviceRole, so the three apps say the same thing.
-    @SerialName("mac") MAC("Vault on Mac", "Keeps your full history. Syncs both ways."),
+    @SerialName("mac") MAC("Home vault · full history", "Keeps all your history. Syncs both ways."),
     @SerialName("phone") PHONE("Phone", "Another phone of yours on the mesh."),
-    @SerialName("home_vault") HOME_VAULT("Home vault", "Gets your new notes and media, and sends your notes on."),
-    @SerialName("browser") BROWSER("Browser page", "Gets your new notes while this app is open."),
+    @SerialName("home_vault") HOME_VAULT("Home vault · new posts", "Keeps your new posts and media, and sends your notes on."),
+    @SerialName("browser") BROWSER("Browser vault", "Gets your new notes while this app is open."),
 }
 
 /** One row of My Devices. */

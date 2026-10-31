@@ -39,7 +39,7 @@ internal fun RelayStep(viewModel: SetupWizardViewModel) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "These relays will be used for your feed. Your personal relay also runs on-device.",
+            text = "These relays will be used for your feed. Your vault also runs on this device.",
             color = SecondaryText,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,

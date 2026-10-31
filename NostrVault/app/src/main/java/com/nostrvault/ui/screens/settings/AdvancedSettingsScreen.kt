@@ -80,7 +80,7 @@ class AdvancedSettingsViewModel @Inject constructor(
         /** The confirm text, with the size when it is known (iOS clearMessage). */
         fun clearMessage(bytes: Long?): String {
             val size = bytes?.let { formatSize(it) + " of " } ?: ""
-            return "Removes ${size}temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched."
+            return "Removes ${size}temporary copies of images and videos. They download again when you view them. Your vault and your media servers are not touched."
         }
     }
 

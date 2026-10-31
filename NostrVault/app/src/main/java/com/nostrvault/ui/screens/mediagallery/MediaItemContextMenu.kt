@@ -89,7 +89,7 @@ internal fun MediaItemContextMenu(
         } else if (backup.mayNeedMirror) {
             // On the phone, and some Blossom server may not have it yet.
             DropdownMenuItem(
-                text = { Text(if (backup.busy) "Mirroring…" else "Mirror to Blossom") },
+                text = { Text(if (backup.busy) "Copying…" else "Copy to your media servers") },
                 enabled = !backup.busy,
                 leadingIcon = {
                     Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -104,7 +104,7 @@ internal fun MediaItemContextMenu(
         // for confirmation first, as in the viewer), then Mark as 404.
         HorizontalDivider()
         DropdownMenuItem(
-            text = { Text("Delete from mirrors", color = ErrorRed) },
+            text = { Text("Delete from media servers", color = ErrorRed) },
             leadingIcon = {
                 Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
             },

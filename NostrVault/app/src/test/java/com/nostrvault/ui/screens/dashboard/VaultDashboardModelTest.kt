@@ -40,7 +40,7 @@ class VaultDashboardModelTest {
     fun `problem text and fix button`() {
         assertNull(m.problemText(RunState.RUNNING, false, 3355))
         assertEquals("It isn't saving new notes or messages. Start it to catch up.", m.problemText(RunState.PAUSED, false, 3355))
-        assertEquals("Another app is using port 3355. Restarting clears it.", m.problemText(RunState.NEEDS_FIX, true, 3355))
+        assertEquals("Another app is blocking your vault. Restarting clears it.", m.problemText(RunState.NEEDS_FIX, true, 3355))
         assertEquals("The last session didn't shut down cleanly. Restarting clears the lock.", m.problemText(RunState.NEEDS_FIX, false, 3355))
         assertEquals("Start vault", m.fixButtonTitle(RunState.PAUSED))
         assertEquals("Restart vault", m.fixButtonTitle(RunState.NEEDS_FIX))
@@ -93,7 +93,7 @@ class VaultDashboardModelTest {
     fun `safety details`() {
         assertEquals("Not saved yet. If a client wipes it, you can't get it back.", m.followListDetail(null, now))
         assertEquals("Last saved 2 hours ago.", m.followListDetail(ago(7200), now))
-        assertEquals("Not set up. Your Mac can keep a copy that's always on.", m.macSyncDetail(false, 123, now))
+        assertEquals("Not set up. A home vault keeps a copy that's always on.", m.macSyncDetail(false, 123, now))
         assertEquals("Set up. Not synced yet.", m.macSyncDetail(true, null, now))
         assertEquals("Set up. Not synced yet.", m.macSyncDetail(true, 0, now))
         assertEquals("Last synced yesterday.", m.macSyncDetail(true, (now / 1000) - 86_400, now))

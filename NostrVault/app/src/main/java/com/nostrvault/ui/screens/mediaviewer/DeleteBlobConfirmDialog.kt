@@ -62,13 +62,13 @@ internal fun DeleteBlobConfirmDialog(
     val confirmLabel: String
     when (scope) {
         DeleteScope.MIRRORS -> {
-            title = "Delete from mirrors?"
-            body = "Removes this file from your public Blossom servers. This phone and your home vault keep their copies."
-            confirmLabel = "Delete from mirrors"
+            title = "Delete from media servers?"
+            body = "Removes this file from your media servers. This phone and your home vault keep their copies."
+            confirmLabel = "Delete from media servers"
         }
         DeleteScope.EVERYWHERE -> {
             title = "Delete everywhere?"
-            body = "Permanently removes this file from this phone, your home vault and your public Blossom servers. This cannot be undone."
+            body = "Permanently removes this file from this phone, your home vault and your media servers. This cannot be undone."
             confirmLabel = "Delete everywhere"
         }
     }

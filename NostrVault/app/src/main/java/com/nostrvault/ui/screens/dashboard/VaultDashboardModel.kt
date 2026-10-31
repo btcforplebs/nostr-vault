@@ -35,7 +35,7 @@ internal object VaultDashboardModel {
     fun problemText(state: RunState, isPortConflict: Boolean, port: Int): String? = when (state) {
         RunState.PAUSED -> "It isn't saving new notes or messages. Start it to catch up."
         RunState.NEEDS_FIX ->
-            if (isPortConflict) "Another app is using port $port. Restarting clears it."
+            if (isPortConflict) "Another app is blocking your vault. Restarting clears it."
             else "The last session didn't shut down cleanly. Restarting clears the lock."
         else -> null
     }
@@ -97,7 +97,7 @@ internal object VaultDashboardModel {
             ?: "Not saved yet. If a client wipes it, you can't get it back."
 
     fun macSyncDetail(macConfigured: Boolean, finishedAtSeconds: Long?, nowMs: Long): String = when {
-        !macConfigured -> "Not set up. Your Mac can keep a copy that's always on."
+        !macConfigured -> "Not set up. A home vault keeps a copy that's always on."
         finishedAtSeconds == null || finishedAtSeconds <= 0 -> "Set up. Not synced yet."
         else -> "Last synced ${relative(finishedAtSeconds * 1000, nowMs)}."
     }

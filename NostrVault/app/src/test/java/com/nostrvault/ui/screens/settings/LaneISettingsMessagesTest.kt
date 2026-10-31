@@ -9,11 +9,11 @@ class LaneISettingsMessagesTest {
     @Test
     fun `clear cache message names the size once it is known`() {
         assertEquals(
-            "Removes temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched.",
+            "Removes temporary copies of images and videos. They download again when you view them. Your vault and your media servers are not touched.",
             AdvancedSettingsViewModel.clearMessage(null),
         )
         assertEquals(
-            "Removes 2.0 MB of temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched.",
+            "Removes 2.0 MB of temporary copies of images and videos. They download again when you view them. Your vault and your media servers are not touched.",
             AdvancedSettingsViewModel.clearMessage(2L * 1024 * 1024),
         )
     }

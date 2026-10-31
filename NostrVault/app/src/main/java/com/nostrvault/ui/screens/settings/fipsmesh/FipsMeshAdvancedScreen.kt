@@ -92,7 +92,7 @@ fun FipsMeshAdvancedScreen(onBack: () -> Unit, viewModel: FipsMeshViewModel = hi
 
             MeshSection(
                 "Middle Server",
-                footer = "Links two devices that can't reach each other directly. A browser page always needs one. With None, only devices on the same network can connect.",
+                footer = "Links two devices that can't reach each other directly. A browser vault always needs one. With None, only devices on the same network can connect.",
             ) {
                 MIDDLE_SERVERS.forEachIndexed { i, (key, label) ->
                     if (i > 0) MeshDivider()

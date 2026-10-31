@@ -128,7 +128,7 @@ class GlobalSearchSession(
             add(SearchSourceState(PHONE_SOURCE_ID, "Phone", SearchSourceKind.PHONE))
         }
         if (plan.macRelayUrl != null) {
-            add(SearchSourceState(MAC_SOURCE_ID, "Mac relay", SearchSourceKind.MAC))
+            add(SearchSourceState(MAC_SOURCE_ID, "Home vault", SearchSourceKind.MAC))
         }
         plan.searchRelays.distinct().forEach { url ->
             add(SearchSourceState(url, SearchRelayUrls.label(url), SearchSourceKind.RELAY))

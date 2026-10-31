@@ -44,7 +44,7 @@ internal fun MirrorStatusSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp),
         ) {
-            Text("Blossom Mirrors", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = PrimaryText)
+            Text("Media Servers", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = PrimaryText)
             Spacer(Modifier.height(2.dp))
             Text(
                 text = sha256.take(16) + "…",

@@ -454,7 +454,7 @@ private fun FeedMediaDeleteBar(
             TextButton(onClick = onDeleteFromMirrors) {
                 Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = red, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Delete from mirrors", color = red, fontSize = 13.sp)
+                Text("Delete from media servers", color = red, fontSize = 13.sp)
             }
             TextButton(onClick = onDeleteEverywhere) {
                 Icon(NostrVaultIcons.Delete, contentDescription = null, tint = red, modifier = Modifier.size(16.dp))

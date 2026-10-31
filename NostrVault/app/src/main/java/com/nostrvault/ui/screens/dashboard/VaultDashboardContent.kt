@@ -376,7 +376,7 @@ internal fun VaultDashboardContent(
                 onOpenScreen(Screen.BlossomSettings)
             }
             DashDivider()
-            SettingLink(Icons.Filled.Laptop, "Sync with Vault on Mac", if (macConfigured) "On" else "Off") {
+            SettingLink(Icons.Filled.Laptop, "Home vault sync", if (macConfigured) "On" else "Off") {
                 onOpenScreen(Screen.HavenRelaySettings)
             }
             DashDivider()

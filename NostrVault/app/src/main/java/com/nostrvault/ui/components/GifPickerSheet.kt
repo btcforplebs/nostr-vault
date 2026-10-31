@@ -100,7 +100,7 @@ fun GifPickerSheet(
                 Spacer(Modifier.weight(1f))
                 // nostr.build GIFs are already hosted; this decides whether
                 // picking one also copies it to your own Blossom servers.
-                Text("Save to my Blossom", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Save to my media servers", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(8.dp))
                 Switch(checked = saveToBlossom, onCheckedChange = onSaveToBlossomChange)
             }

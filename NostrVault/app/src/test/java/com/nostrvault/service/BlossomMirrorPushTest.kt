@@ -134,7 +134,7 @@ class BlossomMirrorPushTest {
     fun `one server refusing is partial, not pushed`() = runTest {
         val result = service(localRelay(), listOf(mirror(true), mirror(false))).pushLocalToMirrors(sha)
         assertEquals(BlossomService.MirrorPushResult.Partial(accepted = 1, attempted = 2), result)
-        assertEquals("Mirrored to 1 of 2 Blossom servers", result.message)
+        assertEquals("Copied to 1 of 2 media servers", result.message)
     }
 
     @Test

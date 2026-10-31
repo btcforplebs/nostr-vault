@@ -74,7 +74,7 @@ internal fun AddDeviceSheet(viewModel: FipsMeshViewModel, onDismiss: () -> Unit)
                 ) { Text("Add", fontWeight = FontWeight.SemiBold) }
             }
 
-            MeshSection("Address", footer = "Open FIPS Mesh on the other device and copy the address under This Device.") {
+            MeshSection("Address", footer = "Open Mesh on the other device and copy the address under This Device.") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
                     scanner.launch(ScanOptions().apply {
                         setDesiredBarcodeFormats(ScanOptions.QR_CODE); setPrompt("Scan the other device's mesh address")
@@ -97,7 +97,7 @@ internal fun AddDeviceSheet(viewModel: FipsMeshViewModel, onDismiss: () -> Unit)
             if (address.isNotBlank() && npub == null) MeshFooter("That isn't a mesh address. Check it for a typo, or copy it again.", ErrorRed)
             if (isSelf) MeshFooter("That is this phone's own address.", ErrorRed)
             if (suggestions.isNotEmpty() && address.isBlank()) {
-                MeshSection("In Your Media Servers", footer = "Kiosks your account lists. Tap one to use its address.") {
+                MeshSection("In Your Media Servers", footer = "Home vaults your account lists. Tap one to use its address.") {
                     suggestions.forEach { s ->
                         Text(s.take(16) + "…" + s.takeLast(8), color = PrimaryText, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
                             modifier = Modifier.fillMaxWidth().clickable { address = s; role = DeviceRole.HOME_VAULT }.padding(vertical = 12.dp))

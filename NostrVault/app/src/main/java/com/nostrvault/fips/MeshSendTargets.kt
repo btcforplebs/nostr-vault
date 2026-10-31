@@ -27,8 +27,8 @@ internal object MeshSendTargets {
     fun afterQueueing(queued: List<Boolean>): Pair<Boolean, Boolean> = queued.any { it } to !queued.all { it }
 
     /** How a target is named in the card's problem line. */
-    fun label(role: DeviceRole): String = if (role == DeviceRole.MAC) "Your Mac" else "Home vault"
+    fun label(role: DeviceRole): String = if (role == DeviceRole.MAC) "Home vault · full history" else "Home vault · new posts"
 
     /** The same, mid-sentence: "the home vault", "your Mac". */
-    fun destination(role: DeviceRole): String = if (role == DeviceRole.MAC) "your Mac" else "the home vault"
+    fun destination(role: DeviceRole): String = if (role == DeviceRole.MAC) "your home vault" else "the home vault"
 }

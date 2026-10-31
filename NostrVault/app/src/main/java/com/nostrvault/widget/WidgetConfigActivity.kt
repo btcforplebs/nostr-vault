@@ -168,7 +168,7 @@ private fun FeedForm(initial: FeedConfig, onSave: (FeedConfig) -> Unit) {
 @Composable
 private fun MosaicForm(initial: MosaicConfig, onSave: (MosaicConfig) -> Unit) {
     var config by remember { mutableStateOf(initial) }
-    Title("Mosaic", "Your Blossom media, live on the home screen.")
+    Title("Mosaic", "Your media, live on the home screen.")
     Section("Layout")
     MosaicStyle.entries.forEach { style ->
         Choice(style.label, selected = config.style == style) { config = config.copy(style = style) }
