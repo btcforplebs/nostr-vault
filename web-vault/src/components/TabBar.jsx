@@ -4,6 +4,7 @@ import { useVaultUnread } from "./useVaultUnread.js"
 import { dashboardHref, openDashboard } from "../net/dashboard-route.js"
 import { useEffect, useState } from "preact/hooks"
 import { isFolded, onFoldedChange, unfold } from "./chrome-fold.js"
+import { useAccountSwitch } from "./AccountSwitch.jsx"
 import "../styles/tabbar.css"
 import "../styles/chrome-fold.css"
 
@@ -39,12 +40,15 @@ export function TabBar({ ctx, route, pubkey }) {
   const vaultNew = useVaultUnread()
   const news = unread > 0 || vaultNew > 0
   const folded = useFolded()
+  // Hold the avatar (the Profile tab, or the folded bar's) for Switch Account, as on the iPhone.
+  const { holdProps, menu } = useAccountSwitch(ctx)
   return (
     <nav class="tabbar" aria-label="Sections">
       <div class="tabs-full" inert={folded || undefined}>
         {TABS.map(([id, label]) => (
           <a key={id} href={`#/${id}`} class={route === id ? "tab on" : "tab"} aria-current={route === id ? "page" : undefined}
-            aria-label={id === "vault" && news ? `${label}, ${unread ? `${unread} unread` : "new activity"}` : undefined} onClick={id === "feed" && route === "feed" ? retapFeed : undefined}>
+            aria-label={id === "vault" && news ? `${label}, ${unread ? `${unread} unread` : "new activity"}` : undefined} onClick={id === "feed" && route === "feed" ? retapFeed : undefined}
+            {...(id === "profile" ? { ...holdProps, class: `${route === id ? "tab on" : "tab"} tab-avatar-hold` } : {})}>
             {id === "profile" && pubkey
               ? <span class="tab-avatar"><Avatar pubkey={pubkey} size={24} /></span>
               : <span class="tab-icon">{ICONS[id] ?? line(<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0" />)}</span>}
@@ -53,18 +57,19 @@ export function TabBar({ ctx, route, pubkey }) {
           </a>
         ))}
       </div>
-      <FoldedBar route={route} pubkey={pubkey} unread={unread} news={news} canPost={!ctx.signer?.readOnly} inert={!folded} />
+      <FoldedBar route={route} pubkey={pubkey} unread={unread} news={news} canPost={!ctx.signer?.readOnly} inert={!folded} holdProps={holdProps} />
+      {menu}
     </nav>
   )
 }
 
 /** Scrolled down, the bar folds to this (chrome-fold.js, BottomTabBar collapsedContent): the avatar, which opens the bar
  *  again, and one round button, Compose, or on the Vault tab the Vault Dashboard. */
-function FoldedBar({ route, pubkey, unread, news, canPost, inert }) {
+function FoldedBar({ route, pubkey, unread, news, canPost, inert, holdProps }) {
   const vault = route === "vault"
   return (
     <div class="tabs-fold" inert={inert || undefined}>
-      <button type="button" class="fold-avatar" aria-label={unread ? `Show the tab bar, ${unread} unread` : "Show the tab bar"} onClick={unfold}>
+      <button type="button" class="fold-avatar tab-avatar-hold" aria-label={unread ? `Show the tab bar, ${unread} unread` : "Show the tab bar"} onClick={unfold} {...holdProps}>
         <Avatar pubkey={pubkey} size={36} />
         {news && <span class="tab-dot" aria-hidden="true" />}
       </button>

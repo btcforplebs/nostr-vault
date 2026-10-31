@@ -1,0 +1,21 @@
+/* Switch Account (components/AccountSwitch.jsx): the iPhone's menu from the tab-bar avatar, a glass list of accounts. */
+.account-switch { position: fixed; z-index: 60; left: max(12px, env(safe-area-inset-left)); width: min(300px, calc(100vw - 24px));
+  display: grid; padding: 6px; background: var(--s2); border: 1px solid var(--strong); border-radius: 14px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / .6); animation: account-switch-in .14s ease-out; }
+.account-switch.above { bottom: calc(env(safe-area-inset-bottom) + var(--tabbar-gap) + var(--tabbar-h) + 8px); }
+.account-switch.below { position: absolute; top: calc(100% + 4px); left: 0; }
+.account-switch-title { padding: 6px 10px 4px; color: var(--text-2); font: var(--t-foot); font-weight: 600; }
+.account-switch [role=menuitemradio] { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 10px; border: 0;
+  border-radius: 10px; background: none; color: var(--text); text-align: left; justify-content: flex-start; box-shadow: none; }
+.account-switch [role=menuitemradio]:hover, .account-switch [role=menuitemradio]:focus-visible { background: var(--s3); outline: none; }
+.account-switch [role=menuitemradio]:active { transform: none; }
+.account-switch-names { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.account-switch-name, .account-switch-kind { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-switch-name { font: var(--t-sub); font-weight: 600; }
+.account-switch-kind { color: var(--text-2); font: var(--t-foot); }
+.account-switch-check { color: var(--accent); flex: none; }
+.account-switch-error { margin: 4px 10px 6px; color: var(--danger); font: var(--t-foot); }
+/* A long press on the avatar opens the menu, not iOS Safari's link preview or a text selection. */
+.tab-avatar-hold { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+@keyframes account-switch-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .account-switch { animation: none; } }

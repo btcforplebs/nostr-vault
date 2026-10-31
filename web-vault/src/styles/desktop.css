@@ -39,6 +39,13 @@
 .side-pop [role=menuitem]:hover, .side-pop [role=menuitem]:focus-visible { background: var(--s3); }
 .side-pop .danger { color: var(--danger); }
 .side-pop hr { border: 0; border-top: 1px solid var(--hair); margin: 4px 0; }
+.side-pop-title { margin: 4px 12px 2px; color: var(--text-2); font: var(--t-foot); font-weight: 600; }
+.side-switch { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border-radius: 8px; border: 0;
+  background: none; color: var(--text); font: var(--t-sub); text-align: left; justify-content: flex-start; box-shadow: none; }
+.side-switch:is(button):hover, .side-switch:focus-visible { background: var(--s3); }
+.side-switch.on::after { content: "✓"; margin-left: auto; color: var(--accent); font-weight: 700; }
+.side-switch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-pop-error { margin: 4px 12px; color: var(--danger); font: var(--t-foot); }
 
 .side-foot { margin-top: auto; padding: 10px 8px 4px; border-top: 1px solid var(--hair); display: grid; gap: 6px; }
 .side-relay { display: flex; align-items: center; gap: 10px; color: var(--text); font: var(--t-foot); font-weight: 600; min-height: 28px; }
