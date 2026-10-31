@@ -39,6 +39,7 @@ import { startChromeFold } from "./src/components/chrome-fold.js"
 import { AuthPrompt } from "./src/components/AuthPrompt.jsx"
 import { Splash } from "./src/components/Loading.jsx"
 import { UpdateBar } from "./src/components/UpdateBar.jsx"
+import { FloatingPlayer } from "./src/readers/FloatingPlayer.jsx"
 import { watchUpdates } from "./src/sw-update.js"
 import { VaultReady } from "./src/components/VaultReady.jsx"
 import { hasLocalData, markPrepared, prepareVault, wasPrepared } from "./src/net/vault-ready.js"
@@ -246,6 +247,7 @@ function App() {
       <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
+      <FloatingPlayer />
       {isDashboardOpen() && <VaultDashboard ctx={ctx} />}
       <AuthPrompt />
     </div>

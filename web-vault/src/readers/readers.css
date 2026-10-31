@@ -230,3 +230,12 @@
 .reader-comment-box { display: grid; gap: 8px; margin-top: 12px; }
 .reader-comment-box textarea { width: 100%; min-height: 72px; resize: vertical; }
 .reader-comment-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+
+/* The app-wide player bar (FloatingButtonRow): fixed in the Post button's row, left of it, on wide windows inside
+   the 640 px column; full width of the column where there's no Post button; at the bottom on the desktop layout. */
+.music-player.floating { position: fixed; z-index: 9; margin: 0; min-height: 48px; justify-content: center;
+  left: max(16px, calc(50% - 320px + 16px)); right: max(16px, calc(50% - 320px + 16px));
+  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 6px + env(safe-area-inset-bottom)); box-shadow: 0 6px 18px rgb(0 0 0 / .45); }
+body:has(a.post-button) .music-player.floating { right: calc(max(20px, calc(50% - 320px + 20px)) + 112px); }
+body:not(:has(.tabbar)) .music-player.floating { bottom: calc(16px + env(safe-area-inset-bottom)); }
+.music-player.floating img, .music-player.floating .music-art.small { width: 32px; height: 32px; }
