@@ -102,7 +102,25 @@ final class ServerListMergeTests: XCTestCase {
         let out = HomeVaultLogic.mergeServerList(existing: existing, current: ["https://a.example"],
                                                  previouslyManaged: ["https://a.example/", "https://b.example/"],
                                                  ownMeshNpub: nil)
-        XCTAssertEqual(out, ["https://a.example", "https://c.example/"])
+        // a keeps the list's own spelling: their entries are not rewritten.
+        XCTAssertEqual(out, ["https://a.example/", "https://c.example/"])
+    }
+
+    func testTheirOrderStaysFirstAndOursGoAfter() {
+        // Logen 2026-10-31: a list set in another app keeps its order; this
+        // phone's servers (Primal, the Mac) never jump ahead of it.
+        let existing = ["https://their-first.example", "https://blossom.primal.net", "https://their-last.example"]
+        let out = HomeVaultLogic.mergeServerList(
+            existing: existing,
+            current: ["https://blossom.primal.net", "https://mac.example.com", "https://new.example"],
+            previouslyManaged: [], ownMeshNpub: nil)
+        XCTAssertEqual(out, existing + ["https://mac.example.com", "https://new.example"])
+    }
+
+    func testNoListOfTheirsUsesOurs() {
+        let out = HomeVaultLogic.mergeServerList(existing: [], current: ["https://blossom.primal.net", "https://mac.example.com"],
+                                                 previouslyManaged: [], ownMeshNpub: nil)
+        XCTAssertEqual(out, ["https://blossom.primal.net", "https://mac.example.com"])
     }
 
     func testThisDevicesMainNpubIsNeverListedAndAnOldEntryIsDropped() {
@@ -212,7 +230,7 @@ final class ServerListMergeTests: XCTestCase {
         // Next to a real public server it is kept, as another phone's entry.
         XCTAssertEqual(HomeVaultLogic.mergeServerList(existing: ["http://192.168.1.5:4443"], current: ["https://a.example/"],
                                                       previouslyManaged: [], ownMeshNpub: nil),
-                       ["https://a.example/", "http://192.168.1.5:4443"])
+                       ["http://192.168.1.5:4443", "https://a.example/"])
     }
 
     func testAFipsHostIsMeshOnlyAndNeverCountsAsAPublicServer() {

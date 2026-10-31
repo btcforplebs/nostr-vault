@@ -74,4 +74,14 @@ final class PostOnFirstServerTests: XCTestCase {
         config.blossomMirrors = ["https://logen.nostr.build", "https://blossom.nostr.band", "https://blossom.nostr.build", "https://blossom.primal.net"]
         XCTAssertEqual(config.activeBlossomMirrors, ["https://blossom.nostr.build", "https://blossom.primal.net"])
     }
+
+    func testTheMacRelayGoesAfterTheOwnersServers() {
+        // Logen 2026-10-31: the owner's order stays first; the Mac is not forced to #1.
+        var config = HavenConfig()
+        config.blossomMirrors = ["https://their-first.example", "https://their-second.example"]
+        config.macRelayURL = "wss://mac.example.com"
+        XCTAssertEqual(config.activeBlossomMirrors, ["https://their-first.example", "https://their-second.example", "https://mac.example.com"])
+        config.blossomMirrors = []
+        XCTAssertEqual(config.activeBlossomMirrors, ["https://mac.example.com"])
+    }
 }

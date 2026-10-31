@@ -50,8 +50,10 @@ extension HavenConfig {
             }
         }
         let macHttps = macRelayHttpsURL
+        // After the owner's servers, not first: their order stays first
+        // (Logen, 2026-10-31).
         if !macHttps.isEmpty, !mirrors.contains(macHttps) {
-            mirrors.insert(macHttps, at: 0)
+            mirrors.append(macHttps)
         }
         if let fipsURL = fipsBlossomURL(detectedNpub: detectedNpub), !mirrors.contains(fipsURL) {
             mirrors.append(fipsURL)

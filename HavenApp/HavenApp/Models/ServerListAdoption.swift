@@ -5,8 +5,10 @@ import Foundation
 /// `HavenConfig.activeBlossomMirrors`, so a server only on the published list
 /// was never uploaded to. Twin of Android's `ServerListAdoption.kt`.
 ///
-/// Adds only. A server this device has stays, and a server this device
-/// published and later removed is not added back (it is in `base` but not in
+/// Adds only, and their order comes first: the published servers in the
+/// owner's order, then this device's other servers. A server this device has
+/// stays, and a server this device published and later removed is not added
+/// back (it is in `base` but not in
 /// `local`). Same newest-wins stamp as the DM inbox list: a list no newer
 /// than the last change here, or than the last one adopted, changes nothing.
 enum ServerListAdoption {
@@ -30,11 +32,22 @@ enum ServerListAdoption {
         ownServers: [String] = []
     ) -> Result? {
         if let updatedAt, publishedAt <= updatedAt { return nil }
-        var skip = Set((local + (base ?? []) + ownServers).map(ListMerge.key))
-        let added = published
+        // A server this device has keeps its spelling here, so a later add
+        // of the same address is still seen as a duplicate.
+        var localByKey: [String: String] = [:]
+        for url in local where localByKey[ListMerge.key(url)] == nil { localByKey[ListMerge.key(url)] = url }
+        // Removed here after this device published it: not brought back.
+        let removedHere = Set((base ?? []).map(ListMerge.key)).subtracting(localByKey.keys)
+        var seen = removedHere.union(ownServers.map(ListMerge.key))
+        // Their list first, in their order (Logen, 2026-10-31); this
+        // device's other servers after it, in the order they were.
+        let theirs = published
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { usable($0) && skip.insert(ListMerge.key($0)).inserted }
-        return Result(mirrors: local + added, added: added, updatedAt: publishedAt)
+            .filter { usable($0) && seen.insert(ListMerge.key($0)).inserted }
+        let rest = local.filter { seen.insert(ListMerge.key($0)).inserted }
+        let added = theirs.filter { localByKey[ListMerge.key($0)] == nil }
+        let mirrors = theirs.map { localByKey[ListMerge.key($0)] ?? $0 } + rest
+        return Result(mirrors: mirrors, added: added, updatedAt: publishedAt)
     }
 
     private static func usable(_ url: String) -> Bool {

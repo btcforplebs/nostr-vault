@@ -127,7 +127,8 @@ enum HomeVaultLogic {
 extension HomeVaultLogic {
     /// One rule for every phone that publishes the owner's 10063 (Tao, FIPS
     /// thread): merge into the newest list, never replace it. Only the https
-    /// servers this phone manages change; every other entry keeps its order.
+    /// servers this phone manages change. The existing list keeps its order
+    /// and stays first; this phone's new servers go after it.
     /// NIP-F1 order: public servers first, mesh entries after them (Tao's call;
     /// senders pick the home vault from the setting, not from list order).
     ///
@@ -165,10 +166,13 @@ extension HomeVaultLogic {
             if seen.insert(key(url)).inserted { out.append(url) }
         }
 
-        current.filter { !$0.hasPrefix("fipsmesh://") }.forEach(add)
+        // The owner's list first, in their order (Logen, 2026-10-31): a
+        // server they listed keeps its place, wherever this phone has it.
         for url in existing where !url.hasPrefix("fipsmesh://") && !dropped.contains(key(url)) {
-            add(url)  // another phone's server
+            add(url)
         }
+        // This phone's servers only after theirs: new ones are appended.
+        current.filter { !$0.hasPrefix("fipsmesh://") }.forEach(add)
         for url in existing where !dropped.contains(key(url)) {
             // Malformed mesh entries are dropped: readers ignore them too.
             if let npub = meshNpub(fromEntry: url), npub != ownMeshNpub { add(url) }

@@ -4,6 +4,26 @@ import XCTest
 /// Media servers set in another app (kind 10063) become upload servers
 /// (Android twin: `ServerListAdoptionTest.kt`).
 final class ServerListAdoptionTests: XCTestCase {
+    func testTheirOrderComesFirstAndOursFollow() {
+        // Logen 2026-10-31: their list in their order, then this device's others.
+        let result = ServerListAdoption.adopt(
+            local: ["https://blossom.primal.net", "https://only-here.example"],
+            updatedAt: 100,
+            published: ["https://their-first.example", "https://blossom.primal.net/", "https://their-last.example"],
+            publishedAt: 200,
+            base: nil
+        )
+        XCTAssertEqual(result?.mirrors, ["https://their-first.example", "https://blossom.primal.net",
+                                         "https://their-last.example", "https://only-here.example"])
+        XCTAssertEqual(result?.added, ["https://their-first.example", "https://their-last.example"])
+    }
+
+    func testTheMacAddressTheAppAddsItselfIsNotCopiedIn() {
+        let result = ServerListAdoption.adopt(local: [], updatedAt: nil, published: ["https://mac.example.com/", "https://a.example"],
+                                              publishedAt: 5, base: nil, ownServers: ["https://mac.example.com"])
+        XCTAssertEqual(result?.mirrors, ["https://a.example"])
+    }
+
     func testServersSetInAnotherAppAreAddedAfterTheOnesHere() {
         let result = ServerListAdoption.adopt(
             local: ["https://blossom.primal.net"],

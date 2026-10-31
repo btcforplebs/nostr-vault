@@ -68,7 +68,8 @@ final class BlossomDeleteTargetsTests: XCTestCase {
 
         let everywhere = config.blossomDeleteTargets(
             ownerServerList: ["https://mac.example.com/"], photoURL: nil, includeHomeVault: true)
-        XCTAssertEqual(everywhere, ["https://mac.example.com", "https://blossom.primal.net",
+        // The Mac goes after the owner's servers (Logen, 2026-10-31).
+        XCTAssertEqual(everywhere, ["https://blossom.primal.net", "https://mac.example.com",
                                     "http://\(meshNpub).fips:\(config.relayPort)"])
     }
 

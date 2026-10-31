@@ -12,6 +12,9 @@ struct MirrorMediaStep: View {
     @State private var appeared = false
     @State private var activeTab = 0
     @State private var blossomURL = "https://blossom.primal.net"
+    /// The field still holds the suggestion: the owner's own first server
+    /// replaces it once their list (kind 10063) is found.
+    @State private var blossomURLEdited = false
     @State private var showingFileImporter = false
     @State private var isSyncing = false
     @State private var syncCompleted = false
@@ -66,6 +69,7 @@ struct MirrorMediaStep: View {
             Spacer().frame(height: 8)
         }
         .onAppear { appeared = true }
+        .task { await prefillFromTheirList() }
         .fileImporter(
             isPresented: $showingFileImporter,
             allowedContentTypes: [.zip],
@@ -134,7 +138,10 @@ struct MirrorMediaStep: View {
 
                 WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
             } else {
-                WizardInputField(label: String(localized: "setup.media.label.blossomURL"), text: $blossomURL, placeholder: "https://blossom.primal.net")
+                WizardInputField(label: String(localized: "setup.media.label.blossomURL"), text: Binding(
+                    get: { blossomURL },
+                    set: { blossomURL = $0; blossomURLEdited = true }
+                ), placeholder: "https://blossom.primal.net")
 
                 WizardPrimaryButton(title: String(localized: "setup.media.syncAction")) {
                     startNetworkSync()
@@ -223,13 +230,8 @@ struct MirrorMediaStep: View {
             return
         }
 
-        if !configService.config.blossomMirrors.contains(trimmedURL) {
-            configService.config.blossomMirrors.append(trimmedURL)
-            configService.save()
-            NostrService.shared.publishServerList()
-        }
-
         Task {
+            await useServer(trimmedURL)
             let blossomService = BlossomService(configService: configService, nostrService: nostrService)
             let mirroredCount = await blossomService.mirrorAllFromExternal { completed, total in
                 syncedCount = completed
@@ -242,6 +244,40 @@ struct MirrorMediaStep: View {
             syncCompleted = true
             progressMessage = "Synced \(mirroredCount) files."
         }
+    }
+
+    /// The owner's newest media server list (kind 10063). `known` false: the
+    /// relays could not say whether they have one.
+    private func theirServerList() async -> (servers: [String], known: Bool) {
+        let owner = nostrService.activeHexPubkey
+        guard !owner.isEmpty else { return ([], false) }
+        let lookup = await nostrService.lookupNewestReplaceable(
+            kind: 10063, for: owner, alsoAsk: [RelayConfiguration.serverListIndexerRelay])
+        if let event = lookup.event {
+            return (ProfileRepository.parseServerListTags(event.tags), true)
+        }
+        return ([], lookup.confirmedNone)
+    }
+
+    /// Their first server in the field, in place of the Primal suggestion.
+    private func prefillFromTheirList() async {
+        guard let first = await theirServerList().servers.first(where: { $0.lowercased().hasPrefix("https://") }),
+              !blossomURLEdited, !isSyncing else { return }
+        blossomURL = first
+    }
+
+    /// Syncs from `url`. A list the owner already has is never signed over
+    /// here (Logen, 2026-10-31): their servers come in first, in their order
+    /// (`syncOwnerServerList`, no publish), and the server typed here is only
+    /// added for uploads on this device. A new 10063 goes out only when the
+    /// relays confirmed the account has none.
+    private func useServer(_ url: String) async {
+        let theirs = await theirServerList()
+        if !theirs.servers.isEmpty { await nostrService.syncOwnerServerList() }
+        guard !configService.config.blossomMirrors.contains(url) else { return }
+        configService.config.blossomMirrors.append(url)
+        configService.save()
+        if theirs.servers.isEmpty && theirs.known { nostrService.publishServerList() }
     }
 
     private func importMedia(from url: URL) {
