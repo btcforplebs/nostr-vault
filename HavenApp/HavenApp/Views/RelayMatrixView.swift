@@ -84,9 +84,39 @@ struct RelayMatrixView: View {
                                     ownInbox: configService.config.ownHavenDMInboxURL) }
     }
 
-    /// The one place the relay lists are written and published.
+    /// The one place the relay lists are written and published. A Save that
+    /// publishes first reads the published lists again: if another app
+    /// changed them since this page opened, or the relays can't say, nothing
+    /// is saved or published (Logen 2026-10-31).
     private func save() {
         guard let state = draft, let plan else { return }
+        guard plan.publishes else { commit(state, plan: plan); return }
+        Task {
+            let fresh = await NostrService.shared.lookupOwnerRelayLists()
+            guard draft == state else {
+                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                               message: "Not saved: the list changed while it was being checked. Tap Save again.",
+                                               tone: .error, seconds: 6)
+                return
+            }
+            switch RelayDraft.saveCheck(opened: state.published, fresh: fresh, plan: plan) {
+            case .ok:
+                commit(state, plan: plan)
+            case .changed:
+                ActionToastManager.shared.show(
+                    icon: "exclamationmark.triangle.fill",
+                    message: "Not saved: your relay list changed in another app since this page opened. Close Relays and open it again to edit the newest one.",
+                    tone: .error, seconds: 6)
+            case .unknown:
+                ActionToastManager.shared.show(
+                    icon: "exclamationmark.triangle.fill",
+                    message: "Not saved: your relays didn't answer, so your newest relay list isn't known. Try again in a moment.",
+                    tone: .error, seconds: 6)
+            }
+        }
+    }
+
+    private func commit(_ state: RelayDraft.State, plan: RelayDraft.Plan) {
         let new = state.draft
         configService.config.feedRelays = new.read
         configService.config.blastrRelays = new.write

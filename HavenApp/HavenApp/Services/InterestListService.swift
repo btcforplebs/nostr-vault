@@ -62,8 +62,11 @@ final class InterestListService: ObservableObject {
         self.hashtags = applied(to: list).hashtags
 
         // A key setup just made has no list anywhere: nothing to wait for.
-        if !confirmed, FreshAccountKeys.isFresh(hex) { confirmed = true }
-        if !confirmed {
+        if !confirmed, FreshAccountKeys.isFresh(hex) {
+            confirmed = true
+        } else {
+            // Every save starts from the newest list on the relays, fetched
+            // now, not the copy read at launch (Logen 2026-10-31).
             let ok = await (fetch ?? startFetch()).value
             guard ok, accountHex == hex else {
                 if accountHex == hex { self.hashtags = list.hashtags }
@@ -107,8 +110,12 @@ final class InterestListService: ObservableObject {
             guard let self, !Task.isCancelled, self.accountHex == hex else { return false }
             self.fetch = nil
             guard let result else { return false }
-            if let remote = result, remote.createdAt >= self.list.createdAt {
-                self.accept(remote)
+            if let remote = result {
+                if remote.createdAt >= self.list.createdAt { self.accept(remote) }
+            } else {
+                // The relays agree there is no list: a save starts from an
+                // empty one, not from what this phone cached.
+                self.accept(InterestList())
             }
             self.confirmed = true
             return true
@@ -237,7 +244,9 @@ private final class OneShotQuery {
         clients.forEach { $0.disconnect() }
         clients = []
         cancellables.removeAll()
-        if newest != nil || answered > 0 {
+        // "None" only when the relays agree: one relay answering may just
+        // not hold the list (Logen 2026-10-31).
+        if newest != nil || ListMerge.knowsNone(asked: relays.count, answered: answered) {
             completion(.some(newest))
         } else {
             completion(nil)

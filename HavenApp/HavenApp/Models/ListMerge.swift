@@ -109,7 +109,7 @@ enum ListMerge {
     enum EditBase<Event> {
         /// The newest list, published or already held here.
         case list(Event)
-        /// Every relay answered and none has a list.
+        /// At least two relays answered, every one asked did, and none has a list.
         case none
         /// Not known: publishing could replace a list this device never saw.
         case unknown
@@ -130,7 +130,34 @@ enum ListMerge {
         if let newest = [lookup.event, held].compactMap({ $0 }).max(by: { createdAt($0) < createdAt($1) }) {
             return .list(newest)
         }
-        return lookup.confirmedNone ? .none : .unknown
+        return knowsNone(asked: lookup.asked, answered: lookup.answered) ? .none : .unknown
+    }
+
+    /// "You have no list" is known only when at least two relays answered and
+    /// every relay asked did. One relay saying none is not that: it may just
+    /// not hold the list (Logen 2026-10-31).
+    static func knowsNone(asked: Int, answered: Int) -> Bool {
+        answered >= 2 && answered >= asked
+    }
+
+    /// A follow or unfollow made on `before` (the list the tap saw) applied to
+    /// `base`, the newest list fetched right before signing. Every tag of
+    /// `base` stays as it is (petnames, relay hints, tags other than `p`), the
+    /// `p` entries the tap removed come out, and the ones it added go at the
+    /// end. Signing the copy loaded at launch instead put back people
+    /// unfollowed and dropped people followed in another app since.
+    static func contactEdit(base: [[String]], before: [[String]], after: [[String]]) -> [[String]] {
+        func person(_ tag: [String]) -> String? {
+            tag.count >= 2 && tag[0] == "p" ? tag[1].lowercased() : nil
+        }
+        let had = Set(before.compactMap(person))
+        let removed = had.subtracting(after.compactMap(person))
+        var out = base.filter { tag in person(tag).map { !removed.contains($0) } ?? true }
+        var present = Set(out.compactMap(person))
+        for tag in after {
+            if let key = person(tag), !had.contains(key), present.insert(key).inserted { out.append(tag) }
+        }
+        return out
     }
 
     private static func relayKey(_ url: String) -> String {

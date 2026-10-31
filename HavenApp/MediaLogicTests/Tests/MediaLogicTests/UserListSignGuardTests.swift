@@ -6,9 +6,8 @@ import XCTest
 /// Paths from Tron's audit at 633d5552 (RESEARCH/NV_LIST_OVERWRITE_AUDIT_633D5552.md). Android twin:
 /// UserListSignGuardTest.kt.
 ///
-/// The `knownLivePath` tests are live paths the audit found that can overwrite a list. They are skipped and fail
-/// on purpose when run (`NV_RUN_KNOWN_LIVE_PATHS=1 swift test --filter UserListSignGuardTests`); Logen decides
-/// the fixes. Drop the `knownLivePath` line when a fix lands.
+/// The last tests pin the fixes for the live paths the audit found (iPhone/Mac, 2026-10-31): nothing signs a list
+/// on load, a Save edits the newest copy fetched right before it, and one relay saying "none" is not "you have none".
 final class UserListSignGuardTests: XCTestCase {
 
     private static let listKinds: Set<String> = ["0", "3", "10000", "10002", "10006", "10015", "10050", "10063"]
@@ -96,42 +95,36 @@ final class UserListSignGuardTests: XCTestCase {
         ])
     }
 
-    // MARK: - Known live paths (Tron audit 633d5552). Skipped; they fail when run. Logen decides the fixes.
-
-    private func knownLivePath(_ line: String) throws {
-        if ProcessInfo.processInfo.environment["NV_RUN_KNOWN_LIVE_PATHS"] != "1" { throw XCTSkip("KNOWN LIVE PATH " + line) }
-    }
+    // MARK: - The audit's live paths (Tron 633d5552), fixed 2026-10-31.
 
     private func src(_ path: String) -> String { Self.sources[path] ?? "" }
 
     func testLoadingTheFollowListNeverReSignsIt() throws {
-        try knownLivePath("⛔ (Tron 633d5552): kind 3 self-heal re-signs on load, FeedService+ContactList.swift:257-267")
         XCTAssertFalse(src("HavenApp/Services/Feed/FeedService+ContactList.swift").contains("self.publishContactList()"))
     }
 
     func testAFollowTapReadsTheNewestKind3BeforeSigning() throws {
-        try knownLivePath("⚠️ (Tron 633d5552): follow/unfollow edits the launch copy, no re-fetch, FeedService+Follow.swift:122; non-p tags dropped, FeedService+ContactList.swift:306")
-        XCTAssertTrue(src("HavenApp/Services/Feed/FeedService+Follow.swift").contains("lookupNewestReplaceable(kind: 3"))
+        let follow = src("HavenApp/Services/Feed/FeedService+Follow.swift")
+        XCTAssertNotNil(follow.range(of: #"lookupNewestReplaceable\( ?kind: 3,"#, options: .regularExpression))
+        XCTAssertTrue(follow.contains("ListMerge.contactEdit(base: base.tags, before: before, after: attempted)"),
+                      "the tap's change goes onto the fetched list, every other tag kept")
     }
 
     func testOneRelaySayingNoneIsNotEnoughToPublishA10063Or10006() throws {
-        try knownLivePath("⚠️ (Tron 633d5552): one 'none' answer = known, cache fallback, publishes local/empty 10063/10006, NostrService+ListPublishing.swift:89,204-228")
         let publishing = src("HavenApp/Services/Nostr/NostrService+ListPublishing.swift")
         XCTAssertFalse(publishing.contains("lookup.event == nil && lookup.answered == 0"))
         XCTAssertFalse(publishing.contains("} else { existing = serverLists[owner] ?? [] }"))
     }
 
     func testOneRelayAnsweringIsNotEnoughToPublishA10015() throws {
-        try knownLivePath("⚠️ (Tron 633d5552): 10015 one relay answering = known, InterestListService.swift:236-240")
         XCTAssertFalse(src("HavenApp/Services/InterestListService.swift").contains("newest != nil || answered > 0"))
     }
 
     func testSaveInRelaysReadsTheNewestListAtSave() throws {
-        try knownLivePath("🔵 (Tron 633d5552): 10002/10050 Save uses the copy read when Relays opened, not at Save")
-        let save = src("HavenApp/Services/Nostr/NostrService+RelayListSave.swift")
-        let publish = save.components(separatedBy: "func publishRelayListTags").last?
-            .components(separatedBy: "func publishOwnerDMRelays").first ?? ""
-        XCTAssertFalse(publish.isEmpty)
-        XCTAssertTrue(publish.contains("lookupNewestReplaceable("), "the 10002 Save reads the newest list before signing")
+        let view = src("HavenApp/Views/RelayMatrixView.swift")
+        let save = view.components(separatedBy: "private func save()").last?
+            .components(separatedBy: "private func commit(").first ?? ""
+        XCTAssertTrue(save.contains("await NostrService.shared.lookupOwnerRelayLists()"), "Save reads the lists again")
+        XCTAssertTrue(save.contains("RelayDraft.saveCheck(opened: state.published, fresh: fresh, plan: plan)"))
     }
 }

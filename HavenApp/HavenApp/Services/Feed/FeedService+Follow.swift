@@ -117,12 +117,61 @@ extension FeedService {
         // stale relay copy and drop the edit we're about to publish.
         ownContactListAccountKey = currentSnapshotKey()
         ownContactListCreatedAt = max(ownContactListCreatedAt, Int64(Date().timeIntervalSince1970))
-        Task { [weak self] in
-            guard let self = self else { return }
-            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: self.contactListContent, tags: attempted) else {
+        // Every caller is a tap that carries the list it was made on.
+        guard let before = rollback?.pTags else {
+            DispatchQueue.main.async { fail(nil) }
+            return
+        }
+        let owner = ConfigService.shared.activeAccountHexPubkey
+        // One at a time, so a second tap builds on the first one's list.
+        let previousPublish = Self.contactListPublishTail
+        let publish = Task { @MainActor [weak self] in
+            await previousPublish?.value
+            guard let self else { return }
+            // Never sign the copy loaded at launch: fetch the newest list right
+            // now and apply only this tap's change to it (Logen 2026-10-31).
+            let config = ConfigService.shared.config
+            let lookup = await NostrService.shared.lookupNewestReplaceable(
+                kind: 3, for: owner, alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
+            guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(nil); return }
+            let base: (tags: [[String]], content: String, createdAt: Int64)
+            switch ListMerge.editBase(lookup, held: Self.lastSignedContactList[owner], createdAt: { $0.created_at }) {
+            case .unknown:
+                #if DEBUG
+                print("FeedService: follow list not published — relays didn't answer (\(lookup.answered)/\(lookup.asked))")
+                #endif
+                fail(nil)
+                return
+            case .none: base = ([], "", 0)
+            case .list(let newest): base = (newest.tags, newest.content, newest.created_at)
+            }
+            let tags = ListMerge.contactEdit(base: base.tags, before: before, after: attempted)
+            let basePeople = base.tags.filter { $0.count >= 2 && $0[0] == "p" }.count
+            let people = tags.filter { $0.count >= 2 && $0[0] == "p" }.count
+            guard ContactManager.mayPublish(tagCount: people, lastFetchedCount: basePeople,
+                                            unfollowFrom: unfollowFrom == nil ? nil : basePeople) else {
                 fail(nil)
                 return
             }
+            // A later second than the list it replaces, or relays may keep that
+            // one. A list dated further ahead than a clock skew isn't waited for.
+            let wait = base.createdAt + 1 - Int64(Date().timeIntervalSince1970)
+            if wait > 0, wait <= 2 { try? await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000) }
+            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: base.content, tags: tags),
+                  event.pubkey.lowercased() == owner.lowercased(),
+                  owner == ConfigService.shared.activeAccountHexPubkey else {
+                fail(nil)
+                return
+            }
+            Self.lastSignedContactList[owner] = event
+            // What went out is now the list, unless another tap is already on screen.
+            if self.contactListPTags == attempted {
+                let parsed = ContactManager.parseContactList(pTags: tags.filter { $0.count >= 2 && $0[0] == "p" })
+                self.contactListPTags = parsed.pTags
+                self.followedPubkeys = parsed.pubkeys
+                self.lastFetchedContactCount = parsed.relayPTagCount
+            }
+            self.contactListContent = base.content
             self.recordOwnContactList(event: event)
             self.watchForRebuiltWeb()
             NostrService.shared.postEvent(event, onBroadcastOutcome: { outcome in
@@ -130,7 +179,14 @@ extension FeedService {
                 Task { @MainActor in fail(event.created_at) }
             })
         }
+        Self.contactListPublishTail = publish
     }
+
+    /// The last follow list signed here per account: the newest copy until
+    /// the relays echo it back.
+    @MainActor static var lastSignedContactList: [String: NostrEvent] = [:]
+    /// The follow-list publish still running, so the next one waits for it.
+    @MainActor static var contactListPublishTail: Task<Void, Never>?
 
     /// The active account has no key here and no bunker, so nothing it
     /// publishes can be signed.

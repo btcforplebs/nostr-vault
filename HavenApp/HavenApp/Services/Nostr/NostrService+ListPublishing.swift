@@ -86,13 +86,19 @@ extension NostrService {
         guard !author.isEmpty else { return nil }
         let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
         let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk)
-        if lookup.event == nil && lookup.answered == 0 {
+        // The newest list, or "none" only when the relays agree there is none:
+        // one relay saying none may just not hold it (Logen 2026-10-31).
+        let published: NostrEvent?
+        switch ListMerge.editBase(lookup, held: nil, createdAt: { $0.created_at }) {
+        case .list(let event): published = event
+        case .none: published = nil
+        case .unknown:
             #if DEBUG
-            print("NostrService: Kind \(kind): no relay answered; not published")
+            print("NostrService: Kind \(kind): list not known (\(lookup.answered)/\(lookup.asked) relays answered); not published")
             #endif
             return nil
         }
-        let (tags, content) = build(lookup.event)
+        let (tags, content) = build(published)
         guard let event = await signEventAsync(kind: kind, content: content, tags: tags, signAsNpub: signAsNpub) else {
             #if DEBUG
             print("NostrService: Failed to sign Kind \(kind) list")
@@ -190,21 +196,29 @@ extension NostrService {
         let ownMeshNpub = ownMesh, photo = photoNpub, current = servers
 
         Task {
-            // Start from the newest list on the relays, not this phone's cache
-            // (same rule as Android): the cache only when the relays could not
-            // say, and nothing when they all confirmed there is none.
+            // Start from the newest list on the relays, never this phone's
+            // cache: when the relays can't say (none answered, or only one said
+            // "none"), nothing is published (Logen 2026-10-31).
             let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [RelayConfiguration.serverListIndexerRelay])
+            // The account may have changed during the lookup: never sign one
+            // account's servers as another.
+            guard owner == activeHexPubkey else { return }
             let existing: [String]
-            if let newest = lookup.event {
+            switch ListMerge.editBase(lookup, held: nil, createdAt: { $0.created_at }) {
+            case .list(let newest):
                 // lookupNewestReplaceable keeps only events whose author and signature it checked.
                 if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id, signedByAuthor: true) {
                     serverLists[owner] = ProfileRepository.parseServerListTags(newest.tags)
                 }
-                existing = serverLists[owner] ?? []
-            } else if lookup.confirmedNone {
+                // A newer list already held here (one this phone just signed) wins.
+                existing = serverLists[owner] ?? ProfileRepository.parseServerListTags(newest.tags)
+            case .none:
                 existing = []
-            } else {
-                existing = serverLists[owner] ?? []
+            case .unknown:
+                #if DEBUG
+                print("NostrService: Kind 10063: list not known (\(lookup.answered)/\(lookup.asked) relays answered); not published")
+                #endif
+                return
             }
             guard let merged = HomeVaultLogic.mergeServerList(
                 existing: existing,
@@ -225,7 +239,8 @@ extension NostrService {
                 return
             }
             let tags = merged.map { ["server", $0] }
-            if let event = await signEventAsync(kind: 10063, content: "", tags: tags) {
+            if let event = await signEventAsync(kind: 10063, content: "", tags: tags),
+               event.pubkey.lowercased() == owner.lowercased() {
                 // Ours is now the newest: merge from it next time, even before it echoes back.
                 // Signed here, by this account.
                 if acceptServerListStamp(pubkey: event.pubkey, createdAt: event.created_at, id: event.id, signedByAuthor: true) {
