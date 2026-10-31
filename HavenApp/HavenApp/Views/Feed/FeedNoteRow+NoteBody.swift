@@ -195,7 +195,8 @@ extension FeedNoteRow {
                     .popover(isPresented: $showingEmojiPicker) {
                         EmojiPickerView(onSelect: { pickReaction($0) })
                         #if os(iOS)
-                        .presentationDetents([.height(520)])
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
                         #endif
                     }
                     #if os(macOS)
