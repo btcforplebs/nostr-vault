@@ -8,7 +8,10 @@ import { signerFor } from "./src/signer/index.js"
 import { unlockLocal, wellFormed, DAMAGED } from "./src/signer/local.js"
 import { clearAuthUrl } from "./src/signer/nip46.js"
 import { painted } from "./src/components/KeyCard.jsx"
-import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } from "./src/haven/vault.js"
+import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven, routeClient, deviceKey } from "./src/haven/vault.js"
+import { BOX } from "./src/box/mode.js"
+import { startBoxVault } from "./src/box/box-vault.js"
+import { BoxScreen } from "./src/box/BoxScreen.jsx"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { readKept, keep as keepNeverConnect } from "./src/net/never-connect.js"
@@ -54,7 +57,7 @@ import { NotifyWatch } from "./src/components/useNotifyWatch.js"
 import { VaultDashboard } from "./src/screens/VaultDashboard.jsx"
 import { isDashboardOpen } from "./src/net/dashboard-route.js"
 
-const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "settings", "accounts", "wallet"]
+const ROUTES = ["feed", "search", "wot", "notifications", "compose", "profile", "relay", "thread", "messages", "dm", "vault", "settings", "accounts", "wallet", ...(BOX ? ["box"] : [])]
 // "#/thread/<id>" -> { route: "thread", arg: "<id>" }; "#/profile/<pubkey>" is someone else's profile.
 const routeOf = () => {
   const [r, arg = ""] = location.hash.replace(/^#\/?/, "").split(/[?]/)[0].split("/")
@@ -66,7 +69,7 @@ const routeOf = () => {
 const bootHash = location.hash
 // Compose closes back to the page it came from, or shows Done when it was the first page (src/components/nav-depth.js).
 startNavDepth()
-if (loadSession()) preloadHaven()
+if (loadSession() && !BOX) preloadHaven() // a box's vault is the box: no haven.wasm
 
 // 760px and up is the desktop layout (src/desktop). The address is fixed up for the layout before anything renders:
 // a thread link opens beside the list it came from on a wide window, and a desktop address with a note open goes to
@@ -104,6 +107,7 @@ globalThis.nvLog = logLines
 function App() {
   const [session, setSession] = useState(loadSession)
   const [signer, setSigner] = useState(() => session && signerFor(session, pool))
+  const signerNow = useRef(signer); signerNow.current = signer // box mode signs the box relay's AUTH with whichever signer is current
   const [vault, setVault] = useState(null)
   const [account, setAccount] = useState(null)
   const [error, setError] = useState("")
@@ -141,7 +145,7 @@ function App() {
     let opened = !firstTime, shown = null
     openNow.current = () => { if (opened) return; opened = true; setPrep(null); if (shown) setAccount(shown) }
     ;(async () => {
-      const v = await startVault({ pubkey: session.pubkey, log })
+      const v = BOX ? startBoxVault({ signer: { signEvent: e => signerNow.current.signEvent(e) }, routeClient, deviceKey }) : await startVault({ pubkey: session.pubkey, log })
       if (!live) return
       log("boot", { loadMs: v.loadMs, startMs: v.startMs, method: session.method })
       setVault(v)
@@ -247,7 +251,9 @@ function App() {
     <div class={desk ? "app desk-app" : "app"}>
       <NotifyWatch ctx={ctx} />
       {desk ? <DesktopShell ctx={ctx} mode={mode} hash={location.hash} lastList={lastList} /> : <PhoneScreens ctx={ctx} route={route} arg={arg} other={other} />}
-      <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>
+      {/* A box has its own mesh and no in-page relay: its Box screen (src/box) instead of the browser relay's. */}
+      {BOX ? (route === "box" || route === "relay") && <div class="box-host"><BoxScreen ctx={ctx} /></div>
+        : <div class="relay-host" hidden={route !== "relay"}><RelayScreen ctx={ctx} log={log} /></div>}
       {!desk && (route === "feed" || route === "search" || route === "profile" && !other) && !signer?.readOnly && <PostButton />}
       {!desk && <TabBar ctx={ctx} route={tabOf(route, other)} pubkey={session.pubkey} />}
       <FloatingPlayer />

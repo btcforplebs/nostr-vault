@@ -27,6 +27,7 @@ import { DefaultReactionRow } from "../components/DefaultReactionRow.jsx"
 import { PostButtonsSwitch } from "../components/PostButtonsSwitch.jsx"
 import { AutoplaySwitch } from "../components/AutoplaySwitch.jsx"
 import { LineLimitSteppers } from "../components/LineLimitSteppers.jsx"
+import { BOX, BoxLink } from "../box/BoxLink.jsx"
 import {
   SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL,
   logLines,
@@ -71,7 +72,7 @@ function Index({ ctx }) {
   return (
     <main class="screen settings">
       <header class="screen-head"><a class="button small" href="#/profile">Close</a><h2>Settings</h2><span style="width: 64px" /></header>
-      <RelayStatusCard ctx={ctx} />
+      {BOX ? <BoxLink /> : <RelayStatusCard ctx={ctx} />}
       <section class="settings-group">
         <div class="section-label">Learn</div>
         <div class="settings-rows">
