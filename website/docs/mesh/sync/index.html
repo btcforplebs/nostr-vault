@@ -5,14 +5,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync with your Mac — Nostr Vault Docs</title>
+    <title>Home vault sync — Nostr Vault Docs</title>
     <meta name="description" content="Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.">
     <link rel="canonical" href="https://nostrvault.app/docs/mesh/sync/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/mesh/sync/">
-    <meta property="og:title" content="Sync with your Mac — Nostr Vault Docs">
+    <meta property="og:title" content="Home vault sync — Nostr Vault Docs">
     <meta property="og:description" content="Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/" aria-current="page">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/" aria-current="page">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -130,31 +130,31 @@
 
         <main class="docs-main">
             <p class="eyebrow">Mesh and your devices</p>
-            <h1>Sync with your Mac</h1>
+            <h1>Home vault sync</h1>
             <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#set-it-up">Set it up</a></li><li><a href="#check">Check that it arrived</a></li><li><a href="#good-to-know">Good to know</a></li></ul></div>
 
             <article class="docs-article">
-                <p>With your Mac on your phone's list as <span class="ui">Vault on Mac</span>, each new note and photo you post on the
+                <p>With your Mac on your phone's list as <span class="ui">Home vault &middot; full history</span>, each new note and photo you post on the
                     phone also goes to the Mac over the mesh. Your notes and history sync back from the Mac to the phone. The Mac becomes
                     the second, always-on copy of your vault.</p>
 
                 <h2 id="set-it-up">Set it up</h2>
                 <ol class="steps">
                     <li>Turn on the mesh on the Mac and on the phone, and add each to the other's
-                        <a href="/docs/mesh/my-devices/">My Devices</a>. On the phone, pick <span class="ui">Vault on Mac</span>.</li>
+                        <a href="/docs/mesh/my-devices/">My Devices</a>. On the phone, pick <span class="ui">Home vault &middot; full history</span>.</li>
                     <li>Keep Nostr Vault open on the Mac. It syncs while it's open.</li>
-                    <li>Shortly after the phone's relay starts, it copies your full history from the Mac on its own. After that, new
+                    <li>Shortly after the phone's vault starts, it copies your full history from the Mac on its own. After that, new
                         posts and mentions keep syncing by themselves.</li>
                 </ol>
 
                 <h2 id="check">Check that it arrived</h2>
-                <p>On iPhone and Android, open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span> and, under
-                    <span class="ui">Sync</span>, tap <span class="ui">Check sync with Vault on Mac</span>. It's also under
-                    <span class="path">Settings &rarr; Sync with Vault on Mac</span>. It ends with what was copied and how many are
+                <p>On iPhone and Android, open <span class="path">Settings &rarr; Mesh</span> and, under
+                    <span class="ui">Sync</span>, tap <span class="ui">Check home vault sync</span>. It's also under
+                    <span class="path">Settings &rarr; Home vault sync</span>. It ends with what was copied and how many are
                     missing (Done &middot; nothing missing on iPhone, Everything copied &middot; 0 missing on Android), or says why
                     it stopped.</p>
                 <div class="shots">
-                    <figure><img src="/docs/img/ios/sync.webp" alt="Sync, with Check sync with Vault on Mac" width="900" height="1957" loading="lazy"><figcaption>Sync, with Check sync with Vault on Mac</figcaption></figure>
+                    <figure><img src="/docs/img/ios/sync.webp" alt="Sync, with Check home vault sync" width="900" height="1957" loading="lazy"><figcaption>Sync, with Check home vault sync</figcaption></figure>
                 </div>
 
                 <ul>
@@ -176,7 +176,7 @@
             <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/mesh/my-devices/"><span>Previous</span>My Devices</a>
-                <a class="next" href="/docs/mesh/home-vault/"><span>Next</span>Home vault and kiosk</a>
+                <a class="next" href="/docs/mesh/home-vault/"><span>Next</span>Home vault</a>
             </div>
         </main>
     </div>

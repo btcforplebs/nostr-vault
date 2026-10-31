@@ -5,15 +5,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home vault and kiosk mode — Nostr Vault Docs</title>
-    <meta name="description" content="Turn a spare phone into an always-on home vault with kiosk mode: it keeps your new posts and media, passes your notes on to your relays, and serves your public photos.">
+    <title>Home vault — Nostr Vault Docs</title>
+    <meta name="description" content="Your home vault is the always-on one: a Mac, Linux box, Pi, box or spare phone that stays on. What each kind does, and how to turn a spare phone into one with Home vault mode.">
     <link rel="canonical" href="https://nostrvault.app/docs/mesh/home-vault/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/mesh/home-vault/">
-    <meta property="og:title" content="Home vault and kiosk mode — Nostr Vault Docs">
-    <meta property="og:description" content="Turn a spare phone into an always-on home vault with kiosk mode: it keeps your new posts and media, passes your notes on to your relays, and serves your public photos.">
+    <meta property="og:title" content="Home vault — Nostr Vault Docs">
+    <meta property="og:description" content="Your home vault is the always-on one: a Mac, Linux box, Pi, box or spare phone that stays on. What each kind does, and how to turn a spare phone into one with Home vault mode.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/" aria-current="page">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/" aria-current="page">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -130,51 +130,58 @@
 
         <main class="docs-main">
             <p class="eyebrow">Mesh and your devices</p>
-            <h1>Home vault and kiosk mode</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#kiosk">1. Turn the spare phone into a kiosk</a></li><li><a href="#home">2. Make it your home vault</a></li><li><a href="#photos">Photos go to</a></li></ul></div>
+            <h1>Home vault</h1>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#kinds">What each kind does</a></li><li><a href="#kiosk">1. Turn on Home vault mode on the spare phone</a></li><li><a href="#home">2. Add it to My Devices</a></li><li><a href="#photos">Photos go to</a></li></ul></div>
 
             <article class="docs-article">
-                <p>An old phone on a charger at home can be your <strong>home vault</strong>: a small always-on copy of your vault that
-                    you own. Your main phone sends it your new posts and media over the mesh, and it passes your notes on to your
-                    relays.</p>
+                <p>Your <strong>home vault</strong> is the vault that stays on. It can be a Mac, a Linux box or Raspberry Pi, a box, or
+                    an old phone on a charger. Your other devices reach it over the mesh, so your notes and media have a home even when
+                    your phone is off.</p>
 
-                <h2 id="kiosk">1. Turn the spare phone into a kiosk</h2>
+                <h2 id="kinds">What each kind does</h2>
+                <ul>
+                    <li><strong>Home vault &middot; full history</strong> (a Mac today; Linux and Pi later): keeps all your history and syncs both
+                        ways with your phones. Set it up with <a href="/docs/mesh/sync/">Home vault sync</a>.</li>
+                    <li><strong>Home vault &middot; new posts</strong> (a spare phone or a box): keeps your new posts and media, and passes your notes
+                        on to your relays. It doesn't hold your older history. This page shows how to set one up on a spare phone.</li>
+                </ul>
+
+                <h2 id="kiosk">1. Turn on Home vault mode on the spare phone</h2>
                 <ol class="steps">
                     <li>Install Nostr Vault on the spare phone and sign in with the same account.</li>
-                    <li>On iPhone, add your main phone under My Devices first (step 2). Kiosk mode won't start with an empty
+                    <li>On iPhone, add your main phone under My Devices first (step 2). Home vault mode won't start with an empty
                         list.</li>
-                    <li>Open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span>, switch on <span class="ui">Mesh</span>,
-                        and under <span class="ui">Share With Others</span> switch on <span class="ui">Kiosk mode</span>.</li>
+                    <li>Open <span class="path">Settings &rarr; Mesh</span>, switch on <span class="ui">Mesh</span>,
+                        and under <span class="ui">Share With Others</span> switch on <span class="ui">Home vault mode</span>.</li>
                     <li>Leave it on a charger.</li>
                 </ol>
                 <ul>
-                    <li>On iPhone, kiosk mode keeps the screen on, pauses when you leave the app and turns on again when you come
-                        back. On Android it keeps serving in the background while the vault relay runs, and after a restart.</li>
-                    <li>Your devices in My Devices reach the kiosk in full.</li>
+                    <li>On iPhone, Home vault mode keeps the screen on, pauses when you leave the app and turns on again when you come
+                        back. On Android it keeps serving in the background while your vault runs, and after a restart.</li>
+                    <li>Your devices in My Devices reach the home vault in full.</li>
                     <li>Anyone else on the mesh can read only the photos in your posts, and slowly: 1 MB/s for all of them together,
                         at most 256 MB each. On iPhone they get 1 GB a day in total, then wait until the next day. They can't read your
                         notes or change anything.</li>
                     <li>On Android, <span class="ui">Pause after</span> (250 MB, 1 GB or 5 GB, 1 GB to start) sets how much the mesh
-                        may download in one session. When it's reached, kiosk mode turns off until you turn it on again.</li>
+                        may download in one session. When it's reached, Home vault mode turns off until you turn it on again.</li>
                 </ul>
-
                 <div class="shots">
                     <figure><img src="/docs/img/ios/share-kiosk.webp" alt="Share With Others on iPhone" width="900" height="1957" loading="lazy"><figcaption>Share With Others on iPhone</figcaption></figure>
                     <figure><img src="/docs/img/android/share-kiosk.webp" alt="Share With Others on Android, with Pause after" width="900" height="2000" loading="lazy"><figcaption>Share With Others on Android, with Pause after</figcaption></figure>
                 </div>
 
-                <h2 id="home">2. Make it your home vault</h2>
+                <h2 id="home">2. Add it to My Devices</h2>
                 <ol class="steps">
-                    <li>On the kiosk phone, under <span class="ui">This Device</span>, copy its mesh address (or show its QR code).</li>
-                    <li>On your main phone, open <span class="ui">FIPS Mesh</span> &rarr; <span class="ui">Add a device by address</span>,
-                        paste or scan it, and pick <span class="ui">Home vault</span>. A kiosk your account already lists shows under
+                    <li>On the spare phone, under <span class="ui">This Device</span>, copy its mesh address (or show its QR code).</li>
+                    <li>On your main phone, open <span class="path">Settings &rarr; Mesh</span> &rarr; <span class="ui">Add a device by address</span>,
+                        paste or scan it, and pick <span class="ui">Home vault &middot; new posts</span>. A home vault your account already lists shows under
                         Address as In your media servers (on Android, <span class="ui">In Your Media Servers</span>). Tap it to use
                         its address.</li>
-                    <li>Add the main phone to the kiosk's My Devices too.</li>
+                    <li>Add the main phone to the spare phone's My Devices too.</li>
                 </ol>
-                <p>From then on, your new notes and media also go to the kiosk phone over the mesh, and it sends your notes on to your
+                <p>From then on, your new notes and media also go to the home vault over the mesh, and it sends your notes on to your
                     relays. They stay on your main phone too. Anything that can't reach it waits on the main phone and goes when the
-                    app is open and the kiosk is in reach. <span class="ui">Send now</span> under Sync sends it straight away.</p>
+                    app is open and the home vault is in reach. <span class="ui">Send now</span> under Sync sends it straight away.</p>
 
                 <div class="note">
                     <p><strong>What's public.</strong> A home vault's mesh address is listed in your media server list, in public, so
@@ -183,14 +190,14 @@
                 </div>
 
                 <h2 id="photos">Photos go to</h2>
-                <p>Under Share With Others, <span class="ui">Photos go to</span> (<span class="ui">Public server</span>,
-                    <span class="ui">My Mac</span> or <span class="ui">Both</span>) saves where you want photos to go, but it doesn't
+                <p>Under Share With Others, <span class="ui">Photos go to</span> (<span class="ui">Media server</span>,
+                    <span class="ui">Home vault</span> or <span class="ui">Both</span>) saves where you want photos to go, but it doesn't
                     change anything yet: posting a photo still needs a public media server.</p>
             </article>
             <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
-                <a class="prev" href="/docs/mesh/sync/"><span>Previous</span>Sync with your Mac</a>
-                <a class="next" href="/docs/mesh/photo-server/"><span>Next</span>Mac photo server</a>
+                <a class="prev" href="/docs/mesh/sync/"><span>Previous</span>Home vault sync</a>
+                <a class="next" href="/docs/mesh/photo-server/"><span>Next</span>Photo server</a>
             </div>
         </main>
     </div>

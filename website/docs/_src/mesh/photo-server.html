@@ -1,14 +1,14 @@
 <!--page
 {
   "title": "Your Mac as your photo server",
-  "nav": "Mac photo server",
+  "nav": "Photo server",
   "section": "mesh",
   "order": 5,
-  "description": "Let Nostr Vault on your Mac serve your photos over the FIPS mesh, listed in your media servers, with no public IP, domain or port forwarding.",
+  "description": "Let Nostr Vault on your Mac serve your photos over the mesh, listed in your media servers, with no public IP, domain or port forwarding.",
   "checked": "Nostr Vault 3.0.0 (41) for macOS",
   "labels": {
     "mac": ["Mesh", "This Device", "Share With Others", "List in my media servers", "Address source", "My Nostr npub", "Advanced",
-            "Startup", "Launch at Login", "Start Relay Automatically"]
+            "Startup", "Launch at Login", "Start Vault Automatically"]
   }
 }
 -->
@@ -18,12 +18,12 @@
 
 <h2>Turn it on</h2>
 <ol class="steps">
-    <li>On the Mac, open <span class="path">Settings &rarr; FIPS Mesh</span> and switch on <span class="ui">Mesh</span>.
+    <li>On the Mac, open <span class="path">Settings &rarr; Mesh</span> and switch on <span class="ui">Mesh</span>.
         The mesh engine runs inside the Mac app; there's nothing else to install.</li>
     <li>Add a phone under <a href="/docs/mesh/my-devices/">My Devices</a>. The mesh starts once at least one of your
         devices is on that list, and the Mac then lists its mesh address in your media servers by itself.</li>
     <li>Keep Nostr Vault open. In <span class="path">Settings &rarr; Startup</span>, turn on
-        <span class="ui">Launch at Login</span> and <span class="ui">Start Relay Automatically</span> so it's always
+        <span class="ui">Launch at Login</span> and <span class="ui">Start Vault Automatically</span> so it's always
         there.</li>
 </ol>
 

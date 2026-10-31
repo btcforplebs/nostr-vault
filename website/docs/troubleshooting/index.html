@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Troubleshooting — Nostr Vault Docs</title>
-    <meta name="description" content="Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, kiosk mode paused.">
+    <meta name="description" content="Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Home vault mode paused.">
     <link rel="canonical" href="https://nostrvault.app/docs/troubleshooting/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/troubleshooting/">
     <meta property="og:title" content="Troubleshooting — Nostr Vault Docs">
-    <meta property="og:description" content="Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, kiosk mode paused.">
+    <meta property="og:description" content="Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Home vault mode paused.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -132,7 +132,7 @@
             <p class="eyebrow">Help</p>
             <h1>When something <span>isn't working</span></h1>
             <p class="docs-lede">One heading per problem: what you see, why it happens, and what to tap.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#my-feed-is-empty">My feed is empty</a></li><li><a href="#i-can-t-post-like-or-follow">I can't post, like or follow</a></li><li><a href="#my-signer-never-answers">My signer never answers</a></li><li><a href="#my-photo-post-didn-t-send">My photo post didn't send</a></li><li><a href="#a-relay-isn-t-answering">A relay isn't answering</a></li><li><a href="#android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</a></li><li><a href="#a-device-on-my-devices-is-never-in-reach">A device on My Devices is never in reach</a></li><li><a href="#check-sync-stops-early">Check sync stops early</a></li><li><a href="#someone-s-photos-don-t-load-over-the-mesh">Someone's photos don't load over the mesh</a></li><li><a href="#kiosk-mode-paused">Kiosk mode paused</a></li><li><a href="#still-stuck">Still stuck?</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#my-feed-is-empty">My feed is empty</a></li><li><a href="#i-can-t-post-like-or-follow">I can't post, like or follow</a></li><li><a href="#my-signer-never-answers">My signer never answers</a></li><li><a href="#my-photo-post-didn-t-send">My photo post didn't send</a></li><li><a href="#a-relay-isn-t-answering">A relay isn't answering</a></li><li><a href="#android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</a></li><li><a href="#a-device-on-my-devices-is-never-in-reach">A device on My Devices is never in reach</a></li><li><a href="#check-sync-stops-early">Check sync stops early</a></li><li><a href="#someone-s-photos-don-t-load-over-the-mesh">Someone's photos don't load over the mesh</a></li><li><a href="#home-vault-mode-paused">Home vault mode paused</a></li><li><a href="#still-stuck">Still stuck?</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="empty-feed">
@@ -184,26 +184,26 @@
 
                 <section id="android-update">
                 <h2 id="android-my-vault-went-quiet-after-an-update">Android: my vault went quiet after an update</h2>
-                <p>Installing an update stops the app, and with it your vault relay.</p>
-                <p><strong>Fix:</strong> open the app once after updating. Keep <strong>Start Relay Automatically</strong> on:
+                <p>Installing an update stops the app, and with it your vault.</p>
+                <p><strong>Fix:</strong> open the app once after updating. Keep <strong>Start Vault Automatically</strong> on:
                     newer builds then start the relay again by themselves after an update.</p>
                 </section>
 
                 <section id="dot">
                 <h2 id="a-device-on-my-devices-is-never-in-reach">A device on My Devices is never in reach</h2>
-                <p>Under <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh &rarr; My Devices</span> a device stays "Not in
-                    reach" (Android shows when it was last seen). A Mac or a kiosk phone only answers devices that are on its own
+                <p>Under <span class="path">Settings &rarr; Mesh &rarr; My Devices</span> a device stays "Not in
+                    reach" (Android shows when it was last seen). A Mac or a home vault only answers devices that are on its own
                     My Devices list, and a Mac with an empty list doesn't start the mesh at all.</p>
                 <p><strong>Fix:</strong> add the devices both ways. On each device, copy the address under
                     <strong>This Device</strong> and add it on the other one; on your phones, add the Mac as
-                    <strong>Vault on Mac</strong>. Check that Mesh is on, on both. See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</p>
+                    <strong>Home vault &middot; full history</strong>. Check that Mesh is on, on both. See <a class="inline" href="/docs/mesh/#devices">My Devices</a>.</p>
                 </section>
 
                 <section id="check-sync">
                 <h2 id="check-sync-stops-early">Check sync stops early</h2>
-                <p>On iPhone and Android, <strong>Check sync with Vault on Mac</strong> ends on "Stopped · N still missing", "Copy didn't
+                <p>On iPhone and Android, <strong>Check home vault sync</strong> ends on "Stopped · N still missing", "Copy didn't
                     finish" with a reason, or "Copy was interrupted". The button is greyed out while a copy is running or when
-                    your vault relay isn't running.</p>
+                    your vault isn't running.</p>
                 <p><strong>Fix:</strong> read the reason line. "Copy was interrupted" means the app closed during the copy; it
                     picks up again the next time the relay starts. Anything that couldn't be copied is tried again once a day,
                     and tapping the button starts a new run.</p>
@@ -219,11 +219,11 @@
                 </section>
 
                 <section id="kiosk">
-                <h2 id="kiosk-mode-paused">Kiosk mode paused</h2>
-                <p>On iPhone you get "Kiosk mode paused". Leaving the app pauses kiosk mode.</p>
-                <p><strong>Fix:</strong> tap the notification or open the app again; kiosk mode turns back on by itself. If it
+                <h2 id="home-vault-mode-paused">Home vault mode paused</h2>
+                <p>On iPhone you get "Home vault mode paused". Leaving the app pauses Home vault mode.</p>
+                <p><strong>Fix:</strong> tap the notification or open the app again; Home vault mode turns back on by itself. If it
                     won't start, add your other phone or your Mac under My Devices first. If it says the mesh downloaded today's
-                    limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Kiosk mode</a>.</p>
+                    limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Home vault mode</a>.</p>
                 </section>
 
                 <section id="more">

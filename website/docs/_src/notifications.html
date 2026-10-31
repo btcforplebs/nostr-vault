@@ -11,8 +11,8 @@
   "checked": "the apps and web app on master, October 2026",
   "labels": {
     "ios": ["Notifications"],
-    "android": ["Notifications", "Enable Notifications", "Nostr Vault Relay", "Relay running", "Stop Relay", "Start Relay Automatically", "Missed while open"],
-    "mac": ["Notifications", "Launch at Login", "Start Relay Automatically"],
+    "android": ["Notifications", "Enable Notifications", "Your Vault", "Vault running", "Stop Vault", "Start Vault Automatically", "Missed while open"],
+    "mac": ["Notifications", "Launch at Login", "Start Vault Automatically"],
     "web": ["Notifications", "Browser notifications"]
   }
 }
@@ -58,16 +58,16 @@
 <p><strong>What to allow:</strong> notifications (the app asks during setup), and
     <span class="path">iOS Settings &rarr; General &rarr; Background App Refresh</span> on for Nostr Vault. The app
     doesn't check that second one for you. Low Power Mode pauses Background App Refresh.</p>
-<p><strong>The honest limit:</strong> an iPhone without a Mac vault is not instant. If you need alerts right away,
-    keep a Mac vault running or open the app.</p>
+<p><strong>The honest limit:</strong> an iPhone without a home vault is not instant. If you need alerts right away,
+    keep a home vault running or open the app.</p>
 </section>
 
 <section id="android">
 <p class="eyebrow">Android</p>
 <h2>Android: your vault keeps running</h2>
 <p><strong>What wakes it:</strong> nothing has to. Your vault runs as a service you can see: the
-    <strong>Nostr Vault Relay</strong> notification, which says <strong>Relay running</strong> and has a
-    <strong>Stop Relay</strong> button. It listens to your relays all the time and checks for anything it missed
+    <strong>Your Vault</strong> notification, which says <strong>Vault running</strong> and has a
+    <strong>Stop Vault</strong> button. It listens to your relays all the time and checks for anything it missed
     every 15 minutes.</p>
 <ul>
     <li><strong>Open:</strong> new things show as a pill. Pills you didn't look at are filed quietly under
@@ -75,9 +75,9 @@
     <li><strong>In the background or swiped away:</strong> alerts come right away, because the vault keeps
         running.</li>
     <li><strong>After a restart or an app update:</strong> the vault starts again by itself, as long as
-        <strong>Start Relay Automatically</strong> is on (it is unless you turned it off, under
-        <span class="path">Settings &rarr; Your Vault Relay</span>).</li>
-    <li><strong>Force stopped or Stop Relay:</strong> no alerts until you open the app again.</li>
+        <strong>Start Vault Automatically</strong> is on (it is unless you turned it off, under
+        <span class="path">Settings &rarr; Your Vault</span>).</li>
+    <li><strong>Force stopped or Stop Vault:</strong> no alerts until you open the app again.</li>
     <li><strong>Using another app's relay</strong> (such as Citrine) instead of the built-in one: Nostr Vault makes
         no alerts.</li>
 </ul>
@@ -104,7 +104,7 @@
 <p><strong>What to allow:</strong> notifications (the app asks as setup finishes). To have your vault running
     after a restart, turn on <strong>Launch at Login</strong> under
     <span class="path">Settings &rarr; Startup</span>. It is off until you turn it on.
-    <strong>Start Relay Automatically</strong> is there too.</p>
+    <strong>Start Vault Automatically</strong> is there too.</p>
 <p><strong>The honest limit:</strong> a Mac is the best always-on vault you have, but only while it's awake. It
     also helps your iPhone: each time iOS wakes the phone, it asks the Mac what came in.</p>
 </section>

@@ -5,15 +5,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The browser relay — Nostr Vault Docs</title>
-    <meta name="description" content="The Nostr Vault browser relay at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the FIPS mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.">
+    <title>The browser vault — Nostr Vault Docs</title>
+    <meta name="description" content="The Nostr Vault browser vault at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.">
     <link rel="canonical" href="https://nostrvault.app/docs/browser-relay/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/browser-relay/">
-    <meta property="og:title" content="The browser relay — Nostr Vault Docs">
-    <meta property="og:description" content="The Nostr Vault browser relay at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the FIPS mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.">
+    <meta property="og:title" content="The browser vault — Nostr Vault Docs">
+    <meta property="og:description" content="The Nostr Vault browser vault at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/" aria-current="page">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/" aria-current="page">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -130,17 +130,17 @@
 
         <main class="docs-main">
             <p class="eyebrow">Mesh and your devices</p>
-            <h1>A small relay in a <span>browser tab</span>.</h1>
-            <p class="docs-lede">nostrvault.app/relay/ turns a browser tab into a small Nostr relay on the FIPS mesh. Your iPhone can send your new notes to it, and only the devices you pair can read them.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-the-browser-relay-is">What the browser relay is</a></li><li><a href="#pair-your-iphone-with-the-page">Pair your iPhone with the page</a></li><li><a href="#what-it-keeps-and-serves">What it keeps and serves</a></li><li><a href="#the-screensaver">The screensaver</a></li><li><a href="#when-the-tab-closes">When the tab closes</a></li><li><a href="#in-my-devices">In My Devices</a></li><li><a href="#limits-and-privacy">Limits and privacy</a></li></ul></div>
+            <h1>A small vault in a <span>browser tab</span>.</h1>
+            <p class="docs-lede">nostrvault.app/relay/ turns a browser tab into a small vault on the mesh. Your iPhone can send your new notes to it, and only the devices you pair can read them.</p>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-the-browser-vault-is">What the browser vault is</a></li><li><a href="#pair-your-iphone-with-the-page">Pair your iPhone with the page</a></li><li><a href="#what-it-keeps-and-serves">What it keeps and serves</a></li><li><a href="#the-screensaver">The screensaver</a></li><li><a href="#when-the-tab-closes">When the tab closes</a></li><li><a href="#in-my-devices">In My Devices</a></li><li><a href="#limits-and-privacy">Limits and privacy</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="what">
                 <p class="eyebrow">The basics</p>
-                <h2 id="what-the-browser-relay-is">What the browser relay is</h2>
-                <p>A relay is a server that stores Nostr notes and hands them out. The browser relay is one that runs inside
+                <h2 id="what-the-browser-vault-is">What the browser vault is</h2>
+                <p>The browser vault keeps your notes like any vault, but it runs inside
                     a web page, at <code>nostrvault.app/relay/</code>. It stores notes in the browser's own storage on that
-                    device and joins the FIPS mesh, so your own devices can reach it by its key. New to the mesh? Read
+                    device and joins the mesh, so your own devices can reach it by its key. New to the mesh? Read
                     <a class="inline" href="/docs/mesh/">The mesh</a> first.</p>
                 <p>The page keeps no Nostr key of yours. Your notes arrive already signed, and the page checks each
                     signature. A good spot for it is an old phone or tablet on a charger.</p>
@@ -150,7 +150,7 @@
                 <p class="eyebrow">Set it up</p>
                 <h2 id="pair-your-iphone-with-the-page">Pair your iPhone with the page</h2>
                 <ol>
-                    <li>On your iPhone, open <strong>FIPS Mesh</strong> and turn the mesh on. Under
+                    <li>On your iPhone, open <strong>Mesh</strong> and turn the mesh on. Under
                         <strong>This Device</strong>, tap <strong>Copy</strong>. That's the phone's mesh address.</li>
                     <li>On the device that will run the page, open <code>nostrvault.app/relay/</code>. Paste the address
                         into the box under the FIPS heading (one address per line). In the box below it, paste your Nostr
@@ -159,7 +159,7 @@
                     <li>Tap <strong>Start FIPS</strong>. The status's first line shows the page's own <em>mesh address</em>.
                         There's no Copy button, so select the address and copy it.</li>
                     <li>On the iPhone, go to <span class="path">My Devices &rarr; Add a device by address</span>, paste the
-                        page's address, and pick <strong>Browser page</strong>.</li>
+                        page's address, and pick <strong>Browser vault</strong>.</li>
                 </ol>
                 <p>The phone then connects for the page. If it doesn't, open the page's entry in My Devices and tap
                     <strong>Connect this phone</strong>. <strong>Copy this phone's mesh address</strong> is there too.</p>
@@ -180,15 +180,15 @@
                         authors it isn't set up for.</li>
                     <li><strong>Owners only, for notes.</strong> The page serves notes on the mesh only to the addresses saved
                         as owners. Anyone else asking for notes is dropped without an answer.</li>
-                    <li><strong>A public photo door.</strong> Like the apps, <strong>Start FIPS</strong> also opens mesh port 80
-                        to anyone, and it answers only for photos that a public note names.</li>
+                    <li><strong>A public photo door.</strong> Like the apps, <strong>Start FIPS</strong> also opens a public photo door
+                        on the mesh to anyone, and it answers only for photos that a public note names.</li>
                     <li><strong>Photos, read only.</strong> Under <strong>Show photo</strong>, you can paste a photo's
                         fingerprint (sha256) or a <code>.fips</code> link and the page fetches it from a paired vault. It shows
                         the photo only if the fingerprint matches. Photos aren't stored on the page.</li>
                 </ul>
                 <p>The page reaches your phone through the public mesh entry points (seeds). Once both ends are connected
                     it tries a direct link. On the iPhone, leave the middle server under <strong>Advanced</strong> on its
-                    public setting. A browser page has no same-network route, so with <strong>None</strong> it most likely can't
+                    public setting. A browser vault has no same-network route, so with <strong>None</strong> it most likely can't
                     reach your phone at all.</p>
                 </section>
 
@@ -220,12 +220,12 @@
                 <section id="devices">
                 <p class="eyebrow">Your devices list</p>
                 <h2 id="in-my-devices">In My Devices</h2>
-                <p>The page shows up in <strong>My Devices</strong> as a <strong>Browser page</strong>, the role whose job
-                    reads "Gets your new notes while this app is open." Each phone has one browser page, whichever account
+                <p>The page shows up in <strong>My Devices</strong> as a <strong>Browser vault</strong>, the role whose job
+                    reads "Gets your new notes while this app is open." Each phone has one browser vault, whichever account
                     is signed in; adding a new one replaces the old.</p>
-                <p>To stop sending, open its entry and tap <strong>Remove from my devices</strong>. Anything already on the
+                <p>To stop sending, open its entry and tap <strong>Remove from My Devices</strong>. Anything already on the
                     page stays there.</p>
-                <p>Android and Mac also offer <strong>Browser page</strong> under
+                <p>Android and Mac also offer <strong>Browser vault</strong> under
                     <span class="path">My Devices &rarr; Add a device by address</span>. In this build, only the iPhone app
                     sends notes to the page.</p>
                 </section>
@@ -244,7 +244,7 @@
                         never your Nostr key.</li>
                 </ul>
                 <div class="note">
-                    <p>The browser relay is early. Treat it as an extra copy of your
+                    <p>The browser vault is early. Treat it as an extra copy of your
                         notes, not your only one.</p>
                 </div>
                 </section>

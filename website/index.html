@@ -41,7 +41,7 @@
           "name": "Nostr Vault",
           "url": "https://nostrvault.app/",
           "image": "https://nostrvault.app/assets/og-image.jpg",
-          "description": "A Nostr client built around your web of trust, for iPhone, iPad, Mac, Android and the web. Every feed shows the people your circle can vouch for, each feed has its own guard, and a personal relay keeps your notes on your own device. NIP-49 encrypted keys and NIP-46 remote signing.",
+          "description": "A Nostr client built around your web of trust, for iPhone, iPad, Mac, Android and the web. Every feed shows the people your circle can vouch for, each feed has its own guard, and your vault keeps your notes on your own device. NIP-49 encrypted keys and NIP-46 remote signing.",
           "applicationCategory": "SocialNetworkingApplication",
           "operatingSystem": "iOS, iPadOS, macOS, Android, Web",
           "softwareVersion": "2.7.2",
@@ -60,7 +60,7 @@
           "video": {
             "@type": "VideoObject",
             "name": "Nostr Vault — Bring them home",
-            "description": "Your posts live on someone else's server. Nostr Vault brings them home: a personal relay on iPhone, Mac and Android with encrypted keys built in.",
+            "description": "Your posts live on someone else's server. Nostr Vault brings them home: a vault of your own on iPhone, Mac and Android with encrypted keys built in.",
             "thumbnailUrl": "https://nostrvault.app/assets/video/the-door-poster.jpg",
             "contentUrl": "https://nostrvault.app/assets/video/the-door-720.mp4",
             "uploadDate": "2026-10-03",
@@ -104,8 +104,8 @@
             },
             {
               "@type": "Question",
-              "name": "What is the difference between the phone relay and the Mac relay?",
-              "acceptedAnswer": { "@type": "Answer", "text": "On iPhone, iPad and Android the embedded relay keeps a full copy of your notes and pushes them out to the relays you choose. A Mac with a domain name runs the same relay 24/7 at a public address, so other people and other clients can read from it directly." }
+              "name": "What is the difference between my phone's vault and a home vault?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Every copy of Nostr Vault runs a vault: it keeps a full copy of your notes and media and sends your posts out to the relays you choose. A home vault is the one that stays on, such as a Mac, a Linux box, a Pi, a box or a spare phone. Your other devices reach it over the mesh, so your notes have a home even when your phone is off." }
             }
           ]
         }
@@ -283,7 +283,7 @@
     <section class="web" id="web">
         <p class="eyebrow center fade-in-up">In your browser</p>
         <h2 class="center fade-in-up">Nothing to install.<br>Same vault, one tab away.</h2>
-        <p class="center lede-sm fade-in-up delay-100">The web app runs the Nostr Vault relay inside the page, so your notes
+        <p class="center lede-sm fade-in-up delay-100">The web app runs your vault inside the page, so your notes
             are kept in your browser, not on our server. Sign in with an extension or a bunker and your key stays with
             your signer. Or just look around with any name or npub.</p>
         <div class="hero-buttons fade-in-up delay-200">
@@ -314,7 +314,7 @@
         <p class="eyebrow center fade-in-up">Watch</p>
         <h2 class="center fade-in-up">Your posts. Their servers. Their rules.<br>Bring them home.</h2>
         <figure class="film-main fade-in-up delay-100">
-            <video class="sound-toggle" muted loop playsinline preload="metadata" poster="assets/video/the-door-poster.jpg" width="1280" height="720" aria-label="Twenty second Nostr Vault film: notes drift off remote servers and come home through an orange vault door to a personal relay on iPhone, Mac and Android">
+            <video class="sound-toggle" muted loop playsinline preload="metadata" poster="assets/video/the-door-poster.jpg" width="1280" height="720" aria-label="Twenty second Nostr Vault film: notes drift off remote servers and come home through an orange vault door to a vault on iPhone, Mac and Android">
                 <source src="assets/video/the-door-720.mp4" type="video/mp4">
             </video>
             <figcaption data-label="The Door &middot; 20 seconds">The Door &middot; 20 seconds &middot; tap for sound</figcaption>
@@ -401,8 +401,8 @@
                 <figcaption>iPhone &middot; A note, pinned where you tapped it</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-200">
-                <img src="assets/screens/iphone-relay.webp" alt="The Feed Dashboard in Nostr Vault on iPhone showing content filters, spam filtering and the connected feed relays alongside the local relay" width="900" height="1957" loading="lazy">
-                <figcaption>iPhone &middot; Feed dashboard: local relay, feed relays, filters</figcaption>
+                <img src="assets/screens/iphone-relay.webp" alt="The Feed Dashboard in Nostr Vault on iPhone showing content filters, spam filtering and the connected feed relays alongside your vault" width="900" height="1957" loading="lazy">
+                <figcaption>iPhone &middot; Feed dashboard: your vault, feed relays, filters</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-100">
                 <img src="assets/screens/iphone-following.webp" alt="The Following feed in Nostr Vault on iPhone showing threaded replies from followed developers" width="900" height="1957" loading="lazy">
@@ -417,8 +417,8 @@
                 <figcaption>Android &middot; Recipes feed</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-100">
-                <img src="assets/screens/android-relay.webp" alt="The Settings screen in Nostr Vault on Android with accounts, theme, feed relays, Blastr, Blossom, import and backup options" width="900" height="2005" loading="lazy">
-                <figcaption>Android &middot; Settings: relays, Blastr, Blossom, backups</figcaption>
+                <img src="assets/screens/android-relay.webp" alt="The Settings screen in Nostr Vault on Android with accounts, theme, feed relays, Blastr, media servers, import and backup options" width="900" height="2005" loading="lazy">
+                <figcaption>Android &middot; Settings: relays, Blastr, media servers, backups</figcaption>
             </figure>
         </div>
     </section>
@@ -428,7 +428,7 @@
         <h2 class="center fade-in-up">Pocket relay, or a home on the network.</h2>
         <p class="center lede-sm fade-in-up delay-100">Every build carries the full relay. What changes is who can reach it.</p>
         <figure class="film-main relay-film fade-in-up">
-            <video class="sound-toggle" muted loop playsinline preload="none" poster="assets/video/spot-relaybackup-15s-poster.jpg" width="1280" height="720" aria-label="Fifteen second film: the relay running inside the phone, then exporting notes and Blossom media and importing them on an iPad">
+            <video class="sound-toggle" muted loop playsinline preload="none" poster="assets/video/spot-relaybackup-15s-poster.jpg" width="1280" height="720" aria-label="Fifteen second film: the vault running inside the phone, then exporting notes and media and importing them on an iPad">
                 <source src="assets/video/spot-relaybackup-15s.mp4" type="video/mp4">
             </video>
             <figcaption data-label="Relay and backup &middot; 15 seconds">Relay and backup &middot; 15 seconds &middot; tap for sound</figcaption>
@@ -450,7 +450,7 @@
             </article>
             <article class="card fade-in-up delay-200">
                 <h3>Back it up &mdash; take it anywhere</h3>
-                <p>Export your notes as JSONL and your Blossom media as files, straight from the relay dashboard.
+                <p>Export your notes as JSONL and your media as files, straight from the Vault Dashboard.
                     Import them on another phone or an iPad and your vault is back, nothing lost. No account to
                     recover, no server to ask.</p>
             </article>
