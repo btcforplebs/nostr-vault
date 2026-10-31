@@ -14,9 +14,9 @@ export function PostResult({ result }) {
       </strong>
       {reached.length > 0 && <div class="muted small">{reached.map(r => host(r.url)).join(" · ")}</div>}
       {failed.map(r => <div key={r.url} class="error small">✗ {host(r.url)}: {r.message}</div>)}
-      <div class="muted small">✓ Saved to your relay in this browser</div>
+      <div class="muted small">✓ Saved to your vault in this browser</div>
       {result.relays.filter(r => r.local).map(r => (
-        <div key={r.url} class="muted small">{r.ok ? "✓ Also on this Mac's vault relay" : `This Mac's vault relay (${host(r.url)}) didn't answer. That doesn't change the relays above.`}</div>
+        <div key={r.url} class="muted small">{r.ok ? "✓ Also on your home vault" : `Your home vault (${host(r.url)}) didn't answer. That doesn't change the relays above.`}</div>
       ))}
       <a href="#/profile">See it on your profile</a>
     </div>

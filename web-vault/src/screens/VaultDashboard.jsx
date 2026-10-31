@@ -116,7 +116,7 @@ export function VaultDashboard({ ctx }) {
       <div class="dash-panel">
         <header class="dash-bar-top">
           {view === "activity" ? <button type="button" class="dash-link" onClick={() => setView("dashboard")}>Back</button> : <span />}
-          <h2 id="dash-title"><DashIcon />{view === "activity" ? "Relay Activity" : "Vault Dashboard"}</h2>
+          <h2 id="dash-title"><DashIcon />{view === "activity" ? "Vault Activity" : "Vault Dashboard"}</h2>
           <button type="button" class="dash-link done" onClick={closeDashboard} autofocus>Done</button>
         </header>
         <div class="dash-scroll">

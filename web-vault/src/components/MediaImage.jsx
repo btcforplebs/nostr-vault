@@ -92,7 +92,7 @@ export function MediaImage({ item, author, media = fipsMedia(), allowed = meshAl
  *  "failed" when there was no vault to ask, "unreached" when its vault was asked and didn't answer. */
 export const afterMeshFail = (e, item) => (fipsRef(item.url) ? (noVault(e) ? "failed" : "unreached") : "web")
 
-export const LOADING_TEXT = "Loading image over FIPS…"
+export const LOADING_TEXT = "Loading image over the mesh…"
 export const UNREACHED_TEXT = "Couldn't reach the owner's vault"
 
 /** What stands in the photo's place while it isn't one: loading over the mesh, not read, or the read gave up. */

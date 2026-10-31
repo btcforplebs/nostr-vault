@@ -55,7 +55,7 @@ export function MediaServersPage({ ctx }) {
   if (!loaded) return <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your media servers…" />
   return (
     <>
-      <p class="settings-note muted small">Photos you attach to a note are uploaded here (Blossom), the first server first. Other apps read this list (BUD-03) to find your files.</p>
+      <p class="settings-note muted small">Photos you attach to a note are uploaded here, the first server first. Other apps read this list to find your files.</p>
       {!loaded.checked && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
       {!loaded.event && loaded.checked && <p class="settings-note muted small">You haven't published a list, so the defaults below are used. Saving publishes them with your changes.</p>}
       {urls.map((url, i) => (

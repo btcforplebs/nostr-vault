@@ -198,8 +198,8 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
         {!readOnly && (asking
           ? <>
               <p class="muted small">Delete this file from {targets.length === 1 ? hostOf(targets[0]) : `${targets.length} servers: ${targets.map(hostOf).join(", ")}`}? Notes that show it will show a broken picture. This can't be undone.</p>
-              <p class="muted small">If your home vault (Nostr Vault on your Mac) has a copy, it stays: the web can't delete from it. Delete it there with Delete everywhere.</p>
-              <div class="row"><button class="danger small" disabled={!!busy} onClick={remove} aria-busy={busy === "delete" || undefined}>{busy === "delete" ? "Deleting…" : "Delete from mirrors"}</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+              <p class="muted small">If your home vault has a copy, it stays: the web can't delete from it. Delete it there with Delete everywhere.</p>
+              <div class="row"><button class="danger small" disabled={!!busy} onClick={remove} aria-busy={busy === "delete" || undefined}>{busy === "delete" ? "Deleting…" : "Delete from media servers"}</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
             </>
           : <button class="danger small" disabled={!!busy} onClick={() => setAsking(true)}>Delete…</button>)}
         {readOnly && <p class="muted small">{READ_ONLY}</p>}

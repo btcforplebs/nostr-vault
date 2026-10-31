@@ -35,9 +35,9 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
          `public photo door (port 80): open ${s.door?.open ?? 0}, accepted ${s.door?.accepted ?? 0}`,
          `last request from a vault ${sv.lastInAt ? new Date(sv.lastInAt).toISOString() : "never"}`,
          `photos read ${s.blobs?.fetched ?? 0} (${s.blobs?.bytes ?? 0} bytes), failed ${s.blobs?.failed ?? 0}${s.blobs?.lastError ? ": " + s.blobs.lastError : ""}`, s.errors ? `errors ${s.errors}: ${s.lastError}` : ""].filter(Boolean).join("\n")
-      : !owners.size ? "FIPS off: add a vault's mesh address first"
-      : !haven ? "FIPS off: Haven is not running"
-      : "FIPS off"
+      : !owners.size ? "Mesh off: add a vault's mesh address first"
+      : !haven ? "Mesh off: the vault is not running"
+      : "Mesh off"
     const seedUp = [...(s?.seeds?.values() ?? [])].includes("connected")
     $("sfips").textContent = running ? `FIPS ${seedUp ? "seed up" : "seed DOWN"} · streams ${sv.open ?? 0}` : ""
   }
@@ -59,25 +59,25 @@ export function mountFipsPanel({ haven, owners, log, account, storage }) {
     if (running) {
       await running.stop()
       running = undefined
-      $("fipsStart").textContent = "Start FIPS"
+      $("fipsStart").textContent = "Start mesh"
       log("fips-stop")
       return render()
     }
     if (!owners.size || !haven) return render()
     try {
       running = await startFipsRelay({ haven, getOwners: () => owners, storage, onStatus: render })
-      $("fipsStart").textContent = "Stop FIPS"
+      $("fipsStart").textContent = "Stop mesh"
       log("fips-start", { npub: running.status.npub })
     } catch (e) {
       log("fips-error", { err: String(e) })
-      $("fipsStatus").textContent = "FIPS failed to start: " + e
+      $("fipsStatus").textContent = "The mesh failed to start: " + e
     }
   }
   // A photo by hash from a paired vault. A .fips link names the vault; a bare hash tries each paired vault in turn.
   let shown
   if (photoUi) $("blobGet").onclick = async () => {
     const say = t => ($("blobStatus").textContent = t)
-    if (!running) return say("Start FIPS first: the photo comes over its session to your vault.")
+    if (!running) return say("Start the mesh first: the photo comes from your vault over the mesh.")
     let ref
     try {
       ref = parseBlobRef($("blobRef").value)

@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#000000">
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icon.svg">
-<title>Nostr Vault Browser Relay</title>
+<title>Nostr Vault in your browser</title>
 <style>
   html,body{margin:0;background:#000;color:#ddd;font:15px -apple-system,system-ui,sans-serif}
   main{padding:max(16px,env(safe-area-inset-top)) 16px 16px}
@@ -24,7 +24,7 @@
 </head>
 <body>
 <main>
-  <h1>Nostr Vault Browser Relay</h1>
+  <h1>Nostr Vault in your browser</h1>
   <div class="row">
     <div><div class="k">events</div><div id="count" class="big">–</div></div>
     <div><div class="k">uptime</div><div id="uptime" class="big">–</div></div>
@@ -38,10 +38,10 @@
     <button id="copyrep">Copy report</button>
     <button id="copy">Copy log</button>
   </div>
-  <h2 style="font-size:15px;margin:16px 0 4px">FIPS (NIP-01 on port 7447, owner only)</h2>
+  <h2 style="font-size:15px;margin:16px 0 4px">Mesh (NIP-01 on port 7447, owner only)</h2>
   <textarea id="fipsOwners" rows="2" placeholder="Your vault's mesh address (one per line)" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace"></textarea>
   <input id="fipsAccount" placeholder="Your Nostr account npub, so your notes are kept" autocapitalize="off" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace;margin-top:6px">
-  <div><button id="fipsSave">Save owners</button><button id="fipsStart">Start FIPS</button></div>
+  <div><button id="fipsSave">Save owners</button><button id="fipsStart">Start mesh</button></div>
   <pre id="fipsStatus"></pre>
   <h2 style="font-size:15px;margin:16px 0 4px">Photo from your vault (mesh port 80)</h2>
   <input id="blobRef" placeholder="sha256, or http://npub1….fips/<sha256>.jpg" autocapitalize="off" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;background:#111;color:#ddd;border:1px solid #444;border-radius:8px;padding:8px;font:12px ui-monospace,monospace">

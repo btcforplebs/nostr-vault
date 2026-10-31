@@ -153,7 +153,7 @@ test("relay activity: the log as plain lines, health from the newest, reports wi
   assert.equal(health(items), "headsUp")
   assert.equal(bannerDetail(items), "This browser may clear your vault when it needs room")
   assert.equal(health(activityItems([{ t: "x", type: "boot-error", err: "quota" }])), "problem")
-  assert.equal(bannerDetail(activityItems(log.slice(0, 1))), "Your relay is running normally.")
+  assert.equal(bannerDetail(activityItems(log.slice(0, 1))), "Your vault is running normally.")
   assert.equal(redact(`key npub1${"q".repeat(58)} id ${"f".repeat(64)} at 192.168.4.99 in /Users/logen/x`), "key [key] id [id] at [ip] in [path]")
   assert.match(report(items, { now: new Date(0) }), /Health: Heads-up/)
 })

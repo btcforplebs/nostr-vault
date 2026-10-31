@@ -38,7 +38,7 @@ export const SETTINGS_GROUPS = [
     { id: "relays", title: "Relays", icon: "relays", color: "var(--accent)", href: "#/settings/relays" },
     { id: "media-servers", title: "Media Servers", icon: "server", color: "#30d158", href: "#/settings/media-servers" },
   ] },
-  { title: "Your Vault Relay", rows: [
+  { title: "Your Vault", rows: [
     { id: "relay-access", title: "Who Can Reach You", icon: "reach", color: "#0a84ff", href: "#/relay" },
     { id: "import", title: "Import Notes", icon: "import", color: "#ff9f0a", href: "#/settings/import" },
     { id: "backup", title: "Backup & Restore", icon: "drive", color: "#5e5ce6", href: "#/settings/backup" },

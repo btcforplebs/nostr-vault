@@ -138,7 +138,7 @@ export function FeedScreen({ ctx }) {
       await shown
       await reload()
       markSynced(me, follows)
-      say(n ? `${n} notes saved to your relay` : "Up to date")
+      say(n ? `${n} notes saved to your vault` : "Up to date")
     } catch (e) { say(`Sync failed (${e?.message ?? e}): showing your saved feed`) }
     finally { setSyncing(false) }
   }
@@ -317,7 +317,7 @@ export function FeedScreen({ ctx }) {
       {newCount > 0 && <NewPostsPill count={newCount} onShow={following ? showPending : showStrangePending} />}
       {following
         ? !follows.length ? account.loaded ? <EmptyFollowing onRefresh={sync} /> : <SkeletonRows label="Loading your follows…" />
-          : notes === null ? <SkeletonRows label="Opening your relay…" />
+          : notes === null ? <SkeletonRows label="Opening your vault…" />
           : !notes.length ? syncing ? <SkeletonRows label="Fetching notes from the people you follow…" /> : <p class="empty">No notes saved yet.</p>
           : media ? <Media tiles={tiles} blockedAll={!shown.length} onOlder={older} olderState={olderState} />
           : <Notes shown={shown} onOlder={older} olderState={olderState} layout={layout} fetchRoots={rootFetcher(vault, relays)} />

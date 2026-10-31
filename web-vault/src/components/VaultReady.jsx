@@ -37,7 +37,7 @@ export function VaultReady({ steps, onOpen }) {
     <main class="vault-ready" aria-busy="true">
       <span class="splash-mark"><img src="./icon.svg" alt="" /></span>
       <h1>Getting your vault ready</h1>
-      <p class="vr-lede">Your relay runs right here in this tab. The first time, it fetches your notes and the people you follow, so the app opens full. Next time it opens straight away.</p>
+      <p class="vr-lede">Your vault runs right here in this tab. The first time, it fetches your notes and the people you follow, so the app opens full. Next time it opens straight away.</p>
       <div class="vr-bar" role="progressbar" aria-label="Getting your vault ready" aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct}
         aria-valuetext={current ? `${pct}%, ${current.title.toLowerCase()}` : `${pct}%`}>
         <span style={{ width: `${pct}%` }} />
