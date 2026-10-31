@@ -1,14 +1,16 @@
 // Pieces NoteMedia and MediaLightbox share.
 import { useEffect, useRef } from "preact/hooks"
 import { reducedMotion } from "./pager.js"
+import { autoplayOn } from "../net/media-prefs.js"
 
 /** A video in a note, as iOS InlineFeedVideoPlayer (FeedMediaView.swift): muted, looping, playing inline while it is
- *  on screen, with controls. No autoplay when the user asks for reduced motion. */
+ *  on screen, with controls. No autoplay when the user asks for reduced motion or turned Autoplay Videos off
+ *  (Settings › Media): the video waits for its play control. */
 export function InlineVideo({ src }) {
   const ref = useRef()
   useEffect(() => {
     const v = ref.current
-    if (!v || reducedMotion() || !globalThis.IntersectionObserver) return
+    if (!v || reducedMotion() || !autoplayOn() || !globalThis.IntersectionObserver) return
     const io = new IntersectionObserver(([e]) => {
       if (e.isIntersecting) v.play().catch(() => {}) // a browser may still refuse; the controls are there
       else v.pause()
