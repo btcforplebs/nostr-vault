@@ -455,6 +455,25 @@ class VaultActivityViewModel @Inject constructor(
         if (account != _activeHex.value) markAccountSeen(account, System.currentTimeMillis() / 1000)
     }
 
+    /**
+     * A line for another account opens as that account: switch first, so a
+     * reply or like from the opened note signs with the right key, as a
+     * tapped notification does. Then [open] runs.
+     */
+    fun openLineAs(account: String, open: () -> Unit) {
+        val config = configStore.config.value
+        val npubs = config.allAccountNpubs().mapNotNull { npub -> nostrService.npubToHex(npub)?.lowercase()?.let { it to npub } }.toMap()
+        val npub = VaultAccountChips.switchTarget(account, _activeHex.value, npubs)
+        if (npub == null) {
+            open()
+            return
+        }
+        viewModelScope.launch {
+            configStore.switchActiveAccount(npub)
+            open()
+        }
+    }
+
     private fun resetAccountChip() {
         otherJob?.cancel()
         _accountChip.value = null
@@ -749,7 +768,7 @@ internal fun VaultActivityScreen(
                             account = if (others) row.account else null,
                             onClick = {
                                 activity.openedLine(row.account)
-                                onOpenLine(line, isOther)
+                                activity.openLineAs(row.account) { onOpenLine(line, isOther) }
                             },
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )

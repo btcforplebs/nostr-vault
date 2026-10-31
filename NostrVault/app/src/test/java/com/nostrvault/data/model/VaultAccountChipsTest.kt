@@ -74,4 +74,15 @@ class VaultAccountChipsTest {
         )
         assertEquals(listOf("1", "2"), merged.map { it.line.id })
     }
+
+    @Test fun switchTargetOnlyForAnotherHeldAccount() {
+        val npubs = mapOf(me to "npub1me", bob to "npub1bob")
+        // Another account's line: switch to it, whatever the case of the hex.
+        assertEquals("npub1bob", VaultAccountChips.switchTarget(bob.uppercase(), me, npubs))
+        // The active account's own line, or a list with one account: no switch.
+        assertEquals(null, VaultAccountChips.switchTarget(me, me.uppercase(), npubs))
+        assertEquals(null, VaultAccountChips.switchTarget(null, me, npubs))
+        // An account the device no longer holds: nothing to switch to.
+        assertEquals(null, VaultAccountChips.switchTarget(cat, me, npubs))
+    }
 }
