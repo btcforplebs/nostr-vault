@@ -14,7 +14,7 @@ import { backgroundFill } from "../net/vault-ready.js"
 import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
+import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
@@ -33,7 +33,7 @@ const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a tim
 const FEEDS = feedList(READERS)
 const readerFor = mode => READERS.find(r => r.id === mode)
 // A saved feed that Edit Feeds has since hidden opens Following; a #tag link still opens its tag.
-const pickedChoice = () => tagChoice(globalThis.location?.hash) ?? loadChoice(globalThis.localStorage, visibleFeeds(FEEDS, loadMenu()))
+const pickedChoice = () => withScope(tagChoice(globalThis.location?.hash) ?? loadChoice(globalThis.localStorage, visibleFeeds(FEEDS, loadMenu())))
 // Once the Feed has taken a #tag link's tag, the address drops it: Back and a reload keep the feed the user is on.
 const dropTag = () => history.replaceState(history.state, "", withParam(location.hash, "tag", null))
 
@@ -61,9 +61,10 @@ export function FeedScreen({ ctx }) {
   const [olderState, setOlderState] = useState("")
   // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
   const Reader = readerFor(choice.mode)?.Screen
-  const following = fromHaven(choice.mode), media = choice.mode === "media", popular = choice.mode === "popular"
-  // Global, Popular and Discover are all read through your web of trust, so they wait for your follows.
-  const global = choice.mode === "global", discover = choice.mode === "discovery", needsWeb = popular || global || discover
+  // `following`: read from Haven /feed (Following, and Media on Following). Media on Global is a stranger feed.
+  const following = readsHaven(choice), media = choice.mode === "media", popular = choice.mode === "popular"
+  // Global, Media on Global, Popular and Discover are all read through your web of trust, so they wait for your follows.
+  const global = globalLike(choice), discover = choice.mode === "discovery", needsWeb = popular || global || discover
   // Discover's network (net/discover.js), worked out once per follow list and kept for Older: { key, people }.
   const network = useRef(null)
   const discoverPeople = async () => {
@@ -79,7 +80,9 @@ export function FeedScreen({ ctx }) {
   // One number per feed shown: picking a feed or starting a stranger load bumps it, and work started under an older
   // number (a Following sync, a Global page) no longer writes the status line.
   const seq = useRef(0)
-  const pick = c => { seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus(""); setOlderState("") }
+  const pick = c => { c = withScope(c); seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus(""); setOlderState("") }
+  // Media's Following / Global buttons (FeedView+Toolbar.swift).
+  const pickScope = scope => { if (scope !== choice.scope) { saveMediaScope(scope); pick({ ...choice, scope }) } }
   const sayer = () => statusGate(seq, setStatus)
   // Edit Feeds: the picker's order and hidden feeds. Hiding the feed you're on takes you back to Following.
   const [menu, setMenu] = useState(loadMenu)
@@ -184,7 +187,7 @@ export function FeedScreen({ ctx }) {
   const loadStrange = async (c, until) => {
     const n = ++seq.current
     if (c.mode === "hashtag" && !c.tag) return setStatus("")
-    if ((c.mode === "popular" || c.mode === "global" || c.mode === "discovery") && !follows.length) return setStatus("")
+    if ((c.mode === "popular" || globalLike(c) || c.mode === "discovery") && !follows.length) return setStatus("")
     if (!navigator.onLine) return setStatus(`Offline: ${FEEDS.find(f => f.id === c.mode).label} needs the network`)
     setStatus(until ? "Fetching older notes…" : c.mode === "popular" ? "Ranking the last day's likes, reposts and zaps…"
       : c.mode === "discovery" && !network.current ? "Finding the people your follows follow…" : "Loading…")
@@ -192,7 +195,7 @@ export function FeedScreen({ ctx }) {
       const page = c.mode === "popular"
         ? (await fetchPopular({ me: ctx.session?.pubkey, follows, relays, vault, blocked })).notes
         : c.mode === "discovery" ? await fetchDiscover(await discoverPeople(), account.relays.read, { until })
-        : await fetchStrangerFeed(c, account.relays.read, { until, trust: c.mode === "global" ? await globalTrust(ctx.session?.pubkey, follows) : null })
+        : await fetchStrangerFeed(c, account.relays.read, { until, limit: c.mode === "media" ? MEDIA_PAGE : PAGE, trust: globalLike(c) ? await globalTrust(ctx.session?.pubkey, follows) : null })
       if (n !== seq.current) return
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
       holdNotes(c, all)
@@ -237,13 +240,14 @@ export function FeedScreen({ ctx }) {
   useFeedSpot(`${feedKey(choice)}:${layout}`, !!shown?.length)
   // The same toggles the old Feed options menu offered: Auto-load on Following and Media, Replies off on Global and Threaded.
   const toggles = Reader || !hasLayouts(choice.mode) ? []
-    : [following && "autoLoad", "reposts", choice.mode !== "global" && !threaded && "replies"].filter(Boolean)
+    : [following && "autoLoad", "reposts", !global && !threaded && "replies"].filter(Boolean)
   return (
     <main class="screen">
       <header class="screen-head feed-head">
         <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} />
         <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}
-          filters={filters} onFilters={changeFilters} toggles={toggles} onRefresh={Reader ? null : refresh} />
+          filters={filters} onFilters={changeFilters} toggles={toggles} onRefresh={Reader ? null : refresh}
+          scope={media ? choice.scope : null} onScope={pickScope} />
       </header>
       {editing && <EditFeeds feeds={FEEDS} menu={menu} onChange={changeMenu} onClose={() => setEditing(false)} />}
       {choice.mode === "hashtag" && <HashtagBox choice={choice} onPick={pick} />}
@@ -267,6 +271,8 @@ export function FeedScreen({ ctx }) {
           : strange === null ? navigator.onLine ? <SkeletonRows /> : <p class="empty">This feed needs the network.</p>
           : !strange.length && discover ? <DiscoverEmpty onRefresh={refresh} text={network.current?.people.length
               ? "No notes from your extended network on these relays yet." : "No follow lists came back from your relays. Try refreshing."} />
+          : media ? <Media tiles={tiles} blockedAll={!!strange.length && !shown.length}
+              onOlder={() => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} olderState={olderState} />
           : !strange.length ? <p class="empty">{popular ? "Nothing popular in the last day yet: a note needs likes, reposts or zaps from three people your follows follow." : global ? "No notes from your web of trust on these relays yet." : "No notes found."}</p>
           : <Notes shown={shown} memoryOnly layout={layout} keepFeedOrder fetchRoots={rootFetcher(vault, account.relays.read, { save: false })}
               olderState={olderState} onOlder={popular ? null : () => runOlder(() => loadStrange(choice, strange.at(-1)?.created_at - 1))} />}

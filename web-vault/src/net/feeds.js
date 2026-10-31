@@ -79,6 +79,20 @@ export const visibleFeeds = (feeds, menu) => menuFeeds(feeds, menu).filter(f => 
 
 /** Following and Media are read from Haven /feed; the others are strangers' notes, held in memory. */
 export const fromHaven = mode => mode === "following" || mode === "media"
+
+// Media's Following / Global choice, as on the iPhone (FeedService.mediaFeedMode, FeedView+Toolbar.swift): Following is
+// the follows' notes from Haven /feed; Global is Global's notes (trust-screened, held in memory), as a grid. Kept on
+// this browser apart from the picked feed, so picking Media again opens the same one.
+const SCOPE_KEY = "nv-media-scope"
+export const loadMediaScope = (storage = globalThis.localStorage) => (storage?.getItem(SCOPE_KEY) === "global" ? "global" : "following")
+export const saveMediaScope = (scope, storage = globalThis.localStorage) => storage?.setItem(SCOPE_KEY, scope === "global" ? "global" : "following")
+/** The choice with Media's scope filled in (the saved one when it has none); other feeds as they are. */
+export const withScope = (choice, storage = globalThis.localStorage) =>
+  choice.mode === "media" ? { ...choice, scope: choice.scope === "global" || choice.scope === "following" ? choice.scope : loadMediaScope(storage) } : choice
+/** Whether a choice is read from Haven /feed: Following, and Media on Following. */
+export const readsHaven = choice => choice.mode === "following" || (choice.mode === "media" && choice.scope !== "global")
+/** Global, and Media on Global: read from everyone, kept to the web of trust (global-trust.js). */
+export const globalLike = choice => choice.mode === "global" || (choice.mode === "media" && choice.scope === "global")
 const KEY = "nv-feed"
 
 /** The last feed picked on this browser: { mode, tag }. Following when nothing (or nothing valid) is saved. */
@@ -108,9 +122,9 @@ export function tagChoice(hash = "") {
 }
 
 /** The relay filter for a stranger feed, or null when there is nothing to ask for (Hashtag with no tag). */
-export function feedFilter({ mode, tag }, { limit = 100, until } = {}) {
+export function feedFilter({ mode, tag, scope }, { limit = 100, until } = {}) {
   const page = { limit, ...(until ? { until } : {}) }
-  if (mode === "global") return { kinds: FEED_KINDS, ...page }
+  if (mode === "global" || (mode === "media" && scope === "global")) return { kinds: FEED_KINDS, ...page }
   if (mode === "hashtag") return tag ? { kinds: [1], "#t": [tag], ...page } : null
   return null
 }
@@ -121,7 +135,7 @@ export function feedFilter({ mode, tag }, { limit = 100, until } = {}) {
 export async function fetchStrangerFeed(choice, relays, { limit = 100, until, trust = null, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const filter = feedFilter(choice, { limit, until })
   if (!filter) return []
-  const global = choice.mode === "global"
+  const global = globalLike(choice)
   if (global && !trust?.size) return []
   const filters = global ? trustedFilters(filter, trust) : [filter]
   const evs = (await Promise.all(filters.map(f => query(uniq(relays), f, { maxWait: 8000 })))).flat()
@@ -156,6 +170,6 @@ export function noteAuthors(notes) {
 
 // Stranger feeds already loaded this session, by feed, so switching back shows them at once. Memory only.
 const held = new Map()
-export const feedKey = ({ mode, tag }) => (mode === "hashtag" ? `hashtag:${tag}` : mode)
+export const feedKey = ({ mode, tag, scope }) => (mode === "hashtag" ? `hashtag:${tag}` : mode === "media" && scope === "global" ? "media:global" : mode)
 export const heldNotes = choice => held.get(feedKey(choice)) ?? null
 export const holdNotes = (choice, notes) => { held.set(feedKey(choice), notes) }
