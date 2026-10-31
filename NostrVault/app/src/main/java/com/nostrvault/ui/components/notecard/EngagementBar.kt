@@ -180,7 +180,7 @@ internal fun EngagementBar(
         // nothing, so it never shows as active.
         if (onTrustWeb != null) {
             EngagementButton(
-                icon = NostrVaultIcons.WebOfTrust,
+                icon = NostrVaultIcons.TabWoT,
                 isActive = false,
                 activeColor = SecondaryText,
                 contentDescription = "Web of Trust",

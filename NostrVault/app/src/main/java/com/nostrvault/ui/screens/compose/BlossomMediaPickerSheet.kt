@@ -78,8 +78,10 @@ internal fun BlossomMediaPickerSheet(
         }
     }
 
+    // Opens nearly full height; swipe down still closes it.
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = WindowBackground
     ) {
         // The grid runs 8 from the edges; the title and filter keep 16.

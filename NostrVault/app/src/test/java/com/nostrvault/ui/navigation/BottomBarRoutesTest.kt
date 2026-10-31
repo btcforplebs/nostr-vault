@@ -24,4 +24,11 @@ class BottomBarRoutesTest {
         }
         assertFalse(showsBottomBar(null))
     }
+
+    @Test fun miniPlayerStaysOffCompose() {
+        assertFalse(showsMiniPlayer(Screen.ComposeNote.route))
+        listOf(Screen.Feed, Screen.Dashboard, Screen.NoteDetail, Screen.Profile, Screen.Settings).forEach {
+            assertTrue(it.route, showsMiniPlayer(it.route))
+        }
+    }
 }

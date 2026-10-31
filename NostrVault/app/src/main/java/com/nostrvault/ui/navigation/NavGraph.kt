@@ -72,6 +72,10 @@ private val BOTTOM_BAR_ROUTES = TOP_LEVEL_ROUTES + setOf(
 
 internal fun showsBottomBar(route: String?): Boolean = route in BOTTOM_BAR_ROUTES
 
+/** The mini player sits over every screen except compose, where it covered
+ *  the text box and its toolbar. iOS compose is a sheet above the player. */
+internal fun showsMiniPlayer(route: String?): Boolean = route != Screen.ComposeNote.route
+
 /** Tabs whose pushed screens count as inside them, as an iOS tab's own
  *  NavigationStack: over a note opened from the Feed or the Vault that tab
  *  stays lit, and tapping it goes back to it (then to the top). */
@@ -359,7 +363,7 @@ fun NostrVaultNavHost(
         // Folds away with the bar and the floating button; the folded bar
         // carries a small now-playing disc instead (iOS ChromeFold).
         val miniFolded by rememberChromeFolded()
-        com.nostrvault.ui.screens.music.MiniPlayerBar(
+        if (showsMiniPlayer(currentRoute)) com.nostrvault.ui.screens.music.MiniPlayerBar(
             actions = musicActions,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
