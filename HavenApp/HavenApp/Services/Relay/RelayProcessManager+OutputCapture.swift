@@ -274,6 +274,10 @@ extension RelayProcessManager {
         for marker in batch.notifyMarkers {
             LocalNotificationService.shared.handle(marker)
         }
+        // Each account's count in the account switcher.
+        if !batch.notifyMarkers.isEmpty {
+            AccountUnreadStore.shared.record(markers: batch.notifyMarkers)
+        }
     }
 
     func startLogThrottler() {

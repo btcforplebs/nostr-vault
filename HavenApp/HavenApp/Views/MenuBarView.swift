@@ -21,6 +21,7 @@ struct MenuBarView: View {
     @ObservedObject var nostrService = NostrService.shared
     // Rebuilds the account menu once each account's picture is cached.
     @ObservedObject var accountAvatars = AccountMenuAvatars.shared
+    @ObservedObject var unreadStore = AccountUnreadStore.shared
     @State var statusPulse = false
     @State private var showingOwnProfile = false
     @State var showingAccountSwitcher = false

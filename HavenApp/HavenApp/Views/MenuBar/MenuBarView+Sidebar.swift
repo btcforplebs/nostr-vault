@@ -99,7 +99,8 @@ extension MenuBarView {
                                             npub: npub,
                                             name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
                                             pictureURL: profile?.pictureURL,
-                                            isActive: activeNpub.isEmpty ? isOwner : npub == activeNpub
+                                            isActive: activeNpub.isEmpty ? isOwner : npub == activeNpub,
+                                            unread: unreadStore.count(npub: npub)
                                         ) {
                                             configService.switchActiveAccount(to: npub)
                                         }

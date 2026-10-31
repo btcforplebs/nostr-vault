@@ -27,6 +27,7 @@ struct MenuBarStatusView: View {
     @ObservedObject private var statsService = StatsService.shared
     // Shows pictures the window already cached; this panel starts no loads.
     @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
+    @ObservedObject private var unreadStore = AccountUnreadStore.shared
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -337,7 +338,8 @@ struct MenuBarStatusView: View {
             name: profile?.bestName
                 ?? (rowIsOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
             pictureURL: profile?.pictureURL,
-            isActive: isActive
+            isActive: isActive,
+            unread: unreadStore.count(npub: npub)
         ) {
             configService.switchActiveAccount(to: npub)
         }

@@ -118,7 +118,7 @@ extension VaultView {
 
     /// Called when the Vault list comes on screen or leaves it. Arriving keeps
     /// the last visit's time, so lines newer than it show as unread; both
-    /// move the mark to now.
+    /// move the mark to now and empty the account's switcher count.
     func activityVisit(arriving: Bool) {
         let now = Date().timeIntervalSince1970
         if arriving {
@@ -127,6 +127,8 @@ extension VaultView {
             activityUnreadSince = Int64(last > 0 ? last : now)
         }
         UserDefaults.standard.set(now, forKey: activitySeenKey)
+        // The account switcher's count for this account starts over with it.
+        AccountUnreadStore.shared.markSeen(hex: followersOwnerHex)
     }
 }
 
