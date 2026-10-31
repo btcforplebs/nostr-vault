@@ -1,6 +1,6 @@
 // A note's thread: the root, then its replies indented under what they answer. Rendered only from Haven /feed;
 // the network fills /feed in the background. Read-only: nothing here signs.
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks"
 import { NoteCard } from "../components/NoteCard.jsx"
 import { buildThread, flattenThread, readThread, repostedNote, rootIdOf, syncThread } from "../net/thread.js"
 import { DEFAULT_RELAYS, pool, uniq } from "../net/pool.js"
@@ -12,6 +12,7 @@ import { SkeletonRows } from "../components/FeedExtras.jsx"
 import { compose } from "../net/actions.js"
 import { quotedById } from "../net/quotes.js"
 import { SNO_KIND } from "../readers/sno.js"
+import { landOn, onReaderScroll, tapLine } from "../components/tap-line.js"
 
 if (import.meta.env) import("../styles/thread.css")
 
@@ -166,7 +167,7 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
       {thread === null ? <SkeletonRows count={3} label="Opening the thread…" />
         : <>
             {rootBlocked ? <p class="empty">This note is from someone you blocked.</p>
-              : thread.root ? <Focus on={thread.root.id === focused?.id} scroll={false} summary={<ReactionSummary ctx={ctx} note={thread.root} relays={relays} />}><NoteCard event={thread.root} /></Focus>
+              : thread.root ? <Focus on={thread.root.id === focused?.id} summary={<ReactionSummary ctx={ctx} note={thread.root} relays={relays} />}><NoteCard event={thread.root} /></Focus>
               : syncing ? <SkeletonRows count={1} label="Finding the note this thread starts from…" />
               : rootId && <p class="empty">The note this thread starts from wasn't found.</p>}
             {(rows.length > 0 || thread.root) && <h3 class="thread-replies-label">Replies</h3>}
@@ -176,6 +177,8 @@ export function ThreadScreen({ ctx, id, onAuthors }) {
               </div>
             ))}
             {!rows.length && thread.root && (syncing ? <SkeletonRows count={2} label={LOADING} /> : <p class="empty">No replies yet.</p>)}
+            {/* Room under a short thread, so a reply opened near its end can still reach the tap line (NoteDetailView, feeds.css). */}
+            {focused && focused.id !== thread.root?.id && <div class="tap-room" aria-hidden="true" />}
           </>}
     </main>
   )
@@ -198,10 +201,25 @@ function useChunks(total, focusAt, key) {
 }
 
 // The focused note (the iPhone's orange border and glow, styled as `.note-card.focused` with the note rows), with its
-// reaction summary under it. When it is a reply further down it is scrolled into view; marked for screen readers.
-function Focus({ on, children, summary, scroll = true }) {
+// reaction summary under it, marked for screen readers. On a phone its top goes on the tap line, 20 px under the bar's
+// buttons, as the iPhone's note detail lands it: the root and a reply further down alike. It is put back there each
+// time the thread above it grows (replies streaming in, images sizing), until the reader scrolls. The desktop pane
+// scrolls on its own, so there it is only scrolled into view.
+function Focus({ on, children, summary }) {
   const el = useRef(null)
-  useEffect(() => { if (on && scroll) el.current?.scrollIntoView?.({ block: "center" }) }, [on])
+  useLayoutEffect(() => {
+    const card = el.current
+    if (!on || !card?.closest) return
+    if (card.closest(".desk-app")) { card.scrollIntoView?.({ block: "center" }); return }
+    const screen = card.closest(".thread-screen")
+    let held = true
+    const land = () => held && landOn(card, tapLine(screen?.querySelector(".thread-bar")), { instant: true })
+    land()
+    const grows = globalThis.ResizeObserver && screen ? new ResizeObserver(land) : null
+    grows?.observe(screen)
+    const stop = onReaderScroll(() => { held = false; grows?.disconnect() })
+    return () => { stop(); grows?.disconnect() }
+  }, [on])
   if (!on) return children
   return <div class="note-card focused" aria-current="true" ref={el}>{children}{summary}</div>
 }

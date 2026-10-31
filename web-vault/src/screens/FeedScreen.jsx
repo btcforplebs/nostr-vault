@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
+import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
@@ -151,7 +152,7 @@ export function FeedScreen({ ctx }) {
         markSynced(me, follows)
         const fresh = newerNotes(notesNow.current, await readFeed(vault, follows, { limit: PAGE }))
         if (!fresh.length) return
-        if (filters.autoLoad && scrollY < 80) setNotes(prev => [...fresh, ...(prev ?? [])])
+        if (filters.autoLoad && scrollY < 80 && !feedPostOpen()) setNotes(prev => [...fresh, ...(prev ?? [])])
         else setPending(fresh)
       } catch {}
     }
@@ -212,6 +213,8 @@ export function FeedScreen({ ctx }) {
   const shown = list && visibleNotes(media ? list : applyFilters(list, filters, { threaded }), blocked)
   const newCount = following && !media ? visibleNotes(applyFilters(pending, filters, { threaded }), blocked).length : 0
   const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
+  // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
+  useFeedSpot(`${feedKey(choice)}:${layout}`, !!shown?.length)
   // The same toggles the old Feed options menu offered: Auto-load on Following and Media, Replies off on Global and Threaded.
   const toggles = Reader || !hasLayouts(choice.mode) ? []
     : [following && "autoLoad", "reposts", choice.mode !== "global" && !threaded && "replies"].filter(Boolean)

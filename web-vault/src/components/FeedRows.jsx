@@ -4,6 +4,7 @@
 // is fetched (Haven, then the read relays) into memory only; the card says "Loading the start of this thread…" until
 // it lands, and drops the line if no relay has it.
 import { useEffect, useMemo, useState } from "preact/hooks"
+import { useFeedTap } from "./feed-tap.js"
 import { NoteCard } from "./NoteCard.jsx"
 import { CondensedNote } from "./CondensedNote.jsx"
 import { FeedThreadCard } from "./FeedThreadCard.jsx"
@@ -15,14 +16,16 @@ import { fetchProfiles } from "../net/profiles.js"
 import { replyRefs } from "../net/thread.js"
 
 export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots }) {
-  const [openId, setOpenId] = useState(null)
-  if (layout === "condensed") return <div class="condensed-list">{notes.map(n => {
+  // The open post glides to the tap line (feed-tap.js); while one is open, room under the list lets the last ones reach it.
+  const [openId, setOpenId] = useFeedTap()
+  const room = openId && <div class="tap-room" aria-hidden="true" />
+  if (layout === "condensed") return <><div class="condensed-list">{notes.map(n => {
     const shown = tileNote(n) ?? n
     return openId && shown.id === openId
-      ? <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} />
+      ? <div key={n.id} data-tap-open><NoteCard event={n} memoryOnly={memoryOnly} /></div>
       : <CondensedNote key={n.id} event={n} card onOpen={x => setOpenId(x.id)} />
-  })}</div>
-  if (layout === "threaded") return <Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} />
+  })}</div>{room}</>
+  if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} />{room}</>
   // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).
   return notes.map((n, i) => <NoteCard key={n.id} event={n} memoryOnly={memoryOnly} showParent={n.kind === 1 && !!replyRefs(n).parent && notes[i + 1]?.id !== replyRefs(n).parent} />)
 }
