@@ -12,3 +12,7 @@ test("one Requests row, the iPhone's (below the list, glyph and count), not a se
   assert.match(src, /class="dm-row dm-requests" href="#\/messages\/requests" aria-label=\{`Requests, \$\{requests\.length\}`\}/)
   assert.doesNotMatch(src, /Requests \(\{requests\.length\}\)/)
 })
+
+test("the empty inbox shows only when there are no Requests either (DMInboxView: both lists empty)", () => {
+  assert.match(src, /showRequests \? <div class="empty"><strong>No Requests<\/strong><\/div> : requests\.length \? null : \(/)
+})

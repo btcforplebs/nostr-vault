@@ -205,7 +205,8 @@ export function MessagesScreen({ ctx }) {
           {ctx.session.method === "nip46" && <p class="status-line">Your signer may ask you to approve.</p>}
           <SkeletonList rowClass="dm-row" avatar={44} label="Opening your messages…" />
         </>
-        : !list.length ? (note ? null : showRequests ? <div class="empty"><strong>No Requests</strong></div> : (
+        // DMInboxView shows its empty state only when both lists are empty: with Requests waiting, the Requests row is it.
+        : !list.length ? (note ? null : showRequests ? <div class="empty"><strong>No Requests</strong></div> : requests.length ? null : (
           // DMInboxView's empty state; the web composer is the "New message to" box above, not a button.
           <div class="empty"><strong>No Messages Yet</strong><p class="small">Start an encrypted conversation<br />with New message above</p></div>
         ))
