@@ -19,7 +19,7 @@ extension TutorialID {
         case .wot: return "Your Web of Trust"
         case .vault: return "Your Vault"
         case .walletConnect: return "Wallet Connect"
-        case .pocketRelay: return "Vault in Your Pocket"
+        case .pocketRelay: return "Your Vault at Work"
         case .importTour: return "How Your Vault Works"
         }
     }
@@ -31,8 +31,8 @@ extension TutorialID {
         case .wot: return "The people you follow, how anyone reaches you, and keeping it fresh."
         case .vault: return "Everything you've posted, kept on this device."
         case .walletConnect: return "Link a wallet so you can send zaps."
-        case .pocketRelay: return "A personal relay and media server, and how it differs from public relays."
-        case .importTour: return "Your own copy, your relay, and public relays."
+        case .pocketRelay: return "What your vault keeps, and how it differs from public relays."
+        case .importTour: return "Your own copy, your vault, and public relays."
         }
     }
 
@@ -186,8 +186,8 @@ enum TutorialContent {
         ),
         TutorialStep(
             anchor: vaultRelay,
-            title: "Your relay",
-            body: "Your vault is a real relay, running on this phone. Tap Vault to watch it work."
+            title: "A real relay",
+            body: "Your vault is a real Nostr relay, running on this phone. Tap Vault to watch it work."
         ),
     ]
 
@@ -228,8 +228,8 @@ enum TutorialContent {
     static let pocketRelay: [TutorialStep] = [
         TutorialStep(
             anchor: relayStatus,
-            title: "Your vault, in your pocket",
-            body: "Your vault is a personal Nostr relay and a Blossom media server, running on this phone. It keeps a full copy of your notes and media."
+            title: "Your vault, on this phone",
+            body: "Your vault runs on this phone. It keeps a full copy of your notes and media."
         ),
         TutorialStep(
             anchor: relayActivity,
@@ -239,7 +239,7 @@ enum TutorialContent {
         TutorialStep(
             anchor: relayAddress,
             title: "Personal vs public",
-            body: "Public relays are shared servers that anyone can post to. Your vault is personal: this address only works on this phone, so nobody else can connect to it. If you want a public address that's always on, run Nostr Vault on a Mac with your own domain. That part is optional."
+            body: "Public relays are shared servers that anyone can post to. Your vault is personal: only you can use it, from this phone and your own devices in My Devices. Want it always on? Set up a home vault, a computer, box or spare phone that stays on. That part is optional."
         ),
     ]
 
@@ -256,8 +256,8 @@ enum TutorialContent {
         ),
         TutorialStep(
             anchor: nil,
-            title: "A vault in your pocket",
-            body: "Nostr Vault runs a personal relay and a Blossom media server on your phone. It keeps everything and sends your posts out to the relays you pick. Nobody on the network can connect to it."
+            title: "A vault on your phone",
+            body: "Nostr Vault keeps your vault on your phone, with all your notes and media. It sends your posts out to the relays you pick. Only you can use it: this phone, and your own devices in My Devices."
         ),
         TutorialStep(
             anchor: nil,
@@ -266,8 +266,8 @@ enum TutorialContent {
         ),
         TutorialStep(
             anchor: nil,
-            title: "Want a public address?",
-            body: "Run Nostr Vault on a Mac with your own domain, and it becomes a public relay that's always on. Your phone syncs with it. This is optional: your vault works fine on its own."
+            title: "Want it always on?",
+            body: "Set up a home vault: a computer, box or spare phone that stays on and keeps a copy of your vault. This is optional: your vault works fine on its own."
         ),
         TutorialStep(
             anchor: nil,
