@@ -28,3 +28,12 @@ test("with no wallet linked the screen says so first, and the link form opens fr
   assert.match(s, /Link a wallet you already use to send and receive zaps\./)
   assert.match(s, /onClick=\{\(\) => setOpen\(true\)\}>Connect a wallet<\/button>/)
 })
+
+test("Send uses the iPhone's words: who it went to, and the range hints", () => {
+  const s = src("screens/WalletSend.jsx")
+  assert.match(s, /`Sent \$\{n\.toLocaleString\(\)\} sats to \$\{target\.address \?\? pay\.host\}\.`/)
+  assert.match(s, /`The smallest amount it accepts is \$\{check\.minSats\.toLocaleString\(\)\} sats\.`/)
+  assert.match(s, /`The largest amount it accepts is \$\{check\.maxSats\.toLocaleString\(\)\} sats\.`/)
+  assert.match(s, /`Between \$\{check\.minSats\.toLocaleString\(\)\} and \$\{check\.maxSats\.toLocaleString\(\)\} sats\.`/)
+  assert.doesNotMatch(s, /At least|At most/)
+})
