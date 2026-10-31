@@ -1,5 +1,5 @@
-// An article's likes, comments, zaps and highlights under the reader, read-only (the iPhone's ArticleReaderView
-// action counts, commentsSection and highlights list). Zap receipts only count once their zap request checks out and
+// An article's Like / Comment / Zap bar (ArticleActions.jsx), then its likes, comments, zaps and highlights under
+// the reader (the iPhone's ArticleReaderView action counts, commentsSection and highlights list). Zap receipts only count once their zap request checks out and
 // the payee's zap service published them (net/zaps.js trustedReceipts), as in Live chat.
 import { useEffect, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
@@ -12,6 +12,7 @@ import { fetchPersonLists } from "../net/person.js"
 import { pool } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { receiptTrust } from "../net/zaps.js"
+import { ArticleActionBar } from "./ArticleActions.jsx"
 import { coordinate, engagementFilters, engagementRelays, highlightFilters, shownHighlights, tally, visibleEvents } from "./engagement.js"
 
 /** Every event about the article: your read relays first, then the author's write relays as they become known. */
@@ -37,6 +38,7 @@ function useArticleEvents(ctx, article) {
 
 export function ArticleEngagement({ ctx, article }) {
   const evs = useArticleEvents(ctx, article)
+  const [mine, setMine] = useState([]) // comments sent from here, shown before any relay echoes them
   const { blocked } = useBlocks(ctx)
   const [trusted, setTrusted] = useState(null)
   useEffect(() => {
@@ -49,8 +51,13 @@ export function ArticleEngagement({ ctx, article }) {
     })
     return () => { live = false }
   }, [evs, blocked.size])
-  if (!trusted) return <p class="muted small reader-engage-loading">Loading likes and comments…</p>
-  return <EngagementView article={article} events={trusted} />
+  const events = trusted && [...trusted, ...mine.filter(m => !trusted.some(e => e.id === m.id))]
+  const t = events && tally(events, article.id, coordinate(article))
+  return <>
+    <ArticleActionBar ctx={ctx} article={article} likers={t?.likers ?? null} comments={t?.commentCount ?? 0}
+      onComment={ev => setMine(m => [...m, ev])} />
+    {events ? <EngagementView article={article} events={events} /> : <p class="muted small reader-engage-loading">Loading likes and comments…</p>}
+  </>
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`

@@ -1,6 +1,6 @@
 // What the network says about an article, read-only: likes, comments, zaps and highlights (the iPhone's
 // ArticleEngagement, ArticleTally, ArticleHighlight and ArticleBlockFilter, Models/ArticleEngagement.swift). Liking,
-// commenting, zapping and highlighting sign or spend, so they aren't here. Nothing is stored.
+// commenting and zapping are drawn by ArticleActions.jsx; this file only builds what they send. Nothing is stored.
 import { zapSats } from "../net/notifications.js"
 import { isNoiseOrSpam } from "./spam.js"
 
@@ -108,4 +108,22 @@ export function engagementRelays(read, authorWrite = []) {
     if (u && !seen.has(k)) { seen.add(k); out.push(u) }
   }
   return out.slice(0, 8)
+}
+
+/** A top-level NIP-22 comment on the article (NIP10Thread.topLevelCommentTags): rooted by A alone for an addressable
+ *  article, with this version's e; by E for one without a d tag. Lowercase k and p name the article and its author. */
+export function commentTemplate(article, content, relayHint = "", now = Math.floor(Date.now() / 1000)) {
+  const coord = coordinate(article), kind = String(article.kind)
+  const tags = coord
+    ? [["A", coord, relayHint], ["K", kind], ["P", article.pubkey], ["a", coord, relayHint], ["e", article.id, relayHint, article.pubkey]]
+    : [["E", article.id, relayHint, article.pubkey], ["K", kind], ["P", article.pubkey], ["e", article.id, relayHint, article.pubkey]]
+  return { kind: COMMENT, created_at: now, tags: [...tags, ["k", kind], ["p", article.pubkey]], content: String(content).trim() }
+}
+
+/** The like count with your own like in it as soon as you tap (ArticleReaderView.likeCount), and out as soon as you
+ *  take it back. `mine`: actions.js myReaction(id) — { emoji } liked here, { emoji: null } taken back, null unchanged. */
+export function likeCount(likers, me, mine) {
+  if (!mine || !me) return likers.size
+  const counted = likers.has(me)
+  return likers.size + (mine.emoji && !counted ? 1 : !mine.emoji && counted ? -1 : 0)
 }

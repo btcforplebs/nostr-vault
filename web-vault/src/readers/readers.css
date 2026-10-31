@@ -221,3 +221,12 @@
 .now-playing-actions { display: flex; justify-content: center; gap: 8px; }
 .now-playing-actions button { display: inline-flex; align-items: center; gap: 6px; }
 .now-playing-actions button.on { color: var(--accent-light); }
+
+/* The article's Like / Comment / Zap bar (ArticleReaderView actionBar): the notes' capsules, each count beside it. */
+.reader-action-bar { margin: 24px 0 0; flex-wrap: wrap; }
+.reader-action-count { display: inline-flex; align-items: center; gap: 6px; }
+.reader-count { color: var(--text-2); font: 600 13px/1 var(--font); font-variant-numeric: tabular-nums; }
+.note-actions .comment.sent { color: var(--accent); background: rgb(230 115 38 / .15); }
+.reader-comment-box { display: grid; gap: 8px; margin-top: 12px; }
+.reader-comment-box textarea { width: 100%; min-height: 72px; resize: vertical; }
+.reader-comment-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
