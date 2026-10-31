@@ -1,4 +1,4 @@
-//go:build !cshared && !wasm
+//go:build !cshared && !wasm && !nolmdb
 
 package main
 
