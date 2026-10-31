@@ -74,14 +74,8 @@ extension BlossomService {
             request.httpMethod = "DELETE"
             request.timeoutInterval = 30
 
-            // Create Blossom auth event for deletion per BUD-02 spec
-            let expirationTimestamp = Int64(Date().timeIntervalSince1970) + 3600
-            let authTags = [
-                ["t", "delete"],
-                ["x", sha256],
-                ["u", deleteURL.absoluteString],
-                ["expiration", String(expirationTimestamp)]
-            ]
+            // One token per server, naming it (BlossomDeleteAuth).
+            let authTags = BlossomDeleteAuth.tags(sha256: sha256, deleteURL: deleteURL)
 
             let authContent = "Delete blob \(sha256.prefix(8))..."
 

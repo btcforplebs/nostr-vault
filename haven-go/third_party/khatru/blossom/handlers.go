@@ -1,6 +1,7 @@
 package blossom
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -325,11 +326,13 @@ func (bs BlossomServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if auth != nil {
-		if auth.Tags.FindWithValue("t", "delete") == nil {
-			blossomError(w, "invalid \"Authorization\" event \"t\" tag", 403)
-			return
-		}
+	if auth == nil {
+		blossomError(w, "missing \"Authorization\" header", 401)
+		return
+	}
+	if auth.Tags.FindWithValue("t", "delete") == nil {
+		blossomError(w, "invalid \"Authorization\" event \"t\" tag", 403)
+		return
 	}
 
 	spl := strings.SplitN(r.URL.Path, ".", 2)
@@ -357,8 +360,9 @@ func (bs BlossomServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// should we accept this delete?
+	ctx := context.WithValue(r.Context(), requestHostKey{}, r.Host)
 	for _, rd := range bs.RejectDelete {
-		reject, reason, code := rd(r.Context(), auth, hhash, ext)
+		reject, reason, code := rd(ctx, auth, hhash, ext)
 		if reject {
 			blossomError(w, reason, code)
 			return

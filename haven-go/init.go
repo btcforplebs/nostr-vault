@@ -565,6 +565,7 @@ func initRelays(ctx context.Context) error {
 	blossomServer.LoadBlob = append(blossomServer.LoadBlob, loadBlob)
 	// Over the mesh, only blobs a public note names (mesh_safety.go).
 	guardMeshBlobs(blossomServer)
+	guardDeleteServer(blossomServer)
 	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
 		return fs.Remove(config.BlossomPath + sha256)

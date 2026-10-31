@@ -675,6 +675,7 @@
 		7570C4E14AA4FF93C3F233E9 /* GlobalSearchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */; };
 		75B917CF28D1115CEC3225F6 /* MarketScopeGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B1CCA082F36A09EF426579 /* MarketScopeGate.swift */; };
 		75E785C732866CC95067DE3D /* starter_packs.json in Resources */ = {isa = PBXBuildFile; fileRef = E76B268D327BDC761BB5AC1E /* starter_packs.json */; };
+		75E7DE09D1BEE802A16EECCD /* BlossomDeleteAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B366C7A2143ADA058BCFCFA /* BlossomDeleteAuth.swift */; };
 		75F45827C544ECEAF42D7745 /* ChromeMorphCapsule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B3366EB807139F9BCD79B3 /* ChromeMorphCapsule.swift */; };
 		760D65B08AFEAAEEF8EB6683 /* StatsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0AF323C6A978AA0E08E94A /* StatsCard.swift */; };
 		761DA014324390987C7661CF /* VaultNoteScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */; };
@@ -1451,6 +1452,7 @@
 		F453242408423CC09490129F /* ImportTourStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA03816123BAFD2424954F9 /* ImportTourStep.swift */; };
 		F49E32FCADAF1E2E1573892F /* FollowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E0BC988FC3F464AE8DAD87 /* FollowListView.swift */; };
 		F4CD7E0CC46D4D6C982D1F4B /* NostrIntroStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D6D901711AB80C224DA70D6 /* NostrIntroStep.swift */; };
+		F4D74011AB16CFA8E9D10E6B /* BlossomDeleteAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B366C7A2143ADA058BCFCFA /* BlossomDeleteAuth.swift */; };
 		F4DA0E809309049EC1DDA67E /* NostrService+FilterQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53310FE0EAE603E4DDC5EA39 /* NostrService+FilterQuery.swift */; };
 		F4DE1594633DA412BFEADFFE /* MarketListing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F7D5B8237EEF6E947F2E02 /* MarketListing.swift */; };
 		F503C421DD7BABE44209ED84 /* MarketplaceSellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE757A797972E778F02D705 /* MarketplaceSellView.swift */; };
@@ -1648,6 +1650,7 @@
 		1A6E60029BAE8DFF771BF7B3 /* VaultBackupRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultBackupRestore.swift; sourceTree = "<group>"; };
 		1AF6EB49EF70B0D69B6BF435 /* ProfileContent+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileContent+Media.swift"; sourceTree = "<group>"; };
 		1B03DACD65D976F80B315E19 /* MirrorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorService.swift; sourceTree = "<group>"; };
+		1B366C7A2143ADA058BCFCFA /* BlossomDeleteAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDeleteAuth.swift; sourceTree = "<group>"; };
 		1C477D8592D4BF3D830EDEEE /* NIP46Service+Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NIP46Service+Bridge.swift"; sourceTree = "<group>"; };
 		1C7B0FCECC367D25BBB73718 /* FeedLayoutMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLayoutMode.swift; sourceTree = "<group>"; };
 		1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp_iOS.swift; sourceTree = "<group>"; };
@@ -3068,6 +3071,7 @@
 				54E29020BA039397A6D8AFB8 /* BitcoinAddress.swift */,
 				93478F128B3552096C953E1B /* BitcoinSweepEstimate.swift */,
 				E8B8BF0CFACC02D638AEDA16 /* BlockedPeople.swift */,
+				1B366C7A2143ADA058BCFCFA /* BlossomDeleteAuth.swift */,
 				0AD3CB3C64B69F90BC5AC4F7 /* BlossomPresenceDisk.swift */,
 				EA0A686E5FF7B46AC8AB9776 /* BlossomURI.swift */,
 				EC971B12438093F727E8967F /* Bolt11.swift */,
@@ -3882,6 +3886,7 @@
 				B269F0CA9A5435B3EA0A9922 /* BlossomDashboardMirrors.swift in Sources */,
 				88FB85A8406DE6D5CB0F0113 /* BlossomDashboardModels.swift in Sources */,
 				BDA2EED14D678BC16890F89F /* BlossomDashboardView.swift in Sources */,
+				F4D74011AB16CFA8E9D10E6B /* BlossomDeleteAuth.swift in Sources */,
 				E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */,
 				29FDF203010DFCDF7E9BA986 /* BlossomMediaPickerSheet.swift in Sources */,
 				F7DB53EC4F75BBF25215260F /* BlossomPresenceDisk.swift in Sources */,
@@ -4654,6 +4659,7 @@
 				A9BB3CB519144EE25890C345 /* BlossomDashboardMirrors.swift in Sources */,
 				DD787F5C4841934389DE2A38 /* BlossomDashboardModels.swift in Sources */,
 				DD81E21B30BB4122081806C1 /* BlossomDashboardView.swift in Sources */,
+				75E7DE09D1BEE802A16EECCD /* BlossomDeleteAuth.swift in Sources */,
 				8FEB6F24A3984B98CCF81E56 /* BlossomMediaCache.swift in Sources */,
 				16F6670579A7DABAC4B5BDBE /* BlossomMediaPickerSheet.swift in Sources */,
 				32FD41A6A136EC3CC6833772 /* BlossomPresenceDisk.swift in Sources */,

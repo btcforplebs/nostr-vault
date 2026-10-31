@@ -83,6 +83,10 @@ test("delete goes to every server holding the file with a delete auth for its ha
   const auth = seen[0][2]
   assert.ok(verifyEvent(auth) && auth.kind === 24242 && auth.pubkey === ME)
   assert.deepEqual(auth.tags.slice(0, 2), [["t", "delete"], ["x", H("a")]])
+  // Each server gets its own token naming it, so none can be replayed against another (the home vault refuses that).
+  assert.deepEqual(seen.map(s => s[2].tags.find(t => t[0] === "server")?.[1]), [A, B].map(s => new URL(s).hostname))
+  const exp = Number(auth.tags.find(t => t[0] === "expiration")[1])
+  assert.equal(exp - auth.created_at, 300, "a delete token lasts five minutes")
   assert.ok(r.every(x => x.ok))
 })
 
@@ -110,8 +114,8 @@ test("kinds from the type or the extension; filters; day groups keep order", () 
   assert.deepEqual(g.map(x => [x.day, x.blobs.length]), [["Today", 2], ["This Week", 2], ["This Month", 1], ["September", 1], ["December 2025", 1], ["Undated", 1]])
   // A week that starts on Monday leaves Sunday the 18th in This Month.
   assert.deepEqual(byDay([{ uploaded: at(9, 19) }, { uploaded: at(9, 18) }], "en-GB", now).map(x => x.day), ["This Week", "This Month"])
-  const t = blossomAuthTemplate("delete", H("d"), 1000)
-  assert.deepEqual(t.tags, [["t", "delete"], ["x", H("d")], ["expiration", "1600"]])
+  assert.deepEqual(blossomAuthTemplate("delete", H("d"), 1000, "vault.example").tags, [["t", "delete"], ["x", H("d")], ["server", "vault.example"], ["expiration", "1300"]])
+  assert.deepEqual(blossomAuthTemplate("upload", H("d"), 1000).tags, [["t", "upload"], ["x", H("d")], ["expiration", "1600"]])
 })
 
 test("Test: a file of yours the server still serves proves it works; gone, empty, or silent say so", async () => {
@@ -142,7 +146,7 @@ test("Delete from mirrors goes to every media server, any other that listed the 
   const seen = []
   const r = await deleteBlob(blob, { ctx, servers: [A, C], fetch: async (url, opt) => { seen.push([url, opt.method, authOf(opt.headers.Authorization).tags[1]]); return url.startsWith(C) ? res(500, null, "busy") : res(url.startsWith(D) ? 404 : 200) } })
   assert.deepEqual(seen.map(x => x[0]), [A, C, B, D].map(s => `${s}/${H("e")}`))
-  assert.ok(seen.every(x => x[1] === "DELETE" && x[2][1] === H("e")), "one delete auth, scoped to the file")
+  assert.ok(seen.every(x => x[1] === "DELETE" && x[2][1] === H("e")), "each delete auth is scoped to the file")
   assert.deepEqual(r.map(x => [x.server, x.ok]), [[A, true], [C, false], [B, true], [D, true]])
   assert.match(outcome(r, "Deleted"), /^Deleted on 3 of 4 servers\. c\.example: busy/)
 })
