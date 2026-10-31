@@ -40,7 +40,8 @@ export function ReactionButton({ ctx, note, state, off }) {
     addEventListener("pointerdown", away); addEventListener("keydown", esc)
     return () => { removeEventListener("pointerdown", away); removeEventListener("keydown", esc) }
   }, [bar])
-  const sent = state === "sent", busy = state === "busy", error = state?.error
+  // A like going out already shows as yours (net/actions.js like); only the unlike or a swap is "busy".
+  const pending = state === "pending", sent = state === "sent" || pending, busy = state === "busy", error = state?.error
   const mine = sent ? displayEmoji(reactionOf(note.id)) : null
   const react = emoji => { setBar(false); setPicker(false); act(ctx, "like", note, pickFor(mine, emoji)) }
   const down = () => { held.current = false; hold.current = setTimeout(() => { held.current = true; setBar(true) }, HOLD_MS) }
@@ -48,7 +49,7 @@ export function ReactionButton({ ctx, note, state, off }) {
   const click = e => {
     e.stopPropagation()
     if (held.current) { held.current = false; return }
-    if (!busy) act(ctx, "like", note)
+    if (!busy && !pending) act(ctx, "like", note)
   }
   const name = off ? `Like. ${off}` : error ? `${state.unlike ? "Unlike" : "Like"} didn't go out: ${error}. Try again`
     : busy ? "Like: sending" : mine ? `Your reaction: ${mine}. Tap to remove it, hold to change it` : "React. Hold for more reactions"
@@ -56,9 +57,9 @@ export function ReactionButton({ ctx, note, state, off }) {
   return (
     <span class="reaction" ref={ref} onClick={e => e.stopPropagation()}>
       <button type="button" class={`note-action like${sent ? " sent" : ""}${mine && mine !== "❤️" ? " emoji" : ""}${error ? " failed" : ""}${off ? " off" : ""}`}
-        aria-label={name} title={name} aria-pressed={sent} aria-busy={busy || undefined} aria-disabled={busy || !!off || undefined} aria-haspopup="menu" aria-expanded={bar}
-        onPointerDown={off ? undefined : down} onPointerUp={up} onPointerLeave={up} onClick={off ? undefined : click}
-        onContextMenu={e => { e.preventDefault(); up(); if (!off && !busy) setBar(true) }}>
+        aria-label={name} title={name} aria-pressed={sent} aria-busy={busy || undefined} aria-disabled={busy || pending || !!off || undefined} aria-haspopup="menu" aria-expanded={bar}
+        onPointerDown={off || pending ? undefined : down} onPointerUp={up} onPointerLeave={up} onClick={off ? undefined : click}
+        onContextMenu={e => { e.preventDefault(); up(); if (!off && !busy && !pending) setBar(true) }}>
         {mine && mine !== "❤️" ? <span class="reaction-emoji">{mine}</span>
           : <svg viewBox="0 0 24 24" width="16" height="16" fill={sent ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={HEART} /></svg>}
       </button>

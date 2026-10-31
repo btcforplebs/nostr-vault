@@ -42,6 +42,20 @@ test("only events that name the note count, and each event once", () => {
   assert.equal(sum.reposts, 0)
 })
 
+test("your own reaction counts at once, in place of what the relays had for you, and goes when taken back", () => {
+  const relays = [ev(7, "p1", "+"), ev(7, "me", "😂"), ev(6, "p5")]
+  // Liked just now: counted before any relay has it.
+  assert.deepEqual(reactionSummary([], note, { pubkey: "me", emoji: "❤️" }).reactions, [{ emoji: "❤️", count: 1 }])
+  // Swapped 😂 for 🔥: the old one isn't counted twice.
+  assert.deepEqual(reactionSummary(relays, note, { pubkey: "me", emoji: "🔥" }).reactions, [{ emoji: "❤️", count: 1 }, { emoji: "🔥", count: 1 }])
+  // A heart joins the other hearts.
+  assert.deepEqual(reactionSummary(relays, note, { pubkey: "me", emoji: "❤️" }).reactions, [{ emoji: "❤️", count: 2 }])
+  // Taken back (or failed): gone, and an emoji nobody else sent drops out.
+  assert.deepEqual(reactionSummary(relays, note, { pubkey: "me", emoji: null }).reactions, [{ emoji: "❤️", count: 1 }])
+  // Not changed here: the relays' answer stands.
+  assert.deepEqual(reactionSummary(relays, note, null).reactions, [{ emoji: "❤️", count: 1 }, { emoji: "😂", count: 1 }])
+})
+
 test("the thread screen draws the focused note, its summary and the REPLIES label", () => {
   const src = readFileSync(new URL("../src/screens/ThreadScreen.jsx", import.meta.url), "utf8")
   assert.match(src, /class="note-card focused"/)

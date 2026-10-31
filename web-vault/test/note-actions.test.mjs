@@ -12,7 +12,7 @@ import { pool } from "../src/net/pool.js"
 import { publishNote } from "../src/net/sync.js"
 import {
   REACTION, act, actionState, actionTarget, composeTarget, deleteNote, deletionTemplate, findNote, gateIds, isDeleted, loadDeletions,
-  loadSent, publishAction, quoteOf, reactionOf, reactionTemplate, replyTags, repostTemplate, shareLink, unlike,
+  loadSent, myReaction, publishAction, quoteOf, reactionOf, reactionTemplate, replyTags, repostTemplate, shareLink, unlike,
 } from "../src/net/actions.js"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -138,11 +138,13 @@ test("a repost card's actions act on the note inside it, only when that note's s
   assert.equal(actionTarget(finalizeEvent({ kind: 7, created_at: now, tags: [], content: "+" }, other)), null)
 })
 
-test("a like is sent once signed and a relay took it, and is kept in the outbox", async t => {
+test("a like shows at once, then is sent once signed and a relay took it, and is kept in the outbox", async t => {
   const sent = relaysSay(t, () => Promise.resolve(""))
   const c = ctxFor(), n = note()
   const p = act(c, "like", n)
-  assert.equal(actionState(n.id).like, "busy")
+  assert.equal(actionState(n.id).like, "pending") // before the signer has answered
+  assert.equal(reactionOf(n.id), REACTION)
+  assert.deepEqual(myReaction(n.id), { emoji: REACTION })
   await p
   assert.equal(actionState(n.id).like, "sent")
   assert.equal(sent.length, 1)
@@ -308,6 +310,34 @@ test("no relay took it: the action shows the error and can be tried again", asyn
   t.mock.method(pool, "publish", urls => urls.map(() => Promise.resolve("")))
   await act(c, "repost", n)
   assert.equal(actionState(n.id).repost, "sent")
+})
+
+test("a like whose signer never answers can't be tapped again while it is going out", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  let signs = 0
+  const c = { ...ctxFor(), signer: { signEvent: () => { signs++; return new Promise(() => {}) } } }, n = note()
+  act(c, "like", n, "🔥")
+  await act(c, "like", n)
+  await act(c, "like", n, "😂")
+  assert.equal(signs, 1)
+  assert.equal(actionState(n.id).like, "pending")
+  assert.equal(reactionOf(n.id), "🔥")
+  assert.equal(sent.length, 0)
+})
+
+test("a like that fails is taken off again: no emoji, not counted, the heart says why, and a tap tries again", async t => {
+  relaysSay(t, () => Promise.reject(new Error("down")))
+  const c = ctxFor(), n = note()
+  const p = act(c, "like", n, "🔥")
+  assert.equal(reactionOf(n.id), "🔥")
+  await p
+  assert.equal(reactionOf(n.id), null)
+  assert.match(actionState(n.id).like.error, /No relay took it/)
+  assert.deepEqual(myReaction(n.id), { emoji: null })
+  t.mock.method(pool, "publish", urls => urls.map(() => Promise.resolve("")))
+  await act(c, "like", n, "🔥")
+  assert.equal(actionState(n.id).like, "sent")
+  assert.deepEqual(myReaction(n.id), { emoji: "🔥" })
 })
 
 test("a signer that signs as someone else never gets published", async t => {
