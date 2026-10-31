@@ -1,5 +1,9 @@
 // A long-form body drawn from parseMarkdown's blocks (the iPhone's MarkdownBodyView). Everything is built as
-// elements from parsed text, never as HTML, so nothing in an article can run in the page.
+// elements from parsed text, never as HTML, so nothing in an article can run in the page. A tap on an image opens it
+// full screen on its own (MarkdownBodyView onImageTap -> the media viewer with just that URL).
+import { useState } from "preact/hooks"
+import { MediaLightbox } from "../components/MediaLightbox.jsx"
+import { imageItem } from "../net/note-media.js"
 import { parseMarkdown, parseInline } from "./longform.js"
 
 export function Markdown({ body }) {
@@ -13,12 +17,23 @@ export function Markdown({ body }) {
           case "ordered": return <div key={i} class="md-item"><span class="md-mark">{b.index}.</span><span><Inline text={b.text} /></span></div>
           case "quote": return <blockquote key={i}><Inline text={b.text} /></blockquote>
           case "code": return <pre key={i}><code>{b.text}</code></pre>
-          case "image": return <img key={i} class="md-image" src={b.url} alt="" loading="lazy" referrerpolicy="no-referrer" />
+          case "image": return <MdImage key={i} url={b.url} />
           default: return <hr key={i} />
         }
       })}
     </div>
   )
+}
+
+/** An article image, a button that opens it full screen. */
+export function MdImage({ url }) {
+  const [open, setOpen] = useState(false)
+  return <>
+    <button type="button" class="md-image-open" aria-label="View image full screen" onClick={e => { e.stopPropagation(); setOpen(true) }}>
+      <img class="md-image" src={url} alt="" loading="lazy" referrerpolicy="no-referrer" />
+    </button>
+    {open && <MediaLightbox items={[imageItem(url)]} onClose={() => setOpen(false)} />}
+  </>
 }
 
 export function Inline({ text }) {
