@@ -689,6 +689,11 @@ class ComposeNoteViewModel @Inject constructor(
                     }
                 }
 
+                // NIP-18: a `q` tag for each live stream the text quotes ("Share as a note").
+                com.nostrvault.ui.screens.live.LiveStreamShare.quoteTags(baseContent).forEach { q ->
+                    if (tags.none { it.size >= 2 && it[0] == "q" && it[1] == q[1] }) tags.add(q)
+                }
+
                 // NIP-30: an `emoji` tag for each custom emoji the post uses.
                 tags.addAll(customEmojiTags(baseContent))
 

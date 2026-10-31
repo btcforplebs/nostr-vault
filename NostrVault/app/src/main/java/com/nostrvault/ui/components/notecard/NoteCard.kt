@@ -430,8 +430,17 @@ fun NoteCard(
             val isArticle = note.displayKind == ArticleMeta.KIND
             val poll = remember(note.id, note.displayKind, note.content) { note.poll }
             // Lightning invoices: cut from the text, drawn as pay cards under the links.
-            val invoices = remember(note.content) { NoteInvoices.find(note.content) }
-            val invoiceBody = remember(note.content, invoices) { NoteInvoices.textWithout(invoices, note.content) }
+            // A quoted live stream's own links leave the note: its card draws them (LiveNoteLinks).
+            val liveHidden = remember(note.id, quotedNotes) {
+                LiveNoteLinks.hidden(note.mediaURLs + note.linkURLs, note.quotedEventIds, quotedNotes)
+            }
+            val liveBody = remember(note.content, liveHidden) {
+                LiveNoteLinks.body(note.content, liveHidden, com.nostrvault.relay.HavenQuoteDecoder)
+            }
+            val shownMedia = remember(note.mediaURLs, liveHidden) { note.mediaURLs - liveHidden }
+            val shownCards = remember(note.cardLinkURLs, liveHidden) { note.cardLinkURLs - liveHidden }
+            val invoices = remember(liveBody) { NoteInvoices.find(liveBody) }
+            val invoiceBody = remember(liveBody, invoices) { NoteInvoices.textWithout(invoices, liveBody) }
             if (repostPlaceholder != null) {
                 RepostPlaceholderLine(repostPlaceholder)
             } else if (isArticle) {
@@ -457,8 +466,8 @@ fun NoteCard(
                 // vote on.
                 PollCard(poll = poll, isFocused = isFocused, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
             } else if (invoiceBody.isNotBlank()) {
-                val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
-                val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
+                val mediaSet = remember(shownMedia) { shownMedia.toSet() }
+                val linkSet = remember(shownCards) { shownCards.toSet() }
                 TranslatableNoteText(
                     noteKey = note.effectiveEventId,
                     content = invoiceBody,
@@ -472,7 +481,7 @@ fun NoteCard(
                     // Each link's card sits where the link was written (iOS #1246).
                     NoteTextWithLinkCards(
                         content = invoiceBody,
-                        cards = note.cardLinkURLs,
+                        cards = shownCards,
                         emojis = note.customEmojis,
                         profiles = profiles,
                         mediaURLs = mediaSet,
@@ -486,10 +495,10 @@ fun NoteCard(
 
             // Media thumbnails. Same order as iOS FeedNoteRow: text, media,
             // links, quotes.
-            if (!isArticle && note.mediaURLs.isNotEmpty()) {
+            if (!isArticle && shownMedia.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 MediaPreviewRow(
-                    urls = note.mediaURLs,
+                    urls = shownMedia,
                     tags = note.tags,
                     autoplayVideos = autoplayVideos,
                     author = note.pubkey,
@@ -501,7 +510,7 @@ fun NoteCard(
             // inline. Not for an article: its links and images belong to the reader.
             val cardsInline = repostPlaceholder == null && !isArticle && note.displayKind != FeedHighlight.KIND &&
                 poll == null && invoiceBody.isNotBlank()
-            if (!isArticle && !cardsInline) for (link in note.cardLinkURLs) {
+            if (!isArticle && !cardsInline) for (link in shownCards) {
                 Spacer(Modifier.height(8.dp))
                 LinkPreviewCard(
                     url = link,

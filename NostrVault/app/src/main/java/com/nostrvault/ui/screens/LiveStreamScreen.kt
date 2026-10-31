@@ -378,7 +378,7 @@ fun LiveStreamScreen(
                     LiveShareButton(
                         stream = stream,
                         hostName = hostName,
-                        onShareAsNote = { leaveFor { LiveStreamLeave.compose(LiveStreamShare.noteText(stream)) } },
+                        onShareAsNote = { leaveFor { LiveStreamLeave.compose(LiveStreamShare.noteText(stream, hostName)) } },
                         onOpenHost = { openProfile(stream.hostPubkey) },
                         onCopied = { viewModel.showStatus("Link copied") },
                     )
