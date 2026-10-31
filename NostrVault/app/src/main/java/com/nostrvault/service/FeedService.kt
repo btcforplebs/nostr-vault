@@ -308,9 +308,6 @@ class FeedService @Inject constructor(
     internal val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
-    private val _feedScrollingDown = MutableStateFlow(false)
-    val feedScrollingDown: StateFlow<Boolean> = _feedScrollingDown.asStateFlow()
-
     internal val _connectionStatus = MutableStateFlow("Disconnected")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
@@ -739,22 +736,10 @@ class FeedService @Inject constructor(
         _restoredScrollPosition.value = null
     }
 
-    /**
-     * Drives the scroll-condense animation of the bottom nav bar + compose FAB
-     * (iOS parity with FeedService.feedScrollingDown). StateFlow dedups equal
-     * values, so the feed screen can call this freely; only an actual flip
-     * publishes, keeping the bar/FAB the sole recomposing consumers.
-     */
     fun requestRelayDashboard() {
         _relayDashboardRequest.tryEmit(Unit)
     }
 
-    fun setFeedScrollingDown(value: Boolean) {
-        // When the user disables the tab bar animation, the bar (and compose FAB)
-        // must stay fully expanded, so never publish a "scrolling down" flip.
-        if (value && configStore.config.value.disableTabBarAnimation) return
-        _feedScrollingDown.value = value
-    }
 
     fun requestScrollToTop() {
         _scrollToTopRequest.tryEmit(Unit)

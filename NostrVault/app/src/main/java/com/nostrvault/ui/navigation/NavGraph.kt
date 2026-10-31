@@ -2,9 +2,8 @@ package com.nostrvault.ui.navigation
 
 import com.nostrvault.ui.components.ZapFlightStage
 import com.nostrvault.ui.components.ScrollChrome
-import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFold
-import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.components.FoldBlocked
 import com.nostrvault.ui.components.rememberScrollChromeConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.*
@@ -174,11 +173,6 @@ fun NostrVaultNavHost(
     val chromeConnection = rememberScrollChromeConnection(
         enabled = chromeFolds && !config.disableTabBarAnimation,
     )
-    // The FABs and the feed's top bar still read the old boolean for which
-    // controls take taps; it flips once, halfway through the fold.
-    LaunchedEffect(Unit) {
-        snapshotFlow { ScrollChrome.isFolded }.collect { feedService.setFeedScrollingDown(it) }
-    }
 
     // An artist or album opened from the full player off the Feed tab: go
     // back to the Feed tab, which switches to Music and shows the page.
@@ -368,10 +362,10 @@ fun NostrVaultNavHost(
         // a live stream is loaded. On tabs with a floating button (Post,
         // Blossom, Relay) it stops short of it so the two share the row.
         // Folds away with the bar and the floating button; the folded bar
-        // carries a small now-playing disc instead (iOS ChromeFold).
-        val miniFolded by rememberChromeFolded()
-        if (showsMiniPlayer(currentRoute)) com.nostrvault.ui.screens.music.MiniPlayerBar(
-            actions = musicActions,
+        // carries a small now-playing disc instead (iOS ChromeFold). The fold
+        // is read in FoldBlocked, so its flip never recomposes this host.
+        if (showsMiniPlayer(currentRoute)) FoldBlocked(
+            whenFolded = true,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
@@ -381,9 +375,8 @@ fun NostrVaultNavHost(
                     // 12dp side inset already counts toward the gap.
                     end = (FloatingButtonRow.reservedWidth - 12.dp).coerceAtLeast(0.dp),
                 )
-                .chromeFold()
-                .blockedWhen(miniFolded),
-        )
+                .chromeFold(),
+        ) { com.nostrvault.ui.screens.music.MiniPlayerBar(actions = musicActions) }
 
         // The live player, over everything above (tab bar and mini player
         // included) rather than on a nav route: it needs the LiveStream object

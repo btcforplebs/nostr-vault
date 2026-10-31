@@ -223,11 +223,6 @@ class FeedViewModel @Inject constructor(
     val isLoadingExtendedNetwork: StateFlow<Boolean> = feedService.isLoadingExtendedNetwork
     val followedPubkeys: StateFlow<List<String>> = feedService.followedPubkeys
 
-    // ── Scroll-condense state (bottom bar + FAB) ────────────────
-    val feedScrollingDown: StateFlow<Boolean> = feedService.feedScrollingDown
-
-    fun setFeedScrollingDown(value: Boolean) = feedService.setFeedScrollingDown(value)
-
     // ── Pending notes (new posts indicator) ────────────────────
     // Counted through the current feed's filter, not raw: Global with the Web
     // of Trust on drops most of what arrives, and a raw count put a "new posts"
@@ -643,7 +638,7 @@ class FeedViewModel @Inject constructor(
             // No list scrolls in Reels, so nothing would ever un-condense a
             // bottom bar condensed by the last feed; the page chrome is laid
             // out against the full bar.
-            feedService.setFeedScrollingDown(false)
+            com.nostrvault.ui.components.ScrollChrome.reset()
             reelsFeedService.loadIfNeeded()
         }
         // Live and Marketplace load from their own services. Music (Wavlake)

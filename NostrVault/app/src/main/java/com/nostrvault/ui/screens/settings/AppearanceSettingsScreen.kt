@@ -22,7 +22,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.FeedLanguage
-import com.nostrvault.service.FeedService
 import com.nostrvault.service.NoteTranslationPolicy
 import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
@@ -47,7 +46,6 @@ import javax.inject.Inject
 @HiltViewModel
 class AppearanceViewModel @Inject constructor(
     private val configStore: ConfigStore,
-    private val feedService: FeedService,
     private val noteTranslator: NoteTranslator,
     private val pendingPostManager: PendingPostManager,
 ) : ViewModel() {
@@ -171,10 +169,8 @@ class AppearanceViewModel @Inject constructor(
     fun toggleTabBarAnimation(disabled: Boolean) {
         _disableTabBarAnimation.value = disabled
         viewModelScope.launch {
+            // The nav host shows the bars again once the setting turns off folding.
             configStore.update { it.copy(disableTabBarAnimation = disabled) }
-            // If the bar is currently condensed, restore it immediately so the
-            // setting takes effect without waiting for the next scroll-up.
-            if (disabled) feedService.setFeedScrollingDown(false)
         }
     }
 }

@@ -23,9 +23,8 @@ import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.components.ThreadLineAnchor
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
-import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.newPostsFold
-import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.components.FoldBlocked
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.theme.*
 import com.nostrvault.service.FeedLanguage
@@ -347,11 +346,8 @@ fun FeedScreen(
         // behind the toolbar would sit over the top of every video.
         containerColor = if (feedMode == FeedMode.REELS) Color.Black else WindowBackground,
         toolbar = {
-            // Read here so only the toolbar recomposes when the feed scrolls.
-            val scrollingDown by viewModel.feedScrollingDown.collectAsState()
             FeedTopBar(
                 feedMode = feedMode,
-                collapsed = scrollingDown,
                 connectionStatus = connectionStatus,
                 layoutMode = layoutMode,
                 autoLoad = autoLoad,
@@ -622,18 +618,16 @@ fun FeedScreen(
             // Floating "New Posts" pill. It folds away with the bars, rising
             // back under the top bar; folded, the small pill in the top bar's
             // row stands in for it (iOS `NewPostsFold`).
-            if (showNewPosts) {
-                val folded by rememberChromeFolded()
-                NewPostsPill(
-                    count = pendingCount,
-                    onClick = loadNewPosts,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = padding.calculateTopPadding() + 12.dp)
-                        .zIndex(1f)
-                        .newPostsFold()
-                        .blockedWhen(folded)
-                )
+            // The fold is read in FoldBlocked, so its flip never recomposes the feed.
+            if (showNewPosts) FoldBlocked(
+                whenFolded = true,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = padding.calculateTopPadding() + 12.dp)
+                    .zIndex(1f)
+                    .newPostsFold(),
+            ) {
+                NewPostsPill(count = pendingCount, onClick = loadNewPosts)
             }
             // Fill your feed: its cards, the meter on Post's row, the profile card.
             val guideFollows by viewModel.feedServiceRef.followedPubkeys.collectAsState()

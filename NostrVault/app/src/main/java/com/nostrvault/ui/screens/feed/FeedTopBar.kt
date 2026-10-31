@@ -24,9 +24,9 @@ import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.ui.components.GlassPill
-import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFold
 import com.nostrvault.ui.components.chromeReveal
+import com.nostrvault.ui.components.FoldBlocked
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.theme.*
 import com.nostrvault.service.FeedLanguage
@@ -36,10 +36,6 @@ import com.nostrvault.service.FeedLanguage
 @Composable
 internal fun FeedTopBar(
     feedMode: FeedMode,
-    /// Folded past halfway with the bottom bar (the pieces fold continuously
-    /// with the finger, via chromeFold): only the feed icon and the
-    /// layout button stay, like the iOS top bar. Folded pieces take no taps.
-    collapsed: Boolean,
     connectionStatus: String,
     layoutMode: FeedLayoutMode,
     autoLoad: Boolean,
@@ -183,21 +179,22 @@ internal fun FeedTopBar(
         // Folded, the floating "New Posts" button becomes a small pill centred
         // in this row, between the two circles (iOS `foldedNewPostsPill`).
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            if (newPostsCount > 0) {
-                val folded by rememberChromeFolded()
+            if (newPostsCount > 0) FoldBlocked(whenFolded = false, modifier = Modifier.chromeReveal()) {
                 NewPostsPill(
                     count = newPostsCount,
                     compact = true,
                     onClick = onLoadNewPosts,
-                    modifier = Modifier.chromeReveal().blockedWhen(!folded),
                 )
             }
         }
 
         // ── Trailing pill: compact toggle + mode-dependent filters.
-        // Reels has no layout button, so collapsed there leaves nothing to show.
+        // Reels has no layout button, so folded there leaves nothing to show.
+        // The fold is read only in Reels: elsewhere its flip never recomposes
+        // this bar (the pieces fold in layout, and FoldBlocked takes the taps).
+        val folded = rememberChromeFolded()
         AnimatedVisibility(
-            visible = !(collapsed && feedMode == FeedMode.REELS),
+            visible = !(feedMode == FeedMode.REELS && folded.value),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
         ) { GlassPill(
@@ -223,7 +220,7 @@ internal fun FeedTopBar(
             // Mode-dependent filter buttons. Articles and the other non-note
             // feeds get only Following / Global and the shield: reposts,
             // replies and auto-load are all about kind-1 traffic.
-            Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
+            FoldBlocked(whenFolded = true, modifier = Modifier.chromeFold(leadingGap = 4.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
                 FeedMode.MUSIC -> com.nostrvault.ui.screens.music.MusicToolbarButtons()
                 // The hashtag sheet's rule: follows, then your Web of Trust or everyone.
                 FeedMode.HASHTAGS -> TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)

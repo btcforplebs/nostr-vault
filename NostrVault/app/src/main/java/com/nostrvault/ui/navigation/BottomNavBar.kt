@@ -156,14 +156,15 @@ fun BottomNavBar(
         // width to the cluster's, the tabs fade out of it in the first part of
         // the fold and the cluster fades in over the last. Progress is read in
         // layout and draw only, so a drag re-lays-out the pill each frame and
-        // never recomposes it. The side that is mostly hidden takes no taps.
+        // never recomposes it. The side that is mostly hidden takes no taps:
+        // read in [FoldTaps], so the halfway flip recomposes only that box,
+        // never this bar or its tabs (iOS #1410).
         val progress by rememberUpdatedState(foldProgress)
-        val folded by remember { derivedStateOf { progress() > 0.5f } }
         Layout(
             content = {
                 // No accent wash: the iOS capsule is plain glass.
                 Box(Modifier.glassPillBackground(isOled = isOled, accentColor = Color.Transparent))
-                ExpandedNavRow(
+                FoldTaps(blockedWhenFolded = true, progress = { progress() }) { ExpandedNavRow(
                     currentRoute = currentRoute,
                     primaryColor = colors.primary,
                     isOwner = isOwner,
@@ -177,9 +178,8 @@ fun BottomNavBar(
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
                     onPickFeedMode = onPickFeedMode,
-                    modifier = Modifier.blockedWhen(folded),
-                )
-                CondensedNavCluster(
+                ) }
+                FoldTaps(blockedWhenFolded = false, progress = { progress() }) { CondensedNavCluster(
                     isOwner = isOwner,
                     activeAccountPubkey = activeAccountPubkey,
                     activeAvatarUrl = activeAvatarUrl,
@@ -194,8 +194,7 @@ fun BottomNavBar(
                     onExpand = onExpand,
                     onAccountSwitcher = onAccountSwitcher,
                     nowPlaying = nowPlaying,
-                    modifier = Modifier.blockedWhen(!folded),
-                )
+                ) }
             },
         ) { measurables, constraints ->
             val loose = constraints.copy(minWidth = 0, minHeight = 0)
@@ -232,6 +231,17 @@ fun BottomNavBar(
             }
         }
     }
+}
+
+/**
+ * One form of the bar, taking no taps while the fold is mostly on the other
+ * side. The only part of the bar that reads the fold in composition: the
+ * halfway flip recomposes this box and nothing inside it.
+ */
+@Composable
+private fun FoldTaps(blockedWhenFolded: Boolean, progress: () -> Float, content: @Composable () -> Unit) {
+    val folded by remember { derivedStateOf { progress() > 0.5f } }
+    Box(Modifier.blockedWhen(folded == blockedWhenFolded)) { content() }
 }
 
 private fun lerp(a: Int, b: Int, t: Float): Int = (a + (b - a) * t).roundToInt()
