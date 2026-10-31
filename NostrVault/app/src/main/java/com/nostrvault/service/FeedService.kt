@@ -75,7 +75,9 @@ class FeedService @Inject constructor(
         internal const val FEED_LOAD_TIMEOUT_MS = 20_000L
         internal const val EXTENDED_NETWORK_TIMEOUT_MS = 15_000L
         internal const val NOTE_FETCH_TIMEOUT_MS = 8_000L
-        internal const val NOTE_FETCH_BATCH_DELAY_MS = 300L
+        // Quoted and replied-to notes are gathered this long into one lookup, so a
+        // scroll asks each relay once instead of every 300 ms.
+        internal const val NOTE_FETCH_BATCH_DELAY_MS = 1_500L
         internal const val UNAVAILABLE_RETRY_MS = 60_000L
         /** Quiet time after a batch of follows' relay lists before re-planning. */
         internal const val OUTBOX_RELAY_LIST_SETTLE_MS = 5_000L
