@@ -234,6 +234,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         author: String,
         forceOwner: Boolean,
         extraRelays: () -> List<String> = { emptyList() },
+        onPosted: () -> Unit = {},
         build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
@@ -250,10 +251,6 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 return@launch
             }
             val extra = extraRelays()
-            if (extra.isEmpty()) {
-                signAndPost(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
-                return@launch
-            }
             val event = try {
                 signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
             } catch (e: Exception) {
@@ -262,6 +259,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             } ?: return@launch
             postEvent(event)
             extra.forEach { fireAndForgetPublish(event, it) }
+            onPosted()
         }
     }
 
@@ -277,12 +275,13 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         local: List<String>,
         extraRelays: () -> List<String> = { emptyList() },
         publishedFirst: Boolean = false,
+        onPosted: () -> Unit = {},
         adjust: (List<List<String>>) -> List<List<String>>? = { it },
     ) {
         val owner = ownerHexPubkey
         val bases = configStore.config.value.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }
         val baseKey = "$kind:$owner"
-        publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays) { published ->
+        publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays, onPosted = onPosted) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
             val keep = { value: String -> base == null || ListMerge.key(value) !in base }
             val tags = if (publishedFirst) {
@@ -347,7 +346,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val mirrors = config.activeBlossomMirrors
         val home = config.homeVaultNpub
         val macs = linkedMacs(config)
-        if (mirrors.isEmpty() && home == null && macs.isEmpty() && dropMesh.isEmpty()) return
+        // What unlinks left for this Save to take off (FipsMeshViewModel records them; Tron #1451).
+        val drop = (dropMesh + config.serverListDropMesh).distinct()
+        if (mirrors.isEmpty() && home == null && macs.isEmpty() && drop.isEmpty()) return
         // Every fipsmesh:// entry on the published list is kept (a kiosk put
         // it there), after the public servers; this phone's home vault and
         // linked Macs are added and the ones it listed before ([dropMesh])
@@ -360,13 +361,29 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
         // Their published order stays first (BUD-03: the first server is their default); a server
         // only this device has goes after it.
-        publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true) { tags ->
+        // Cleared only once the list went out, so a Save that published nothing drops them next time.
+        val cleared = { configStore.update { it.copy(serverListDropMesh = it.serverListDropMesh - drop.toSet()) } }
+        publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true, onPosted = cleared) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
             val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(
-                servers, servers, home, dropMesh, macs, myDevices = config.fipsPeers,
+                servers, servers, home, drop, macs, myDevices = config.fipsPeers,
             ) ?: return@publishOwnerEntryList null
             merged.map { listOf("server", it) } + tags.filter { it.isNotEmpty() && it[0] != "server" }
         }
+    }
+
+    /**
+     * The mesh npubs the next Save takes off the owner's 10063 after a My Devices change from [before] to
+     * [after]: the [pending] ones plus the home vault or linked Macs that went, less any listed again.
+     */
+    internal fun serverListDropsAfter(
+        before: com.nostrvault.relay.HavenConfig,
+        after: com.nostrvault.relay.HavenConfig,
+        pending: List<String> = after.serverListDropMesh,
+    ): List<String> {
+        val listedBefore = listOfNotNull(before.homeVaultNpub) + linkedMacs(before)
+        val listedAfter = (listOfNotNull(after.homeVaultNpub) + linkedMacs(after)).toSet()
+        return (pending + listedBefore).distinct().filter { it !in listedAfter }
     }
 
     /** The Macs in My Devices this phone lists in the owner's 10063 (iOS 8af86b0d). */

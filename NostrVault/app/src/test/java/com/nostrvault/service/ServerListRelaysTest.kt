@@ -27,7 +27,7 @@ class ServerListRelaysTest {
         val src = File("src/main/java/com/nostrvault/service/nostr/NostrServiceListPublishing.kt").readText()
         val impl = src.substringAfter("fun NostrService.publishServerListImpl").substringBefore("\n    }\n")
         assertTrue("extra relays", impl.contains("ServerListRelays.extra(_outboxRelays.value[ownerHexPubkey]"))
-        assertTrue("publish passes them", impl.contains("publishOwnerEntryList(10063, \"server\", mirrors, extraRelays, publishedFirst = true)"))
+        assertTrue("publish passes them", impl.contains("publishOwnerEntryList(10063, \"server\", mirrors, extraRelays, publishedFirst = true, onPosted = cleared)"))
         assertTrue("My Devices kept", impl.contains("myDevices = config.fipsPeers"))
     }
 }

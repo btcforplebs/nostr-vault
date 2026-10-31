@@ -45,6 +45,10 @@ internal object ServerListAdoption {
         return Result(theirs, added, publishedAt)
     }
 
+    /** True when [mirrors] has servers and none is https: Media servers warns (Tron #1451). */
+    fun allPlainHttp(mirrors: List<String>): Boolean =
+        mirrors.isNotEmpty() && mirrors.none { it.trim().startsWith("https://", ignoreCase = true) }
+
     private fun usable(url: String): Boolean =
         (url.startsWith("https://", ignoreCase = true) || url.startsWith("http://", ignoreCase = true)) &&
             !url.contains(' ') && !isLoopbackRelay(url)

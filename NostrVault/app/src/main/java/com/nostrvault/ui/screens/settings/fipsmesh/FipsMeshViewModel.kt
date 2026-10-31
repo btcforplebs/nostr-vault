@@ -134,6 +134,8 @@ class FipsMeshViewModel @Inject constructor(
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
         // The 10063 is not republished here: only Save in Media servers publishes it (Logen 2026-10-31).
+        // What left is kept for that Save to drop, or an unlinked Mac stays on the owner's list (Tron #1451).
+        configStore.updateAsync { it.copy(serverListDropMesh = com.nostrvault.service.serverListDropsAfter(before, it)) }
     }
 
     /**
