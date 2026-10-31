@@ -36,18 +36,18 @@ extension BlossomService {
         return "Still on " + ListFormatter.localizedString(byJoining: places)
     }
 
-    /// Delete media from mirrors only
-    /// - Parameter sha256: The SHA256 hash of the media to delete
-    /// - Returns: true only if every mirror deleted it (or already lacked it)
-    func deleteFromMirrors(sha256: String) async -> Bool {
-        await deleteFromMirrorsReport(sha256: sha256).allDeleted
-    }
-
-    /// Delete media from every mirror and report each one. One mirror
-    /// succeeding used to count as success, so a file left on two of three
-    /// servers was reported as deleted.
-    func deleteFromMirrorsReport(sha256: String) async -> MirrorDeleteResult {
-        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+    /// Delete media from every server that may hold it and report each one.
+    /// One mirror succeeding used to count as success, so a file left on two
+    /// of three servers was reported as deleted. The servers are
+    /// `HavenConfig.blossomDeleteTargets`: `photoURL` adds the server in the
+    /// file's own link, and `includeHomeVault` false keeps the Mac relay's
+    /// and the FIPS address's copy ("Delete from mirrors").
+    func deleteFromMirrorsReport(sha256: String, photoURL: URL?, includeHomeVault: Bool) async -> MirrorDeleteResult {
+        let mirrors = await MainActor.run {
+            configService.config.blossomDeleteTargets(
+                ownerServerList: nostrService.serverLists[nostrService.activeHexPubkey] ?? [],
+                photoURL: photoURL, includeHomeVault: includeHomeVault)
+        }
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured for deletion")
             return MirrorDeleteResult()

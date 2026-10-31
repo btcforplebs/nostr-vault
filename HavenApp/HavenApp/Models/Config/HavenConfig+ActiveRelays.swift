@@ -64,6 +64,54 @@ extension HavenConfig {
         activeBlossomMirrors(detectedNpub: nil)
     }
 
+    /// Where a delete of one of the owner's files goes: the configured
+    /// mirrors, the owner's server list (kind 10063) and the server in the
+    /// photo's own link, once each. A file can sit on a server this device
+    /// never uploaded to (the home vault passes uploads on to the 10063
+    /// list), so deleting from the configured mirrors alone left it public.
+    /// `includeHomeVault` false is "Delete from mirrors": the Mac relay and
+    /// the FIPS address keep their copy.
+    func blossomDeleteTargets(ownerServerList: [String], photoURL: URL?, includeHomeVault: Bool,
+                              detectedNpub: String? = nil) -> [String] {
+        var candidates = activeBlossomMirrors(detectedNpub: detectedNpub)
+        candidates += ownerServerList.compactMap(Self.blossomUploadServer)
+        if let photoServer = Self.blossomServerOrigin(of: photoURL),
+           let server = Self.blossomUploadServer(photoServer) {
+            candidates.append(server)
+        }
+        let homeVault = Set([macRelayHttpsURL, fipsBlossomURL(detectedNpub: detectedNpub) ?? ""]
+            .filter { !$0.isEmpty }.map(Self.blossomServerKey))
+        var seen = Set<String>()
+        var targets: [String] = []
+        for server in candidates {
+            let key = Self.blossomServerKey(server)
+            guard !key.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            if !includeHomeVault && homeVault.contains(key) { continue }
+            targets.append(server)
+        }
+        return targets
+    }
+
+    /// `scheme://host[:port]` of a photo link on an outside server, or nil
+    /// for this device's own relay (loopback) and mesh (.fips) links: those
+    /// copies are the local and home-vault ones, deleted on their own.
+    static func blossomServerOrigin(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        if ["localhost", "127.0.0.1", "0.0.0.0", "::1"].contains(host) || host.hasSuffix(".fips") { return nil }
+        return url.port.map { "\(scheme)://\(host):\($0)" } ?? "\(scheme)://\(host)"
+    }
+
+    /// One server however it was typed: case, trailing slashes and http vs
+    /// https (deletes go over https anyway) don't make a second server.
+    static func blossomServerKey(_ server: String) -> String {
+        var key = server.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if key.hasPrefix("http://") { key = "https://" + key.dropFirst("http://".count) }
+        while key.hasSuffix("/") { key.removeLast() }
+        return key
+    }
+
     /// Active feed relays, including the Mac relay if configured.
     var activeFeedRelays: [String] {
         var relays = feedRelays
