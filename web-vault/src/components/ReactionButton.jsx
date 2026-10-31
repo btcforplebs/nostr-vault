@@ -3,8 +3,9 @@
 // picker. Picking your current emoji takes it back, another swaps it (net/actions.js act). The button shows your
 // emoji: a filled red heart for ❤️, the emoji itself otherwise.
 import { useEffect, useRef, useState } from "preact/hooks"
-import { act, reactionOf } from "../net/actions.js"
+import { act, actionState, reactionOf } from "../net/actions.js"
 import { Dialog } from "./Moderation.jsx"
+import { showToast } from "./Toast.jsx"
 
 export const TAPBACK = ["❤️", "🤙", "🔥", "😂", "😮", "😢"]
 export const QUICK = ["❤️", "👍", "🔥", "😂", "😮", "😢", "🎉", "🚀"]
@@ -25,6 +26,28 @@ export function firstEmoji(text) {
   return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(first) ? first : ""
 }
 
+/** The pill once a like has landed or failed (LikeFeedback): "Liked", "Reacted 🔥", or why it didn't go out. Nothing
+ *  for an Unlike, which leaves no like behind. -> { message, tone, icon } | null */
+export function likeFeedback(state, emoji) {
+  if (state === "sent") {
+    const shown = displayEmoji(emoji)
+    return { message: shown === "❤️" ? "Liked" : `Reacted ${shown}`, tone: "accent", icon: "heart" }
+  }
+  if (state?.error && !state.unlike) {
+    const why = /relay/i.test(state.error) ? "no relay took it" : /different account/i.test(state.error) ? "your signer signed as another account"
+      : "your signer didn't answer"
+    return { message: `Like failed: ${why}`, tone: "error", icon: "warn" }
+  }
+  return null
+}
+
+/** act() for the heart, with its pill once the like has landed or failed. */
+export async function likeWithFeedback(ctx, note, emoji) {
+  await act(ctx, "like", note, emoji)
+  const f = likeFeedback(actionState(note.id).like, reactionOf(note.id))
+  if (f) showToast({ key: "like", ...f })
+}
+
 /** What a pick asks act() for: your own reaction, as the button shows it, takes it back (no emoji = toggle), even when
  *  its stored content is "+" or "❤" or a shortcode; anything else reacts with that emoji. */
 export const pickFor = (mine, emoji) => (mine && emoji === mine ? undefined : emoji)
@@ -43,13 +66,13 @@ export function ReactionButton({ ctx, note, state, off }) {
   // A like going out already shows as yours (net/actions.js like); only the unlike or a swap is "busy".
   const pending = state === "pending", sent = state === "sent" || pending, busy = state === "busy", error = state?.error
   const mine = sent ? displayEmoji(reactionOf(note.id)) : null
-  const react = emoji => { setBar(false); setPicker(false); act(ctx, "like", note, pickFor(mine, emoji)) }
+  const react = emoji => { setBar(false); setPicker(false); likeWithFeedback(ctx, note, pickFor(mine, emoji)) }
   const down = () => { held.current = false; hold.current = setTimeout(() => { held.current = true; setBar(true) }, HOLD_MS) }
   const up = () => clearTimeout(hold.current)
   const click = e => {
     e.stopPropagation()
     if (held.current) { held.current = false; return }
-    if (!busy && !pending) act(ctx, "like", note)
+    if (!busy && !pending) likeWithFeedback(ctx, note)
   }
   const name = off ? `Like. ${off}` : error ? `${state.unlike ? "Unlike" : "Like"} didn't go out: ${error}. Try again`
     : busy ? "Like: sending" : mine ? `Your reaction: ${mine}. Tap to remove it, hold to change it` : "React. Hold for more reactions"
