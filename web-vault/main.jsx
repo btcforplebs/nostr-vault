@@ -27,7 +27,7 @@ import { MessagesScreen } from "./src/screens/MessagesScreen.jsx"
 import { ConversationScreen } from "./src/screens/ConversationScreen.jsx"
 import { PersonScreen } from "./src/screens/PersonScreen.jsx"
 import { VaultScreen } from "./src/screens/VaultScreen.jsx"
-import { SettingsScreen } from "./src/screens/SettingsScreen.jsx"
+import { SettingsScreen, resetBrowser } from "./src/screens/SettingsScreen.jsx"
 import { AccountsScreen } from "./src/screens/AccountsScreen.jsx"
 import { WalletScreen } from "./src/screens/WalletScreen.jsx"
 import { WotScreen } from "./src/screens/WotScreen.jsx"
@@ -263,6 +263,8 @@ function UnlockScreen({ session, onUnlocked, onSignOut }) {
   const [pw, setPw] = useState("")
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  // Signing out here deletes the only copy of this key: ask first, in the Settings wipe's words.
+  const leave = () => resetBrowser({ session, signOut: onSignOut })
   // No password opens a missing or damaged key: say so once, and leave only Sign out.
   const [damaged, setDamaged] = useState(() => !wellFormed(session?.ncryptsec))
   const submit = async e => {
@@ -278,7 +280,7 @@ function UnlockScreen({ session, onUnlocked, onSignOut }) {
       <img src="./icon.svg" alt="" class="signin-logo" />
       <h1>Your key can't be opened</h1>
       <p class="muted" role="alert">{DAMAGED}</p>
-      <button class="danger" onClick={onSignOut}>Sign out</button>
+      <button class="danger" onClick={leave}>Sign out</button>
     </main>
   )
   return (
@@ -293,7 +295,7 @@ function UnlockScreen({ session, onUnlocked, onSignOut }) {
         <button type="submit" class="primary" disabled={busy || !pw} aria-busy={busy || undefined}>{busy ? "Unlocking…" : "Unlock"}</button>
       </form>
       {err && <p class="error">{err}</p>}
-      <button class="danger" onClick={onSignOut}>Sign out instead</button>
+      <button class="danger" onClick={leave}>Sign out instead</button>
     </main>
   )
 }

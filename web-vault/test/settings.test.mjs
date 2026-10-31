@@ -125,6 +125,11 @@ test("every Sign out button asks before the wipe", () => {
     const direct = (src(f).match(/onClick=\{ctx\.signOut\}/g) ?? []).length
     assert.equal(direct, f.includes("Accounts") ? 1 : 0, `${f}: the only direct one is Accounts' confirm row`)
   }
+  // The Unlock screen (a locked browser key): both its Sign out buttons ask through resetBrowser.
+  const main = readFileSync(new URL("../main.jsx", import.meta.url), "utf8")
+  assert.match(main, /const leave = \(\) => resetBrowser\(\{ session, signOut: onSignOut \}\)/)
+  assert.equal((main.match(/onClick=\{leave\}>Sign out/g) ?? []).length, 2)
+  assert.doesNotMatch(main, /onClick=\{onSignOut\}/)
 })
 
 test("a backup file is the phone's .zip by its bytes, anything else an older .jsonl", async () => {
