@@ -20,8 +20,12 @@ import (
 // A tag names this vault when it is the host the request came in on (the
 // iPhone reaches a Mac by its tunnel, LAN or .ts.net name, which the Mac
 // itself never learns: its RELAY_URL is 127.0.0.1) or one isOwnBlossomServer
-// knows. A mirror replaying its token arrives with this vault's Host, not its
-// own: behind a tunnel or on a tailnet it cannot choose the Host header.
+// knows. A public mirror replaying its token arrives with this vault's Host,
+// not its own: through a tunnel or tailnet name it cannot choose the Host
+// header. Anyone reaching the vault directly can (a raw port-forward, a LAN
+// device, another device on the tailnet), but still needs an owner-signed
+// token. A tunnel that rewrites Host (cloudflared httpHostHeader) breaks the
+// match and its deletes get 403.
 //
 // A token with no "server" tag is still accepted: Android and other Blossom
 // apps do not send one yet, and refusing them would break their deletes.
