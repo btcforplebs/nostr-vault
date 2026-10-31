@@ -50,8 +50,8 @@ extension ProfileContent {
                     let hash = canDeleteMedia ? built.blossomHashes[mediaItem.id] : nil
                     MediaGridItem(
                         item: mediaItem,
-                        onDeleteFromMirrors: hash.map { hash in { _ in deleteFromMirrors(hash: hash) } },
-                        onDeleteEverywhere: hash.map { hash in { _ in deleteEverywhere(hash: hash) } }
+                        onDeleteFromMirrors: hash.map { hash in { deleteFromMirrors(hash: hash, url: $0.url) } },
+                        onDeleteEverywhere: hash.map { hash in { deleteEverywhere(hash: hash, url: $0.url) } }
                     ) {
                         withAnimation(Motion.fade) {
                             selectedMedia = mediaItem
@@ -66,17 +66,17 @@ extension ProfileContent {
         }
     }
 
-    private func deleteFromMirrors(hash: String) {
+    private func deleteFromMirrors(hash: String, url: URL) {
         Task {
-            await MediaBackupActions.deleteFromMirrors(hash: hash, configService: configService, nostrService: nostrService)
+            await MediaBackupActions.deleteFromMirrors(hash: hash, photoURL: url, configService: configService, nostrService: nostrService)
         }
     }
 
     /// The tile stays: it belongs to a post, and the post is still up unless
     /// "Delete file and post" was chosen (see `.havenOwnEventsDeleted`).
-    private func deleteEverywhere(hash: String) {
+    private func deleteEverywhere(hash: String, url: URL) {
         Task {
-            await MediaBackupActions.deleteEverywhere(hash: hash, configService: configService, nostrService: nostrService)
+            await MediaBackupActions.deleteEverywhere(hash: hash, photoURL: url, configService: configService, nostrService: nostrService)
         }
     }
 

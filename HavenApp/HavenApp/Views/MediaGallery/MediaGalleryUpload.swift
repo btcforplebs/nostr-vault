@@ -437,19 +437,28 @@ extension MediaGalleryView {
         }
     }
 
-    func deleteMediaFromMirrors(item: MediaItem) {
+    /// The file's hash, or nil after saying it could not be read: a delete
+    /// that silently did nothing looked like a delete that worked. The key
+    /// falls back to the link's last path part, so check it is a hash.
+    func deleteHash(for item: MediaItem) -> String? {
         let sha256 = extractViewerSHA256(from: item.url)
-        guard !sha256.isEmpty else { return }
+        if sha256.count == 64 && sha256.allSatisfy(\.isHexDigit) { return sha256 }
+        ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                       message: "Can't delete: this file's hash could not be read", tone: .error)
+        return nil
+    }
+
+    func deleteMediaFromMirrors(item: MediaItem) {
+        guard let sha256 = deleteHash(for: item) else { return }
         Task {
-            await MediaBackupActions.deleteFromMirrors(hash: sha256, configService: configService, nostrService: nostrService)
+            await MediaBackupActions.deleteFromMirrors(hash: sha256, photoURL: item.url, configService: configService, nostrService: nostrService)
         }
     }
 
     func deleteMediaEverywhere(item: MediaItem) {
-        let sha256 = extractViewerSHA256(from: item.url)
-        guard !sha256.isEmpty else { return }
+        guard let sha256 = deleteHash(for: item) else { return }
         Task {
-            let localOk = await MediaBackupActions.deleteEverywhere(hash: sha256, configService: configService, nostrService: nostrService)
+            let localOk = await MediaBackupActions.deleteEverywhere(hash: sha256, photoURL: item.url, configService: configService, nostrService: nostrService)
             // Only drop the tile once the device copy is really gone.
             guard localOk else { return }
             // Instantly clean up local state

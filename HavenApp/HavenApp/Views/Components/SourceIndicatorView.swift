@@ -182,9 +182,9 @@ enum MediaBackupActions {
 
     /// Deletes a file from your Blossom servers, re-checks the badges and
     /// says which servers still have it.
-    static func deleteFromMirrors(hash: String, configService: ConfigService, nostrService: NostrService) async {
+    static func deleteFromMirrors(hash: String, photoURL: URL?, configService: ConfigService, nostrService: NostrService) async {
         let service = BlossomService(configService: configService, nostrService: nostrService)
-        let report = await service.deleteFromMirrorsReport(sha256: hash)
+        let report = await service.deleteFromMirrorsReport(sha256: hash, photoURL: photoURL, includeHomeVault: false)
         // The cloud badges cache each server's answer for the session;
         // ask again so they stop showing the pre-delete count.
         await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
@@ -203,10 +203,10 @@ enum MediaBackupActions {
     /// the badges and says what is left.
     /// - Returns: whether the copy on this phone is gone.
     @discardableResult
-    static func deleteEverywhere(hash: String, configService: ConfigService, nostrService: NostrService) async -> Bool {
+    static func deleteEverywhere(hash: String, photoURL: URL?, configService: ConfigService, nostrService: NostrService) async -> Bool {
         let service = BlossomService(configService: configService, nostrService: nostrService)
         async let local = service.deleteFromLocal(sha256: hash)
-        async let mirrors = service.deleteFromMirrorsReport(sha256: hash)
+        async let mirrors = service.deleteFromMirrorsReport(sha256: hash, photoURL: photoURL, includeHomeVault: true)
         let (localOk, report) = await (local, mirrors)
         let leftover = BlossomService.deleteEverywhereLeftover(localDeleted: localOk, mirrors: report)
         await BlossomBackupStore.shared.refresh(hash: hash, service: service, force: true)
