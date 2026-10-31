@@ -3,7 +3,7 @@
 // hash, so a file shows once with the servers that hold it. A file can be copied to the servers missing it (BUD-04
 // PUT /mirror) or deleted from all of them (BUD-02 DELETE /<sha256>), each with a kind 24242 authorisation.
 import { checkSigned } from "./sync.js"
-import { authHeader } from "./upload.js"
+import { authHeader, serverUrl } from "./upload.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -103,10 +103,23 @@ export async function listBlobs(servers, pubkey, { ctx, fetch = globalThis.fetch
   return { blobs: merge(lists), status }
 }
 
-/** Delete a file from every server that holds it. -> [{ server, ok, message }] */
-export async function deleteBlob(blob, { ctx, fetch = globalThis.fetch }) {
+/**
+ * Where "Delete from mirrors" goes (Tim's facts, nv-fips 68c16689: one list on every app): the account's media servers
+ * (its 10063, the web's mirrors) whether or not their list showed the file, any other server whose list had it, and
+ * the server in the file's own link, once each. A server's list can miss a file it still serves, and a server dropped
+ * from the 10063 can still hold it. The web has no home vault to skip: a FIPS vault is only ever read (fips-media.js).
+ */
+export function deleteTargets(blob, servers = []) {
+  let own = null
+  try { own = serverUrl(new URL(blob.url).origin) } catch {}
+  return [...new Set([...servers, ...(blob.servers ?? []), own].map(s => s && serverUrl(s)).filter(Boolean))]
+}
+
+/** Delete a file from every server in deleteTargets. A server that says 404 doesn't have it: that counts as done.
+ *  -> [{ server, ok, message }] */
+export async function deleteBlob(blob, { ctx, fetch = globalThis.fetch, servers = [] }) {
   const auth = await signAuth(ctx, "delete", blob.sha256)
-  return Promise.all(blob.servers.map(async server => {
+  return Promise.all(deleteTargets(blob, servers).map(async server => {
     try {
       const res = await fetch(`${server}/${blob.sha256}`, { method: "DELETE", headers: { Authorization: auth } })
       return { server, ok: res.ok || res.status === 404, message: res.ok ? "" : res.headers?.get?.("X-Reason") || `HTTP ${res.status}` }

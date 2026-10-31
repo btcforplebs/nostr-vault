@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
-import { listBlobs, deleteBlob, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
+import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, mediaType, byDay, outcome, blossomAuthTemplate, TYPE_FILTERS, resetListAuth } from "../src/net/blossom-gallery.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const signs = []
@@ -130,4 +130,19 @@ test("Test: a file of yours the server still serves proves it works; gone, empty
   assert.deepEqual(await testServer(A, ME, { ctx: ro, fetch: make({ listFails: true }) }), { state: "answers", reason: "Failed to fetch" })
   assert.equal((await testServer(A, ME, { ctx: ro, fetch: make({ listFails: true, front: false }) })).state, "offline")
   assert.deepEqual(Object.keys(SERVER_STATES), ["working", "answers", "lostFile", "offline"])
+})
+
+test("Delete from mirrors goes to every media server, any other that listed the file and the host in its link, once each", async () => {
+  // The file's list showed it only on B; A and C are the account's servers (C's list missed it); D is in its link.
+  const blob = { sha256: H("e"), url: `${D}/${H("e")}.jpg`, servers: [B] }
+  assert.deepEqual(deleteTargets(blob, [A, C, `${B}/`]), [A, C, B, D])
+  assert.deepEqual(deleteTargets({ ...blob, url: `${A}/${H("e")}` }, [A, C]), [A, C, B], "the link's host isn't asked twice")
+  assert.deepEqual(deleteTargets({ ...blob, url: `http://evil.example/${H("e")}` }, [A]), [A, B], "only https (or this machine) hosts")
+  assert.deepEqual(deleteTargets({ ...blob, url: "not a url" }, [A]), [A, B])
+  const seen = []
+  const r = await deleteBlob(blob, { ctx, servers: [A, C], fetch: async (url, opt) => { seen.push([url, opt.method, authOf(opt.headers.Authorization).tags[1]]); return url.startsWith(C) ? res(500, null, "busy") : res(url.startsWith(D) ? 404 : 200) } })
+  assert.deepEqual(seen.map(x => x[0]), [A, C, B, D].map(s => `${s}/${H("e")}`))
+  assert.ok(seen.every(x => x[1] === "DELETE" && x[2][1] === H("e")), "one delete auth, scoped to the file")
+  assert.deepEqual(r.map(x => [x.server, x.ok]), [[A, true], [C, false], [B, true], [D, true]])
+  assert.match(outcome(r, "Deleted"), /^Deleted on 3 of 4 servers\. c\.example: busy/)
 })

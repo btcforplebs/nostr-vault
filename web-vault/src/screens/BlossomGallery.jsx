@@ -1,13 +1,13 @@
 // Vault › Media (iPhone MediaGalleryView): your files on your Blossom servers, filtered to Photos, Videos or GIFs and
 // sorted Newest first (by day), Oldest first (by day) or by Media type, as the iPhone's MediaSortOption. Every tile
 // says how many of your servers hold it. A tile opens the file with Copy link, the servers that hold it, Copy to the servers missing
-// it, and Delete (from every server, after asking). "In your notes" keeps the pictures your notes carry.
+// it, and Delete from mirrors (every media server, any other that listed it and the server in its link, after asking). "In your notes" keeps the pictures your notes carry.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
-import { listBlobs, deleteBlob, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
+import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
 if (import.meta.env) import("../styles/blossom.css")
 
@@ -133,6 +133,7 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
   const touchStart = e => { swipe.current = e.touches[0]?.clientX ?? null }
   const touchEnd = e => { const x = e.changedTouches[0]?.clientX; if (swipe.current != null && x != null && Math.abs(x - swipe.current) > 50) step(x < swipe.current ? next : prev); swipe.current = null }
   const missing = servers.filter(s => !blob.servers.includes(s))
+  const targets = deleteTargets(blob, servers)
   const run = (label, f) => async () => {
     setBusy(label); setMsg("")
     try { await f() } catch (e) { setMsg(String(e?.message ?? e)) } finally { setBusy("") }
@@ -144,7 +145,7 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
     setMsg(outcome(r, "Copied"))
   })
   const remove = run("delete", async () => {
-    const r = await deleteBlob(blob, { ctx })
+    const r = await deleteBlob(blob, { ctx, servers })
     if (r.some(x => x.ok)) onDeleted(outcome(r, "Deleted"))
     else setMsg(outcome(r, "Deleted"))
   })
@@ -169,8 +170,9 @@ function Viewer({ ctx, blob, servers, order = [], onStep, onClose, onDeleted, on
         </div>
         {!readOnly && (asking
           ? <>
-              <p class="muted small">Delete this file from {blob.servers.length === 1 ? hostOf(blob.servers[0]) : `all ${blob.servers.length} servers that hold it`}? Notes that show it will show a broken picture. This can't be undone.</p>
-              <div class="row"><button class="danger small" disabled={!!busy} onClick={remove} aria-busy={busy === "delete" || undefined}>{busy === "delete" ? "Deleting…" : "Delete everywhere"}</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
+              <p class="muted small">Delete this file from {targets.length === 1 ? hostOf(targets[0]) : `${targets.length} servers: ${targets.map(hostOf).join(", ")}`}? Notes that show it will show a broken picture. This can't be undone.</p>
+              <p class="muted small">If your home vault (Nostr Vault on your Mac) has a copy, it stays: the web can't delete from it. Delete it there with Delete everywhere.</p>
+              <div class="row"><button class="danger small" disabled={!!busy} onClick={remove} aria-busy={busy === "delete" || undefined}>{busy === "delete" ? "Deleting…" : "Delete from mirrors"}</button><button class="small" disabled={!!busy} onClick={() => setAsking(false)}>Cancel</button></div>
             </>
           : <button class="danger small" disabled={!!busy} onClick={() => setAsking(true)}>Delete…</button>)}
         {readOnly && <p class="muted small">{READ_ONLY}</p>}
