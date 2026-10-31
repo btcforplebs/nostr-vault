@@ -69,6 +69,9 @@ class DraftService @Inject constructor(
      */
     private val pendingDeletes = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
+    /** "id@updatedAt" of drafts being signed and sent now: the same version isn't signed twice. */
+    private val syncsInFlight = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     /** Ids deleted this run. A fetch already in flight may still return them. */
     private val deletedThisRun = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
@@ -81,9 +84,11 @@ class DraftService @Inject constructor(
 
     /**
      * Save or update a draft. If a draft with the same ID exists it is replaced.
-     * Persists to disk immediately.
+     * Persists to disk immediately. [syncToRelay] false keeps it on the device
+     * only, unsigned: the composer's typing autosave, which would otherwise
+     * ask the signer (an Amber prompt) on every pause. [syncDraft] sends it later.
      */
-    fun saveDraft(draft: Draft): Draft {
+    fun saveDraft(draft: Draft, syncToRelay: Boolean = true): Draft {
         val owner = draft.pubkey.ifEmpty { configStore.activeAccountHexPubkey.value }
         val updated = draft.copy(pubkey = owner, updatedAt = System.currentTimeMillis())
         val current = _drafts.value.toMutableList()
@@ -97,8 +102,17 @@ class DraftService @Inject constructor(
         deletedThisRun.remove(updated.id)
         persistToDisk(current)
         pendingSyncQueue.add(updated.id)
-        trySyncDraft(updated)
+        if (syncToRelay) trySyncDraft(updated)
         return updated
+    }
+
+    /**
+     * Sends a draft saved with `syncToRelay = false` to the relay: one sign.
+     * Nothing when it is gone or already sent.
+     */
+    fun syncDraft(draftId: String) {
+        if (draftId !in pendingSyncQueue) return
+        findDraft(draftId)?.let { trySyncDraft(it) }
     }
 
     /**
@@ -218,6 +232,10 @@ class DraftService @Inject constructor(
         // Signing uses the active account: another account's draft waits
         // until that account is active again.
         if (draft.pubkey.isNotEmpty() && draft.pubkey != configStore.activeAccountHexPubkey.value) return
+        // Leaving the composer right after it went to the background (or the
+        // signer app opening) asks again while the first sign is still out.
+        val version = "${draft.id}@${draft.updatedAt}"
+        if (!syncsInFlight.add(version)) return
 
         scope.launch {
             try {
@@ -227,11 +245,14 @@ class DraftService @Inject constructor(
                     content = draft.content,
                     tags = DraftEvents.tags(draft),
                 )
-                if (event != null && postToPrivateRelay(event)) {
+                // A newer save while this one was out still has to go.
+                if (event != null && postToPrivateRelay(event) && findDraft(draft.id)?.updatedAt == draft.updatedAt) {
                     pendingSyncQueue.remove(draft.id)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to sync draft ${draft.id} to relay", e)
+            } finally {
+                syncsInFlight.remove(version)
             }
         }
     }

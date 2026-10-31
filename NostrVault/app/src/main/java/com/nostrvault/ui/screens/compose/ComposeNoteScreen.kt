@@ -30,7 +30,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.nostrvault.data.model.Draft
 import com.nostrvault.ui.components.AccountSwitcherSheet
 import com.nostrvault.ui.components.AvatarImage
@@ -93,6 +95,8 @@ fun ComposeNoteScreen(
     // "Save this note as a draft?" — the X and the back gesture both ask once
     // there is something worth keeping (iOS ComposeView).
     var showDraftPrompt by remember { mutableStateOf(false) }
+    // Backgrounded: the draft goes to the relay now, signed once (typing only saves it here).
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.syncDraftToRelay() }
     val requestClose: () -> Unit = {
         if (viewModel.shouldAskToSaveDraft()) showDraftPrompt = true else onBack()
     }

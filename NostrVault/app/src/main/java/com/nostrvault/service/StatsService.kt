@@ -127,6 +127,8 @@ class StatsService @Inject constructor(
             authRelayTag: String?,
             signAuth: suspend (relayTag: String, challenge: String) -> Pair<String, String>?,
             timeoutMs: Long = 20_000,
+            alreadyAuthed: Boolean = false,
+            keepOpen: Boolean = false,
         ): Pair<Map<Int, Int>, Map<Int, Int>>? {
             val author = yours?.first
             val results = ConcurrentHashMap<Int, Int>()
@@ -153,7 +155,8 @@ class StatsService @Inject constructor(
                     if (!completed.compareAndSet(false, true)) return
                     listener?.cancel()
                     timeout?.cancel()
-                    client.disconnect()
+                    // [keepOpen]: an answered, logged-in socket is kept for the next count.
+                    if (!keepOpen || answer == null) client.disconnect()
                     cont.resume(answer) { _, _, _ -> }
                 }
 
@@ -201,8 +204,13 @@ class StatsService @Inject constructor(
                     }
                 }
 
-                client.connect()
-                if (authRelayTag == null) sendCounts()
+                // [alreadyAuthed]: an open socket this owner logged in on before; no new AUTH.
+                if (alreadyAuthed) {
+                    sendCounts()
+                } else {
+                    client.connect()
+                    if (authRelayTag == null) sendCounts()
+                }
 
                 timeout = scope.launch {
                     delay(timeoutMs)
@@ -360,16 +368,36 @@ class StatsService @Inject constructor(
         kinds: List<Int>,
         yours: Pair<String, List<Int>>?,
     ): Pair<Map<Int, Int>, Map<Int, Int>>? {
-        val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl))
-        return countOver(
+        val relayTag = authRelayTag(configStore.config.value, relayUrl)
+        if (relayTag == null) {
+            val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl))
+            return countOver(client, scope, kinds, yours, authRelayTag = null, signAuth = ::signOwnerAuth)
+        }
+        // /private and /chat: reuse the socket the owner already logged in on,
+        // so each Vault tab visit doesn't sign two more AUTHs (and on a
+        // remote signer, make two more requests).
+        val key = "${nostrService.ownerHexPubkey}|$relayUrl"
+        val open = authedCountSockets.remove(key)
+            ?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+        val client = open ?: WebSocketClient(
+            url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl), autoReconnect = false,
+        )
+        val answer = countOver(
             client = client,
             scope = scope,
             kinds = kinds,
             yours = yours,
-            authRelayTag = authRelayTag(configStore.config.value, relayUrl),
+            authRelayTag = relayTag,
             signAuth = ::signOwnerAuth,
+            alreadyAuthed = open != null,
+            keepOpen = true,
         )
+        if (answer != null) authedCountSockets.put(key, client)?.takeIf { it !== client }?.disconnect()
+        return answer
     }
+
+    /** Count sockets the owner is logged in on (NIP-42), by "owner|url"; see [fetchKindCounts]. */
+    private val authedCountSockets = ConcurrentHashMap<String, RelayConnection>()
 
     /**
      * The owner's kind-22242 AUTH for [challenge], as (event id, event JSON),
