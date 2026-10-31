@@ -21,6 +21,7 @@ import { PostResult } from "./compose/PostResult.jsx"
 import { draftKey, idbDrafts } from "./compose/drafts.js"
 import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
+import { PollCompose } from "./compose/PollCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
@@ -143,7 +144,9 @@ function useKeyboardFrame(on) {
 /** `fixed`: the reply or quote to write, instead of the one in the address (the desktop's inline reply under a thread).
  *  `inline`: drawn small, with no title and no copy of the note above it, since the thread is right there. */
 export function ComposeScreen(props) {
-  if (!props.fixed && !props.inline && composeType() === "article") return <ArticleCompose ctx={props.ctx} />
+  const type = props.fixed || props.inline ? "note" : composeType()
+  if (type === "article") return <ArticleCompose ctx={props.ctx} />
+  if (type === "poll") return <PollCompose ctx={props.ctx} />
   return <NoteCompose {...props} />
 }
 
