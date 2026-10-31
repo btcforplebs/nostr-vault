@@ -29,6 +29,10 @@
 .dm-title { display: inline-flex; align-items: center; gap: 8px; max-width: 60%; }
 .dm-title .author-name { font: inherit; }
 .dm-thread { display: flex; flex-direction: column; gap: 6px; padding: 4px var(--gutter) 12px; }
+/* Their messages: the face at the foot of the bubble, as DMThreadView draws them. */
+.dm-line { display: flex; align-items: flex-end; gap: 8px; align-self: flex-start; max-width: calc(78% + 36px); }
+.dm-line .dm-bubble { max-width: 100%; min-width: 0; }
+.dm-face { flex: none; display: inline-flex; }
 .dm-bubble { max-width: 78%; align-self: flex-start; padding: 8px 12px; border-radius: 18px 18px 18px 6px; background: var(--s2); }
 .dm-bubble.mine { align-self: flex-end; background: var(--accent-grad); color: #fff; border-radius: 18px 18px 6px 18px; }
 .dm-bubble .note-text { margin: 0; font: var(--t-body); }

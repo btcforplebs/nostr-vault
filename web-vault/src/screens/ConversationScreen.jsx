@@ -101,8 +101,9 @@ export function ConversationScreen({ ctx, peer }) {
       {isBlocked && <div class="status-line">You blocked this person on your phone, so their messages are hidden here.</div>}
       <div class="dm-thread">
         {!rows.length && !note && (loaded ? <p class="empty">Start a conversation</p> : <BubbleSkeletons />)}
-        {rows.map(m => (
-          <div key={m.id} class={`dm-bubble${m.from === me ? " mine" : ""}${m.pending ? " pending" : ""}${m.failed ? " failed" : ""}`}>
+        {rows.map(m => {
+          const bubble = (
+          <div key={m.from === me ? m.id : undefined} class={`dm-bubble${m.from === me ? " mine" : ""}${m.pending ? " pending" : ""}${m.failed ? " failed" : ""}`}>
             {/* depth={1} stops DM text building quote cards, which would query relays the sender names and write
                 into /feed; dm keeps video links and nostr:npub as plain text (the iPhone does), and a stranger's
                 images wait for a tap. */}
@@ -111,7 +112,13 @@ export function ConversationScreen({ ctx, peer }) {
               ? <span class="dm-meta dm-failed" role="alert">Not sent · <button type="button" class="link" onClick={() => m.resend().catch(err => setStatus(sendFailure(err)))}>Try again</button> · <button type="button" class="link" onClick={() => dropFailed(m.id)}>Remove</button></span>
               : <span class="dm-meta">{m.pending ? "Sending…" : ago(m.at)}{m.legacy ? " · NIP-04" : ""}</span>}
           </div>
-        ))}
+          )
+          // Their messages carry their face at the bubble's foot (DMThreadView's 28 pt avatar). A stranger's picture
+          // still waits (`follows`): drawn here it would tell their server you opened the conversation.
+          return m.from === me ? bubble : (
+            <div key={m.id} class="dm-line"><span class="dm-face"><Avatar pubkey={peer} size={28} load={follows} /></span>{bubble}</div>
+          )
+        })}
         <div ref={end} class="dm-end" />
       </div>
       {!note && !isBlocked && (
