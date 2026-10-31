@@ -43,3 +43,9 @@ internal fun ComposeNoteViewModel.customEmojiTags(content: String): List<List<St
     for (emoji in knownCustomEmoji()) known.putIfAbsent(emoji.shortcode, emoji)
     return ComposeEmoji.tags(content, known)
 }
+
+/** A pick from the emoji panel goes in at [caret] and counts as a use; returns the new (text, caret). */
+fun ComposeNoteViewModel.insertPanelEmoji(pick: com.nostrvault.data.local.ReactionPick, caret: Int): Pair<String, Int> {
+    emojiPalette.recordUse(pick)
+    return insertPickedEmoji(pick.content, caret)
+}
