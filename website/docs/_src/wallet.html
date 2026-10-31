@@ -12,7 +12,7 @@
     "ios": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials"],
     "mac": ["Account", "Wallet", "Wallet Connect", "Default Zap", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet"],
     "android": ["Account", "Wallet", "Settings", "Nostr Wallet Connect (NWC)", "Default Zap Amount (sats)", "Balance", "Lightning", "No Wallet Connected", "Connect a wallet", "Save wallet to my Nostr account", "Use saved wallet", "Remove from my account", "Appearance", "Post buttons", "Add ⚡️", "Advanced", "Bitcoin On-Chain", "Bitcoin Address", "Copy Address", "Sweep Wallet", "Help", "Tutorials", "Wallet Connect"],
-    "web": ["Account", "Wallet", "Wallet Connect", "Connect wallet", "Balance", "Default zap", "Disconnect wallet", "Disconnect"]
+    "web": ["Account", "Wallet", "Wallet Connect", "No Wallet Connected", "Connect a wallet", "Connect wallet", "Balance", "Default zap", "Disconnect wallet", "Disconnect"]
   }
 }
 -->
@@ -39,16 +39,18 @@
     <li>In your wallet app, find Nostr Wallet Connect (NWC) and copy the connection link.</li>
     <li>In Nostr Vault, open <span class="path">Settings &rarr; Account &rarr; Wallet</span>.</li>
     <li>Paste the link into the <strong>Wallet Connect</strong> box (on Android it's called
-        <strong>Nostr Wallet Connect (NWC)</strong>). On the web, tap <strong>Connect wallet</strong>.</li>
+        <strong>Nostr Wallet Connect (NWC)</strong>). On the web, tap <strong>Connect a wallet</strong>, paste the link, then tap
+        <strong>Connect wallet</strong>.</li>
 </ol>
 <p>The app pastes the link only. There is no QR scanner for it. Once a wallet is connected you'll see its
     <strong>Balance</strong> and can set your <strong>Default Zap</strong> (on Android,
-    <strong>Default Zap Amount (sats)</strong>), the amount one tap sends.</p>
-<p>On iPhone, iPad, Mac and Android you can also start from your own profile. Tap the bolt, labelled
-    <strong>Lightning</strong>. With no wallet
+    <strong>Default Zap Amount (sats)</strong>), the amount one tap sends. On the web, Default zap is there even
+    before you connect.</p>
+<p>On every device, including the web, you can also start from your own profile. Tap the bolt (labelled
+    <strong>Lightning</strong> in the apps, Wallet on the web). With no wallet
     yet, it shows <strong>No Wallet Connected</strong> and a <strong>Connect a wallet</strong> button that
     takes you to the same place. On Android the wallet is on the <strong>Settings</strong> tab of that
-    screen. Once connected, the Lightning screen shows your balance and lets you receive with an invoice,
+    screen. Once connected, that screen shows your balance and lets you receive with an invoice,
     pay an invoice, lightning address or LNURL, and see your history if your wallet shares it.</p>
 </section>
 

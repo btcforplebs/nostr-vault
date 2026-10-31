@@ -132,7 +132,7 @@
             <p class="eyebrow">Media and sharing</p>
             <h1>Where your <span>photos</span> go.</h1>
             <p class="docs-lede">A note on Nostr is text. The photos in it live on media servers, and the note links to them. This page explains which servers Nostr Vault uses, how to change them, and how to keep your own copies.</p>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-a-media-server-is">What a media server is</a></li><li><a href="#where-a-photo-goes-when-you-post">Where a photo goes when you post</a></li><li><a href="#add-or-remove-a-media-server">Add or remove a media server</a></li><li><a href="#mirroring">Mirroring</a></li><li><a href="#media-cache">Media &amp; Cache</a></li><li><a href="#uploading-from-the-share-sheet">Uploading from the share sheet</a></li><li><a href="#your-device-as-a-photo-server">Your device as a photo server</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-a-media-server-is">What a media server is</a></li><li><a href="#where-a-photo-goes-when-you-post">Where a photo goes when you post</a></li><li><a href="#add-or-remove-a-media-server">Add or remove a media server</a></li><li><a href="#mirroring">Mirroring</a></li><li><a href="#deleting-a-photo">Deleting a photo</a></li><li><a href="#media-cache">Media &amp; Cache</a></li><li><a href="#uploading-from-the-share-sheet">Uploading from the share sheet</a></li><li><a href="#your-device-as-a-photo-server">Your device as a photo server</a></li></ul></div>
 
             <article class="docs-article">
                 <section id="servers">
@@ -156,7 +156,8 @@
                 </ol>
                 <p>If no outside server takes the photo, the post is not lost. It waits under
                     <span class="path">Settings &rarr; Media Servers</span> in <strong>Waiting to send</strong>, and sends
-                    itself when a server answers. Tap <strong>Try sending now</strong> to retry straight away.</p>
+                    itself when a server answers. Tap <strong>Try sending now</strong> to retry straight away, or tap the bin
+                    next to a post to drop it.</p>
                 <div class="note">
                     <p><strong>Posting a photo still needs a public media server.</strong> A photo that is only on your phone
                         can't be seen by anyone else, so the app won't post it without an outside server.</p>
@@ -173,12 +174,15 @@
                     <li><strong>Remove:</strong> tap the red button next to a server (a minus sign on iPhone and Mac, a bin
                         on Android).</li>
                 </ul>
+                <p>Under <strong>Suggested</strong>, tap Add next to a well-known server to add it. Prices and limits are set by
+                    each server.</p>
                 <p>Each change is saved and your updated list is published to your relays.</p>
                 <p>If you set up <span class="path">Sync with Vault on Mac</span>, your Mac is used as a media server too. It
                     shows at the top of the page and you don't need to add it by hand.</p>
                 <p><strong>In the web app</strong>, the same page is <span class="path">Settings &rarr; Media Servers</span>.
-                    Use <strong>Add</strong> and <strong>Remove</strong>, then <strong>Save and publish</strong>. <strong>Test</strong>
-                    checks that a saved server answers. The web app uploads to the server marked <em>first</em> first. If you
+                    Use <strong>Add</strong> and <strong>Remove</strong>, or add one from Suggested. Each saved server is checked
+                    when the page opens, and <strong>Test</strong> checks it again. After a change, tap <strong>Save and
+                    publish</strong>, or <strong>Discard changes</strong>. The web app uploads to the server marked <em>first</em> first. If you
                     have never published a list, it starts from two default servers. It also needs at least one server in
                     the list.</p>
                 <p>There is no button to reorder servers. In the web app, a server you add goes to the end of the list.</p>
@@ -196,6 +200,19 @@
                 </ul>
                 </section>
 
+                <section id="delete">
+                <p class="eyebrow">Taking a photo down</p>
+                <h2 id="deleting-a-photo">Deleting a photo</h2>
+                <p>In Media, hold a photo:</p>
+                <ul>
+                    <li><strong>Delete from mirrors</strong> removes it from your outside media servers, any server in your
+                        published list and the server in its link. It keeps the copy on this device and on your home vault.</li>
+                    <li><strong>Delete everywhere</strong> removes those copies too, and offers to delete the posts that use
+                        it.</li>
+                </ul>
+                <p>The web app has only Delete from mirrors.</p>
+                </section>
+
                 <section id="cache">
                 <p class="eyebrow">Other people's photos</p>
                 <h2 id="media-cache">Media &amp; Cache</h2>
@@ -207,7 +224,9 @@
                     <li><strong>Prefetch Profile Pictures</strong> loads profile pictures ahead of time for smoother
                         scrolling.</li>
                     <li><strong>Disable Media Cache</strong> stops saving copies, so media downloads again each time.</li>
-                    <li><strong>Keep Media For</strong> sets how long copies are kept: 1, 3, 7, 14 or 30 days, or Never.</li>
+                    <li><strong>Keep Media For</strong> sets how long copies are kept: 1, 3, 7, 14 or 30 days, or Never (they
+                        don't expire). It starts at 3 days. On iPhone and Mac the oldest copies are still cleared once the cache
+                        passes 500 MB.</li>
                     <li><strong>Clear Media Cache</strong> deletes the temporary copies to free space. Your vault and your
                         media servers are not touched.</li>
                 </ul>

@@ -9,12 +9,12 @@
   "labels": {
     "ios": ["Advanced", "Finder relays, middle server", "Finder Relays", "Middle Server", "Public (fips1, fips2.iris.to)", "None", "Reset to defaults",
             "Changes apply the next time the mesh starts."],
-    "android": ["Advanced", "Finder Relays", "Middle Server", "Public (fips1, fips2.iris.to)", "None", "Reset to defaults"]
+    "android": ["Advanced", "Finder Relays", "Middle Server", "Public (fips1, fips2.iris.to)", "None", "Reset to defaults", "Remove"]
   }
 }
 -->
 <p>Open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh &rarr; Advanced</span>. Most people never need to
-    change these. Changes apply the next time the mesh starts.</p>
+    change these. On iPhone, changes apply the next time the mesh starts. On Android they apply right away.</p>
 
 <div class="shots">
     <figure><img src="/docs/img/ios/mesh-advanced.webp" alt="FIPS Mesh, Advanced" width="900" height="1957" loading="lazy"><figcaption>FIPS Mesh, Advanced</figcaption></figure>
@@ -22,7 +22,8 @@
 
 <h2>Finder Relays</h2>
 <p>Your devices post where they are on these relays, so your other devices can find them. Like any relay, they see
-    this device's IP address. Swipe to remove one; at least one must stay.</p>
+    this device's IP address. Swipe to remove one on iPhone, or tap Remove on Android. At least one must
+    stay.</p>
 
 <h2>Middle Server</h2>
 <p>The middle server links two devices that can't reach each other directly. It's how this phone reaches anyone
@@ -30,7 +31,8 @@
     this phone's address, but the middle server does see it. Which follows' photos your app loads is up to
     you; who can see your photos isn't a setting.</p>
 <ul>
-    <li><span class="ui">Public (fips1, fips2.iris.to)</span>: the default.</li>
+    <li><span class="ui">Public (fips1, fips2.iris.to)</span>: the default on iPhone. On Android the default is
+        None, so pick Public for follows' photos, a browser page and kiosk visitors.</li>
     <li><span class="ui">None</span>: only devices on the same network can connect. Follows' photos load from their web
         addresses instead, a browser page only connects on the same network, and a kiosk takes no visitors.</li>
 </ul>

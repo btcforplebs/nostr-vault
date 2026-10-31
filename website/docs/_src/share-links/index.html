@@ -9,9 +9,9 @@
   "lede": "A Nostr Vault share link opens the post in any web browser. The person you send it to needs no account and nothing to install to read it.",
   "description": "How Nostr Vault share links work: Share and Copy Link make a nostrvault.app/thread/ link that opens the post in any browser as a guest, with a link preview card. Plus sharing photos into the app.",
   "labels": {
-    "ios": ["Share", "Copy Link", "Link copied", "Add to Blossom upload queue", "Ready to upload to Blossom"],
+    "ios": ["Share", "Copy Link", "Link copied", "Share as a note", "Add to Blossom upload queue", "Ready to upload to Blossom"],
     "android": ["Share", "Copy link", "Share Note", "Link copied", "Uploading to Blossom…"],
-    "web": ["Copy link", "Link copied", "Viewing as a guest", "Get the app", "Sign in", "This post was deleted by its author."]
+    "web": ["Share", "Copy link", "Link copied", "Viewing as a guest", "Get the app", "Sign in", "This post was deleted by its author."]
   }
 }
 -->
@@ -21,15 +21,18 @@
 <h2>Share or copy a link</h2>
 <p>Open the <strong>&hellip;</strong> menu on any post.</p>
 <ul>
-    <li><strong>Share</strong> opens your phone's share sheet, so you can send the link in a message, an email or
-        another app. On Android it's titled <strong>Share Note</strong>.</li>
+    <li><strong>Share</strong> opens your phone's or browser's share sheet, so you can send the link in a message,
+        an email or another app. Where a browser has no share sheet, it copies the link. On Android it's titled
+        <strong>Share Note</strong>.</li>
     <li><strong>Copy Link</strong> (Android and web: <strong>Copy link</strong>) puts the link on your
         clipboard and shows <strong>Link copied</strong>.</li>
 </ul>
 <p>The link looks like <code>https://nostrvault.app/thread/nevent1&hellip;</code>. The
     <code>nevent</code> part names the post and its author, so the link works without any account and doesn't
     depend on one relay.</p>
-<p>Articles, videos and other posts have a Share button too, and give the same kind of link.</p>
+<p>Articles, videos and other posts have a Share button too, and give the same kind of link. A live stream's
+    link ends in <code>naddr1&hellip;</code> instead. Its &hellip; menu also has <strong>Share as a note</strong>,
+    which starts a note saying "Live now: <em>host</em>" with the stream's live card.</p>
 </section>
 
 <section id="preview">
@@ -44,9 +47,9 @@
 <h2>Opening a link, with or without an account</h2>
 <p>The link opens the post in the Nostr Vault web app, in any normal browser.</p>
 <ul>
-    <li><strong>No account?</strong> They read the post and its replies as a guest. A bar at the top says
+    <li><strong>No account?</strong> They read the post and its replies as a guest. A bar at the bottom says
         <strong>Viewing as a guest</strong>, with <strong>Get the app</strong> and <strong>Sign in</strong>.
-        They can open profiles and hashtags and come back to the post.</li>
+        They can open profiles and come back to the post. Hashtags and messages ask them to sign in.</li>
     <li><strong>Want to reply or like?</strong> Liking, replying, reposting and zapping need them to sign in.
         After signing in, the web app opens on the same post.</li>
     <li><strong>Already signed in</strong> to the web app in that browser? The post opens in their account.</li>
@@ -73,6 +76,5 @@
     <li><strong>Android:</strong> share one or more photos or videos to Nostr Vault. The upload starts right
         away and shows <strong>Uploading to Blossom&hellip;</strong>. Set up your account first.</li>
 </ul>
-<p>Uploading needs a public media server; see <span class="path">Settings &rarr; Relays &rarr; Media
-    Servers</span>.</p>
+<p>Uploading needs a public media server; see <span class="path">Settings &rarr; Media Servers</span>.</p>
 </section>

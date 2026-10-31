@@ -142,7 +142,8 @@
                 <ol class="steps">
                     <li>On the Mac, open <span class="path">Settings &rarr; FIPS Mesh</span> and switch on <span class="ui">Mesh</span>.
                         The mesh engine runs inside the Mac app; there's nothing else to install.</li>
-                    <li>Under <span class="ui">Share With Others</span>, turn on <span class="ui">List in my media servers</span>.</li>
+                    <li>Add a phone under <a href="/docs/mesh/my-devices/">My Devices</a>. The mesh starts once at least one of your
+                        devices is on that list, and the Mac then lists its mesh address in your media servers by itself.</li>
                     <li>Keep Nostr Vault open. In <span class="path">Settings &rarr; Startup</span>, turn on
                         <span class="ui">Launch at Login</span> and <span class="ui">Start Relay Automatically</span> so it's always
                         there.</li>
@@ -166,8 +167,10 @@
                     <li>Your home IP isn't published. The list holds the Mac's mesh key, and the mesh finds it by key.</li>
                     <li>Listing it does link your npub to the Mac's mesh key, in public. Removing it later doesn't erase older copies of
                         your list that relays may still hold.</li>
-                    <li>Under <span class="ui">Advanced</span>, <span class="ui">Address source</span> picks which key the listed
-                        address uses. <span class="ui">My Nostr npub</span> is the usual choice.</li>
+                    <li><span class="ui">List in my media servers</span> (under Share With Others) and <span class="ui">Address
+                        source</span> (under Advanced) are only for an outside FIPS transport such as nostr-vpn. With
+                        <span class="ui">My Nostr npub</span> it lists your Nostr npub, not the Mac's mesh key. Leave them off
+                        otherwise.</li>
                 </ul>
                 <p>More on how photos are checked on the way: <a href="/docs/mesh/">The mesh</a>.</p>
             </article>

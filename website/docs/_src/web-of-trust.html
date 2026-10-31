@@ -11,7 +11,7 @@
   "labels": {
     "ios": ["WoT", "Web of Trust", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Talk with you", "Follow you back", "Find someone", "My Web", "See their web", "Open in WoT", "Profile", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust"],
     "android": ["WoT", "Everyone", "Following", "Vouched", "Further out", "Rebuild your web", "Find someone", "My Web", "See their web", "Who Can Reach You", "Follow Distance", "Minimum Followers", "Refresh Trust List", "Your Web of Trust"],
-    "web": ["WoT", "Web of Trust", "Globe", "My Web", "See their web", "Find a name, npub or key"]
+    "web": ["WoT", "Web of Trust", "Globe", "Everyone", "Following", "Vouched", "Further out", "Find someone", "Follow you back", "My Web", "See their web", "Rebuild your web"]
   }
 }
 -->
@@ -24,7 +24,8 @@
     <li><strong>Vouched</strong>: people that 10 or more of your follows follow.</li>
     <li><strong>Further out</strong>: people your follows follow, but fewer than 10 of them.</li>
 </ul>
-<p>Your vault relay rebuilds the web on its own once a day. If you follow very few people, it borrows from your
+<p>Your vault relay rebuilds the web on its own, once a day unless you change
+    Refresh Trust List. If you follow very few people, it borrows from your
     follows' follows so a new account isn't empty.</p>
 </section>
 
@@ -75,8 +76,9 @@
 <ul>
     <li><strong>Who can reach your vault.</strong> Only people in your web can post to your vault's inbox.
         Strangers can still reply to or quote your own posts.</li>
-    <li><strong>Notifications.</strong> Replies, likes and mentions notify you only from people in your web.
-        Zaps, follows and messages always come through. A new follower outside your web is folded into
+    <li><strong>Notifications.</strong> Replies, likes, reposts and mentions notify you only from people in
+        your web. Zaps and follows always come through. A message alerts if it's from your web or someone you've
+        written to; others wait under Requests. A new follower outside your web is folded into
         "N new followers".</li>
     <li><strong>Feeds.</strong> Global, Media and the other discovery feeds show only your web unless you
         switch them to Everyone. Everyone unlocks once you follow 5 people. See
@@ -101,9 +103,11 @@
 <h2>On each device</h2>
 <ul>
     <li><strong>iPhone, iPad and Android</strong> have everything on this page.</li>
-    <li><strong>The web app</strong> has a WoT tab with a <strong>Globe</strong> and <strong>My Web</strong>.
-        It builds your web in the browser from follow lists, so there's no Rebuild button and no trust
-        settings. Its search box says "Find a name, npub or key".</li>
+    <li><strong>The web app</strong> has a WoT tab with the <strong>Globe</strong>, the Everyone, Following,
+        Vouched and Further out layers, <strong>Find someone</strong>, <strong>Follow you back</strong>, trust
+        cards with <strong>See their web</strong>, and <strong>My Web</strong> with <strong>Rebuild your
+        web</strong>. It builds your web in the browser from follow lists, so it has no Talk with you filter and
+        no trust settings.</li>
 </ul>
 <p class="note">Replay it in the app: <span class="path">Settings &rarr; Help &rarr; Tutorials &rarr; Your Web of Trust</span>.</p>
 </section>

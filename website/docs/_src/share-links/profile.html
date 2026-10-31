@@ -10,7 +10,9 @@
   "description": "Share profile in Nostr Vault: a QR code and a nostrvault.app/p/ link for any profile, Copy link and Share, and what happens when someone scans or opens the link.",
   "labels": {
     "ios": ["Share profile", "Edit Profile", "Copy link", "Copied", "Share", "Done", "Search", "Who told you about Nostr Vault?", "Scan their profile code", "Skip, nobody told me", "Not them? Try another"],
-    "mac": ["Share profile", "Edit Profile", "Copy link", "Copied", "Share", "Search", "Who told you about Nostr Vault?", "Skip, nobody told me", "Not them? Try another"]
+    "mac": ["Share profile", "Edit Profile", "Copy link", "Copied", "Share", "Search", "Who told you about Nostr Vault?", "Skip, nobody told me", "Not them? Try another"],
+    "android": ["Skip", "Not them? Change"],
+    "web": ["Share profile"]
   }
 }
 -->
@@ -19,7 +21,8 @@
 <p class="eyebrow">Share profile</p>
 <h2>Open the share sheet</h2>
 <ul>
-    <li><strong>Your own profile:</strong> tap the QR code button next to <strong>Edit Profile</strong>.</li>
+    <li><strong>Your own profile:</strong> tap the QR code button (Android: the share button) next to
+        <strong>Edit Profile</strong>.</li>
     <li><strong>Anyone else's profile:</strong> open the <strong>&hellip;</strong> menu and tap
         <strong>Share profile</strong>.</li>
 </ul>
@@ -64,8 +67,9 @@
     <li>Tap the button that says how many you'll follow. You follow them and everyone still ticked, as one follow
         list, once setup finishes.</li>
 </ol>
-<p>The step comes after your profile when you create an account, and after the relay check when you bring an
-    account you can post with. Read-only accounts skip it. Details for each device:
+<p>When you create an account, the step comes after your profile and the servers step on iPhone, and straight
+    after your profile on Android. When you bring an account you can post with, it comes after the relay check
+    (Android: right after you enter your key). On Android the buttons read Skip and Not them? Change. Read-only accounts skip it. Details for each device:
     <a class="inline" href="/docs/start/iphone/#who-told-you">iPhone</a>,
     <a class="inline" href="/docs/start/android/#who-told-you">Android</a>,
     <a class="inline" href="/docs/start/mac/#who-told-you">Mac</a>.</p>
@@ -78,5 +82,6 @@
         fills in the Who told you step.</li>
     <li><strong>Mac</strong> has Share profile, and a link pasted into Search opens the profile. Links don't open the
         Mac app from a browser, so paste the link into the Who told you step yourself.</li>
+    <li><strong>Web</strong> has <strong>Share profile</strong> (QR code, Copy link, Share) on every profile.</li>
 </ul>
 </section>
