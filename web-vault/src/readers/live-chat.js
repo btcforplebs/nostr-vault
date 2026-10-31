@@ -110,12 +110,12 @@ export const streamShareLink = s => `${SITE}/thread/${streamNaddr(s)}`
 /** The host's public profile page. */
 export const profileShareLink = pubkey => `${SITE}/p/${npubEncode(pubkey)}`
 
-/** "Share as a note" (LiveStreamShare.noteText): a heading, then one link per line (the picture, the playlist,
- *  nostr:naddr) so other apps draw each one. */
-export function noteText({ title, hostName, picture, streaming, naddr }) {
-  const heading = title?.trim() ? `${title.trim()}, live now with ${hostName}` : `${hostName} is live now`
-  const links = [picture, streaming, naddr && `nostr:${naddr}`].filter(Boolean)
-  return links.length ? [heading, "", ...links].join("\n") : heading
+/** "Share as a note" (LiveStreamShare.noteText): "Live now: <host>" and the stream's nostr:naddr, nothing else. The
+ *  card the naddr draws carries the title, picture and player, read from the event: a host such as The Lot Radio
+ *  republishes one 30311 for every show, so a title written into the note would name the wrong show by the next. */
+export function noteText({ hostName, naddr }) {
+  const heading = `Live now: ${hostName}`
+  return naddr ? `${heading}\n\nnostr:${naddr}` : heading
 }
 
 /** What a chat row offers (LiveChatRowView / chatRowMenu): a row naming nobody (a zap whose payer is unproven) says

@@ -10,11 +10,12 @@ import { publishNote } from "../net/sync.js"
 import { shareLink, copyLink } from "./share.js"
 import { noteText, profileShareLink, streamNaddr, streamShareLink } from "./live-chat.js"
 import { streamLink } from "./live.js"
+import { liveQuoteTags } from "../net/live-note.js"
 
 export const hostName = pk => { const p = getProfile(pk); return p?.display_name || p?.name || `${pk.slice(0, 8)}…` }
 
 /** The note "Share as a note" starts from (LiveStreamShare.noteText). */
-export const shareNoteText = s => noteText({ title: s.title, hostName: hostName(s.host), picture: s.image ?? s.previews[0], streaming: s.streaming, naddr: streamNaddr(s) })
+export const shareNoteText = s => noteText({ hostName: hostName(s.host), naddr: streamNaddr(s) })
 
 export function LiveMoreMenu({ ctx, stream: s }) {
   const [open, setOpen] = useState(false)
@@ -57,7 +58,8 @@ export function ShareNoteDialog({ ctx, stream: s, onClose }) {
   const post = async () => {
     setBusy(true); setErr("")
     try {
-      const r = await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, text.trim(), ctx.account.relays.write, [["a", s.address]])
+      // The q tag (NIP-18) for each stream the text still quotes, so other apps count it as a quote of the stream.
+      const r = await publishNote(ctx.vault, ctx.signer, ctx.session.pubkey, text.trim(), ctx.account.relays.write, [["a", s.address], ...liveQuoteTags(text)])
       if (!r.relays.some(x => x.ok && !x.local)) throw new Error("No relay took it. Try again.")
       setDone(true); setTimeout(onClose, 900)
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
