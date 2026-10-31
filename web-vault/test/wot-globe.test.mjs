@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import {
   RADIUS, direction, layout, outerFaces, pictured, OUTER_FACES, OUTER_CANDIDATES, newCamera, moving, drag, flick, zoomBy, zoomNow, flyTo, facing, home, step, projector, unit, outline,
   faceShown, faceRadius, dotLight, seatFade, seats, hit, IDENTITY, ZOOM_MIN, ZOOM_MAX, MAX_SPIN, FACE_FULL, FACE_GONE,
+  layerFaceCandidates, LAYER_FACES, LAYER_CANDIDATES, RING_FACES, STAR, starAlpha,
 } from "../src/net/wot-globe.js"
 
 // Made-up keys spread like real ones: a real key's leading hex digits place it (TrustMap.fraction), so keys sharing a
@@ -166,4 +167,31 @@ test("a big web: projecting and seating 2,500 follows and 5,000 dots takes a few
   const seated = seats(faces)
   assert.ok(performance.now() - t < 100, `${performance.now() - t} ms`)
   assert.ok(seated.size > 20 && seated.size < faces.length / 2, `${seated.size} seated of ${faces.length}`)
+})
+
+test("faces per layer as the iPhone's (×1.8): Everyone a few, Vouched and Further out many from their own shell, Following none", () => {
+  assert.deepEqual(LAYER_FACES, { everyone: 65, following: 0, close: 180, furtherOut: 180 })
+  assert.equal(RING_FACES, 72)
+  const ext = Array.from({ length: 500 }, (_, i) => hex("2", i)), far = Array.from({ length: 3 }, (_, i) => hex("3", i))
+  const web = { me: ME, follows: [], extended: ext, further: far }
+  assert.deepEqual(layerFaceCandidates(web, "close"), ext.slice(0, LAYER_CANDIDATES))
+  assert.deepEqual(layerFaceCandidates(web, "furtherOut"), far)
+  assert.deepEqual(layerFaceCandidates(web, "following"), [])
+  // Everyone mixes both shells, most linked first.
+  assert.deepEqual(layerFaceCandidates(web, "everyone").slice(0, 4), [ext[0], far[0], ext[1], far[1]])
+})
+
+test("only the follows given as ring faces are faces; the rest stay stars", () => {
+  const f = [hex("1", 1), hex("1", 2)]
+  const nodes = layout({ me: ME, follows: f, extended: [], further: [] }, [], [], new Set([f[1]]))
+  assert.deepEqual(nodes.filter(n => n.layer === "follow").map(n => n.face), [false, true])
+  // Without the set every follow is a face, as before.
+  assert.ok(layout({ me: ME, follows: f, extended: [], further: [] }, []).filter(n => n.layer === "follow").every(n => n.face))
+})
+
+test("stars run from their back alpha to their front alpha with depth (GlobeScene's ranges)", () => {
+  assert.equal(starAlpha(STAR.further, 0.35), 0.06)
+  assert.ok(Math.abs(starAlpha(STAR.further, 1) - 0.22) < 1e-12)
+  assert.equal(starAlpha(STAR.ring, 0), 0.25) // clamped behind the back
+  assert.ok(starAlpha(STAR.extended, 0.7) > starAlpha(STAR.extended, 0.5))
 })

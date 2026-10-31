@@ -129,11 +129,9 @@
 
 /* Full width: the WoT globe, with the trust card as a right-hand panel instead of the phone's bottom sheet. */
 .desk-full { height: 100dvh; overflow: hidden; }
-.desk-full .screen.wot { min-height: 100dvh; height: 100dvh; }
-.desk-full .wot-globe { margin-bottom: 0; }
-.desk-full .wot-list { padding-bottom: 24px; overflow-y: auto; }
-.desk-full .wot-card { left: auto; right: 16px; top: 16px; bottom: auto; transform: none; width: 340px; max-height: calc(100dvh - 32px); overflow-y: auto; }
-.desk-full .wot-actions { grid-template-columns: repeat(2, 1fr); }
+.desk-full .screen.wot { height: 100dvh; }
+.desk-full .wot-card { left: auto; right: 16px; top: 68px; bottom: auto; transform: none; width: 360px; max-height: calc(100dvh - 84px); overflow-y: auto; }
+.desk-full .wot-myweb-button { right: 24px; bottom: 20px; }
 
 /* The Dashboard (main.jsx keeps the relay screen mounted outside the shell): laid over the main area. */
 .desk-app .relay-host:not([hidden]) { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; left: var(--side-w); overflow-y: auto; background: var(--bg); }
@@ -220,8 +218,8 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 /* The feed picker and the profile tabs scroll sideways under a fade, instead of being cut off at the divider. */
 .desk-app .feed-modes, .desk-app .segmented { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
-.desk-app .segmented:not(.wot-views) { overflow-x: auto; scrollbar-width: none; }
-.desk-app .segmented:not(.wot-views) button { flex: 1 0 auto; padding: 0 12px; white-space: nowrap; }
+.desk-app .segmented { overflow-x: auto; scrollbar-width: none; }
+.desk-app .segmented button { flex: 1 0 auto; padding: 0 12px; white-space: nowrap; }
 
 /* Profile: Wallet sits in the account menu and Settings in the sidebar on desktop, so the banner keeps only Refresh,
    floating over it as on the phone. */
@@ -233,10 +231,6 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 /* Vault: the mode strip takes the first row, its filter, search and Dashboard buttons the second. */
 .desk-app .screen-head.vault-head { flex-wrap: wrap; row-gap: 8px; }
 .desk-app .vault-head .vault-modes { flex: 1 1 100%; }
-
-/* WoT: the title and the Globe / My Web switch in one bar. */
-.desk-app .wot-head .wot-views { mask-image: none; -webkit-mask-image: none; border: 0; }
-.desk-app .wot-views button { min-height: 32px; }
 
 /* Desktop density. The phone's 16px gutter, 12px card gap and 17px text make a narrow list column a stack of large
    boxes (~38 characters a line). The list column runs a 12px gutter, 8px gap and a 15px body; the note column reads
@@ -251,7 +245,7 @@ kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border-radius: 6
 .desk-detail .note-text { font: 400 16px/1.5 var(--font); }
 
 /* Thin, dark scrollbars: three columns of default grey bars are the loudest thing on the page otherwise. */
-.desk-side, .desk-list, .desk-detail, .desk-full .wot-list, .desk-app .relay-host, .desk-compose {
+.desk-side, .desk-list, .desk-detail, .desk-app .relay-host, .desk-compose {
   scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / .18) transparent; }
 
 /* Sidebar: black like the iPad's on OLED, a hairline seam, one 12px inset for the account, rows and footer, and
