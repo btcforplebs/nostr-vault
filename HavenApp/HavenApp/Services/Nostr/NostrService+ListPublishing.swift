@@ -302,26 +302,6 @@ extension NostrService {
     }
 }
 
-#if os(iOS)
-/// The Mac this phone is linked to by mesh npub. A Mac without the owner's
-/// key can't sign the 10063, so the phone lists it (Logen, 2026-10-21).
-enum LinkedMacEntry {
-    /// Republishes when the owner's kept 10063 lacks the linked Mac. Checked
-    /// when a signed 10063 arrives (the newest replays at every launch) and
-    /// when the Mac is linked. At most once per npub every 5 minutes.
-    @MainActor static func ensureListed(owner: String, nostr: NostrService) {
-        guard owner == nostr.activeHexPubkey,
-              let mac = ConfigService.shared.config.macRelayMeshNpub,
-              HomeVaultLogic.photoNodeMissing(from: nostr.serverLists[owner], photoNpub: mac) else { return }
-        let key = "\(owner):\(mac)"
-        if let last = lastTry[key], Date().timeIntervalSince(last) < 300 { return }
-        lastTry[key] = Date()
-        nostr.publishServerList()
-    }
-    @MainActor private static var lastTry: [String: Date] = [:]
-}
-#endif
-
 #if os(macOS)
 /// The Mac's photo node: its own mesh node (MacFipsMeshService), which also
 /// lets strangers read photos by hash through the public seeds, capped. Its
@@ -333,21 +313,5 @@ enum PhotoNode {
         HomeVaultLogic.macPhotoNpub(MacFipsMeshService.photoNpub(), engineRunning: MacFipsMeshService.shared.running)
             .flatMap { HomeVaultLogic.meshNpub(fromInput: $0) }
     }
-
-    /// Republishes when the owner's kept 10063 lacks the photo node, so the
-    /// entry appears with no setup and comes back if a stale list (another
-    /// device's) dropped it. Checked when a 10063 arrives (even one already
-    /// seen: the newest list replays on every launch and is not "newer") and
-    /// when the Mac's mesh npub becomes known. At most once per npub every
-    /// 5 minutes, so a publish that never lands is retried, not looped.
-    @MainActor static func ensureListed(owner: String, nostr: NostrService) {
-        guard owner == nostr.activeHexPubkey, let npub = npub(),
-              HomeVaultLogic.photoNodeMissing(from: nostr.serverLists[owner], photoNpub: npub) else { return }
-        let key = "\(owner):\(npub)"
-        if let last = lastTry[key], Date().timeIntervalSince(last) < 300 { return }
-        lastTry[key] = Date()
-        nostr.publishServerList()
-    }
-    @MainActor private static var lastTry: [String: Date] = [:]
 }
 #endif
