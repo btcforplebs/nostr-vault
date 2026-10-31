@@ -328,9 +328,9 @@ fun CondensedNoteLine(
                         media to FeedNote.parseLinkURLs(displayContent, media)
                     }
                     val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
-                        NostrMentions.collapseGaps(
+                        NostrMentions.squeezeBlankLines(NostrMentions.collapseGaps(
                             NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet())
-                        ).trim()
+                        )).trim()
                     }
                     if (plainText.isNotBlank()) {
                         Spacer(Modifier.height(2.dp))

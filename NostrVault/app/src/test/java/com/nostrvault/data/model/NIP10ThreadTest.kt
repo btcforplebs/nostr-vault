@@ -87,4 +87,54 @@ class NIP10ThreadTest {
         assertEquals("c2", NIP10Thread.parentEventId(1111, tags))
         assertEquals("root", NIP10Thread.rootEventId(1111, tags))
     }
+
+    // "reply to X" names the parent's author, not the thread's starter.
+    private val rootAuthor = "3c6d08c75000fdb7226014e1e7e14abf9a51b628f5de60f892b39a9a9e797774"
+    private val parentAuthor = "0fdb4c25ac659e5ef841dad7417e7a57bc8099d4f78c3c41a4094d4b9c8993b4"
+
+    @Test fun replyToAReplyNamesTheParentsAuthorNotTheRoots() {
+        // The real Nostur reply from Logen's screenshot: root author's p first.
+        val tags = listOf(
+            listOf("e", "root", "", "root"), listOf("e", "parent", "", "reply"),
+            listOf("p", rootAuthor), listOf("p", parentAuthor))
+        assertEquals(parentAuthor, NIP10Thread.parentAuthor(1, tags))
+    }
+
+    @Test fun parentTagPubkeySlotWinsOverPTagOrder() {
+        val tags = listOf(
+            listOf("e", "root", "", "root", rootAuthor), listOf("e", "parent", "", "reply", parentAuthor),
+            listOf("p", parentAuthor), listOf("p", rootAuthor))
+        assertEquals(parentAuthor, NIP10Thread.parentAuthor(1, tags))
+    }
+
+    @Test fun commentReadsTheLowercaseETagsPubkey() {
+        val tags = listOf(listOf("E", "root", "", rootAuthor), listOf("e", "parent", "", parentAuthor),
+            listOf("p", parentAuthor), listOf("P", rootAuthor))
+        assertEquals(parentAuthor, NIP10Thread.parentAuthor(NIP10Thread.COMMENT_KIND, tags))
+    }
+
+    @Test fun aNoteThatAnswersNothingHasNoParentAuthor() {
+        assertNull(NIP10Thread.parentAuthor(1, listOf(listOf("p", rootAuthor), listOf("e", "q", "", "mention"))))
+    }
+
+    @Test fun directReplyToRootTakesTheFirstP() {
+        // A direct reply that also tags a mentioned person after the root's author.
+        val tags = listOf(listOf("e", "root", "", "root"), listOf("p", rootAuthor), listOf("p", parentAuthor))
+        assertEquals(rootAuthor, NIP10Thread.parentAuthor(1, tags))
+    }
+
+    @Test fun positionalSingleETagIsADirectReply() {
+        val tags = listOf(listOf("e", "root"), listOf("p", rootAuthor), listOf("p", parentAuthor))
+        assertEquals(rootAuthor, NIP10Thread.parentAuthor(1, tags))
+    }
+
+    @Test fun positionalDeepReplyTakesTheLastP() {
+        val tags = listOf(listOf("e", "root"), listOf("e", "parent"), listOf("p", rootAuthor), listOf("p", parentAuthor))
+        assertEquals(parentAuthor, NIP10Thread.parentAuthor(1, tags))
+    }
+
+    @Test fun commentWithoutPubkeySlotTakesTheFirstP() {
+        val tags = listOf(listOf("E", "root"), listOf("e", "parent"), listOf("p", parentAuthor), listOf("p", rootAuthor))
+        assertEquals(parentAuthor, NIP10Thread.parentAuthor(NIP10Thread.COMMENT_KIND, tags))
+    }
 }

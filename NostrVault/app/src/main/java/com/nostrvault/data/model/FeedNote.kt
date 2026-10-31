@@ -377,8 +377,9 @@ data class FeedNote(
             // A highlight's `e`/`p` name its source, not a thread it replies in.
             val threads = feedKind != 6 && feedKind != FeedHighlight.KIND
             val isReply = threads && nonMentionETags.isNotEmpty()
-            val replyToPubkey = if (threads) {
-                resolvedTags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            // The parent's author, not the first `p` (the thread's starter).
+            val replyToPubkey = if (isReply) {
+                NIP10Thread.parentAuthor(feedKind, resolvedTags)
             } else null
             val parentEventId = if (threads) {
                 NIP10Thread.parentEventId(feedKind, resolvedTags)
