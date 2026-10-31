@@ -82,12 +82,11 @@ import com.nostrvault.tutorials.tutorialAnchor
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
-import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
 import com.nostrvault.ui.components.appendTextWithEmoji
 import com.nostrvault.ui.components.customEmojiInlineContent
 import com.nostrvault.ui.components.reactionEmojiSummary
-import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.components.FoldBlocked
 import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.ui.navigation.Screen
@@ -661,8 +660,9 @@ internal fun VaultActivityScreen(
             }
         },
         floatingActionButton = {
-            val folded by rememberChromeFolded()
-            Box(Modifier.chromeFab().blockedWhen(folded)) {
+            // FoldBlocked alone reads the fold: its halfway flip never recomposes
+            // the button (#1437).
+            FoldBlocked(whenFolded = true, modifier = Modifier.chromeFab()) {
                 Surface(
                     onClick = onOpenDashboard,
                     modifier = Modifier

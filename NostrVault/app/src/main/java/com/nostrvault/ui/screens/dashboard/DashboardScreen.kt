@@ -35,9 +35,8 @@ import com.nostrvault.data.model.*
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
-import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
-import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.components.FoldBlocked
 import com.nostrvault.ui.navigation.NotificationTarget
 import com.nostrvault.ui.navigation.RelayFocus
 import com.nostrvault.ui.navigation.Screen
@@ -384,8 +383,9 @@ fun DashboardScreen(
         },
         floatingActionButton = {
             // The FAB folds with the bars, following the finger.
-            val folded by rememberChromeFolded()
-            Box(Modifier.chromeFab().blockedWhen(folded)) {
+            // FoldBlocked alone reads the fold: its halfway flip never recomposes
+            // the button (#1437).
+            FoldBlocked(whenFolded = true, modifier = Modifier.chromeFab()) {
                 Surface(
                     onClick = onOpenDashboard,
                     modifier = Modifier

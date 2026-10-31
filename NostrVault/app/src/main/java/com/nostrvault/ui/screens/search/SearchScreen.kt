@@ -14,9 +14,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
-import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
-import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.components.FoldBlocked
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -205,8 +204,9 @@ fun SearchScreen(
         floatingActionButton = {
             // The same gradient "Post" capsule as the feed, folding with the bars.
             // None for a read-only sign-in: it can't sign a post.
-            val folded by rememberChromeFolded()
-            if (canSign) Box(Modifier.chromeFab().blockedWhen(folded)) {
+            // FoldBlocked alone reads the fold: its halfway flip never recomposes
+            // the button (#1437).
+            if (canSign) FoldBlocked(whenFolded = true, modifier = Modifier.chromeFab()) {
                 Surface(
                     onClick = onCompose,
                     shape = RoundedCornerShape(50),
