@@ -160,8 +160,10 @@ struct AccountDetailView: View {
                             set: { enabled in
                                 configService.config.publishRelayListPerAccount[npub] = enabled
                                 configService.save()
+                                // Adds the vault to the account's own published
+                                // list; this device's defaults never go out.
                                 if enabled {
-                                    NostrService.shared.publishRelayList(forNpub: npub)
+                                    NostrService.shared.publishOwnRelaysInRelayList(forNpub: npub)
                                 }
                             }
                         )) {

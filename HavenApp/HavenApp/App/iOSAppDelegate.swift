@@ -35,14 +35,10 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
                 NIP46Service.shared.connectFromConfig()
             }
 
-            // Publish NIP-65 relay lists for accounts with the setting enabled
+            // Takes a DM inbox list (kind 10050) saved on another device.
+            // Never publishes: only Save in Settings > Relays does.
             try? await Task.sleep(for: .seconds(5))
-            NostrService.shared.publishRelayListsForEnabledAccounts()
-                // Heals accounts whose kind 10050 still advertises
-                // 127.0.0.1 from an older build — replacing it is what
-                // makes them reachable again, including from senders
-                // still running that build.
-                NostrService.shared.republishDMRelayListsForSignableAccounts()
+            await NostrService.shared.adoptPublishedDMRelayList()
 
             // Start profile picture prefetch service (runs once per day on Wi-Fi)
             try? await Task.sleep(for: .seconds(5))

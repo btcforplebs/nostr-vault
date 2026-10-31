@@ -141,13 +141,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
             Self.scheduleAppRefresh()
 
-            // Republish our kind 10050 so senders on any client know where to
-            // deliver DMs. It is replaceable, so this also heals lists written
-            // by older builds (127.0.0.1 entries, or ["r", url] tags no other
-            // client reads). The macOS AppDelegate does the same at launch.
+            // Takes a DM inbox list (kind 10050) saved on another device.
+            // Never publishes: only Save in Settings > Relays does.
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(5))
-                NostrService.shared.republishDMRelayListsForSignableAccounts()
+                await NostrService.shared.adoptPublishedDMRelayList()
                 // Media servers set in another app (kind 10063) become
                 // upload servers here too.
                 await NostrService.shared.syncOwnerServerList()

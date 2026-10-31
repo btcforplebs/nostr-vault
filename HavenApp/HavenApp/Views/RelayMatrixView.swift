@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Settings > Relays: every relay the owner uses on one screen. Each row is a
-/// relay; the Read, Write, DMs and Search columns are its jobs, tapped on and
-/// off. Import lives in the relay's detail and shows as a tag under its name. The owner's own relay is pinned on top. The Recommended page has
-/// the fixes, relays the owner's follows write to and the fastest relays from
-/// this device. See `RelayMatrix`.
+/// Settings > Relays: every relay the owner uses on one screen (Logen
+/// 2026-10-31, option A). "Yours" (the owner's published relay list and DM
+/// inbox, plus relays added here) on top, "App defaults" (this device only)
+/// below. Each row has the five job dots and Remove. Every edit is a draft
+/// (`RelayDraft`): nothing is written or published until Save, and rows never
+/// move while you tap. The owner's own relay is pinned on top. The
+/// Recommended page has the fixes, relays the owner's follows write to and
+/// the fastest relays from this device. Twin of Android `RelayMatrixScreen.kt`.
 struct RelayMatrixView: View {
     @EnvironmentObject var configService: ConfigService
     @StateObject private var probe = RelayProbe()
@@ -22,17 +25,21 @@ struct RelayMatrixView: View {
     @State private var blockedPublishTask: Task<Void, Never>?
 
     @State private var searchRelays: [String] = SearchRelaySettings.relays
-    @State private var selected: RelayMatrix.Row?
+    @State private var selected: RelayDraft.Row?
     @State private var showingAdd = false
     @State private var newRelay = ""
-    @State private var dmPublishTask: Task<Void, Never>?
-    @State private var relayListPublishTask: Task<Void, Never>?
+    /// Nil until the published lists have been looked up.
+    @State private var draft: RelayDraft.State?
+    @State private var confirming = false
+    @State private var confirmingDiscard = false
+    @Environment(\.dismiss) private var dismiss
 
-    private static let columnWidth: CGFloat = 42
+    private static let columnWidth: CGFloat = RelayDraftRowView.dotWidth
 
     // MARK: - Lists
 
-    private var lists: RelayMatrix.Lists {
+    /// This device's saved lists.
+    private var savedLists: RelayMatrix.Lists {
         RelayMatrix.Lists(
             read: configService.config.feedRelays,
             write: configService.config.blastrRelays,
@@ -41,30 +48,64 @@ struct RelayMatrixView: View {
             importing: configService.config.importSeedRelays)
     }
 
-    private func apply(_ new: RelayMatrix.Lists) {
-        let old = lists
-        guard new != old else { return }
-        if new.read != old.read { configService.config.feedRelays = new.read }
-        if new.write != old.write { configService.config.blastrRelays = new.write }
-        if new.importing != old.importing { configService.config.importSeedRelays = new.importing }
-        if new.search != old.search {
-            searchRelays = new.search
+    /// The lists the screen shows: the draft once loaded, else the saved ones.
+    private var lists: RelayMatrix.Lists { draft?.draft ?? savedLists }
+
+    private var pinned: [String] { [ownRelay, configService.config.ownHavenDMInboxURL] }
+
+    private var changes: Int { draft.map(RelayDraft.changeCount) ?? 0 }
+
+    /// Changes the draft; nothing is written until `save`.
+    private func edit(_ change: (RelayDraft.State) -> RelayDraft.State) {
+        guard let state = draft else { return }
+        let next = change(state)
+        guard next != state else { return }
+        draft = next
+        // Only relays with no speed yet, so the timed rows keep their dots.
+        probe.probe(RelayMatrix.needingProbe(next.layout.map(\.url), known: Set(probe.results.keys)))
+    }
+
+    private func loadDraft() {
+        guard draft == nil else { return }
+        Task {
+            let published = await NostrService.shared.lookupOwnerRelayLists()
+            guard draft == nil else { return }
+            let state = RelayDraft.start(savedLists, published: published, pinned: pinned)
+            draft = state
+            probe.probe(RelayMatrix.needingProbe(state.layout.map(\.url), known: Set(probe.results.keys)))
+            refreshSuggestions()
+        }
+    }
+
+    private var plan: RelayDraft.Plan? {
+        draft.map { RelayDraft.plan($0, ownRelays: configService.config.ownPublicRelays,
+                                    ownInbox: configService.config.ownHavenDMInboxURL) }
+    }
+
+    /// The one place the relay lists are written and published.
+    private func save() {
+        guard let state = draft, let plan else { return }
+        let new = state.draft
+        configService.config.feedRelays = new.read
+        configService.config.blastrRelays = new.write
+        configService.config.dmRelays = new.dms
+        configService.config.importSeedRelays = new.importing
+        if new.search != SearchRelaySettings.relays {
             SearchRelaySettings.relays = new.search
         }
-        if new.dms != old.dms {
-            configService.config.dmRelays = new.dms
-            scheduleDMPublish()
-        }
-        if new.read != old.read || new.write != old.write { scheduleRelayListPublish() }
-        probe.probe(RelayMatrix.needingProbe(rows.map(\.url), known: Set(probe.results.keys)))
+        searchRelays = SearchRelaySettings.relays
+        configService.save()
+        if let tags = plan.relayListTags { NostrService.shared.publishRelayListTags(tags) }
+        if let dms = plan.dmRelays { NostrService.shared.publishOwnerDMRelays(dms) }
+        draft = RelayDraft.saved(state, plan: plan)
     }
 
     private var blocked: [String] { configService.config.blockedRelays }
 
+    /// Never connect: blocked now (kind 10006), out of the lists on Save.
     private func block(_ url: String) {
-        let (newLists, newBlocked) = RelayMatrix.blocking(url, lists: lists, blocked: blocked)
-        apply(newLists)
-        setBlocked(newBlocked)
+        setBlocked(RelayMatrix.blocking(url, lists: lists, blocked: blocked).1)
+        edit { RelayDraft.remove($0, key: RelayMatrix.key(url)) }
     }
 
     private func unblock(_ url: String) {
@@ -90,9 +131,7 @@ struct RelayMatrixView: View {
         configService.config.ownPublicRelays.first { !$0.isEmpty } ?? ""
     }
 
-    private var rows: [RelayMatrix.Row] {
-        RelayMatrix.rows(lists, pinned: [ownRelay, configService.config.ownHavenDMInboxURL])
-    }
+    private var rows: [RelayDraft.Row] { draft.map(RelayDraft.rows) ?? [] }
 
     private var problems: [RelayMatrix.Problem] {
         // Only the owner's relays: the probe also times suggestions.
@@ -108,7 +147,13 @@ struct RelayMatrixView: View {
             summarySection
             switch page {
             case .relays:
-                gridSection
+                RelayDraftSections(
+                    draft: draft, rows: rows, ownRow: ownRelay.isEmpty ? nil : AnyView(ownRow),
+                    result: { probe.result(for: $0) },
+                    open: { selected = $0 },
+                    toggle: { key, job in edit { RelayDraft.toggle($0, key: key, job: job) } },
+                    remove: { key in edit { RelayDraft.remove($0, key: key) } },
+                    undo: { key in edit { RelayDraft.undo($0, key: key) } })
                 if !blocked.isEmpty { neverConnectSection }
                 mediaSection
             case .recommended:
@@ -120,7 +165,25 @@ struct RelayMatrixView: View {
         #if os(iOS)
         .listStyle(.insetGrouped)
         #endif
+        .safeAreaInset(edge: .bottom) {
+            if page == .relays, draft != nil { saveBar }
+        }
+        #if os(iOS)
+        // Leaving with unsaved edits asks first: nothing was saved or published.
+        .navigationBarBackButtonHidden(changes > 0)
+        #endif
         .toolbar {
+            #if os(iOS)
+            if changes > 0 {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        confirmingDiscard = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.backward")
+                    }
+                }
+            }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     newRelay = ""
@@ -140,32 +203,43 @@ struct RelayMatrixView: View {
                 .autocorrectionDisabled(true)
             Button("Add") {
                 if let url = RelayMatrix.relayURL(from: newRelay) {
-                    apply(RelayMatrix.adding(url, to: lists))
+                    edit { RelayDraft.add($0, url: url, jobs: [.read, .write]) }
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("It starts with Read and Write. Tap its name to change that.")
+            Text("It goes in Yours with Read and Write. Save publishes it.")
         }
         .sheet(item: $selected) { row in
             RelayDetailView(
                 url: row.url,
                 jobs: { currentJobs(for: row.url) },
                 result: probe.result(for: row.url),
-                set: { job, on in apply(RelayMatrix.setting(job, on, for: row.url, in: lists)) },
+                set: { job, on in edit { RelayDraft.setJob($0, url: row.url, job: job, on: on) } },
                 block: {
                     block(row.url)
                     selected = nil
                 },
                 remove: {
-                    apply(RelayMatrix.removing(row.url, from: lists))
+                    edit { RelayDraft.remove($0, key: row.id) }
                     selected = nil
                 })
             .environmentObject(configService)
         }
+        .sheet(isPresented: $confirming) {
+            if let plan { RelaySaveSheet(plan: plan, changes: changes, save: save) }
+        }
+        .confirmationDialog("Discard \(RelaySaveSheet.changesLabel(changes))?", isPresented: $confirmingDiscard,
+                            titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Nothing has been saved or published.")
+        }
         .onAppear {
             searchRelays = SearchRelaySettings.relays
             probe.probe(([ownRelay] + rows.map(\.url)).filter { !$0.isEmpty })
+            loadDraft()
             refreshSuggestions()
         }
         .onReceive(NotificationCenter.default.publisher(for: LocalTLSTrust.certificateChanged)) { _ in
@@ -178,15 +252,7 @@ struct RelayMatrixView: View {
                         + followSuggestions.map(\.url))
         }
         .onDisappear {
-            // Leaving mid-debounce must not drop the publish.
-            if dmPublishTask != nil {
-                dmPublishTask?.cancel()
-                NostrService.shared.publishOwnerDMInboxList()
-            }
-            if relayListPublishTask != nil {
-                relayListPublishTask?.cancel()
-                publishRelayListIfEnabled()
-            }
+            // Leaving mid-debounce must not drop the blocked list publish.
             if blockedPublishTask != nil {
                 blockedPublishTask?.cancel()
                 NostrService.shared.publishBlockedRelayList()
@@ -275,16 +341,14 @@ struct RelayMatrixView: View {
                         Text(problem.detail).font(.appCaption).foregroundColor(.secondary)
                     }
                     Spacer(minLength: 8)
-                    if case .unreachable(let key) = problem, let row = rows.first(where: { $0.id == key }) {
-                        Button("Remove") { apply(RelayMatrix.removing(row.url, from: lists)) }
+                    if case .unreachable(let key) = problem, let row = rows.first(where: { $0.id == key && !$0.removed }) {
+                        Button("Remove") { edit { RelayDraft.remove($0, key: row.id) } }
                             .buttonStyle(.borderedProminent)
                             .tint(.havenPurple)
                             .controlSize(.small)
                     } else if problem == .noSearch {
                         Button("Defaults") {
-                            SearchRelaySettings.resetToDefaults()
-                            searchRelays = SearchRelaySettings.relays
-                            probe.probe(searchRelays)
+                            edit { RelayDraft.resetSearch($0, defaults: SearchRelayDefaults.effective(stored: nil), pinned: pinned) }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.havenPurple)
@@ -305,122 +369,71 @@ struct RelayMatrixView: View {
         }
     }
 
-    private var gridSection: some View {
-        Section {
-            if !ownRelay.isEmpty { ownRow }
-            ForEach(rows) { row in
-                relayRow(row)
-            }
-            if rows.isEmpty && ownRelay.isEmpty {
-                Text("No relays yet. Tap + to add one.")
-                    .font(.appCaption)
-                    .foregroundColor(.secondary)
-            }
-        } header: {
-            HStack {
-                Text("Relay")
-                Spacer()
-                ForEach(RelayMatrix.Job.columns) { job in
-                    Text(job.title)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(width: Self.columnWidth)
-                }
-            }
-        } footer: {
-            Text("Read + Write are your public relay list (10002). DMs are your DM inbox (10050). Search is where searches go. Tap a relay's name for Import.")
-        }
-    }
-
     private var ownRow: some View {
-        HStack(spacing: 10) {
-            healthDot(probe.result(for: ownRelay))
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "lock.circle.fill")
+                .font(.title3)
+                .foregroundColor(.havenPurple)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(RelayMatrix.label(ownRelay))
                     .font(.appBody)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
                     .truncationMode(.middle)
                 HStack(spacing: 6) {
+                    healthDot(probe.result(for: ownRelay))
                     subtitle(probe.result(for: ownRelay), tags: [])
-                    Text("YOUR RELAY")
-                        .font(.appSystem(size: 9, weight: .bold))
-                        .foregroundColor(.havenPurple)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Color.havenPurple.opacity(0.15)))
+                    RelayTag(text: "YOUR RELAY", tint: .havenPurple)
+                    Spacer(minLength: 2)
+                    HStack(spacing: 0) {
+                        RelayJobDot(on: true, locked: true)
+                        RelayJobDot(on: true, locked: true)
+                        RelayJobDot(on: !configService.config.ownHavenDMInboxURL.isEmpty, locked: true)
+                        ownSearchDot
+                        RelayJobDot(on: false).opacity(0.3)
+                    }
                 }
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("\(RelayMatrix.label(ownRelay)), your relay. Always used for reading and writing.")
-            Spacer(minLength: 4)
-            lockedDot(true)
-            lockedDot(true)
-            lockedDot(!configService.config.ownHavenDMInboxURL.isEmpty)
-            dot(ownRelay, .search, on: searchRelays.contains { RelayMatrix.key($0) == RelayMatrix.key(ownRelay) })
         }
+        .padding(.vertical, 2)
     }
 
-    private func relayRow(_ row: RelayMatrix.Row) -> some View {
-        HStack(spacing: 10) {
-            healthDot(probe.result(for: row.url))
-            Button {
-                selected = row
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(RelayMatrix.label(row.url))
-                        .font(.appBody)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .truncationMode(.middle)
-                    subtitle(probe.result(for: row.url),
-                             tags: RelayMatrix.Job.advanced.filter(row.has).map(\.title))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Shows every job for this relay")
-            ForEach(RelayMatrix.Job.columns) { job in
-                jobDot(row, job)
-            }
-        }
-    }
-
-    private func jobDot(_ row: RelayMatrix.Row, _ job: RelayMatrix.Job) -> some View {
-        dot(row.url, job, on: row.has(job))
-    }
-
-    private func dot(_ url: String, _ job: RelayMatrix.Job, on: Bool) -> some View {
-        Button {
-            apply(RelayMatrix.setting(job, !on, for: url, in: lists))
+    private var ownSearchDot: some View {
+        let on = lists.search.contains { RelayMatrix.key($0) == RelayMatrix.key(ownRelay) }
+        return Button {
+            edit { RelayDraft.setJob($0, url: ownRelay, job: .search, on: !on) }
         } label: {
-            Circle()
-                .fill(on ? Color.havenPurple : Color.clear)
-                .overlay(Circle().stroke(on ? Color.havenPurple : Color.secondary.opacity(0.5), lineWidth: 1.5))
-                .frame(width: 24, height: 24)
-                .frame(width: Self.columnWidth, height: 40)
-                .contentShape(Rectangle())
+            RelayJobDot(on: on)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(job.title), \(RelayMatrix.label(url))")
+        .accessibilityLabel("Search, \(RelayMatrix.label(ownRelay))")
         .accessibilityValue(on ? "On" : "Off")
     }
 
-    private func lockedDot(_ on: Bool) -> some View {
-        ZStack {
-            Circle()
-                .fill(on ? Color.havenPurple : Color.clear)
-                .overlay(Circle().stroke(on ? Color.havenPurple : Color.secondary.opacity(0.5), lineWidth: 1.5))
-            if on {
-                Image(systemName: "lock.fill")
-                    .font(.appSystem(size: 9, weight: .bold))
-                    .foregroundColor(.white)
+    private var saveBar: some View {
+        VStack(spacing: 6) {
+            Button {
+                confirming = true
+            } label: {
+                Text(changes == 0 ? "Save" : "Save (\(RelaySaveSheet.changesLabel(changes)))")
+                    .font(.appBody.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.havenPurple)
+            .disabled(changes == 0)
+            Text("Only Save publishes. App defaults, Search and Import stay on this device.")
+                .font(.appCaption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
-        .frame(width: 24, height: 24)
-        .frame(width: Self.columnWidth, height: 40)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private func healthDot(_ result: RelayProbe.Result?) -> some View {
@@ -520,13 +533,13 @@ struct RelayMatrixView: View {
                 suggestionRow(suggestion.url,
                               detail: "\(suggestion.follows) follows write here",
                               addLabel: "Add") {
-                    apply(RelayMatrix.setting(.read, true, for: suggestion.url, in: lists))
+                    edit { RelayDraft.add($0, url: suggestion.url, jobs: [.read]) }
                 }
             }
         } header: {
             Text("Your Follows Write To")
         } footer: {
-            Text("Add one to Read to see more of their posts. Based on \(followsWithLists) of your \(followCount) follows' relay lists.")
+            Text("Add puts it in Yours with Read; Save publishes it. Based on \(followsWithLists) of your \(followCount) follows' relay lists.")
         }
     }
 
@@ -553,13 +566,13 @@ struct RelayMatrixView: View {
             }
             ForEach(fastest, id: \.self) { url in
                 suggestionRow(url, detail: nil, addLabel: "Add") {
-                    apply(RelayMatrix.adding(url, to: lists))
+                    edit { RelayDraft.add($0, url: url, jobs: [.read, .write]) }
                 }
             }
         } header: {
             Text("Fastest From This Device")
         } footer: {
-            Text("Well-known public relays, timed from here just now. Add puts it in Read and Write.")
+            Text("Well-known public relays, timed from here just now. Add puts it in Yours with Read and Write; Save publishes it.")
         }
     }
 
@@ -607,37 +620,6 @@ struct RelayMatrixView: View {
         } footer: {
             Text("The app won't open a connection to these, even when someone you follow uses them. Published as your blocked relay list (10006).")
         }
-    }
-
-    // MARK: - Publishing
-
-    /// Edits are published once they settle, like the DM relay page did.
-    private func scheduleDMPublish() {
-        dmPublishTask?.cancel()
-        dmPublishTask = Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            dmPublishTask = nil
-            NostrService.shared.publishOwnerDMInboxList()
-        }
-    }
-
-    private func scheduleRelayListPublish() {
-        relayListPublishTask?.cancel()
-        relayListPublishTask = Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            relayListPublishTask = nil
-            publishRelayListIfEnabled()
-        }
-    }
-
-    /// Read and Write are the public relay list, so a change republishes it
-    /// for the owner when the owner has "Publish Relay List" on.
-    private func publishRelayListIfEnabled() {
-        let owner = configService.config.ownerNpub
-        guard !owner.isEmpty, configService.config.publishRelayListPerAccount[owner] == true else { return }
-        NostrService.shared.publishRelayList(forNpub: owner)
     }
 }
 

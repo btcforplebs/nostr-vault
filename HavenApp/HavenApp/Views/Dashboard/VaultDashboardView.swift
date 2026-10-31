@@ -453,7 +453,7 @@ struct VaultDashboardView: View {
     private func publishRelayList() {
         configService.config.publishRelayListPerAccount[activeNpub] = true
         configService.save()
-        NostrService.shared.publishRelayList(forNpub: activeNpub)
+        NostrService.shared.publishOwnRelaysInRelayList(forNpub: activeNpub)
     }
 
     // MARK: - Keep it full

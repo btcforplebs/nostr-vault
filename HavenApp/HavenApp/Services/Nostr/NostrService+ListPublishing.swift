@@ -256,42 +256,6 @@ extension NostrService {
         return host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "0.0.0.0"
     }
 
-    /// NIP-17: Publishes a Kind 10050 (DM Relay List) event advertising which relays to send DMs to.
-    /// Call whenever relay preferences change or during initial setup.
-    ///
-    /// Loopback entries are stripped: this list tells *other people* where to
-    /// deliver, and our own 127.0.0.1 is meaningless to them. We previously
-    /// inserted it at position 0, so every sender delivered our DMs into their
-    /// own local relay and we received nothing.
-    @MainActor
-    func publishDMRelayList(dmRelays: [String], signAsNpub: String? = nil) {
-        let reachable = dmRelays.filter { !Self.isLoopbackRelay($0) }
-        guard !reachable.isEmpty else {
-            #if DEBUG
-            print("NostrService: No externally reachable DM relays, skipping Kind 10050 publish")
-            #endif
-            return
-        }
-
-        // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
-        // which no other client reads — they saw an empty list and had nowhere
-        // to deliver our DMs.
-        let tags = reachable.map { ["relay", $0] }
-
-        Task {
-            if let event = await signEventAsync(kind: 10050, content: "", tags: tags, signAsNpub: signAsNpub) {
-                postEvent(event)
-                #if DEBUG
-                print("NostrService: Published Kind 10050 DM relay list with \(tags.count) relays")
-                #endif
-            } else {
-                #if DEBUG
-                print("NostrService: Failed to sign Kind 10050 DM relay list")
-                #endif
-            }
-        }
-    }
-
     /// NIP-51: publishes the owner's blocked relay list (kind 10006), the
     /// relays set to Never connect. Public `relay` tags merged with the ones
     /// other clients added. An empty local list is published too, so
@@ -305,176 +269,36 @@ extension NostrService {
         }
     }
 
-    /// Brings the owner's DM inbox list (kind 10050) into step across devices,
-    /// and republishes kind 10050 for every other account that can sign.
-    ///
-    /// The owner's list is one list for all devices: the newest published
-    /// 10050 is adopted unless this device changed its list more recently, in
-    /// which case this device's list is published. Before, every device
-    /// republished its own settings at launch, so whichever device opened last
-    /// silently replaced the list the others had set.
-    ///
-    /// Publishing also heals lists from older builds (`wss://127.0.0.1:<port>`
-    /// entries, which made senders write the gift wrap to their own machine).
-    /// That's why this isn't gated behind the publish-relay-list toggle the
-    /// way kind 10002 is: a broken 10050 silently breaks DMs.
+    /// Takes the owner's newest published DM inbox list (kind 10050) when it
+    /// is newer than this device's. Never publishes: launch and setup used to
+    /// publish this device's list, or the app's defaults when the account had
+    /// none, and signed one for every other account too, without anyone
+    /// saving anything (Logen 2026-10-31). Only Save in Settings > Relays
+    /// publishes it; see `NostrService+RelayListSave`.
     @MainActor
-    func republishDMRelayListsForSignableAccounts() {
-        let config = ConfigService.shared.config
-
-        var accounts: [String] = config.whitelistedNpubs
-        if !config.ownerNpub.isEmpty && !accounts.contains(config.ownerNpub) {
-            accounts.insert(config.ownerNpub, at: 0)
-        }
-
-        Task {
-            await syncOwnerDMInboxList()
-
-            // Not gated on `config.isLocal`: the dmRelays list is remote either
-            // way, and new-user setup always lands on a local relay URL.
-            // Other accounts keep the plain list: the owner's Haven inbox
-            // only takes DMs for the owner.
-            let reachable = ConfigService.shared.config.dmRelays.filter { !Self.isLoopbackRelay($0) }
-            guard !reachable.isEmpty else { return }
-            for npub in accounts where npub != config.ownerNpub {
-                let canSign = ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub)
-                guard canSign else { continue }
-
-                // Only when it would change something. This ran on every
-                // launch and signed the same list again every time; with a
-                // remote signer that is a request to the person's signer app
-                // for nothing, queued in front of whatever they do first. A
-                // published list we cannot read (nobody answered, or it holds
-                // loopback entries from an older build) still gets republished
-                // — healing those is why this is not behind a toggle.
-                if let hex = Bech32.decode(npub)?.hexString,
-                   let newest = await fetchNewestDMRelayList(for: hex, alsoAsk: reachable),
-                   Set(newest.relays) == Set(reachable) {
-                    #if DEBUG
-                    print("NostrService: DM relay list for \(npub.prefix(12))… already published and unchanged — not re-signing")
-                    #endif
-                    continue
-                }
-
-                publishDMRelayList(dmRelays: reachable, signAsNpub: npub)
-                try? await Task.sleep(nanoseconds: 500_000_000)
-            }
-        }
-    }
-
-    /// Adopts or publishes the owner's DM inbox list — see
-    /// `republishDMRelayListsForSignableAccounts`.
-    @MainActor
-    func syncOwnerDMInboxList() async {
+    func adoptPublishedDMRelayList() async {
         let configService = ConfigService.shared
         let config = configService.config
-        guard !config.ownerNpub.isEmpty,
-              let ownerHex = Bech32.decode(config.ownerNpub)?.hexString else { return }
-        let canSign = !config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil
-            || configService.hasBunkerConfig(forNpub: config.ownerNpub)
-
+        guard let ownerHex = Bech32.decode(config.ownerNpub)?.hexString else { return }
         let lookup = await lookupNewestReplaceable(kind: 10050, for: ownerHex, alsoAsk: config.dmInboxRelays)
-        // No relay answered: "none found" is unknown, not empty. A new install
-        // of an existing account would otherwise publish the defaults over
-        // the real list.
-        if lookup.event == nil && lookup.answered == 0 {
-            #if DEBUG
-            print("NostrService: DM inbox sync: no relay answered; not published")
-            #endif
-            return
-        }
-        let newest = lookup.event.map { (relays: ProfileRepository.parseDMRelayListTags($0.tags), createdAt: $0.created_at) }
+        guard let event = lookup.event else { return }
         // A published list can still carry relays that are gone; adopting it
         // would undo the one-time drop of them from the saved config.
-        let published = newest?.relays.filter { !Self.isLoopbackRelay($0) && !HavenConfig.isDeadRelay($0) }
-
-        var action = HavenConfig.dmInboxSyncAction(
+        let published = ProfileRepository.parseDMRelayListTags(event.tags)
+            .filter { !Self.isLoopbackRelay($0) && !HavenConfig.isDeadRelay($0) }
+        let action = HavenConfig.dmInboxSyncAction(
             local: configService.config.dmInboxRelays,
             localUpdatedAt: configService.config.dmRelaysUpdatedAt,
-            published: published, publishedAt: newest?.createdAt)
-
-        if action == .adopt, let published, let newest {
-            if !published.isEmpty {
-                configService.config.dmRelays = published
-            }
-            configService.config.dmRelaysUpdatedAt = newest.createdAt
-            configService.save()
-            #if DEBUG
-            print("NostrService: Adopted published DM inbox list (\(published.count) relays)")
-            #endif
-            // Adopting can still leave this device holding more than was
-            // published (its own Haven inbox, or loopback entries dropped).
-            action = HavenConfig.dmInboxSyncAction(
-                local: configService.config.dmInboxRelays,
-                localUpdatedAt: newest.createdAt,
-                published: newest.relays, publishedAt: newest.createdAt)
+            published: published, publishedAt: event.created_at)
+        guard action == .adopt else { return }
+        if !published.isEmpty {
+            configService.config.dmRelays = published
         }
-
-        guard action == .publish, canSign else { return }
-        publishOwnerDMInboxList()
-    }
-
-    /// Publishes this device's DM inbox list for the owner and stamps it as the
-    /// newest change. Call after the user edits the list or the Haven inbox
-    /// address changes.
-    @MainActor
-    func publishOwnerDMInboxList() {
-        let configService = ConfigService.shared
-        let reachable = configService.config.dmInboxRelays.filter { !Self.isLoopbackRelay($0) }
-        guard !reachable.isEmpty else { return }
-        configService.config.dmRelaysUpdatedAt = Int64(Date().timeIntervalSince1970)
+        configService.config.dmRelaysUpdatedAt = event.created_at
         configService.save()
-        publishDMRelayList(dmRelays: reachable, signAsNpub: configService.config.ownerNpub)
-    }
-
-    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event: the owner's
-    /// own relays plus the Read and Write relays (`HavenConfig.publicRelayListTags`).
-    /// Call when the user enables the toggle or on app launch.
-    @MainActor
-    func publishRelayList(forNpub accountNpub: String) {
-        let tags = ConfigService.shared.config.publicRelayListTags
-        guard !tags.isEmpty else {
-            #if DEBUG
-            print("NostrService: No public relays to list, skipping Kind 10002 publish")
-            #endif
-            return
-        }
-
-        Task {
-            if let event = await signEventAsync(kind: 10002, content: "", tags: tags, signAsNpub: accountNpub) {
-                postEvent(event)
-                #if DEBUG
-                print("NostrService: Published Kind 10002 relay list for \(accountNpub.prefix(8)) with \(tags.count) relays")
-                #endif
-            } else {
-                #if DEBUG
-                print("NostrService: Failed to sign Kind 10002 relay list for \(accountNpub.prefix(8))")
-                #endif
-            }
-        }
-    }
-
-    /// Publishes Kind 10002 relay list for all accounts that have the setting enabled.
-    @MainActor
-    func publishRelayListsForEnabledAccounts() {
-        let config = ConfigService.shared.config
-
-        let enabledAccounts = config.publishRelayListPerAccount.filter { $0.value }.map { $0.key }
-        guard !enabledAccounts.isEmpty else { return }
-
-        Task {
-            for npub in enabledAccounts {
-                // Verify the account can sign
-                let isOwner = npub == config.ownerNpub
-                let canSign = isOwner
-                    ? (!config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil || ConfigService.shared.hasBunkerConfig(forNpub: npub))
-                    : (ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub))
-                guard canSign else { continue }
-
-                publishRelayList(forNpub: npub)
-                try? await Task.sleep(nanoseconds: 500_000_000)
-            }
-        }
+        #if DEBUG
+        print("NostrService: Adopted published DM inbox list (\(published.count) relays)")
+        #endif
     }
 }
 
