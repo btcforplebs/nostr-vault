@@ -281,3 +281,27 @@ final class NotificationPreferencesDecodingTests: XCTestCase {
         XCTAssertEqual(decoded, prefs)
     }
 }
+
+// MARK: - Account label
+
+final class NotificationAccountLabelTests: XCTestCase {
+    private let owner = "npub1ownerownerownerownerownerownerownerownerownerownerowner0"
+    private let second = "npub1secondsecondsecondsecondsecondsecondsecondsecondsecond"
+
+    func testNoLabelWithOneAccount() {
+        XCTAssertNil(NotificationPolicy.accountLabel(npub: owner, accounts: [owner], name: "Logen"))
+    }
+
+    func testNamesTheAccountWithTwo() {
+        XCTAssertEqual(NotificationPolicy.accountLabel(npub: second, accounts: [owner, second], name: "Shop"), "Shop")
+    }
+
+    func testShortNpubWithoutAName() {
+        XCTAssertEqual(NotificationPolicy.accountLabel(npub: second, accounts: [owner, second], name: "  "),
+                       "npub1sec…cond")
+    }
+
+    func testNoLabelForAnAccountNoLongerHeld() {
+        XCTAssertNil(NotificationPolicy.accountLabel(npub: second, accounts: [owner, "npub1other"], name: "Shop"))
+    }
+}
