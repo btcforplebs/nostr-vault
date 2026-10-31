@@ -125,7 +125,8 @@ export function matches(e, category, q) {
   return !s || e === s || category.toLowerCase().includes(s) || (KEYWORDS[e] ?? "").split(" ").some(w => w.startsWith(s))
 }
 
-function EmojiPicker({ current, onPick, onClose }) {
+/** The picker sheet; Settings › Default Reaction opens it too, with its own `title` and `action`. */
+export function EmojiPicker({ current, onPick, onClose, title = "React with Emoji", action = "React" }) {
   const [custom, setCustom] = useState("")
   const [q, setQ] = useState("")
   const first = firstEmoji(custom)
@@ -133,14 +134,14 @@ function EmojiPicker({ current, onPick, onClose }) {
   const groups = CATEGORIES.map(([name, list]) => [name, list.split(" ").filter(e => matches(e, name, q))]).filter(([, l]) => l.length)
   const cell = e => <button key={e} type="button" class={`picker-cell${e === current ? " on" : ""}`} aria-label={e === current ? `${e}, your reaction` : e} onClick={() => onPick(e)}>{e}</button>
   return (
-    <Dialog label="React with Emoji" onClose={onClose}>
-      <div class="info-head"><h3>React with Emoji</h3><button type="button" class="small" onClick={onClose}>Done</button></div>
+    <Dialog label={title} onClose={onClose}>
+      <div class="info-head"><h3>{title}</h3><button type="button" class="small" onClick={onClose}>Done</button></div>
       <h4 class="info-section">Quick Reactions</h4>
       <div class="picker-grid">{QUICK.map(cell)}</div>
       <h4 class="info-section">React with Custom Emoji</h4>
       <form class="picker-custom" onSubmit={e => { e.preventDefault(); if (okCustom) onPick(first) }}>
         <input value={custom} onInput={e => setCustom(e.currentTarget.value)} placeholder="Paste or type any emoji..." aria-label="Custom emoji" />
-        <button type="submit" class="primary small" disabled={!okCustom}>React</button>
+        <button type="submit" class="primary small" disabled={!okCustom}>{action}</button>
       </form>
       <input type="search" class="picker-search" value={q} onInput={e => setQ(e.currentTarget.value)} placeholder="Search emojis..." aria-label="Search emojis" />
       <div class="picker-scroll">

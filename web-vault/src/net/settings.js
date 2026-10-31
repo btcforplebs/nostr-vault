@@ -22,8 +22,8 @@ export const PRIVACY_URL = "https://nostrvault.app/privacy.html"
  * doesn't are left out rather than shown dead: Feed, Appearance,
  * Media & Cache, Notifications, Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay Automatically.
  * Some of their settings sit on the index itself instead of a page: the Notifications switch, Appearance's Feed Text
- * (components/LineLimitSteppers.jsx), Feed's Posting section (Send Delay, components/SendDelayPicker.jsx) and Media &
- * Cache's Autoplay Videos (components/AutoplaySwitch.jsx).
+ * (components/LineLimitSteppers.jsx) and Reactions (components/DefaultReactionRow.jsx), Feed's Posting section (Send
+ * Delay, components/SendDelayPicker.jsx) and Media & Cache's Autoplay Videos (components/AutoplaySwitch.jsx).
  */
 export const SETTINGS_GROUPS = [
   { title: "Account", rows: [

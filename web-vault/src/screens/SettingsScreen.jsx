@@ -22,6 +22,7 @@ import { learn } from "../shell.js"
 import { NotifySwitch } from "../components/NotifySwitch.jsx"
 import { RESET_ALL_QUESTION } from "../net/reset-all.js"
 import { SendDelayPicker } from "../components/SendDelayPicker.jsx"
+import { DefaultReactionRow } from "../components/DefaultReactionRow.jsx"
 import { AutoplaySwitch } from "../components/AutoplaySwitch.jsx"
 import { LineLimitSteppers } from "../components/LineLimitSteppers.jsx"
 import {
@@ -103,6 +104,10 @@ function Index({ ctx }) {
       <section class="settings-group">
         <div class="section-label">Feed Text</div>
         <div class="settings-rows"><LineLimitSteppers /></div>
+      </section>
+      <section class="settings-group">
+        <div class="section-label">Reactions</div>
+        <div class="settings-rows"><DefaultReactionRow /></div>
       </section>
       <section class="settings-group">
         <div class="section-label">Posting</div>

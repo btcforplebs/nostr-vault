@@ -8,6 +8,7 @@ import { appendClientTag } from "./client-tag.js"
 import { checkSigned } from "./sync.js"
 import { repostInner, repostedId, verifiedCopy } from "./thread.js"
 import { keepDeletedCopy } from "./recently-deleted.js"
+import { defaultReaction } from "./reaction-pref.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -20,7 +21,8 @@ export const setActionContext = ctx => {
 }
 export const actionContext = () => actx
 
-/** The iPhone app's quick reaction (HavenConfig.defaultReactionEmoji). */
+/** How an empty or "+" reaction reads (reactionDisplayEmoji). A one-tap like sends the user's Default Reaction
+ *  (net/reaction-pref.js), ❤️ unless they picked another. */
 export const REACTION = "❤️"
 
 /** NIP-25 reaction to `note`, tagged as the iPhone tags it (FeedActions.react). */
@@ -180,7 +182,7 @@ export async function act(ctx, kind, note, emoji) {
     if (!emoji || cur?.unlike || emoji === emojiOf.get(note.id)) return unlike(ctx, note).catch(() => {})
     try { await unlike(ctx, note) } catch { return }
   } else if (cur === "sent") return
-  if (kind === "like") return like(ctx, note, emoji ?? REACTION)
+  if (kind === "like") return like(ctx, note, emoji ?? defaultReaction()) // a plain tap: Settings › Default Reaction
   put(note.id, kind, "busy")
   try {
     await publishAction(ctx, repostTemplate(note))
