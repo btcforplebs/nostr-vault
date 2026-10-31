@@ -36,7 +36,8 @@ import kotlinx.coroutines.delay
  * Matches the iOS QuotedNoteView layout:
  * - 18dp avatar + author name (12sp bold) + timestamp (10sp)
  * - Content (13sp, secondary, 3-line max)
- * - First media, whole at its own shape (tall 220dp max, others 180dp)
+ * - First media, whole at its own shape (tall 220dp max, others 180dp);
+ *   on a condensed line ([condensedMedia]) the 56dp square at the right
  * - TertiaryGroupedBg background, themed border, 8dp corner radius
  *
  * A quoted long-form post gets a different body: its content is a whole
@@ -55,6 +56,12 @@ fun QuotedNoteCard(
      * Markdown source, so a screen with a reader should pass this.
      */
     onArticleClick: ((String) -> Unit)? = null,
+    /**
+     * On a condensed line the quote's photo is the same 56dp square at the
+     * right that a plain note gets, not a full-width picture. The opened note,
+     * the expanded card and compose keep it big. iOS `condensedMedia`.
+     */
+    condensedMedia: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // Someone you follow can quote a blocked person: the card hides them,
@@ -143,20 +150,17 @@ fun QuotedNoteCard(
                 // A 3D object (SNO): its content is geometry, not text to print.
                 Spacer(Modifier.height(8.dp))
                 com.nostrvault.ui.components.sno.SnoQuoteBody(note)
+            } else if (condensedMedia && note.mediaURLs.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                    QuotedNoteText(note, profiles, Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    CondensedMediaThumbnail(note.mediaURLs)
+                }
             } else {
-                // Content
                 if (note.content.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = remember(note.content, profiles, note.mediaURLs) {
-                            NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet())
-                        },
-                        color = SecondaryText,
-                        fontSize = 13.sp,
-                        lineHeight = 17.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    QuotedNoteText(note, profiles)
                 }
 
                 // First media thumbnail
@@ -193,6 +197,26 @@ fun QuotedNoteCard(
             }
         }
     }
+}
+
+/** A quoted note's words: three lines, mentions as names, media links dropped. */
+@Composable
+private fun QuotedNoteText(note: FeedNote, profiles: Map<String, FeedProfile>, modifier: Modifier = Modifier) {
+    if (note.content.isBlank()) {
+        Spacer(modifier)
+        return
+    }
+    Text(
+        text = remember(note.content, profiles, note.mediaURLs) {
+            NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet())
+        },
+        color = SecondaryText,
+        fontSize = 13.sp,
+        lineHeight = 17.sp,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }
 
 /**
