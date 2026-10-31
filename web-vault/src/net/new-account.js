@@ -4,7 +4,7 @@
 // Nothing is built or sent before the last step: the key was made in this run, so it cannot have any of these events
 // yet, and a kind 3 here can't wipe an older list (net/follows.js guards lists that may exist elsewhere).
 import { decode } from "nostr-tools/nip19"
-import { DEFAULT_RELAYS, BROADCAST_RELAYS, pool, publishRelays, uniq } from "./pool.js"
+import { DEFAULT_RELAYS, pool, isDead, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { firstTaken } from "./actions.js"
 import packsData from "./starter-packs.js"
@@ -13,9 +13,14 @@ const HEX = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
 const wss = url => { try { const u = new URL(url); return u.protocol === "wss:" && !["localhost", "127.0.0.1", "0.0.0.0", "[::1]"].includes(u.hostname) } catch { return false } }
 
-/** The relays a new account reads and writes: the app's defaults and its broadcast relays, wss only, once each
- *  (RelayConfiguration.newAccountRelayListTags). */
-export const NEW_ACCOUNT_RELAYS = uniq([...DEFAULT_RELAYS, ...BROADCAST_RELAYS].map(u => u.trim().replace(/\/+$/, ""))).filter(wss)
+/** The list Create an account's relay step starts with: the five the apps read from, wss only, once each
+ *  (StarterRelayListStep). The step can change it; what it shows is all that is published. */
+export const NEW_ACCOUNT_RELAYS = starterList(DEFAULT_RELAYS)
+
+/** `urls` as a starter list: trimmed, wss to a host others can reach, once each (RelayConfiguration.newAccountRelayListTags). */
+export function starterList(urls) {
+  return uniq((urls ?? []).map(u => String(u).trim().replace(/\/+$/, ""))).filter(wss)
+}
 
 /** The starter packs (the iPhone's starter_packs.json), each account with its hex pubkey; bad npubs are dropped
  *  (StarterPacksData.validated). `on`: picked at first, and listed first. The Bitcoin pack starts unpicked, at the end: the feed leads with people. */
@@ -39,10 +44,12 @@ export function profileContent(name, picture) {
 
 /** The unsigned events, in the order they're published. `follows`: hex pubkeys. */
 export function newAccountTemplates({ name, picture, follows, relays = NEW_ACCOUNT_RELAYS, at = now() }) {
-  const out = [
-    { kind: 10002, created_at: at, content: "", tags: relays.map(r => ["r", r]) },
-    { kind: 10050, created_at: at, content: "", tags: DEFAULT_RELAYS.filter(wss).map(r => ["relay", r]) },
-  ]
+  // Only the list the relay step showed, for the relay list and the DM inbox list both: nothing added unseen.
+  const list = starterList(relays)
+  const out = list.length ? [
+    { kind: 10002, created_at: at, content: "", tags: list.map(r => ["r", r]) },
+    { kind: 10050, created_at: at, content: "", tags: list.map(r => ["relay", r]) },
+  ] : []
   const content = profileContent(name, picture)
   if (content) out.push({ kind: 0, created_at: at, content, tags: [] })
   const people = uniq((follows ?? []).filter(pk => HEX.test(pk)))
@@ -57,12 +64,12 @@ export async function signAll(signer, pubkey, templates) {
   return out
 }
 
-/** Send the events to the network relays. Done once one relay took each (or every relay refused it), not at the
+/** Send the events to the relays the relay step showed, and only those. Done once one relay took each (or every relay refused it), not at the
  *  slowest relay's answer, which held Start Exploring for 5 s; the other sends carry on in the background while the
  *  page is open. The page's own relay gets them as the app starts (main.jsx writes them into Haven's outbox; the web
  *  Haven has no blastr relays, so it doesn't send them on). -> [{ kind, taken, of, settled: Promise<how many took it> }] */
 export async function publishNewAccount(events, { publish = (urls, ev) => pool.publish(urls, ev), relays = NEW_ACCOUNT_RELAYS } = {}) {
-  const { network } = publishRelays(relays)
+  const network = starterList(relays).filter(u => !isDead(u))
   return Promise.all(events.map(async ev => {
     const sends = publish(network, ev)
     const settled = Promise.allSettled(sends).then(results => results.filter(r => r.status === "fulfilled").length)

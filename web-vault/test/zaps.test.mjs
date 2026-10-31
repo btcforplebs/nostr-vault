@@ -83,7 +83,7 @@ test("an invoice's exact amount: whole msat only, nothing for an amountless one"
 
 test("receipts go to public relays only, ten at most", () => {
   const r = receiptRelays({ relays: { read: ["ws://localhost:3355", "wss://a.example/", "wss://192.168.1.4"], write: ["wss://a.example", "wss://box.local"] } })
-  assert.deepEqual(r, ["wss://a.example", "wss://relay.damus.io", "wss://relay.primal.net"])
+  assert.deepEqual(r, ["wss://a.example", "wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"])
 })
 
 test("a note zap: the request is tagged as the iPhone tags it, and the invoice is paid from the wallet", async () => {
@@ -100,7 +100,7 @@ test("a note zap: the request is tagged as the iPhone tags it, and the invoice i
   assert.equal(req.kind, 9734)
   assert.equal(req.pubkey, pk(me))
   assert.equal(req.content, ZAP_MESSAGE)
-  assert.deepEqual(req.tags, [["p", n.pubkey], ["relays", "wss://relay.example.com", "wss://relay.damus.io", "wss://relay.primal.net"],
+  assert.deepEqual(req.tags, [["p", n.pubkey], ["relays", "wss://relay.example.com", "wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"],
     ["amount", "21000"], ["e", n.id], ["lnurl", "Bob@Zaps.example"]])
   assert.deepEqual(w.paid, [{ conn: wallet.conn, pr: "lnbc210n1qqqqfake" }])
   assert.ok(!s.asked.some(u => u.includes(wallet.conn.secret)), "the wallet's secret is in no URL")
@@ -224,7 +224,7 @@ test("totals are asked in groups of ten, one filter per call, once per note", as
   assert.ok(!Array.isArray(calls[0].filter))
   assert.deepEqual(calls[0].filter, { kinds: [9735], "#e": ids.slice(0, 10), limit: 500 })
   assert.deepEqual(calls[1].filter["#e"], ids.slice(10))
-  assert.deepEqual(calls[0].relays, ["wss://relay.example.com", "wss://relay.damus.io", "wss://relay.primal.net"])
+  assert.deepEqual(calls[0].relays, ["wss://relay.example.com", "wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"])
 })
 
 test("the lightning address comes from the newest kind 0 in Haven, lud06 included", async () => {

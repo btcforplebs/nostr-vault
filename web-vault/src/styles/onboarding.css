@@ -63,3 +63,7 @@
 .your-key > p { margin: 0; }
 .your-key > .card { margin: 0; }
 .your-key-hide { justify-self: start; }
+/* The relay step's servers (components/StarterRelays.jsx): one row each, Remove on the right while changing. */
+.starter-relays { list-style: none; padding-left: 18px; display: grid; gap: 10px; }
+.starter-relay { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.starter-relay-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

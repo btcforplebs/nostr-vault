@@ -38,7 +38,8 @@ globalThis.document = {
 const root = fileURLToPath(new URL("..", import.meta.url))
 const vite = await createServer({ root, configFile: false, logLevel: "silent", appType: "custom", server: { middlewareMode: true, hmr: false, ws: false }, oxc: { jsx: { runtime: "automatic", importSource: "preact" } } })
 const { FeedScreen } = await vite.ssrLoadModule("/src/screens/FeedScreen.jsx")
-const { pool } = await vite.ssrLoadModule("/src/net/pool.js")
+const { pool, DEFAULT_RELAYS } = await vite.ssrLoadModule("/src/net/pool.js")
+const R = DEFAULT_RELAYS.length // an account with no read list reads from the defaults
 test.after(() => vite.close())
 
 Object.defineProperty(globalThis.navigator, "onLine", { value: true, configurable: true })
@@ -68,7 +69,7 @@ function gatedRelays() {
   // The live subscription for new notes (net/feed-live.js): recorded, never opened.
   const live = []
   pool.subscribeMany = (urls, filter, params) => { const sub = { filter, params, closed: false, close() { sub.closed = true } }; live.push(sub); return sub }
-  // Each relay is asked on its own: a chunk is one gate per relay (two here, the default relays).
+  // Each relay is asked on its own: a chunk is one gate per relay (R here, the default relays).
   return { live, pending: () => gates.length, release: () => gates.shift()(), releaseChunk: () => { for (const g of gates.splice(0)) g() } }
 }
 
@@ -95,16 +96,16 @@ test("the first chunk of follows is asked alone and its notes show; the other ch
   const m = mount({ follows: [], relays: { read: [] }, loaded: false })
   await tick(20)
   m.rerender({ follows, relays: { read: [] }, loaded: true })
-  await until(() => relays.pending() === 2, "chunk 1 asked of both relays")
+  await until(() => relays.pending() === R, "chunk 1 asked of every default relay")
   await tick(20)
-  assert.equal(relays.pending(), 2, "later chunks asked before the first screen's chunk landed")
+  assert.equal(relays.pending(), R, "later chunks asked before the first screen's chunk landed")
   assert.match(text(m.el), /Fetching notes from the people you follow…/)
   assert.doesNotMatch(text(m.el), /No notes saved yet\./)
 
   relays.releaseChunk() // chunk 1 of 3 (follows 1-250) lands
   await until(() => /note from/.test(text(m.el)), "chunk 1's notes on screen")
   // 695 follows: chunks 2 and 3 open together, not one after the other.
-  await until(() => relays.pending() === 4, "chunks 2 and 3 asked together")
+  await until(() => relays.pending() === 2 * R, "chunks 2 and 3 asked together")
   assert.match(text(m.el), /Syncing 250\/695 follows · 3 saved/)
   assert.doesNotMatch(text(m.el), /No notes saved yet\./)
 
@@ -119,12 +120,12 @@ test("the first relay's notes show while a slower relay is still answering", asy
   const m = mount({ follows: [], relays: { read: [] }, loaded: false })
   await tick(20)
   m.rerender({ follows, relays: { read: [] }, loaded: true })
-  await until(() => relays.pending() === 2, "both relays asked for chunk 1")
-  relays.release() // the fast relay answers; the slow one hasn't
+  await until(() => relays.pending() === R, "every default relay asked for chunk 1")
+  relays.release() // the fast relay answers; the slow ones haven't
   await until(() => /note from/.test(text(m.el)), "the fast relay's notes on screen")
-  assert.equal(relays.pending(), 1, "the slow relay is still being waited on")
+  assert.equal(relays.pending(), R - 1, "the slow relays are still being waited on")
   assert.match(text(m.el), /Syncing 0\/695 follows · 3 saved/)
-  relays.release()
+  for (let i = 1; i < R; i++) relays.release()
   await until(() => relays.pending() > 0, "the next chunks' queries")
   assert.equal((text(m.el).match(/note from/g) ?? []).length, 3, "the slow relay's copies aren't saved twice")
   relays.releaseChunk()
@@ -134,7 +135,7 @@ test("the first relay's notes show while a slower relay is still answering", asy
 
 test("answers landing while the feed is being read wait for one more read, not one read each", async () => {
   const relays = gatedRelays()
-  // Six relays, each with notes of its own: every answer saves something.
+  // Its four relays and the defaults, each with notes of its own: every answer saves something.
   const gated = pool.querySync
   let n = 1000
   pool.querySync = async (urls, f, o) => (await gated(urls, f, o)).map(e => ({ ...e, id: hex(n++) }))
@@ -146,15 +147,16 @@ test("answers landing while the feed is being read wait for one more read, not o
   m.ctx.vault.feed.query = async f => { if (f.limit > 1) reads++; await tick(30); return query(f) }
   await tick(20)
   m.rerender({ follows, relays: { read: own }, loaded: true })
-  await until(() => relays.pending() === 6, "chunk 1 asked of six relays")
+  const N = own.length + R
+  await until(() => relays.pending() === N, "chunk 1 asked of every relay")
   relays.releaseChunk()
-  await until(() => relays.pending() === 12, "chunks 2 and 3 asked")
+  await until(() => relays.pending() === 2 * N, "chunks 2 and 3 asked")
   await until(() => /Syncing 250\/695/.test(text(m.el)), "chunk 1 shown")
   await tick(100)
   const before = reads
-  relays.releaseChunk() // twelve answers, each saving notes, all inside one read
-  await until(() => /54 notes saved to your relay/.test(text(m.el)), "the finished sync")
-  assert.ok(reads - before <= 3, `${reads - before} reads for twelve answers`)
+  relays.releaseChunk() // 2N answers, each saving notes, all inside one read
+  await until(() => new RegExp(`${9 * N} notes saved to your relay`).test(text(m.el)), "the finished sync")
+  assert.ok(reads - before <= 3, `${reads - before} reads for ${2 * N} answers`)
   render(null, m.el)
 })
 
@@ -183,9 +185,9 @@ test("a follow's new note arrives live, is saved and waits behind the pill; leav
   // The pill listens for scrolls on the window, which this DOM doesn't have: just enough of one, for this test.
   const window = { addEventListener() {}, removeEventListener() {}, scrollY: 0 }
   Object.assign(globalThis, window)
-  await until(() => relays.pending() === 2, "chunk 1 asked")
+  await until(() => relays.pending() === R, "chunk 1 asked")
   relays.releaseChunk()
-  await until(() => relays.pending() === 4, "chunks 2 and 3 asked")
+  await until(() => relays.pending() === 2 * R, "chunks 2 and 3 asked")
   relays.releaseChunk()
   await until(() => /notes saved to your relay/.test(text(m.el)), "the finished sync")
   // One REQ per 250 follows, from now on, for the feed's kinds.
