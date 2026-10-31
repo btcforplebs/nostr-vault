@@ -3,6 +3,8 @@
 // Only who each list follows is kept, 32 bytes a person, not the signed event (a list's petnames and relay hints make
 // it ~2x bigger and nothing here reads them). Haven /feed can't hold them: it only takes feed notes (OnlyFeedKinds).
 // Named so sign-out's store wipe takes it (haven/vault.js storeNames).
+import { loadSession } from "../session.js"
+
 const HEX64 = /^[0-9a-f]{64}$/
 
 export const wotDbName = pubkey => `haven:${pubkey}:wotlists`
@@ -39,21 +41,26 @@ export function unpack({ pubkey, created_at, ps }) {
 const stores = new Map()
 export const emptyKept = () => ({ lists: new Map(), misses: new Map(), checkedAt: 0 })
 
-export function wotStore(pubkey, idb = globalThis.indexedDB) {
+// Who is signed in now: a store whose account has signed out must not open (opening creates the database again).
+const signedInNow = () => globalThis.localStorage ? loadSession(globalThis.localStorage)?.pubkey : undefined
+
+export function wotStore(pubkey, idb = globalThis.indexedDB, signedIn = signedInNow) {
   if (!idb || !pubkey) return { load: async () => emptyKept(), save: async () => {} }
   if (idb === globalThis.indexedDB && stores.has(pubkey)) return stores.get(pubkey)
-  const store = openStore(pubkey, idb)
+  const store = openStore(pubkey, idb, signedIn)
   if (idb === globalThis.indexedDB) stores.set(pubkey, store)
   return store
 }
 
-function openStore(pubkey, idb) {
+function openStore(pubkey, idb, signedIn) {
   const none = emptyKept
   // `gone` once the database is deleted under us (sign-out, here or in another tab): a save still in flight then must
   // not create it again with the signed-out account's follows in it.
   let db = null, gone = false, existed = false
   const open = () => db ??= new Promise((resolve, reject) => {
     if (gone) return reject(new Error("store deleted"))
+    // Signed out before the first open (sign-out's wipe found no database to delete, so no versionchange came).
+    if (signedIn() !== pubkey) { gone = true; return reject(new Error("signed out")) }
     const req = idb.open(wotDbName(pubkey), 1)
     req.onupgradeneeded = () => {
       if (existed) { gone = true; req.transaction.abort(); return } // it was there before: this is a re-create

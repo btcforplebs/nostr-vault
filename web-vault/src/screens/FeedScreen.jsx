@@ -182,8 +182,8 @@ export function FeedScreen({ ctx }) {
   }
 
   // Back on the Feed soon after a sync (from another screen, or a reload): show Haven's notes and ask nothing; the
-  // background sync and Refresh bring newer ones.
-  useEffect(() => { if (following) reload().then(read => (syncedRecently(me, follows) ? undefined : sync({ have: read.length }))) }, [follows.length, following])
+  // background sync and Refresh bring newer ones. An empty Haven (signed out and in again: sign-out wiped it) syncs.
+  useEffect(() => { if (following) reload().then(read => (read.length > 0 && syncedRecently(me, follows) ? undefined : sync({ have: read.length }))) }, [follows.length, following])
   // Following and Media share the notes read from /feed; Media reads a bigger page, so switching to it reads again.
   useEffect(() => { if (following && notes) reload() }, [media])
   useEffect(() => { if (!Reader && !following && !heldNotes(choice)) loadStrange(choice) }, [feedKey(choice), needsWeb && follows.length > 0])

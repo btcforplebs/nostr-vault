@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
 import { followLists, LISTS_WAIT_MS, REFRESH_MS } from "../src/net/wot.js"
-import { pack, unpack } from "../src/net/wot-store.js"
+import { pack, unpack, wotStore } from "../src/net/wot-store.js"
 import { FRESH_MS, followsKey, markSynced, syncedRecently } from "../src/net/feed-synced.js"
 
 registerHooks({
@@ -201,4 +201,17 @@ test("thread roots are asked for once per page load: Haven /feed first, then the
   clock += ROOT_RETRY_MS
   await fetchRoots([inFeed.id, remote.id, missing])
   assert.deepEqual(asked.at(-1), [missing], "only the miss, after ROOT_RETRY_MS")
+})
+
+test("the kept-lists store doesn't open (and so re-create) its database once its account has signed out", async () => {
+  const me = hex("a", 70)
+  let opens = 0
+  const idb = { open: () => { opens++; return {} } }
+  const out = wotStore(me, idb, () => undefined)
+  assert.equal((await out.load()).lists.size, 0)
+  await out.save([list(hex("1", 71), [hex("6")])], 1)
+  assert.equal(opens, 0, "signed out: never opened")
+  const other = wotStore(me, idb, () => hex("b", 72))
+  await other.save([], 1)
+  assert.equal(opens, 0, "another account signed in: never opened")
 })
