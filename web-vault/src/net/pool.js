@@ -3,6 +3,7 @@
 import { SimplePool } from "nostr-tools/pool"
 import { normalizeURL } from "nostr-tools/utils"
 import { blocklist } from "./never-connect.js"
+import { relayBudget } from "./relay-budget.js"
 
 // Hosts the iPhone app strips from saved lists because they stopped answering (HavenConfig.deadRelayHosts).
 export const DEAD_RELAY_HOSTS = new Set(["nos.lol", "nostr.mom", "offchain.pub"])
@@ -32,6 +33,10 @@ const busy = r => r.openSubs.size > 0 || r.openEventPublishes.size > 0 || r.open
 // A relay that has just connected has no subscription on it yet; don't close it under the caller about to use it.
 const IDLE_GRACE_MS = 250
 const SLOT_POLL_MS = 50
+// nostr-tools' keep-alive ping is a dummy REQ every 29 s on every open relay (browsers have no WebSocket ping), which
+// was half of what an open tab sent damus. A relay heard from within the last ping interval is plainly alive, so it is
+// not pinged; in a hidden tab, not until it has been quiet for HIDDEN_PING_MS.
+export const HIDDEN_PING_MS = 5 * 60_000
 
 export class LivePool extends SimplePool {
   signerRelays = new Set()
@@ -41,6 +46,9 @@ export class LivePool extends SimplePool {
   closing = new Set() // sockets of relays that closed or failed, until they reach CLOSED
   watched = new WeakSet()
   neverConnect = blocklist([])
+  budget = relayBudget() // relay-budget.js: hosts that ban busy addresses get a minute's and a day's share
+  heard = new WeakMap() // socket -> when it last sent us anything
+  isHidden = () => globalThis.document?.visibilityState === "hidden"
   /** Relays a signer (a bunker link) named: neither the dead list nor Never Connect refuses these. */
   keepForSigner(urls) { for (const u of urls ?? []) try { this.signerRelays.add(normalizeURL(u)) } catch {} }
   /** The user's Never Connect list (kind 10006, never-connect.js): refused from now on, and closed if open. */
@@ -56,6 +64,7 @@ export class LivePool extends SimplePool {
     const key = normalizeURL(url)
     if (isDead(url) && !this.signerRelays.has(key)) throw new Error(`dead relay skipped: ${url}`)
     if (this.neverConnect(url) && !this.signerRelays.has(key)) throw new Error(`on your Never Connect list: ${url}`)
+    if (!this.signerRelays.has(key) && !this.budget.take(url)) throw new Error(`relay skipped, request budget used: ${url}`)
     const deadline = Date.now() + (this.strictCap ? SLOT_WAIT_MS : 0)
     // Nothing is awaited between the last check and super.ensureRelay, which adds the relay to this.relays
     // synchronously, so relays opening at the same moment can't all take the same free slot.
@@ -70,6 +79,7 @@ export class LivePool extends SimplePool {
     if (fresh) { this.watch(fresh); this.lastUsed.set(fresh, Date.now()) }
     const relay = await opening
     this.lastUsed.set(relay, Date.now())
+    this.listen(relay)
     return relay
   }
   /** Keeps each socket a relay closes (by us, by its idle timer, or on a failed connect) in `closing`. */
@@ -80,6 +90,22 @@ export class LivePool extends SimplePool {
     const close = r.close.bind(r), hardClose = r.handleHardClose.bind(r)
     r.close = () => { keep(); close() }
     r.handleHardClose = reason => { keep(); hardClose(reason) }
+    const ping = r.pingpong.bind(r)
+    r.pingpong = () => {
+      this.listen(r)
+      const quiet = Date.now() - (this.heard.get(r.ws) ?? 0)
+      if (quiet < (this.isHidden() ? HIDDEN_PING_MS : r.pingFrequency)) return
+      if (!this.budget.take(r.url)) return
+      return ping()
+    }
+  }
+  /** Notes when the relay's current socket last sent anything (a reconnect brings a new socket). */
+  listen(r) {
+    const ws = r?.ws
+    if (!ws || this.heard.has(ws)) return
+    this.heard.set(ws, Date.now())
+    const on = ws.onmessage
+    ws.onmessage = ev => { this.heard.set(ws, Date.now()); return on?.call(ws, ev) }
   }
   /** Relays plus sockets the browser is still closing: what counts against Brave's cap. */
   openSockets() {

@@ -7,6 +7,13 @@ import { activityRows, followersOf } from "./vault-lists.js"
 import { formatSats, reactionEmojiSummary } from "./notifications.js"
 
 export const POLL_MS = 60_000
+// A hidden tab asks every five minutes instead: a tab left open all day polled relay.damus.io ~1,440 times, and damus
+// bans busy addresses (net/relay-budget.js). Coming back to the tab asks at once if the last poll is older than POLL_MS.
+export const HIDDEN_POLL_MS = 5 * 60_000
+/** How long until the next poll: POLL_MS while the tab is seen, HIDDEN_POLL_MS while it is hidden. */
+export const pollDelay = hidden => (hidden ? HIDDEN_POLL_MS : POLL_MS)
+/** Whether coming back to the tab should poll now: none running and the last one older than POLL_MS. */
+export const pollOnReturn = ({ polling, lastPoll, now = Date.now() }) => !polling && now - lastPoll >= POLL_MS
 /** At most this many notifications at once; more become one "N new in your Vault". */
 export const MAX_AT_ONCE = 3
 
