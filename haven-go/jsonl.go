@@ -191,6 +191,20 @@ func importDB(ctx context.Context, db DBBackend, r io.Reader) error {
 			continue
 		}
 
+		// A backup may hold an older copy of a list than the vault: only the
+		// newest copy of a replaceable kind is kept (ReplaceEvent), the
+		// same rule the relay applies to a live publish.
+		if nostr.IsEphemeralKind(event.Kind) {
+			skipped++
+			continue
+		}
+		if isUserList(&event) {
+			if err := db.ReplaceEvent(ctx, &event); err != nil {
+				return err
+			}
+			count++
+			continue
+		}
 		if err := db.SaveEvent(ctx, &event); err != nil {
 			if errors.Is(err, eventstore.ErrDupEvent) {
 				slog.Debug("⏭️ skipping duplicate event", "id", event.ID)

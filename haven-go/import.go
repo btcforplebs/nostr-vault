@@ -471,7 +471,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 								}
 							}
 							if ownerVec != nil {
-								ostats, oerr := negsync.SyncWithVector(rctx, outboxStore, ownerVec, url, ownerFilter, negsync.Both, uploadMemoFor(url))
+								ostats, oerr := negsync.SyncWithVector(rctx, outboxStore.uploadingTo(url), ownerVec, url, ownerFilter, negsync.Both, uploadMemoFor(url))
 								if oerr == nil {
 									log.Printf("📤 negentropy owner sync %s: %d down / %d up", url, ostats.Downloaded, ostats.Uploaded)
 								} else {

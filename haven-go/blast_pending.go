@@ -59,6 +59,7 @@ type blastQueue struct {
 	mu    sync.Mutex
 	path  string
 	items []pendingBlast
+	local eventQuerier // the outbox store: a queued list it holds a newer copy of is dropped
 }
 
 func openBlastQueue(file string) *blastQueue {
@@ -199,6 +200,20 @@ func retryPendingOnce(ctx context.Context, q *blastQueue) {
 			continue
 		}
 		if p.NextAt > now {
+			continue
+		}
+		// A list (kind 3, 10002, ...) may have been edited since it was
+		// queued, here or on another device. Sending the old copy again would
+		// undo that edit, so look for a newer one first.
+		switch checkListResend(ctx, q.local, config.BlastrRelays, &ev) {
+		case listDrop:
+			slog.Warn("🗑️ a newer copy of a queued list exists, dropping ours", "id", ev.ID, "kind", ev.Kind)
+			q.remove(ev.ID)
+			continue
+		case listNoCheck:
+			if ctx.Err() == nil {
+				q.failed(ev.ID) // no relay answered the check: not sent, tried again later
+			}
 			continue
 		}
 		switch res := blast(ctx, &ev); {
