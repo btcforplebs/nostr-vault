@@ -1,9 +1,10 @@
-/* The Feed's header (components/FeedPickerMenu.jsx), as on the iPhone: one glass pill on the left that opens the feeds,
-   one glass capsule of icon toggles on the right (FeedPickerMenu.swift, FeedView+Toolbar.swift). */
-.feed-head { gap: 8px; --feed-glass: rgb(72 72 74 / .62); } /* the iPhone's clear glass reads grey over black */
+/* The Feed's header (components/FeedPickerMenu.jsx): a solid black bar, posts start under it and scroll under it, never
+   through it. One pill on the left that opens the feeds, one capsule of icon toggles on the right, both 44px tall
+   (FeedPickerMenu.swift, FeedView+Toolbar.swift). No glass: over moving posts it smeared them and made the labels soft. */
+.feed-head { gap: 8px; background: var(--bg); border-bottom: 1px solid var(--hair); margin-bottom: 10px; }
 .feed-mode-menu { position: relative; min-width: 0; }
-.feed-mode-pill { display: flex; align-items: center; gap: 6px; min-height: 44px; max-width: 100%; padding: 0 14px 0 8px; border-radius: 999px;
-  background: var(--feed-glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair);
+.feed-mode-pill { display: flex; align-items: center; gap: 6px; height: 44px; max-width: 100%; padding: 0 14px 0 8px; border-radius: 999px;
+  background: var(--s1); border: 1px solid var(--hair);
   color: var(--text); font: 700 17px/1 var(--font); cursor: pointer; }
 .feed-mode-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; }
 .feed-mode-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -16,9 +17,9 @@
 .feed-mode-list button:hover { background: var(--s2); }
 .feed-mode-list button span:first-of-type { flex: 1; }
 .feed-mode-list .check { width: 14px; color: var(--accent); font-weight: 700; }
-.feed-toolbar { flex: none; display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px; border-radius: 999px;
-  background: var(--feed-glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); }
-.feed-tool { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: none;
+.feed-toolbar { flex: none; display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 4px; border-radius: 999px;
+  background: var(--s1); border: 1px solid var(--hair); }
+.feed-tool { display: grid; place-items: center; width: 36px; height: 36px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: none;
   color: var(--text-2); cursor: pointer; }
 .feed-tool.on { color: var(--accent); }
 .feed-tool.on[aria-label="Replies"] svg { fill: currentColor; } /* message.fill, as on the iPhone */
