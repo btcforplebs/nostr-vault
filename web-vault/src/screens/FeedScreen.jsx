@@ -8,14 +8,14 @@ import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
-import { watchFollowing } from "../net/feed-live.js"
+import { watchFollowing, watchLive } from "../net/feed-live.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { backgroundFill } from "../net/vault-ready.js"
 import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope } from "../net/feeds.js"
+import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, readsHaven, globalLike, withScope, saveMediaScope, liveFilters, liveKeeps } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { discoverNetwork, fetchDiscover } from "../net/discover.js"
 import { globalTrust } from "../readers/trust.js"
@@ -29,6 +29,7 @@ import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows,
 if (import.meta.env) import("../styles/feeds.css")
 
 const PAGE = 100
+const POPULAR_RECHECK_MS = 10 * 60_000 // Popular is ranked again this often while it is on screen, for its pill
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
 const FEEDS = feedList(READERS)
 const readerFor = mode => READERS.find(r => r.id === mode)
@@ -57,6 +58,10 @@ export function FeedScreen({ ctx }) {
   const changeFilters = f => { saveFilters(f); setFilters(f) }
   // New notes a background sync found, held behind the pill until it is tapped (or loaded at once with Auto-load).
   const [pending, setPending] = useState([])
+  // The same for Global, Hashtag, Discover (live, net/feed-live.js) and Popular (ranked again): held in memory, as their
+  // notes are, and dropped on a switch. Popular's tap shows the whole new ranking (`popularNext`).
+  const [strangePending, setStrangePending] = useState([])
+  const popularNext = useRef(null)
   // Older: "" | "busy" | "end" | an error message. One load at a time; a feed switch starts over.
   const [olderState, setOlderState] = useState("")
   // A reader (Articles, Live, …) draws its own list under the picker; the notes below are not loaded for it.
@@ -80,7 +85,7 @@ export function FeedScreen({ ctx }) {
   // One number per feed shown: picking a feed or starting a stranger load bumps it, and work started under an older
   // number (a Following sync, a Global page) no longer writes the status line.
   const seq = useRef(0)
-  const pick = c => { c = withScope(c); seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus(""); setOlderState("") }
+  const pick = c => { c = withScope(c); seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStrangePending([]); setStatus(""); setOlderState("") }
   // Media's Following / Global buttons (FeedView+Toolbar.swift).
   const pickScope = scope => { if (scope !== choice.scope) { saveMediaScope(scope); pick({ ...choice, scope }) } }
   const sayer = () => statusGate(seq, setStatus)
@@ -184,6 +189,57 @@ export function FeedScreen({ ctx }) {
   }, [following, follows.length, filters.autoLoad])
   const showPending = () => { setNotes(prev => [...pending, ...(prev ?? [])]); setPending([]); scrollTo({ top: 0, behavior: "smooth" }) }
 
+  // New posts on Global, Hashtag and Discover: their filters stay open from the first page on (the iPhone keeps its feed
+  // REQ open) and what comes in waits behind the pill. Nothing is saved.
+  const strangeNow = useRef(strange)
+  strangeNow.current = strange
+  const keyNow = useRef("")
+  keyNow.current = feedKey(choice)
+  const holdNew = (key, evs) => {
+    if (key !== keyNow.current) return
+    const fresh = newerNotes(strangeNow.current ?? [], evs)
+    if (fresh.length) setStrangePending(prev => newerNotes([], [...fresh, ...prev.filter(p => !fresh.some(f => f.id === p.id))]))
+  }
+  useEffect(() => {
+    if (Reader || following || popular || strange === null || !navigator.onLine) return
+    const c = choice, key = feedKey(c)
+    let close = () => {}, live = true
+    ;(async () => {
+      const trust = globalLike(c) ? await globalTrust(me, follows) : null
+      const network = c.mode === "discovery" ? await discoverPeople() : null
+      const filters = liveFilters(c, { trust, network })
+      if (!live || !filters.length) return
+      close = watchLive({ filters, relays: account.relays.read, keep: ev => liveKeeps(c, ev, { trust, network }), onNotes: evs => holdNew(key, evs) })
+    })().catch(() => {})
+    return () => { live = false; close() }
+  }, [feedKey(choice), strange !== null, follows.length])
+  // Popular is one ranked page, not a stream: it is ranked again every POPULAR_RECHECK_MS while it is on screen, and
+  // notes that have joined the ranking wait behind the pill; a tap shows the new ranking.
+  useEffect(() => {
+    if (!popular || strange === null || !follows.length) return
+    const t = setInterval(async () => {
+      if (document.hidden || !navigator.onLine) return
+      try {
+        const next = (await fetchPopular({ me, follows, relays, vault, blocked })).notes
+        if (keyNow.current !== "popular") return
+        const shownIds = new Set((strangeNow.current ?? []).map(n => n.id))
+        const joined = next.filter(n => !shownIds.has(n.id))
+        popularNext.current = next
+        setStrangePending(joined)
+      } catch {}
+    }, POPULAR_RECHECK_MS)
+    t.unref?.() // node (the tests) only: a timer must not keep the process up
+    return () => clearInterval(t)
+  }, [popular, strange !== null, follows.length])
+  const showStrangePending = () => {
+    const all = popular && popularNext.current ? popularNext.current : mergePage(strangePending, strange ?? [])
+    popularNext.current = null
+    holdNotes(choice, all)
+    setStrange(all)
+    setStrangePending([])
+    scrollTo({ top: 0, behavior: "smooth" })
+  }
+
   // Global, Hashtag and Popular. Each load is for one feed: once the picker has moved on, a late answer is dropped.
   const loadStrange = async (c, until) => {
     const n = ++seq.current
@@ -201,6 +257,7 @@ export function FeedScreen({ ctx }) {
       const all = until ? mergePage(heldNotes(c) ?? [], page) : page
       holdNotes(c, all)
       setStrange(all)
+      if (!until) setStrangePending([]) // a fresh first page has them
       setStatus("")
       return page.length
     } catch (e) { if (n === seq.current) setStatus(`Couldn't load (${e?.message ?? e})`) }
@@ -235,7 +292,7 @@ export function FeedScreen({ ctx }) {
   const list = following ? notes : strange
   const threaded = layout === "threaded" && hasLayouts(choice.mode)
   const shown = list && visibleNotes(media ? list : applyFilters(list, filters, { threaded }), blocked)
-  const newCount = following && !media ? visibleNotes(applyFilters(pending, filters, { threaded }), blocked).length : 0
+  const newCount = media ? 0 : visibleNotes(applyFilters(following ? pending : strangePending, filters, { threaded }), blocked).length
   const tiles = media && shown && mediaTiles(shown.filter(n => n.kind === 1 || n.kind === 6)) // notes, as the iPhone's grid
   // Back from a thread finds the list where it was left (the phone layout draws the Feed again).
   useFeedSpot(`${feedKey(choice)}:${layout}`, !!shown?.length)
@@ -257,7 +314,7 @@ export function FeedScreen({ ctx }) {
       {/* Always there, so the list doesn't move when "Syncing…" comes and goes. */}
       <div class="status-line keep">{status}</div>
       {privateNote && !ctx.signer?.readOnly && <div class="status-line">Your private blocks weren't read ({privateNote}), so those people may still show.</div>}
-      {newCount > 0 && <NewPostsPill count={newCount} onShow={showPending} />}
+      {newCount > 0 && <NewPostsPill count={newCount} onShow={following ? showPending : showStrangePending} />}
       {following
         ? !follows.length ? account.loaded ? <EmptyFollowing onRefresh={sync} /> : <SkeletonRows label="Loading your follows…" />
           : notes === null ? <SkeletonRows label="Opening your relay…" />
