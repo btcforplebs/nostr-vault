@@ -134,6 +134,7 @@ struct RelayJobHeader: View {
                 .textCase(nil)
             HStack(spacing: 0) {
                 Text("Relay")
+                    .font(.appCaption)
                 Spacer()
                 ForEach(RelayMatrix.Job.allCases) { job in
                     Text(job.title)
