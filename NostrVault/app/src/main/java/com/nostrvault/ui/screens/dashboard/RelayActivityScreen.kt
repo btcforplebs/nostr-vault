@@ -75,7 +75,7 @@ fun RelayActivityScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Relay Activity") },
+                title = { Text("Vault Activity") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(NostrVaultIcons.Back, contentDescription = "Back")
@@ -175,7 +175,7 @@ private fun StatusBanner(health: PlainLog.Severity, items: List<PlainLog.Item>) 
         health != PlainLog.Severity.GOOD && it.severity == health && it.lastSeen.time >= lastUp
     }
     val detail = when {
-        top == null -> "Your relay is running normally."
+        top == null -> "Your vault is running normally."
         top.hint != null -> "${top.title}. ${top.hint}"
         else -> top.title
     }

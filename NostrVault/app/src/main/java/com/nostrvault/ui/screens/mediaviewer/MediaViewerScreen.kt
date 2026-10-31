@@ -272,7 +272,7 @@ fun MediaViewerScreen(
                     Icon(NostrVaultIcons.Copy, contentDescription = "Copy link", tint = Color.White)
                 }
                 IconButton(onClick = { pendingDelete = DeleteScope.MIRRORS }) {
-                    Icon(NostrVaultIcons.Cloud, contentDescription = "Delete from mirrors", tint = Color(0xFFE53935))
+                    Icon(NostrVaultIcons.Cloud, contentDescription = "Delete from media servers", tint = Color(0xFFE53935))
                 }
                 IconButton(onClick = { pendingDelete = DeleteScope.EVERYWHERE }) {
                     Icon(NostrVaultIcons.Delete, contentDescription = "Delete everywhere", tint = Color(0xFFE53935))

@@ -121,7 +121,7 @@ fun FipsMeshDeviceScreen(npub: String, onBack: () -> Unit, viewModel: FipsMeshVi
             }
 
             MeshSection(null, footer = "It can no longer reach this phone's vault. Anything it already has stays on it.") {
-                Text("Remove from my devices", color = ErrorRed, fontSize = 16.sp,
+                Text("Remove from My Devices", color = ErrorRed, fontSize = 16.sp,
                     modifier = Modifier.fillMaxWidth().clickable { viewModel.removeDevice(npub); leave() }.padding(vertical = 14.dp))
             }
             Spacer(Modifier.height(24.dp))

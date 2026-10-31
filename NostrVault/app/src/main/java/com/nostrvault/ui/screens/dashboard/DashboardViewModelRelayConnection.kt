@@ -91,7 +91,7 @@ import com.nostrvault.ui.screens.dashboard.DashboardViewModel.Companion.MAX_SEEN
     internal fun DashboardViewModel.connectToLocalRelay() {
         val config = configStore.config.value
         if (config.nostrURL == null) {
-            _connectionStatus.value = "No local relay"
+            _connectionStatus.value = "No vault"
             _connectionColor.value = "red"
             return
         }

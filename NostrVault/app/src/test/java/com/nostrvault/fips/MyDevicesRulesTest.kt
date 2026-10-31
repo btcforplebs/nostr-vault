@@ -23,7 +23,7 @@ class MyDevicesRulesTest {
         assertEquals(listOf(DeviceRole.MAC, DeviceRole.PHONE, DeviceRole.HOME_VAULT), list.map { it.role })
         assertEquals("MacBook", list[0].title)
         assertTrue(list[0].inReach); assertFalse(list[2].inReach)
-        assertEquals("a device with no name goes by its role, as on iPhone", "Home vault", list[2].title)
+        assertEquals("a device with no name goes by its role, as on iPhone", "Home vault · new posts", list[2].title)
     }
 
     @Test fun `status line counts devices in reach`() {

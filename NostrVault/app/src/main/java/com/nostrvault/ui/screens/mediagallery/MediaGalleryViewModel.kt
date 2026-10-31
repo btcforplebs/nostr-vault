@@ -112,7 +112,7 @@ class MediaGalleryViewModel @Inject constructor(
             try {
                 val result = blossomService.pushToMissing(item.sha256)
                 when (result) {
-                    null -> notificationManager.showToast("Already on all your Blossom servers")
+                    null -> notificationManager.showToast("Already on all your media servers")
                     is BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
                     is BlossomService.MirrorPushResult.Partial -> notificationManager.showError(result.message, ErrorStyle.WARNING)
                     else -> notificationManager.showError(result.message)

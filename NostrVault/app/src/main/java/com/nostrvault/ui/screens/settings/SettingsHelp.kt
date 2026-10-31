@@ -10,7 +10,7 @@ package com.nostrvault.ui.screens.settings
 enum class SettingsHelp(val key: String, val title: String, val text: String) {
     RELAY_STATUS(
         "relay.status",
-        "Your Vault Relay",
+        "Your Vault",
         "The relay on this device stores your notes and media locally.",
     ),
     ACCOUNT_ACCOUNTS(
@@ -141,7 +141,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     MEDIA_CLEAR_CACHE(
         "media.clearCache",
         "Clear Media Cache",
-        "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched.",
+        "Deletes temporary copies of media to free up space. Your vault and your media servers are not touched.",
     ),
     PRIVACY_VERTEX(
         "privacy.vertex",
@@ -190,7 +190,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     ),
     SHARE_FIPS(
         "share.fips",
-        "FIPS Address",
+        "Mesh Address",
         "Publishes an address so others can find your media directly.",
     ),
     RELAY_SYNC(

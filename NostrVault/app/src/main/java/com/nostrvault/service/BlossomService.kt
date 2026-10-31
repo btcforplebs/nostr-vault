@@ -372,9 +372,9 @@ class BlossomService @Inject constructor(
         val message: String
             get() = when (this) {
                 is AllAccepted -> "Pushed to mirrors"
-                is Partial -> "Mirrored to $accepted of $attempted Blossom servers"
+                is Partial -> "Copied to $accepted of $attempted media servers"
                 is AllFailed -> "Could not push to mirrors"
-                NoOutsideServer -> "No Blossom mirrors configured"
+                NoOutsideServer -> "No media servers added"
                 NotOnDevice -> "Could not read this file from your vault"
                 SignerUnavailable -> "Could not sign the upload"
             }
@@ -393,7 +393,7 @@ class BlossomService @Inject constructor(
     enum class VaultSave(val message: String) {
         FAILED("Could not save to your vault"),
         ON_PHONE("Saved to your vault on this phone"),
-        BACKED_UP("Saved to your vault and your Blossom"),
+        BACKED_UP("Saved to your vault and your media servers"),
     }
 
     /** What Save to Vault did, and the hash the vault stored the downloaded bytes under (null on failure). */

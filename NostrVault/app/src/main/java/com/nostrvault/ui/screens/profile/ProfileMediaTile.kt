@@ -131,7 +131,7 @@ internal fun ProfileMediaTile(
                         onClick = { close(); viewModel.saveMediaToVault(url) },
                     )
                     ProfileMediaAction.MIRROR_TO_BLOSSOM -> DropdownMenuItem(
-                        text = { Text(if (busy) "Mirroring…" else "Mirror to Blossom") },
+                        text = { Text(if (busy) "Copying…" else "Copy to your media servers") },
                         enabled = !busy,
                         leadingIcon = { Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         onClick = { close(); viewModel.mirrorMediaToBlossom(url) },
@@ -150,7 +150,7 @@ internal fun ProfileMediaTile(
                         if (deleteOpen) {
                             val mirrors = action == ProfileMediaAction.DELETE_FROM_MIRRORS
                             DropdownMenuItem(
-                                text = { Text(if (mirrors) "Delete from mirrors" else "Delete everywhere", color = ErrorRed) },
+                                text = { Text(if (mirrors) "Delete from media servers" else "Delete everywhere", color = ErrorRed) },
                                 leadingIcon = { Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp)) },
                                 contentPadding = PaddingValues(start = 28.dp, end = 12.dp),
                                 onClick = {

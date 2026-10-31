@@ -783,7 +783,7 @@ class ProfileViewModel @Inject constructor(
                 }
                 val backedUp = configStore.config.value.activeBlossomMirrors.isNotEmpty() &&
                     pushMissing(saved).let { it == null || it is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted }
-                notificationManager.showToast(if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone")
+                notificationManager.showToast(if (backedUp) "Saved to your vault and your media servers" else "Saved to your vault on this phone")
             } finally {
                 _mediaBusyUrl.value = null
             }
@@ -799,7 +799,7 @@ class ProfileViewModel @Inject constructor(
             try {
                 // The same lines and tones as the gallery (MediaGalleryViewModel.mirrorMissing).
                 when (val result = pushMissing(sha)) {
-                    null -> notificationManager.showToast("Already on all your Blossom servers")
+                    null -> notificationManager.showToast("Already on all your media servers")
                     is com.nostrvault.service.BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
                     is com.nostrvault.service.BlossomService.MirrorPushResult.Partial ->
                         notificationManager.showError(result.message, com.nostrvault.ui.notification.ErrorStyle.WARNING)

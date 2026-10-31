@@ -114,7 +114,7 @@ object MediaUploadOutcomeMessage {
      * opens the Media Servers screen on Android.
      */
     const val NO_OUTSIDE_SERVER =
-        "Your post wasn't sent: no outside media server is set up, so nobody else could see this photo. Add your Mac or another server in Settings → Media Servers, then post again."
+        "Your post wasn't sent: no outside media server is set up, so nobody else could see this photo. Add a home vault or another server in Settings → Media Servers, then post again."
 
     /** The blob never reached this device's own relay. */
     const val NOT_SAVED_ON_DEVICE =
@@ -130,7 +130,7 @@ object MediaUploadOutcomeMessage {
     fun queued(hosts: List<String>, macHost: String?): String {
         val waitingFor = when {
             macHost != null && macHost in hosts ->
-                if (hosts.size == 1) "your Mac vault" else "your Mac vault or another media server"
+                if (hosts.size == 1) "your home vault" else "your home vault or another media server"
             hosts.size == 1 -> hosts.first()
             else -> "one of your media servers"
         }

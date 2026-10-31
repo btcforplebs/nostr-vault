@@ -177,7 +177,7 @@ private fun FrontDoorHero(iconSize: Dp, onWhatsInside: () -> Unit) {
             .fillMaxWidth()
             .clearAndSetSemantics { contentDescription = "Includes your own relay, private DMs and zaps" },
     ) {
-        FrontDoorChip(NostrVaultIcons.AppIcon, "Own relay")
+        FrontDoorChip(NostrVaultIcons.AppIcon, "Own vault")
         FrontDoorChip(NostrVaultIcons.Lock, "Private DMs")
         FrontDoorChip(NostrVaultIcons.Zap, "Zaps")
     }

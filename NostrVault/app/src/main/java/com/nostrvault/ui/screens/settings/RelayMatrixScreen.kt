@@ -586,7 +586,7 @@ fun RelayMatrixScreen(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                     Text(
-                        "Where your photos and videos are stored (Blossom). These aren't relays.",
+                        "Where your photos and videos are stored. These aren't relays.",
                         color = SecondaryText, fontSize = 12.sp,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
                     )

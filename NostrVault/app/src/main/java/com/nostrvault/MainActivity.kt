@@ -383,7 +383,7 @@ class MainActivity : FragmentActivity() {
         if (uris.isEmpty()) return
         uris.forEach { mediaUploadManager.upload(it, contentResolver) }
         notificationManager.showToast(
-            if (uris.size == 1) "Uploading to Blossom…" else "Uploading ${uris.size} files to Blossom…"
+            if (uris.size == 1) "Uploading to your media servers…" else "Uploading ${uris.size} files to your media servers…"
         )
     }
 

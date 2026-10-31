@@ -35,10 +35,10 @@ internal fun MirrorToBlossomPill(
         state is FeedMediaMirrorViewModel.MirrorState.Failed
 
     val spoken = when (state) {
-        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Mirroring to Blossom"
-        FeedMediaMirrorViewModel.MirrorState.Mirrored -> "Mirrored to Blossom"
+        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Copying to your media servers"
+        FeedMediaMirrorViewModel.MirrorState.Mirrored -> "Copied to your media servers"
         is FeedMediaMirrorViewModel.MirrorState.Failed -> "Mirror failed, retry"
-        FeedMediaMirrorViewModel.MirrorState.Idle -> "Mirror to Blossom"
+        FeedMediaMirrorViewModel.MirrorState.Idle -> "Copy to your media servers"
     }
 
     Row(

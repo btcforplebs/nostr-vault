@@ -569,7 +569,7 @@ fun ComposeNoteScreen(
                 ) {
                     Icon(
                         imageVector = NostrVaultIcons.Blossom,
-                        contentDescription = "Pick from Blossom",
+                        contentDescription = "Pick from your media",
                         tint = colors.primary,
                         modifier = Modifier.size(20.dp)
                     )

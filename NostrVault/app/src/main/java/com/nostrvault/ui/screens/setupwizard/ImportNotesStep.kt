@@ -68,7 +68,7 @@ internal fun ImportNotesStep(viewModel: SetupWizardViewModel) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Bring your existing notes into your personal relay.",
+            text = "Bring your existing notes into your vault.",
             color = SecondaryText,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,

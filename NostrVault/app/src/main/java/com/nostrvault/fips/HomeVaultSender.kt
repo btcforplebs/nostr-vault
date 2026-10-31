@@ -281,7 +281,7 @@ class HomeVaultSender @Inject constructor(
             publicCopies.remove(it.key)
         }
         if (gaveUp.isNotEmpty()) {
-            problem("Gave up copying ${gaveUp.size} published ${if (gaveUp.size == 1) "file" else "files"} to a public server; other apps can't show ${if (gaveUp.size == 1) "it" else "them"}")
+            problem("Gave up copying ${gaveUp.size} published ${if (gaveUp.size == 1) "file" else "files"} to your media servers; other apps can't show ${if (gaveUp.size == 1) "it" else "them"}")
         }
         val selection = HomeVaultRules.select(
             publicCopies.items(), now, userInitiated, signerIsLocal(), needsSignature = { true },

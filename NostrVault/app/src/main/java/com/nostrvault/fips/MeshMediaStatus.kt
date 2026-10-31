@@ -17,7 +17,7 @@ enum class MeshMediaPhase {
     Unreached;
 
     fun text(video: Boolean = false): String = when (this) {
-        MeshLookup -> if (video) "Loading video over FIPS…" else "Loading image over FIPS…"
+        MeshLookup -> if (video) "Loading video over the mesh…" else "Loading image over the mesh…"
         Unreached -> "Couldn't reach the owner's vault"
     }
 }

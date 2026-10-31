@@ -127,7 +127,7 @@ fun RelayStatusCard(viewModel: RelayStatusCardViewModel = hiltViewModel()) {
             ) {
                 Icon(NostrVaultIcons.PlayArrow, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Start Relay", color = SuccessGreen, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text("Start Vault", color = SuccessGreen, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

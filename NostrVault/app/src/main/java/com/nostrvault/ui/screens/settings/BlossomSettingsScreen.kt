@@ -379,7 +379,7 @@ private fun FipsSection(onOpenFipsMesh: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
             Text(
-                text = "FIPS",
+                text = "Mesh",
                 color = SecondaryText,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -405,7 +405,7 @@ private fun FipsSection(onOpenFipsMesh: () -> Unit) {
                     fontSize = 13.sp,
                 )
                 Text(
-                    "Your own devices and sharing: FIPS Mesh",
+                    "Your own devices and sharing: Mesh",
                     color = LocalNostrVaultColors.current.primary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -450,7 +450,7 @@ private fun OfflineCopiesSection(
                     text = when {
                         run.running -> run.status
                         run.lastResult.isNotEmpty() -> run.lastResult
-                        else -> "Download your media from external Blossom mirrors to local storage"
+                        else -> "Download your media from your media servers into your vault"
                     },
                     color = SecondaryText,
                     fontSize = 12.sp,

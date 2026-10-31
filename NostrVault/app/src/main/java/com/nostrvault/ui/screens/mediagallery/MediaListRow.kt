@@ -146,7 +146,7 @@ internal fun MediaListRow(
                 Icon(
                     imageVector = if (backup.busy) NostrVaultIcons.ArrowUpCircleFill
                     else NostrVaultIcons.ArrowUpCircle,
-                    contentDescription = if (backup.busy) "Mirroring" else "Mirror to Blossom",
+                    contentDescription = if (backup.busy) "Copying" else "Copy to your media servers",
                     tint = actionTint,
                     modifier = Modifier.size(22.dp),
                 )

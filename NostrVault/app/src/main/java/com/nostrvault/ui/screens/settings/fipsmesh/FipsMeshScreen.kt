@@ -89,7 +89,7 @@ fun FipsMeshScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("FIPS Mesh") },
+                title = { Text("Mesh") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(NostrVaultIcons.Back, contentDescription = "Back") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = WindowBackground, titleContentColor = PrimaryText, navigationIconContentColor = PrimaryText),
             )
@@ -102,8 +102,8 @@ fun FipsMeshScreen(
             }
             MeshSection(
                 title = null,
-                footer = if (status.running) "Your devices reach each other over the FIPS mesh, with no public IP or domain."
-                else "Turn the mesh on to reach your Mac, your home vault and your browser page from this phone.",
+                footer = if (status.running) "Your devices reach each other over the mesh, with no public IP or domain."
+                else "Turn the mesh on to reach your home vault, your other phones and your browser vault from this phone.",
             ) {
                 MeshSwitchRow(
                     "Mesh", null, status.running, enabled = viewModel.isAvailable,
@@ -175,9 +175,9 @@ private fun MyDevicesSection(devices: List<MyDevice>, running: Boolean, onOpen: 
     val now = System.currentTimeMillis() / 1000
     // The address is hidden only once a device is listed (MeshEnginePlan): say so while none is (Tron, #1025).
     val footer = if (devices.isEmpty()) {
-        "Your Mac, phones, home vault and browser page, in one list. Until you add one, anyone on the mesh can learn this phone's address."
+        "Your home vaults, phones and browser vault, in one list. Until you add one, anyone on the mesh can learn this phone's address."
     } else {
-        "Your Mac, phones, home vault and browser page, in one list. Only the addresses here can reach this phone's vault or learn its address."
+        "Your home vaults, phones and browser vault, in one list. Only the addresses here can reach this phone's vault or learn its address."
     }
     MeshSection("My Devices", footer = footer) {
         devices.forEach { d ->

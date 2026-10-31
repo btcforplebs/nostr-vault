@@ -109,7 +109,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
             getString(R.string.relay_notification_channel),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Persistent notification for the Nostr Vault relay service"
+            description = "Keeps your vault running in the background"
             setShowBadge(false)
         }
 

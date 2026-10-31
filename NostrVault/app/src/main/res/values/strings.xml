@@ -3,13 +3,13 @@
     <string name="app_name">Nostr Vault</string>
 
     <!-- Relay -->
-    <string name="relay_notification_channel">Relay Service</string>
-    <string name="relay_notification_title">Nostr Vault Relay</string>
-    <string name="relay_status_booting">Booting relay&#8230;</string>
+    <string name="relay_notification_channel">Vault Service</string>
+    <string name="relay_notification_title">Your Vault</string>
+    <string name="relay_status_booting">Starting your vault&#8230;</string>
     <string name="relay_status_importing">Importing notes&#8230;</string>
-    <string name="relay_status_running">Relay running</string>
-    <string name="relay_status_offline">Relay offline</string>
-    <string name="relay_action_stop">Stop Relay</string>
+    <string name="relay_status_running">Vault running</string>
+    <string name="relay_status_offline">Vault offline</string>
+    <string name="relay_action_stop">Stop Vault</string>
     <string name="relay_action_open">Open App</string>
 
     <!-- Navigation -->

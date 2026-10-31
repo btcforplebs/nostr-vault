@@ -120,7 +120,7 @@ class FipsMeshFallbackTest {
         }
         read(chain)
         assertEquals(MeshMediaPhase.MeshLookup, seen)
-        assertEquals("Loading image over FIPS…", MeshMediaPhase.MeshLookup.text())
+        assertEquals("Loading image over the mesh…", MeshMediaPhase.MeshLookup.text())
     }
 
     @Test fun `a vault without the photo hands over to the next one the author lists`() {

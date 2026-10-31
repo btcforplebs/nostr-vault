@@ -25,10 +25,10 @@ import kotlinx.coroutines.flow.first
 @Composable
 internal fun WhatsInsideSheet(onDone: () -> Unit) {
     val features = listOf(
-        Triple(NostrVaultIcons.AppIcon, "Personal Relay", "Run your own relay on-device. Notes are stored locally and broadcast to the network — you always have a copy."),
+        Triple(NostrVaultIcons.AppIcon, "Your Vault", "Your own relay, on this device. Notes are kept here and sent to the network, so you always have a copy."),
         Triple(NostrVaultIcons.Articles, "Full Nostr Client", "Browse your feed, post notes, reply, repost, and discover content from the network."),
         Triple(NostrVaultIcons.Lock, "Private Messaging", "NIP-17 encrypted DMs that stay on your device. No third-party server reads your conversations."),
-        Triple(NostrVaultIcons.Media, "Blossom Media", "Host images and videos on your device with Blossom. Mirror media from the network to your local storage."),
+        Triple(NostrVaultIcons.Media, "Your Media", "Keep images and videos in your vault, and copy them to your media servers."),
         Triple(NostrVaultIcons.Zap, "Lightning Zaps", "Send and receive zaps over Lightning by connecting your own wallet with Nostr Wallet Connect."),
     )
     Column(

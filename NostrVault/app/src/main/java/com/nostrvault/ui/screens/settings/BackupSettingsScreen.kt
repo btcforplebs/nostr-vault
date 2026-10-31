@@ -199,16 +199,16 @@ fun BackupSettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            SectionLabel("Media (Blossom)")
+            SectionLabel("Media")
             BackupRow(
                 title = "Export Media",
-                subtitle = "Save all Blossom media files as a backup (.zip)",
+                subtitle = "Save all your vault's media as a backup (.zip)",
                 buttonText = "Export",
                 enabled = !busy,
             ) { createMedia.launch("nostrvault-media-backup.zip") }
             BackupRow(
                 title = "Import Media",
-                subtitle = "Restore media from a Blossom backup (.zip)",
+                subtitle = "Restore media from a media backup (.zip)",
                 buttonText = "Import",
                 enabled = !busy,
             ) { openMedia.launch(arrayOf("application/zip", "application/octet-stream")) }

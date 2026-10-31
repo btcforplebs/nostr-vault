@@ -140,11 +140,11 @@ class QueuedMediaPostTest {
     @Test
     fun `queued message names the Mac vault`() {
         assertEquals(
-            "Saved on this device. Your post will send itself as soon as your Mac vault answers.",
+            "Saved on this device. Your post will send itself as soon as your home vault answers.",
             MediaUploadOutcomeMessage.queued(hosts = listOf("mac.ts.net"), macHost = "mac.ts.net"),
         )
         assertEquals(
-            "Saved on this device. Your post will send itself as soon as your Mac vault or another media server answers.",
+            "Saved on this device. Your post will send itself as soon as your home vault or another media server answers.",
             MediaUploadOutcomeMessage.queued(hosts = listOf("mac.ts.net", "blossom.example"), macHost = "mac.ts.net"),
         )
     }
