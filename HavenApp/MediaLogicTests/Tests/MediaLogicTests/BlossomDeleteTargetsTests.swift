@@ -80,4 +80,58 @@ final class BlossomDeleteTargetsTests: XCTestCase {
             photoURL: URL(string: "https://image.nostr.build/\(blob).jpg"), includeHomeVault: false)
         XCTAssertEqual(targets, ["https://blossom.nostr.build"])
     }
+
+    // MARK: - Delete from mirrors never reaches an owner's vault (Tron ship check 10-31)
+
+    /// A mesh-only phone (no Mac set) whose 10063 names the owner's vaults by
+    /// their home-network and mesh addresses: none of them is a mirror.
+    func testMirrorsOnlySkipsEveryHomeNetworkAndMeshEntry() {
+        let vaults = ["http://192.168.1.20:3355", "https://studio-mac.local:3355", "http://10.44.194.35:3355",
+                      "https://mac.tail1234.ts.net", "http://[fd00::20]:3355",
+                      "http://\(meshNpub).fips:3355", "fipsmesh://npub1\(String(repeating: "q", count: 58))/"]
+        let config = config(mirrors: ["https://blossom.primal.net"])
+        let mirrorsOnly = config.blossomDeleteTargets(
+            ownerServerList: vaults, photoURL: URL(string: "http://192.168.1.20:3355/\(blob)"), includeHomeVault: false)
+        XCTAssertEqual(mirrorsOnly, ["https://blossom.primal.net"])
+
+        // Delete everywhere is unchanged: it still asks them.
+        let everywhere = config.blossomDeleteTargets(ownerServerList: vaults, photoURL: nil, includeHomeVault: true)
+        XCTAssertTrue(everywhere.contains("http://192.168.1.20:3355"))
+        XCTAssertTrue(everywhere.contains("https://studio-mac.local:3355"))
+    }
+
+    /// The configured Mac listed by another phone with its default port
+    /// spelled out is still this Mac.
+    func testMirrorsOnlySkipsTheMacWrittenWithItsPort() {
+        let config = config(mirrors: [], mac: "wss://mac.example.com")
+        XCTAssertEqual(config.blossomDeleteTargets(
+            ownerServerList: ["https://mac.example.com:443/", "https://blossom.primal.net"],
+            photoURL: nil, includeHomeVault: false), ["https://blossom.primal.net"])
+    }
+
+    func testHomeNetworkServer() {
+        for vault in ["http://192.168.0.5:3355", "https://box.lan", "https://mac.local", "http://127.0.0.1:3355",
+                      "http://\(meshNpub).fips:3355", "fipsmesh://whatever/", "not a url"] {
+            XCTAssertTrue(HavenConfig.isHomeNetworkServer(vault), vault)
+        }
+        for mirror in ["https://blossom.primal.net", "https://mac.example.com", "https://8.8.8.8"] {
+            XCTAssertFalse(HavenConfig.isHomeNetworkServer(mirror), mirror)
+        }
+    }
+
+    /// Another phone's Mac under a public name looks like any mirror; its
+    /// relay info names the owner, so it is kept.
+    func testVaultCheckVerdict() {
+        let owner = String(repeating: "c", count: 64)
+        func info(_ json: String) -> Data { Data(json.utf8) }
+        XCTAssertEqual(HavenConfig.vaultCheckVerdict(
+            info: info(#"{"name":"outbox","pubkey":"\#(owner.uppercased())","software":"https://github.com/barrydeen/haven"}"#),
+            ownerHex: owner), .ownVault)
+        XCTAssertEqual(HavenConfig.vaultCheckVerdict(
+            info: info(#"{"name":"relay","pubkey":"\#(String(repeating: "d", count: 64))"}"#), ownerHex: owner), .mirror)
+        XCTAssertEqual(HavenConfig.vaultCheckVerdict(info: info("<html>Blossom</html>"), ownerHex: owner), .mirror)
+        XCTAssertEqual(HavenConfig.vaultCheckVerdict(info: Data(), ownerHex: owner), .mirror)
+        XCTAssertEqual(HavenConfig.vaultCheckVerdict(info: nil, ownerHex: owner), .unknown)
+        XCTAssertEqual(HavenConfig.vaultCheckVerdict(info: info(#"{"pubkey":"\#(owner)"}"#), ownerHex: ""), .unknown)
+    }
 }

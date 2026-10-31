@@ -69,8 +69,12 @@ extension HavenConfig {
     /// photo's own link, once each. A file can sit on a server this device
     /// never uploaded to (the home vault passes uploads on to the 10063
     /// list), so deleting from the configured mirrors alone left it public.
-    /// `includeHomeVault` false is "Delete from mirrors": the Mac relay and
-    /// the FIPS address keep their copy.
+    /// `includeHomeVault` false is "Delete from mirrors": no home-network or
+    /// mesh server is a target (LAN, `.local`, `.fips`, `fipsmesh://`, the
+    /// configured Mac and FIPS address), since any of them may be one of the
+    /// owner's vaults. A vault with a public https name (another phone's Mac
+    /// in 10063) looks like a mirror here; `vaultCheckVerdict` catches it
+    /// before the delete is sent.
     func blossomDeleteTargets(ownerServerList: [String], photoURL: URL?, includeHomeVault: Bool,
                               detectedNpub: String? = nil) -> [String] {
         var candidates = activeBlossomMirrors(detectedNpub: detectedNpub)
@@ -87,7 +91,7 @@ extension HavenConfig {
             let key = Self.blossomServerKey(server)
             guard !key.isEmpty, !seen.contains(key) else { continue }
             seen.insert(key)
-            if !includeHomeVault && homeVault.contains(key) { continue }
+            if !includeHomeVault && (homeVault.contains(key) || Self.isHomeNetworkServer(server)) { continue }
             targets.append(server)
         }
         return targets
@@ -103,13 +107,51 @@ extension HavenConfig {
         return url.port.map { "\(scheme)://\(host):\($0)" } ?? "\(scheme)://\(host)"
     }
 
-    /// One server however it was typed: case, trailing slashes and http vs
-    /// https (deletes go over https anyway) don't make a second server.
+    /// One server however it was typed: case, trailing slashes, http vs
+    /// https (deletes go over https anyway) and a spelled-out default port
+    /// don't make a second server.
     static func blossomServerKey(_ server: String) -> String {
         var key = server.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if key.hasPrefix("http://") { key = "https://" + key.dropFirst("http://".count) }
         while key.hasSuffix("/") { key.removeLast() }
+        for port in [":443", ":80"] where key.hasSuffix(port) { key.removeLast(port.count) }
         return key
+    }
+
+    /// A server only the owner's own devices can be on: a mesh entry or
+    /// address, or a home-network host (LAN IP, `.local`, `.lan`, `.ts.net`,
+    /// loopback). Those are vault addresses, never a public mirror.
+    static func isHomeNetworkServer(_ server: String) -> Bool {
+        let trimmed = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard HomeVaultLogic.isReachableWithoutMesh(trimmed),
+              let host = URLComponents(string: trimmed)?.host, !host.isEmpty else { return true }
+        return isPrivateNetworkHost(host)
+    }
+
+    /// What a server's NIP-11 answer says about deleting from it with
+    /// "Delete from mirrors".
+    enum VaultCheckVerdict: Equatable {
+        /// Not one of the owner's vaults: delete there.
+        case mirror
+        /// A Haven relay run by the owner: one of their vaults, keep its copy.
+        case ownVault
+        /// No answer: it may be a vault, so nothing is sent there.
+        case unknown
+    }
+
+    /// `info` is the body a server sent back for `Accept:
+    /// application/nostr+json` at its root, or nil when it didn't answer.
+    /// Every vault's relay names its owner as `pubkey` (OUTBOX_RELAY_NPUB),
+    /// whatever address it is reached by, so this catches a vault listed
+    /// under a name this device has never seen. Public media servers answer
+    /// with a page, an error or someone else's key.
+    static func vaultCheckVerdict(info: Data?, ownerHex: String) -> VaultCheckVerdict {
+        guard let info else { return .unknown }
+        guard let object = try? JSONSerialization.jsonObject(with: info) as? [String: Any],
+              let pubkey = object["pubkey"] as? String else { return .mirror }
+        let owner = ownerHex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !owner.isEmpty else { return .unknown }
+        return pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == owner ? .ownVault : .mirror
     }
 
     /// Active feed relays, including the Mac relay if configured.
