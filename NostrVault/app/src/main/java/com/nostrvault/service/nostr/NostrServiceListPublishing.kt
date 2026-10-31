@@ -63,9 +63,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * The owner's published relay list (kind 10002) and DM inbox (kind
-     * 10050), for Settings > Relays. A list counts as known when it was
-     * found, or both indexer relays answered without one
-     * ([com.nostrvault.relay.RelayDraft.settled]); otherwise the cached copy
+     * 10050), for Settings > Relays. A list counts as known when both
+     * indexer relays answered ([com.nostrvault.relay.RelayDraft.settled]); otherwise the cached copy
      * is shown and Save won't publish over it.
      */
     internal suspend fun NostrService.lookupOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published =
@@ -88,12 +87,18 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val (read, write) = rl?.event?.let { profileRepository.parseRelayListTags(it.tags) }
             ?: (relayLists.value[owner].orEmpty() to outboxRelays.value[owner].orEmpty())
         val dms = dl?.event?.let { profileRepository.parseDMRelayListTags(it.tags) } ?: emptyList()
+        // Entries the screen can't edit (ws://, home network) stay as published; loopback ones are dropped, they
+        // never worked for anyone.
+        val kept = rl?.event?.tags.orEmpty().filter {
+            it.size >= 2 && it[0] == "r" && !com.nostrvault.relay.RelayDraft.listable(it[1]) && !isLoopbackRelay(it[1])
+        }
         com.nostrvault.relay.RelayDraft.Published(
-            read = read.filterNot(::isLoopbackRelay),
-            write = write.filterNot(::isLoopbackRelay),
+            read = read.filter(com.nostrvault.relay.RelayDraft::listable),
+            write = write.filter(com.nostrvault.relay.RelayDraft::listable),
             dms = dms.filterNot(::isLoopbackRelay),
             relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.answeredBy),
             dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.answeredBy),
+            kept = kept,
         ).also {
             Log.i(TAG, "Relay lists looked up: 10002 ${rl?.answered}/${rl?.asked} found=${rl?.event != null}, " +
                 "10050 ${dl?.answered}/${dl?.asked} found=${dl?.event != null}")
@@ -298,17 +303,20 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     /**
      * The owner saved a new Haven relay address: on the published DM inbox
      * list, [oldInbox] becomes [newInbox] and every other entry stays as
-     * published. Nothing goes out when no list was found or the relays
-     * didn't answer, so the app's defaults never reach it.
+     * published. Nothing goes out when no list was found or the indexers
+     * didn't both answer, so the app's defaults never reach it and a lagging
+     * relay's older copy is never re-signed over a newer one (Tron, #1386).
      */
     internal fun NostrService.publishOwnerDMInboxMoveImpl(oldInbox: String, newInbox: String) {
         val owner = ownerHexPubkey
         if (owner.isBlank()) return
         scope.launch(Dispatchers.IO) {
             val config = configStore.config.value
-            val ask = (config.dmInboxRelays + config.writeRelays).filterNot(::isLoopbackRelay).distinct()
-            val event = runCatching { lookupNewestReplaceable(10050, owner, ask) }.getOrNull()?.event ?: run {
-                Log.w(TAG, "DM inbox move: no published list found; not published")
+            val ask = (config.dmInboxRelays + config.writeRelays + com.nostrvault.relay.RelayDraft.INDEXERS)
+                .filterNot(::isLoopbackRelay).distinctBy(com.nostrvault.relay.RelayMatrix::key)
+            val lookup = runCatching { lookupNewestReplaceable(10050, owner, ask) }.getOrNull()
+            val event = lookup?.event?.takeIf { com.nostrvault.relay.RelayDraft.settled(true, lookup.answeredBy) } ?: run {
+                Log.w(TAG, "DM inbox move: no settled published list; not published")
                 return@launch
             }
             val tags = ListMerge.edit("relay", event.tags, listOfNotNull(newInbox.ifBlank { null }), listOfNotNull(oldInbox.ifBlank { null }))
