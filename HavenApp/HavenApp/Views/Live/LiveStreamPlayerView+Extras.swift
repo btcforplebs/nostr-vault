@@ -135,10 +135,7 @@ extension LiveStreamPlayerView {
     /// and posts it themselves.
     var shareNoteText: String {
         LiveStreamShare.noteText(
-            title: stream.title,
             hostName: hostName,
-            pictureURL: stream.imageURL ?? stream.previewImageURLs.first,
-            streamingURL: stream.streamingURL,
             naddr: LiveStreamShare.naddr(authorPubkey: stream.authorPubkey, identifier: stream.identifier,
                                          relays: stream.chatRelays))
     }

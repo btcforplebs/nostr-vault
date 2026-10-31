@@ -18,24 +18,25 @@ enum LiveStreamShare {
         URL(string: "\(ProfileShareLink.site)/thread/\(naddr)")
     }
 
-    /// A kind 1 that other apps can play. Most clients draw a bare `.m3u8`
-    /// link as a video and a bare picture link as a picture, while the
-    /// `nostr:naddr1…` quote lets NIP-53 clients open the stream itself with
-    /// its chat. One item per line, so each link stands alone for a parser.
-    static func noteText(title: String?, hostName: String, pictureURL: URL?,
-                         streamingURL: URL?, naddr: String?) -> String {
-        let heading = title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        var lines: [String] = []
-        if let heading, !heading.isEmpty {
-            lines.append("\(heading), live now with \(hostName)")
-        } else {
-            lines.append("\(hostName) is live now")
+    /// The note "Share as a note" starts the composer with: who is live, then
+    /// the stream's `nostr:naddr1…`, which every NIP-53 client draws as the
+    /// stream's own card with its current title and picture. No title in the
+    /// text: a host such as The Lot Radio republishes one 30311 for every
+    /// show, so a title written now names the wrong show an hour later. No
+    /// picture or `.m3u8` link either: next to the card they drew the same
+    /// picture twice and a bare stream link (Logen, 2026-10-31).
+    static func noteText(hostName: String, naddr: String?) -> String {
+        let heading = "Live now: \(hostName)"
+        guard let naddr else { return heading }
+        return "\(heading)\n\nnostr:\(naddr)"
+    }
+
+    /// NIP-18 `q` tags for the live streams a note's text embeds: one
+    /// `["q", "30311:<pubkey>:<d>", relayHint]` per stream, repeats dropped, so
+    /// clients that read tags rather than text still know what is quoted.
+    static func quoteTags(in content: String, relayHint: String = "") -> [[String]] {
+        LiveNoteCleanup.liveCoordinates(in: content).map { coordinate in
+            ["q", "\(NostrWebLink.liveStreamKind):\(coordinate.pubkey):\(coordinate.dTag)", relayHint]
         }
-        var links: [String] = []
-        if let pictureURL { links.append(pictureURL.absoluteString) }
-        if let streamingURL { links.append(streamingURL.absoluteString) }
-        if let naddr { links.append("nostr:\(naddr)") }
-        if !links.isEmpty { lines.append("") }
-        return (lines + links).joined(separator: "\n")
     }
 }

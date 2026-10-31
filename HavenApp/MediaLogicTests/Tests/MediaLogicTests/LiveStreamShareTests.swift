@@ -15,28 +15,28 @@ final class LiveStreamShareTests: XCTestCase {
         XCTAssertEqual(parts.hrp, "naddr")
     }
 
-    /// Each link on its own line after the title, so another app's parser
-    /// finds the picture, the playable HLS and the naddr quote.
-    func testNoteCarriesTitlePictureStreamAndNaddrEachOnItsOwnLine() {
-        let text = LiveStreamShare.noteText(
-            title: "  Night radio ",
-            hostName: "Ann",
-            pictureURL: URL(string: "https://img.example/cover.jpg"),
-            streamingURL: URL(string: "https://cdn.example/live/index.m3u8"),
-            naddr: "naddr1abc")
-        XCTAssertEqual(text, """
-        Night radio, live now with Ann
-
-        https://img.example/cover.jpg
-        https://cdn.example/live/index.m3u8
-        nostr:naddr1abc
-        """)
+    /// Who is live and the naddr, nothing else: the card draws the current
+    /// title and picture, so the note never names a show that has ended.
+    func testNoteIsLiveNowHostThenTheNaddr() {
+        XCTAssertEqual(LiveStreamShare.noteText(hostName: "The Lot Radio", naddr: "naddr1abc"),
+                       "Live now: The Lot Radio\n\nnostr:naddr1abc")
+        XCTAssertFalse(LiveStreamShare.noteText(hostName: "Ann", naddr: "naddr1abc").contains("http"))
     }
 
-    func testNoteWithoutTitleOrLinksStillNamesTheHost() {
-        XCTAssertEqual(LiveStreamShare.noteText(title: nil, hostName: "Ann", pictureURL: nil,
-                                                streamingURL: nil, naddr: nil),
-                       "Ann is live now")
+    func testNoteWithoutNaddrStillNamesTheHost() {
+        XCTAssertEqual(LiveStreamShare.noteText(hostName: "Ann", naddr: nil), "Live now: Ann")
+    }
+
+    func testQuoteTagNamesTheStreamAddressOnce() throws {
+        let naddr = try XCTUnwrap(LiveStreamShare.naddr(authorPubkey: service, identifier: "show-1", relays: []))
+        let text = LiveStreamShare.noteText(hostName: "Ann", naddr: naddr) + "\nagain nostr:\(naddr)"
+        XCTAssertEqual(LiveStreamShare.quoteTags(in: text, relayHint: "wss://r.example"),
+                       [["q", "30311:\(service):show-1", "wss://r.example"]])
+    }
+
+    func testQuoteTagSkipsOtherAddressableKinds() throws {
+        let article = try XCTUnwrap(NostrWebLink.naddr(kind: 30023, pubkey: service, identifier: "post"))
+        XCTAssertEqual(LiveStreamShare.quoteTags(in: "read nostr:\(article)"), [])
     }
 
     // MARK: - Chat media

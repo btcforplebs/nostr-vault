@@ -353,6 +353,12 @@ extension ComposeView {
                 }
             }
 
+            // NIP-18 `q` for each live stream the text embeds ("Share as a note").
+            for qTag in LiveStreamShare.quoteTags(in: finalContent, relayHint: configService.config.publicRelayHint)
+            where !tags.contains(where: { $0.count >= 2 && $0[0] == "q" && $0[1] == qTag[1] }) {
+                tags.append(qTag)
+            }
+
             // NIP-30: an `emoji` tag for each custom emoji the post uses.
             tags.append(contentsOf: await MainActor.run { customEmojiTags(for: baseContent) })
 
