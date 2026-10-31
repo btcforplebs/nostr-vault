@@ -3,7 +3,9 @@
 // signed by a throwaway key, one wrap to the other person and one to the user (the self-copy the iPhone keeps too).
 // Read: kind 1059 wraps addressed to the user, and legacy kind 4 from older clients. Wraps are kept in Haven's
 // /chat route (the iPhone's inbox), so they are there offline; kind 4 is not, /chat refuses it.
-// Decrypted text lives only in memory here: nothing decrypted is ever written to Haven, localStorage or the log.
+// Decrypted text is never written in the clear: not to Haven, localStorage or the log. Between reloads the opened
+// messages are kept encrypted by the signer to the user's own key (dm-cache.js), so a reload asks once per chunk
+// instead of twice per message.
 // The text is encrypted and decrypted by the signer: a NIP-07 extension's nip44 / nip04, or a NIP-46 bunker's
 // nip44_encrypt / nip44_decrypt / nip04_decrypt (signer/nip46.js bunkerCrypto). The user's key stays with the signer.
 import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, verifyEvent } from "nostr-tools/pure"
@@ -14,6 +16,7 @@ import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
 import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
 import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
+import { dmCache } from "./dm-cache.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -122,12 +125,13 @@ export function chatStore(vault) {
   return chats.get(vault)
 }
 
-// What the screens read: decrypted messages by id, for one account, in memory only. `more`: messages waiting to be
+// What the screens read: decrypted messages by id, for one account, in memory (and kept sealed: dm-cache.js). `more`: messages waiting to be
 // opened (past the first load's ceiling, or past the live rate), which "Open more" opens.
 let state = { pubkey: null, messages: new Map(), note: "", trouble: "", more: 0, loaded: false }
 const opened = new Set() // wrap ids opened, or found not to be the user's, so a refresh doesn't ask the signer again
 const waiting = new Map() // id -> event, not asked yet
 const listeners = new Set()
+let kept = null // this account's sealed cache (dm-cache.js), once opened
 export const getMessages = () => state
 export function onMessages(cb) { listeners.add(cb); return () => listeners.delete(cb) }
 const changed = () => { for (const cb of listeners) cb() }
@@ -136,6 +140,7 @@ export function resetMessages(pubkey) {
   state = { pubkey, messages: new Map(), note: "", trouble: "", more: 0, loaded: false }
   opened.clear()
   waiting.clear()
+  kept?.close(); kept = null
   refusals.clear()
   forgetDeclinedAuth() // another account's declines aren't this one's
   changed()
@@ -192,8 +197,8 @@ async function take(evs, crypto, me, { limit = Infinity } = {}) {
     let n = 0, lost = false
     got.forEach((m, j) => {
       const id = batch[j].id
-      if (m?.id) { state.messages.set(m.id, m); refusals.delete(id); n++; return }
-      if (!m?.failed) return // not the user's: stays in `opened`
+      if (m?.id) { state.messages.set(m.id, m); refusals.delete(id); kept?.add(m); n++; return }
+      if (!m?.failed) { kept?.junk(id); return } // not the user's: stays in `opened`, and is kept as such
       if (m.failed.unreachable) { opened.delete(id); lost = true; return }
       refused++
       const times = (refusals.get(id) ?? 0) + 1
@@ -262,7 +267,7 @@ export function loadMessages(ctx, relays, opts = {}) {
 
 // The DM reads answer AUTH (dm-read-auth.js): a Haven inbox hands its wraps only to its owner. `net` is for tests.
 const readSigning = ctx => ({ sign: (url, template) => authFor(ctx, url)(template), who: ctx.session?.pubkey, authWait: ctx.session?.method === "nip46" ? AUTH_WAIT.nip46 : AUTH_WAIT.other })
-async function load({ vault, session, signer }, relays, { crypto, net = pool, wait = 8000, chat, clock = Date.now,
+async function load({ vault, session, signer }, relays, { crypto, net = pool, wait = 8000, chat, clock = Date.now, cache = {},
   query = (r, f, o) => queryWithAuth(net, r, f, { ...o, ...readSigning({ session, signer }) }) } = {}) {
   const me = session.pubkey
   lastLoad = clock()
@@ -271,6 +276,7 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   const c = crypto ?? cryptoFor(session, { signer })
   if (c.reason) { state = { ...state, note: c.reason, loaded: true }; changed(); return { stored: 0 } }
   const store = chat ?? chatStore(vault)
+  if (!kept && cache) await restoreKept(me, c, cache)
   let budget = openLimit(session)
   budget -= (await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me, { limit: budget })).asked
   // What Haven held is on screen: no skeleton while the relays are asked.
@@ -292,6 +298,19 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   state = { ...state, loaded: true }; changed()
   lastLoaded = clock()
   return { stored }
+}
+
+// The first load for an account opens what was kept (one signer request a chunk): those messages show and are never
+// asked about again; a chunk that doesn't open is dropped, and its messages come from their wraps like new ones.
+// `cache` holds dm-cache.js options (tests: storage, signedIn); `false` turns it off.
+async function restoreKept(me, c, opts) {
+  const k = dmCache(me, c, opts)
+  kept = k
+  const { messages, junk } = await k.restore()
+  if (kept !== k || state.pubkey !== me) return
+  for (const id of junk) opened.add(id)
+  for (const m of messages) { opened.add(m.id); if (!state.messages.has(m.id)) state.messages.set(m.id, m) }
+  if (messages.length) { state = { ...state, loaded: true }; changed() }
 }
 
 /** How far back a live subscription looks: a wrap's created_at is up to two days in the past (NIP-59), so `since`
@@ -486,7 +505,10 @@ export async function sendMessage(ctx, peer, text, { crypto, query, chat, publis
   }
   // Delivered: the bubble is the real message now; the rest (other relays, the self-copy, Haven) finishes behind it.
   opened.add(toMe.id); opened.add(toThem.id)
-  if (state.pubkey === me) { state.messages.delete(pid); state.messages.set(toMe.id, { id: toMe.id, from: me, peer, content, at, legacy: false }); state = { ...state }; changed() }
+  if (state.pubkey === me) {
+    const sent = { id: toMe.id, from: me, peer, content, at, legacy: false }
+    state.messages.delete(pid); state.messages.set(toMe.id, sent); kept?.add(sent); state = { ...state }; changed()
+  }
   const mineSend = self ? null : send(mineUrls, toMe, "me")
   const stored = (chat ?? chatStore(ctx.vault)).event(toMe).catch(() => {})
   const relays = [...(await toThemSend.all), ...(mineSend ? await mineSend.all : [])]
