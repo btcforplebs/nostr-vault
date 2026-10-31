@@ -114,8 +114,15 @@ export function priceLabel({ price, currency }) {
   return `${price} ${unit}`
 }
 
-/** Where buying happens: Plebeian Market's product or auction page for the event. */
-export const plebeianUrl = l => `https://plebeian.market/${l.isAuction ? "auction" : "products"}/${l.id}`
+/** Whether the listing has its own Plebeian page. The new Plebeian Market loads only 30402 products, by event id;
+ *  it has no auction route and no NIP-15 product page (iOS MarketListing.hasPlebeianPage). */
+export const hasPlebeianPage = l => l.kind === CLASSIFIED
+
+/** Where "on Plebeian" goes: a 30402's own product page, else the seller's Plebeian profile, where their current
+ *  products are (iOS MarketListing.plebeianURL). */
+export const plebeianUrl = l => hasPlebeianPage(l)
+  ? `https://plebeian.market/products/${l.id}`
+  : `https://plebeian.market/profile/${l.pubkey}`
 
 /** The newest event at each address wins, even one that no longer parses (sold, hidden, out of stock), which removes
  *  the listing; blocked sellers are left out. Newest first, ties by id. */
