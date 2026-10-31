@@ -32,6 +32,7 @@ extension ProfileFeedLoader {
         disconnectClients()
         if isLoadingNotes { isLoadingNotes = false }
         openingPending.removeAll()
+        retriedEmptyLoad = false
         if isLoadingOlderNotes { isLoadingOlderNotes = false }
         olderPageSubId = nil
         if isLoadingOlderTaggedNotes { isLoadingOlderTaggedNotes = false }
@@ -183,20 +184,16 @@ extension ProfileFeedLoader {
             filters.append(["kinds": [3], "#p": [pubkey], "limit": 100] as [String: Any])
         }
 
+        // Each relay gives up on its own (`relayAnswerTimeout` from when it
+        // opens), so loading lasts until the relay list has answered and the
+        // write relays it names have replied. One cap on the whole load left
+        // write relays found at 5 s about 3 s, and new profiles came up empty.
+        notesLoadToken += 1
         openingPending = Set(relayURLs.indices)
         openingFilters = filters
         for url in relayURLs { openProfileRelay(url) }
         lookUpOutboxIfMissing()
-
-        notesLoadToken += 1
-        let token = notesLoadToken
-        if relayURLs.isEmpty { isLoadingNotes = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-            guard let self, token == self.notesLoadToken else { return }
-            self.flushPendingNotes()
-            self.openingPending.removeAll()
-            self.isLoadingNotes = false
-        }
+        if openingPending.isEmpty { finishOpeningLoad() }
     }
 
     /// Opens one relay of the profile's load and sends it the opening REQ.
@@ -234,6 +231,20 @@ extension ProfileFeedLoader {
             .store(in: &profileCancellables)
 
         client.connect(url: url)
+
+        // A relay that connects and never answers counts as answered.
+        let token = notesLoadToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + ProfilePostsLoadPlan.relayAnswerTimeout) { [weak self] in
+            guard let self, token == self.notesLoadToken else { return }
+            self.openingRelayAnswered(relay)
+        }
+    }
+
+    /// Adds a relay to the opening load already under way.
+    private func joinOpeningLoad(_ str: String) {
+        guard !askedRelays.contains(Self.relayKey(str)), let url = URL(string: str) else { return }
+        openingPending.insert(profileClients.count)
+        openProfileRelay(url)
     }
 
     /// Someone you don't follow (most of the WoT) has no relay list cached,
@@ -243,7 +254,13 @@ extension ProfileFeedLoader {
     /// "Loading…" holds until the lookup answers or gives up.
     private func lookUpOutboxIfMissing() {
         guard nostrService.outboxRelays[pubkey] == nil else { return }
-        let token = notesLoadToken + 1   // the token this load is about to take
+        // Their relay list is known and names no write relays: nothing to
+        // look up, go straight to the big public relays.
+        if nostrService.relayLists[pubkey] != nil {
+            addFallbackRelays()
+            return
+        }
+        let token = notesLoadToken
         openingPending.insert(Self.outboxLookup)
         nostrService.fetchRelayList(for: pubkey)
 
@@ -252,22 +269,29 @@ extension ProfileFeedLoader {
             .first()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] outbox in
-                guard let self, token == self.notesLoadToken else { return }
-                for str in outbox.prefix(3) where !self.askedRelays.contains(Self.relayKey(str)) {
-                    guard let url = URL(string: str) else { continue }
-                    self.openingPending.insert(self.profileClients.count)
-                    self.openProfileRelay(url)
-                }
+                // A list that lands after the lookup gave up still joins
+                // while the page is loading.
+                guard let self, token == self.notesLoadToken, self.isLoadingNotes else { return }
+                for str in outbox.prefix(3) { self.joinOpeningLoad(str) }
                 self.openingRelayAnswered(Self.outboxLookup)
             }
             .store(in: &profileCancellables)
 
-        // The lookup's own connections give up after 5s; no list by then
-        // means none was found.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-            guard let self, token == self.notesLoadToken else { return }
+        // No list by the time the lookup gives up means none was found:
+        // ask the big public relays instead.
+        DispatchQueue.main.asyncAfter(deadline: .now() + ProfilePostsLoadPlan.relayListTimeout) { [weak self] in
+            guard let self, token == self.notesLoadToken,
+                  self.openingPending.contains(Self.outboxLookup) else { return }
+            self.addFallbackRelays()
             self.openingRelayAnswered(Self.outboxLookup)
         }
+    }
+
+    /// nos.lol, primal and snort, for someone with no write relays known.
+    private func addFallbackRelays() {
+        let extra = ProfilePostsLoadPlan.fallbackRelays(
+            writeRelays: nostrService.outboxRelays[pubkey], asked: askedRelays)
+        for str in extra { joinOpeningLoad(str) }
     }
 
     /// Stands in `openingPending` for the relay-list lookup.
@@ -275,15 +299,26 @@ extension ProfileFeedLoader {
 
     /// One spelling per relay, so "wss://x/" and "wss://X" count once.
     static func relayKey(_ url: String) -> String {
-        url.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        ProfilePostsLoadPlan.relayKey(url)
     }
 
     private func openingRelayAnswered(_ relay: Int) {
         guard openingPending.remove(relay) != nil else { return }
-        if openingPending.isEmpty {
-            flushPendingNotes()
-            isLoadingNotes = false
+        if openingPending.isEmpty { finishOpeningLoad() }
+    }
+
+    /// Every relay has answered or given up. No posts at all gets one more
+    /// try, with fresh connections, before the page says there are none.
+    private func finishOpeningLoad() {
+        flushPendingNotes()
+        if ProfilePostsLoadPlan.shouldRetry(postsFound: profileNotes.count, alreadyRetried: retriedEmptyLoad) {
+            retriedEmptyLoad = true
+            disconnectClients()
+            isLoadingNotes = false   // fetchAuthorNotes starts only when idle
+            fetchAuthorNotes()
+            return
         }
+        isLoadingNotes = false
     }
 
     func handleProfileNoteMessage(_ message: ProfileRelayMessage, relay: Int) {
