@@ -121,13 +121,9 @@ extension NostrService {
                         if !servers.isEmpty { self.serverLists[pubkey] = servers }
                         self.saveProfilesThrottled()
                     }
-                    #if os(macOS)
-                    // Also for a list already seen: the newest one replays at
-                    // every launch and is never "newer" than itself.
-                    if signed { PhotoNode.ensureListed(owner: pubkey, nostr: self) }
-                    #elseif os(iOS)
-                    if signed { LinkedMacEntry.ensureListed(owner: pubkey, nostr: self) }
-                    #endif
+                    // No republish from here: a list arriving (it replays at
+                    // every launch) never signs a new 10063. Only Save does
+                    // (Logen, 2026-10-31).
                 }
                 return
             }

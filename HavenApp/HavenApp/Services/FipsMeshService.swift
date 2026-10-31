@@ -74,10 +74,6 @@ final class FipsMeshService: ObservableObject {
     /// returns (~10 s, a relay push up to 90 s), and each start carries the
     /// My Devices it was queued with, so a revoke must count these too.
     private var clientOps = 0
-    /// Kiosk mode is starting again after a My Devices change. A failed start
-    /// then republishes the 10063, which still names this phone's vault.
-    private var restartingKiosk = false
-
     private init() {}
 
     /// Kiosk mode was on when the app last left the screen. Leaving the app
@@ -184,19 +180,14 @@ final class FipsMeshService: ObservableObject {
     }
 
     /// `leavingApp`: the app left the screen, so kiosk mode comes back with it.
-    /// Otherwise the owner turned it off. `republish` false: kiosk mode is
-    /// starting again at once, so the 10063 keeps its mesh entry.
-    func stopKiosk(leavingApp: Bool = false, republish: Bool = true) {
-        let wasRestarting = restartingKiosk
-        restartingKiosk = false
+    /// Otherwise the owner turned it off. Kiosk mode never signs a 10063:
+    /// only Save does (Logen, 2026-10-31).
+    func stopKiosk(leavingApp: Bool = false) {
         if !leavingApp { UserDefaults.standard.set(false, forKey: Self.kioskWantedKey) }
         if starting {
             // didStart sees the cancel and stops the engine.
             starting = false
             startGen += 1
-            // Cancelled during a My Devices restart: the 10063 still names
-            // this phone's vault (Tron, #1054 R1).
-            if wasRestarting, republish { publishServerListInBackgroundTask() }
             return
         }
         guard kioskActive else { return }
@@ -209,7 +200,6 @@ final class FipsMeshService: ObservableObject {
         resignObserver = nil
         stopEngine()
         status = nil
-        if republish { publishServerListInBackgroundTask() }
         if leavingApp { notifyPaused() }
     }
 
@@ -231,17 +221,14 @@ final class FipsMeshService: ObservableObject {
             return
         case .restartKiosk:
             print("FipsMesh: My Devices changed, kiosk mode starts again with the new list")
-            // No other device left: kiosk mode can't start, so it goes off
-            // and the 10063 drops its entry.
+            // No other device left: kiosk mode can't start, so it goes off.
             let startsAgain = !MeshDevicesLogic.ownDevices(after, ownNpub: own).isEmpty
-            stopKiosk(republish: !startsAgain)
+            stopKiosk()
             if startsAgain {
                 // Still wanted: if this start fails or the app leaves
                 // mid-start, coming back tries again (resumeIfWanted).
                 UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
-                restartingKiosk = true
                 startKiosk()
-                if !starting { kioskRestartFailed() }
             }
         case .stopClient:
             print("FipsMesh: My Devices changed, client engine stopped")
@@ -260,14 +247,6 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
-    /// The restart after a My Devices change did not go live: the 10063
-    /// still names this phone's vault.
-    private func kioskRestartFailed() {
-        guard restartingKiosk else { return }
-        restartingKiosk = false
-        publishServerListInBackgroundTask()
-    }
-
     nonisolated private static func engineRunning() -> Bool {
         guard let raw = NvFipsStatusJSON() else { return false }
         defer { NvFipsFreeString(raw) }
@@ -283,21 +262,6 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
-    /// stopKiosk runs from didEnterBackground: ask iOS for time so the 10063
-    /// without the mesh entry goes out before the app is suspended.
-    private func publishServerListInBackgroundTask() {
-        var task = UIBackgroundTaskIdentifier.invalid
-        let end = {
-            guard task != .invalid else { return }
-            UIApplication.shared.endBackgroundTask(task)
-            task = .invalid
-        }
-        task = UIApplication.shared.beginBackgroundTask(withName: "fipsmesh-10063") { end() }
-        NostrService.shared.publishServerList()
-        // publishServerList does not report completion; signing and posting take well under this.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { end() }
-    }
-
     private func didStart(gen: Int, _ result: Result<Void, MeshError>) {
         guard starting, gen == startGen else {
             // Cancelled while starting, or superseded by a newer start. A newer
@@ -310,15 +274,12 @@ final class FipsMeshService: ObservableObject {
         switch result {
         case .failure(let error):
             lastError = error.message
-            kioskRestartFailed()
         case .success:
             // The app left while the engine was starting: kiosk mode never goes live.
             guard UIApplication.shared.applicationState != .background else {
                 stopEngine()
-                kioskRestartFailed()
                 return
             }
-            restartingKiosk = false
             kioskActive = true
             UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
             UIApplication.shared.isIdleTimerDisabled = true
@@ -338,16 +299,14 @@ final class FipsMeshService: ObservableObject {
                 MainActor.assumeIsolated { self?.refresh() }
             }
             refresh()
-            NostrService.shared.publishServerList()
         }
     }
 
     // MARK: - Mesh on/off
 
     /// Kiosk mode, a start in flight and any client engine all stop.
-    /// `republish` false: a factory reset, with no account left to sign a 10063.
-    private func stopAll(republish: Bool = true) {
-        stopKiosk(republish: republish)
+    private func stopAll() {
+        stopKiosk()
         if starting {
             starting = false
             startGen += 1
@@ -364,7 +323,7 @@ final class FipsMeshService: ObservableObject {
     /// Reset Everything: the engine stops with the old key before
     /// `MeshIdentityReset` deletes it, so nothing keeps the old mesh npub.
     func stopForReset() {
-        stopAll(republish: false)
+        stopAll()
         lastError = nil
     }
 
@@ -656,11 +615,9 @@ final class FipsMeshService: ObservableObject {
     /// engine's share-again (that would keep the old session's limit).
     private func shareAgain() {
         print("FipsMesh: kiosk starting a new session for strangers")
-        stopKiosk(republish: false)
+        stopKiosk()
         UserDefaults.standard.set(true, forKey: Self.kioskWantedKey)
-        restartingKiosk = true
         startKiosk()
-        if !starting { kioskRestartFailed() }
     }
 
     private static func loadBudget() -> KioskDailyBudget {
