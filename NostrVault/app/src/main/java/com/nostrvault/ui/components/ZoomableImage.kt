@@ -209,6 +209,11 @@ fun ZoomableBox(
                     var zoom = 1f
                     var pastTouchSlop = false
                     val touchSlop = viewConfiguration.touchSlop
+                    // A one-finger drag at 1x picks its direction once, after
+                    // touch slop, and keeps it: a sideways page swipe that
+                    // wobbles must never turn into drag-to-close.
+                    var dragAxis: DragAxis? = null
+                    var slopTravel = Offset.Zero
 
                     awaitFirstDown(requireUnconsumed = false)
 
@@ -268,12 +273,16 @@ fun ZoomableBox(
                                         change.consume()
                                     }
                                 } else {
-                                    // At 1.0x: only capture vertical drags for dismiss
-                                    if (abs(pan.y) > abs(pan.x) * 1.5f) {
+                                    // At 1.0x: vertical drags close, horizontal ones
+                                    // are left to the pager for the whole gesture.
+                                    if (dragAxis == null) {
+                                        slopTravel += pan
+                                        dragAxis = decideDragAxis(slopTravel, touchSlop)
+                                    }
+                                    if (dragAxis == DragAxis.Vertical) {
                                         onVerticalDrag?.invoke(pan.y)
                                         change.consume()
                                     }
-                                    // Horizontal drags pass through to pager
                                 }
                             }
                         }
@@ -312,4 +321,16 @@ fun ZoomableBox(
     ) {
         content()
     }
+}
+
+internal enum class DragAxis { Horizontal, Vertical }
+
+/**
+ * The direction a one-finger drag at 1x commits to, or null while its total
+ * travel is still inside [touchSlop]. Vertical needs to clearly dominate;
+ * anything else is a page swipe.
+ */
+internal fun decideDragAxis(travel: Offset, touchSlop: Float): DragAxis? {
+    if (travel.getDistance() <= touchSlop) return null
+    return if (abs(travel.y) > abs(travel.x) * 1.5f) DragAxis.Vertical else DragAxis.Horizontal
 }

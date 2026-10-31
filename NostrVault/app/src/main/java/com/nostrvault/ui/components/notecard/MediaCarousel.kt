@@ -72,6 +72,8 @@ internal fun MediaCarousel(
     Column(modifier = modifier) {
         HorizontalPager(
             state = pagerState,
+            // Build the next photo ahead so a swipe never lands on a blank.
+            beyondViewportPageCount = 1,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(pagerRatio)
