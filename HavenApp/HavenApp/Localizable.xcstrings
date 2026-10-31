@@ -18,7 +18,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Could not mirror to the local relay"
+            "value" : "Could not copy it into your vault"
           }
         }
       }
@@ -58,7 +58,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This file has no Blossom hash to push"
+            "value" : "This file has no hash, so it can't be copied to your media servers"
           }
         }
       }
@@ -1991,7 +1991,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Blossom media hosting active"
+            "value" : "Your vault keeps your photos and videos"
           }
         }
       }
@@ -2443,7 +2443,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull your existing posts from the Nostr network into your local relay."
+            "value" : "Pull your existing posts from the Nostr network into your vault."
           }
         }
       }
@@ -2724,7 +2724,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac Relay"
+            "value" : "Home Vault"
           }
         }
       }
@@ -2804,7 +2804,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac Relay URL (optional)"
+            "value" : "Home Vault Address (optional)"
           }
         }
       }
@@ -2814,7 +2814,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connect to Your Mac Relay"
+            "value" : "Connect to Your Home Vault"
           }
         }
       }
@@ -2824,7 +2824,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your Mac runs a personal relay that stores everything locally. Posts always reach the Nostr network."
+            "value" : "Your vault keeps everything on this Mac. Posts always reach the Nostr network."
           }
         }
       }
@@ -2864,7 +2864,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your Personal Relay"
+            "value" : "Your Vault"
           }
         }
       }

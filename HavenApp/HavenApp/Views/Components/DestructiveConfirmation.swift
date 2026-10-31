@@ -131,7 +131,7 @@ enum MediaDeleteScope: Identifiable {
 
     var title: String {
         switch self {
-        case .mirrors: return "Delete from mirrors?"
+        case .mirrors: return "Delete from media servers?"
         case .everywhere: return "Delete everywhere?"
         }
     }
@@ -139,15 +139,15 @@ enum MediaDeleteScope: Identifiable {
     var message: String {
         switch self {
         case .mirrors:
-            return "Removes this blob from all external Blossom mirrors. Your local copy is kept."
+            return "Removes this file from all your media servers. Your vault keeps its copy."
         case .everywhere:
-            return "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
+            return "Permanently removes this file from your vault and all your media servers. This cannot be undone."
         }
     }
 
     var confirmTitle: String {
         switch self {
-        case .mirrors: return "Delete from mirrors"
+        case .mirrors: return "Delete from media servers"
         case .everywhere: return "Delete everywhere"
         }
     }

@@ -500,7 +500,7 @@ struct RelayMatrixView: View {
         } header: {
             Text("Media Servers")
         } footer: {
-            Text("Where your photos and videos are stored (Blossom). These aren't relays.")
+            Text("Where your photos and videos are stored. These aren't relays.")
         }
     }
 

@@ -25,7 +25,7 @@ struct FipsMeshSettingsView: View {
         }
         .listStyle(.insetGrouped)
         .tint(Color.havenPurple)
-        .navigationTitle("FIPS Mesh")
+        .navigationTitle("Mesh")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { mesh.refresh() }
         .sheet(isPresented: $showAddDevice) { FipsMeshAddDeviceSheet().environmentObject(configService) }
@@ -50,8 +50,8 @@ struct FipsMeshSettingsView: View {
             .tint(Color.havenPurple)
         } footer: {
             Text(enabled
-                 ? "Your devices reach each other over the FIPS mesh, with no public IP or domain."
-                 : "Turn the mesh on to reach your Mac, your home vault and your browser page from this phone.")
+                 ? "Your devices reach each other over the mesh, with no public IP or domain."
+                 : "Turn the mesh on to reach your home vault, your other phones and your browser vault from this phone.")
         }
     }
 
@@ -95,7 +95,7 @@ struct FipsMeshSettingsView: View {
                 }
             }
             if !hasMac && !hasHomeVault {
-                Text("Add your Mac or a home vault under My Devices to sync with it.")
+                Text("Add a home vault under My Devices to sync with it.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
             }

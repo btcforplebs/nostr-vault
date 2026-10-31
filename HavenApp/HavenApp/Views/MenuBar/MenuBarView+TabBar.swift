@@ -55,7 +55,7 @@ extension MenuBarView {
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(relayManager.isBooting)
-                                .help(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Restart Relay" : "Start Relay"))
+                                .help(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Restart Vault" : "Start Vault"))
 
                                 // Signal icon → relay dashboard
                                 Button(action: {
@@ -255,7 +255,7 @@ extension MenuBarView {
                                     selectedTab = .relay
                                 }
 
-                                TabButton(icon: "photo.on.rectangle", title: "Blossom", isSelected: selectedTab == .media) {
+                                TabButton(icon: "photo.on.rectangle", title: "Media", isSelected: selectedTab == .media) {
                                     selectedTab = .media
                                 }
 

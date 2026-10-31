@@ -20,7 +20,7 @@ struct FipsMeshLinkRow: View {
     }
 
     private var label: some View {
-        Label("Your mesh address, devices and sharing: FIPS Mesh", systemImage: "point.3.filled.connected.trianglepath.dotted")
+        Label("Your mesh address, devices and sharing: Mesh", systemImage: "point.3.filled.connected.trianglepath.dotted")
             .font(.appCaption)
             .foregroundColor(.havenPurple)
     }

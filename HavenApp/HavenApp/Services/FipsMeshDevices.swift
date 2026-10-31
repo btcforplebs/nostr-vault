@@ -37,7 +37,7 @@ enum FipsMeshDevices {
     static func add(address: String, name: String, role: MeshDeviceRole, config: ConfigService) -> String? {
         let before = current(config.config)
         guard let npub = HomeVaultLogic.meshNpub(fromInput: address) else {
-            return "That isn't a mesh address. Copy it from FIPS Mesh → This Device on the other device."
+            return "That isn't a mesh address. Copy it from Mesh → This Device on the other device."
         }
         if let own = FipsMeshService.shared.ownMeshNpub ?? FipsMeshService.meshNpubFromKey(), npub == own {
             return "That is this phone's own address."
@@ -45,7 +45,7 @@ enum FipsMeshDevices {
         if role == .mac {
             let typed = config.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
             if !typed.isEmpty, config.config.macRelayMeshNpub == nil {
-                return "Your Mac is set by its web address in Sync with Vault on Mac. Clear it there first, then add it here."
+                return "This home vault is set by its web address in Home vault sync. Clear it there first, then add it here."
             }
         }
         // One address, one role: the same address under another role leaves

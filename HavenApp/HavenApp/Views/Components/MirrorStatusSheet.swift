@@ -29,7 +29,7 @@ struct MirrorStatusSheet: View {
                     ContentUnavailableView(
                         "No Mirrors Configured",
                         systemImage: "server.rack",
-                        description: Text("Configure Blossom mirrors in Settings to enable external backup")
+                        description: Text("Add media servers in Settings to keep copies of your media")
                     )
                 } else {
                     List {
@@ -99,7 +99,7 @@ struct MirrorStatusSheet: View {
                     }
                 }
             }
-            .navigationTitle("Blossom Mirrors")
+            .navigationTitle("Media Servers")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

@@ -193,7 +193,7 @@ extension MenuBarView {
                                 // The Vault (VaultView): what the return pill's arrow points at.
                                 .vaultAnchor(.leading)
 
-                                SidebarTabButton(icon: "photo.on.rectangle", title: "Blossom", isSelected: selectedTab == .media) {
+                                SidebarTabButton(icon: "photo.on.rectangle", title: "Media", isSelected: selectedTab == .media) {
                                     selectedTab = .media
                                 }
 
@@ -219,7 +219,7 @@ extension MenuBarView {
                                     HStack {
                                         Image(systemName: relayManager.isRunning ? "arrow.clockwise.circle.fill" : "play.circle.fill")
                                             .foregroundColor(relayManager.isRunning ? .orange : .green)
-                                        Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Restart Relay" : "Start Relay"))
+                                        Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Restart Vault" : "Start Vault"))
                                             .font(.appSystem(size: 13, weight: .semibold))
                                         Spacer()
                                     }

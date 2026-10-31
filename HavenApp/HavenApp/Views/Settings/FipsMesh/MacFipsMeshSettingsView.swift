@@ -59,7 +59,7 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("Mesh")
         } footer: {
-            Text("Your devices reach this Mac's vault over the FIPS mesh, with no public IP or domain. Anyone else can only open photos and files by their link, at up to 1 MB/s. They can't read your notes or change anything.")
+            Text("Your devices reach this vault over the mesh, with no public IP or domain. Anyone else can only open photos and files by their link, at up to 1 MB/s. They can't read your notes or change anything.")
         }
     }
 
@@ -112,7 +112,7 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("This Device")
         } footer: {
-            Text("Add this address on your phones under FIPS Mesh → My Devices, as Vault on Mac.")
+            Text("Add this address on your phones under Mesh → My Devices, as Home vault · full history.")
         }
     }
 
@@ -171,7 +171,7 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("My Devices")
         } footer: {
-            Text("Your phones, home vault and browser page, in one list. Copy each one's address from FIPS Mesh → This Device on that device.")
+            Text("Your phones, home vaults and browser vault, in one list. Copy each one's address from Mesh → This Device on that device.")
         }
     }
 
@@ -197,7 +197,7 @@ struct MacFipsMeshSettingsView: View {
 
     private var syncSection: some View {
         Section {
-            Text("Your phones sync with this Mac. Check sync from FIPS Mesh on the phone.")
+            Text("Your phones sync with this Mac. Check sync from Mesh on the phone.")
                 .font(.appCaption)
                 .foregroundColor(.secondary)
         } header: {
@@ -243,7 +243,7 @@ struct MacFipsMeshSettingsView: View {
         } header: {
             Text("Share With Others")
         } footer: {
-            Text("Lists this Mac's .fips address in your Blossom server list, so apps with a FIPS transport can load your media without a public IP or domain. A FIPS transport must be running for it to answer.")
+            Text("Lists this vault's .fips address in your media servers, so apps that speak the mesh (FIPS) can load your media without a public IP or domain. The mesh must be running for it to answer.")
         }
     }
 

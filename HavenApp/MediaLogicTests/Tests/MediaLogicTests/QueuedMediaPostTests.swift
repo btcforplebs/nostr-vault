@@ -85,11 +85,11 @@ final class QueuedMediaPostTests: XCTestCase {
     func testQueuedMessageNamesTheMacVault() {
         XCTAssertEqual(
             MediaUploadOutcomeMessage.queued(hosts: ["mac.ts.net"], macHost: "mac.ts.net"),
-            "Saved on this device. Your post will send itself as soon as your Mac vault answers."
+            "Saved on this device. Your post will send itself as soon as your home vault answers."
         )
         XCTAssertTrue(
             MediaUploadOutcomeMessage.queued(hosts: ["mac.ts.net", "blossom.example"], macHost: "mac.ts.net")
-                .contains("your Mac vault or another media server")
+                .contains("your home vault or another media server")
         )
     }
 
@@ -108,7 +108,7 @@ final class QueuedMediaPostTests: XCTestCase {
     /// Mac, not tell a user with a Mac set up to go add a server.
     func testVaultMessageNamesTheMacNotMissingServers() {
         let message = MediaUploadOutcomeMessage.vaultDidNotTake
-        XCTAssertTrue(message.contains("Mac"), message)
+        XCTAssertTrue(message.contains("home vault"), message)
         XCTAssertFalse(message.localizedCaseInsensitiveContains("no outside media server"), message)
         XCTAssertNotEqual(message, MediaUploadOutcomeMessage.noOutsideServer)
     }

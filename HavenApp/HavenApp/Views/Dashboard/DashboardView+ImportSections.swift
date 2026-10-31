@@ -70,7 +70,7 @@ extension DashboardView {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Blossom Import")
+                    Text("Media Import")
                         .font(.appSystem(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
 

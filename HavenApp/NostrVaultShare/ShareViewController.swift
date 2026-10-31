@@ -139,7 +139,7 @@ final class ShareModel: ObservableObject {
 
         let waiting = NVShareInbox.pending().count
         let content = UNMutableNotificationContent()
-        content.title = "Ready to upload to Blossom"
+        content.title = "Ready to upload to your media servers"
         content.body = waiting == 1
             ? "1 item is in the upload queue. Tap to finish."
             : "\(waiting) items are in the upload queue. Tap to finish."
@@ -190,7 +190,7 @@ struct ShareCard: View {
             Button {
                 model.add()
             } label: {
-                Text("Add to Blossom upload queue")
+                Text("Add to the upload queue")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -204,7 +204,7 @@ struct ShareCard: View {
         case .added:
             message(
                 icon: "checkmark.circle.fill",
-                text: "Added to the Blossom upload queue. Open Nostr Vault or tap the notification to finish."
+                text: "Added to the upload queue. Open Nostr Vault or tap the notification to finish."
             )
             Button("Done") { model.finish() }
                 .frame(maxWidth: .infinity)

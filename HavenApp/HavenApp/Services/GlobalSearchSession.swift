@@ -193,7 +193,7 @@ final class GlobalSearchSession {
 
         if let mac = request.macRelay {
             let id = "mac"
-            addSource(id: id, label: "Mac relay", role: .mac, pending: 1, detail: "checking")
+            addSource(id: id, label: "Home vault", role: .mac, pending: 1, detail: "checking")
             probeMac(sourceId: id, url: mac)
         }
 

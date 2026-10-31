@@ -77,7 +77,7 @@ enum SettingsHelp: String, CaseIterable {
     /// Names the setting in the popover heading and the button's VoiceOver label.
     var title: String {
         switch self {
-        case .relayStatus: return "Your Vault Relay"
+        case .relayStatus: return "Your Vault"
         case .accountAccounts: return "Accounts"
         case .accountSigning: return "Signing"
         case .accountRevealKey: return "Reveal Key"
@@ -113,7 +113,7 @@ enum SettingsHelp: String, CaseIterable {
         case .shareBroadcast: return "Broadcast"
         case .shareMediaServers: return "Media Servers"
         case .shareAutoMirror: return "Auto-Mirror Media"
-        case .shareFIPS: return "FIPS Address"
+        case .shareFIPS: return "Mesh Address"
         case .relaySync: return "Sync"
         case .relayDomain: return "Domain"
         case .relayPort: return "Port"
@@ -159,7 +159,7 @@ enum SettingsHelp: String, CaseIterable {
         case .mediaDisableCache: return "Stops saving media locally, so it re-downloads each time."
         case .mediaPrefetchAvatars: return "Loads profile pictures ahead of time for smoother scrolling."
         case .mediaCacheTTL: return "How long downloaded media is kept before it's cleared."
-        case .mediaClearCache: return "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched."
+        case .mediaClearCache: return "Deletes temporary copies of media to free up space. Your vault and your media servers are not touched."
         case .privacyVertex: return "When you open someone's profile, asks Vertex (vertexlab.io) how many followers they have. The request is signed by your key, so Vertex learns whose profiles you open."
         case .privacyFanfares: return "When a Fanfares article shows, asks Fanfares whether you have bought it. The request is signed by your key and names the article. Off, you check with a tap."
         case .notifyEnable: return "Turns on notifications, made on this device by your relay — no outside push server involved."

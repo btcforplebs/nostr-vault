@@ -172,8 +172,8 @@ struct BlossomBackupBadge: View {
     }
 
     static func accessibility(_ summary: BlossomBackupSummary?, total: Int) -> String {
-        guard let summary else { return "Checking your Blossom servers" }
-        var text = "On \(summary.present) of \(total) Blossom servers"
+        guard let summary else { return "Checking your media servers" }
+        var text = "On \(summary.present) of \(total) media servers"
         if summary.unreachable > 0 { text += ", \(summary.unreachable) could not be reached" }
         return text
     }
@@ -217,7 +217,7 @@ enum MediaBackupActions {
         case .savedOnly:
             ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault on this phone", tone: .success)
         case .savedAndBackedUp:
-            ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault and your Blossom", tone: .success)
+            ActionToastManager.shared.show(icon: "internaldrive.fill", message: "Saved to your vault and your media servers", tone: .success)
         }
     }
 
@@ -329,7 +329,7 @@ struct SourceIndicatorView: View {
                             ProgressView().controlSize(.small)
                                 .frame(width: 16, height: 16)
                         } else {
-                            Label("Mirror to Blossom", systemImage: "arrow.up.circle")
+                            Label("Copy to your media servers", systemImage: "arrow.up.circle")
                                 .font(.appSystem(size: 11, weight: .bold))
                         }
                     }

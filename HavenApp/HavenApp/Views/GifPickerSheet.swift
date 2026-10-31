@@ -109,7 +109,7 @@ struct GifPickerSheet: View {
                 get: { configService.config.saveGifsToBlossom },
                 set: { configService.config.saveGifsToBlossom = $0; configService.save() }
             )) {
-                Text("Save to my Blossom")
+                Text("Save to my media servers")
                     .font(.appSystem(size: 13, weight: .semibold))
             }
             .toggleStyle(.switch)

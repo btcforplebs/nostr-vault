@@ -157,7 +157,7 @@ extension MediaGalleryView {
                             Button(role: .destructive, action: {
                                 pendingViewerDelete = .mirrors
                             }) {
-                                Label("Delete from mirrors", systemImage: "trash")
+                                Label("Delete from media servers", systemImage: "trash")
                             }
                             Button(role: .destructive, action: {
                                 pendingViewerDelete = .everywhere

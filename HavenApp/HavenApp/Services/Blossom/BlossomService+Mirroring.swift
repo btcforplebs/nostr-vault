@@ -43,7 +43,7 @@ extension BlossomService {
             if !accepted.isEmpty && accepted.count < mirrors.count {
                 // Count, not hosts: a server may answer with a CDN URL whose
                 // host differs from the one configured.
-                let message = "Mirrored to \(accepted.count) of \(mirrors.count) Blossom servers"
+                let message = "Copied to \(accepted.count) of \(mirrors.count) media servers"
                 await MainActor.run {
                     ErrorNotificationManager.shared.show(message, icon: "exclamationmark.icloud.fill", style: .warning)
                 }

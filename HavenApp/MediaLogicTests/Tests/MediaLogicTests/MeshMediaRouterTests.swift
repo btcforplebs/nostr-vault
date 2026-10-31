@@ -123,10 +123,10 @@ final class MeshMediaRouterTests: XCTestCase {
         XCTAssertEqual(MeshMediaPhase.failed(after: .meshLookup, meshOnly: true), .unreached)
         XCTAssertEqual(MeshMediaPhase.failed(after: .loading, meshOnly: true), .notReachable)
         XCTAssertEqual(MeshMediaPhase.failed(after: .loading, meshOnly: false), .notFound)
-        XCTAssertEqual(MeshMediaPhase.meshLookup.text(), "Loading image over FIPS…", "web-vault MediaImage.jsx LOADING_TEXT")
+        XCTAssertEqual(MeshMediaPhase.meshLookup.text(), "Loading image over the mesh…", "web-vault MediaImage.jsx LOADING_TEXT")
         XCTAssertEqual(MeshMediaPhase.unreached.text(), "Couldn't reach the owner's vault", "web-vault UNREACHED_TEXT")
         XCTAssertEqual(MeshMediaPhase.notReachable.text(), "Photo not reachable")
-        XCTAssertEqual(MeshMediaPhase.meshLookup.text(video: true), "Loading video over FIPS…")
+        XCTAssertEqual(MeshMediaPhase.meshLookup.text(video: true), "Loading video over the mesh…")
         XCTAssertNil(MeshMediaPhase.loading.text())
     }
 

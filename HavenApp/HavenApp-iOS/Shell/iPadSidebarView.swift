@@ -253,7 +253,7 @@ struct iPadSidebarView: View {
                         }
                     } label: {
                         Label(
-                            relayManager.isRunning ? "Restart Relay" : "Start Relay",
+                            relayManager.isRunning ? "Restart Vault" : "Start Vault",
                             systemImage: relayManager.isRunning ? "arrow.clockwise.circle" : "play.circle"
                         )
                         .foregroundStyle(relayManager.isRunning ? Color.orange : Color.green)

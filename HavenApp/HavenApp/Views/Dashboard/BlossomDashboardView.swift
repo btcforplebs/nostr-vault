@@ -39,19 +39,19 @@ struct BlossomDashboardView: View {
                 Image(systemName: "camera.macro")
                     .font(.appSystem(size: 13, weight: .semibold))
                     .foregroundColor(.havenPurple)
-                Text("Blossom")
+                Text("Media")
                     .font(.appSystem(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
                 Button(action: { showingBlossomSettings = true }) {
                     Image(systemName: "gearshape")
                 }
-                .accessibilityLabel("Blossom settings")
+                .accessibilityLabel("Media server settings")
                 Button(action: refreshAll) {
                     Image(systemName: "arrow.clockwise")
                 }
                 .disabled(isLoadingStats || isPulling || isPushing)
-                .accessibilityLabel("Refresh Blossom")
+                .accessibilityLabel("Refresh media")
             }
             .foregroundColor(.havenPurple)
             .padding(.horizontal)
@@ -79,7 +79,7 @@ struct BlossomDashboardView: View {
                         Image(systemName: "camera.macro")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.havenPurple)
-                        Text("Blossom")
+                        Text("Media")
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                     }
                 }

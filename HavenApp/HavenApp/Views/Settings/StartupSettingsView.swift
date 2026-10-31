@@ -12,7 +12,7 @@ struct StartupSettingsView: View {
                 Toggle("Launch at Login", isOn: $configService.config.launchAtLogin)
                 #endif
                 Toggle(isOn: $configService.config.autoStartRelay) {
-                    Text("Start Relay Automatically").settingInfo(.relayAutoStart)
+                    Text("Start Vault Automatically").settingInfo(.relayAutoStart)
                 }
             }
         }

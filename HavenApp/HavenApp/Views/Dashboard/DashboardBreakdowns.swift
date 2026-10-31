@@ -485,7 +485,7 @@ struct MediaCacheBreakdownView: View {
                     }
                 }
             } message: {
-                Text("This will remove all cached images, videos, and thumbnails. Blossom media will not be affected. Files will be re-downloaded as needed.")
+                Text("This will remove all cached images, videos, and thumbnails. Your vault's media will not be affected. Files will be re-downloaded as needed.")
             }
         }
         #if os(macOS)
@@ -540,7 +540,7 @@ struct StorageBreakdownView: View {
         let dbSize = max(0, statsService.storageSize - statsService.blossomSize - statsService.cacheSize - statsService.thumbnailSize)
         return [
             StorageBucket(label: "Database", icon: "cylinder.fill", color: .blue, size: dbSize),
-            StorageBucket(label: "Blossom Media", icon: "camera.macro", color: .green, size: statsService.blossomSize, detail: .blossom),
+            StorageBucket(label: "Vault Media", icon: "camera.macro", color: .green, size: statsService.blossomSize, detail: .blossom),
             StorageBucket(label: "Media Cache", icon: "photo.stack.fill", color: .orange, size: statsService.cacheSize + statsService.thumbnailSize, detail: .cache),
         ].filter { $0.size > 0 }
     }
