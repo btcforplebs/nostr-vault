@@ -30,6 +30,9 @@ const TOGGLE_ICON = {
   reposts: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
   replies: "M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 0 1 12 3.5a8.4 8.4 0 0 1 9 8z",
 }
+// Media's scope buttons (FeedView+Toolbar.swift): person.2(.fill) and globe.
+const SCOPE_ICON = { following: FEED_ICON.following, global: FEED_ICON.global }
+const SCOPE_NAME = { following: "Following", global: "Global" }
 const TOGGLE_NAME = { autoLoad: "Auto-load new posts", reposts: "Reposts", replies: "Replies" }
 const REFRESH_ICON = "M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"
 
@@ -85,13 +88,20 @@ export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
 }
 
 /** The right capsule. `layout`: null when this feed has one layout. `toggles`: which filters this feed offers.
- *  `onRefresh`: null for readers. */
-export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], onRefresh }) {
+ *  `onRefresh`: null for readers. `scope`: Media's "following" | "global", null elsewhere; `onScope(scope)` picks one. */
+export function FeedToolbar({ layout, onCycleLayout, filters, onFilters, toggles = [], onRefresh, scope = null, onScope }) {
   const next = layout && LAYOUT_NAME[nextLayout(layout)]
   const flip = k => onFilters({ ...filters, [k]: !filters[k] })
-  if (!layout && !toggles.length && !onRefresh) return null
+  if (!layout && !toggles.length && !onRefresh && !scope) return null
   return (
     <div class="feed-toolbar" role="toolbar" aria-label="Feed options">
+      {scope && ["following", "global"].map(s => (
+        <button key={s} type="button" class={`feed-tool${scope === s ? " on" : ""}`} aria-pressed={scope === s}
+          title={SCOPE_NAME[s]} aria-label={SCOPE_NAME[s]} onClick={() => onScope(s)}>
+          <Icon d={SCOPE_ICON[s]} />
+        </button>
+      ))}
+      {scope && (layout || toggles.length > 0) && <span class="feed-tool-divider" aria-hidden="true" />}
       {layout && <button type="button" class="feed-tool on" onClick={onCycleLayout}
         title={`${LAYOUT_NAME[layout]}. Switch to ${next}`} aria-label={`${LAYOUT_NAME[layout]}. Switch to ${next}`}>
         <Icon d={LAYOUT_ICON[layout]} />
