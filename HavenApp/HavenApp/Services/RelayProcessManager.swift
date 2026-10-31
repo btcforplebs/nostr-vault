@@ -71,6 +71,8 @@ class RelayProcessManager: ObservableObject {
     let logProcessingQueue = DispatchQueue(label: "com.haven.relay.logs", qos: .utility)
     
     var pendingImportConfig: HavenConfig?
+    /// Import-only extra relays waiting on a stop (see `importNotes`).
+    var pendingImportAlsoFrom: [String] = []
     @Published var startDate: Date?
     
     // Auto-fix locks

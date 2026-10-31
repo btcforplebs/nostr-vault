@@ -129,7 +129,9 @@ extension RelayProcessManager {
         // If we were stopping to start an import, trigger it now
         if let importConfig = pendingImportConfig {
             pendingImportConfig = nil
-            importNotes(config: importConfig)
+            let alsoFrom = pendingImportAlsoFrom
+            pendingImportAlsoFrom = []
+            importNotes(config: importConfig, alsoFrom: alsoFrom)
         }
     }
     

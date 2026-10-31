@@ -64,4 +64,39 @@ final class RelayCheckTests: XCTestCase {
         XCTAssertEqual(RelayCheck.closedResult(reason: nil), .refused)
         XCTAssertFalse(RelayCheck.Result.needsSignIn.canImport)
     }
+
+    // MARK: Their own servers (setup import, read only)
+
+    func testOwnWriteRelaysSkipReadOnlyWsAndLANAndDuplicates() {
+        let tags = [["r", "wss://relay.damus.io"], ["r", "wss://nostr.wine/", "write"],
+                    ["r", "wss://read.only", "read"], ["r", "ws://relay.example.com"],
+                    ["r", "wss://192.168.1.20:4869"], ["r", "wss://10.0.0.5"], ["r", "wss://172.20.1.1"],
+                    ["r", "wss://100.70.1.1"], ["r", "wss://127.0.0.1:4869"], ["r", "wss://umbrel.local"],
+                    ["r", "wss://box.lan"], ["r", "wss://localhost:4869"], ["r", "WSS://Relay.Damus.io/"],
+                    ["r", "wss://172.32.0.1"], ["r", "wss://[fd00::1]:4869"], ["r", "wss://box.tail1234.ts.net"],
+                    ["p", "x"]]
+        XCTAssertEqual(RelayCheck.ownWriteRelays(relayListTags: tags),
+                       ["wss://relay.damus.io", "wss://nostr.wine", "wss://172.32.0.1"])
+    }
+
+    func testOwnServersSkippedInTheCheckRowsToo() {
+        let rows = RelayCheck.rows(relayListTags: [["r", "ws://relay.example.com"], ["r", "wss://192.168.1.2"]],
+                                   defaults: defaults)
+        XCTAssertEqual(rows.map(\.url), defaults)
+    }
+
+    func testImportSeedsPutOwnServersOnTopOfTheFixedListWithoutDuplicates() {
+        XCTAssertEqual(RelayCheck.importSeeds(fixed: defaults, own: ["wss://relay.snort.social", "wss://nostr.wine"]),
+                       defaults + ["wss://nostr.wine"])
+        XCTAssertEqual(RelayCheck.importSeeds(fixed: defaults, own: []), defaults)
+    }
+
+    func testSplitPicksKeepsOwnServersOutOfTheSavedList() {
+        let tags = [["r", "wss://nostr.wine"], ["r", "wss://relay.snort.social"], ["r", "wss://dead.example"]]
+        var rows = RelayCheck.rows(relayListTags: tags, defaults: defaults)
+        for i in rows.indices { rows[i].isOn = rows[i].url != "wss://dead.example" }
+        let picks = RelayCheck.splitPicks(rows, defaults: defaults)
+        XCTAssertEqual(picks.own, ["wss://nostr.wine"])
+        XCTAssertEqual(picks.fixed, ["wss://relay.snort.social", "wss://relay.primal.net", "wss://nostr-pub.wellorder.net"])
+    }
 }

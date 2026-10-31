@@ -82,6 +82,9 @@ struct SetupWizardView: View {
     @State private var profilePhotoJPEG: Data?
     /// The relay list to publish for the new key (step 17); nil publishes none.
     @State private var starterRelayList: [String]?
+    /// Their own relays picked in the relay check: the import reads them,
+    /// nothing saves them.
+    @State private var importOwnRelays: [String] = []
 
     // Error state
     @State private var setupError: String?
@@ -336,9 +339,12 @@ struct SetupWizardView: View {
                 onNo: { answerBackupQuestion(.no) }
             )
         case 14:
-            RelayCheckStep(npub: npub) { goForward() }
+            RelayCheckStep(npub: npub) { own in
+                importOwnRelays = own
+                goForward()
+            }
         case 13:
-            ImportTourStep(isReadOnly: useNostrIsReadOnly) { _ in
+            ImportTourStep(isReadOnly: useNostrIsReadOnly, alsoFrom: importOwnRelays) { _ in
                 // Kept running or not, the import carries on in
                 // RelayProcessManager; startRelay waits for it.
                 saveAndComplete()

@@ -4,12 +4,14 @@ import SwiftUI
 
 /// Between Your key and the import tour: checks which relays answer and
 /// have this person's notes, so the import can't hang on a dead one.
-/// "Start import" saves the picks to `importSeedRelays`, which is what the
-/// import reads.
+/// "Start import" saves the picked fixed relays to `importSeedRelays`; the
+/// picked relays from their own list are handed to the import only, never
+/// saved (Logen 2026-10-31).
 struct RelayCheckStep: View {
     @EnvironmentObject var configService: ConfigService
     let npub: String
-    let onStart: () -> Void
+    /// Their own picked relays, for this import only.
+    let onStart: (_ ownRelays: [String]) -> Void
 
     @State private var rows: [RelayCheck.Row] = []
     @State private var isChecking = true
@@ -137,8 +139,9 @@ struct RelayCheckStep: View {
     private func runCheck() async {
         // Their relay list says where their notes are; the defaults are
         // where most people's notes also land.
+        // The indexers too: a list made in another app may live only there.
         let list = await NostrService.shared.fetchNewestReplaceable(
-            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays
+            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays + RelayDraft.indexers
         )
         rows = RelayCheck.rows(relayListTags: list?.tags ?? [], defaults: HavenConfig().importSeedRelays)
         await withTaskGroup(of: (String, RelayCheck.Result).self) { group in
@@ -171,8 +174,9 @@ struct RelayCheckStep: View {
     }
 
     private func start() {
-        configService.config.importSeedRelays = RelayCheck.importList(rows)
+        let picks = RelayCheck.splitPicks(rows, defaults: HavenConfig().importSeedRelays)
+        if !picks.fixed.isEmpty { configService.config.importSeedRelays = picks.fixed }
         configService.save()
-        onStart()
+        onStart(picks.own)
     }
 }
