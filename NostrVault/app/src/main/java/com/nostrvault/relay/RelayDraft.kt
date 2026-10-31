@@ -267,6 +267,15 @@ object RelayDraft {
     }
 
     /**
+     * True when Save must not sign: the screen opened with a published list
+     * ([openedWithList]) but the lookup at Save found no copy at all. The
+     * indexers can answer "none" for a list that only lives on the owner's
+     * own relays; rebasing onto nothing would publish only the rows the
+     * screen added and drop the rest (Tron, #1458).
+     */
+    fun vanishedAtSave(openedWithList: Boolean, foundAtSave: Boolean): Boolean = openedWithList && !foundAtSave
+
+    /**
      * Save edits the newest kind 10002, fetched right before it is signed,
      * not the copy read when Relays opened (Logen 2026-10-31). The screen's
      * edit is what changed from [before] (the list as published at open) to

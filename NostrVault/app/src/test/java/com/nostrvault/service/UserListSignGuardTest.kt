@@ -144,4 +144,18 @@ class UserListSignGuardTest {
             .substringAfter("fun NostrService.publishOwnerRelayListTagsImpl").substringBefore(" fun ")
         assertTrue(impl.contains("lookupNewestReplaceable"))
     }
+
+    @Test
+    fun `Save in Relays refuses when the list it opened with is not found at Save`() {
+        val file = src("com/nostrvault/service/nostr/NostrServiceListPublishing.kt")
+        for ((fn, rebase) in listOf(
+            "fun NostrService.publishOwnerRelayListTagsImpl" to "rebaseRelayList",
+            "fun NostrService.publishDMRelayList" to "rebaseDMList",
+        )) {
+            val impl = file.substringAfter(fn).substringBefore(" fun ")
+            val guard = impl.indexOf("vanishedAtSave")
+            assertTrue("$fn must check vanishedAtSave", guard >= 0)
+            assertTrue("$fn must check vanishedAtSave before $rebase", guard < impl.indexOf(rebase))
+        }
+    }
 }

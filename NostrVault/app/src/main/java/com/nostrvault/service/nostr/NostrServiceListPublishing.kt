@@ -110,7 +110,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * [before] (the kind 10002 as published when the screen opened) to [tags]
      * goes onto the newest kind 10002, fetched now ([com.nostrvault.relay.RelayDraft.rebaseRelayList]).
      * Nothing is signed when the lookup didn't settle: a list set in another
-     * app since would be overwritten. [onDone] gets false then, on IO.
+     * app since would be overwritten. Nor when the screen opened with a list
+     * and Save found none ([com.nostrvault.relay.RelayDraft.vanishedAtSave]).
+     * [onDone] gets false then, on IO.
      */
     internal fun NostrService.publishOwnerRelayListTagsImpl(
         tags: List<List<String>>,
@@ -123,6 +125,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             val lookup = runCatching { lookupNewestReplaceable(10002, owner, relayListLookupRelays()) }.getOrNull()
             if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy)) {
                 Log.w(TAG, "kind 10002: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
+                return@launch onDone(false)
+            }
+            if (com.nostrvault.relay.RelayDraft.vanishedAtSave(before.any { it.size >= 2 && it[0] == "r" }, lookup.event != null)) {
+                Log.w(TAG, "kind 10002: screen opened with a list but Save found none (${lookup.answered}/${lookup.asked}); not published")
                 return@launch onDone(false)
             }
             val next = com.nostrvault.relay.RelayDraft.rebaseRelayList(before, tags, lookup.event?.tags.orEmpty())
@@ -168,7 +174,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * The owner's Save of the DM inbox in Settings > Relays: the relays added
      * and removed since [before] (the kind 10050 as published when the screen
      * opened) go onto the newest kind 10050, fetched now. Nothing is signed
-     * when the lookup didn't settle. [onDone] gets false then, on IO.
+     * when the lookup didn't settle, or when the screen opened with a list
+     * and Save found none. [onDone] gets false then, on IO.
      */
     fun NostrService.publishDMRelayList(dmRelays: List<String>, before: List<String>, onDone: (Boolean) -> Unit = {}) {
         val owner = ownerHexPubkey
@@ -177,6 +184,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             val lookup = runCatching { lookupNewestReplaceable(10050, owner, relayListLookupRelays()) }.getOrNull()
             if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy)) {
                 Log.w(TAG, "kind 10050: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
+                return@launch onDone(false)
+            }
+            if (com.nostrvault.relay.RelayDraft.vanishedAtSave(before.isNotEmpty(), lookup.event != null)) {
+                Log.w(TAG, "kind 10050: screen opened with a list but Save found none (${lookup.answered}/${lookup.asked}); not published")
                 return@launch onDone(false)
             }
             val newest = lookup.event?.tags.orEmpty().filter { !(it.size >= 2 && it[0] == "relay" && isLoopbackRelay(it[1])) }

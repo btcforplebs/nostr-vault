@@ -296,6 +296,22 @@ class RelayDraftTest {
         assertEquals(newest, RelayDraft.rebaseRelayList(opened, opened, newest))
     }
 
+    @Test fun `Save with no copy found at Save would keep only the added rows, so it is refused`() {
+        // Tron's #1458 case: the indexers answered "none" for a list that lives
+        // only on the owner's own relays, which were slow at Save.
+        val opened = listOf(listOf("r", "wss://a.example"), listOf("r", "wss://b.example"), listOf("r", "wss://c.example"))
+        val saved = opened + listOf(listOf("r", "wss://new.example"))
+        assertEquals(listOf(listOf("r", "wss://new.example")), RelayDraft.rebaseRelayList(opened, saved, emptyList()))
+        assertEquals(
+            listOf(listOf("relay", "wss://new.example")),
+            RelayDraft.rebaseDMList(listOf("wss://a.example"), listOf("wss://a.example", "wss://new.example"), emptyList()),
+        )
+        assertTrue(RelayDraft.vanishedAtSave(openedWithList = true, foundAtSave = false))
+        // Fine: a copy was found, or the screen opened with no list (first publish).
+        assertFalse(RelayDraft.vanishedAtSave(openedWithList = true, foundAtSave = true))
+        assertFalse(RelayDraft.vanishedAtSave(openedWithList = false, foundAtSave = false))
+    }
+
     @Test fun `Save edits the newest DM inbox list`() {
         val newest = listOf(listOf("relay", "wss://inbox.example"), listOf("relay", "wss://other-app.example"))
         assertEquals(
