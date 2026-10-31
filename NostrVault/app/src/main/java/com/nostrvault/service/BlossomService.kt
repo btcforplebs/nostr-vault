@@ -607,12 +607,16 @@ class BlossomService @Inject constructor(
     }
 
     /**
-     * Delete a blob from every mirror and report each one. A 404 counts as
-     * deleted: the file is not there either way. One mirror succeeding used to
-     * count as success, so a file left on two of three servers read as deleted.
+     * Delete a blob from every server that may hold it and report each one:
+     * see [HavenConfig.blossomDeleteTargets]. "Delete from mirrors" leaves the
+     * home vault out; "Delete everywhere" sets [includeHomeVault]. [photoUrl]
+     * is where the photo was seen, so its own host is asked too. A 404 counts
+     * as deleted: the file is not there either way. One mirror succeeding used
+     * to count as success, so a file left on two of three servers read as deleted.
      */
-    suspend fun deleteFromMirrors(sha256: String): MirrorDeleteResult = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
+    suspend fun deleteFromServers(sha256: String, photoUrl: String?, includeHomeVault: Boolean): MirrorDeleteResult = withContext(Dispatchers.IO) {
+        val published = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
+        val mirrors = configStore.config.value.blossomDeleteTargets(published, photoUrl, includeHomeVault)
         if (mirrors.isEmpty()) return@withContext MirrorDeleteResult()
 
         val outcomes = mirrors.map { mirror ->

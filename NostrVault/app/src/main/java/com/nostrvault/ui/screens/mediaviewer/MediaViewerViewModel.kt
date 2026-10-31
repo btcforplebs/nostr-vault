@@ -117,7 +117,7 @@ class MediaViewerViewModel @Inject constructor(
         else notificationManager.showError(message, ErrorStyle.WARNING, autoDismissMs = 6_000L)
     }
 
-    /** Delete the blob from all external mirrors; the local copy is kept. [onDone] runs after. */
+    /** Delete the blob from the public servers; this phone and the home vault keep it. [onDone] runs after. */
     fun deleteFromMirrors(item: BlossomMediaItem, sticky: Boolean = false, onDone: () -> Unit = {}) {
         if (item.sha256.isEmpty()) {
             notificationManager.showError("No hash for this item")
@@ -125,7 +125,7 @@ class MediaViewerViewModel @Inject constructor(
         }
         _deleteLeftover.value = null
         viewModelScope.launch {
-            val report = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(item.sha256) }
+            val report = withContext(Dispatchers.IO) { blossomService.deleteFromServers(item.sha256, item.displayUrl, includeHomeVault = false) }
             when {
                 report.allDeleted -> notificationManager.showToast("Deleted from mirrors")
                 report.failed.isEmpty() -> notificationManager.showError("No mirrors to delete from")
@@ -240,7 +240,7 @@ class MediaViewerViewModel @Inject constructor(
             }
             val (localOk, report) = withContext(Dispatchers.IO) {
                 val local = async { blossomService.deleteFromLocal(item.sha256) }
-                val mirrors = async { blossomService.deleteFromMirrors(item.sha256) }
+                val mirrors = async { blossomService.deleteFromServers(item.sha256, item.displayUrl, includeHomeVault = true) }
                 local.await() to mirrors.await()
             }
             val leftover = deleteEverywhereLeftover(localDeleted = localOk, mirrors = report)

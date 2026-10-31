@@ -534,6 +534,34 @@ data class HavenConfig(
             return mirrors
         }
 
+    /**
+     * Where a blob delete goes: the home vault (when [includeHomeVault]), the
+     * configured mirrors, the servers on the owner's kind 10063 ([published])
+     * and the server in the photo's own URL, each once. Deleting only from
+     * [activeBlossomMirrors] left the file on a 10063 server never adopted, a
+     * mirror since removed, or the host the photo was posted from, and
+     * "Delete from mirrors" also hit the home Mac (Tim, 2026-10-31).
+     *
+     * Left out always: non-HTTP entries and `.fips` hosts (the mesh carries
+     * reads only, and a `.fips` name must never reach DNS: [FipsHostGuard]).
+     * A loopback photo URL is this phone's own vault, which
+     * [BlossomService.deleteFromLocal] deletes from, so its host is not added.
+     */
+    fun blossomDeleteTargets(published: List<String>, photoUrl: String?, includeHomeVault: Boolean): List<String> {
+        val home = macRelayHttpsURL
+        val homeKey = blossomOrigin(home)?.let(::serverKey)
+        val candidates = listOf(home) +
+            (blossomMirrors + published).mapNotNull { blossomUploadServer(it) } +
+            listOfNotNull(photoUrl?.let(::blossomOrigin)?.takeUnless(::isLoopbackServer))
+        val seen = mutableSetOf<String>()
+        return candidates.mapNotNull { it.trim().takeIf(String::isNotEmpty) }.filter { server ->
+            val origin = blossomOrigin(server) ?: return@filter false
+            if (com.nostrvault.fips.FipsHostGuard.isFipsHost(java.net.URI(origin).host)) return@filter false
+            if (!includeHomeVault && serverKey(origin) == homeKey) return@filter false
+            seen.add(serverKey(server))
+        }
+    }
+
     /** Full account roster: owner first, then any added accounts (deduped). */
     fun allAccountNpubs(): List<String> =
         (listOf(ownerNpub) + accountNpubs)
@@ -618,6 +646,21 @@ data class HavenConfig(
             follows = pushNotifyFollows,
         )
 }
+
+/** `scheme://host[:port]` of an http(s) URL, or null for anything else. */
+internal fun blossomOrigin(url: String): String? {
+    val uri = try { java.net.URI(url.trim()) } catch (e: Exception) { return null }
+    val scheme = uri.scheme?.lowercase()
+    val host = uri.host?.lowercase()
+    if ((scheme != "http" && scheme != "https") || host.isNullOrEmpty()) return null
+    return "$scheme://$host" + if (uri.port != -1) ":${uri.port}" else ""
+}
+
+private fun isLoopbackServer(origin: String): Boolean =
+    java.net.URI(origin).host.trim('[', ']') in setOf("localhost", "127.0.0.1", "::1")
+
+/** One server, however it was typed: no trailing slash, case-insensitive. */
+private fun serverKey(server: String): String = server.trim().trimEnd('/').lowercase()
 
 /**
  * The address to use for a configured Blossom server, or null to skip it. Port
