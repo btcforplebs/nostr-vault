@@ -84,7 +84,7 @@ internal fun AvatarWithMenu(
             if (onTrustWeb != null) {
                 DropdownMenuItem(
                     text = { Text("Web of Trust", color = PrimaryText) },
-                    leadingIcon = { Icon(NostrVaultIcons.WebOfTrust, contentDescription = null, tint = LocalNostrVaultColors.current.primary) },
+                    leadingIcon = { Icon(NostrVaultIcons.TabWoT, contentDescription = null, tint = LocalNostrVaultColors.current.primary) },
                     onClick = {
                         expanded = false
                         onTrustWeb(pubkey)
