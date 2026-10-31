@@ -66,7 +66,7 @@ extension NostrService {
     }
 
     func setupMetadataFlusher() {
-        profileFlushCancellable = Timer.publish(every: 0.5, on: .main, in: .common)
+        profileFlushCancellable = Timer.publish(every: RelayRequestBudget.profileFlushInterval, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self else { return }
@@ -104,36 +104,84 @@ extension NostrService {
         #endif
 
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
-
+        profileLookupLastUse = Date()
         for url in uniqueRelays {
-            let client = WebSocketClient()
-            client.isTemporary = true
-
-            let urlString = url.absoluteString
-            client.messageSubject
-                .receive(on: processingQueue)
-                .sink { [weak self] message in
-                    self?.processMessage(message, from: urlString)
-                }
-                .store(in: &cancellables)
-
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] state in
-                    guard let self = self else { return }
-                    if state == .connected {
-                        self.sendProfileRequest(to: client, pubkeys: pubkeys)
-                        // Disconnect after results come in (or reasonable timeout)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                            client.disconnect()
-                        }
-                    }
-                }
-                .store(in: &cancellables)
-
-            client.connect(url: url)
-            trackTemporaryClient(client)
+            sendProfileLookup(pubkeys, to: url)
         }
+        scheduleProfileSocketIdleCheck()
+    }
+
+    /// Sends one batch on `url`'s lookup socket, opening it first if needed.
+    /// The socket stays open for the next batch: a new connection per tick was
+    /// most of what relay.damus.io counted against us (2026-10-31).
+    private func sendProfileLookup(_ pubkeys: [String], to url: URL) {
+        let key = url.absoluteString
+        if let client = profileLookupClients[key] {
+            switch client.connectionState {
+            case .connected:
+                sendProfileRequest(to: client, pubkeys: pubkeys)
+                return
+            case .connecting:
+                profileLookupPending[key, default: []].append(pubkeys)
+                return
+            case .disconnected, .error:
+                profileLookupClients.removeValue(forKey: key)
+            }
+        }
+
+        let client = WebSocketClient()
+        client.isTemporary = true
+        profileLookupClients[key] = client
+        profileLookupPending[key] = [pubkeys]
+
+        client.messageSubject
+            .receive(on: processingQueue)
+            .sink { [weak self] message in
+                self?.processMessage(message, from: key)
+            }
+            .store(in: &cancellables)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                guard let self, let client else { return }
+                switch state {
+                case .connected:
+                    for batch in self.profileLookupPending.removeValue(forKey: key) ?? [] {
+                        self.sendProfileRequest(to: client, pubkeys: batch)
+                    }
+                case .disconnected, .error:
+                    // Only forget it if it is still the socket on file.
+                    if self.profileLookupClients[key] === client {
+                        self.profileLookupClients.removeValue(forKey: key)
+                        self.profileLookupPending.removeValue(forKey: key)
+                    }
+                case .connecting:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+
+        client.connect(url: url)
+        trackTemporaryClient(client)
+    }
+
+    /// Closes the lookup sockets once no batch has used them for
+    /// `profileSocketIdle`; the next batch opens them again.
+    private func scheduleProfileSocketIdleCheck() {
+        let idle = RelayRequestBudget.profileSocketIdle
+        DispatchQueue.main.asyncAfter(deadline: .now() + idle + 0.5) { [weak self] in
+            guard let self else { return }
+            guard Date().timeIntervalSince(self.profileLookupLastUse) >= idle else { return }
+            self.closeProfileLookupSockets()
+        }
+    }
+
+    func closeProfileLookupSockets() {
+        let clients = Array(profileLookupClients.values)
+        profileLookupClients.removeAll()
+        profileLookupPending.removeAll()
+        clients.forEach { $0.disconnect() }
     }
 
     func loadProfiles() {
@@ -186,6 +234,11 @@ extension NostrService {
         if let reqData = try? JSONSerialization.data(withJSONObject: req),
            let reqString = String(data: reqData, encoding: .utf8) {
             client.send(text: reqString)
+            // The socket stays open, so close the subscription itself once
+            // the answers are in (or not).
+            DispatchQueue.main.asyncAfter(deadline: .now() + RelayRequestBudget.profileSubscriptionSeconds) { [weak client] in
+                client?.send(text: "[\"CLOSE\",\"\(subscriptionId)\"]")
+            }
         }
     }
 }

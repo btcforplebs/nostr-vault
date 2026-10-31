@@ -370,17 +370,7 @@ class FeedService: ObservableObject {
     /// of 172 referenced notes still missing after primal and the rest of this
     /// list, those two found 112, the best pair of the 20 relays tried. A quote
     /// in Logen's thread (Plural's, a2f86e95) was on fountain.fm alone.
-    static let fallbackNoteRelays = [
-        "wss://nostr.wine",
-        "wss://nostr.oxtr.dev",
-        "wss://nostr.land",
-        "wss://relay.nostrplebs.com",
-        "wss://relay.snort.social",
-        "wss://relay.primal.net",
-        "wss://relay.damus.io",
-        "wss://relay.nostr.net",
-        "wss://relay.fountain.fm",
-    ]
+    static let fallbackNoteRelays = RelayRequestBudget.fallbackNoteRelays
 
     // Profile saving
     private var profileSaveTimer: Timer?
