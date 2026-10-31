@@ -451,9 +451,8 @@ fun MediaGalleryScreen(
                                 backup = BackupBadgeState(
                                     summary = viewModel.backupSummary(item.sha256, mirrorPresence),
                                     mirrorCount = blossomMirrors.size,
-                                    mirrorsKey = blossomMirrors,
+                                    isLocal = item.isLocal,
                                     busy = busySha == item.sha256,
-                                    check = { viewModel.checkBackup(item.sha256) },
                                     onMirror = { viewModel.mirrorMissing(item) },
                                     onSaveToVault = { viewModel.saveToVault(item) },
                                 ),
@@ -516,9 +515,8 @@ fun MediaGalleryScreen(
                                 backup = BackupBadgeState(
                                     summary = viewModel.backupSummary(item.sha256, mirrorPresence),
                                     mirrorCount = blossomMirrors.size,
-                                    mirrorsKey = blossomMirrors,
+                                    isLocal = item.isLocal,
                                     busy = busySha == item.sha256,
-                                    check = { viewModel.checkBackup(item.sha256) },
                                     onMirror = { viewModel.mirrorMissing(item) },
                                     onSaveToVault = { viewModel.saveToVault(item) },
                                 ),

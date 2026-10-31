@@ -135,10 +135,6 @@ internal fun MediaListRow(
                         modifier = Modifier.size(14.dp),
                     )
                 }
-                if (backup.mirrorCount > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    BlossomBackupBadge(backup = backup)
-                }
             }
         }
 

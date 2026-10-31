@@ -39,6 +39,8 @@ class BlossomService @Inject constructor(
     /** "Last ran" times for the Vault Dashboard (iOS VaultHistory). */
     private val vaultHistory: com.nostrvault.data.local.VaultHistoryStore,
     internal val homeVault: com.nostrvault.fips.HomeVaultSender,
+    /** The photo screen's server answers, kept on disk for a day. */
+    private val presenceStore: BlossomPresenceStore = BlossomPresenceStore(file = null),
 ) {
     companion object {
         internal const val TAG = "BlossomService"
@@ -56,6 +58,12 @@ class BlossomService @Inject constructor(
         /** How long a mesh delete keeps retrying a link that is still coming up, and the pause between tries. */
         internal const val MESH_DELETE_PATIENCE_MS = 20_000L
         internal const val MESH_DELETE_RETRY_MS = 1_000L
+        /** Auto-Mirror lists every server and scans every note, so it waits this long after the last import. */
+        internal const val AUTO_MIRROR_EVERY_MS = 3L * 60 * 60 * 1000
+
+        /** Whether the Media tab's Auto-Mirror should run, given the last finished import (iOS `autoMirrorEvery`). */
+        internal fun autoMirrorDue(lastImport: Long?, now: Long): Boolean =
+            lastImport == null || now < lastImport || now - lastImport >= AUTO_MIRROR_EVERY_MS
     }
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -85,6 +93,16 @@ class BlossomService @Inject constructor(
 
     private val _mirrorRun = MutableStateFlow(MirrorRun())
     val mirrorRun: StateFlow<MirrorRun> = _mirrorRun.asStateFlow()
+
+    /**
+     * The Media tab's Auto-Mirror: a mirror run, unless one finished in the
+     * last 3 hours. False when it didn't start.
+     */
+    fun runAutoMirrorIfDue(now: Long = System.currentTimeMillis()): Boolean {
+        val last = vaultHistory.state.value[com.nostrvault.data.local.VaultHistory.Entry.MEDIA_IMPORT]
+        if (!autoMirrorDue(last, now)) return false
+        return runMirror()
+    }
 
     /** Starts a mirror-from-servers run; false if one is already running. */
     fun runMirror(): Boolean {
@@ -725,12 +743,18 @@ class BlossomService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * Each server's last answer per blob, kept for the session. The Media tab
-     * tiles, the list rows and the viewer all read this one map, so a file
-     * cannot show "3/3" on its tile and offer a Mirror button in the viewer.
+     * Each server's last answer per blob, kept for a day (on disk, see
+     * [BlossomPresenceStore]). The viewer, the menus and the dashboard all
+     * read this one map, so a file cannot show "3/3" in one place and offer
+     * a Mirror button in another.
      */
     internal val _mirrorPresence = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Map<String, BlobPresence>>>(emptyMap())
     val mirrorPresence: kotlinx.coroutines.flow.StateFlow<Map<String, Map<String, BlobPresence>>> = _mirrorPresence
+
+    init {
+        // Yesterday's answers, under any checks that finish first.
+        scope.launch { presenceStore.load().presence().takeIf { it.isNotEmpty() }?.let { saved -> _mirrorPresence.update { saved + it } } }
+    }
 
     /** Checks running now, by hash, so a grid of tiles asks each server once per blob. */
     private val presenceInFlight = mutableMapOf<String, Deferred<Map<String, BlobPresence>>>()
@@ -742,14 +766,14 @@ class BlossomService @Inject constructor(
      * Check if a blob exists on each mirror. A server that could not be asked
      * counts as "does not have it" here; use [checkMirrorPresence] to tell the two apart.
      */
-    suspend fun checkMirrorStatus(sha256: String): Map<String, Boolean> =
-        checkMirrorPresence(sha256, force = true).mapValues { it.value == BlobPresence.PRESENT }
+    suspend fun checkMirrorStatus(sha256: String, force: Boolean = true): Map<String, Boolean> =
+        checkMirrorPresence(sha256, force).mapValues { it.value == BlobPresence.PRESENT }
 
     /**
      * Asks every configured Blossom server whether it holds [sha256] and
-     * records the answer in [mirrorPresence]. Without [force], a cached answer
-     * that covers every configured server, or a check already running, is reused.
-     * Port of iOS `BlossomBackupStore.refresh`.
+     * records the answer in [mirrorPresence]. Without [force], a check already
+     * running is reused, and so is an answer under a day old in which every
+     * configured server answered. Port of iOS `BlossomBackupStore.refresh`.
      */
     suspend fun checkMirrorPresence(sha256: String, force: Boolean = false): Map<String, BlobPresence> {
         val hash = sha256.lowercase()
@@ -760,7 +784,9 @@ class BlossomService @Inject constructor(
             val result = running.await()
             if (!force) return result
         } else if (!force) {
-            _mirrorPresence.value[hash]?.takeIf { cached -> mirrors.all { it in cached } }?.let { return it }
+            _mirrorPresence.value[hash]
+                ?.takeIf { cached -> presenceStore.isFresh(hash) && reusablePresence(cached, mirrors) }
+                ?.let { return it }
         }
         // The check runs in the service scope and records its own answer, so a
         // tile scrolled away mid-check still fills the cache for when it returns.
@@ -770,7 +796,10 @@ class BlossomService @Inject constructor(
                     presenceGate.withPermit {
                         mirrors.map { mirror -> async { mirror to checkBlobExists(mirror, hash) } }
                             .awaitAll().toMap()
-                    }.also { result -> _mirrorPresence.update { it + (hash to result) } }
+                    }.also { result ->
+                        _mirrorPresence.update { it + (hash to result) }
+                        presenceStore.record(hash, result, scope)
+                    }
                 } finally {
                     synchronized(presenceInFlight) {
                         if (presenceInFlight[hash] === coroutineContext[Job]) presenceInFlight.remove(hash)

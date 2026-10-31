@@ -58,12 +58,13 @@ class MediaGalleryViewModel @Inject constructor(
 
     init {
         loadBlossomMedia()
-        // Auto-Mirror Media: pull own media from the mirrors (iOS triggerAutoMirrorIfEnabled).
-        if (configStore.config.value.autoMirrorMedia) blossomService.runMirror()
+        // Auto-Mirror Media: pull own media from the mirrors, at most every
+        // 3 hours (iOS triggerAutoMirrorIfEnabled).
+        if (configStore.config.value.autoMirrorMedia) blossomService.runAutoMirrorIfDue()
     }
 
+    /** Keeps the servers' saved answers: a pull to refresh reloads the list, not every file's backup count. */
     fun refresh() {
-        blossomService.forgetMirrorPresence()
         loadBlossomMedia()
     }
 
@@ -83,10 +84,10 @@ class MediaGalleryViewModel @Inject constructor(
         nostrService.reportUser(pubkey, reason, description.ifBlank { null })
     }
 
-    /** Each Blossom server's answer per blob; the tile badges read this. */
+    /** Each Blossom server's answer per blob, as far as anything has asked; the menus read this. */
     val mirrorPresence = blossomService.mirrorPresence
 
-    /** The user's outside Blossom servers, so badges re-check when one is added. */
+    /** The user's outside Blossom servers. */
     val blossomMirrors = configStore.config
         .map { it.activeBlossomMirrors }
         .distinctUntilChanged()
@@ -94,11 +95,6 @@ class MediaGalleryViewModel @Inject constructor(
 
     fun backupSummary(sha256: String, presence: Map<String, Map<String, BlobPresence>>): BlossomBackupSummary? =
         blossomService.backupSummary(sha256, presence)
-
-    /** Asks the servers about [sha256] once per session (or after a refresh). */
-    suspend fun checkBackup(sha256: String) {
-        blossomService.checkMirrorPresence(sha256)
-    }
 
     private val _busySha = MutableStateFlow<String?>(null)
     /** The blob being saved or mirrored from the menu right now, or null. */
