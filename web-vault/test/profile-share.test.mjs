@@ -46,3 +46,14 @@ test("Follow changes at once, toasts once the list is out, and a tap while your 
   assert.match(s, /setToast\(follow \? `Following \$\{name\}` : `Unfollowed \$\{name\}`\)/)
   assert.match(s, /finally \{ setBusy\(false\); setWant\(null\) \}/, "a failed follow goes back to what your list says")
 })
+
+test("the picture and banner open full size; the lightning and npub chips copy and say Copied with a check", () => {
+  const h = src("components/ProfileHeader.jsx")
+  assert.match(h, /aria-label="Open the picture full size" onClick=\{\(\) => setFull\(p\.picture\)\}/)
+  assert.match(h, /aria-label="Open the banner full size" onClick=\{\(\) => setFull\(p\.banner\)\}/)
+  assert.match(h, /<MediaLightbox items=\{\[imageItem\(full\)\]\}/)
+  assert.match(h, /onClick=\{\(\) => copy\("ln", p\.lud16\)\}/)
+  assert.match(h, /onClick=\{\(\) => copy\("npub", npub\)\}/)
+  assert.match(h, /\{copied === "npub" \? "Copied" :/)
+  assert.match(h, /\{copied === "ln" \? "Copied" : p\.lud16\}/)
+})
