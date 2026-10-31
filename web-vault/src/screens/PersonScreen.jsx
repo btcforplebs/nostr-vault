@@ -90,24 +90,40 @@ export function PersonScreen({ ctx, pubkey }) {
 
   const iFollow = account.follows.includes(pubkey)
   const followsMe = followsOf(lists?.contacts).includes(session.pubkey)
-  const toggle = async () => {
+  // Follow as the iPhone's FeedProfileCard: the button changes at once, a toast says so once the list is out, and a tap
+  // made while your own follow list is still loading waits for it (nothing safe to build on before) and then runs.
+  const [want, setWant] = useState(null) // the follow state asked for and not yet in your list, or null
+  const [toast, setToast] = useState("")
+  const shown = want ?? iFollow
+  const run = async follow => {
     setBusy(true); setErr("")
     try {
-      await setFollow({ vault, signer: ctx.signer, pubkey: session.pubkey, target: pubkey, follow: !iFollow,
+      await setFollow({ vault, signer: ctx.signer, pubkey: session.pubkey, target: pubkey, follow,
         readRelays: account.relays.read, writeRelays: account.relays.write, known: account.contacts, appCount: account.follows.length })
       await ctx.reloadAccount()
-    } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+      setToast(follow ? `Following ${name}` : `Unfollowed ${name}`)
+    } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false); setWant(null) }
   }
-  const label = busy ? (ctx.signer.method === "nip46" ? "Waiting for your signer…" : iFollow ? "Unfollowing…" : "Following…") : iFollow ? "Unfollow" : "Follow"
+  const toggle = () => {
+    if (busy) return
+    const follow = !shown
+    setWant(follow)
+    if (account.loaded) run(follow)
+  }
+  // The queued tap, once your follow list has been read.
+  useEffect(() => { if (account.loaded && want != null && !busy) run(want) }, [account.loaded])
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 2500); return () => clearTimeout(t) }, [toast])
+  const label = shown ? "Unfollow" : "Follow"
+  const waiting = busy && ctx.signer.method === "nip46" ? "Waiting for your signer…" : want != null && !account.loaded ? "Waiting for your follow list…" : ""
 
   return (
     <main class="screen">
       <ProfileHeader pubkey={pubkey} you={false} relation={relation(iFollow, followsMe)} follows={lists?.contacts ? followsOf(lists.contacts).length : null}>
         <div class="person-actions">
           {/* Until the user's own list has been read there is nothing safe to build a new one on. */}
-          <button class={iFollow ? "follow-btn on" : "follow-btn"} disabled={busy || !account.loaded} onClick={toggle} aria-busy={busy || undefined}>
+          <button class={shown ? "follow-btn on" : "follow-btn"} disabled={busy || ctx.signer?.readOnly} onClick={toggle} aria-busy={busy || want != null || undefined} aria-pressed={shown}>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-              <circle cx="9" cy="8" r="4" /><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7" />{iFollow ? <path d="M17 11h6" /> : <path d="M20 8v6M17 11h6" />}
+              <circle cx="9" cy="8" r="4" /><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7" />{shown ? <path d="M17 11h6" /> : <path d="M20 8v6M17 11h6" />}
             </svg>
             {label}
           </button>
@@ -121,6 +137,7 @@ export function PersonScreen({ ctx, pubkey }) {
           <ShareProfileButton pubkey={pubkey} />
           <MoreMenu pubkey={pubkey} className="more-btn" />
         </div>
+        {waiting && <p class="muted small person-waiting" role="status">{waiting}</p>}
         {err && <p class="error person-error" role="alert">{err}</p>}
       </ProfileHeader>
       {isBlocked && (
@@ -130,7 +147,8 @@ export function PersonScreen({ ctx, pubkey }) {
           {unblocking && <UnblockDialog ctx={ctx} pubkey={pubkey} name={name} onClose={() => setUnblocking(false)} />}
         </div>
       )}
-      {status && !isBlocked && <div class="status-line">{status}</div>}
+      {toast && <div class="person-toast" role="status">{toast}</div>}
+            {status && !isBlocked && <div class="status-line">{status}</div>}
       {!isBlocked && <ProfileTabs notes={notes} tagged={tagged} articles={articles} shop={shop} pubkey={pubkey} blocked={blocked} />}
     </main>
   )

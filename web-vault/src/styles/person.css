@@ -16,3 +16,11 @@
 .person-actions a.more-btn, .person-actions button.more-btn { background: var(--accent-pale); color: var(--accent); }
 .person-error { margin: 10px var(--gutter) 0; font: var(--t-foot); }
 .person-end { padding: 16px var(--gutter) 24px; text-align: center; color: var(--text-3); font: var(--t-foot); }
+
+/* Follow feedback (PersonScreen): the toast once the list is out, as the iPhone's banner, and the waiting line. */
+.person-toast { position: fixed; left: 50%; bottom: calc(var(--tabbar-h, 0px) + var(--tabbar-gap, 0px) + 24px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 50; padding: 10px 18px; border-radius: 999px; background: var(--s2); border: 1px solid var(--hair); color: var(--text); font: 600 14px var(--font);
+  box-shadow: 0 6px 20px rgb(0 0 0 / .35); white-space: nowrap; animation: person-toast-in .2s ease-out; }
+@keyframes person-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+@media (prefers-reduced-motion: reduce) { .person-toast { animation: none; } }
+.person-waiting { margin: 6px 0 0; }
