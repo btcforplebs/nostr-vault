@@ -52,6 +52,10 @@ class BlossomService @Inject constructor(
 
         /** Hard ceiling on any single downloaded blob held in memory. */
         internal const val MAX_BLOB_BYTES = 50L * 1024 * 1024 // 50 MB
+
+        /** How long a mesh delete keeps retrying a link that is still coming up, and the pause between tries. */
+        internal const val MESH_DELETE_PATIENCE_MS = 20_000L
+        internal const val MESH_DELETE_RETRY_MS = 1_000L
     }
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -599,11 +603,13 @@ class BlossomService @Inject constructor(
     data class MirrorDeleteResult(
         val deleted: List<String> = emptyList(),
         val failed: List<String> = emptyList(),
+        /** What to call a mesh device in [failedHosts] ("Studio Mac"), by its `fipsmesh://` entry. */
+        val names: Map<String, String> = emptyMap(),
     ) {
         val allDeleted: Boolean get() = failed.isEmpty() && deleted.isNotEmpty()
 
-        /** Hosts still holding the file, for the banner ("blossom.primal.net"). */
-        val failedHosts: List<String> get() = failed.map { serverHost(it) }
+        /** Places still holding the file, for the banner ("blossom.primal.net", "Studio Mac"). */
+        val failedHosts: List<String> get() = failed.map { names[it] ?: serverHost(it) }
     }
 
     /**
@@ -613,11 +619,14 @@ class BlossomService @Inject constructor(
      * is where the photo was seen, so its own host is asked too. A 404 counts
      * as deleted: the file is not there either way. One mirror succeeding used
      * to count as success, so a file left on two of three servers read as deleted.
+     * Delete everywhere also reaches the owner's mesh devices: [deleteOverMesh].
      */
     suspend fun deleteFromServers(sha256: String, photoUrl: String?, includeHomeVault: Boolean): MirrorDeleteResult = withContext(Dispatchers.IO) {
+        val config = configStore.config.value
         val published = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
-        val mirrors = configStore.config.value.blossomDeleteTargets(published, photoUrl, includeHomeVault)
-        if (mirrors.isEmpty()) return@withContext MirrorDeleteResult()
+        val mirrors = config.blossomDeleteTargets(published, photoUrl, includeHomeVault)
+        val mesh = com.nostrvault.fips.MeshDeleteTargets.of(config, includeHomeVault)
+        if (mirrors.isEmpty() && mesh.isEmpty()) return@withContext MirrorDeleteResult()
 
         val outcomes = mirrors.map { mirror ->
             async {
@@ -639,11 +648,58 @@ class BlossomService @Inject constructor(
                     false
                 }
             }
-        }.awaitAll()
+        }
+        // One owner signature for every mesh device, covering the DELETE and the HEAD after it.
+        val meshAuth = if (mesh.isEmpty()) "" else createAuthHeader(listOf("delete", "get"), sha256)
+        val meshOutcomes = mesh.map { target ->
+            async { target.key to (meshAuth.isNotEmpty() && deleteOverMesh(target.npub, sha256, meshAuth)) }
+        }
+        val all = outcomes.awaitAll() + meshOutcomes.awaitAll()
         MirrorDeleteResult(
-            deleted = outcomes.filter { it.second }.map { it.first },
-            failed = outcomes.filterNot { it.second }.map { it.first },
+            deleted = all.filter { it.second }.map { it.first },
+            failed = all.filterNot { it.second }.map { it.first },
+            names = mesh.associate { it.key to it.name },
         )
+    }
+
+    /** The loopback base reaching [npub]'s vault over the mesh, or null. Swapped in tests. */
+    internal var meshIngress: (String) -> String? = { com.nostrvault.fips.FipsMediaRouter.ingressBase(it) }
+    internal var meshForget: (String) -> Unit = { com.nostrvault.fips.FipsMediaRouter.forget(it) }
+    internal var meshRetryDelayMs = MESH_DELETE_RETRY_MS
+
+    /**
+     * BUD-02 DELETE of [sha256] on the owner's device [npub] over the mesh, through the loopback
+     * ingress the reader and [com.nostrvault.fips.HomeVaultSender] use, then a HEAD to see it gone
+     * ([com.nostrvault.fips.MeshDeleteTargets.gone]). Right after the engine starts the link is
+     * still coming up and resets the first tries, so a dropped connection is retried for
+     * [MESH_DELETE_PATIENCE_MS]. The ingress URL carries a token: logged by npub only.
+     */
+    private suspend fun deleteOverMesh(npub: String, sha256: String, auth: String): Boolean {
+        val deadline = System.currentTimeMillis() + MESH_DELETE_PATIENCE_MS
+        while (true) {
+            val base = meshIngress(npub) ?: run {
+                Log.w(TAG, "Mesh delete ${npub.take(12)}: vault not reachable")
+                return false
+            }
+            try {
+                val deleteCode = remoteClient.newCall(
+                    Request.Builder().url("$base/$sha256").delete()
+                        .header("Authorization", "Nostr $auth").build()
+                ).execute().use { it.code }
+                val checkCode = remoteClient.newCall(com.nostrvault.fips.VaultCheck.request(base, sha256, auth))
+                    .execute().use { it.code }
+                val gone = com.nostrvault.fips.MeshDeleteTargets.gone(deleteCode, checkCode)
+                if (!gone) Log.w(TAG, "Mesh delete ${npub.take(12)}: DELETE $deleteCode, then HEAD $checkCode")
+                return gone
+            } catch (e: IOException) {
+                meshForget(npub)
+                if (System.currentTimeMillis() + meshRetryDelayMs > deadline) {
+                    Log.w(TAG, "Mesh delete ${npub.take(12)} failed: ${e.message}")
+                    return false
+                }
+                delay(meshRetryDelayMs)
+            }
+        }
     }
 
     /** @return true if the file is gone from this device (deleted, or never stored here). */

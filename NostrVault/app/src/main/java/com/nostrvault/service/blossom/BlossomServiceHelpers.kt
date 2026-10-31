@@ -11,6 +11,15 @@ fun blossomHashInUrl(url: String): String? {
     return match.groupValues[1].lowercase()
 }
 
+/**
+ * Said when a delete has nothing to name the file by: a delete that silently did nothing looked
+ * like one that worked. Same words as iOS `MediaGalleryView.deleteHash(for:)`.
+ */
+const val DELETE_NO_HASH_MESSAGE = "Can't delete: this file's hash could not be read"
+
+/** A blob hash a delete can use: 64 hex. */
+fun isBlobHash(value: String): Boolean = value.length == 64 && value.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+
 private val BLOSSOM_HASH_PATH = Regex("^([a-fA-F0-9]{64})(\\.[a-zA-Z0-9]+)?$")
 
 /** "blossom.primal.net" for a server's base URL; the URL itself when it has no host. */
