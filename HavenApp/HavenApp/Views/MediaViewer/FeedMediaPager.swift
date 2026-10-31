@@ -27,6 +27,9 @@ struct FeedMediaPager: View {
 
     @State private var selection: URL
     @Environment(\.mediaZoomPresented) private var zoomPresented
+    /// The tapped note, read once: `MeshMediaTap` forgets it after a few
+    /// seconds, and the preloads below run for as long as the pager is open.
+    private let meshNote = MeshMediaTap.note
 
     init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil, onPage: ((URL) -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
@@ -57,11 +60,23 @@ struct FeedMediaPager: View {
                 // MediaGalleryViewer's pager does.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
-                .onChange(of: selection) { _, page in onPage?(page) }
+                .onChange(of: selection) { _, page in
+                    onPage?(page)
+                    preloadNeighbors(of: page)
+                }
+                .onAppear { preloadNeighbors(of: selection) }
             }
         }
         #else
         FeedMediaViewer(url: selected, onDismiss: onDismiss)
         #endif
+    }
+
+    /// Decodes the photos either side of `page`, so the next swipe in either
+    /// direction lands on the photo rather than on a spinner.
+    private func preloadNeighbors(of page: URL) {
+        for url in PagerNeighbors.neighbors(of: page, in: urls) {
+            ViewerPhotoPreloader.preload(url, note: meshNote)
+        }
     }
 }

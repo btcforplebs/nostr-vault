@@ -252,6 +252,23 @@ private struct FeedPhotoView: View {
     @State private var phase: MeshMediaPhase = .loading
     @Environment(\.meshMediaNote) private var meshNote
 
+    init(url: URL, isThumbnail: Bool, fillsFrame: Bool = false,
+         landscapeMaxHeight: CGFloat = 400, portraitMaxHeight: CGFloat = 600) {
+        self.url = url
+        self.isThumbnail = isThumbnail
+        self.fillsFrame = fillsFrame
+        self.landscapeMaxHeight = landscapeMaxHeight
+        self.portraitMaxHeight = portraitMaxHeight
+        // A photo already decoded (prefetched, or seen before) is drawn on the
+        // first frame. Set later in onAppear it was an insertion, and the
+        // image's fade-in showed the grey placeholder under every carousel
+        // page swiped to.
+        if let cached = MediaCacheService.shared.cachedImage(for: url) {
+            _image = State(initialValue: cached)
+            _aspectRatio = State(initialValue: Self.ratioFor(cached))
+        }
+    }
+
     var body: some View {
         ZStack {
             // Grey only behind a thumbnail, or while a photo is loading.
@@ -364,7 +381,9 @@ private struct FeedPhotoView: View {
         }
     }
 
-    private func ratioFor(_ img: PlatformImage) -> CGFloat? {
+    private func ratioFor(_ img: PlatformImage) -> CGFloat? { Self.ratioFor(img) }
+
+    private static func ratioFor(_ img: PlatformImage) -> CGFloat? {
         let size = img.size
         guard size.width > 0, size.height > 0 else { return nil }
         return size.width / size.height

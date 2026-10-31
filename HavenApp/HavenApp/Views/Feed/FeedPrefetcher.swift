@@ -48,10 +48,25 @@ enum FeedPrefetcher {
     }
 
     /// Photos are downloaded and decoded into the memory cache; GIFs only to
-    /// disk. Videos and still-unclassified URLs are left alone: prefetching
-    /// them costs whole files or HEAD requests for rows the user may never see.
+    /// disk. Videos are left alone: prefetching them costs whole files for rows
+    /// the user may never see. A URL whose type is not known yet (no extension,
+    /// no imeta `m`, never sniffed) is resolved first with the same HEAD the row
+    /// itself would make, so a carousel of extensionless blossom photos is
+    /// warmed too instead of every page loading as it is swiped to.
     private static func warmMedia(_ url: URL) {
-        switch MediaKindResolver.cachedKind(for: url) {
+        guard let kind = MediaKindResolver.cachedKind(for: url) else {
+            Task(priority: .utility) {
+                let kind = await MediaKindResolver.kind(for: url)
+                guard kind == .image || kind == .gif else { return }
+                await MainActor.run { warmMedia(url, kind: kind) }
+            }
+            return
+        }
+        warmMedia(url, kind: kind)
+    }
+
+    private static func warmMedia(_ url: URL, kind: MediaKind) {
+        switch kind {
         case .image:
             guard MediaCacheService.shared.cachedImage(for: url) == nil else { return }
             Task(priority: .utility) {

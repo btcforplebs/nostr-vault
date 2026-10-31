@@ -20,7 +20,14 @@ struct MediaViewerPhoto: View {
 
     init(url: URL) {
         self.url = url
-        _image = State(initialValue: MediaCacheService.shared.cachedImage(for: url))
+        // A neighbour the pager preloaded opens at full size, no spinner and
+        // no swap from the feed's smaller copy.
+        if let preloaded = ViewerPhotoPreloader.image(for: url) {
+            _image = State(initialValue: preloaded)
+            _loadedFull = State(initialValue: true)
+        } else {
+            _image = State(initialValue: MediaCacheService.shared.cachedImage(for: url))
+        }
     }
 
     private var meshNote: MeshMediaNote? { envNote ?? tappedNote }
@@ -77,10 +84,50 @@ struct MediaViewerPhoto: View {
             // full-resolution originals (50-190 MB decoded) stack up fast.
             let downsampled = await ImageDownsampler.downsampleToScreen(data: data)
             if let img = downsampled ?? PlatformImage(data: data) {
+                ViewerPhotoPreloader.store(img, for: url)
                 await MainActor.run { self.image = img; self.loadedFull = true }
             } else {
                 await MainActor.run { if self.image == nil { self.loadFailed = true } }
             }
+        }
+    }
+}
+
+// MARK: - ViewerPhotoPreloader
+
+/// Screen-size decodes of the photos either side of the one showing, so a swipe
+/// in the full-screen pager lands on the photo instead of a spinner. Small and
+/// count-bounded: a screen-size decode is ~15 MB, and the pager only ever needs
+/// the current page and its two neighbours.
+enum ViewerPhotoPreloader {
+    private static let cache: NSCache<NSURL, PlatformImage> = {
+        let c = NSCache<NSURL, PlatformImage>()
+        c.countLimit = 4
+        return c
+    }()
+    @MainActor private static var inFlight = Set<URL>()
+
+    static func image(for url: URL) -> PlatformImage? { cache.object(forKey: url as NSURL) }
+
+    static func store(_ image: PlatformImage, for url: URL) { cache.setObject(image, forKey: url as NSURL) }
+
+    /// Fetches and decodes `url` at screen size unless it is already decoded or
+    /// on its way. Videos and GIFs are left to their own players; a type that
+    /// is not known yet costs the same HEAD the page itself would make.
+    @MainActor
+    static func preload(_ url: URL, note: MeshMediaNote?) {
+        guard image(for: url) == nil, !inFlight.contains(url) else { return }
+        inFlight.insert(url)
+        let imetaSha256 = note?.imetaSha256[url.absoluteString]
+        Task(priority: .userInitiated) {
+            defer { inFlight.remove(url) }
+            // Only a known photo: an unclassified URL could be a whole video.
+            guard await MediaKindResolver.kind(for: url) == .image,
+                  let (data, _) = await MediaCacheService.shared.fetchData(
+                url: url, meshAuthor: note?.author, imetaSha256: imetaSha256
+            ), !AnimatedImageHelper.isGIFData(data),
+                  let img = await ImageDownsampler.downsampleToScreen(data: data) else { return }
+            store(img, for: url)
         }
     }
 }
