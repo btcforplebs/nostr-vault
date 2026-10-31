@@ -10,7 +10,7 @@ import { actionContext } from "../net/actions.js"
 import { WalletReceive } from "./WalletReceive.jsx"
 import { WalletHistory } from "./WalletHistory.jsx"
 import { WalletSend } from "./WalletSend.jsx"
-import { Waiting } from "../components/Loading.jsx"
+import { Spinner, Waiting } from "../components/Loading.jsx"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/wallet.css")
@@ -21,7 +21,9 @@ export function WalletScreen() {
     <main class="screen wallet">
       <header class="screen-head"><h2>Wallet</h2></header>
       {wallet.status === "loading" ? <Waiting>Opening your wallet…</Waiting>
-        : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletSend wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /><WalletHistory wallet={wallet} /></> : <Connect />}
+        // The iPhone's order (WalletLightningTab): the balance first, then the lightning address (it heads Receive), Receive,
+        // Send and History; which wallet is linked, and Disconnect, come after.
+        : wallet.status === "ready" ? <><Connected wallet={wallet} /><WalletReceive wallet={wallet} pubkey={actionContext()?.session.pubkey} /><WalletSend wallet={wallet} /><WalletHistory wallet={wallet} /><Linked wallet={wallet} /></> : <Connect />}
       {wallet.status !== "loading" && <DefaultZap sats={wallet.defaultSats} />}
     </main>
   )
@@ -50,26 +52,40 @@ function Connect() {
   )
 }
 
-/** Exported for the test that it re-reads the balance after a payment (`balanceOf`: a fake there). */
+/** The balance as the hero (WalletLightningTab balanceCard): "LIGHTNING BALANCE", the sats large, a spinner while it
+ *  reads and "--" when it can't. Exported for the test that it re-reads the balance after a payment (`balanceOf`: a fake
+ *  there). */
 export function Connected({ wallet, balanceOf = getBalance }) {
   const [balance, setBalance] = useState(null) // msat
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
-  const [confirm, setConfirm] = useState(false)
   const refresh = async () => {
     setBusy(true); setErr("")
     try { setBalance(await balanceOf(wallet.conn)) } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
   useEffect(() => { setBalance(null); refresh() }, [wallet.conn])
   useEffect(() => onPaid(refresh), [wallet.conn])
+  return (
+    <section class="card wallet-card wallet-hero" aria-label="Lightning balance">
+      <div class="wallet-hero-head">
+        <span class="wallet-bolt" aria-hidden="true">⚡</span><span class="wallet-hero-label">LIGHTNING BALANCE</span>
+        {busy ? <Spinner label="Reading the balance" />
+          : <button type="button" class="wallet-refresh" onClick={refresh} aria-label="Refresh balance" title="Refresh">↻</button>}
+      </div>
+      {err ? <p class="error" role="alert">{err}</p>
+        : balance !== null ? <p class="wallet-balance"><span class="wallet-sats-big">{Math.floor(balance / 1000).toLocaleString()}</span> <span class="muted">sats</span></p>
+        : !busy && <p class="wallet-balance"><span class="wallet-sats-big muted">--</span></p>}
+    </section>
+  )
+}
+
+/** Which wallet is linked (its relay and the key it knows this app by), and Disconnect. */
+function Linked({ wallet }) {
+  const [confirm, setConfirm] = useState(false)
   const host = (() => { try { return new URL(wallet.conn.relay).host } catch { return wallet.conn.relay } })()
   return (
     <section class="card wallet-card">
       <h3>Wallet Connect</h3>
-      <div class="wallet-row"><span>Balance</span>
-        <span class="wallet-balance">{busy ? "…" : balance !== null ? `${Math.floor(balance / 1000).toLocaleString()} sats` : err ? <span class="error">{err}</span> : "Unknown"}</span>
-        <button type="button" class="small" disabled={busy} onClick={refresh} aria-label="Refresh balance">↻</button>
-      </div>
       <div class="wallet-row"><span>Relay</span><span class="muted">{host}</span></div>
       <div class="wallet-row"><span>App key</span><span class="muted mono">{npubEncode(appKeyOf(wallet.conn)).slice(0, 20)}…</span></div>
       {confirm
