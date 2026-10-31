@@ -257,14 +257,15 @@ extension FeedService {
             } else if let best = best {
                 // The newest kind-3 any relay returned is OLDER than the contact list
                 // we last published/committed locally — our latest edit (e.g. a fresh
-                // follow) hasn't propagated to these relays yet, so committing it would
-                // silently drop follows. Keep the local set authoritative and re-publish
-                // so the network catches up (self-heal).
+                // follow) hasn't reached these relays yet, so committing it would
+                // hide follows on screen. Keep the local set for display. Loading
+                // never signs a list (Logen 2026-10-31): re-publishing the local copy
+                // here put old follows back over edits made in other apps. The next
+                // tap fetches the newest list before it signs.
                 #if DEBUG
-                print("FeedService: [contact] relay kind-3 stale (relay created_at=\(best.createdAt) < local \(self.ownContactListCreatedAt)) — keeping \(self.followedPubkeys.count) local follows and re-publishing")
+                print("FeedService: [contact] relay kind-3 stale (relay created_at=\(best.createdAt) < local \(self.ownContactListCreatedAt)) — keeping \(self.followedPubkeys.count) local follows, not re-publishing")
                 #endif
                 self.connectionStatus = self.followedPubkeys.isEmpty ? "No contacts found" : "Loaded \(self.followedPubkeys.count) contacts"
-                self.publishContactList()
             } else {
                 // No kind-3 found anywhere — leave the existing follow set intact.
                 #if DEBUG

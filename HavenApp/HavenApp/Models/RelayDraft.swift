@@ -301,6 +301,25 @@ enum RelayDraft {
 
     /// After Save: the saved lists become the start, removed rows leave, and
     /// every other row keeps its place, including defaults now published.
+    enum SaveCheck: Equatable { case ok, changed, unknown }
+
+    /// Right before a Save publishes: the lists read again (`fresh`) must be
+    /// known and the same as when the page opened (`opened`), for each list
+    /// the Save publishes. Otherwise the Save would put this page's copy over
+    /// a list another app changed meanwhile.
+    static func saveCheck(opened: Published, fresh: Published, plan: Plan) -> SaveCheck {
+        func same(_ a: [String], _ b: [String]) -> Bool { Set(a.map(RelayMatrix.key)) == Set(b.map(RelayMatrix.key)) }
+        if plan.relayListTags != nil {
+            guard fresh.relayListKnown else { return .unknown }
+            guard same(opened.read, fresh.read), same(opened.write, fresh.write), opened.kept == fresh.kept else { return .changed }
+        }
+        if plan.dmRelays != nil {
+            guard fresh.dmListKnown else { return .unknown }
+            guard same(opened.dms, fresh.dms) else { return .changed }
+        }
+        return .ok
+    }
+
     static func saved(_ state: State, plan: Plan) -> State {
         var published = state.published
         if let tags = plan.relayListTags?.filter({ listable($0[1]) }) {

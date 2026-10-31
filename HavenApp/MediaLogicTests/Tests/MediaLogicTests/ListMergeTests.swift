@@ -70,20 +70,23 @@ final class ListMergeTests: XCTestCase {
     }
 
     func testEditBaseTakesTheNewerOfFetchedAndHeld() {
-        let fetched = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1)
-        guard case .list(let newest) = ListMerge.editBase(fetched, held: 200, createdAt: { $0 }) else { return XCTFail("no list") }
+        let own = ["wss://a.example", "wss://b.example"]
+        let fetched = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 1, answeredBy: ["wss://a.example"], from: ["wss://a.example"])
+        guard case .list(let newest) = ListMerge.editBase(fetched, held: 200, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
         XCTAssertEqual(newest, 200)
-        guard case .list(let fetchedOnly) = ListMerge.editBase(fetched, held: nil, createdAt: { $0 }) else { return XCTFail("no list") }
+        guard case .list(let fetchedOnly) = ListMerge.editBase(fetched, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
         XCTAssertEqual(fetchedOnly, 100)
     }
 
     func testEditBaseIsUnknownWhenTheFetchFails() {
+        let own = ["wss://a.example", "wss://b.example", "wss://c.example"]
         let nobody = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 0)
-        guard case .unknown = ListMerge.editBase(nobody, held: 200, createdAt: { $0 }) else { return XCTFail("published on a failed fetch") }
-        let some = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 2)
-        guard case .unknown = ListMerge.editBase(some, held: nil, createdAt: { $0 }) else { return XCTFail("published with a relay unanswered") }
-        let all = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 3)
-        guard case .none = ListMerge.editBase(all, held: nil, createdAt: { $0 }) else { return XCTFail("no list anywhere should be none") }
+        guard case .unknown = ListMerge.editBase(nobody, held: 200, own: own, createdAt: { $0 }) else { return XCTFail("published on a failed fetch") }
+        let some = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 2, answeredBy: Set(own.prefix(2)))
+        guard case .unknown = ListMerge.editBase(some, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("published with a relay unanswered") }
+        let all = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 3, answeredBy: Set(own))
+        guard case .none = ListMerge.editBase(all, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list anywhere should be none") }
+        guard case .unknown = ListMerge.editBase(all, held: nil, own: [], createdAt: { $0 }) else { return XCTFail("no own relays must be unknown") }
     }
 
     func testEditBaseIsUnknownOnACopyNoOwnRelayVouchesFor() {
@@ -101,6 +104,30 @@ final class ListMergeTests: XCTestCase {
         let newerElsewhere = ReplaceableLookup(event: 100 as Int64, asked: 3, answered: 2,
                                                answeredBy: ["wss://mine.example", "wss://purplepag.es"], from: ["wss://purplepag.es"])
         guard case .list = ListMerge.editBase(newerElsewhere, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list") }
+    }
+
+    /// Tron #1459: the write relays time out and purplepag.es (or a read relay)
+    /// answers with an older list. That copy must not become the base, and
+    /// neither must a copy this device holds.
+    func testEditBaseNeedsTheOwnRelaysNotJustAnyAnswer() {
+        let write = ["wss://w1.example", "wss://w2.example", "wss://w3.example"]
+        let old = ReplaceableLookup(event: 100 as Int64, asked: 6, answered: 1,
+                                    answeredBy: ["wss://purplepag.es"], from: ["wss://purplepag.es"])
+        guard case .unknown = ListMerge.editBase(old, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("built on purplepag.es alone") }
+        guard case .unknown = ListMerge.editBase(old, held: 150, own: write, createdAt: { $0 }) else { return XCTFail("built on a held copy with the own relays silent") }
+        // One of three write relays answered empty, purplepag.es sent a list: not most of them.
+        let one = ReplaceableLookup(event: 100 as Int64, asked: 6, answered: 2,
+                                    answeredBy: ["wss://purplepag.es", "wss://w1.example"], from: ["wss://purplepag.es"])
+        guard case .unknown = ListMerge.editBase(one, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("1 of 3 own relays is not most") }
+        // Two of three answered: most of them, the newest copy is the base.
+        let two = ReplaceableLookup(event: 100 as Int64, asked: 6, answered: 3,
+                                    answeredBy: ["wss://purplepag.es", "wss://w1.example", "wss://w2.example"], from: ["wss://purplepag.es"])
+        guard case .list(let base) = ListMerge.editBase(two, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("most own relays answered") }
+        XCTAssertEqual(base, 100)
+        // "None" needs every own relay, even when the other relays all answered.
+        let noneButOne = ReplaceableLookup<Int64>(event: nil, asked: 5, answered: 5,
+                                                  answeredBy: ["wss://purplepag.es", "wss://r.example", "wss://w1.example", "wss://w2.example", "wss://x.example"])
+        guard case .unknown = ListMerge.editBase(noneButOne, held: nil, own: write, createdAt: { $0 }) else { return XCTFail("none with an own relay unheard") }
     }
 
     // MARK: - Unblocking from the private part
