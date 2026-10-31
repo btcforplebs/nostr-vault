@@ -153,6 +153,11 @@ data class HavenConfig(
     // media over the mesh: its mesh npub, from their 10063. Null for none.
     val homeVaultNpub: String? = null,
 
+    // Mesh npubs this phone listed in the owner's 10063 (home vault, linked
+    // Macs) that left My Devices or the home vault since. Only Save in Media
+    // servers publishes the 10063, so the next Save drops these, then clears them.
+    val serverListDropMesh: List<String> = emptyList(),
+
     // What one sharing session may send to the mesh before sharing stops (NIP-F1).
     val fipsServeLimitBytes: Long = 1L shl 30,
 

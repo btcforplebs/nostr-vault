@@ -17,9 +17,11 @@ import com.nostrvault.ui.screens.settings.RelayMatrixScreen
 import com.nostrvault.ui.theme.*
 
 /**
- * Create an account: the servers the new account's posts go through, shown
- * before its relay list is published. Continue goes on; Change opens the
- * Relays screen, whose Save is what changes the list.
+ * Create an account: the servers the new account's posts go through, and the
+ * media servers its photos and videos go to, shown before anything is
+ * published. Continue goes on; Change opens the Relays screen, whose Save is
+ * what changes the relay list. The media servers are only this device's upload
+ * servers until Save in Media servers publishes them.
  */
 @Composable
 internal fun StarterRelaysStep(viewModel: SetupWizardViewModel) {
@@ -39,6 +41,23 @@ internal fun StarterRelaysStep(viewModel: SetupWizardViewModel) {
                     RelayMatrix.label(url), color = PrimaryText, fontSize = 15.sp, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp),
                 )
+            }
+        }
+        val media = cfg.blossomMirrors
+        if (media.isNotEmpty()) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Your photos and videos will be stored on these servers",
+                color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(12.dp))
+            WizardCard {
+                media.forEach { url ->
+                    Text(
+                        url.removePrefix("https://").trimEnd('/'), color = PrimaryText, fontSize = 15.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(24.dp))

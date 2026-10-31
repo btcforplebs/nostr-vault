@@ -165,7 +165,9 @@ class SetupWizardViewModel @Inject constructor(
     val backupQuestion = _backupQuestion.asStateFlow()
 
     // Blossom
-    internal val _blossomURL = MutableStateFlow("https://blossom.primal.net")
+    // A suggestion to sync from. Saved as an upload server only when the
+    // account has no media server list of its own (see startMediaMirror).
+    internal val _blossomURL = MutableStateFlow(SUGGESTED_MIRROR_SOURCE)
     val blossomURL = _blossomURL.asStateFlow()
 
     internal val _isMirroring = MutableStateFlow(false)

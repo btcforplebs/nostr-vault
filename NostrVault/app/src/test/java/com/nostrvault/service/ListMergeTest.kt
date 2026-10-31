@@ -57,6 +57,33 @@ class ListMergeTest {
     }
 
     @Test
+    fun `published first keeps their order and default, ours after`() {
+        val published = listOf(
+            listOf("server", "https://theirs.example"), listOf("alt", "x"),
+            listOf("server", "https://B.example/"), listOf("server", "https://gone.example"),
+        )
+        // This device lists the Mac first and b; gone was removed here (in the base, not local).
+        val tags = ListMerge.tagsPublishedFirst(
+            "server", listOf("https://mac.example", "https://b.example", "https://theirs.example"), published,
+        ) { it != "https://gone.example" }
+        assertEquals(
+            listOf(
+                listOf("server", "https://theirs.example"), listOf("alt", "x"),
+                listOf("server", "https://B.example/"), listOf("server", "https://mac.example"),
+            ),
+            tags,
+        )
+    }
+
+    @Test
+    fun `published first with nothing published is the local list`() {
+        assertEquals(
+            listOf(listOf("server", "https://a.example")),
+            ListMerge.tagsPublishedFirst("server", listOf("https://a.example", "https://A.example/", " "), emptyList()) { true },
+        )
+    }
+
+    @Test
     fun `nothing published publishes the local list`() {
         assertEquals(listOf(listOf("p", "x")), ListMerge.tags("p", listOf("x", "X", " "), emptyList()) { true })
     }

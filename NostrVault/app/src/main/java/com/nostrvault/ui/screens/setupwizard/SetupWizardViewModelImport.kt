@@ -10,6 +10,8 @@ import com.nostrvault.relay.BlossomArchive
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.service.ListMerge
+import com.nostrvault.service.syncOwnerServerList
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -156,14 +158,13 @@ import java.net.URL
             _mirrorStatus.value = "Starting media sync..."
             _mirrorCompleted.value = false
 
-            // Save mirror URL to config first
+            // Their published media server list (kind 10063) first, in their
+            // order. The suggested server is added only when they have none;
+            // a server they typed goes after theirs.
+            runCatching { nostrService.syncOwnerServerList() }
             val url = _blossomURL.value.trim()
-            if (url.isNotEmpty()) {
-                configStore.update { config ->
-                    if (url !in config.blossomMirrors) {
-                        config.copy(blossomMirrors = config.blossomMirrors + url)
-                    } else config
-                }
+            configStore.update { config ->
+                SetupMirrorSource.mirrors(config.blossomMirrors, url)?.let { config.copy(blossomMirrors = it) } ?: config
             }
 
             try {
@@ -226,3 +227,23 @@ import java.net.URL
     fun SetupWizardViewModel.skipWallet() { _step.value = stepAfter(WizardStep.WALLET) }
 
     // ── Notifications ("Stay in the Loop", iOS PushNotificationStep) ──
+
+/** Suggested in setup's media step: a server to sync from. */
+internal const val SUGGESTED_MIRROR_SOURCE = "https://blossom.primal.net"
+
+/** What setup's media step does to the upload servers. Pure for the tests. */
+internal object SetupMirrorSource {
+    /**
+     * The upload servers after syncing from [url], or null for no change.
+     * [current] already holds the account's own published list when it has
+     * one: the suggestion is then not added, so it never becomes a server
+     * they did not pick. A server they typed is added after theirs.
+     */
+    fun mirrors(current: List<String>, url: String, suggested: String = SUGGESTED_MIRROR_SOURCE): List<String>? {
+        val u = url.trim()
+        if (u.isEmpty()) return null
+        if (current.any { ListMerge.key(it) == ListMerge.key(u) }) return null
+        if (current.isNotEmpty() && ListMerge.key(u) == ListMerge.key(suggested)) return null
+        return current + u
+    }
+}

@@ -7,17 +7,24 @@ import org.junit.Test
 class ServerListAdoptionTest {
 
     @Test
-    fun `servers set in another app are added after the ones here`() {
+    fun `their list replaces ours, in their order`() {
+        // A new install's defaults, then their own list from another app: theirs, first one first.
         val result = ServerListAdoption.adopt(
-            local = listOf("https://blossom.primal.net"),
-            updatedAt = 100,
-            published = listOf("https://blossom.primal.net/", "https://cdn.satellite.earth"),
+            local = listOf("https://blossom.primal.net", "https://blossom.nostr.build"),
+            updatedAt = null,
+            published = listOf("https://cdn.theirs.example", "https://blossom.primal.net/"),
             publishedAt = 200,
             base = null,
         )!!
-        assertEquals(listOf("https://blossom.primal.net", "https://cdn.satellite.earth"), result.mirrors)
-        assertEquals(listOf("https://cdn.satellite.earth"), result.added)
+        assertEquals(listOf("https://cdn.theirs.example", "https://blossom.primal.net/"), result.mirrors)
+        assertEquals(listOf("https://cdn.theirs.example"), result.added)
         assertEquals(200L, result.updatedAt)
+    }
+
+    @Test
+    fun `a list with no usable server keeps ours`() {
+        val local = listOf("https://blossom.nostr.build")
+        assertNull(ServerListAdoption.adopt(local, null, listOf("fipsmesh://npub1x/", "http://127.0.0.1:3355"), 5, null))
     }
 
     @Test
@@ -42,6 +49,7 @@ class ServerListAdoptionTest {
             base = listOf("https://keep.example", "https://Removed.example/"),
         )!!
         assertEquals(listOf("https://keep.example", "https://new.example"), result.mirrors)
+        assertEquals(listOf("https://new.example"), result.added)
     }
 
     @Test

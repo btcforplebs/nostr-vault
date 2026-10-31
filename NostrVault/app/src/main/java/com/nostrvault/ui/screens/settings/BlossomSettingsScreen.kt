@@ -219,6 +219,24 @@ fun BlossomSettingsScreen(
                 }
             }
 
+            // Every server plain http: uploads and their auth headers go out unencrypted (Tron #1451).
+            if (com.nostrvault.service.ServerListAdoption.allPlainHttp(mirrors)) {
+                Surface(
+                    color = WarningYellow.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = "These servers use http, not https. Uploads and their sign-in go out unencrypted. Add an https server to keep them private.",
+                        color = WarningYellow,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
+
             // Publish status
             if (publishStatus.isNotBlank()) {
                 Surface(
