@@ -72,4 +72,26 @@ final class AccountUnreadTests: XCTestCase {
         XCTAssertEqual(AccountUnread.badge(99), "99")
         XCTAssertEqual(AccountUnread.badge(100), "99+")
     }
+
+    func testOtherAccountDot() {
+        var u = AccountUnread()
+        let both = [alice, bob]
+        XCTAssertFalse(u.othersHaveUnread(accounts: both, active: alice))
+        // News for the active account alone: its Vault tab has the dot, not the avatar.
+        u.record(marker("reply", id: "1", to: alice))
+        XCTAssertFalse(u.othersHaveUnread(accounts: both, active: alice))
+        u.record(marker("zap", id: "2", to: bob))
+        XCTAssertTrue(u.othersHaveUnread(accounts: both, active: alice))
+        XCTAssertTrue(u.othersHaveUnread(accounts: both, active: alice.uppercased()))
+        // Switching to bob: now alice is the other account with news.
+        XCTAssertTrue(u.othersHaveUnread(accounts: both, active: bob))
+        u.markSeen(bob)
+        XCTAssertFalse(u.othersHaveUnread(accounts: both, active: alice))
+    }
+
+    func testRemovedAccountDoesNotHoldTheDot() {
+        var u = AccountUnread()
+        u.record(marker("reply", id: "1", to: bob))
+        XCTAssertFalse(u.othersHaveUnread(accounts: [alice], active: alice))
+    }
 }

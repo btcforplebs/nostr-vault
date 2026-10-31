@@ -290,6 +290,11 @@ fun NostrVaultNavHost(
                     foldProgress = { if (condenseTab) ScrollChrome.progress else 0f },
                     hasUnreadDMs = unreadDMs > 0,
                     hasNewRelayActivity = relayActivity,
+                    // The rows the switcher sheet lists, the active one aside.
+                    otherAccountHasNews = unread.othersHaveUnread(
+                        accounts = buildAccountInfos(config, profiles, includeWhitelisted = true).map { it.hexPubkey },
+                        active = activeHex,
+                    ),
                     onNavigate = { screen ->
                         // The dot goes to where the news is, not to the list
                         // you left. The list clears once it is on screen.

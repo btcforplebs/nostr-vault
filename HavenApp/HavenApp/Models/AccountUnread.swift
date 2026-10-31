@@ -63,6 +63,15 @@ struct AccountUnread: Equatable {
         ids[hex.lowercased()]?.count ?? 0
     }
 
+    /// Whether an account other than the active one has news: the dot on the
+    /// tab-bar / sidebar avatar. Only `accounts` (the hex keys still signed
+    /// in) are asked, so a removed account's leftover ids can't hold the dot
+    /// up with no row left to clear them.
+    func othersHaveUnread(accounts: [String], active: String) -> Bool {
+        let active = active.lowercased()
+        return accounts.contains { $0.lowercased() != active && count(for: $0) > 0 }
+    }
+
     /// The badge text: nothing at zero, "99+" past 99.
     static func badge(_ count: Int) -> String? {
         count <= 0 ? nil : count > 99 ? "99+" : String(count)

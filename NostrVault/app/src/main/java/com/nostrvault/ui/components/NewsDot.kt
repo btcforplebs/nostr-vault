@@ -33,6 +33,8 @@ fun NewsDot(
     /** The red part's diameter. The ring is drawn outside it. */
     size: Dp = 10.dp,
     ring: Dp = 1.5.dp,
+    /** Red for this account's news; the avatar's "another account has news" dot passes the accent. */
+    color: Color = ErrorRed,
 ) {
     AnimatedVisibility(
         visible = isShown,
@@ -42,11 +44,11 @@ fun NewsDot(
     ) {
         Box(
             Modifier
-                .shadow(6.dp, CircleShape, ambientColor = ErrorRed, spotColor = ErrorRed)
+                .shadow(6.dp, CircleShape, ambientColor = color, spotColor = color)
                 .background(Color.Black.copy(alpha = 0.55f), CircleShape)
                 .padding(ring)
                 .size(size)
-                .background(ErrorRed, CircleShape),
+                .background(color, CircleShape),
         )
     }
 }
