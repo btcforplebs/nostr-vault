@@ -35,7 +35,7 @@ export function NotifySwitch() {
           <input type="checkbox" role="switch" checked={types[t.id]} onChange={e => setType(t.id, e.currentTarget.checked)} />
         </label>
       ))}
-      <p class="settings-note muted small">{why || "While Nostr Vault is open in a tab, even in the background, what you pick here shows as notifications. Nothing goes through a push server: the tab asks your relays about once a minute, so nothing arrives once every tab is closed. Messages are opened by your signer as they arrive."}</p>
+      <p class="settings-note muted small">{why || "While Nostr Vault is open in a tab, even in the background, what you pick here shows as notifications. Nothing goes through a push server: the tab asks your relays every minute while you are looking at it, every five minutes while it is in the background, and right away when you come back to it, so nothing arrives once every tab is closed. Messages are opened by your signer as they arrive."}</p>
     </>
   )
 }
