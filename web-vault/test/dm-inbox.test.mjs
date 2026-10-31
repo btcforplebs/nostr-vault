@@ -16,3 +16,12 @@ test("one Requests row, the iPhone's (below the list, glyph and count), not a se
 test("the empty inbox shows only when there are no Requests either (DMInboxView: both lists empty)", () => {
   assert.match(src, /showRequests \? <div class="empty"><strong>No Requests<\/strong><\/div> : requests\.length \? null : \(/)
 })
+
+test("inbox row as the iPhone's: unread dot on the face, accent time, count only past 1, two-line preview", () => {
+  const css = readFileSync(new URL("../src/styles/dms.css", import.meta.url), "utf8")
+  assert.match(src, /\{unread > 0 && <span class="dm-dot" aria-hidden="true" \/>\}/)
+  assert.match(src, /\{unread > 1 && <span class="dm-unread">/)
+  assert.doesNotMatch(src, /\{unread > 0 && <span class="dm-unread">/)
+  assert.match(css, /\.dm-row-last \{[^}]*-webkit-line-clamp: 2/)
+  assert.match(css, /\.dm-row\.unread \.dm-time \{ color: var\(--accent\); \}/)
+})
