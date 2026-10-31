@@ -1,4 +1,4 @@
-// Note actions, as on the iPhone's note row: like (kind 7), repost (kind 6), and the tags a reply (NIP-10) or a
+// Note actions, as on the iPhone's note row: like (kind 7), repost (kind 6, or 16 for other kinds), and the tags a reply (NIP-10) or a
 // quote (NIP-18 q tag + nevent) carries. Signed by the user's signer, stored in Haven's outbox, sent to the relays
 // publishRelays picks. A like or repost reads as sent only once it is signed and a relay took it.
 import { neventEncode } from "nostr-tools/nip19"
@@ -26,9 +26,16 @@ export const REACTION = "❤️"
 export const reactionTemplate = (note, content = REACTION) =>
   ({ kind: 7, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey], ["k", String(note.kind)]], content })
 
-/** NIP-18 repost: the note itself as the content. */
-export const repostTemplate = note =>
-  ({ kind: 6, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey]], content: JSON.stringify(note) })
+/** NIP-18 repost, the reposted event as the content. Kind 6 is only for kind 1 notes; anything else (an article, a
+ *  poll, a picture, a comment) is a kind 16 generic repost with a k tag naming its kind (PendingPostManager), plus the
+ *  a tag NIP-18 asks for when it is addressable. */
+export function repostTemplate(note) {
+  if (note.kind === 1) return { kind: 6, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey]], content: JSON.stringify(note) }
+  const tags = [["e", note.id, ""], ["p", note.pubkey], ["k", String(note.kind)]]
+  const d = note.tags?.find(t => t[0] === "d")?.[1]
+  if (note.kind >= 30000 && note.kind < 40000 && d !== undefined) tags.push(["a", `${note.kind}:${note.pubkey}:${d}`])
+  return { kind: 16, created_at: now(), tags, content: JSON.stringify(note) }
+}
 
 /**
  * NIP-10 tags for a reply to `parent`, as the iPhone's compose builds them (ComposeView+Posting): a parent that is
@@ -147,7 +154,7 @@ const addLikes = (id, ids) => likeIds.set(id, [...new Set([...(likeIds.get(id) ?
  *  it has since taken back (a kind 5 for it) doesn't count. */
 export async function loadSent(ctx, id) {
   if (actionState(id).like && actionState(id).repost) return
-  const mine = await ctx.vault.outbox.query({ kinds: [6, 7], authors: [ctx.session.pubkey], "#e": [id], limit: 20 }).catch(() => [])
+  const mine = await ctx.vault.outbox.query({ kinds: [6, 7, 16], authors: [ctx.session.pubkey], "#e": [id], limit: 20 }).catch(() => [])
   const likes = mine.filter(ev => ev.kind === 7).map(ev => ev.id)
   const gone = likes.length
     ? new Set((await ctx.vault.outbox.query({ kinds: [5], authors: [ctx.session.pubkey], "#e": likes, limit: 50 }).catch(() => []))
