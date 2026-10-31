@@ -29,6 +29,16 @@ export function direction(pubkey) {
 /** Faces past your follows, as the iPhone's Everyone layer: this many, picked from six times as many candidates
  *  because many people further out have no picture. */
 export const OUTER_FACES = 36, OUTER_CANDIDATES = OUTER_FACES * 6
+/** The globe shows about this many times the iPhone's face counts (TrustGlobeCanvas.faceScale, Logen 10/14). */
+export const FACE_SCALE = 1.8
+/** Faces past your follows for each layer of the picker (TrustMap.faceCount): a few for Everyone, many for Vouched or
+ *  Further out, none for Following. Already scaled by FACE_SCALE, as the phone draws them. */
+export const LAYER_FACES = { everyone: Math.round(OUTER_FACES * FACE_SCALE), following: 0, close: Math.round(100 * FACE_SCALE), furtherOut: Math.round(100 * FACE_SCALE) }
+/** Follows drawn as faces, those with a picture (TrustMap.ringFaceCount, scaled); the rest stay stars. */
+export const RING_FACES = Math.round(40 * FACE_SCALE)
+/** Profiles looked at for a single layer's faces: a wide pool, since many people further out have no picture
+ *  (TrustMap.layerFaceCandidateCount). */
+export const LAYER_CANDIDATES = 400
 /** Candidates for those faces: most linked first (buildWeb and filterWeb keep both lists in that order), taken in turn
  *  from the extended network and further out so both outer shells get pictures. */
 export function outerFaces(web, count = OUTER_CANDIDATES) {
@@ -39,18 +49,26 @@ export function outerFaces(web, count = OUTER_CANDIDATES) {
   }
   return out
 }
+/** Candidates for `layer`'s faces: Everyone's mix, or the picked shell's most linked. */
+export function layerFaceCandidates(web, layer) {
+  if (layer === "close") return web.extended.slice(0, LAYER_CANDIDATES)
+  if (layer === "furtherOut") return web.further.slice(0, LAYER_CANDIDATES)
+  if (layer === "following") return []
+  return outerFaces(web, Math.round(OUTER_CANDIDATES * FACE_SCALE))
+}
 
 /** The first `count` candidates with a picture: only they become faces. */
 export const pictured = (candidates, hasPicture, count = OUTER_FACES) => candidates.filter(hasPicture).slice(0, count)
 
 /** Everyone the globe draws, placed once: [{ pk, layer, face, p: [x, y, z] }], you first, then follows, extended,
- *  further. Your follows are faces, and so are `faces` past them (added if the capped lists left them out). */
-export function layout(web, further, faces = []) {
+ *  further. Your follows are faces (only `ringFaces` of them when given), and so are `faces` past them (added if the
+ *  capped lists left them out). */
+export function layout(web, further, faces = [], ringFaces = null) {
   const at = (pk, layer, face) => ({ pk, layer, face, p: direction(pk).map(v => v * RADIUS[layer]) })
   const outer = new Set(faces)
   const nodes = [
     { pk: web.me, layer: "me", face: true, p: [0, 0, 0] },
-    ...web.follows.map(pk => at(pk, "follow", true)),
+    ...web.follows.map(pk => at(pk, "follow", !ringFaces || ringFaces.has(pk))),
     ...web.extended.map(pk => at(pk, "extended", outer.delete(pk))),
     ...further.map(pk => at(pk, "further", outer.delete(pk))),
   ]
@@ -205,8 +223,22 @@ export function seatFade(current, seated, dt, reduceMotion = false) {
 }
 
 /** Base sizes in points at zoom 1, before perspective: your face, a follow's face, a face past your follows (two points
- *  smaller, as Everyone's), the two kinds of dot. */
-export const SIZE = { me: 20, follow: 11, outer: 9, extended: 2.6, further: 1.7 }
+ *  smaller, as Everyone's), the traced card's person (GlobeScene's author face), the two kinds of star (GlobeScene
+ *  closeHaze 1.4, haze 1.2) and a follow that lost its seat (a ring star, 2.1). */
+export const SIZE = { me: 20, follow: 11, outer: 9, traced: 20, extended: 1.4, further: 1.2, ring: 2.1 }
+/** Star colours and their brightness from back to front (GlobeScene ringColor, hazeColor, the hot accent): the haze is
+ *  faint lavender, a follow's star blue-white, a bridge on a traced path orange. [r, g, b, alpha at the back, at the front] */
+export const STAR = {
+  further: [158, 140, 230, 0.06, 0.22],
+  extended: [158, 140, 230, 0.10, 0.32],
+  ring: [184, 209, 255, 0.25, 0.9],
+  hot: [230, 115, 38, 0.35, 1],
+}
+/** A face's rim colour by kind (GlobeScene face tints): follows blue-white, outer faces lavender, bridges orange, the
+ *  traced person yellow. */
+export const RIM = { follow: [184, 209, 255], outer: [158, 140, 230], bridge: [230, 115, 38], traced: [255, 214, 10] }
+/** A star's alpha for its front-ness (dotLight's 0.35..1 read as 0..1). */
+export const starAlpha = ([, , , back, front], light) => back + (front - back) * Math.max(0, Math.min(1, (light - 0.35) / 0.65))
 /** How bright a face past your follows is drawn, as Everyone's outer faces. */
 export const OUTER_ALPHA = 0.8
 /** A face's size on screen: its base size, nearer is bigger, zoom helps up to a point. */

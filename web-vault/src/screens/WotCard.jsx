@@ -9,14 +9,23 @@ import { BlockDialog, UnblockDialog } from "../components/Moderation.jsx"
 import { fetchProfiles, getProfile, onProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { setFollow } from "../net/follows.js"
-import { trustPathText } from "../net/wot.js"
+import { trustPath, trustPathText } from "../net/wot.js"
+import { WOT_GLOBE } from "../components/wot-glyph.js"
 import { brainstormLink } from "../net/person.js"
 
 const nameOf = pk => getProfile(pk)?.name || npubEncode(pk).slice(0, 12) + "…"
-const LAYER_LABEL = { me: "You", follow: "You follow", extended: "Vouched", further: "Further out" }
+// SF Symbol look-alikes for the card's buttons: person.badge.plus / .minus, person.crop.circle, xmark.
+const ICON = {
+  follow: "M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM3 21v-1a7 7 0 0 1 11-5.7M19 14v6M16 17h6",
+  unfollow: "M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM3 21v-1a7 7 0 0 1 11-5.7M16 17h6",
+  profile: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 13a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5.5 19a7.5 7.5 0 0 1 13 0",
+  close: "M6 6l12 12M18 6 6 18",
+}
+const CardIcon = ({ d, size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 
-/** The trust card (TrustWebView+TrustCard): who they are, the people you follow who follow them, and Follow, Profile,
- *  See their web, then Message, Brainstorm and Block or Unblock behind "…", in the iPhone's order. */
+/** The trust card (TrustWebView+TrustCard): who they are, the faces of the people you follow who follow them with how
+ *  they reach you, and Follow, Profile, See their web, then Message, Brainstorm and Block or Unblock behind "…", in the
+ *  iPhone's order. */
 export function TrustCard({ ctx, web, built, root, pubkey, onPick, onSeeWeb, onClose }) {
   const { vault, account, session, signer } = ctx
   const [, bump] = useState(0)
@@ -28,7 +37,6 @@ export function TrustCard({ ctx, web, built, root, pubkey, onPick, onSeeWeb, onC
   // A blocked person is out of your web; their line is still traced, from the web before blocks.
   const pathWeb = isBlocked ? built : web
   const layer = pathWeb.layerOf(pubkey)
-  const by = pathWeb.linkers.get(pubkey) ?? []
   useEffect(() => onProfiles(() => bump(n => n + 1)), [])
   useEffect(() => {
     setErr("")
@@ -49,33 +57,36 @@ export function TrustCard({ ctx, web, built, root, pubkey, onPick, onSeeWeb, onC
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
   const p = getProfile(pubkey)
+  const bridges = trustPath(pathWeb, pubkey)?.bridges ?? []
+  const outside = !layer
   return (
     <section class="wot-card" role="dialog" aria-label={`Trust card: ${nameOf(pubkey)}`}>
-      <button type="button" class="wot-card-close" aria-label="Close" onClick={onClose}>×</button>
       <div class="wot-card-head">
-        <Avatar pubkey={pubkey} size={48} ring={isMe} />
+        <Avatar pubkey={pubkey} size={44} ring={isMe} />
         <div class="wot-card-names">
           <div class="wot-card-name"><AuthorName pubkey={pubkey} /></div>
-          <div class="muted small">{p?.nip05?.replace(/^_@/, "") || npubEncode(pubkey).slice(0, 16) + "…"}</div>
+          <div class="wot-card-sub">{p?.nip05?.replace(/^_@/, "") || npubEncode(pubkey).slice(0, 16) + "…"}</div>
         </div>
-        {layer && <span class={`wot-layer ${layer}`}>{LAYER_LABEL[layer]}</span>}
+        <button type="button" class="wot-card-close" aria-label="Close" onClick={onClose}><CardIcon d={ICON.close} size={13} /></button>
       </div>
-      <p class="wot-path">{trustPathText(pathWeb, pubkey, nameOf)}</p>
-      {by.length > 0 && layer === "follow" && <p class="muted small wot-linkers-note">{by.length === 1 ? "1 of your follows follows them too" : `${by.length} of your follows follow them too`}</p>}
-      {by.length > 0 && (
-        <div class="wot-linkers" aria-label="Who links you">
-          {by.slice(0, 8).map(f => <button key={f} type="button" class="wot-linker" title={nameOf(f)} aria-label={`Show ${nameOf(f)}`} onClick={() => onPick(f)}><Avatar pubkey={f} size={28} /></button>)}
-          {by.length > 8 && <span class="muted small">+{by.length - 8}</span>}
-        </div>
-      )}
+      {/* The bridges' faces, overlapping, then how they reach you (the trust row). A face opens its own card. */}
+      <div class="wot-trust-row">
+        {bridges.length > 0 && <span class="wot-bridges" aria-label="Who links you">
+          {bridges.map(f => <button key={f} type="button" class="wot-bridge" title={nameOf(f)} aria-label={`Show ${nameOf(f)}`} onClick={() => onPick(f)}><Avatar pubkey={f} size={26} /></button>)}
+        </span>}
+        <p class={outside ? "wot-path outside" : "wot-path"}>{trustPathText(pathWeb, pubkey, nameOf)}</p>
+      </div>
       {!isMe && (
         <div class="wot-actions">
-          <button type="button" class={iFollow ? "small" : "small primary"} disabled={busy || !account.loaded} onClick={toggle} aria-busy={busy || undefined}>
-            {busy ? (signer.method === "nip46" ? "Waiting for your signer…" : "…") : iFollow ? "Unfollow" : "Follow"}
+          <button type="button" class={iFollow ? "wot-action" : "wot-action filled"} disabled={busy || !account.loaded} onClick={toggle} aria-busy={busy || undefined}>
+            <CardIcon d={iFollow ? ICON.unfollow : ICON.follow} />
+            {busy ? (signer.method === "nip46" ? "Waiting…" : "…") : iFollow ? "Unfollow" : "Follow"}
           </button>
-          <a class="button small" href={`#/profile/${pubkey}`}>Profile</a>
+          <a class="wot-action" href={`#/profile/${pubkey}`}><CardIcon d={ICON.profile} />Profile</a>
           {/* The iPhone's short label on a narrow card ("Their web"); its full name for screen readers. */}
-          {pubkey !== root && <button type="button" class="small" aria-label="See their web" title={`Puts ${nameOf(pubkey)} in the middle, with the people they follow around them`} onClick={() => onSeeWeb(pubkey)}>Their web</button>}
+          {pubkey !== root && <button type="button" class="wot-action" aria-label="See their web" title={`Puts ${nameOf(pubkey)} in the middle, with the people they follow around them`} onClick={() => onSeeWeb(pubkey)}>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d={WOT_GLOBE} /></svg>Their web
+          </button>}
           <CardMore pubkey={pubkey} blocked={isBlocked} onDialog={setDialog} />
         </div>
       )}
@@ -100,7 +111,7 @@ function CardMore({ pubkey, blocked, onDialog }) {
   const pick = fn => () => { setOpen(false); fn() }
   return (
     <span class="more-wrap" ref={ref}>
-      <button type="button" class="small" aria-label="More" title="More" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" class="wot-action wot-more" aria-label="More" title="More" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" /></svg>
       </button>
       {open && (

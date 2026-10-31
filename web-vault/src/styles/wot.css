@@ -1,51 +1,125 @@
-/* The Web of Trust tab (screens/WotScreen.jsx): the globe fills the screen under the header, the trust card floats
-   above the tab bar, My Web is a list. */
-.screen.wot { max-width: none; display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: 0; }
-.wot-head { gap: 12px; }
-.wot-views { flex: none; margin: 0; }
-.wot-views button { flex: none; min-height: 36px; padding: 0 12px; white-space: nowrap; }
+/* The Web of Trust tab (screens/WotScreen.jsx), as the iPhone's WOT tab: the globe fills the screen under the status
+   bar and the tab bar; over it a glass layer pill and a glass tools capsule, the trail, passing pills, the trust card
+   above the tab bar and the floating My Web button. No title (TrustWebView: the tab's bar has none). */
+.screen.wot { position: relative; max-width: none; height: 100dvh; min-height: 0; padding: 0; overflow: hidden; }
 
-.wot-globe { position: relative; flex: 1; min-height: 320px; margin: 0 0 calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom)); overflow: hidden;
-  background: radial-gradient(circle at 50% 50%, rgb(230 115 38 / .06), transparent 60%), var(--bg); }
+/* The globe, full-bleed on the deep blue the iPhone draws behind it (GlobeSpace). */
+.wot-globe { position: absolute; inset: 0; overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, rgb(18 20 33) 40px, #000 900px); }
 .wot-globe canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; outline: none; }
 .wot-globe canvas:active { cursor: grabbing; }
 .wot-globe canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
-.wot-legend { position: absolute; left: var(--gutter); top: 8px; max-width: calc(100% - 2 * var(--gutter) - 64px); display: flex; flex-wrap: wrap; gap: 4px 12px;
-  padding: 6px 10px; border-radius: 10px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-  color: var(--text-2); font: var(--t-cap); pointer-events: none; }
-.wot-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.wot-legend .dot { width: 8px; height: 8px; border-radius: 50%; }
-.dot.follow { background: var(--accent); }
-.dot.extended { background: var(--verified); }
-.dot.further { background: rgb(255 255 255 / .4); }
-.wot-home { position: absolute; right: var(--gutter); top: 6px; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
 
-.wot-card { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom) + 10px);
-  width: min(420px, calc(100vw - 24px)); padding: 16px; display: grid; gap: 10px;
-  border-radius: 18px; background: rgb(28 28 30 / .92); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--strong); box-shadow: 0 12px 36px rgb(0 0 0 / .6); }
-.wot-card-close { position: absolute; top: 8px; right: 8px; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; }
-.wot-card-head { display: flex; align-items: center; gap: 12px; padding-right: 32px; }
+/* Over the globe: the bar, then search, the trail and the passing pills, at most 560 wide (TrustWebView topRows). */
+.wot-top { position: absolute; z-index: 6; left: 0; right: 0; top: 0; display: grid; gap: 8px; justify-items: start;
+  padding: max(12px, env(safe-area-inset-top)) var(--gutter) 0; pointer-events: none; }
+.wot-top > * { pointer-events: auto; max-width: min(560px, 100%); }
+.wot-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; max-width: none !important; }
+.wot-pill { height: 44px; border-radius: 999px; border: 1px solid var(--hair); background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text); }
+
+/* The layer pill and its menu (layerMenu). */
+.wot-layer-menu { position: relative; min-width: 0; }
+.wot-layer-pill { display: flex; align-items: center; gap: 6px; max-width: 100%; min-height: 0; padding: 0 14px 0 8px; font: 700 17px/1 var(--font); cursor: pointer; }
+.wot-layer-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; }
+.wot-layer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wot-chevron { flex: none; margin-left: 2px; }
+.wot-menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; min-width: 250px; padding: 6px; display: flex; flex-direction: column;
+  background: rgb(44 44 46 / .94); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--hair); border-radius: 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .5); }
+.wot-menu button { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 12px 0 8px; background: none; border: 0;
+  border-radius: 10px; color: var(--text); font: var(--t-sub); text-align: left; }
+.wot-menu button:hover:not(:disabled) { background: var(--s2); }
+.wot-menu button:disabled { background: none; color: var(--text-3); }
+.wot-menu button svg { flex: none; color: var(--accent); }
+.wot-menu button span:last-child { flex: 1; display: grid; }
+.wot-menu small { color: var(--text-2); font: var(--t-cap); }
+.wot-menu .check { flex: none; width: 14px; color: var(--text); font-weight: 700; }
+.wot-menu-sep { height: 1px; margin: 4px 6px; background: var(--hair); }
+
+/* The tools capsule (trailingPill, IconFilterButton): grey when off, the accent when on. */
+.wot-tools { flex: none; display: flex; align-items: center; gap: 4px; padding: 0 4px; }
+.wot-tool { display: grid; place-items: center; width: 36px; height: 36px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--text-2); cursor: pointer; }
+.wot-tool.on { color: var(--accent); }
+.wot-tool:hover { background: rgb(255 255 255 / .08); }
+.wot-tool:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.wot-tool-divider { width: 1px; height: 20px; margin: 0 2px; background: var(--hair); }
+
+/* Find someone (TrustWebView+Search): a field, then results on the thin material. */
+.wot-search { width: 100%; display: grid; gap: 6px; }
+.wot-search-field { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 12px; border-radius: 12px; border: 1px solid var(--hair);
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text-2); }
+.wot-search-field input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; color: var(--text); font: var(--t-body); outline: none; }
+.wot-search-field input::-webkit-search-cancel-button { display: none; }
+.wot-search-clear { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: var(--text-3); color: #000; }
+.wot-results { max-height: min(380px, 45dvh); overflow-y: auto; padding: 4px; border-radius: 14px; border: 1px solid var(--hair);
+  background: rgb(40 40 42 / .72); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+.wot-result { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 8px; border: 0; border-radius: 10px; background: none; text-align: left; }
+.wot-result:hover { background: rgb(255 255 255 / .06); }
+.wot-result-names { flex: 1; min-width: 0; display: grid; }
+.wot-result-names b, .wot-result-names small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wot-result-names b { font: 600 15px/1.3 var(--font); }
+.wot-result-names small { color: var(--text-2); font: 12px/1.3 var(--font); }
+.wot-result-tag { flex: none; padding: 3px 8px; border-radius: 999px; background: var(--accent-pale); color: var(--accent-light); font: 600 11px/1.2 var(--font); }
+.wot-results-note { margin: 0; padding: 10px; color: var(--text-2); font: var(--t-foot); }
+
+/* The trail (TrustWebView+Breadcrumbs): small capsules, the current one filled with the accent. */
+.wot-crumbs { display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; max-width: 100% !important; }
+.wot-crumb { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 0; height: 28px; padding: 0 10px 0 3px; border: 0; border-radius: 999px;
+  background: rgb(255 255 255 / .08); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text); font: 600 13px/1 var(--font); }
+.wot-crumb.on { background: rgb(230 115 38 / .22); }
+.wot-crumb-sep { color: var(--text-3); font: 600 13px/1 var(--font); }
+
+/* Passing pills: the orange one while your web maps (the live pill), a material one for a filter's note or a hint. */
+.wot-live, .wot-note, .wot-middle { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font: 600 13px/1.25 var(--font); }
+.wot-live { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgb(230 115 38 / .35); }
+.wot-note, .wot-middle { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--hair); color: var(--text); }
+.wot-note { border-radius: 14px; }
+.wot-middle { position: absolute; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; font-size: 14px; }
+.wot-spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgb(255 255 255 / .35); border-top-color: #fff; animation: wot-spin .8s linear infinite; }
+@keyframes wot-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wot-spin { animation-duration: 2.4s; } }
+
+/* The floating My Web button, where other tabs have Post (myWebButton): the accent's gradient capsule. */
+.wot-myweb-button { position: fixed; z-index: 10; right: max(20px, calc(50% - 320px + 20px));
+  bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 12px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: 6px; height: 48px; min-height: 0; padding: 0 18px; border: 0; border-radius: 999px;
+  background: var(--accent-grad); color: #fff; font: 700 14px/1 var(--font-round); box-shadow: 0 4px 8px rgb(230 115 38 / .35); }
+
+/* The trust card (TrustWebView+TrustCard): the thin material, slid up above the tab bar. */
+.wot-card { position: fixed; z-index: 9; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom) + 6px);
+  width: min(520px, calc(100vw - 24px)); padding: 14px; display: grid; gap: 12px;
+  border-radius: 16px; background: rgb(44 44 46 / .72); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border: 1px solid rgb(255 255 255 / .12); box-shadow: 0 6px 16px rgb(0 0 0 / .45); }
+.wot-card-head { display: flex; align-items: center; gap: 12px; }
 .wot-card-names { flex: 1; min-width: 0; }
-.wot-card-name .author-name { font: var(--t-headline); }
-.wot-path { margin: 0; font: var(--t-sub); color: var(--text-2); }
-.wot-linkers { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.wot-linker { padding: 0; min-height: 0; border: 0; background: none; border-radius: 50%; }
-.wot-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.wot-actions > * { justify-content: center; min-width: 0; padding: 0 6px; font: var(--t-foot); font-weight: 600; }
-.wot-linkers-note { margin: 0; }
+.wot-card-name .author-name { font: 600 17px/1.25 var(--font); }
+.wot-card-sub { color: var(--text-2); font: 13px/1.3 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wot-card-close { flex: none; display: grid; place-items: center; width: 30px; height: 30px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: rgb(255 255 255 / .1); color: var(--text-2); }
+.wot-trust-row { display: flex; align-items: center; gap: 10px; }
+.wot-bridges { flex: none; display: flex; }
+.wot-bridge { padding: 0; min-height: 0; border: 2px solid rgb(0 0 0 / .6); border-radius: 50%; background: none; line-height: 0; }
+.wot-bridge + .wot-bridge { margin-left: -10px; }
+.wot-path { margin: 0; flex: 1; min-width: 0; font: 13px/1.35 var(--font); color: var(--text); }
+.wot-path.outside { color: var(--text-2); }
+.wot-actions { display: flex; gap: 8px; }
+/* The card's buttons (cardButton): 38 high capsules, the accent filled for Follow, a faint fill with accent words else. */
+.wot-action { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 38px; min-height: 0; padding: 0 10px;
+  border: 0; border-radius: 999px; background: rgb(255 255 255 / .08); color: var(--accent); font: 600 14px/1 var(--font); text-decoration: none; white-space: nowrap; }
+.wot-action.filled { background: var(--accent); color: #fff; }
+.wot-action:disabled { background: rgb(255 255 255 / .05); color: var(--text-3); }
+.wot-actions .more-wrap { flex: none; }
+.wot-action.wot-more { flex: none; width: 38px; padding: 0; color: var(--text-2); }
 
-.wot-layer { flex: none; padding: 3px 7px; border-radius: 5px; font: 700 10px/1.2 var(--font); letter-spacing: .04em; text-transform: uppercase; }
-.wot-layer.me, .wot-layer.follow { color: var(--accent-light); background: var(--accent-pale); }
-.wot-layer.extended { color: var(--verified); background: rgb(51 204 153 / .13); }
-.wot-layer.further { color: var(--text-2); background: rgb(255 255 255 / .10); }
-
-.wot-list { padding-bottom: calc(var(--tabbar-h) + var(--tabbar-gap) + 24px); }
-.wot-list-note { margin: 0 var(--gutter) 10px; }
-.wot-filters { display: flex; gap: 6px; overflow-x: auto; margin: 0 var(--gutter) 10px; padding-bottom: 2px; }
-.wot-filters button { flex: none; min-height: 34px; padding: 0 12px; font: var(--t-foot); font-weight: 600; border-radius: 999px; }
-.wot-filters button.on { border-color: var(--accent); color: var(--accent-light); }
-.wot-search { display: block; width: calc(100% - 2 * var(--gutter)); margin: 0 var(--gutter) 12px; padding: 10px 12px; border-radius: 10px;
-  border: 1px solid var(--hair); background: var(--s1); color: var(--text); font: var(--t-sub); }
-.wot-row { text-align: left; }
-.wot-row .person-names { flex: 1; }
+/* My Web (WotMyWeb.jsx) on the Vault Dashboard's sheet: the big number, then rows with a count and a check. */
+.wot-myweb-head { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 14px; background: var(--s1); border: 1px solid var(--hair); }
+.wot-myweb-mark { flex: none; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 12px; background: rgb(230 115 38 / .14); color: var(--text); }
+.wot-myweb-head b { display: block; font: 700 26px/1.15 var(--font-round); font-variant-numeric: tabular-nums; }
+.wot-myweb-head small { display: block; color: var(--text-2); font: 13px/1.35 var(--font); }
+.wot-count-row { border: 0; border-radius: 0; background: none; text-align: left; font: inherit; }
+.wot-count-row .dash-icon { color: var(--accent); }
+.wot-count { font: 600 17px/1 var(--font-round); font-variant-numeric: tabular-nums; color: var(--text); }
+.wot-count-row.on .wot-count, .wot-count-check { color: var(--accent); }
+.wot-count-check { width: 12px; font-weight: 700; }
