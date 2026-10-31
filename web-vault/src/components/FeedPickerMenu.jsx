@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { LAYOUT_NAME, nextLayout } from "../net/feed-layout.js"
 
 // SF Symbol look-alikes for FeedMode.icon (Services/FeedServiceTypes.swift).
-const FEED_ICON = {
+export const FEED_ICON = {
   following: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.1a4 4 0 0 1 0 7.8M22 21v-1a6 6 0 0 0-4-5.6",
   discovery: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z",
   global: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
@@ -18,7 +18,8 @@ const FEED_ICON = {
   live: "M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8",
   music: "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
 }
-const LIST_ICON = "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"
+export const LIST_ICON = "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"
+const EDIT_ICON = "M4 6h10M4 12h7M4 18h10M18 5v14M15 16l3 3 3-3M15 8l3-3 3 3" // arrow.up.arrow.down + list
 const LAYOUT_ICON = {
   expanded: "M4 4h16v7H4zM4 14h16v6H4z",
   condensed: "M4 5h16M4 10h16M4 15h16M4 20h16",
@@ -32,7 +33,7 @@ const TOGGLE_ICON = {
 const TOGGLE_NAME = { autoLoad: "Auto-load new posts", reposts: "Reposts", replies: "Replies" }
 const REFRESH_ICON = "M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"
 
-const Icon = ({ d, size = 18 }) => (
+export const Icon = ({ d, size = 18 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
     stroke-linejoin="round" aria-hidden="true"><path d={d} /></svg>
 )
@@ -48,8 +49,9 @@ function useDismiss(open, setOpen, ref) {
   }, [open])
 }
 
-/** The left pill: icon + name + chevron; it opens the feeds. `feeds`: [{ id, label }] in the iPhone's order. */
-export function FeedModeMenu({ feeds, choice, onPick }) {
+/** The left pill: icon + name + chevron; it opens the feeds. `feeds`: [{ id, label }] in the picker's order.
+ *  `onEdit` opens Edit Feeds, the list's last item as on the iPhone. */
+export function FeedModeMenu({ feeds, choice, onPick, onEdit }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useDismiss(open, setOpen, ref)
@@ -71,6 +73,12 @@ export function FeedModeMenu({ feeds, choice, onPick }) {
             <span class="check" aria-hidden="true">{choice.mode === f.id ? "✓" : ""}</span>
           </button>
         ))}
+        {onEdit && <>
+          <span class="feed-mode-sep" role="separator" />
+          <button type="button" role="menuitem" class="feed-mode-edit" onClick={() => { setOpen(false); onEdit() }}>
+            <Icon d={EDIT_ICON} size={17} /><span>Edit Feeds</span><span class="check" aria-hidden="true" />
+          </button>
+        </>}
       </div>}
     </div>
   )

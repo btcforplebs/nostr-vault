@@ -124,3 +124,5 @@
    (components/feed-tap.js, the iPhone's TapLandingLine.bottomRoom). The desktop pane doesn't glide. */
 .tap-room { height: calc(100dvh - 75px); }
 .desk-app .tap-room { display: none; }
+/* Edit Feeds, the picker's last item (components/EditFeeds.jsx). */
+.feed-mode-sep { height: 1px; margin: 4px 6px; background: var(--hair); }

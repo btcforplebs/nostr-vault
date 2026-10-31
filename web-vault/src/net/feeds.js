@@ -23,6 +23,59 @@ export function feedList(readers = []) {
   const at = id => { const i = FEED_ORDER.indexOf(id); return i < 0 ? FEED_ORDER.length : i }
   return all.sort((a, b) => at(a.id) - at(b.id))
 }
+// Edit Feeds (iPhone FeedMenuEditor, Models/FeedLayoutMode.swift FeedMenuOrder): the picker's order and the feeds it
+// hides, saved on this browser. Following is the home feed, so it is always shown.
+const MENU_KEY = "nv-feed-menu"
+export const PINNED_FEED = "following"
+
+/** `stored` ids in their saved order, dropping ones no longer offered; a feed the saved order doesn't know (added in a
+ *  later version) goes in after the feed that comes before it by default, as FeedMenuOrder.ordered does. */
+export function menuOrder(stored, defaults) {
+  const out = [...new Set(stored)].filter(id => defaults.includes(id))
+  defaults.forEach((id, i) => {
+    if (out.includes(id)) return
+    const before = defaults.slice(0, i).findLast(d => out.includes(d))
+    out.splice(before ? out.indexOf(before) + 1 : 0, 0, id)
+  })
+  return out
+}
+
+/** The saved { order, hidden }: lists of feed ids, empty when nothing (or junk) is saved. */
+export function loadMenu(storage = globalThis.localStorage) {
+  try {
+    const m = JSON.parse(storage?.getItem(MENU_KEY) ?? "null")
+    const ids = v => (Array.isArray(v) ? v.filter(x => typeof x === "string") : [])
+    return { order: ids(m?.order), hidden: ids(m?.hidden) }
+  } catch { return { order: [], hidden: [] } }
+}
+
+/** Saves the menu; the default order and nothing hidden is saved as nothing, so later feeds keep their default place. */
+export function saveMenu({ order, hidden }, feeds, storage = globalThis.localStorage) {
+  const defaults = feeds.map(f => f.id)
+  const ordered = menuOrder(order, defaults)
+  const hide = ordered.filter(id => id !== PINNED_FEED && hidden.includes(id))
+  const same = ordered.every((id, i) => id === defaults[i])
+  if (same && !hide.length) return storage?.removeItem(MENU_KEY)
+  storage?.setItem(MENU_KEY, JSON.stringify({ order: same ? [] : ordered, hidden: hide }))
+}
+
+/** Every feed in the menu's order, each with `shown`. */
+export function menuFeeds(feeds, menu) {
+  const byId = new Map(feeds.map(f => [f.id, f]))
+  return menuOrder(menu.order, feeds.map(f => f.id))
+    .map(id => ({ ...byId.get(id), shown: id === PINNED_FEED || !menu.hidden.includes(id) }))
+}
+
+/** Moves the item at `from` to `to` in a copy of `list`. */
+export const moveItem = (list, from, to) => {
+  const out = [...list]
+  out.splice(to, 0, ...out.splice(from, 1))
+  return out
+}
+
+/** The feeds the picker lists: shown ones, in the menu's order. */
+export const visibleFeeds = (feeds, menu) => menuFeeds(feeds, menu).filter(f => f.shown).map(({ shown, ...f }) => f)
+
 /** Following and Media are read from Haven /feed; the others are strangers' notes, held in memory. */
 export const fromHaven = mode => mode === "following" || mode === "media"
 const KEY = "nv-feed"

@@ -6,6 +6,7 @@ import { FeedRows, rootFetcher } from "../components/FeedRows.jsx"
 import { MediaGrid } from "../components/MediaGrid.jsx"
 import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
+import { EditFeeds } from "../components/EditFeeds.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
@@ -13,7 +14,7 @@ import { backgroundFill } from "../net/vault-ready.js"
 import { markSynced, syncedRecently } from "../net/feed-synced.js"
 import { visibleNotes } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
-import { feedList, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
+import { feedList, loadMenu, saveMenu, visibleFeeds, PINNED_FEED, loadChoice, tagChoice, saveChoice, normalizeTag, fetchStrangerFeed, mergePage, statusGate, heldNotes, holdNotes, noteAuthors, feedKey, fromHaven } from "../net/feeds.js"
 import { fetchPopular } from "../net/popular.js"
 import { globalTrust } from "../readers/trust.js"
 import { mediaTiles } from "../net/media.js"
@@ -30,7 +31,8 @@ const BACKGROUND_SYNC_MS = 120_000 // new notes from the people you follow, held
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
 const FEEDS = feedList(READERS)
 const readerFor = mode => READERS.find(r => r.id === mode)
-const pickedChoice = () => tagChoice(globalThis.location?.hash) ?? loadChoice(globalThis.localStorage, FEEDS)
+// A saved feed that Edit Feeds has since hidden opens Following; a #tag link still opens its tag.
+const pickedChoice = () => tagChoice(globalThis.location?.hash) ?? loadChoice(globalThis.localStorage, visibleFeeds(FEEDS, loadMenu()))
 // Once the Feed has taken a #tag link's tag, the address drops it: Back and a reload keep the feed the user is on.
 const dropTag = () => history.replaceState(history.state, "", withParam(location.hash, "tag", null))
 
@@ -71,6 +73,14 @@ export function FeedScreen({ ctx }) {
   const seq = useRef(0)
   const pick = c => { seq.current++; saveChoice(c); setChoice(c); setStrange(heldNotes(c)); setStatus(""); setOlderState("") }
   const sayer = () => statusGate(seq, setStatus)
+  // Edit Feeds: the picker's order and hidden feeds. Hiding the feed you're on takes you back to Following.
+  const [menu, setMenu] = useState(loadMenu)
+  const [editing, setEditing] = useState(false)
+  const changeMenu = m => {
+    saveMenu(m, FEEDS)
+    setMenu(m)
+    if (choice.mode !== PINNED_FEED && m.hidden.includes(choice.mode)) pick({ mode: PINNED_FEED, tag: choice.tag })
+  }
   // A #tag link (NoteText) opens that tag's feed, from any screen; the Feed may already be up behind it (desktop).
   useEffect(() => {
     if (!globalThis.location) return
@@ -221,10 +231,11 @@ export function FeedScreen({ ctx }) {
   return (
     <main class="screen">
       <header class="screen-head feed-head">
-        <FeedModeMenu feeds={FEEDS} choice={choice} onPick={pick} />
+        <FeedModeMenu feeds={visibleFeeds(FEEDS, menu)} choice={choice} onPick={pick} onEdit={() => setEditing(true)} />
         <FeedToolbar layout={!Reader && hasLayouts(choice.mode) ? layout : null} onCycleLayout={cycleLayout}
           filters={filters} onFilters={changeFilters} toggles={toggles} onRefresh={Reader ? null : refresh} />
       </header>
+      {editing && <EditFeeds feeds={FEEDS} menu={menu} onChange={changeMenu} onClose={() => setEditing(false)} />}
       {choice.mode === "hashtag" && <HashtagBox choice={choice} onPick={pick} />}
       <PullIndicator pull={pull} busy={syncing && pull > 0} />
       {Reader ? <Reader ctx={ctx} /> : <>
