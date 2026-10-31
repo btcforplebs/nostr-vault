@@ -115,8 +115,8 @@ data class HavenConfig(
     // inbox tagged-event (#p = owner) subscription. Was hardcoded empty on
     // Android, so tagged notes on relays not in importSeedRelays never
     // reached the inbox. Mirrors iOS HavenConfig.dmRelays. relay.damus.io
-    // replaced nos.lol (2026-10-12, see [DeadRelays]) and was dropped from the
-    // default on 2026-10-31 (see importSeedRelays); a saved list keeps it.
+    // replaced nos.lol (2026-10-12, see [DeadRelays]) and stays in the default
+    // (see [DEFAULT_DM_RELAYS]).
     val dmRelays: List<String> = DEFAULT_DM_RELAYS,
     /**
      * When [dmRelays] last changed, in Unix seconds: the created_at of a
@@ -368,9 +368,14 @@ data class HavenConfig(
             "wss://relay.snort.social",
         )
 
-        /** Default DM (kind 10050) relays. No relay.damus.io (see importSeedRelays). */
+        /**
+         * Default DM (kind 10050) relays. Same as iOS. relay.damus.io stays:
+         * config.json does not store a list equal to this default, so an
+         * upgrader whose published 10050 names damus would stop reading it.
+         */
         val DEFAULT_DM_RELAYS: List<String> = listOf(
             "wss://relay.primal.net",
+            "wss://relay.damus.io",
             "wss://relay.btcforplebs.com",
         )
     }

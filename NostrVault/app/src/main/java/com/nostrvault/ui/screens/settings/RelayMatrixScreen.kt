@@ -278,6 +278,8 @@ private fun healthColor(result: RelayProbeResult?): Color = when (result) {
 fun RelayMatrixScreen(
     onBack: () -> Unit,
     onOpenMediaServers: () -> Unit,
+    /** After Save; true when it published a relay list (kind 10002). */
+    onSaved: (publishedRelayList: Boolean) -> Unit = {},
     viewModel: RelayMatrixViewModel = hiltViewModel(),
 ) {
     val cfg by viewModel.config.collectAsState()
@@ -646,6 +648,7 @@ fun RelayMatrixScreen(
             onSave = {
                 viewModel.save()
                 confirming = false
+                onSaved(plan.relayListTags != null)
             },
             onDismiss = { confirming = false },
         )

@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens
 
 import com.nostrvault.relay.HavenConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,5 +37,36 @@ class StarterRelaysTest {
             StarterRelays.tags(listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io")),
         )
         assertTrue(StarterRelays.tags(listOf("ws://127.0.0.1:4869")).isEmpty())
+    }
+
+    private val key = "a".repeat(64)
+    private val saved = HavenConfig.newInstall().copy(
+        feedRelays = listOf("wss://relay.primal.net"),
+        blastrRelays = listOf("wss://relay.primal.net", "wss://write.only.example"),
+    )
+
+    @Test
+    fun `no Change in setup publishes the starter list`() {
+        assertEquals(StarterRelays.tags(saved.activeFeedRelays), StarterRelays.finishTags(saved, null, key))
+    }
+
+    @Test
+    fun `a list Change already published is not replaced when setup finishes`() {
+        assertNull(StarterRelays.finishTags(saved, StarterRelays.Saved(key, published = true), key))
+    }
+
+    @Test
+    fun `a saved list that could not publish goes out with its write-only picks`() {
+        val tags = StarterRelays.finishTags(saved, StarterRelays.Saved(key, published = false), key)!!
+        assertEquals(saved.publicRelayListTags, tags)
+        assertTrue(tags.any { it[1] == "wss://write.only.example" })
+    }
+
+    @Test
+    fun `a Save for another key does not count`() {
+        assertEquals(
+            StarterRelays.tags(saved.activeFeedRelays),
+            StarterRelays.finishTags(saved, StarterRelays.Saved("b".repeat(64), published = true), key),
+        )
     }
 }

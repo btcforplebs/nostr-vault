@@ -7,13 +7,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
 
-/** relay.damus.io is out of the import-seed and DM defaults; an untouched old import list loses it once. */
+/** relay.damus.io is out of the import-seed default (an untouched old import list loses it once) but stays a DM default. */
 class DamusDefaultsTest {
     @Test
-    fun `damus is in neither default the inbox rounds ask`() {
+    fun `damus is out of the import seed`() {
         assertTrue(HavenConfig().importSeedRelays.none(::isDamus))
-        assertTrue(HavenConfig.DEFAULT_DM_RELAYS.none(::isDamus))
-        assertTrue(HavenConfig().dmRelays.none(::isDamus))
+    }
+
+    @Test
+    fun `damus stays a default DM server, so an unsaved default list keeps reading it`() {
+        // config.json leaves out a dmRelays equal to the default, so an
+        // upgrader's list is whatever this default is now.
+        assertTrue(HavenConfig.DEFAULT_DM_RELAYS.any(::isDamus))
+        assertTrue(HavenConfig().dmRelays.any(::isDamus))
     }
 
     @Test
