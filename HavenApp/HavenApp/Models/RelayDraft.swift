@@ -33,17 +33,27 @@ enum RelayDraft {
         var dms: [String] = []
         var relayListKnown = false
         var dmListKnown = false
+        /// Published 10002 tags this screen can't show or edit (ws://, home
+        /// network, .local, CGNAT, .ts.net). Save carries them through as
+        /// published, so editing one relay never drops another app's entries.
+        var kept: [[String]] = []
+    }
+
+    /// Whether a relay can be a row of the published relay list: a wss://
+    /// address others can reach. Anything else in a published list is `kept`.
+    static func listable(_ url: String) -> Bool {
+        !HavenConfig.publicRelayListTags(ownRelays: [url], read: [], write: []).isEmpty
     }
 
     /// The relays that index every account's lists; a "none" counts only when both answered.
     static let indexers = ["wss://purplepag.es", "wss://user.kindpag.es"]
 
-    /// Whether a lookup settled the list: it was found, or every one of the
-    /// `indexers` answered without it. Any other relay answering empty proves
-    /// little: most of them are this device's own defaults, and a list made in
-    /// another app may never have reached them.
+    /// Whether a lookup settled the list: every one of the `indexers`
+    /// answered, found or not. Any other relay answering proves little: most
+    /// of them are this device's own defaults, a list made in another app may
+    /// never have reached them, and one of them may hold an older copy that
+    /// re-signing would bring back (Tron, #1386).
     static func settled(found: Bool, answeredBy: Set<String>) -> Bool {
-        if found { return true }
         let answered = Set(answeredBy.map(RelayMatrix.key))
         return indexers.allSatisfy { answered.contains(RelayMatrix.key($0)) }
     }
@@ -248,9 +258,11 @@ enum RelayDraft {
         let relayListEdited = keys(readNow) != keys(yoursOnly(start.read, yours))
             || keys(writeNow) != keys(yoursOnly(start.write, yours))
             || movedAny(state, [.read, .write])
-        let newTags = HavenConfig.publicRelayListTags(ownRelays: ownRelays, read: readNow, write: writeNow)
+        let shown = HavenConfig.publicRelayListTags(ownRelays: ownRelays, read: readNow, write: writeNow)
+        let shownKeys = Set(shown.map { RelayMatrix.key($0[1]) })
+        let newTags = shown + p.kept.filter { !shownKeys.contains(RelayMatrix.key($0[1])) }
         let relayListChanges = relayListEdited
-            ? diff(before: HavenConfig.publicRelayListTags(ownRelays: [], read: p.read, write: p.write), after: newTags)
+            ? diff(before: HavenConfig.publicRelayListTags(ownRelays: [], read: p.read, write: p.write) + p.kept, after: newTags)
             : []
         let publishRelayList = relayListEdited && p.relayListKnown && !relayListChanges.isEmpty
 
@@ -288,7 +300,7 @@ enum RelayDraft {
     /// every other row keeps its place, including defaults now published.
     static func saved(_ state: State, plan: Plan) -> State {
         var published = state.published
-        if let tags = plan.relayListTags {
+        if let tags = plan.relayListTags?.filter({ listable($0[1]) }) {
             published.read = tags.filter { $0.count == 2 || ($0.count > 2 && $0[2] == "read") }.map { $0[1] }
             published.write = tags.filter { $0.count == 2 || ($0.count > 2 && $0[2] == "write") }.map { $0[1] }
         }

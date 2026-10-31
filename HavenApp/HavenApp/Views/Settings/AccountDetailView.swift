@@ -152,28 +152,6 @@ struct AccountDetailView: View {
                     Text("Remote Signer (NIP-46)")
                 }
 
-                // NIP-65 Relay List Publishing
-                if hasLocalKey || hasBunker {
-                    Section {
-                        Toggle(isOn: Binding(
-                            get: { configService.config.publishRelayListPerAccount[npub] ?? false },
-                            set: { enabled in
-                                configService.config.publishRelayListPerAccount[npub] = enabled
-                                configService.save()
-                                // Adds the vault to the account's own published
-                                // list; this device's defaults never go out.
-                                if enabled {
-                                    NostrService.shared.publishOwnRelaysInRelayList(forNpub: npub)
-                                }
-                            }
-                        )) {
-                            Text("Publish Relay List").settingInfo(.accountPublishInbox)
-                        }
-                    } header: {
-                        Text("Relay List")
-                    }
-                }
-
                 // Remove account (non-owner only)
                 if !isOwner {
                     Section {

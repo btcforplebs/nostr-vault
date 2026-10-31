@@ -305,7 +305,7 @@ struct SetupWizardView: View {
         case 17:
             StarterRelayListStep(starter: starterRelays) { relays in
                 // Published in publishNewAccount, once the key is stored.
-                starterRelayList = relays
+                starterRelayList = relays.isEmpty ? nil : relays
                 direction = .forward
                 withAnimation(WizardAnimations.springEnter) {
                     currentStep = 15
@@ -538,8 +538,20 @@ struct SetupWizardView: View {
         dismiss()
     }
 
+    /// The servers step 17 shows: this device's Write relays others can
+    /// reach, so Change (Relays) updates it. relay.damus.io is left out
+    /// (Logen 1C: it bans busy IPs).
+    private var starterRelays: [String] {
+        RelayConfiguration.newAccountRelayListTags(
+            broadcastRelays: RelayConfiguration.directBroadcastRelays(
+                kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
+            )
+        ).map { $0[1] }
+            .filter { RelayDraft.listable($0) && RelayMatrix.key($0) != RelayMatrix.key("wss://relay.damus.io") }
+    }
+
     /// Publishes what a brand-new account needs to exist for other people:
-    /// the relay list picked in step 17 (none when skipped) and a profile. Its follow list starts with its first
+    /// the relay list shown in step 17 (none when it was empty) and a profile. Its follow list starts with its first
     /// follow, in the Fill your feed guide. Runs once, after
     /// `saveAndComplete` has stored the key, because each event has to be
     /// signed by it. Only for the New to Nostr path, whose key was generated
@@ -548,15 +560,6 @@ struct SetupWizardView: View {
     /// active when the photo upload (up to 30 s) finishes, and are dropped
     /// unless the signed pubkey is the new key's: a kind 0 or 10002 signed
     /// by another account would replace that account's own.
-    /// The app's starter relay list for a new key, as step 17 shows it.
-    private var starterRelays: [String] {
-        RelayConfiguration.newAccountRelayListTags(
-            broadcastRelays: RelayConfiguration.directBroadcastRelays(
-                kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
-            )
-        ).map { $0[1] }
-    }
-
     private func publishNewAccount() {
         let ownerNpub = configService.config.ownerNpub
         guard let ownerHex = NpubValidation.hexPubkey(fromNpub: ownerNpub) else { return }
@@ -573,7 +576,7 @@ struct SetupWizardView: View {
         Task { @MainActor in
             let nostr = NostrService.shared
 
-            // The list picked in step 17; skipped there, nothing is published.
+            // The list step 17 showed; empty there, nothing is published.
             let relayTags = RelayConfiguration.newAccountRelayListTags(broadcastRelays: starterRelayList ?? [])
             if !relayTags.isEmpty,
                let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags, signAsNpub: ownerNpub),

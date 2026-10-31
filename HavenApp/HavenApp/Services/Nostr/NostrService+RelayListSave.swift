@@ -1,15 +1,14 @@
 import Foundation
 
 /// The only places the owner's relay list (kind 10002) and DM inbox (kind
-/// 10050) are published: Save in Settings > Relays, the Publish relay list
-/// switch and dashboard button, a saved Mac relay address change, and a new
-/// account's starter list. Launch and setup never publish them (Logen
+/// 10050) are published: Save in Settings > Relays, a saved Mac relay
+/// address change, and a new account's starter list (Logen 1C). Launch and setup never publish them (Logen
 /// 2026-10-31). Mirrors Android `NostrServiceListPublishing.kt`.
 extension NostrService {
 
     /// The owner's published relay list and DM inbox, for Settings > Relays.
-    /// A list counts as known when it was found, or both indexer relays
-    /// answered without one (`RelayDraft.settled`); otherwise the cached copy
+    /// A list counts as known when both indexer relays answered
+    /// (`RelayDraft.settled`); otherwise the cached copy
     /// is shown and Save won't publish over it.
     @MainActor
     func lookupOwnerRelayLists() async -> RelayDraft.Published {
@@ -27,12 +26,18 @@ extension NostrService {
         #if DEBUG
         print("NostrService: relay lists looked up: 10002 \(rl.answered)/\(rl.asked) found=\(rl.event != nil), 10050 \(dl.answered)/\(dl.asked) found=\(dl.event != nil)")
         #endif
+        // Entries the screen can't edit (ws://, home network) stay as
+        // published; loopback ones are dropped, they never worked for anyone.
+        let kept = rl.event?.tags.filter {
+            $0.count >= 2 && $0[0] == "r" && !RelayDraft.listable($0[1]) && !Self.isLoopbackRelay($0[1])
+        } ?? []
         return RelayDraft.Published(
-            read: read.filter { !Self.isLoopbackRelay($0) },
-            write: write.filter { !Self.isLoopbackRelay($0) },
+            read: read.filter(RelayDraft.listable),
+            write: write.filter(RelayDraft.listable),
             dms: dms.filter { !Self.isLoopbackRelay($0) },
             relayListKnown: RelayDraft.settled(found: rl.event != nil, answeredBy: rl.answeredBy),
-            dmListKnown: RelayDraft.settled(found: dl.event != nil, answeredBy: dl.answeredBy))
+            dmListKnown: RelayDraft.settled(found: dl.event != nil, answeredBy: dl.answeredBy),
+            kept: kept)
     }
 
     /// Publishes `tags` as kind 10002 for `npub` (the owner by default).
@@ -72,17 +77,18 @@ extension NostrService {
 
     /// The owner saved a new Mac relay address: on the published DM inbox
     /// list, `oldInbox` becomes `newInbox` and every other entry stays as
-    /// published. Nothing goes out when no list was found, so the app's
-    /// defaults never reach it.
+    /// published. Nothing goes out when no list was found or the indexers
+    /// didn't both answer, so the app's defaults never reach it.
     @MainActor
     func publishOwnerDMInboxMove(from oldInbox: String, to newInbox: String) {
         let config = ConfigService.shared.config
         guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { return }
         Task {
             let lookup = await lookupNewestReplaceable(kind: 10050, for: owner, alsoAsk: config.dmInboxRelays + RelayDraft.indexers)
-            guard let event = lookup.event else {
+            // Both indexers must answer: a lagging relay's older copy, re-signed, would roll the list back.
+            guard let event = lookup.event, RelayDraft.settled(found: true, answeredBy: lookup.answeredBy) else {
                 #if DEBUG
-                print("NostrService: DM inbox move: no published list found; not published")
+                print("NostrService: DM inbox move: no settled published list; not published")
                 #endif
                 return
             }
@@ -106,36 +112,5 @@ extension NostrService {
         }
         var seen = Set<String>()
         return result.filter { seen.insert(RelayMatrix.key($0)).inserted }
-    }
-
-    /// The Publish relay list switch and the dashboard Publish button (Logen
-    /// 1A): the account's own published relay list plus, for the owner, the
-    /// vault's own relays; never this device's defaults. Nothing goes out
-    /// when the relays didn't settle whether a list exists, or when there is
-    /// nothing to add. Same rule as Android `publishRelayListImpl`.
-    @MainActor
-    func publishOwnRelaysInRelayList(forNpub npub: String) {
-        guard let hex = Bech32.decode(npub)?.hexString else { return }
-        let config = ConfigService.shared.config
-        Task {
-            let lookup = await lookupNewestReplaceable(kind: 10002, for: hex,
-                                                       alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
-            guard RelayDraft.settled(found: lookup.event != nil, answeredBy: lookup.answeredBy) else {
-                #if DEBUG
-                print("NostrService: relay list for \(npub.prefix(12)) not settled; not published")
-                #endif
-                return
-            }
-            // Their list as published, tags and all, with the vault's own
-            // relays put first when missing.
-            let existing = lookup.event?.tags.filter { $0.count >= 2 && $0[0] == "r" } ?? []
-            let listed = Set(existing.map { RelayMatrix.key($0[1]) })
-            let ownRelays = npub == config.ownerNpub ? config.ownPublicRelays : []
-            let missing = HavenConfig.publicRelayListTags(ownRelays: ownRelays, read: [], write: [])
-                .filter { !listed.contains(RelayMatrix.key($0[1])) }
-            guard !missing.isEmpty else { return }
-            let tags = missing + existing
-            publishRelayListTags(tags, signAsNpub: npub)
-        }
     }
 }

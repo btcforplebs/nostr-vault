@@ -212,8 +212,12 @@ final class RelayDraftTests: XCTestCase {
         "wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.primal.net",
     ]
 
-    func testAListFoundAnywhereIsSettled() {
-        XCTAssertTrue(RelayDraft.settled(found: true, answeredBy: ["wss://relay.primal.net"]))
+    func testAFoundListIsSettledOnlyWhenBothIndexersAnswered() {
+        // The relay with the newest copy may have timed out; re-signing an
+        // older copy from another relay would roll the list back (Tron, #1386).
+        XCTAssertFalse(RelayDraft.settled(found: true, answeredBy: ["wss://relay.primal.net"]))
+        XCTAssertFalse(RelayDraft.settled(found: true, answeredBy: ["wss://relay.primal.net", "wss://purplepag.es"]))
+        XCTAssertTrue(RelayDraft.settled(found: true, answeredBy: ["wss://purplepag.es", "wss://user.kindpag.es"]))
     }
 
     func testIndexersSilentAndOnlyDefaultsAnsweringLeavesTheListHeld() {
@@ -240,5 +244,33 @@ final class RelayDraftTests: XCTestCase {
         XCTAssertNil(p.relayListTags)
         XCTAssertNil(p.dmRelays)
         XCTAssertTrue(p.relayListHeld && p.dmListHeld)
+    }
+
+    func testSaveKeepsPublishedEntriesTheScreenCantShow() {
+        // Tron, #1386: ws://, home-network and .local entries from another app
+        // went missing on Save, and the confirm sheet didn't say so.
+        let kept = [["r", "ws://plain.example", "read"], ["r", "wss://192.168.1.5:4848", "read"], ["r", "wss://nas.local"]]
+        var withKept = published
+        withKept.kept = kept
+        let s = RelayDraft.add(RelayDraft.start(config, published: withKept, pinned: [ownRelay, ownInbox]),
+                               url: "wss://new.example", jobs: [.write])
+        let p = plan(s)
+        let tags = try! XCTUnwrap(p.relayListTags)
+        XCTAssertEqual(Array(tags.suffix(3)), kept)
+        XCTAssertTrue(tags.contains(["r", "wss://new.example", "write"]))
+        // The sheet lists only what changes: the kept ones stay as they were.
+        XCTAssertFalse(p.relayListChanges.contains { !RelayDraft.listable($0.url) })
+        XCTAssertTrue(p.relayListChanges.contains { $0.url == "wss://new.example" && $0.added == [.write] })
+        // After Save they are still kept, never rows.
+        let after = RelayDraft.saved(s, plan: p)
+        XCTAssertEqual(after.published.kept, kept)
+        XCTAssertFalse(after.published.read.contains { !RelayDraft.listable($0) })
+    }
+
+    func testOnlyReachableWssRelaysAreListable() {
+        XCTAssertTrue(RelayDraft.listable("wss://relay.primal.net"))
+        for url in ["ws://plain.example", "wss://192.168.1.5:4848", "wss://nas.local", "wss://100.64.0.1", "wss://box.tail1.ts.net", "wss://127.0.0.1:4869"] {
+            XCTAssertFalse(RelayDraft.listable(url), url)
+        }
     }
 }

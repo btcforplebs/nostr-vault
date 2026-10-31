@@ -11,6 +11,8 @@ import SwiftUI
 struct RelayMatrixView: View {
     @EnvironmentObject var configService: ConfigService
     @StateObject private var probe = RelayProbe()
+    /// Shown as a sheet (setup's Change link): Done closes it when nothing is unsaved.
+    var inSheet = false
 
     enum Page: String, CaseIterable, Identifiable {
         case relays = "Your Relays", recommended = "Recommended"
@@ -173,6 +175,11 @@ struct RelayMatrixView: View {
         .navigationBarBackButtonHidden(changes > 0)
         #endif
         .toolbar {
+            if inSheet && changes == 0 {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
             #if os(iOS)
             if changes > 0 {
                 ToolbarItem(placement: .navigationBarLeading) {
