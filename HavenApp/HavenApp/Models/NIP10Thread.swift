@@ -30,6 +30,36 @@ enum NIP10Thread {
         return eTags.last(where: { marker($0) != "mention" })?[1]
     }
 
+    /// Who this note replies to: the parent's author, for the "reply to X"
+    /// line. nil if it is not a reply or names nobody.
+    ///
+    /// - The parent's `e` tag carries the author's pubkey (NIP-10's fifth
+    ///   slot; NIP-22's fourth). Our composers and most current clients send it.
+    /// - Failing that, the `p` tags. NIP-10 has a reply copy the parent's `p`
+    ///   tags and add the parent's author, which most clients append, so a
+    ///   deep reply's first `p` is the thread starter and its last is the
+    ///   parent. The first `p` used to be read for every reply, which named the
+    ///   thread starter on deep replies.
+    /// - A direct reply to the root keeps the first `p`.
+    static func parentAuthor(kind: Int, tags: [[String]]) -> String? {
+        let pTags = tags.filter { $0.count >= 2 && $0[0] == "p" }.map { $0[1] }
+        if kind == commentKind {
+            if let e = tags.first(where: { $0.count >= 4 && $0[0] == "e" }), isHexKey(e[3]) { return e[3] }
+            return pTags.first
+        }
+        let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" && marker($0) != "mention" }
+        let reply = eTags.first(where: { marker($0) == "reply" })
+        let root = eTags.first(where: { marker($0) == "root" })
+        guard let parent = reply ?? root ?? eTags.last else { return nil }
+        if parent.count >= 5, isHexKey(parent[4]) { return parent[4] }
+        let isDirect = reply == nil ? (root != nil || eTags.count == 1) : (root?[1] == parent[1])
+        return isDirect ? pTags.first : pTags.last
+    }
+
+    private static func isHexKey(_ s: String) -> Bool {
+        s.utf8.count == 64 && s.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) || (65...70).contains($0) }
+    }
+
     /// The thread root this note hangs under, or nil if the note has none and
     /// is a root itself. NIP-22 names it in the uppercase `E`; NIP-10 in the
     /// tag marked "root", or the first non-mention `e` in the positional form.

@@ -24,12 +24,19 @@ export function replyRefs(ev) {
   return { root: positional[0][1], parent: positional.at(-1)[1] }
 }
 
-/** Who a note replies to, for the card's "reply to @name" line: the first p tag, as the iPhone's FeedNote.replyToPubkey
- *  (FeedServiceTypes.swift). null for a note that isn't a reply (no NIP-10 parent) or names nobody. */
+/** Who a note replies to, for the card's "reply to @name" line: the parent's author, as the iPhone's
+ *  NIP10Thread.parentAuthor. The parent's `e` tag carries it in its fifth slot (our composers and most clients send it).
+ *  Failing that, the `p` tags: a reply copies the parent's `p` tags and most clients append the parent's author, so a
+ *  deep reply's first `p` is the thread starter and its last the parent. A direct reply to the root keeps the first.
+ *  null for a note that isn't a reply (no NIP-10 parent) or names nobody. */
 export function replyToPubkey(ev) {
-  if (ev?.kind !== 1 || !replyRefs(ev).parent) return null
-  const p = (ev.tags ?? []).find(t => t[0] === "p" && HEX64.test(t[1] ?? ""))
-  return p ? p[1] : null
+  if (ev?.kind !== 1) return null
+  const { root, parent } = replyRefs(ev)
+  if (!parent) return null
+  const tag = (ev.tags ?? []).find(t => t[0] === "e" && t[1] === parent && t[3] !== "mention")
+  if (HEX64.test(tag?.[4] ?? "")) return tag[4]
+  const ps = (ev.tags ?? []).filter(t => t[0] === "p" && HEX64.test(t[1] ?? "")).map(t => t[1])
+  return (parent === root ? ps[0] : ps.at(-1)) ?? null
 }
 
 /** The note a kind 6 repost points at (its e tag), for a repost that left the content empty. */

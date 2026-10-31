@@ -112,3 +112,16 @@ enum FeedMenuOrder {
         values.joined(separator: ",")
     }
 }
+
+/// Text for a condensed or threaded line, which shows only a few lines.
+enum CondensedText {
+    /// Drops blank lines (and lines left empty once URLs are stripped) and
+    /// trims the ends. A post with blank lines between paragraphs spent the
+    /// line limit on them, so the preview came out as one line and "...".
+    static func squeezeBlankLines(_ text: String) -> String {
+        text.split(omittingEmptySubsequences: true, whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+}
