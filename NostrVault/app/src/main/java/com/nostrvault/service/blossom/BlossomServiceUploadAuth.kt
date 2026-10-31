@@ -44,8 +44,22 @@ import com.nostrvault.service.BlossomService.Companion.TAG
         sha256?.let { tags.add(listOf("x", it)) }
         tags.add(listOf("expiration", expiration.toString()))
         uploadUrl?.let { tags.add(listOf("u", it)) }
+        return signAuthHeader(operations.joinToString("+"), sha256, tags)
+    }
 
-        val label = operations.joinToString("+")
+    /**
+     * A delete token for the one server at [deleteUrl]: see [BlossomDeleteAuth]. Signed per server,
+     * so a mirror holding its token cannot replay it against the home vault.
+     */
+    internal suspend fun BlossomService.createDeleteAuthHeader(sha256: String, deleteUrl: String): String =
+        signAuthHeader("delete", sha256, BlossomDeleteAuth.tags(sha256, deleteUrl))
+
+    /** Sign a kind 24242 event with [tags] and encode it as an auth header, or "" on failure. */
+    internal suspend fun BlossomService.signAuthHeader(
+        label: String,
+        sha256: String?,
+        tags: List<List<String>>,
+    ): String {
         // Use signEventAsync so external signers (Amber NIP-55, NIP-46) work.
         // The synchronous signEvent only handles a locally-stored key and returns
         // null under Amber (no on-device key) → empty auth header → servers reject
@@ -111,3 +125,31 @@ import com.nostrvault.service.BlossomService.Companion.TAG
         val lower = url.lowercase()
         return lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("0.0.0.0")
     }
+
+/**
+ * The tags of a Blossom delete token (kind 24242, BUD-02 / BUD-11). Port of iOS BlossomDeleteAuth.
+ *
+ * One token per server, naming that server ("server" = its host, "u" = the delete URL): a token
+ * naming no server, sent to a public mirror, could be replayed by that mirror against the home
+ * vault at its public name (Tron, PR 1403). Five minutes: long enough for a slow server, too short
+ * to keep. [servers] adds more hosts the same token is for (one signature for several mesh vaults).
+ */
+internal object BlossomDeleteAuth {
+    const val LIFETIME_SECONDS = 5 * 60L
+
+    fun tags(
+        sha256: String,
+        deleteUrl: String,
+        nowSeconds: Long = System.currentTimeMillis() / 1000,
+        operations: List<String> = listOf("delete"),
+        servers: List<String> = emptyList(),
+    ): List<List<String>> {
+        val host = if (deleteUrl.isBlank()) null else try { java.net.URI(deleteUrl.trim()).host } catch (_: Exception) { null }
+        val hosts = (listOfNotNull(host) + servers).map { it.lowercase().trimEnd('.') }.filter { it.isNotEmpty() }.distinct()
+        return operations.map { listOf("t", it) } +
+            listOf(listOf("x", sha256)) +
+            listOfNotNull(deleteUrl.takeIf { it.isNotBlank() }?.let { listOf("u", it) }) +
+            hosts.map { listOf("server", it) } +
+            listOf(listOf("expiration", (nowSeconds + LIFETIME_SECONDS).toString()))
+    }
+}
