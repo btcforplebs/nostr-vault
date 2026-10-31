@@ -389,7 +389,7 @@ fun CondensedNoteLine(
 
                 if (showsMediaThumbnail && mediaURLs.isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
-                    CondensedMediaThumbnail(mediaURLs, isRoot)
+                    CondensedMediaThumbnail(mediaURLs, size = if (isRoot) 80.dp else 56.dp)
                 }
             }
             // Under the text, lined up with it; below the thumbnail rather than
@@ -448,15 +448,19 @@ private fun EngagementChip(
     }
 }
 
+/**
+ * The square photo at the right of a condensed line, with a +N badge when the
+ * note carries more than one. A quoted note on a condensed line uses the same
+ * square, so a quote's photo gets no bigger treatment than the note's own.
+ */
 @Composable
-private fun CondensedMediaThumbnail(mediaURLs: List<String>, isRoot: Boolean) {
+internal fun CondensedMediaThumbnail(mediaURLs: List<String>, size: Dp = 56.dp) {
     val context = LocalContext.current
-    val size = if (isRoot) 80.dp else 56.dp
     Box {
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(mediaURLs.first())
-                .size(if (isRoot) 160 else 112)
+                .size(if (size > 56.dp) 160 else 112)
                 .crossfade(false)
                 .build(),
             contentDescription = null,

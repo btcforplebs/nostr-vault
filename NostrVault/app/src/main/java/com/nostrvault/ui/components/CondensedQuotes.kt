@@ -65,7 +65,8 @@ class CondensedQuoteActions(
 
 /**
  * Each quoted note under a condensed line's text, drawn with the expanded
- * feed's [QuotedNoteCard] so a quote reads the same in every layout.
+ * feed's [QuotedNoteCard] so a quote reads the same in every layout, except
+ * its photo: the line's own small square, not a full-width picture.
  * iOS: `CondensedNoteLine.quotedNotes`.
  */
 @Composable
@@ -85,6 +86,7 @@ internal fun CondensedQuotedNotes(
                     profiles = profiles,
                     onClick = actions.onOpen,
                     onArticleClick = actions.onArticleClick,
+                    condensedMedia = true,
                 )
             } else {
                 LaunchedEffect(quote.id) { actions.onMissing(quote.id) }
