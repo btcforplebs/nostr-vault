@@ -20,6 +20,7 @@ import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
 import { NotifySwitch } from "../components/NotifySwitch.jsx"
+import { SendDelayPicker } from "../components/SendDelayPicker.jsx"
 import {
   SETTINGS_GROUPS, PAGES, isPage, APP_VERSION, APP_COMMIT, commitUrl, SUPPORT_NPUB, PRIVACY_URL,
   logLines,
@@ -95,6 +96,10 @@ function Index({ ctx }) {
       <section class="settings-group">
         <div class="section-label">Notifications</div>
         <div class="settings-rows"><NotifySwitch /></div>
+      </section>
+      <section class="settings-group">
+        <div class="section-label">Posting</div>
+        <div class="settings-rows"><SendDelayPicker /></div>
       </section>
       {GROUPS.map(g => (
         <section key={g.title} class="settings-group">

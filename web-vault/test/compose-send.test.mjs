@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { h, render } from "preact"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { SEND_DELAY_KEY, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../src/net/send-delay.js"
+import { SEND_DELAY_KEY, countdownText, sendAction, sendDelaySeconds, startCountdown, setSendDelaySeconds, sendDelayNote } from "../src/net/send-delay.js"
 import { pool } from "../src/net/pool.js"
 
 registerHooks({
@@ -30,6 +30,16 @@ test("the delay is the iPhone's: 5 s by default, 0/5/10 from the same key, anyth
   assert.equal(sendDelaySeconds(store(m)), 5)
   for (const [v, want] of [["0", 0], ["10", 10], ["5", 5], ["7", 5], ["", 5], ["x", 5]]) { m.set(SEND_DELAY_KEY, v); assert.equal(sendDelaySeconds(store(m)), want) }
   assert.equal(sendDelaySeconds(undefined), 5)
+})
+
+test("Settings › Send Delay writes the key the composer reads, only one of its choices, with the iPhone's footer", () => {
+  const m = new Map()
+  for (const s of [0, 10, 5]) { setSendDelaySeconds(s, store(m)); assert.equal(sendDelaySeconds(store(m)), s) }
+  setSendDelaySeconds(0, store(m))
+  setSendDelaySeconds(7, store(m))
+  assert.equal(m.get(SEND_DELAY_KEY), "0", "not a choice: nothing written")
+  assert.equal(sendDelayNote(0), "Posts go out as soon as you tap. There's no undo.")
+  assert.equal(sendDelayNote(10), "Posts wait 10 seconds before going out, so you can undo or edit them.")
 })
 
 test("the pill's words: 'Posting in 5s', whole seconds rounded up, never 0s", () => {

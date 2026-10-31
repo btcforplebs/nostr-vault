@@ -13,6 +13,17 @@ export function sendDelaySeconds(storage = globalThis.localStorage) {
   return SEND_DELAY_CHOICES.includes(n) ? n : SEND_DELAY_DEFAULT
 }
 
+/** Settings › Send Delay: keeps `seconds` (one of the choices) where sendDelaySeconds reads it. */
+export function setSendDelaySeconds(seconds, storage = globalThis.localStorage) {
+  if (!SEND_DELAY_CHOICES.includes(seconds)) return
+  try { storage?.setItem?.(SEND_DELAY_KEY, String(seconds)) } catch {}
+}
+
+/** The picker's footer, the iPhone's FeedSettingsView words. */
+export const sendDelayNote = seconds => seconds === 0
+  ? "Posts go out as soon as you tap. There's no undo."
+  : `Posts wait ${seconds} seconds before going out, so you can undo or edit them.`
+
 /** PendingPostManager.ActionType's words for the three the composer sends. */
 export const SEND_ACTIONS = {
   newPost: { label: "Posting", done: "Posted" },

@@ -132,6 +132,14 @@ test("every Sign out button asks before the wipe", () => {
   assert.doesNotMatch(main, /onClick=\{onSignOut\}/)
 })
 
+test("the Settings index has the Send Delay picker, Off / 5s / 10s", async () => {
+  const { choiceLabel } = await import("../src/components/SendDelayPicker.jsx")
+  const { SEND_DELAY_CHOICES } = await import("../src/net/send-delay.js")
+  assert.deepEqual(SEND_DELAY_CHOICES.map(choiceLabel), ["Off", "5s", "10s"])
+  const screen = readFileSync(new URL("../src/screens/SettingsScreen.jsx", import.meta.url), "utf8")
+  assert.match(screen, /<div class="section-label">Posting<\/div>\s*<div class="settings-rows"><SendDelayPicker \/><\/div>/)
+})
+
 test("a backup file is the phone's .zip by its bytes, anything else an older .jsonl", async () => {
   const { isZip } = await import("../src/components/BackupCard.jsx")
   assert.equal(isZip(new Uint8Array([0x50, 0x4b, 3, 4, 20])), true)
