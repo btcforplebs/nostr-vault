@@ -3,7 +3,9 @@
 //   GET  status   -> { version, uptime: seconds, mem: { used, total }, disk: { used, total }, mesh: { up, npub, peers } }
 //   GET  storage  -> { path, used, free, total }                       bytes
 //   GET  devices  -> { box: { npub, name }, devices: [{ npub, name, role, approved, lastSeen }] }
+//                    havend: the owner's 10063 has no names or seen times, so name is "" and lastSeen is left out
 //   POST update   -> { started, from, to, rollback }                   rollback: what the box keeps to go back to
+//                    havend: to/rollback only when the container side knows them
 //   POST move     { path } -> { ok, path, message }
 // A missing field reads as unknown, never as 0.
 import { getToken } from "nostr-tools/nip98"
