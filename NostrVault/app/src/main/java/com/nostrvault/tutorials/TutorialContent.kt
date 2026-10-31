@@ -115,7 +115,7 @@ object TutorialContent {
         ),
         TutorialStep(
             WOT_LAYERS, "Layers and rebuild",
-            "Tap here to light up Everyone, Following, Close or Further out. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes.",
+            "Tap here to light up Everyone, Following, Vouched or Further out. Rebuild your web sits at the bottom: it re-reads who you follow and loads pictures, and can take a few minutes.",
         ),
     )
 
