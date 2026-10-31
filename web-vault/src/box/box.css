@@ -1,0 +1,18 @@
+/* The box screens (BoxScreen.jsx): Settings' groups and rows, plus a value column, meters and the move form. */
+.box-screen .box-pad { padding: 10px 16px; margin: 0; }
+.box-row { gap: 10px; }
+.box-row .settings-title { flex: 1 0 auto; display: flex; flex-direction: column; }
+.box-value { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #8e8e93); font-variant-numeric: tabular-nums; text-align: right; }
+.box-value.good { color: #30d158; }
+.box-sub { font-weight: normal; }
+.box-meter-row { flex-wrap: wrap; }
+.box-meter { flex-basis: 100%; height: 6px; border-radius: 3px; background: var(--hair, rgba(127, 127, 127, 0.25)); overflow: hidden; }
+.box-meter > span { display: block; height: 100%; background: var(--accent, #0a84ff); }
+.box-meter > span.full { background: #ff453a; }
+.box-action { width: 100%; border: 0; border-radius: 0; background: none; color: var(--accent, #0a84ff); font: inherit; text-align: left; cursor: pointer; }
+.box-action[disabled] { opacity: 0.6; cursor: default; }
+.box-form { padding: 10px 16px; display: grid; gap: 10px; }
+.box-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+/* The wide layout: beside the sidebar, as the relay screen (desktop.css .relay-host). */
+.desk-app .box-host { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; left: var(--side-w); overflow-y: auto; background: var(--bg); }
+.desk-app .box-host .screen { max-width: 760px; }
