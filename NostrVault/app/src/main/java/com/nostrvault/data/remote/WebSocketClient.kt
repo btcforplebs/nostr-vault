@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
  * Port of WebSocketClient.swift -- OkHttp WebSocket with auto-reconnect.
  *
  * Features:
- * - 25-second ping interval (matches iOS keepalive)
+ * - Our own idle watchdog instead of OkHttp pings (see [WATCHDOG_IDLE_MS])
  * - Exponential backoff reconnection (up to 10 attempts)
  * - Localhost trust for self-signed certs (local relay, LAN)
  * - SharedFlow for message delivery (replaces Combine PassthroughSubject)
@@ -43,6 +43,8 @@ class WebSocketClient(
     private val autoReconnect: Boolean = true,
     /** Frames held for a slow collector before new ones are dropped. */
     messageBuffer: Int = 256,
+    private val watchdogIdleMs: Long = WATCHDOG_IDLE_MS,
+    private val watchdogReplyMs: Long = WATCHDOG_REPLY_MS,
 ) : RelayConnection {
     companion object {
         private const val TAG = "WebSocketClient"
@@ -69,6 +71,34 @@ class WebSocketClient(
          */
         internal const val STABLE_CONNECTION_MS = 60_000L
 
+        /**
+         * Liveness without OkHttp pings. OkHttp 4.12's ping timeout fails the
+         * socket from its task thread and closes the okio streams while the
+         * reader thread is still inside read(); okio buffers aren't thread-safe,
+         * and the app died with NPE / "closed" / AIOOBE size=0 inside Buffer
+         * (Moto, 4 crashes on 10-31). So pings are off, and a socket quiet for
+         * this long gets a tiny REQ that every relay answers (EOSE or CLOSED).
+         */
+        internal const val WATCHDOG_IDLE_MS = 30_000L
+
+        /**
+         * No frame at all this long after the probe: the link is dead. The
+         * watchdog calls [WebSocket.cancel], which only closes the raw socket,
+         * so the reader fails on its own thread and nothing is closed under it.
+         */
+        internal const val WATCHDOG_REPLY_MS = 20_000L
+
+        /** Subscription ids of watchdog probes; their replies never reach [messages]. */
+        internal const val PROBE_PREFIX = "nv-wd-"
+
+        /** A REQ that matches nothing: the relay just sends EOSE. */
+        internal fun probe(subId: String): String =
+            "[\"REQ\",\"$subId\",{\"ids\":[\"${"0".repeat(64)}\"],\"limit\":0}]"
+
+        /** Whether [text] is a relay's answer to a watchdog probe. */
+        internal fun isProbeReply(text: String): Boolean =
+            text.startsWith("[\"EOSE\",\"$PROBE_PREFIX") || text.startsWith("[\"CLOSED\",\"$PROBE_PREFIX")
+
         /** Whether a socket that opened at [openedAtMs] and closed at [nowMs] earns a fresh backoff. */
         internal fun stayedUp(openedAtMs: Long, nowMs: Long): Boolean =
             openedAtMs > 0 && nowMs - openedAtMs >= STABLE_CONNECTION_MS
@@ -84,7 +114,7 @@ class WebSocketClient(
         /** Shared OkHttpClient for all normal (non-localhost) connections. */
         val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
-                .pingInterval(25, TimeUnit.SECONDS)
+                .pingInterval(0, TimeUnit.SECONDS) // see WATCHDOG_IDLE_MS
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS)
                 .build()
@@ -93,7 +123,7 @@ class WebSocketClient(
         /** Shared OkHttpClient for this device's relay and LAN relays; trust follows [LocalTls]. */
         val sharedLocalhostClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
-                .pingInterval(25, TimeUnit.SECONDS)
+                .pingInterval(0, TimeUnit.SECONDS) // see WATCHDOG_IDLE_MS
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS)
                 .localTrust()
@@ -122,6 +152,9 @@ class WebSocketClient(
     private var reconnectJob: Job? = null
     private var shouldReconnect = true
     @Volatile private var refusedByBlocklist = false
+    @Volatile private var lastInboundMs = 0L
+    private var watchdogJob: Job? = null
+    private var probes = 0
 
     init {
         live.add(this)
@@ -150,6 +183,10 @@ class WebSocketClient(
 
     override fun connect() {
         shouldReconnect = true
+        // Already open or dialling: a second socket would orphan the first
+        // (it used to overwrite [webSocket] and leave the old one running).
+        if (synchronized(socketLock) { webSocket != null }) return
+        reconnectJob?.cancel()
         reconnectAttempts = 0
         doConnect()
     }
@@ -158,9 +195,11 @@ class WebSocketClient(
         shouldReconnect = false
         refusedByBlocklist = false
         reconnectJob?.cancel()
+        watchdogJob?.cancel()
         synchronized(socketLock) {
-            webSocket?.close(1000, "Client disconnect")
+            val open = webSocket
             webSocket = null
+            open?.close(1000, "Client disconnect")
         }
         _connectionState.value = ConnectionState.DISCONNECTED
     }
@@ -171,8 +210,18 @@ class WebSocketClient(
         }
     }
 
+    /** Whether [ws] is still this client's socket; callbacks from an older one are ignored. */
+    private fun isCurrent(ws: WebSocket): Boolean = synchronized(socketLock) { webSocket === ws }
+
+    /** Drops [ws] if it is the current socket; false when it was an older one. */
+    private fun release(ws: WebSocket): Boolean = synchronized(socketLock) {
+        if (webSocket !== ws) return false
+        webSocket = null
+        true
+    }
+
     private fun doConnect() {
-        if (_connectionState.value == ConnectionState.CONNECTING) return
+        if (synchronized(socketLock) { webSocket != null }) return
         // Never connect: the owner blocked this relay. No retry; unblocking
         // reconnects it through [blocklistChanged].
         if (RelayBlocklist.isBlocked(url)) {
@@ -181,11 +230,12 @@ class WebSocketClient(
             _connectionState.value = ConnectionState.DISCONNECTED
             return
         }
-        // This host answered 429 lately: no dial until its hold is over
-        // ([RateLimitBackoff]). A pooled socket just fails; the pool cools down.
+        // This host answered 429 or refused the upgrade lately: no dial until
+        // its hold is over ([RateLimitBackoff]). A pooled socket just fails;
+        // the pool cools down.
         val heldMs = RateLimitBackoff.remainingMs(url)
         if (heldMs > 0) {
-            if (BuildConfig.DEBUG) Log.d(TAG, "Rate-limited host, waiting ${heldMs / 1000}s: $url")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Held host, waiting ${heldMs / 1000}s: $url")
             _connectionState.value = ConnectionState.DISCONNECTED
             reconnectJob?.cancel()
             if (shouldReconnect && autoReconnect) {
@@ -195,12 +245,6 @@ class WebSocketClient(
                 }
             }
             return
-        }
-
-        _connectionState.value = if (reconnectAttempts > 0) {
-            ConnectionState.RECONNECTING
-        } else {
-            ConnectionState.CONNECTING
         }
 
         val request = try {
@@ -214,39 +258,72 @@ class WebSocketClient(
         }
 
         synchronized(socketLock) {
+            if (webSocket != null) return
+            _connectionState.value = if (reconnectAttempts > 0) {
+                ConnectionState.RECONNECTING
+            } else {
+                ConnectionState.CONNECTING
+            }
+            // Callbacks take socketLock in isCurrent/release, so none can run
+            // before this assignment lands.
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (!isCurrent(webSocket)) {
+                    webSocket.cancel()
+                    return
+                }
                 if (BuildConfig.DEBUG) Log.d(TAG, "Connected to $url")
                 _connectionState.value = ConnectionState.CONNECTED
                 openedAtMs = System.currentTimeMillis()
+                startWatchdog(webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (!isCurrent(webSocket)) return
+                lastInboundMs = System.currentTimeMillis()
+                if (isProbeReply(text)) {
+                    if (text.startsWith("[\"EOSE\"")) {
+                        val subId = text.substringAfter(",\"").substringBefore('"')
+                        webSocket.send("[\"CLOSE\",\"$subId\"]")
+                    }
+                    return
+                }
                 _messages.tryEmit(text)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 if (BuildConfig.DEBUG) Log.d(TAG, "WebSocket closing: $code $reason")
-                webSocket.close(code, reason)
+                // Not the server's code: 1005 ("no status") and 1006 are
+                // reserved, and echoing one makes OkHttp throw, turning a clean
+                // close into a failure and a redial.
+                webSocket.close(1000, null)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (BuildConfig.DEBUG) Log.d(TAG, "WebSocket closed: $code $reason")
+                if (!release(webSocket)) return
                 _connectionState.value = ConnectionState.DISCONNECTED
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "WebSocket failure ($url): ${t.message}")
+                if (!release(webSocket)) return
                 lastError = t.message
                 _connectionState.value = ConnectionState.DISCONNECTED
+                val code = response?.code
                 // 429 = rate-limited by the relay; retrying soon makes it worse
                 // (damus bans and lists the IP). Every socket to this host
                 // holds off for an hour or more; see [RateLimitBackoff].
-                if (response?.code == 429) {
+                if (code == 429) {
                     val holdMs = RateLimitBackoff.limited(url)
                     Log.w(TAG, "429 from $url, holding the host for ${holdMs / 60_000} min")
                     reconnectAttempts = MAX_RECONNECT_ATTEMPTS
+                } else if (code != null && code != 101) {
+                    // Refused the upgrade (5xx, 52x, 404, a 200 page): every
+                    // client waits out the hold instead of dialling on its own.
+                    val holdMs = RateLimitBackoff.refused(url)
+                    if (holdMs > 0) Log.w(TAG, "$code from $url, holding the host for ${holdMs / 1000}s")
                 }
                 scheduleReconnect()
             }
@@ -263,6 +340,34 @@ class WebSocketClient(
         reconnectAttempts = 0
     }
 
+    /**
+     * Probes [ws] whenever it has been quiet for [watchdogIdleMs] and cancels
+     * it when the probe gets no frame back in [watchdogReplyMs]. Ends when
+     * [ws] stops being this client's socket.
+     */
+    private fun startWatchdog(ws: WebSocket) {
+        lastInboundMs = System.currentTimeMillis()
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch(Dispatchers.IO) {
+            while (isCurrent(ws)) {
+                val quietMs = System.currentTimeMillis() - lastInboundMs
+                if (quietMs < watchdogIdleMs) {
+                    delay(watchdogIdleMs - quietMs)
+                    continue
+                }
+                val sentAt = System.currentTimeMillis()
+                if (!ws.send(probe(PROBE_PREFIX + (++probes)))) break
+                delay(watchdogReplyMs)
+                if (!isCurrent(ws)) break
+                if (lastInboundMs < sentAt) {
+                    Log.w(TAG, "No answer from $url in ${watchdogReplyMs / 1000}s, dropping the socket")
+                    ws.cancel()
+                    break
+                }
+            }
+        }
+    }
+
     private fun scheduleReconnect() {
         if (stayedUp(openedAtMs, System.currentTimeMillis())) {
             reconnectAttempts = 0
@@ -276,6 +381,7 @@ class WebSocketClient(
             // (every 2 minutes) so the connection can recover if the relay comes
             // back or the network changes.
             Log.w(TAG, "Max fast-reconnect attempts reached for $url, switching to slow retry")
+            reconnectJob?.cancel()
             reconnectJob = scope.launch(Dispatchers.IO) {
                 delay(SLOW_RETRY_INTERVAL_MS)
                 reconnectAttempts = MAX_RECONNECT_ATTEMPTS // keep in slow mode
@@ -288,6 +394,7 @@ class WebSocketClient(
         val backoffMs = INITIAL_BACKOFF_MS * (1L shl reconnectAttempts.coerceAtMost(6))
         reconnectAttempts++
 
+        reconnectJob?.cancel()
         reconnectJob = scope.launch(Dispatchers.IO) {
             delay(backoffMs)
             if (BuildConfig.DEBUG) Log.d(TAG, "Reconnecting to $url (attempt $reconnectAttempts)")
