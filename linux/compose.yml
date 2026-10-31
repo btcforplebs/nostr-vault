@@ -1,0 +1,28 @@
+# Nostr Vault for Linux. install.sh puts this file and its .env in /opt/nostr-vault and starts it with
+# `docker compose up -d`; to run it by hand, write the .env yourself (README.md).
+#   NV_OWNER      the owner's npub (the box is never claimed by whoever visits first)
+#   NV_DATA_HOST  where the vault lives on this machine (mounted at /data inside)
+#   NV_PORT       the port on this machine, 8080 unless taken
+#   NV_IMAGE      the image to run
+name: nostr-vault
+services:
+  vault:
+    image: ${NV_IMAGE:-ghcr.io/btcforplebs/nostr-vault-linux:latest}
+    container_name: nostr-vault-linux
+    restart: unless-stopped
+    # A small board has other jobs: the vault gets at most 1.5 GB of memory, and a quarter of the CPU weight of
+    # anything else when the CPU is busy (its programs also run at nice 10).
+    mem_limit: 1.5g
+    cpu_shares: 256
+    environment:
+      NV_OWNER: ${NV_OWNER:?NV_OWNER is not set (run install.sh)}
+      NV_DATA_DIR: /data
+      NV_PORT: "8080"
+    volumes:
+      - ${NV_DATA_HOST:?NV_DATA_HOST is not set (run install.sh)}:/data
+    ports:
+      # On the local network only: nothing here opens a port on the router, and the mesh needs none.
+      - "${NV_PORT:-8080}:8080"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

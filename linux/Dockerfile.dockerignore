@@ -1,0 +1,11 @@
+# Context for linux/Dockerfile (the repo root; BuildKit reads this file next to the Dockerfile, and multi-arch builds
+# need BuildKit). Only what the image is built from.
+*
+!haven-go
+!web-relay
+!web-vault
+!linux/stubs
+!linux/supervise.sh
+**/node_modules
+**/dist
+**/.DS_Store
