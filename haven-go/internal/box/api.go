@@ -15,7 +15,7 @@ type API struct {
 	Auth    *OwnerAuth
 	Version string
 	Started time.Time
-	Key     DeviceKey
+	Mesh    MeshID // the box's one npub, the mesh's
 	Owner   string // npub
 
 	Engine     interface{ State() EngineState }
@@ -94,15 +94,16 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (a *API) status() Status {
 	eng := a.Engine.State()
 	disk, _ := DiskOf(eng.VaultDir)
+	npub, _, _ := a.Mesh.Read()
 	return Status{
 		Version: a.Version,
 		Uptime:  int64(time.Since(a.Started).Seconds()),
 		Mem:     readMem(eng.Pid),
 		Disk:    disk,
-		Mesh:    readMesh(a.MeshStatus, a.Key.Npub),
+		Mesh:    readMesh(a.MeshStatus, npub, time.Now()),
 		Engine:  eng,
 		Owner:   a.Owner,
-		Device:  a.Key.Npub,
+		Device:  npub,
 		Move:    a.Mover.State(),
 	}
 }

@@ -26,6 +26,7 @@ func main() {
 		return
 	}
 	config = loadConfig()
+	behindProxy = os.Getenv("HAVEN_BEHIND_PROXY") == "1"
 	nostr.InfoLogger = log.New(io.Discard, "", 0)
 	slog.SetLogLoggerLevel(getLogLevelFromConfig())
 	green := "\033[32m"
@@ -145,8 +146,14 @@ func main() {
 			return
 		}
 
-		dynamicRelayHandler(w, r)
+		proxyAware(dynamicRelayHandler)(w, r)
 	})
+
+	// The Linux box: nv-mesh sends strangers to this loopback door. Without
+	// it they get nothing (closed), so the vault itself still starts.
+	if _, err := startMeshDoorFromEnv(); err != nil {
+		log.Printf("🚫 mesh door not open: %v", err)
+	}
 
 	addr := net.JoinHostPort(config.RelayBindAddress, strconv.Itoa(config.RelayPort))
 

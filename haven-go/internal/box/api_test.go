@@ -24,18 +24,15 @@ func newTestAPI(t *testing.T) (*httptest.Server, testKey, *API) {
 	vault := filepath.Join(base, "vault")
 	makeVault(t, vault)
 	os.MkdirAll(filepath.Join(base, "mnt", "usb"), 0o755)
-	key, err := LoadOrCreateDeviceKey(filepath.Join(base, "box"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	meshID := testMeshID(t, newTestKey(t))
 	mesh := filepath.Join(base, "mesh.json")
-	os.WriteFile(mesh, []byte(`{"up":true,"peers":2}`), 0o600)
+	os.WriteFile(mesh, []byte(`{"running":true,"peers":["a","b"],"updated":`+itoa64(time.Now().Unix())+`}`), 0o600)
 	eng := &fakeEngine{dir: vault}
 	api := &API{
 		Auth: NewOwnerAuth(owner.pk), Version: "test-1", Started: time.Now().Add(-time.Minute),
-		Key: key, Owner: "npub-owner", Engine: stateOnly{EngineState{Running: true, VaultDir: vault}},
+		Mesh: meshID, Owner: "npub-owner", Engine: stateOnly{EngineState{Running: true, VaultDir: vault}},
 		MeshStatus: mesh, Storage: &StorageMeter{},
-		Devices: &Devices{OwnerHex: owner.pk, Key: key, Source: &fakeLists{}},
+		Devices: &Devices{OwnerHex: owner.pk, Mesh: meshID, Source: &fakeLists{}},
 		Mover: &Mover{Root: filepath.Join(base, "mnt"), BoxDir: filepath.Join(base, "box"), Engine: eng,
 			Ctx: context.Background(), FreeOf: func(string) (uint64, error) { return 1 << 30, nil }},
 		Updater: &Updater{BoxDir: filepath.Join(base, "box")},
@@ -92,10 +89,10 @@ func TestAPIStatusStorageDevices(t *testing.T) {
 			t.Errorf("status lacks %q: %v", k, st)
 		}
 	}
-	if st["version"] != "test-1" || st["uptime"].(float64) < 59 || st["device"] != api.Key.Npub {
+	if st["version"] != "test-1" || st["uptime"].(float64) < 59 || st["device"] != meshNpub(t, api.Mesh) {
 		t.Errorf("status %v", st)
 	}
-	if mesh := st["mesh"].(map[string]any); mesh["peers"] != float64(2) || mesh["up"] != true || mesh["npub"] != api.Key.Npub {
+	if mesh := st["mesh"].(map[string]any); mesh["peers"] != float64(2) || mesh["up"] != true || mesh["npub"] != meshNpub(t, api.Mesh) {
 		t.Errorf("mesh %v", mesh)
 	}
 	if disk := st["disk"].(map[string]any); disk["total"].(float64) <= 0 {
@@ -113,7 +110,7 @@ func TestAPIStatusStorageDevices(t *testing.T) {
 
 	code, dev := call(t, srv, &owner, "GET", "/api/box/devices", nil)
 	box := dev["box"].(map[string]any)
-	if code != 200 || box["npub"] != api.Key.Npub || box["approved"] != false || box["name"] == "" {
+	if code != 200 || box["npub"] != meshNpub(t, api.Mesh) || box["approved"] != false || box["name"] == "" {
 		t.Fatalf("devices %d %v", code, dev)
 	}
 }
@@ -122,7 +119,7 @@ func TestAPIMissingMeshStatus(t *testing.T) {
 	srv, owner, api := newTestAPI(t)
 	api.MeshStatus = filepath.Join(t.TempDir(), "none.json")
 	_, st := call(t, srv, &owner, "GET", "/api/box/status", nil)
-	if m := st["mesh"].(map[string]any); m["up"] != false || m["npub"] != api.Key.Npub {
+	if m := st["mesh"].(map[string]any); m["up"] != false || m["npub"] != meshNpub(t, api.Mesh) {
 		t.Fatalf("mesh %v", m)
 	}
 }

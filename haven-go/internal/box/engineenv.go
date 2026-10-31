@@ -39,6 +39,8 @@ var engineDifferences = map[string]string{
 	"NOTIFY_KINDS":                "unset: a box has no screen to notify on",
 	"HAVEN_ENABLE_TLS":            "0: the LAN and the mesh reach the front door over plain HTTP, like the Mac",
 	"HAVEN_SERVICE_URL_FROM_HOST": "1 without NV_RELAY_URL: NIP-42 AUTH names the address the client used (LAN IP, hostname, mesh), not 127.0.0.1",
+	"HAVEN_BEHIND_PROXY":          "1: every client reaches the engine through havend on 127.0.0.1, so the engine takes the client from havend's X-Forwarded-For and rate-limits that, not loopback",
+	"HAVEN_MESH_PLAIN_PORT":       "NV_MESH_DOOR_PORT: the CLI engine opens the mesh door there at start (the Mac opens it with SetMeshServingC); nv-mesh sends strangers to it",
 }
 
 // EngineEnv is the engine's environment for a vault in vaultDir.
@@ -134,6 +136,8 @@ func EngineEnv(c Config, vaultDir string) map[string]string {
 		"WOT_FETCH_TIMEOUT_SECONDS":   "60",
 		"HAVEN_ENABLE_TLS":            "0",
 		"HAVEN_SERVICE_URL_FROM_HOST": "1",
+		"HAVEN_BEHIND_PROXY":          "1",
+		"HAVEN_MESH_PLAIN_PORT":       strconv.Itoa(c.MeshDoorPort),
 	}
 	return env
 }

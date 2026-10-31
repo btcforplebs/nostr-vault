@@ -113,15 +113,21 @@ type Status struct {
 	Mesh    map[string]any `json:"mesh"`
 	Engine  EngineState    `json:"engine"`
 	Owner   string         `json:"owner"`
-	Device  string         `json:"device"` // the box's own npub
+	Device  string         `json:"device"` // the box's one npub (the mesh's); "" until nv-mesh made it
 	Move    *MoveState     `json:"move,omitempty"`
 }
 
-// readMesh returns the mesh process's status file, an object with at least
-// {up, npub, peers} (web-vault/src/box/api.js). No file, or one that is not
-// a JSON object, reads as {"up": false}. npub defaults to the box's own
-// npub: the mesh runs as the box's device key.
-func readMesh(path, boxNpub string) map[string]any {
+// meshStale: a status.json older than this is from an nv-mesh that has
+// stopped writing (it writes every 5 s), so the mesh reads as down.
+const meshStale = 30 * time.Second
+
+// readMesh turns nv-mesh's status.json (linux/mesh/README.md: the engine's
+// status plus npub, devices, error, updated) into the screens' mesh object
+// {up, npub, peers} (web-vault/src/box/api.js), keeping nv-mesh's own fields
+// alongside. up is the engine's "running", and only while the file is fresh.
+// peers is a count: the length of the engine's peer list. No file, or one
+// that is not a JSON object, reads as down. npub is the box's mesh npub.
+func readMesh(path, boxNpub string, now time.Time) map[string]any {
 	m := map[string]any{}
 	if b, err := os.ReadFile(path); err == nil && len(b) <= 64<<10 {
 		_ = json.Unmarshal(b, &m)
@@ -129,9 +135,15 @@ func readMesh(path, boxNpub string) map[string]any {
 			m = map[string]any{}
 		}
 	}
-	if _, ok := m["up"].(bool); !ok {
-		m["up"] = false
+	running, _ := m["running"].(bool)
+	updated, _ := m["updated"].(float64)
+	age := now.Sub(time.Unix(int64(updated), 0))
+	m["up"] = running && updated > 0 && age < meshStale && age > -meshStale
+	peers := 0
+	if list, ok := m["peers"].([]any); ok {
+		peers = len(list)
 	}
+	m["peers"] = peers
 	if s, _ := m["npub"].(string); s == "" && boxNpub != "" {
 		m["npub"] = boxNpub
 	}

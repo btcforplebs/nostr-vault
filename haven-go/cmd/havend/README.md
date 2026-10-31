@@ -1,8 +1,9 @@
 # havend: Nostr Vault on a Linux box
 
 `havend` is the box daemon of the `nostr-vault-linux` container. It runs the
-vault engine the Mac app runs, serves everything on one port, and keeps the
-box's own device key.
+vault engine the Mac app runs, serves everything on one port, and tells
+nv-mesh which of the owner's devices to let in. The box has one key, the
+mesh's (made by nv-mesh, `linux/mesh/README.md`); havend has none of its own.
 
 ## Build
 
@@ -22,11 +23,13 @@ for LMDB.
 |---|---|
 | Owner | `NV_OWNER` (npub or hex), required, set by the installer. Never claimed by a visitor. |
 | Port | `NV_PORT` (8080): relay WebSocket at `/` (and `/private`, `/chat`, `/inbox`, `/feed`), Blossom, web app, `/api/box/` |
-| Data | `NV_DATA_DIR` (`/data`): `box/` (device key, state), `vault/` (the engine's working dir) |
-| Engine | `NV_ENGINE_BIN` (`/usr/local/bin/haven-engine`), on `127.0.0.1:NV_ENGINE_PORT` (3355) |
+| Data | `NV_DATA_DIR` (`/data`): `box/` (state), `vault/` (the engine's working dir), `mesh-devices.json`; `mesh/` is nv-mesh's |
+| Engine | `NV_ENGINE_BIN` (`/usr/local/bin/haven-engine`), on `127.0.0.1:NV_ENGINE_PORT` (3355). Run with `HAVEN_BEHIND_PROXY=1`: every client arrives through havend on loopback, so the engine rate-limits the client havend names in `X-Forwarded-For`, and only a request with none (havend's own) or a loopback client keeps the loopback pass |
+| Mesh door | `NV_MESH_DOOR_PORT` (`NV_PORT`+1), passed to the engine as `HAVEN_MESH_PLAIN_PORT`: the engine opens the mesh door on `127.0.0.1` at start. nv-mesh sends strangers there; they get only blob reads and owner-signed uploads/events, never the relay port |
 | Web app | `NV_WEB_DIR` (built web app; SPA fallback to `index.html`) |
-| Device key | `/data/box/device.key`, hex, 0600. `havend device` prints its npub. |
-| Mesh status | the mesh writes a JSON object to `NV_MESH_STATUS_FILE` (`/data/mesh/status.json`) with at least `{up, npub, peers}`; status passes it through as `mesh` (no file: `{up:false}`; `npub` defaults to the box's) |
+| Box npub | nv-mesh's `/data/mesh/npub`: the one key the owner approves. `havend device` prints it (and fails until nv-mesh's first start). |
+| Mesh devices | havend writes `NV_MESH_DEVICES` (`/data/mesh-devices.json`, 0644, atomically, only on change): `[{"npub": …}]`, the owner's other `fipsmesh` entries in their newest 10063, and `[]` while that list doesn't name the box. Refreshed every 30 s and on each devices read; with no list found the file is kept. |
+| Mesh status | nv-mesh writes `NV_MESH_STATUS_FILE` (`/data/mesh/status.json`) every 5 s. status returns it as `mesh` with `up` = its `running` while `updated` is under 30 s old, `peers` = the length of its `peers` list, `npub` the box's (no file: `up:false, peers:0`) |
 | Update | `NV_UPDATE_HOOK` is run on `POST update`; unset, `/data/box/update-request.json` is written |
 | Move | `POST move {path}` only into `NV_MOVE_ROOT` (`/mnt`): mount extra disks there |
 
@@ -50,7 +53,9 @@ Shapes match `web-vault/src/box/api.js`. NIP-42: without `NV_RELAY_URL` the engi
 The owner adds the box's npub on the phone in My Devices as **Home vault**.
 The phone then republishes the owner's kind 10063 with `fipsmesh://<box npub>/`
 in it. The box reads the owner's newest 10063 (its own vault first, then
-`NV_DIRECTORY_RELAYS`): listed = approved, dropped = revoked.
+`NV_DIRECTORY_RELAYS`): listed = approved, dropped = revoked. The same list
+fills `mesh-devices.json`, so an approved box lets the owner's listed devices
+in over the mesh, and a device or box dropped from the list is shut out.
 
 ## Test
 
