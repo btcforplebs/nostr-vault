@@ -239,3 +239,11 @@
 body:has(a.post-button) .music-player.floating { right: calc(max(20px, calc(50% - 320px + 20px)) + 112px); }
 body:not(:has(.tabbar)) .music-player.floating { bottom: calc(16px + env(safe-area-inset-bottom)); }
 .music-player.floating img, .music-player.floating .music-art.small { width: 32px; height: 32px; }
+
+/* A live stream inside a note (LiveStreamEmbedView): the Live tile, 170 px picture; ENDED dimmed with nothing to tap.
+   On air, its player opens over everything as the iPhone's sheet. */
+.live-embed { margin-top: 8px; }
+.live-embed .live-tile { max-width: 420px; }
+.live-tile.ended { opacity: .75; cursor: default; }
+.live-badge.live-ended { color: rgb(255 255 255 / .8); background: rgb(0 0 0 / .55); }
+.live-embed-sheet { position: fixed; inset: 0; z-index: 50; overflow: auto; background: var(--bg); }
