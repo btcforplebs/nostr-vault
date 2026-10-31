@@ -79,6 +79,7 @@ class ComposeNoteViewModel @Inject constructor(
     private var autoSaveJob: Job? = null
     /** Posted or discarded: leaving must not send the draft to the relay again. */
     private var draftSessionClosed = false
+    private val draftSyncGate = DraftSyncGate()
     /** Typed since the last device save. Not [autoSaveJob]: onCleared runs after viewModelScope is cancelled. */
     private var hasUnsavedEdit = false
 
@@ -551,6 +552,16 @@ class ComposeNoteViewModel @Inject constructor(
             ),
             syncToRelay = false,
         )
+    }
+
+    /** A photo or video picker is about to open: the stop it causes isn't leaving. */
+    fun pickerOpening() = draftSyncGate.pickerOpening()
+
+    fun onComposerStarted() = draftSyncGate.started()
+
+    /** Backgrounded: sync the draft, unless a picker from this screen is what stopped it. */
+    fun onComposerStopped() {
+        if (draftSyncGate.syncOnStop()) syncDraftToRelay()
     }
 
     /** Leaving or backgrounding: the latest text to the device, then one relay sync if it changed. */
