@@ -9,6 +9,7 @@ import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
 import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
+import { BlossomThumb } from "../components/BlossomThumb.jsx"
 if (import.meta.env) import("../styles/blossom.css")
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -123,7 +124,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
 function Thumb({ blob, big = false }) {
   if (blob.kind === "video") return <video src={big ? blob.url : `${blob.url}#t=0.1`} preload="metadata" muted={!big} controls={big} playsinline />
   if (blob.kind === "other") return <span class="blossom-file" style={{ overflowWrap: "anywhere", textAlign: "center", padding: 4 }}>{isAudio(blob) ? "♪ " : ""}{blob.type || "file"}</span>
-  return <img src={blob.url} alt="" loading={big ? "eager" : "lazy"} decoding="async" />
+  return big ? <img src={blob.url} alt="" loading="eager" decoding="async" /> : <BlossomThumb blob={blob} />
 }
 
 /** The file before / after `sha` in the grid's order, or null at either end. */
