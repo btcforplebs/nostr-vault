@@ -512,7 +512,9 @@ func ingestPopularEngagement(ctx context.Context) {
 	if pool == nil {
 		return
 	}
-	relays := config.ImportSeedRelays
+	// An author-less firehose is the heaviest read there is; keep it off
+	// the bulkReadExcludedHosts (damus bans busy IPs).
+	relays := withoutBulkReadExcluded(config.ImportSeedRelays)
 	if len(relays) == 0 {
 		log.Println("📊 popular tally: no seed relays configured")
 		return

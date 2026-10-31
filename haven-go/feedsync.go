@@ -204,7 +204,8 @@ func ownerFollowListAt() time.Time {
 
 // feedSyncRelays picks the external relay set to reconcile the feed against:
 // FEED_SYNC_RELAYS_FILE when configured, otherwise blastr ∪ import seed
-// relays (the same relays the clients read their feeds from).
+// relays (the same relays the clients read their feeds from), minus the
+// bulkReadExcludedHosts.
 func feedSyncRelays() []string {
 	if len(config.FeedSyncRelays) > 0 {
 		return config.FeedSyncRelays
@@ -220,7 +221,7 @@ func feedSyncRelays() []string {
 	for r := range set {
 		relays = append(relays, r)
 	}
-	return relays
+	return withoutBulkReadExcluded(relays)
 }
 
 // syncFeed runs the feed-cache convergence loop for one relay cycle: an
@@ -322,6 +323,9 @@ func syncFeed(ctx context.Context) {
 					if ctx.Err() != nil {
 						return
 					}
+					if relayBanned(url) {
+						continue
+					}
 					if !relaySupportsNegentropy(ctx, url) {
 						fallback = append(fallback, url)
 						continue
@@ -341,8 +345,10 @@ func syncFeed(ctx context.Context) {
 						// unsupported instead of re-probing every round.
 						slog.Warn("negentropy feed sync refused, plain catch-up until retry TTL", "relay", url, "err", err)
 						markNegentropyUnsupported(url)
+						noteRelayRefusal(url, err)
 						fallback = append(fallback, url)
 					default:
+						noteRelayRefusal(url, err)
 						slog.Warn("negentropy feed sync failed, plain catch-up this round", "relay", url, "err", err)
 						fallback = append(fallback, url)
 					}

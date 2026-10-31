@@ -98,6 +98,9 @@ type Config struct {
 
 const relaySoftware = "https://github.com/barrydeen/haven"
 
+// minInboxPullIntervalSeconds floors INBOX_PULL_INTERVAL_SECONDS (see Load).
+const minInboxPullIntervalSeconds = 3600
+
 func loadConfig() Config {
 	_ = godotenv.Load(".env")
 
@@ -184,11 +187,13 @@ func loadConfig() Config {
 	}
 
 	// Clamp the catch-up interval regardless of which host app passed it in:
-	// no UI exposes it, so anything below 5 min is a legacy save (the old 60s
-	// default) — short enough that sync rounds run back-to-back once the DBs
-	// grow, the 100% CPU treadmill. ≤0 means unset; use sites default it.
-	if cfg.InboxPullIntervalSeconds > 0 && cfg.InboxPullIntervalSeconds < 300 {
-		cfg.InboxPullIntervalSeconds = 300
+	// no UI exposes it. Below 5 min sync rounds run back-to-back once the DBs
+	// grow (the 100% CPU treadmill), and the apps' 900 s default dialled every
+	// seed relay four times an hour, enough for damus to rate-limit and ban
+	// the IP. Live subscriptions deliver in real time; pull-to-refresh still
+	// runs a round on demand. ≤0 means unset; use sites default it.
+	if cfg.InboxPullIntervalSeconds > 0 && cfg.InboxPullIntervalSeconds < minInboxPullIntervalSeconds {
+		cfg.InboxPullIntervalSeconds = minInboxPullIntervalSeconds
 	}
 
 	applyGoMemLimit(cfg.GoMemLimitMB)
