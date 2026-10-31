@@ -213,6 +213,9 @@ internal fun FullScreenMediaPager(
     ) {
             HorizontalPager(
                 state = pagerState,
+                // Load the next photo ahead, so its full-size decode is not
+                // running during the swipe.
+                beyondViewportPageCount = 1,
                 // Lock paging while a page is zoomed so pan doesn't flip pages.
                 userScrollEnabled = currentScale <= 1.05f && !closing,
                 modifier = Modifier
