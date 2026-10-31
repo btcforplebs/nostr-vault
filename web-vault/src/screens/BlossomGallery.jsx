@@ -33,8 +33,13 @@ const SERVERS_KEY = "nv-gallery-servers:"
 export const rememberedServers = (pubkey, storage = globalThis.localStorage) => { try { const s = JSON.parse(storage?.getItem(SERVERS_KEY + pubkey) ?? "null"); return Array.isArray(s) && s.length && s.every(x => typeof x === "string") ? s : null } catch { return null } }
 const rememberServers = (pubkey, s, storage = globalThis.localStorage) => { try { storage?.setItem(SERVERS_KEY + pubkey, JSON.stringify(s)) } catch {} }
 
-// The last full list per account, for this tab's life: opening Media again draws it at once and asks underneath.
-const shown = new Map() // pubkey -> { servers, found }
+// The last full list per account, for this tab's life: opening Media again draws it and doesn't ask the servers
+// again (each /list may want a signed auth) until Refresh, or until it is MEDIA_FRESH_MS old: an upload made from
+// Compose then shows on a later visit.
+const shown = new Map() // pubkey -> { servers, found, at }
+export const MEDIA_FRESH_MS = 5 * 60_000
+/** Whether opening Media asks the servers: no list kept this visit, or the kept one is old. */
+export const needsAsking = (kept, now = Date.now()) => !kept || !(now - (kept.at ?? 0) < MEDIA_FRESH_MS)
 
 export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
   const me = ctx.session.pubkey
@@ -61,12 +66,19 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
     if (!quiet && !same) setServers(s)
     const r = early && same ? await early : await list(s)
     if (run !== runs.current) return
-    shown.set(me, { servers: s, found: { ...r, done: true } })
+    shown.set(me, { servers: s, found: { ...r, done: true }, at: Date.now() })
     setServers(s); setFound({ ...r, done: true })
   }
-  useEffect(() => { load() }, [me, refreshes])
-  // Uploads, deletes and copies change the list on screen; the cached one follows.
-  useEffect(() => { if (found?.done) shown.set(me, { servers, found }) }, [found])
+  const drawn = useRef(null) // the account this card last opened for
+  useEffect(() => {
+    const entering = drawn.current !== me
+    drawn.current = me
+    // Opening Media again draws the kept list without asking; Refresh (refreshes) always asks.
+    if (entering && !needsAsking(shown.get(me))) return
+    load()
+  }, [me, refreshes])
+  // Uploads, deletes and copies change the list on screen; the kept one follows (its age doesn't).
+  useEffect(() => { if (found?.done) shown.set(me, { servers, found, at: shown.get(me)?.at ?? Date.now() }) }, [found])
 
   if (!found || (!found.done && !found.blobs.length)) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
   const blobs = found.blobs.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)

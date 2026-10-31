@@ -16,7 +16,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { SORTS, loadSort, sections, typeRank, isAudio, neighbour, rememberedServers } = await import("../src/screens/BlossomGallery.jsx")
+const { SORTS, loadSort, sections, typeRank, isAudio, neighbour, rememberedServers, needsAsking, MEDIA_FRESH_MS } = await import("../src/screens/BlossomGallery.jsx")
 const day = (d, h = 12) => Date.UTC(2026, 9, d, h) / 1000
 const b = (id, kind, uploaded, type = "") => ({ sha256: id, kind, uploaded, type, servers: [] })
 const files = [b("p1", "photo", day(1)), b("v2", "video", day(2)), b("g3", "gif", day(3)), b("a4", "other", day(4), "audio/mpeg"), b("o5", "other", day(5), "application/pdf"), b("p6", "photo", day(6))]
@@ -62,7 +62,7 @@ test("the Vault's Refresh asks the media servers again", () => {
   const vault = readFileSync(new URL("../src/screens/VaultScreen.jsx", import.meta.url), "utf8")
   assert.match(vault, /onClick=\{\(\) => \{ setRefreshes\(n => n \+ 1\); load\(\{ hold: false \}\) \}\}/)
   assert.match(vault, /<BlossomGallery ctx=\{ctx\} filter=\{filter\} refreshes=\{refreshes\} \/>/)
-  assert.match(src, /useEffect\(\(\) => \{ load\(\) \}, \[me, refreshes\]\)/)
+  assert.match(src, /    load\(\)\n  \}, \[me, refreshes\]\)/)
 })
 
 test("the viewer steps through the grid's order and stops at either end; video tiles carry a play mark", () => {
@@ -92,4 +92,17 @@ test("the delete button says Delete from mirrors, names every server it goes to,
   assert.match(src, /deleteBlob\(blob, \{ ctx, servers \}\)/)
   assert.match(src, /targets\.map\(hostOf\)\.join/)
   assert.match(src, /home vault \(Nostr Vault on your Mac\) has a copy, it stays: the web can't delete from it/)
+})
+
+test("opening Media again in the same visit draws the kept list without asking the servers; Refresh or an old list asks", () => {
+  const now = 1_000_000_000
+  assert.equal(needsAsking(undefined, now), true, "nothing kept yet")
+  assert.equal(needsAsking({ at: now - 1000 }, now), false, "kept a second ago")
+  assert.equal(needsAsking({ at: now - MEDIA_FRESH_MS + 1 }, now), false)
+  assert.equal(needsAsking({ at: now - MEDIA_FRESH_MS }, now), true, "five minutes old")
+  assert.equal(needsAsking({}, now), true, "no age: ask")
+  const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
+  // Only entering skips; a Refresh (refreshes changing for the same account) always loads.
+  assert.match(src, /if \(entering && !needsAsking\(shown\.get\(me\)\)\) return\n    load\(\)\n  \}, \[me, refreshes\]\)/)
+  assert.match(src, /shown\.set\(me, \{ servers: s, found: \{ \.\.\.r, done: true \}, at: Date\.now\(\) \}\)/)
 })
