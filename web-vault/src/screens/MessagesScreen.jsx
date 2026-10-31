@@ -201,9 +201,6 @@ export function MessagesScreen({ ctx }) {
       )}
       {err && <div class="status-line error">{err}</div>}
       {showRequests && <p class="status-line muted small">From people outside your Web of Trust. Replying moves a conversation to Messages.</p>}
-      {!showRequests && requests.length > 0 && (
-        <a class="dm-row dm-requests" href="#/messages/requests"><span class="dm-row-text"><span class="dm-row-head">Requests ({requests.length})</span></span></a>
-      )}
       {!loaded && !list.length ? <>
           {ctx.session.method === "nip46" && <p class="status-line">Your signer may ask you to approve.</p>}
           <SkeletonList rowClass="dm-row" avatar={44} label="Opening your messages…" />
