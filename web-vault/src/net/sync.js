@@ -221,10 +221,15 @@ export function checkSigned(event, template, pubkey) {
  * -> { event, local, relays: [{url, ok, message, local}] } with `local` set on this machine's own relay
  */
 export async function publishNote(vault, signer, pubkey, content, writeRelays, tags = []) {
-  const template = { kind: 1, created_at: now(), tags: appendClientTag(tags, 1), content }
+  return publishKind(vault, signer, pubkey, 1, content, writeRelays, tags)
+}
+
+/** publishNote for any kind: an article (30023) or a poll (1068) from Compose goes out the same way. */
+export async function publishKind(vault, signer, pubkey, kind, content, writeRelays, tags = []) {
+  const template = { kind, created_at: now(), tags: appendClientTag(tags, kind), content }
   const event = checkSigned(await signer.signEvent(template), template, pubkey)
   const local = await vault.outbox.event(event)
-  if (!local.ok) throw new Error(`Haven refused the note: ${local.message}`)
+  if (!local.ok) throw new Error(`Haven refused the ${kind === 1 ? "note" : "post"}: ${local.message}`)
   const { network, local: own } = publishRelays(writeRelays)
   const urls = [...network, ...own]
   const results = await Promise.allSettled(pool.publish(urls, event))

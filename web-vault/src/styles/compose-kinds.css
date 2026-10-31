@@ -1,0 +1,32 @@
+/* Compose's other kinds (screens/compose): the Note / Article chooser under the bar, and the article form.
+   The fields read as the iPhone's grouped Form rows: borderless on the sheet, one hairline between. */
+.compose-kinds { margin: 0 var(--gutter) 12px; }
+
+.kind-form { display: flex; flex-direction: column; gap: 10px; padding: 0 var(--gutter) 16px; }
+.kind-form input.kind-title, .kind-form textarea.kind-field { width: 100%; box-sizing: border-box; margin: 0; padding: 12px 14px;
+  border: 0; border-radius: var(--radius); background: var(--s2); color: var(--text); box-shadow: none; resize: vertical; }
+.kind-form input.kind-title { font: var(--t-title2); }
+.kind-form textarea.kind-field { font: 400 16px/1.45 var(--font); }
+.kind-form textarea.article-body { min-height: 40vh; }
+.kind-form :is(input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.kind-form .kind-mode { align-self: flex-start; }
+.kind-form .kind-note { margin: 0 2px; }
+
+/* The cover: a 160 px tile, the photo cropped to fill it, a round × at the top right. */
+.article-cover { position: relative; }
+.article-cover-pick { display: block; width: 100%; height: 160px; padding: 0; overflow: hidden; border: 0; border-radius: var(--radius);
+  background: var(--s2); color: var(--accent); box-shadow: none; }
+.article-cover-pick:active { transform: none; }
+.article-cover-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.article-cover-empty { display: inline-flex; align-items: center; gap: 8px; font: 600 16px var(--font); }
+.article-cover.uploading img, .article-cover.failed img { opacity: .5; }
+.article-cover-state { position: absolute; left: 10px; bottom: 10px; padding: 4px 10px; border-radius: 999px;
+  background: rgb(0 0 0 / .6); color: #fff; font: 600 13px var(--font); }
+.article-cover-remove { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; min-height: 0; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%; background: rgb(0 0 0 / .55); color: #fff; }
+
+/* Preview: the post as the reader draws it. */
+.article-preview { padding: 4px 2px; }
+.article-preview-cover { width: 100%; max-height: 240px; object-fit: cover; border-radius: var(--radius); display: block; }
+.article-preview h1 { margin: 14px 0 6px; font: var(--t-title); overflow-wrap: anywhere; }
+.article-preview-summary { margin: 0; color: var(--text-2); font: 400 17px/1.4 var(--font); }
