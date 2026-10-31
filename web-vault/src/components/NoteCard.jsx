@@ -6,6 +6,7 @@ import { repostState } from "../net/blocks.js"
 import { useProfile } from "./useProfile.js"
 import { ago } from "./time.js"
 import { ZapButton } from "./ZapButton.jsx"
+import { zapButtonOn } from "../net/post-buttons.js"
 import { MoreMenu } from "./Moderation.jsx"
 import { READ_ONLY_SHORT } from "../signer/readonly.js"
 import { act, actionContext, actionState, actionTarget, compose, gateIds, isDeleted, loadSent, onActionState } from "../net/actions.js"
@@ -154,7 +155,8 @@ function NoteMore({ note }) {
   return <MoreMenu note={note} className="note-more" />
 }
 
-/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up. */
+/** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up.
+ *  Zap only once turned on in Settings › Post buttons, as on the iPhone. */
 function NoteActions({ note }) {
   const ctx = actionContext()
   const [s, setS] = useState(() => actionState(note.id))
@@ -172,7 +174,7 @@ function NoteActions({ note }) {
       <ActionButton label="Repost" off={off} doneLabel="Reposted" kind="repost" state={s.repost} icon={ICONS.repost} onClick={() => act(ctx, "repost", note)} />
       <ActionButton label="Quote" off={off} icon={ICONS.quote} onClick={() => compose("quote", note)} />
       <ReactionButton ctx={ctx} note={note} state={s.like} off={off} />
-      <ZapButton note={note} />
+      {zapButtonOn() && <ZapButton note={note} />}
       <EventInfoButton event={note} account={ctx.account} />
     </div>
   )
