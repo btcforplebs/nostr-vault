@@ -12,7 +12,6 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.MacSync
 import com.nostrvault.relay.MacSyncStatus
-import com.nostrvault.relay.PublicRelayList
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.relay.RelayMatrix
 import com.nostrvault.service.FeedService
@@ -291,29 +290,6 @@ class VaultDashboardViewModel @Inject constructor(
         "nip46" -> cfg.bunkerConfig(activeNpub(cfg)) != null
         "amber" -> true
         else -> false
-    }
-
-    /**
-     * The vault's own addresses that would go in the published relay list.
-     * Empty for a pocket relay with no Mac relay: there is nothing to list.
-     */
-    fun hasPublishableOwnRelay(cfg: HavenConfig): Boolean =
-        PublicRelayList.tags(ownRelays = listOf(cfg.macRelayWssURL), read = emptyList(), write = emptyList()).isNotEmpty()
-
-    fun publishesRelayList(cfg: HavenConfig): Boolean = cfg.publishRelayListPerAccount[activeNpub(cfg)] == true
-
-    /** Why the last Publish sent nothing, shown under the row; null when it went out. */
-    private val _publishNote = MutableStateFlow<String?>(null)
-    val publishNote = _publishNote.asStateFlow()
-
-    fun publishRelayList() {
-        val npub = activeNpub(configStore.config.value)
-        if (npub.isEmpty()) return
-        viewModelScope.launch {
-            val note = nostrService.publishRelayList(npub)
-            _publishNote.value = note
-            if (note == null) configStore.setPublishRelayList(npub, true)
-        }
     }
 
     /**

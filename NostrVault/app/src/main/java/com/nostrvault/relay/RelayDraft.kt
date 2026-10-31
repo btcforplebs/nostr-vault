@@ -184,18 +184,6 @@ object RelayDraft {
 
     private fun movedToYours(state: State, entry: Entry): Boolean = entry.key in state.moved
 
-    /**
-     * The relay list (kind 10002) a plain "Publish" sends: [published]'s own
-     * relays with [ownRelay] first, never the app's defaults. Null when the
-     * list wasn't settled (publishing could replace one set elsewhere) or
-     * there is nothing to list.
-     */
-    fun yoursRelayListTags(published: Published, ownRelay: String): List<List<String>>? {
-        if (!published.relayListKnown) return null
-        return PublicRelayList.tags(listOf(ownRelay).filter { it.isNotBlank() }, published.read, published.write)
-            .ifEmpty { null }
-    }
-
     // ── Save ──────────────────────────────────────────────────────
 
     /** One line of the confirm sheet: a relay and the jobs it gains or loses. */

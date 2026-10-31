@@ -231,20 +231,6 @@ internal fun AccountDetail(
             }
         }
 
-        // NIP-65 publish toggle
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-            Text("Publish Relay List (NIP-65)", color = PrimaryText, fontSize = 13.sp)
-            InfoButton(SettingsHelp.ACCOUNT_PUBLISH_INBOX)
-            Spacer(Modifier.weight(1f))
-            Switch(
-                checked = cfg.publishRelayListPerAccount[npub] ?: false,
-                onCheckedChange = { viewModel.togglePublishRelayList(npub, it) },
-                colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
-            )
-        }
-        val publishNote by viewModel.publishNote.collectAsState()
-        publishNote[npub]?.let { Text(it, color = SecondaryText, fontSize = 12.sp) }
-
         if (!isOwner) {
             TextButton(onClick = { confirmRemoveAccount = true }) {
                 Text("Remove Account", color = ErrorRed)

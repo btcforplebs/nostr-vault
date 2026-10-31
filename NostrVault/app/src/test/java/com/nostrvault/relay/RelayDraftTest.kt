@@ -250,24 +250,6 @@ class RelayDraftTest {
         assertTrue(plan.relayListHeld && plan.dmListHeld)
     }
 
-    @Test
-    fun `plain Publish sends his own relay list and the vault, never the defaults`() {
-        val tags = assertNotNullAndGet(RelayDraft.yoursRelayListTags(published, ownRelay))
-        assertEquals(
-            listOf(listOf("r", ownRelay), listOf("r", "wss://nostr.land", "read"), listOf("r", "wss://relay.primal.net")),
-            tags,
-        )
-        assertTrue(tags.none { key(it[1]) in config.read.map(::key) - key("wss://relay.primal.net") })
-    }
-
-    @Test
-    fun `plain Publish holds when his list wasn't settled, and sends only the vault when he has none`() {
-        assertNull(RelayDraft.yoursRelayListTags(published.copy(relayListKnown = false), ownRelay))
-        val none = RelayDraft.Published(relayListKnown = true)
-        assertEquals(listOf(listOf("r", ownRelay)), RelayDraft.yoursRelayListTags(none, ownRelay))
-        assertNull(RelayDraft.yoursRelayListTags(none, ""))
-    }
-
     private fun <T> assertNotNullAndGet(value: T?): T {
         assertNotNull(value)
         return value!!

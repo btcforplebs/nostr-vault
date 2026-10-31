@@ -89,8 +89,8 @@ import java.net.URL
 
     /**
      * Publishes what a brand-new account needs to exist for other people:
-     * a relay list (only the starter list the person chose Use on; Skip
-     * publishes none) and a profile. Its follow list starts with its first
+     * a relay list (the starter servers shown in setup, without damus) and
+     * a profile. Its follow list starts with its first
      * follow, in the Fill your feed guide. Same as iOS. Runs once setup has
      * stored the key, because each event is signed by it, and only on New to
      * Nostr, whose key was generated in this run and so has none of these
@@ -110,7 +110,7 @@ import java.net.URL
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             if (!stillGenerated()) return@launch
-            val relayTags = StarterRelays.tags(_starterRelays.value, _publishStarterRelays.value)
+            val relayTags = StarterRelays.tags(configStore.config.value.activeBlastrRelays)
             if (relayTags.isNotEmpty()) {
                 runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
                     .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }

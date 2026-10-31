@@ -1,11 +1,10 @@
 package com.nostrvault.ui.screens
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Create an account's starter relay list: shown first, published only on Use. */
+/** Create an account's starter servers: the public broadcast relays, never damus. */
 class StarterRelaysTest {
 
     @Test
@@ -15,23 +14,17 @@ class StarterRelaysTest {
     }
 
     @Test
-    fun `skip publishes nothing`() {
-        assertTrue(StarterRelays.tags(listOf("wss://relay.primal.net"), use = false).isEmpty())
+    fun `damus is never on the starter list, however it is spelled`() {
+        val list = StarterRelays.from(listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://Relay.Damus.io/"))
+        assertEquals(listOf("wss://relay.btcforplebs.com"), list)
     }
 
     @Test
-    fun `use publishes exactly the edited list`() {
-        var list = listOf("wss://relay.primal.net", "wss://relay.btcforplebs.com")
-        list = StarterRelays.removing(list, "wss://relay.primal.net/")
-        list = StarterRelays.adding(list, "nostr.land")!!
-        assertEquals(listOf(listOf("r", "wss://relay.btcforplebs.com"), listOf("r", "wss://nostr.land")), StarterRelays.tags(list, use = true))
-    }
-
-    @Test
-    fun `adding a private or malformed address is refused, a duplicate changes nothing`() {
-        val list = listOf("wss://relay.primal.net")
-        assertNull(StarterRelays.adding(list, "ws://192.168.1.4:4869"))
-        assertNull(StarterRelays.adding(list, "not a relay"))
-        assertEquals(list, StarterRelays.adding(list, "relay.primal.net"))
+    fun `the published tags are the starter servers`() {
+        assertEquals(
+            listOf(listOf("r", "wss://relay.btcforplebs.com"), listOf("r", "wss://relay.snort.social")),
+            StarterRelays.tags(listOf("wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social")),
+        )
+        assertTrue(StarterRelays.tags(listOf("wss://relay.damus.io")).isEmpty())
     }
 }
