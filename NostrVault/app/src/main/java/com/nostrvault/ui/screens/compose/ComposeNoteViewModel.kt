@@ -77,6 +77,10 @@ class ComposeNoteViewModel @Inject constructor(
     /** Stable draft ID for this compose session. */
     private val draftId: String = resumeDraftId ?: java.util.UUID.randomUUID().toString()
     private var autoSaveJob: Job? = null
+    /** Posted or discarded: leaving must not send the draft to the relay again. */
+    private var draftSessionClosed = false
+    /** Typed since the last device save. Not [autoSaveJob]: onCleared runs after viewModelScope is cancelled. */
+    private var hasUnsavedEdit = false
 
     /**
      * True once the composer screen is gone. A send keeps running after that
@@ -394,6 +398,7 @@ class ComposeNoteViewModel @Inject constructor(
     /** Leaving without posting: drafts keep only text, so the GIF copies have no further use. */
     override fun onCleared() {
         screenGone = true
+        syncDraftToRelay()
         // A send still running reads these; it deletes them when it ends.
         if (!_isPublishing.value) deleteGifCopies(_attachments.value)
         super.onCleared()
@@ -506,9 +511,35 @@ class ComposeNoteViewModel @Inject constructor(
     /** Closing now should ask "Save this note as a draft?" (iOS handleCancelTapped). */
     fun shouldAskToSaveDraft(): Boolean = composeNeedsDraftPrompt(_content.value)
 
-    /** "Save Draft": write the draft now rather than waiting on the debounce. */
+    /** "Save Draft": write the draft now rather than waiting on the debounce. Leaving syncs it. */
     fun saveDraftNow() {
         autoSaveJob?.cancel()
+        saveDraftLocally()
+    }
+
+    /** "Discard": drop the pending autosave and any draft this session wrote or resumed. */
+    fun discardDraft() {
+        autoSaveJob?.cancel()
+        draftSessionClosed = true
+        draftService.deleteDraft(draftId)
+    }
+
+    /**
+     * Typing saves the draft on the device only. The relay copy (a signed
+     * kind 31234) goes once, when the composer is left or the app goes to the
+     * background, so the signer isn't asked on every pause.
+     */
+    private fun scheduleDraftSave() {
+        hasUnsavedEdit = true
+        autoSaveJob?.cancel()
+        autoSaveJob = viewModelScope.launch {
+            delay(2000) // 2-second debounce
+            saveDraftLocally()
+        }
+    }
+
+    private fun saveDraftLocally() {
+        hasUnsavedEdit = false
         val text = _content.value
         if (text.isBlank()) return
         draftService.saveDraft(
@@ -517,32 +548,21 @@ class ComposeNoteViewModel @Inject constructor(
                 content = convertMentionsToNostr(text),
                 replyToId = replyToNoteId,
                 quoteId = quoteCitedId(),
-            )
+            ),
+            syncToRelay = false,
         )
     }
 
-    /** "Discard": drop the pending autosave and any draft this session wrote or resumed. */
-    fun discardDraft() {
-        autoSaveJob?.cancel()
-        draftService.deleteDraft(draftId)
-    }
-
-    private fun scheduleDraftSave() {
-        autoSaveJob?.cancel()
-        autoSaveJob = viewModelScope.launch {
-            delay(2000) // 2-second debounce
-            val text = _content.value
-            if (text.isNotBlank()) {
-                draftService.saveDraft(
-                    Draft(
-                        id = draftId,
-                        content = convertMentionsToNostr(text),
-                        replyToId = replyToNoteId,
-                        quoteId = quoteCitedId(),
-                    )
-                )
-            }
+    /** Leaving or backgrounding: the latest text to the device, then one relay sync if it changed. */
+    fun syncDraftToRelay() {
+        if (draftSessionClosed) return
+        // Only an edit the debounce hasn't saved yet: a fresh save would queue
+        // an unchanged draft for a second sign.
+        if (hasUnsavedEdit) {
+            autoSaveJob?.cancel()
+            saveDraftLocally()
         }
+        draftService.syncDraft(draftId)
     }
 
     fun publish(onPublished: () -> Unit) {
@@ -569,7 +589,9 @@ class ComposeNoteViewModel @Inject constructor(
         // does (iOS ComposeView.postNote does the same).
         // [sentVersion] is that save: the draft can be reopened from Drafts
         // and edited while this send runs, and those edits must outlive it.
+        // Device only: the post itself is the one sign, and the draft goes when it does.
         autoSaveJob?.cancel()
+        draftSessionClosed = true
         val sentVersion = if (text.isNotBlank()) {
             draftService.saveDraft(
                 Draft(
@@ -577,7 +599,8 @@ class ComposeNoteViewModel @Inject constructor(
                     content = convertMentionsToNostr(text),
                     replyToId = replyToNoteId,
                     quoteId = quoteCitedId(),
-                )
+                ),
+                syncToRelay = false,
             ).updatedAt
         } else {
             null
@@ -799,6 +822,8 @@ class ComposeNoteViewModel @Inject constructor(
     /** On the screen if it is still open, otherwise as a banner over whatever is. */
     private fun reportSendError(message: String) {
         _error.value = message
+        // The draft outlives a failed send, so leaving syncs it again.
+        draftSessionClosed = false
         if (screenGone) notificationManager.showError(message)
     }
 
