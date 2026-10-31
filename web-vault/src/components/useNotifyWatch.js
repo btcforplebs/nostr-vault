@@ -7,7 +7,7 @@ import { getProfile, fetchProfiles } from "../net/profiles.js"
 import { getBlocks } from "../net/blocks.js"
 import { useDmTrust } from "./useDmTrust.js"
 import {
-  POLL_MS, notifyOn, permission, readMark, writeMark, readSince, unreadFrom, vaultLines, unreadLines, titleWith, noticesFor, lookingAtVault,
+  pollDelay, pollOnReturn, notifyOn, permission, readMark, writeMark, readSince, unreadFrom, vaultLines, unreadLines, titleWith, noticesFor, lookingAtVault,
   setVaultUnread,
 } from "../net/notify-watch.js"
 import { readTypes, lineWanted } from "../net/notify-prefs.js"
@@ -18,7 +18,7 @@ const nameOf = pk => getProfile(pk)?.name ?? ""
 
 /**
  * While the app is open for an account: asks the user's relays for new Vault activity every POLL_MS (a background tab
- * too; browsers slow its timers to about once a minute, which this already is), keeps the count of lines newer than
+ * every HIDDEN_POLL_MS, and at once on coming back to it), keeps the count of lines newer than
  * the Vault list's seen mark in the tab's title, and raises a browser notification for each new line when the user
  * turned them on. Pull only, and only while a page is open.
  */
@@ -32,7 +32,7 @@ export function useNotifyWatch(ctx) {
   useEffect(() => {
     if (!me) return
     const base = document.title.replace(/^\(\d+\+?\) /, "")
-    let stopped = false, timer = null, lines = []
+    let stopped = false, timer = null, lines = [], polling = false, lastPoll = 0
     let mark = readMark(me)
     const since = readSince(me)
     const from = () => unreadFrom(readSeen(me)?.activity ?? 0, since)
@@ -57,7 +57,9 @@ export function useNotifyWatch(ctx) {
       for (const n of out.notices) await showNotice(n)
     }
     const poll = async () => {
-      if (stopped) return
+      if (stopped || polling) return
+      polling = true
+      lastPoll = Date.now()
       const { vault } = live.current
       const after = Math.max(0, mark - 60)
       if (navigator.onLine !== false) {
@@ -69,14 +71,21 @@ export function useNotifyWatch(ctx) {
       if (stopped) return
       await rebuild().catch(() => {})
       await raise().catch(() => {})
-      if (!stopped) timer = setTimeout(poll, POLL_MS)
+      polling = false
+      if (!stopped) timer = setTimeout(poll, pollDelay(document.visibilityState === "hidden"))
     }
+    const back = () => {
+      if (document.visibilityState !== "visible" || !pollOnReturn({ polling, lastPoll })) return
+      clearTimeout(timer)
+      poll()
+    }
+    document.addEventListener("visibilitychange", back)
     rebuild().catch(() => {}).then(poll)
     // A look at the Vault list moves its seen mark: the title's count follows at once.
     const offSeen = onSeen(show)
     const offClicks = listenNoticeClicks()
     addEventListener("hashchange", show)
-    return () => { stopped = true; clearTimeout(timer); offSeen(); offClicks(); setVaultUnread(0); removeEventListener("hashchange", show); document.title = base }
+    return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", back); offSeen(); offClicks(); setVaultUnread(0); removeEventListener("hashchange", show); document.title = base }
   }, [me, relays.join(" ")])
 }
 
