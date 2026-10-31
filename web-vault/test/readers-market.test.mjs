@@ -2,7 +2,7 @@
 // out, prices, categories, and the newest-per-address book.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { parseListing, priceLabel, classify, book, marketCategories, marketFilter, fetchListings, plebeianUrl, loadScope, isOutOfStock, MARKET_RELAYS, trustedFilters, TRUSTED_AUTHORS_CAP } from "../src/readers/market.js"
+import { parseListing, priceLabel, classify, book, marketCategories, marketFilter, fetchListings, hasPlebeianPage, plebeianUrl, loadScope, isOutOfStock, MARKET_RELAYS, trustedFilters, TRUSTED_AUTHORS_CAP } from "../src/readers/market.js"
 
 const A = "a".repeat(64), C = "c".repeat(64)
 let n = 0
@@ -30,8 +30,18 @@ test("Conduit's JSON 30402 with image objects and an auction's starting bid", ()
   const a = parseListing(ev({ kind: 30020, content: JSON.stringify({ name: "Coin", images: ["https://img/c.jpg"], starting_bid: 1000 }) }))
   assert.ok(a.isAuction)
   assert.equal(priceLabel(a), "1,000 sats")
-  assert.match(plebeianUrl(a), /^https:\/\/plebeian\.market\/auction\//)
-  assert.match(plebeianUrl(c), /^https:\/\/plebeian\.market\/products\//)
+  assert.equal(plebeianUrl(c), `https://plebeian.market/products/${c.id}`)
+})
+
+test("Plebeian link: a 30402 opens its product page; a 30018 product or 30020 auction opens the seller's profile", () => {
+  const j = JSON.stringify({ name: "Coin", images: ["https://img/c.jpg"], starting_bid: 1000 })
+  const c = parseListing(ev({ kind: 30402, content: "Body", tags: [["d", "c"], ["title", "Bike"], ["image", "https://img/b.jpg"], ["price", "5"]] }))
+  const p = parseListing(ev({ kind: 30018, content: j }))
+  const a = parseListing(ev({ kind: 30020, content: j }))
+  assert.deepEqual([hasPlebeianPage(c), hasPlebeianPage(p), hasPlebeianPage(a)], [true, false, false])
+  assert.equal(plebeianUrl(c), `https://plebeian.market/products/${c.id}`)
+  assert.equal(plebeianUrl(p), `https://plebeian.market/profile/${p.pubkey}`)
+  assert.equal(plebeianUrl(a), `https://plebeian.market/profile/${a.pubkey}`)
 })
 
 test("left out: no title, Untitled Product, no http image, sold, out of stock, hidden", () => {

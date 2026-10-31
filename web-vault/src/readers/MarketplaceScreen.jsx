@@ -9,7 +9,7 @@ import { useBlocks } from "../components/useBlocks.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { Scopes } from "./ArticlesScreen.jsx"
 import { EmptyState } from "./EmptyState.jsx"
-import { MARKET_SCOPES, fetchListings, loadScope, marketCategories, plebeianUrl, priceLabel, saveScope } from "./market.js"
+import { MARKET_SCOPES, fetchListings, hasPlebeianPage, loadScope, marketCategories, plebeianUrl, priceLabel, saveScope } from "./market.js"
 import { SkeletonGrid } from "../components/Loading.jsx"
 import { followsDep, heldResults } from "./held.js"
 
@@ -115,7 +115,7 @@ export function ListingView({ listing: l, onBack }) {
         <Avatar pubkey={l.pubkey} size={32} /><span><span class="muted small">Sold by</span><br /><AuthorName pubkey={l.pubkey} /></span><span class="market-chevron" aria-hidden="true">›</span>
       </a>
       {l.summary && <p class="market-description">{l.summary}</p>}
-      <a class="market-buy" href={plebeianUrl(l)} target="_blank" rel="noopener noreferrer">{l.isAuction ? "Bid on Plebeian" : "Buy on Plebeian"}</a>
+      <a class="market-buy" href={plebeianUrl(l)} target="_blank" rel="noopener noreferrer">{hasPlebeianPage(l) ? "Buy on Plebeian" : "Seller on Plebeian"}</a>
       <p class="muted small">Checkout happens on Plebeian Market. Nostr Vault doesn't take payments for listings.</p>
     </article>
   )
