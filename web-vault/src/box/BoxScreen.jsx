@@ -124,7 +124,7 @@ function Devices({ devices }) {
       {list.length === 0 && <p class="muted small box-pad">No devices of yours have reached the box yet.</p>}
       {list.map(d => (
         <div key={d.npub} class="settings-row box-row">
-          <span class="settings-title">{d.name?.trim() || ROLE[d.role] || "Device"}<span class="muted small box-sub">{[d.name?.trim() && ROLE[d.role], `seen ${ago(d.lastSeen)}`].filter(Boolean).join(" · ")}</span></span>
+          <span class="settings-title">{d.name?.trim() || ROLE[d.role] || "Device"}<span class="muted small box-sub">{[d.name?.trim() && ROLE[d.role], Number.isFinite(d.lastSeen) && `seen ${ago(d.lastSeen)}`].filter(Boolean).join(" · ")}</span></span>
           <span class={`box-value ${d.approved ? "good" : ""}`}>{d.approved ? "Approved" : "Waiting"}</span>
         </div>
       ))}

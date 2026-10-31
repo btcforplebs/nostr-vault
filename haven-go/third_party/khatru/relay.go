@@ -54,6 +54,9 @@ func NewRelay() *Relay {
 type Relay struct {
 	// setting this variable overwrites the hackish workaround we do to try to figure out our own base URL
 	ServiceURL string
+	// ServiceURLFor, when set, wins over ServiceURL: the base URL for this
+	// request (a box reached under several names: LAN IP, hostname, mesh).
+	ServiceURLFor func(r *http.Request) string
 
 	// hooks that will be called at various times
 	RejectEvent               []func(ctx context.Context, event *nostr.Event) (reject bool, msg string)
@@ -119,6 +122,9 @@ type Relay struct {
 }
 
 func (rl *Relay) getBaseURL(r *http.Request) string {
+	if rl.ServiceURLFor != nil {
+		return rl.ServiceURLFor(r)
+	}
 	if rl.ServiceURL != "" {
 		return rl.ServiceURL
 	}
