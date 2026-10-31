@@ -148,6 +148,18 @@ class LocalNotificationService @Inject constructor(
         /** The quiet channel a pill that went unread is filed in: no sound, no heads-up. */
         private const val FILED_CHANNEL_ID = "nv_missed_while_open"
 
+        /**
+         * Which account a notification is for, shown beside the app name. Null
+         * with one account, where there is nothing to tell apart, and for an
+         * npub the vault no longer holds. The profile name when known, else a
+         * short npub.
+         */
+        fun accountLabel(npub: String, accounts: List<String>, name: String?): String? {
+            if (accounts.size < 2 || npub !in accounts) return null
+            name?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            return if (npub.length > 12) "${npub.take(8)}…${npub.takeLast(4)}" else npub
+        }
+
         /** A follower key as the relay marker should carry it: 64 hex characters. */
         fun isPubkeyHex(s: String): Boolean = s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
@@ -840,6 +852,13 @@ class LocalNotificationService @Inject constructor(
         // Resolved after the avatar fetch: a sound picked meanwhile has
         // retired the channel that was current when this started.
         val channelId = if (filedPill) ensureFiledChannel() else ensureChannel()
+        // With two or more accounts, name the one this is for and group each
+        // account's alerts on their own.
+        val nostr = nostrService.get()
+        val accountLabel = accountLabel(
+            npub, configStore.config.value.allAccountNpubs(),
+            nostr.npubToHex(npub)?.let { nostr.profiles.value[it]?.bestName },
+        )
         val notification = NotificationCompat.Builder(context, channelId)
             // Status-bar icons are drawn from alpha only, so use the
             // purpose-built 24dp silhouette rather than the full-colour
@@ -854,6 +873,7 @@ class LocalNotificationService @Inject constructor(
             .setContentIntent(pending)
             .apply { if (largeIcon != null) setLargeIcon(largeIcon) }
             .apply { if (extras != null) addExtras(extras) }
+            .apply { if (accountLabel != null) setSubText(accountLabel).setGroup("nv_account_$npub") }
             .setOnlyAlertOnce(alertOnce)
             .build()
 

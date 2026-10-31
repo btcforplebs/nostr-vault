@@ -658,6 +658,15 @@ final class LocalNotificationService {
             let sound = NotificationSound(rawValue: ConfigService.shared.config.notificationSoundName) ?? .defaultSound
             content.sound = UNNotificationSound(named: UNNotificationSoundName(sound.systemSoundName))
         }
+        // With two or more accounts, name the one this is for and group each
+        // account's alerts on their own.
+        let hex = Bech32.decode(npub)?.hexString ?? ""
+        if let label = NotificationPolicy.accountLabel(npub: npub,
+                                                       accounts: ConfigService.shared.allAccountNpubs,
+                                                       name: NostrService.shared.profiles[hex]?.bestName) {
+            content.subtitle = label
+            content.threadIdentifier = npub
+        }
         content.categoryIdentifier = "RELAY_EVENT"
         content.userInfo = ["notif_type": type, "notif_id": id, "notif_npub": npub, Self.quietKey: quiet]
             .merging(extra) { current, _ in current }

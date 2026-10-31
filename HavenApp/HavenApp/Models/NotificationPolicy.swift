@@ -130,6 +130,17 @@ enum NotificationPolicy {
             : ("\(count) new followers", "Tap to see your followers")
     }
 
+    /// Which account a notification is for, shown under its title. Nil with
+    /// one account, where there is nothing to tell apart, and for an npub the
+    /// vault no longer holds. The profile name when known, else a short npub.
+    static func accountLabel(npub: String, accounts: [String], name: String?) -> String? {
+        guard accounts.count > 1, accounts.contains(npub) else { return nil }
+        if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+        return npub.count > 12 ? "\(npub.prefix(8))…\(npub.suffix(4))" : npub
+    }
+
     static func allowsWithPushOff(type: String, appInForeground: Bool) -> Bool {
         appInForeground && (type == "dm" || type == "giftwrap")
     }
