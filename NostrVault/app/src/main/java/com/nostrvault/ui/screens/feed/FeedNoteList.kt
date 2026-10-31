@@ -149,6 +149,8 @@ internal fun FeedNoteList(
                             onBlock = { id -> blockNoteId = id },
                             onDelete = { id -> deleteNoteId = id },
                             onLongPressLike = { id -> emojiPickerNoteId = id },
+                            // The line it answers sits right above it in the card.
+                            showReplyContext = false,
                         )
                     },
                 )

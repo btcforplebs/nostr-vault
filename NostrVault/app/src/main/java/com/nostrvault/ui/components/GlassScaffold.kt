@@ -2,8 +2,10 @@ package com.nostrvault.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -54,6 +56,9 @@ fun GlassScaffold(
         val density = LocalDensity.current
         var toolbarHeightPx by remember { mutableIntStateOf(0) }
         val toolbarTopPadding = with(density) { toolbarHeightPx.toDp() }
+        // The clock's band stays solid; only below it does the scrim fade.
+        // Fading from the very top let the feed show through under the clock.
+        val statusBarPx = WindowInsets.statusBars.getTop(density)
 
         Box(modifier = Modifier.fillMaxSize()) {
             // Content fills full height; caller decides padding placement
@@ -71,12 +76,14 @@ fun GlassScaffold(
                     .onGloballyPositioned { toolbarHeightPx = it.size.height }
                     .drawBehind {
                         val alpha = toolbarScrimAlpha()
-                        if (alpha > 0f) {
+                        if (alpha > 0f && size.height > 0f) {
+                            val solid = (statusBarPx / size.height).coerceIn(0f, 0.9f)
                             drawRect(
                                 Brush.verticalGradient(
                                     colorStops = arrayOf(
                                         0.0f to containerColor,
-                                        0.7f to containerColor.copy(alpha = 0.7f),
+                                        solid to containerColor,
+                                        (solid + (1f - solid) * 0.7f) to containerColor.copy(alpha = 0.7f),
                                         1.0f to Color.Transparent,
                                     ),
                                 ),

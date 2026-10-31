@@ -38,6 +38,12 @@ internal fun FeedFullNoteRow(
     onBlock: (String) -> Unit,
     onDelete: (String) -> Unit,
     onLongPressLike: (String) -> Unit,
+    /**
+     * The parent preview above a reply. Off for a line opened inside a thread
+     * card: the line it answers is already drawn right above it (iOS
+     * FeedThreadCard passes showParent: false).
+     */
+    showReplyContext: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     // A bare repost is drawn as the note it points at, once that arrives.
@@ -63,6 +69,7 @@ internal fun FeedFullNoteRow(
             onBlock = onBlock,
             onDelete = onDelete,
             onLongPressLike = onLongPressLike,
+            showReplyContext = showReplyContext,
             modifier = modifier,
         )
     }
@@ -120,6 +127,7 @@ private fun FeedFullNoteRowContent(
     onBlock: (String) -> Unit,
     onDelete: (String) -> Unit,
     onLongPressLike: (String) -> Unit,
+    showReplyContext: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val headPubkeys = remember(note.id) {
@@ -196,7 +204,7 @@ private fun FeedFullNoteRowContent(
         repostPlaceholder = repostPlaceholder,
         parentNote = parentNote,
         parentIsNext = isParentNext,
-        showReplyContext = true,
+        showReplyContext = showReplyContext,
         onNoteClick = onNoteClick,
         onArticleClick = onArticleClick,
         onProfileClick = onProfileClick,

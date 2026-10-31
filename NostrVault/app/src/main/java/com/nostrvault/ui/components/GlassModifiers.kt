@@ -46,9 +46,13 @@ private val PillShape = RoundedCornerShape(50)
 
 // ─── OLED-aware value helpers ────────────────────────────────────
 
-/** Background alpha: higher on OLED to compensate for true-black. */
+/**
+ * Background alpha: nearly solid. iOS glass blurs what is behind it; Compose
+ * cannot, so at 0.55 the feed's text read straight through the bars and the
+ * Following pill (Logen, Moto). Higher on OLED to compensate for true-black.
+ */
 private fun glassBgAlpha(isOled: Boolean): Float =
-    if (isOled) 0.72f else 0.55f
+    if (isOled) 0.94f else 0.92f
 
 /** Border top alpha (matches iOS 0.25 / OLED ~0.30). */
 private fun glassBorderTopAlpha(isOled: Boolean): Float =

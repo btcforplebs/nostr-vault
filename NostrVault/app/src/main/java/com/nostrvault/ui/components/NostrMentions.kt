@@ -110,4 +110,13 @@ object NostrMentions {
 
     /** Runs of spaces or tabs become one space; newlines are left alone. */
     fun collapseGaps(text: String): String = SPACE_RUN.replace(text, " ")
+
+    private val BLANK_LINES = Regex("""\n[ \t]*(?:\n[ \t]*)+""")
+
+    /**
+     * For a line-limited preview: a blank line between paragraphs becomes one
+     * line break. Left in, a blank line could be the last one the limit shows,
+     * and the ellipsis then sat alone on it: "..." under every reply.
+     */
+    fun squeezeBlankLines(text: String): String = BLANK_LINES.replace(text, "\n")
 }

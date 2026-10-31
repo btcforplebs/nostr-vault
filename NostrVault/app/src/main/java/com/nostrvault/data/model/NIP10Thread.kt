@@ -36,6 +36,33 @@ object NIP10Thread {
     }
 
     /**
+     * Who this note answers: the author of its parent, for "reply to X".
+     * Same rule as iOS/web (NIP10Thread.swift parentAuthor, PR #1415).
+     * The parent's `e` tag names them in its pubkey slot (NIP-10's fifth, a
+     * comment's fourth) when the sender filled it in. Failing that, a direct
+     * reply to the root takes the first `p`; a deeper reply the last `p` (a
+     * reply copies its parent's `p` tags and appends the parent's author).
+     */
+    fun parentAuthor(kind: Int, tags: List<List<String>>): String? {
+        val pTags = tags.filter { it.size >= 2 && it[0] == "p" }.map { it[1] }
+        if (kind == COMMENT_KIND) {
+            val e = tags.firstOrNull { it.size >= 4 && it[0] == "e" }
+            if (e != null && isHexKey(e[3])) return e[3]
+            return pTags.firstOrNull()
+        }
+        val eTags = tags.filter { it.size >= 2 && it[0] == "e" && marker(it) != "mention" }
+        val reply = eTags.firstOrNull { marker(it) == "reply" }
+        val root = eTags.firstOrNull { marker(it) == "root" }
+        val parent = reply ?: root ?: eTags.lastOrNull() ?: return null
+        if (parent.size >= 5 && isHexKey(parent[4])) return parent[4]
+        val isDirect = if (reply == null) root != null || eTags.size == 1 else root?.get(1) == parent[1]
+        return if (isDirect) pTags.firstOrNull() else pTags.lastOrNull()
+    }
+
+    private fun isHexKey(s: String): Boolean =
+        s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+
+    /**
      * The thread root this note hangs under, or null if the note has none and
      * is a root itself. NIP-22 names it in the uppercase `E`; NIP-10 in the
      * tag marked "root", or the first non-mention `e` in the positional form.
