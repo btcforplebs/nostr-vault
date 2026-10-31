@@ -106,8 +106,9 @@
 .wot-path.outside { color: var(--text-2); }
 .wot-actions { display: flex; gap: 8px; }
 /* The card's buttons (cardButton): 38 high capsules, the accent filled for Follow, a faint fill with accent words else. */
-.wot-action { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 38px; min-height: 0; padding: 0 10px;
+.wot-action { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 38px; min-height: 0; padding: 0 8px;
   border: 0; border-radius: 999px; background: rgb(255 255 255 / .08); color: var(--accent); font: 600 14px/1 var(--font); text-decoration: none; white-space: nowrap; }
+.wot-action svg { flex: none; }
 .wot-action.filled { background: var(--accent); color: #fff; }
 .wot-action:disabled { background: rgb(255 255 255 / .05); color: var(--text-3); }
 .wot-actions .more-wrap { flex: none; }
