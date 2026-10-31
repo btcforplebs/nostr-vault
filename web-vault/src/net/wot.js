@@ -5,7 +5,7 @@
 // EXTENDED_MIN of your follows follow) and further out. Everything here is other people's data and stays in memory,
 // except your own follows' lists, which this browser keeps so a reload doesn't download them again (wot-store.js).
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
-import { wotStore } from "./wot-store.js"
+import { emptyKept, wotStore } from "./wot-store.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 
@@ -43,7 +43,7 @@ const caches = { home: newCache(""), visit: newCache("") }
  * `slot` is "home" (the user's follows) or "visit" (someone else's, for See their web). `query` and `now` are for tests.
  * -> Map(follow pubkey -> kind 3), only the follows whose list has come back
  */
-export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home", store = slot === "home" ? wotStore(me) : null, refreshMs = REFRESH_MS } = {}) {
+export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home", store = slot === "home" ? wotStore(me) : null, refreshMs = REFRESH_MS, reachable = relayUp, loadMs = LOAD_TIMEOUT_MS } = {}) {
   if (caches[slot].me !== me) caches[slot] = newCache(me)
   const cache = caches[slot]
   const { lists, tried, inflight } = cache
@@ -52,7 +52,8 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   // after the page starts, once it is idle: the screens build their sets from it straight away (Messages' trust and the
   // unread badge, ~0.36 s for 1,054 follows), and done during boot that put a reload's first note ~0.4 s later. Still
   // seconds sooner than the download it replaces.
-  if (store && !cache.disk) cache.disk = idle().then(() => store.load()).then(({ lists: kept, misses, checkedAt }) => {
+  // A read that never answers (an IndexedDB open that hangs) counts as nothing kept after loadMs.
+  if (store && !cache.disk) cache.disk = idle().then(() => within(store.load(), loadMs, emptyKept())).then(({ lists: kept, misses, checkedAt }) => {
     for (const [pk, ev] of kept) if (!(lists.get(pk)?.created_at >= ev.created_at)) lists.set(pk, ev)
     cache.missed = misses
     cache.checkedAt = checkedAt
@@ -61,7 +62,7 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   const keep = (evs, always = false, misses = []) => { if (store && (evs.length || misses.length || always)) return store.save(evs, cache.checkedAt ||= Math.floor(t / 1000), misses, Math.floor(t / 1000)) }
   if (store && cache.checkedAt && !cache.refreshed && t - cache.checkedAt * 1000 > refreshMs) {
     cache.refreshed = true
-    refreshLists(cache, follows, { relays, query, keep, at: Math.floor(t / 1000) })
+    refreshLists(cache, follows, { relays, query, keep, reachable, now, at: Math.floor(t / 1000) })
   }
   const waits = new Set()
   const want = []
@@ -75,7 +76,7 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   }
   for (let i = 0; i < want.length; i += 250) {
     const chunk = want.slice(i, i + 250), wanted = new Set(chunk)
-    const started = Date.now()
+    const started = now()
     const job = query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: LISTS_WAIT_MS })
       .catch(() => [])
       .then(evs => {
@@ -85,7 +86,8 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
         // An answer with some of the group's lists but not someone's: kept as missing. A failed or empty answer, or one
         // cut off at LISTS_WAIT_MS (querySync ends a timeout as if the relay had sent EOSE), keeps nothing, so it is
         // asked again after RETRY_MS as before.
-        const cut = Date.now() - started >= LISTS_WAIT_MS - 100
+        // An answer as long as the limit may be a relay's cap rather than all it has: no misses from that either.
+        const cut = now() - started >= LISTS_WAIT_MS - 100 || evs.length >= chunk.length
         const misses = !cut && evs.some(ev => wanted.has(ev?.pubkey)) ? chunk.filter(pk => !lists.has(pk)) : []
         for (const pk of misses) cache.missed.set(pk, Math.floor(t / 1000))
         return keep(got, false, misses)
@@ -100,6 +102,12 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
 }
 
 export const BOOT_GRACE_MS = 1500
+export const LOAD_TIMEOUT_MS = 5000
+const relayUp = urls => Promise.any(urls.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 })))
+function within(p, ms, fallback) {
+  let timer
+  return Promise.race([p, new Promise(r => { timer = setTimeout(() => r(fallback), ms) })]).finally(() => clearTimeout(timer))
+}
 const idle = () => new Promise(r => {
   if (!globalThis.requestIdleCallback) return r() // node (the tests)
   setTimeout(() => requestIdleCallback(() => r(), { timeout: 3000 }), Math.max(0, BOOT_GRACE_MS - performance.now()))
@@ -107,9 +115,14 @@ const idle = () => new Promise(r => {
 
 // The lists already held that changed since the last check: a relay sends only those, so this is a few small answers
 // rather than every list again. Runs behind the caller; the next followLists call has what it found.
-async function refreshLists(cache, follows, { relays, query, keep, at }) {
+async function refreshLists(cache, follows, { relays, query, keep, reachable, now, at }) {
   const held = uniq(follows).filter(pk => cache.lists.has(pk))
   const since = cache.checkedAt - 600
+  // An empty answer is the usual one (nobody changed their list), and it is also what an unreachable relay gives: only
+  // a check that reached a relay, and wasn't cut off, moves the check time on. Otherwise the next load asks again.
+  if (globalThis.navigator?.onLine === false) return
+  try { await reachable(uniq(relays)) } catch { return }
+  const started = now()
   let ok = true
   const got = []
   await Promise.all(Array.from({ length: Math.ceil(held.length / 250) }, (_, k) => held.slice(k * 250, k * 250 + 250)).map(chunk => {
@@ -119,6 +132,7 @@ async function refreshLists(cache, follows, { relays, query, keep, at }) {
       .catch(() => { ok = false })
   }))
   // A check that failed keeps the old time, so the next load asks from there again.
+  if (now() - started >= 8000 - 100) ok = false
   if (ok) cache.checkedAt = at
   await keep(got, ok)
 }

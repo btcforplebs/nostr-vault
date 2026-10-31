@@ -7,7 +7,7 @@ import { registerHooks } from "node:module"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
-import { followLists, REFRESH_MS } from "../src/net/wot.js"
+import { followLists, LISTS_WAIT_MS, REFRESH_MS } from "../src/net/wot.js"
 import { pack, unpack } from "../src/net/wot-store.js"
 import { FRESH_MS, followsKey, markSynced, syncedRecently } from "../src/net/feed-synced.js"
 
@@ -86,7 +86,7 @@ test("lists already kept are checked for newer ones `since` the last check, afte
   let answered
   const done = new Promise(r => { answered = r })
   const now = () => (checked * 1000) + REFRESH_MS + 1
-  const got = await followLists(me, [f1], { store, now, query: async (r, f) => { asked.push(f); await new Promise(r => setTimeout(r, 5)); setTimeout(answered); return [list(f1, [hex("8")], 20)] } })
+  const got = await followLists(me, [f1], { store, now, reachable: async () => {}, query: async (r, f) => { asked.push(f); await new Promise(r => setTimeout(r, 5)); setTimeout(answered); return [list(f1, [hex("8")], 20)] } })
   assert.deepEqual(got.get(f1).tags, [["p", hex("6")]], "the kept list is handed out at once")
   await done; await new Promise(r => setTimeout(r, 0))
   assert.equal(asked.length, 1)
@@ -119,14 +119,48 @@ test("a follow whose list the relay didn't have is kept as missing, and not aske
   await followLists(hex("e", 9), [], { store: memStore(), query: async () => [] })
   clock += REFRESH_MS
   const later = []
-  await followLists(me, [f1, f2], { store, query: async (r, f) => { later.push(f.authors); return f.since ? [] : [list(f2, [hex("7")])] }, now: () => clock })
-  assert.deepEqual(later, [[f1], [f2]], "after REFRESH_MS: f1's kept list `since` the last check, f2 in full")
+  await followLists(me, [f1, f2], { store, reachable: async () => {}, query: async (r, f) => { later.push(f.authors); return f.since ? [] : [list(f2, [hex("7")])] }, now: () => clock })
+  assert.deepEqual(later.map(a => a.join()).sort(), [f1, f2].sort(), "after REFRESH_MS: f1's kept list `since` the last check, f2 in full")
   assert.ok(store.rows.get(f2).ps, "its list, once it comes, replaces the miss")
   // A failed ask, or an empty answer (what a timeout gives), is not a miss: it is asked again after RETRY_MS.
   const s2 = memStore()
   await followLists(hex("e", 5), [hex("3", 1)], { store: s2, query: async () => { throw new Error("down") } })
   await followLists(hex("e", 6), [hex("3", 2)], { store: s2, query: async () => [] })
   assert.equal(s2.rows.size, 0)
+})
+
+test("a check that can't reach the relay, or is cut off, doesn't move the check time on; nor does a cut-off or capped answer make misses", async () => {
+  const f1 = hex("1", 51), checked = 1_000_000
+  const late = (checked * 1000) + REFRESH_MS + 1
+  // Unreachable: nothing asked, the old check time stays, so the next load asks from there again.
+  const s1 = memStore([list(f1, [hex("6")], 10)], checked)
+  const asked = []
+  await followLists(hex("e", 11), [f1], { store: s1, now: () => late, reachable: async () => { throw new Error("down") }, query: async (r, f) => { asked.push(f); return [] } })
+  await new Promise(r => setTimeout(r, 5))
+  assert.deepEqual(asked.filter(f => f.since), [])
+  assert.equal(s1.checkedAt, checked)
+  // Reached, but the answer took the whole wait: not a check either.
+  const s2 = memStore([list(f1, [hex("6")], 10)], checked)
+  let clock = late
+  await followLists(hex("e", 12), [f1], { store: s2, now: () => clock, reachable: async () => {}, query: async () => { clock += 8000; return [] } })
+  await new Promise(r => setTimeout(r, 5))
+  assert.equal(s2.checkedAt, checked)
+  // A group's answer cut off at LISTS_WAIT_MS, or as long as its limit (a relay's cap), makes no misses.
+  const f2 = hex("2", 51), f3 = hex("2", 52)
+  const s3 = memStore()
+  let t3 = 5_000_000_000
+  await followLists(hex("e", 13), [f2, f3], { store: s3, now: () => t3, query: async () => { t3 += LISTS_WAIT_MS; return [list(f2, [hex("6")])] } })
+  assert.equal(s3.rows.get(f3), undefined, "cut off: f3 not kept as missing")
+  const s4 = memStore()
+  await followLists(hex("e", 14), [f2, f3], { store: s4, query: async () => [list(f2, [hex("6")], 1), list(f2, [hex("6")], 2)] })
+  assert.equal(s4.rows.get(f3), undefined, "two events for a limit of two: maybe capped, f3 not kept as missing")
+})
+
+test("a kept-lists read that never answers counts as nothing kept, so the web still loads", async () => {
+  const f1 = hex("1", 61)
+  const hung = { load: () => new Promise(() => {}), save: async () => {} }
+  const got = await followLists(hex("e", 15), [f1], { store: hung, loadMs: 10, query: async (r, f) => f.authors.map(pk => list(pk, [hex("6")])) })
+  assert.equal(got.size, 1)
 })
 
 test("the Feed skips a sync newer than FRESH_MS for the same follow list, per account", () => {

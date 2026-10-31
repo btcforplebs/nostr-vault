@@ -35,14 +35,35 @@ export function unpack({ pubkey, created_at, ps }) {
  * there is no IndexedDB (node, the tests). `checkedAt` (unix seconds) is when the relays were last asked for newer
  * lists; followLists asks again `since` then. A failed read or write keeps nothing: the lists are only a cache.
  */
+// One store (one connection) per account for the page: sign-out's delete reaches it as a versionchange.
+const stores = new Map()
+export const emptyKept = () => ({ lists: new Map(), misses: new Map(), checkedAt: 0 })
+
 export function wotStore(pubkey, idb = globalThis.indexedDB) {
-  const none = () => ({ lists: new Map(), misses: new Map(), checkedAt: 0 })
-  if (!idb || !pubkey) return { load: async () => none(), save: async () => {} }
-  let db = null
+  if (!idb || !pubkey) return { load: async () => emptyKept(), save: async () => {} }
+  if (idb === globalThis.indexedDB && stores.has(pubkey)) return stores.get(pubkey)
+  const store = openStore(pubkey, idb)
+  if (idb === globalThis.indexedDB) stores.set(pubkey, store)
+  return store
+}
+
+function openStore(pubkey, idb) {
+  const none = emptyKept
+  // `gone` once the database is deleted under us (sign-out, here or in another tab): a save still in flight then must
+  // not create it again with the signed-out account's follows in it.
+  let db = null, gone = false, existed = false
   const open = () => db ??= new Promise((resolve, reject) => {
+    if (gone) return reject(new Error("store deleted"))
     const req = idb.open(wotDbName(pubkey), 1)
-    req.onupgradeneeded = () => { req.result.createObjectStore("lists", { keyPath: "pubkey" }); req.result.createObjectStore("meta") }
-    req.onsuccess = () => { req.result.onversionchange = () => { req.result.close(); db = null }; resolve(req.result) }
+    req.onupgradeneeded = () => {
+      if (existed) { gone = true; req.transaction.abort(); return } // it was there before: this is a re-create
+      req.result.createObjectStore("lists", { keyPath: "pubkey" }); req.result.createObjectStore("meta")
+    }
+    req.onsuccess = () => {
+      existed = true
+      req.result.onversionchange = () => { req.result.close(); db = null; gone = true }
+      resolve(req.result)
+    }
     req.onerror = () => { db = null; reject(req.error) }
   })
   const tx = (mode, f) => open().then(d => new Promise((resolve, reject) => {
