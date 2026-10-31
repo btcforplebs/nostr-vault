@@ -15,6 +15,7 @@ nvfips = { package = "fips-v2-android", path = "../../fips-v2-android" }
 # the same rev as fips-v2-android, so one fips is linked.
 fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "e831d6d5" }
 serde_json = "1"
+libc = "0.2"
 tracing = "0.1"
 tokio = { version = "1", features = ["rt", "macros", "signal", "time"] }
 
