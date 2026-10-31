@@ -4,8 +4,8 @@
 // at 633d5552 (RESEARCH/NV_LIST_OVERWRITE_AUDIT_633D5552.md). Twins: Android UserListSignGuardTest.kt, iOS/Mac
 // UserListSignGuardTests.swift.
 //
-// The "known live path" tests are paths the audit found that can overwrite a list. They are skipped and fail on
-// purpose when run (NV_RUN_KNOWN_LIVE_PATHS=1 node --test test/user-list-sign-guard.test.mjs); Logen decides the fixes.
+// The three "list safety" tests at the end were the audit's web live paths, skipped until fixed; they run now
+// (fixed by "Web list safety": refuse to save when relays don't answer, re-read the list at Save).
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readdirSync, readFileSync, statSync } from "node:fs"
@@ -69,24 +69,23 @@ test("only these places sign a user list", () => {
   })
 })
 
-// ---- Known live paths (Tron audit 633d5552). Skipped; they fail when run. Logen decides the fixes. ----
+// ---- List safety (Tron audit 633d5552 web live paths, fixed; these were skipped until then). ----
 
-const run = process.env.NV_RUN_KNOWN_LIVE_PATHS === "1"
-const known = (line, name, fn) => test(name, { skip: run ? false : `KNOWN LIVE PATH ${line}` }, fn)
+const known = (line, name, fn) => test(`${name} (${line})`, fn)
 const fn = (path, name) => sources[path].split(`function ${name}`)[1]?.split(/ export (async )?function /)[0] ?? ""
 
-known("⚠️ (Tron 633d5552): latestList says checked:true when every relay failed, list-edit.js:21-35",
+known("was ⚠️ Tron 633d5552: latestList said checked:true when every relay failed",
   "an edit is 'checked' only when a relay answered", () => {
     assert.ok(fn("src/net/list-edit.js", "latestList"))
     assert.doesNotMatch(fn("src/net/list-edit.js", "latestList"), /return \{ event: best, checked: true \}/)
   })
 
-known("⚠️ (Tron 633d5552): Media servers starts an edit from the app defaults when no list was found, MediaServersPage.jsx:31",
+known("was ⚠️ Tron 633d5552: Media servers started an edit from the defaults when no list was found",
   "Media servers never starts an edit from the defaults", () => {
     assert.doesNotMatch(sources["src/screens/MediaServersPage.jsx"], /ev \? serverEntries\(ev\) : DEFAULT_MEDIA_SERVERS/)
   })
 
-known("🔵 (Tron 633d5552): publishList signs over the copy read when the page opened (10002/10050/10006/10063), list-edit.js:42",
+known("was 🔵 Tron 633d5552: publishList signed over the copy read when the page opened (10002/10050/10006/10063)",
   "Save reads the newest list before signing", () => {
     const publish = fn("src/net/list-edit.js", "publishList")
     assert.match(publish, /ctx\.signer\.signEvent\(template\)/, "found publishList")

@@ -3,7 +3,7 @@
 // (NIP-17); 10006 is the relays your apps should never connect to (NIP-51). Draws early and locks editing until every
 // relay has been asked, as RelaysPage.
 import { useEffect, useState } from "preact/hooks"
-import { latestList, publishList, relayUrl, relayUrlError, urlEntries, urlTags, addUrl, removeUrl, sameRows } from "../net/list-edit.js"
+import { latestList, publishList, ListNotSaved, relayUrl, relayUrlError, urlEntries, urlTags, addUrl, removeUrl, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 
 export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false, removeLabel = "Remove" }) {
@@ -35,7 +35,10 @@ export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false, 
       setLoaded({ event, checked: true }); setUrls(urlEntries(event))
       setStatus(`Published to ${relays.filter(r => r.ok).length} of ${relays.length} relays.`)
       if (kind === 10006) ctx.reloadAccount?.().catch(() => {}) // the pool takes the new Never Connect list now
-    } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
+    } catch (e) {
+      if (e instanceof ListNotSaved && e.checked) { setLoaded({ event: e.latest, checked: true }); setUrls(urlEntries(e.latest)) }
+      setErr(String(e?.message ?? e))
+    } finally { setBusy(false) }
   }
 
   return (
