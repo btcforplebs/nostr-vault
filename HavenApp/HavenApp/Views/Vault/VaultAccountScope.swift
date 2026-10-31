@@ -6,7 +6,7 @@ import SwiftUI
 /// over it, each line marked with the account it is for. The device's relay
 /// serves every account, so another account's lines are read from it the
 /// same way the active account's are. With one account none of this shows.
-/// Android: VaultActivityScreen's AccountChipRow.
+/// Android: VaultAccountChipRow.kt (AccountChipRow).
 extension VaultView {
 
     /// Every account on the device, by hex, in switcher order.
