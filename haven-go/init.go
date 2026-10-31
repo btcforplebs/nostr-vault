@@ -511,6 +511,7 @@ func initRelays(ctx context.Context) error {
 
 	relayCtx := ctx
 	blastQ := openBlastQueue(blastPendingFile)
+	blastQ.local = outboxDB
 	runsafe.Go("blast-retry", func() { retryPendingBlasts(relayCtx, blastQ) })
 	// Only what the store now holds, and nothing a stranger sent over the
 	// mesh door (mesh_safety.go). The relay's context, not the connection's:

@@ -360,6 +360,15 @@ type outboxNegStore struct {
 	outbox  eventstore.RelayWrapper
 	tombs   *tombstones.Set
 	advance func(nostr.Timestamp)
+	remote  string // the relay an upload goes to; see uploadingTo
+}
+
+// uploadingTo is s for a Both sync with the relay at url: a list is uploaded
+// only after url says it holds no newer copy.
+func (s *outboxNegStore) uploadingTo(url string) *outboxNegStore {
+	c := *s
+	c.remote = url
+	return &c
 }
 
 func (s *outboxNegStore) QuerySync(ctx context.Context, f nostr.Filter) ([]*nostr.Event, error) {
@@ -387,6 +396,19 @@ func (s *outboxNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan 
 		for ev := range ch {
 			if ev.Kind == nostr.KindGiftWrap || nostr.IsEphemeralKind(ev.Kind) || nip70.IsProtected(*ev) {
 				continue
+			}
+			// A list the relay lacks may be one it replaced with a newer copy
+			// (an edit on another device). Upload ours only when the relay
+			// answered and holds nothing newer; with no relay to ask, never.
+			if isUserList(ev) {
+				var urls []string
+				if s.remote != "" {
+					urls = []string{s.remote}
+				}
+				if r := checkListResend(ctx, s.outbox.Store, urls, ev); r != listSend {
+					slog.Info("📤 not uploading an owner list (newer copy or no answer)", "id", ev.ID, "kind", ev.Kind, "relay", s.remote, "drop", r == listDrop)
+					continue
+				}
 			}
 			select {
 			case out <- ev:
