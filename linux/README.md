@@ -37,27 +37,28 @@ Also `NV_PORT` (8080), `NV_IMAGE`, `NV_HOME` (`/opt/nostr-vault`).
 | Update | run the installer again, or **Update** in the app |
 
 The container gets at most 1.5 GB of memory and low CPU priority, restarts by itself (`unless-stopped`), and keeps
-3 × 10 MB of logs.
+3 × 10 MB of logs. It shares the machine's network, so the mesh can offer your devices its real LAN address: the
+vault listens on `NV_PORT` (8080), and on loopback only the engine (3355) and the mesh door (8081). The installer
+checks those are free.
 
 ## Inside the container (for the four lanes)
 
 | | |
 |---|---|
-| `/app/bin/supervise` | the one supervisor (under tini): runs `havend` and `nv-mesh` at nice 10, starts either again when it exits (1 s, doubling to 30 s; back to 1 s after a minute up), stops both on `docker stop`. Refuses to start without a valid `NV_OWNER` or a writable `/data`. |
-| `/app/bin/havend` | the vault (haven-go/cmd/havend). Listens on `NV_PORT` (8080) and serves everything: the relay websocket at `/` (Upgrade), Blossom like the Mac, the web app, and the owner-only box API under `/api/box/` (NIP-98). |
-| `/app/bin/nv-mesh` | the mesh process (linux/mesh/). |
-| `/app/web` | the web app (`NV_WEB_DIR`), built with `NV_BOX=1`. Its base is `/vault/`, so havend serves it there and sends a plain `GET /` to `/vault/`. |
-| `/data` | `NV_DATA_DIR`: the host path the owner chose, owned by the image's `vault` user (uid 10001), mode 700. |
+| `/app/bin/supervise` | the one supervisor (under tini). Starts as root only to set up `/data`, then runs each program as its own user with no capabilities and no new privileges (setpriv), at nice 10. Starts either again when it exits (1 s, doubling to 30 s; back to 1 s after a minute up), stops both on `docker stop`. Refuses to start without a valid `NV_OWNER`. |
+| `/app/bin/havend` (uid 10002 `vault`) | the vault (haven-go/cmd/havend): the relay websocket at `/` (Upgrade), Blossom, the web app and the owner-only box API under `/api/box/` (NIP-98), all on `NV_PORT`. It runs `/usr/local/bin/haven-engine` (pure Go, Badger) on `127.0.0.1:3355`. |
+| `/app/bin/nv-mesh` (uid 10001 `nvmesh`) | the mesh (linux/mesh/README.md). Own devices reach `NV_PORT`; strangers only the mesh door (`NV_MESH_DOOR_PORT`, 8081). |
+| `/app/web` | the web app (`NV_WEB_DIR`), built with `NV_BOX=1`: served at the box's root, its vault the box itself. |
+| `/data` | `NV_DATA_DIR`: the host path the owner chose. Mode 0711, havend's: `box/` (device key, state), `vault/` (the engine's), `mesh-devices.json`. `mesh/` is nv-mesh's (0755): `key/` (0700, the mesh key, nv-mesh only), `npub`, `status.json`. |
 
-Environment: `NV_OWNER` (npub or hex, required), `NV_DATA_DIR=/data`, `NV_PORT=8080`, `NV_WEB_DIR=/app/web`,
-`NV_VERSION` (the build's commit). The health check passes when anything answers HTTP on `NV_PORT`.
-
-Until havend and the mesh process land, `linux/stubs/` stand in for them (same names and port, nothing kept): the
-web app is served, `/api/box/status` says `"stub": true`, and the rest of `/api/box/` and the relay answer 501.
+Environment: `NV_OWNER` (npub or hex, required), `NV_DATA_DIR=/data`, `NV_PORT=8080`, `NV_MESH_DOOR_PORT=8081`
+(= `HAVEN_MESH_PLAIN_PORT`), `NV_WEB_DIR=/app/web`, `NV_ENGINE_BIN`, `NV_VERSION` (the build's commit). The health
+check passes when anything answers HTTP on `NV_PORT`.
 
 ## Build
 
-From the repo root, on any machine with Docker Buildx (both arches build natively except the runtime's `apt-get`):
+From the repo root, on any machine with Docker Buildx. The Go programs and the web app build on the machine's own
+arch; nv-mesh (Rust) builds per target, so the foreign arch builds under emulation (slow the first time, then cached):
 
 ```sh
 docker buildx build --platform linux/arm64,linux/amd64 -f linux/Dockerfile -t nostr-vault-linux .

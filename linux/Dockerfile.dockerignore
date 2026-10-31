@@ -4,8 +4,12 @@
 !haven-go
 !web-relay
 !web-vault
-!linux/stubs
+!fips-v2/src/stack.rs
+!web-relay-vault
+!fips-v2-android
+!linux/mesh
 !linux/supervise.sh
 **/node_modules
 **/dist
+**/target
 **/.DS_Store

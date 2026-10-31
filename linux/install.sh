@@ -13,7 +13,7 @@ set -eu
 NV_HOME=${NV_HOME:-/opt/nostr-vault}
 NV_SOURCE=${NV_SOURCE:-https://raw.githubusercontent.com/btcforplebs/nostr-vault/master/linux}
 NV_IMAGE=${NV_IMAGE:-ghcr.io/btcforplebs/nostr-vault-linux:latest}
-VAULT_UID=10001 # the vault user inside the image (linux/Dockerfile)
+VAULT_UID=10002 # havend's user inside the image (linux/Dockerfile); the box's supervisor sets up the rest of /data
 
 say() { printf '%s\n' "$*"; }
 warn() { printf '! %s\n' "$*" >&2; }
@@ -103,7 +103,7 @@ while :; do
 done
 $SUDO mkdir -p "$data"
 $SUDO chown "$VAULT_UID:$VAULT_UID" "$data"
-$SUDO chmod 700 "$data"
+$SUDO chmod 711 "$data"
 
 # 4. Whose vault it is: only this npub can manage it. The box never holds a secret key.
 npub_ok() { printf '%s' "$1" | grep -Eq '^npub1[02-9ac-hj-np-z]{58}$'; }
@@ -114,12 +114,18 @@ while :; do
   [ -n "$TTY" ] || exit 1
 done
 
-# 5. The port on this machine.
+# 5. Ports. The box shares this machine's network (the mesh needs its real LAN address): the vault listens on
+# NV_PORT, and on loopback only the engine (3355) and the mesh door (8081). An earlier box of ours holding them is fine.
+ours() { $SUDO docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nostr-vault-linux; }
+taken() { command -v ss >/dev/null 2>&1 && ss -Hltn "sport = :$1" 2>/dev/null | grep -q .; }
 port=${NV_PORT:-$(old NV_PORT)}; port=${port:-8080}
-if command -v ss >/dev/null 2>&1 && ss -Hltn "sport = :$port" 2>/dev/null | grep -q . \
-   && ! $SUDO docker ps --format '{{.Names}}' | grep -qx nostr-vault-linux; then
-  warn "Port $port is taken on this machine."
-  port=$(ask "Port for the vault" "8081")
+if ! ours; then
+  for p in 3355 8081; do taken "$p" && die "port $p is in use on this machine, and the vault needs it on its loopback (ss -ltnp shows by what)"; done
+  while taken "$port" || [ "$port" = 3355 ] || [ "$port" = 8081 ]; do
+    warn "Port $port is taken on this machine."
+    [ -n "$TTY" ] || exit 1
+    port=$(ask "Port for the vault" "8090")
+  done
 fi
 
 # 6. Write compose.yml and .env, get the image, start it.
