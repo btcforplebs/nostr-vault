@@ -1,7 +1,8 @@
 // havend runs Nostr Vault on a Linux box (the "nostr-vault-linux"
 // container): the same vault engine the Mac app runs, one front door on
-// NV_PORT for the relay, Blossom, the web app and the owner-only box API,
-// and the box's own device key.
+// NV_PORT for the relay, Blossom, the web app and the owner-only box API.
+// The box has one identity, the mesh key nv-mesh makes (mesh/npub); havend
+// reports that npub and writes mesh-devices.json from the owner's 10063.
 //
 // The vault engine is haven-go's relay binary built pure Go with
 // `-tags nolmdb` (Badger, as libhaven on the Mac). havend starts it on a
@@ -19,12 +20,14 @@
 //	NV_MOVE_ROOT        where POST move may move the vault, default /mnt
 //	NV_UPDATE_HOOK      program run on POST update; unset = request file
 //	NV_MESH_STATUS_FILE mesh status JSON, default $NV_DATA_DIR/mesh/status.json
+//	NV_MESH_DEVICES     owner's devices for nv-mesh, default $NV_DATA_DIR/mesh-devices.json
+//	NV_MESH_DOOR_PORT   the engine's loopback mesh door, default NV_PORT+1
 //	NV_DIRECTORY_RELAYS comma list, where to look for the owner's 10063
 //	NV_BACKUP_PROVIDER  "s3" to turn on backups, with NV_S3_* settings
 //
-// `havend device` prints the box's device npub (making the key on first
-// run) and exits: the installer shows it so the owner can add the box in
-// My Devices.
+// `havend device` prints the box's npub (the mesh's, from mesh/npub) and
+// exits: the npub the owner adds in My Devices. It fails until nv-mesh has
+// made the key on its first start.
 package main
 
 import (
@@ -67,14 +70,15 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	key, err := box.LoadOrCreateDeviceKey(cfg.BoxDir())
-	if err != nil {
-		return err
-	}
+	mesh := box.MeshID{NpubFile: cfg.MeshNpubFile}
 	if len(args) > 0 {
 		switch args[0] {
 		case "device":
-			fmt.Println(key.Npub)
+			npub, _, ok := mesh.Read()
+			if !ok {
+				return fmt.Errorf("no box npub yet: nv-mesh writes %s on its first start", cfg.MeshNpubFile)
+			}
+			fmt.Println(npub)
 			return nil
 		default:
 			return fmt.Errorf("unknown command %q (commands: device)", args[0])
@@ -98,14 +102,15 @@ func run(args []string) error {
 		Auth:       box.NewOwnerAuth(cfg.OwnerHex),
 		Version:    cfg.Version,
 		Started:    time.Now(),
-		Key:        key,
+		Mesh:       mesh,
 		Owner:      cfg.OwnerNpub,
 		Engine:     engine,
 		MeshStatus: cfg.MeshStatusFile,
 		Storage:    &box.StorageMeter{},
 		Devices: &box.Devices{
-			OwnerHex: cfg.OwnerHex,
-			Key:      key,
+			OwnerHex:    cfg.OwnerHex,
+			Mesh:        mesh,
+			DevicesFile: cfg.MeshDevicesFile,
 			Source: &box.RelayServerLists{
 				VaultURL:  "ws://127.0.0.1:" + strconv.Itoa(cfg.EnginePort),
 				Directory: cfg.DirectoryRelays,
@@ -121,6 +126,10 @@ func run(args []string) error {
 		},
 		Updater: &box.Updater{Hook: cfg.UpdateHook, BoxDir: cfg.BoxDir()},
 	}
+	// The owner's 10063 decides which devices nv-mesh lets in: read it now
+	// and every 30 s, so an approval or a removal reaches the mesh by itself.
+	go api.Devices.Run(ctx, 30*time.Second)
+
 	front := &box.Front{API: api, Engine: box.EngineProxy(cfg.EnginePort)}
 	if cfg.WebDir != "" {
 		front.Web = box.WebApp(cfg.WebDir)
@@ -131,8 +140,12 @@ func run(args []string) error {
 		Handler:           front,
 		ReadHeaderTimeout: 15 * time.Second,
 	}
-	log.Printf("havend %s: owner %s, device %s, vault %s, listening on :%d",
-		cfg.Version, cfg.OwnerNpub, key.Npub, vaultDir, cfg.Port)
+	boxNpub, _, ok := mesh.Read()
+	if !ok {
+		boxNpub = "(not yet: nv-mesh makes it)"
+	}
+	log.Printf("havend %s: owner %s, box %s, vault %s, listening on :%d, mesh door on 127.0.0.1:%d",
+		cfg.Version, cfg.OwnerNpub, boxNpub, vaultDir, cfg.Port, cfg.MeshDoorPort)
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()

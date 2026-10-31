@@ -17,7 +17,7 @@ import (
 
 // POST /api/box/move {path}: move the vault (databases, Blossom, relay
 // lists) to another disk, e.g. a USB drive mounted under NV_MOVE_ROOT. The
-// box's own files (device key, state) stay in NV_DATA_DIR, so the box keeps
+// box's own files (state) stay in NV_DATA_DIR, so the box keeps
 // its identity and approval. The engine is stopped for the copy and started
 // on the new place after it; on any failure it starts again on the old one.
 

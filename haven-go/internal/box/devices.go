@@ -2,6 +2,7 @@ package box
 
 import (
 	"context"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -175,16 +176,25 @@ func validServerList(ev *nostr.Event, ownerHex string) bool {
 }
 
 // Devices builds DevicesReport, caching the answer for a minute so the
-// screen can poll without asking relays each time.
+// screen can poll without asking relays each time. Each fresh read also
+// rewrites mesh-devices.json, so the owner's 10063 is what lets a device in
+// over the mesh, and dropping it from the list is what shuts it out.
 type Devices struct {
 	OwnerHex string
-	Key      DeviceKey
+	Mesh     MeshID // the box's one npub
 	Source   ServerListSource
 	TTL      time.Duration
+	// DevicesFile is mesh-devices.json (NV_MESH_DEVICES). Empty: not written.
+	DevicesFile string
 
 	mu     sync.Mutex
 	cached *DevicesReport
 	at     time.Time
+
+	// wmu serialises file writes; wroteAt is the list last written, so a
+	// slow read of an older list (Run and Report race) never undoes a newer.
+	wmu     sync.Mutex
+	wroteAt nostr.Timestamp
 }
 
 func (d *Devices) Report(ctx context.Context) DevicesReport {
@@ -199,21 +209,69 @@ func (d *Devices) Report(ctx context.Context) DevicesReport {
 		return r
 	}
 	d.mu.Unlock()
-
-	ev, src := d.Source.Newest(ctx, d.OwnerHex)
-	r := BuildDevicesReport(d.Key, ev, src)
+	r := d.Refresh(ctx)
 	d.mu.Lock()
 	d.cached, d.at = &r, time.Now()
 	d.mu.Unlock()
 	return r
 }
 
-// BuildDevicesReport is the pure part of Report.
-func BuildDevicesReport(key DeviceKey, list *nostr.Event, src string) DevicesReport {
+// Refresh reads the owner's newest list now and writes mesh-devices.json
+// from it. With no list found (relays and vault both silent) the file is
+// left as it was: an outage must not drop every device. It does not fill
+// Report's cache, so the screen never shows an answer older than its TTL.
+func (d *Devices) Refresh(ctx context.Context) DevicesReport {
+	ev, src := d.Source.Newest(ctx, d.OwnerHex)
+	npub, pubkey, _ := d.Mesh.Read()
+	r := BuildDevicesReport(npub, pubkey, ev, src)
+	if d.DevicesFile != "" && ev != nil {
+		d.writeDevices(r, ev)
+	}
+	return r
+}
+
+func (d *Devices) writeDevices(r DevicesReport, ev *nostr.Event) {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	if ev.CreatedAt < d.wroteAt {
+		return
+	}
+	devices := MeshDevices(r)
+	changed, err := writeMeshDevices(d.DevicesFile, devices)
+	if err != nil {
+		log.Printf("box: %v", err)
+		return
+	}
+	d.wroteAt = ev.CreatedAt
+	if changed {
+		log.Printf("box: mesh devices now %d (owner's list %s)", len(devices), ev.ID)
+	}
+}
+
+// Run refreshes every interval until ctx ends, so approvals and removals
+// reach nv-mesh without anyone opening the devices screen.
+func (d *Devices) Run(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		d.Refresh(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// BuildDevicesReport is the pure part of Report. boxNpub is the box's mesh
+// npub, "" while nv-mesh has not made its key yet.
+func BuildDevicesReport(boxNpub, boxPubkey string, list *nostr.Event, src string) DevicesReport {
 	var r DevicesReport
-	r.Box.Npub = key.Npub
+	r.Box.Npub = boxNpub
 	r.Box.Name = "Nostr Vault box"
-	r.Box.Address = "fipsmesh://" + key.Npub + "/"
+	if boxNpub != "" {
+		r.Box.Address = "fipsmesh://" + boxNpub + "/"
+	}
 	r.Devices = []MeshEntry{}
 	r.Source = "none"
 	r.Checked = time.Now().Unix()
@@ -223,7 +281,7 @@ func BuildDevicesReport(key DeviceKey, list *nostr.Event, src string) DevicesRep
 		r.Source = src
 		for _, e := range MeshEntries(list) {
 			e.Approved = true
-			if e.Pubkey == key.Pubkey {
+			if boxPubkey != "" && e.Pubkey == boxPubkey {
 				e.Role = "homeVault"
 				e.This = true
 				r.Box.Approved = true
@@ -231,7 +289,10 @@ func BuildDevicesReport(key DeviceKey, list *nostr.Event, src string) DevicesRep
 			r.Devices = append(r.Devices, e)
 		}
 	}
-	if !r.Box.Approved {
+	switch {
+	case boxNpub == "":
+		r.Hint = "The box's mesh is starting. Its address shows here once it is up."
+	case !r.Box.Approved:
 		r.Hint = "On your phone: FIPS Mesh → My Devices → Add, paste " + r.Box.Npub + ", role Home vault."
 	}
 	return r

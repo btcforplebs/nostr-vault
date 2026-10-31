@@ -81,3 +81,43 @@ func TestEngineEnvIsTheMacsWithLoopbackBind(t *testing.T) {
 		t.Fatalf("engine env must be clean:\n%s", joined)
 	}
 }
+
+// The mesh door is NV_PORT+1 unless set, never one of the other two ports, and
+// the engine gets it as HAVEN_MESH_PLAIN_PORT (linux/mesh/README.md), with
+// HAVEN_BEHIND_PROXY so it rate-limits clients, not havend's loopback.
+func TestMeshDoorPortReachesTheEngine(t *testing.T) {
+	k := newTestKey(t)
+	c, err := ConfigFromEnv(envOf(map[string]string{"NV_OWNER": k.pk}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MeshDoorPort != 8081 || c.MeshNpubFile != "/data/mesh/npub" || c.MeshDevicesFile != "/data/mesh-devices.json" {
+		t.Fatalf("mesh defaults: %+v", c)
+	}
+	env := EngineEnv(c, "/v")
+	if env["HAVEN_MESH_PLAIN_PORT"] != "8081" || env["HAVEN_BEHIND_PROXY"] != "1" {
+		t.Fatalf("engine env: door %q proxy %q", env["HAVEN_MESH_PLAIN_PORT"], env["HAVEN_BEHIND_PROXY"])
+	}
+	joined := strings.Join(EngineEnvList(c, "/v", envOf(nil)), "\n")
+	if !strings.Contains(joined, "HAVEN_MESH_PLAIN_PORT=8081") {
+		t.Fatalf("exec env drops the door port:\n%s", joined)
+	}
+	c, err = ConfigFromEnv(envOf(map[string]string{"NV_OWNER": k.pk, "NV_PORT": "9000", "NV_MESH_DOOR_PORT": "9100", "NV_MESH_DEVICES": "/x/d.json"}))
+	if err != nil || c.MeshDoorPort != 9100 || c.MeshDevicesFile != "/x/d.json" {
+		t.Fatalf("set: %+v %v", c, err)
+	}
+	if c, _ := ConfigFromEnv(envOf(map[string]string{"NV_OWNER": k.pk, "NV_PORT": "9000"})); c.MeshDoorPort != 9001 {
+		t.Fatalf("door follows NV_PORT: %d", c.MeshDoorPort)
+	}
+	for _, env := range []map[string]string{
+		{"NV_OWNER": k.pk, "NV_MESH_DOOR_PORT": "8080"},
+		{"NV_OWNER": k.pk, "NV_MESH_DOOR_PORT": "3355"},
+		{"NV_OWNER": k.pk, "NV_MESH_DOOR_PORT": "x"},
+		{"NV_OWNER": k.pk, "NV_PORT": "65535"},
+		{"NV_OWNER": k.pk, "NV_MESH_DEVICES": "rel.json"},
+	} {
+		if _, err := ConfigFromEnv(envOf(env)); err == nil {
+			t.Fatalf("%v should fail", env)
+		}
+	}
+}

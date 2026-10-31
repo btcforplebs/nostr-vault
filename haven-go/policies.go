@@ -39,6 +39,56 @@ func bypassLocalhostConnectionLimiter(inner func(r *http.Request) bool) func(r *
 	}
 }
 
+// behindProxy is set (HAVEN_BEHIND_PROXY=1) when every client reaches this
+// engine through a front door on loopback: the Linux box's havend, which
+// sets X-Forwarded-For to the real client. Without it every LAN or mesh
+// client would arrive as 127.0.0.1, get bypassLocalhostConnectionLimiter's
+// free pass, and never be rate-limited.
+var behindProxy bool
+
+// clientFromProxy returns r with RemoteAddr set to the client the front door
+// names in X-Forwarded-For (the last entry: the one the door added), so the
+// limiters, the loopback bypass and the logs all see that client. Only a
+// loopback peer is trusted to name one. A request from the door with no
+// X-Forwarded-For is the box's own (havend asking the vault) and stays
+// loopback; one with an address that does not parse is limited as unknown,
+// never let through as loopback.
+func clientFromProxy(r *http.Request) *http.Request {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return r
+	}
+	xff := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
+	if strings.TrimSpace(xff) == "" {
+		return r
+	}
+	parts := strings.Split(xff, ",")
+	client := "0.0.0.0"
+	if ip := net.ParseIP(strings.TrimSpace(parts[len(parts)-1])); ip != nil {
+		client = ip.String()
+	}
+	out := r.WithContext(r.Context())
+	out.Header = r.Header.Clone()
+	out.Header.Del("X-Forwarded-For")
+	out.Header.Del("X-Real-Ip")
+	out.Header.Del("Forwarded")
+	out.RemoteAddr = net.JoinHostPort(client, "0")
+	return out
+}
+
+// proxyAware runs next with the proxied client in place when behindProxy.
+func proxyAware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if behindProxy {
+			r = clientFromProxy(r)
+		}
+		next(w, r)
+	}
+}
+
 // ownerConn reports whether r arrived on a connection the host marked as the
 // owner's own. Only the browser build sets it (wasm_entry.go): its streams
 // have no loopback address to bypass on, and a synthetic loopback address

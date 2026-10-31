@@ -52,21 +52,20 @@ func (f *fakeLists) Newest(context.Context, string) (*nostr.Event, string) {
 
 func TestDevicesApprovalFollowsTheNewestList(t *testing.T) {
 	owner, phone := newTestKey(t), newTestKey(t)
-	key, err := LoadOrCreateDeviceKey(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	boxKey := newTestKey(t)
+	mesh := testMeshID(t, boxKey)
+	boxNpub := npubOf(t, boxKey)
 	src := &fakeLists{}
-	d := &Devices{OwnerHex: owner.pk, Key: key, Source: src, TTL: time.Nanosecond}
+	d := &Devices{OwnerHex: owner.pk, Mesh: mesh, Source: src, TTL: time.Nanosecond}
 
 	r := d.Report(context.Background())
-	if r.Box.Approved || r.Source != "none" || r.Hint == "" || r.Box.Address != "fipsmesh://"+key.Npub+"/" {
+	if r.Box.Approved || r.Source != "none" || r.Hint == "" || r.Box.Npub != boxNpub || r.Box.Address != "fipsmesh://"+boxNpub+"/" {
 		t.Fatalf("no list: %+v", r)
 	}
 
 	src.ev = owner.sign(t, nostr.Event{Kind: 10063, CreatedAt: nostr.Now(), Tags: nostr.Tags{
 		{"server", "fipsmesh://" + npubOf(t, phone) + "/"},
-		{"server", "fipsmesh://" + key.Npub + "/"},
+		{"server", "fipsmesh://" + boxNpub + "/"},
 	}})
 	src.src = "vault"
 	r = d.Report(context.Background())
@@ -89,9 +88,8 @@ func TestDevicesApprovalFollowsTheNewestList(t *testing.T) {
 }
 
 func TestDevicesReportIsCached(t *testing.T) {
-	key, _ := LoadOrCreateDeviceKey(t.TempDir())
 	src := &fakeLists{}
-	d := &Devices{OwnerHex: newTestKey(t).pk, Key: key, Source: src}
+	d := &Devices{OwnerHex: newTestKey(t).pk, Mesh: testMeshID(t, newTestKey(t)), Source: src}
 	d.Report(context.Background())
 	d.Report(context.Background())
 	if src.calls != 1 {

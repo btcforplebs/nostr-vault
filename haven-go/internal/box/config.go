@@ -1,6 +1,7 @@
 // Package box is the Linux home vault ("nostr-vault-linux"): the owner-only
 // box API, the single front door on NV_PORT, the supervisor that runs the
-// vault engine, and the box's own device key. cmd/havend wires it together.
+// vault engine, and the mesh files it shares with nv-mesh. cmd/havend wires
+// it together.
 package box
 
 import (
@@ -36,6 +37,16 @@ type Config struct {
 	Version string
 	// MeshStatusFile is where the mesh process writes its status JSON.
 	MeshStatusFile string
+	// MeshNpubFile is where nv-mesh writes the box's npub: the box's one
+	// identity, the key the owner approves in My Devices.
+	MeshNpubFile string
+	// MeshDevicesFile is mesh-devices.json (NV_MESH_DEVICES): havend writes
+	// it from the owner's server list, nv-mesh reads it.
+	MeshDevicesFile string
+	// MeshDoorPort is the engine's loopback mesh door (NV_MESH_DOOR_PORT,
+	// default Port+1), where nv-mesh sends strangers. The engine gets it as
+	// HAVEN_MESH_PLAIN_PORT.
+	MeshDoorPort int
 	// UpdateHook, if set, is run on POST update. Otherwise the request is left
 	// as a file for the container side to pick up.
 	UpdateHook string
@@ -77,6 +88,19 @@ func ConfigFromEnv(getenv func(string) string) (Config, error) {
 	if c.EnginePort == c.Port {
 		return c, errors.New("NV_ENGINE_PORT must differ from NV_PORT")
 	}
+	defDoor := c.Port + 1
+	if defDoor > 65535 {
+		defDoor = 0
+	}
+	if c.MeshDoorPort, err = port(getenv("NV_MESH_DOOR_PORT"), defDoor, "NV_MESH_DOOR_PORT"); err != nil {
+		return c, err
+	}
+	if c.MeshDoorPort == 0 {
+		return c, errors.New("NV_MESH_DOOR_PORT must be set when NV_PORT is 65535")
+	}
+	if c.MeshDoorPort == c.Port || c.MeshDoorPort == c.EnginePort {
+		return c, errors.New("NV_MESH_DOOR_PORT must differ from NV_PORT and NV_ENGINE_PORT")
+	}
 	if !filepath.IsAbs(c.DataDir) {
 		return c, fmt.Errorf("NV_DATA_DIR must be an absolute path, got %q", c.DataDir)
 	}
@@ -87,6 +111,11 @@ func ConfigFromEnv(getenv func(string) string) (Config, error) {
 	c.MoveRoot = filepath.Clean(c.MoveRoot)
 	if c.MeshStatusFile == "" {
 		c.MeshStatusFile = filepath.Join(c.DataDir, "mesh", "status.json")
+	}
+	c.MeshNpubFile = filepath.Join(c.DataDir, "mesh", "npub")
+	c.MeshDevicesFile = orDefault(getenv("NV_MESH_DEVICES"), filepath.Join(c.DataDir, "mesh-devices.json"))
+	if !filepath.IsAbs(c.MeshDevicesFile) {
+		return c, fmt.Errorf("NV_MESH_DEVICES must be an absolute path, got %q", c.MeshDevicesFile)
 	}
 	if c.Version == "" {
 		c.Version = "dev"
@@ -156,7 +185,8 @@ func port(raw string, def int, name string) (int, error) {
 	return p, nil
 }
 
-// BoxDir holds the box's own files: device key, state, update request.
+// BoxDir holds the box's own files: state, update request. The box's key
+// is the mesh's, in mesh/key/, which havend never reads.
 func (c Config) BoxDir() string { return filepath.Join(c.DataDir, "box") }
 
 // DefaultVaultDir is where the vault lives until it is moved.

@@ -6,10 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 // testKey is a throwaway key made per test run, never a real account.
@@ -55,4 +58,27 @@ func mustReq(t *testing.T, r *http.Request, err error) *http.Request {
 		t.Fatal(err)
 	}
 	return r
+}
+
+// testMeshID is a mesh/npub file holding k's npub, as nv-mesh writes it.
+func testMeshID(t *testing.T, k testKey) MeshID {
+	t.Helper()
+	npub, err := nip19.EncodePublicKey(k.pk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "npub")
+	if err := os.WriteFile(path, []byte(npub+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return MeshID{NpubFile: path}
+}
+
+func meshNpub(t *testing.T, m MeshID) string {
+	t.Helper()
+	npub, _, ok := m.Read()
+	if !ok {
+		t.Fatal("mesh npub unreadable")
+	}
+	return npub
 }
