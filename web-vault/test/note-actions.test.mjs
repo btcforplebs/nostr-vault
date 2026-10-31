@@ -65,6 +65,26 @@ test("a repost is a kind 6 carrying the note", () => {
   assert.deepEqual(JSON.parse(t.content), plain(n))
 })
 
+test("a repost of anything but a kind 1 is a kind 16 with a k tag, and an a tag when it is addressable", () => {
+  const poll = { ...note(), kind: 1068 }
+  const p = repostTemplate(poll)
+  assert.equal(p.kind, 16)
+  assert.deepEqual(p.tags, [["e", poll.id, ""], ["p", poll.pubkey], ["k", "1068"]])
+  assert.deepEqual(JSON.parse(p.content), plain(poll))
+  const article = { ...note(), kind: 30023, tags: [["d", "my-post"], ["title", "T"]] }
+  const a = repostTemplate(article)
+  assert.equal(a.kind, 16)
+  assert.deepEqual(a.tags, [["e", article.id, ""], ["p", article.pubkey], ["k", "30023"], ["a", `30023:${article.pubkey}:my-post`]])
+})
+
+test("after a reload, a kind 16 repost already in the outbox reads as sent", async t => {
+  relaysSay(t, () => Promise.resolve(""))
+  const c = ctxFor(), article = { ...note(), kind: 30023, tags: [["d", "x"]] }
+  await publishAction(c, repostTemplate(article))
+  await loadSent(c, article.id)
+  assert.equal(actionState(article.id).repost, "sent")
+})
+
 test("a reply to a root note: one root e tag with the author, then the author's p", () => {
   const n = note()
   assert.deepEqual(replyTags(n), [["e", n.id, "", "root", n.pubkey], ["p", n.pubkey]])
