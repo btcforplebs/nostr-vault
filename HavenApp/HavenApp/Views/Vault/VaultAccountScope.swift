@@ -164,6 +164,13 @@ extension VaultView {
         }
     }
 
+    /// Each account on the device, hex (lowercased) to npub.
+    var vaultAccountNpubsByHex: [String: String] {
+        Dictionary(configService.allAccountNpubs.compactMap { npub in
+            Bech32.decode(npub).map { ($0.hexString.lowercased(), npub) }
+        }, uniquingKeysWith: { a, _ in a })
+    }
+
     private func chipNpub(_ chip: VaultAccountChip) -> String? {
         guard case .account(let hex) = chip else { return nil }
         return configService.allAccountNpubs.first { Bech32.decode($0)?.hexString.lowercased() == hex }

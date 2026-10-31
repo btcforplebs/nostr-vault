@@ -73,6 +73,18 @@ object VaultAccountChips {
             .take(maxOf(0, limit))
     }
 
+    /**
+     * The npub to switch to before opening a line that is for another
+     * account, so a reply or like signs as that account (the same switch a
+     * tapped notification makes). Null for the active account's own lines or
+     * an account the device no longer holds.
+     */
+    fun switchTarget(lineAccount: String?, active: String, npubByHex: Map<String, String>): String? {
+        val hex = lineAccount?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+        if (hex == active.lowercase()) return null
+        return npubByHex[hex]
+    }
+
     private fun unique(list: List<String>): List<String> =
         list.map { it.lowercase() }.filter { it.isNotEmpty() }.distinct()
 }

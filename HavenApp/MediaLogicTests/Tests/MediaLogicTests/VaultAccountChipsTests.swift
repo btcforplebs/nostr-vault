@@ -70,4 +70,15 @@ final class VaultAccountChipsTests: XCTestCase {
             order: [me, bob], limit: 2)
         XCTAssertEqual(merged.map(\.line.id), ["1", "2"])
     }
+
+    func testSwitchTargetOnlyForAnotherHeldAccount() {
+        let npubs = [me: "npub1me", bob: "npub1bob"]
+        // Another account's line: switch to it, whatever the case of the hex.
+        XCTAssertEqual(VaultAccountChips.switchTarget(lineAccount: bob.uppercased(), active: me, npubByHex: npubs), "npub1bob")
+        // The active account's own line, or a list with one account: no switch.
+        XCTAssertNil(VaultAccountChips.switchTarget(lineAccount: me, active: me.uppercased(), npubByHex: npubs))
+        XCTAssertNil(VaultAccountChips.switchTarget(lineAccount: nil, active: me, npubByHex: npubs))
+        // An account the device no longer holds: nothing to switch to.
+        XCTAssertNil(VaultAccountChips.switchTarget(lineAccount: cat, active: me, npubByHex: npubs))
+    }
 }

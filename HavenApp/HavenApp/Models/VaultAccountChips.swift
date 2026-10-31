@@ -71,6 +71,15 @@ enum VaultAccountChips {
         return Array(sorted.prefix(max(0, limit)))
     }
 
+    /// The npub to switch to before opening a line that is for another
+    /// account, so a reply or like signs as that account (the same switch a
+    /// tapped notification makes). Nil for the active account's own lines or
+    /// an account the device no longer holds.
+    static func switchTarget(lineAccount: String?, active: String, npubByHex: [String: String]) -> String? {
+        guard let hex = lineAccount?.lowercased(), !hex.isEmpty, hex != active.lowercased() else { return nil }
+        return npubByHex[hex]
+    }
+
     private static func unique(_ list: [String]) -> [String] {
         var seen = Set<String>()
         return list.map { $0.lowercased() }.filter { !$0.isEmpty && seen.insert($0).inserted }

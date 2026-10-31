@@ -136,6 +136,12 @@ extension VaultView {
     private func openActivity(_ line: VaultActivity, account: String? = nil) {
         let isOtherAccount = account.map { $0 != followersOwnerHex.lowercased() } ?? false
         if let account { openedAccountLine(VaultAccountLine(account: account, line: line)) }
+        // A line for another account opens as that account: switch first, so
+        // a reply or like from the opened note signs with the right key.
+        if let npub = VaultAccountChips.switchTarget(lineAccount: account, active: followersOwnerHex,
+                                                     npubByHex: vaultAccountNpubsByHex) {
+            configService.switchActiveAccount(to: npub)
+        }
         if let id = line.openId {
             openNote(id)
         } else if line.kind == .follow && line.actors.count > 1 && !isOtherAccount {
