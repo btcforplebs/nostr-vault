@@ -13,7 +13,7 @@ extension NostrService {
     @MainActor
     func lookupOwnerRelayLists() async -> RelayDraft.Published {
         let config = ConfigService.shared.config
-        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { return RelayDraft.Published() }
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { return RelayDraft.Published(hasAccount: false) }
         let ask = Array(config.readRelays.prefix(3)) + RelayDraft.indexers
         async let relayList = lookupNewestReplaceable(kind: 10002, for: owner, alsoAsk: ask)
         async let dmList = lookupNewestReplaceable(kind: 10050, for: owner, alsoAsk: ask + config.dmInboxRelays)

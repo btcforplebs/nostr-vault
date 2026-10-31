@@ -234,7 +234,7 @@ struct RelayMatrixView: View {
             .environmentObject(configService)
         }
         .sheet(isPresented: $confirming) {
-            if let plan { RelaySaveSheet(plan: plan, changes: changes, save: save) }
+            if let plan { RelaySaveSheet(plan: plan, changes: changes, save: save, hasAccount: draft?.published.hasAccount ?? true) }
         }
         .confirmationDialog("Discard \(RelaySaveSheet.changesLabel(changes))?", isPresented: $confirmingDiscard,
                             titleVisibility: .visible) {

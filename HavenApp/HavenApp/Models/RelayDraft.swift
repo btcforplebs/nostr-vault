@@ -37,6 +37,9 @@ enum RelayDraft {
         /// network, .local, CGNAT, .ts.net). Save carries them through as
         /// published, so editing one relay never drops another app's entries.
         var kept: [[String]] = []
+        /// False during setup, before the new key is stored: there is no
+        /// list to load, and setup's own step publishes the first one.
+        var hasAccount = true
     }
 
     /// Whether a relay can be a row of the published relay list: a wss://

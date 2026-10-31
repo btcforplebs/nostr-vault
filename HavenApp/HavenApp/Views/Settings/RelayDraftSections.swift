@@ -15,7 +15,7 @@ struct RelayDraftSections: View {
 
     var body: some View {
         if let draft {
-            if !draft.published.relayListKnown || !draft.published.dmListKnown {
+            if draft.published.hasAccount, !draft.published.relayListKnown || !draft.published.dmListKnown {
                 Section {
                     Label {
                         Text("Your \(unknownLists(draft.published)) didn't load. Edits to \(draft.published.relayListKnown || draft.published.dmListKnown ? "it" : "them") are kept on this device and not published.")
@@ -32,7 +32,7 @@ struct RelayDraftSections: View {
                 if mine.isEmpty {
                     Text(draft.published.relayListKnown
                          ? "No published relay list yet. Tap + to add a relay, then Save."
-                         : "Nothing loaded yet.")
+                         : draft.published.hasAccount ? "Nothing loaded yet." : "Your new account has no relay list yet.")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
                 }

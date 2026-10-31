@@ -6,6 +6,8 @@ struct RelaySaveSheet: View {
     let plan: RelayDraft.Plan
     let changes: Int
     let save: () -> Void
+    /// False in setup's Change sheet: the key isn't stored yet, and setup publishes on Continue.
+    var hasAccount = true
 
     @Environment(\.dismiss) private var dismiss
 
@@ -67,7 +69,9 @@ struct RelaySaveSheet: View {
         } header: {
             Text(title)
         } footer: {
-            if held {
+            if held && !hasAccount {
+                Text("Saved on this device. Setup publishes your Write relays when you tap Continue.")
+            } else if held {
                 Text("Not published: your relays didn't send your current list, and publishing could replace one set in another app. Saved on this device.")
                     .foregroundColor(.orange)
             } else if let note, !changes.isEmpty {
