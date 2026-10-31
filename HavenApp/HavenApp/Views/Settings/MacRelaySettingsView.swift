@@ -156,14 +156,15 @@ struct MacRelaySettingsView: View {
 
         // The DM inbox list leads with the Mac relay's inbox. Drop the old
         // address (another device may have copied it into dmRelays when it
-        // adopted the published list) and publish, so senders and every
-        // device move to the new one.
+        // adopted the published list), and swap it on the published list,
+        // leaving every other entry as published, so senders and every
+        // device move to the new one. The field commits when editing ends.
         if prevWssURL != newWss {
-            if !prevWssURL.isEmpty {
-                let oldInbox = HavenConfig.normalizedRelayURL(prevWssURL + "/inbox").lowercased()
-                configService.config.dmRelays.removeAll { HavenConfig.normalizedRelayURL($0).lowercased() == oldInbox }
+            let oldInbox = prevWssURL.isEmpty ? "" : HavenConfig.normalizedRelayURL(prevWssURL + "/inbox")
+            if !oldInbox.isEmpty {
+                configService.config.dmRelays.removeAll { RelayMatrix.key($0) == RelayMatrix.key(oldInbox) }
             }
-            NostrService.shared.publishOwnerDMInboxList()
+            NostrService.shared.publishOwnerDMInboxMove(from: oldInbox, to: configService.config.ownHavenDMInboxURL)
         }
 
         prevWssURL = newWss

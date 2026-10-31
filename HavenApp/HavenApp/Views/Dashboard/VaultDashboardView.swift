@@ -399,14 +399,6 @@ struct VaultDashboardView: View {
 
     // MARK: - Who can reach you
 
-    /// The vault's own addresses that would go in the published relay list.
-    /// Empty for a pocket relay with no Mac relay: there is nothing to list.
-    private var publishableOwnRelays: [[String]] {
-        HavenConfig.publicRelayListTags(ownRelays: config.ownPublicRelays, read: [], write: [])
-    }
-
-    private var publishesRelayList: Bool { config.publishRelayListPerAccount[activeNpub] == true }
-
     private var reachSection: some View {
         DashboardSection(title: "Who can reach you") {
             DashboardRowLink(
@@ -428,32 +420,12 @@ struct VaultDashboardView: View {
             ) {
                 BlockedSettingsView().settingsPage("Blocked")
             }
-            if !publishableOwnRelays.isEmpty {
-                DashboardDivider()
-                DashboardRow(
-                    icon: "point.3.connected.trianglepath.dotted",
-                    title: publishesRelayList ? "Your relay list points here" : "Your relay list leaves out your vault",
-                    detail: publishesRelayList ? "Other apps find you at your vault." : "Other apps can't find you here until you publish it.",
-                    state: publishesRelayList ? .done : .todo
-                ) {
-                    if !publishesRelayList {
-                        RowButton(title: "Publish") { publishRelayList() }
-                            .disabled(!(hasLocalKey || usesSigner))
-                    }
-                }
-            }
         }
     }
 
     private var blockedDetail: String {
         let count = configService.activeAccountBlockedHexPubkeys.count
         return count == 0 ? "Nobody blocked." : count == 1 ? "1 person blocked." : "\(count) people blocked."
-    }
-
-    private func publishRelayList() {
-        configService.config.publishRelayListPerAccount[activeNpub] = true
-        configService.save()
-        NostrService.shared.publishRelayList(forNpub: activeNpub)
     }
 
     // MARK: - Keep it full

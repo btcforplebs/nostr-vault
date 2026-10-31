@@ -80,6 +80,8 @@ struct SetupWizardView: View {
     // New account state: published once setup completes and the key can sign
     @State private var profileName = ""
     @State private var profilePhotoJPEG: Data?
+    /// The relay list to publish for the new key (step 17); nil publishes none.
+    @State private var starterRelayList: [String]?
 
     // Error state
     @State private var setupError: String?
@@ -111,7 +113,7 @@ struct SetupWizardView: View {
     private var pathSteps: [Int] {
         switch setupPath {
         case .none: return []
-        case .newToNostr: return [9, 10, 11, 15, 8] // keys, password, profile, who told you, done
+        case .newToNostr: return [9, 10, 11, 17, 15, 8] // keys, password, profile, relay list, who told you, done
         // Existing Nostr users: the Vault backup question comes before the relay import.
         case .browse: return VaultBackupQuestion.steps(path: .browse, isIOS: isIOSDevice)
         case .full:
@@ -296,10 +298,19 @@ struct SetupWizardView: View {
                 onContinue: {
                     direction = .forward
                     withAnimation(WizardAnimations.springEnter) {
-                        currentStep = 15
+                        currentStep = 17
                     }
                 }
             )
+        case 17:
+            StarterRelayListStep(starter: starterRelays) { relays in
+                // Published in publishNewAccount, once the key is stored.
+                starterRelayList = relays.isEmpty ? nil : relays
+                direction = .forward
+                withAnimation(WizardAnimations.springEnter) {
+                    currentStep = 15
+                }
+            }
         case 15:
             ReferrerStep(
                 ownPubkey: NpubValidation.hexPubkey(fromNpub: npub),
@@ -397,7 +408,9 @@ struct SetupWizardView: View {
                 currentStep = useNostrIsReadOnly ? 14 : 15 // Import tour: back to who told you / the relay check
             } else if currentStep == 15 {
                 // Who told you: back to profile, the relay check or the wallet
-                currentStep = setupPath == .newToNostr ? 11 : setupPath == .useNostr ? 14 : 6
+                currentStep = setupPath == .newToNostr ? 17 : setupPath == .useNostr ? 14 : 6
+            } else if currentStep == 17 {
+                currentStep = 11 // Relay list: back to profile
             } else if currentStep == 11 {
                 currentStep = 10 // Profile: back to password
             } else if currentStep == 10 {
@@ -488,11 +501,10 @@ struct SetupWizardView: View {
         configService.save()
         configService.refreshActiveAccountHex()
 
-        // Advertise where to send us DMs. Setup never did this, so a new account
-        // had no kind 10050 at all — anyone messaging them fell through to a
-        // guessed relay set, and replies had nowhere defined to go. Without it a
-        // brand-new user is effectively unreachable over NIP-17.
-        NostrService.shared.republishDMRelayListsForSignableAccounts()
+        // An existing account's DM inbox list (kind 10050) becomes this
+        // device's. Setup doesn't publish one: the owner picks DM relays and
+        // saves them in Settings > Relays (Logen 2026-10-31).
+        Task { await NostrService.shared.adoptPublishedDMRelayList() }
         // An existing account's media servers (kind 10063) become upload servers.
         Task { await NostrService.shared.syncOwnerServerList() }
 
@@ -526,8 +538,20 @@ struct SetupWizardView: View {
         dismiss()
     }
 
+    /// The servers step 17 shows: this device's Write relays others can
+    /// reach, so Change (Relays) updates it. relay.damus.io is left out
+    /// (Logen 1C: it bans busy IPs).
+    private var starterRelays: [String] {
+        RelayConfiguration.newAccountRelayListTags(
+            broadcastRelays: RelayConfiguration.directBroadcastRelays(
+                kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
+            )
+        ).map { $0[1] }
+            .filter { RelayDraft.listable($0) && RelayMatrix.key($0) != RelayMatrix.key("wss://relay.damus.io") }
+    }
+
     /// Publishes what a brand-new account needs to exist for other people:
-    /// a relay list and a profile. Its follow list starts with its first
+    /// the relay list shown in step 17 (none when it was empty) and a profile. Its follow list starts with its first
     /// follow, in the Fill your feed guide. Runs once, after
     /// `saveAndComplete` has stored the key, because each event has to be
     /// signed by it. Only for the New to Nostr path, whose key was generated
@@ -552,11 +576,8 @@ struct SetupWizardView: View {
         Task { @MainActor in
             let nostr = NostrService.shared
 
-            let relayTags = RelayConfiguration.newAccountRelayListTags(
-                broadcastRelays: RelayConfiguration.directBroadcastRelays(
-                    kind: 10002, tags: [], blastrRelays: configService.config.activeBlastrRelays
-                )
-            )
+            // The list step 17 showed; empty there, nothing is published.
+            let relayTags = RelayConfiguration.newAccountRelayListTags(broadcastRelays: starterRelayList ?? [])
             if !relayTags.isEmpty,
                let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags, signAsNpub: ownerNpub),
                relayList.pubkey.lowercased() == ownerHex.lowercased() {
