@@ -31,11 +31,11 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     }
 
     /**
-     * Brings the owner's DM inbox list (kind 10050) into step across devices:
-     * the newest published list is adopted unless this device published a
-     * newer one, in which case ours is published. Every device used to
-     * republish its own settings at launch, so whichever device opened last
-     * silently replaced the list the others had set. See [DMInbox].
+     * Takes the owner's newest published DM inbox list (kind 10050) when it
+     * is newer than this device's. Never publishes: launch and setup used to
+     * publish this device's list, or the app's defaults when the account had
+     * none, without the owner saving anything (Logen 2026-10-31). Only Save
+     * in Settings > Relays publishes it. See [DMInbox].
      */
     internal suspend fun NostrService.syncOwnerDMInboxList() {
         val owner = ownerHexPubkey
@@ -52,17 +52,51 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val newest = lookup.event?.let { profileRepository.parseDMRelayListTags(it.tags) to it.createdAt }
         val published = newest?.first?.filter { !isLoopbackRelay(it) }
 
-        var action = DMInbox.syncAction(config.dmInboxRelays, config.dmRelaysUpdatedAt, published, newest?.second)
+        val action = DMInbox.syncAction(config.dmInboxRelays, config.dmRelaysUpdatedAt, published, newest?.second)
         if (action == DMInbox.SyncAction.ADOPT && newest != null && published != null) {
             configStore.updateAsync {
                 it.copy(dmRelays = published.ifEmpty { it.dmRelays }, dmRelaysUpdatedAt = newest.second)
             }
             if (BuildConfig.DEBUG) Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
-            // This device may still hold more than was published (its own
-            // Haven inbox, or loopback entries dropped).
-            action = DMInbox.syncAction(configStore.config.value.dmInboxRelays, newest.second, newest.first, newest.second)
         }
-        if (action == DMInbox.SyncAction.PUBLISH) publishOwnerDMInboxList()
+    }
+
+    /**
+     * The owner's published relay list (kind 10002) and DM inbox (kind
+     * 10050), for Settings > Relays. A list counts as known when it was
+     * found, or at least half the relays asked answered without one
+     * ([com.nostrvault.relay.RelayDraft.settled]); otherwise the cached copy
+     * is shown and Save won't publish over it.
+     */
+    internal suspend fun NostrService.lookupOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published = coroutineScope {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return@coroutineScope com.nostrvault.relay.RelayDraft.Published()
+        val config = configStore.config.value
+        val ask = (config.writeRelays + config.readRelays.take(3) + NostrService.PROFILE_RELAYS).filterNot(::isLoopbackRelay).distinct()
+        val relayList = async { runCatching { lookupNewestReplaceable(10002, owner, ask) }.getOrNull() }
+        val dmList = async {
+            runCatching { lookupNewestReplaceable(10050, owner, (ask + config.dmInboxRelays).filterNot(::isLoopbackRelay).distinct()) }.getOrNull()
+        }
+        val rl = relayList.await()
+        val dl = dmList.await()
+        val (read, write) = rl?.event?.let { profileRepository.parseRelayListTags(it.tags) }
+            ?: (relayLists.value[owner].orEmpty() to outboxRelays.value[owner].orEmpty())
+        val dms = dl?.event?.let { profileRepository.parseDMRelayListTags(it.tags) } ?: emptyList()
+        com.nostrvault.relay.RelayDraft.Published(
+            read = read.filterNot(::isLoopbackRelay),
+            write = write.filterNot(::isLoopbackRelay),
+            dms = dms.filterNot(::isLoopbackRelay),
+            relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.asked, rl.answered),
+            dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.asked, dl.answered),
+        ).also {
+            Log.i(TAG, "Relay lists looked up: 10002 ${rl?.answered}/${rl?.asked} found=${rl?.event != null}, " +
+                "10050 ${dl?.answered}/${dl?.asked} found=${dl?.event != null}")
+        }
+    }
+
+    /** Publishes [tags] as the owner's kind 10002. Only Save in Settings > Relays calls this. */
+    internal fun NostrService.publishOwnerRelayListTagsImpl(tags: List<List<String>>) {
+        signAndPost(kind = 10002, content = "", tags = tags, forceOwner = true)
     }
 
     /**
@@ -95,11 +129,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // DMs to us. The embedded Haven relay lives on 127.0.0.1 and is never
         // reachable by anyone else, so loopback URLs must be stripped — otherwise
         // senders are told to deliver replies to an address they can't reach.
-        var relays = dmRelays.filter { !isLoopbackRelay(it) }
-        // Never publish an empty list — fall back to public defaults.
-        if (relays.isEmpty()) {
-            relays = HavenConfig.DEFAULT_DM_RELAYS
-        }
+        // Exactly what the owner saved: an emptied list goes out empty rather
+        // than as the app's defaults, or the removed relays come back on the
+        // next launch's adopt.
+        val relays = dmRelays.filter { !isLoopbackRelay(it) }
         // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
         // which no other client reads — they saw an empty list and had nowhere
         // to deliver our DMs.
@@ -257,16 +290,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
     }
 
-    /**
-     * Republishes kind 10050 for the owner account.
-     *
-     * Builds shipped a 10050 leading with 127.0.0.1, making those accounts
-     * undeliverable — senders wrote the gift wrap to their own machine. 10050 is
-     * replaceable, so publishing a clean one overwrites the broken one on every
-     * relay holding it, and from then on *any* sender reaches them, including
-     * ones still running the old build.
-     */
-    internal fun NostrService.republishDMRelayListImpl() {
+    /** Runs [syncOwnerDMInboxList] off the main thread: adopts a newer published 10050, never publishes. */
+    internal fun NostrService.adoptPublishedDMRelayListImpl() {
         scope.launch(Dispatchers.IO) {
             runCatching { syncOwnerDMInboxList() }
                 .onFailure { Log.w(TAG, "DM inbox sync failed: ${it.message}") }
@@ -274,12 +299,26 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     }
 
     /**
-     * Publishes this device's DM inbox list for the owner and stamps it as the
-     * newest change. Call when the Haven relay address changes.
+     * The owner saved a new Haven relay address: on the published DM inbox
+     * list, [oldInbox] becomes [newInbox] and every other entry stays as
+     * published. Nothing goes out when no list was found or the relays
+     * didn't answer, so the app's defaults never reach it.
      */
-    internal fun NostrService.publishOwnerDMInboxListImpl() {
-        configStore.update { it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) }
-        publishDMRelayList(configStore.config.value.dmInboxRelays)
+    internal fun NostrService.publishOwnerDMInboxMoveImpl(oldInbox: String, newInbox: String) {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            val config = configStore.config.value
+            val ask = (config.dmInboxRelays + config.writeRelays).filterNot(::isLoopbackRelay).distinct()
+            val event = runCatching { lookupNewestReplaceable(10050, owner, ask) }.getOrNull()?.event ?: run {
+                Log.w(TAG, "DM inbox move: no published list found; not published")
+                return@launch
+            }
+            val tags = ListMerge.edit("relay", event.tags, listOfNotNull(newInbox.ifBlank { null }), listOfNotNull(oldInbox.ifBlank { null }))
+            if (tags == event.tags) return@launch
+            configStore.update { it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) }
+            signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
+        }
     }
 
     /**

@@ -106,10 +106,10 @@ class HavenRelaySettingsViewModel @Inject constructor(
             val before = configStore.config.value
             val oldInbox = before.ownHavenDMInboxURL
             configStore.update { cfg -> withMacRelayURL(cfg, _urlInput.value.trim()) }
-            // The DM inbox list leads with the Haven inbox: publish when it moved.
-            if (configStore.config.value.ownHavenDMInboxURL != oldInbox) {
-                nostrService.publishOwnerDMInboxList()
-            }
+            // The DM inbox list leads with the Haven inbox: when it moved, swap
+            // it on the published list, leaving every other entry as it was.
+            val newInbox = configStore.config.value.ownHavenDMInboxURL
+            if (newInbox != oldInbox) nostrService.publishOwnerDMInboxMove(oldInbox, newInbox)
             _saved.value = true
         }
     }

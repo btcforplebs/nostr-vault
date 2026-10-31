@@ -157,12 +157,9 @@ class MainActivity : FragmentActivity() {
                         RelayForegroundService.start(this@MainActivity)
                     }
 
-                    // Heals accounts whose kind 10050 still advertises 127.0.0.1
-                    // from an older build. 10050 is replaceable, so publishing a
-                    // clean one overwrites the broken event everywhere — which is
-                    // what makes them reachable again, including from senders
-                    // still running that build.
-                    runCatching { nostrService.republishDMRelayList() }
+                    // Takes a DM inbox list (kind 10050) saved on another
+                    // device. Never publishes: only Save in Settings > Relays does.
+                    runCatching { nostrService.adoptPublishedDMRelayList() }
 
                     // Media servers set in another app (kind 10063) become
                     // upload servers here too.

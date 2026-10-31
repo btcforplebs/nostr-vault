@@ -74,11 +74,10 @@ import java.net.URL
             // their follows stayed ticked, now that this key is active.
             ownerHexNow()?.let { followReferrerPicks(it) }
 
-            // Advertise where to send us DMs. Setup never did this, so a new
-            // account had no kind 10050 at all and was effectively unreachable
-            // over NIP-17 — senders fell through to a guessed relay set and
-            // replies had nowhere defined to go.
-            runCatching { nostrService.republishDMRelayList() }
+            // An existing account's DM inbox list (kind 10050) becomes this
+            // device's. Setup doesn't publish one: the owner picks DM relays
+            // and saves them in Settings > Relays (Logen 2026-10-31).
+            runCatching { nostrService.adoptPublishedDMRelayList() }
             // An existing account's media servers (kind 10063) become upload servers.
             runCatching { nostrService.syncServerList() }
 

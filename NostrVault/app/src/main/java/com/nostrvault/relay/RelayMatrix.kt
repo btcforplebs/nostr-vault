@@ -21,13 +21,7 @@ object RelayMatrix {
         WRITE("Write", "Publish your posts here"),
         DMS("DMs", "Inbox for private messages"),
         SEARCH("Search", "Send searches here"),
-        IMPORT("Import", "Pull your history into your relay");
-
-        companion object {
-            /** Grid columns; the rest are tags under the name and switches in the detail. */
-            val columns = listOf(READ, WRITE, DMS, SEARCH)
-            val advanced = listOf(IMPORT)
-        }
+        IMPORT("Import", "Pull your history into your relay"),
     }
 
     /**

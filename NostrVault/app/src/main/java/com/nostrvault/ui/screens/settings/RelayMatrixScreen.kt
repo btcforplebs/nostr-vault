@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,10 +31,12 @@ import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.RelayBlocklist
+import com.nostrvault.relay.RelayDraft
 import com.nostrvault.relay.RelayMatrix
 import com.nostrvault.relay.RelayMatrix.Job
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.publishDMRelayList
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -63,12 +67,13 @@ sealed class RelayProbeResult {
 }
 
 /**
- * Settings > Relays: every relay the owner uses on one screen. Port of iOS
- * RelayMatrixView. Edits go straight to the config; a DM change republishes
- * kind 10050 and a Read/Write change republishes kind 10002 (when the owner
- * publishes it), each once edits settle. The Recommended page suggests relays
- * the follows write to and the fastest well-known relays; Never connect
- * blocks a relay and publishes kind 10006.
+ * Settings > Relays: every relay the owner uses on one screen, as a draft
+ * (Logen 2026-10-31, option A; see [RelayDraft]). Dots, Remove and Add only
+ * change the draft. Save writes it to the config and, after a confirm
+ * sheet, publishes kind 10002 / 10050 from the Yours rows; App defaults,
+ * Search and Import stay on this device. The Recommended page suggests
+ * relays the follows write to and the fastest well-known relays; Never
+ * connect blocks a relay and publishes kind 10006.
  */
 @HiltViewModel
 class RelayMatrixViewModel @Inject constructor(
@@ -82,10 +87,10 @@ class RelayMatrixViewModel @Inject constructor(
     private val _results = MutableStateFlow<Map<String, RelayProbeResult>>(emptyMap())
     val results = _results.asStateFlow()
 
-    private var dmJob: CoroutineJob? = null
-    private var dmPending = false
-    private var relayListJob: CoroutineJob? = null
-    private var relayListPending = false
+    /** Null until the published lists have been looked up. */
+    private val _draft = MutableStateFlow<RelayDraft.State?>(null)
+    val draft = _draft.asStateFlow()
+
     private var blockedJob: CoroutineJob? = null
     private var blockedPending = false
 
@@ -98,6 +103,21 @@ class RelayMatrixViewModel @Inject constructor(
     private val _follow = MutableStateFlow(FollowInfo())
     val follow = _follow.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            val published = runCatching { nostrService.lookupOwnerRelayLists() }.getOrElse { RelayDraft.Published() }
+            val cfg = configStore.config.value
+            val state = RelayDraft.start(RelayMatrix.lists(cfg), published, pinned(cfg))
+            _draft.value = state
+            probe(RelayMatrix.needingProbe(state.layout.map { it.url }, _results.value.keys))
+            refreshSuggestions()
+        }
+    }
+
+    /** The lists the screen shows: the draft once loaded, else the config. */
+    private fun currentLists(): RelayMatrix.Lists =
+        _draft.value?.draft ?: RelayMatrix.lists(configStore.config.value)
+
     /** Walks every follow's relay list, so it runs when asked, not per frame. */
     fun refreshSuggestions() {
         val cfg = configStore.config.value
@@ -105,17 +125,17 @@ class RelayMatrixViewModel @Inject constructor(
         val outbox = nostrService.outboxRelays.value
         _follow.value = FollowInfo(
             suggestions = RelayMatrix.followSuggestions(
-                follows, outbox, RelayMatrix.lists(cfg), cfg.blockedRelays, pinned(cfg)),
+                follows, outbox, currentLists(), cfg.blockedRelays, pinned(cfg)),
             withLists = RelayMatrix.followsWithRelayLists(follows, outbox),
             follows = follows.size,
         )
     }
 
+    /** Never connect: blocked now (kind 10006), out of the lists on Save. */
     fun block(url: String) {
         val cfg = configStore.config.value
-        val (lists, blocked) = RelayMatrix.blocking(url, RelayMatrix.lists(cfg), cfg.blockedRelays)
-        apply(lists)
-        setBlocked(blocked)
+        setBlocked(RelayMatrix.blocking(url, currentLists(), cfg.blockedRelays).second)
+        edit { RelayDraft.remove(it, RelayMatrix.key(url)) }
     }
 
     fun unblock(url: String) = setBlocked(RelayMatrix.unblocking(url, configStore.config.value.blockedRelays))
@@ -143,19 +163,48 @@ class RelayMatrixViewModel @Inject constructor(
 
     fun pinned(cfg: HavenConfig): List<String> = listOf(cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)
 
-    fun apply(new: RelayMatrix.Lists) {
-        val old = RelayMatrix.lists(configStore.config.value)
-        if (new == old) return
-        configStore.update { RelayMatrix.applying(new, it) }
-        if (new.dms != old.dms) scheduleDM()
-        if (new.read != old.read || new.write != old.write) scheduleRelayList()
+    /** Changes the draft; nothing is written until [save]. */
+    fun edit(change: (RelayDraft.State) -> RelayDraft.State) {
+        val state = _draft.value ?: return
+        val next = change(state)
+        if (next == state) return
+        _draft.value = next
         // Only relays with no speed yet, so the timed rows keep their dots.
-        probe(RelayMatrix.needingProbe(RelayMatrix.rows(new).map { it.url }, _results.value.keys))
+        probe(RelayMatrix.needingProbe(next.layout.map { it.url }, _results.value.keys))
     }
 
-    fun resetSearch() = configStore.update { it.copy(searchRelays = null) }
+    fun toggle(key: String, job: Job) = edit { RelayDraft.toggle(it, key, job) }
+    fun remove(key: String) = edit { RelayDraft.remove(it, key) }
+    fun undo(key: String) = edit { RelayDraft.undo(it, key) }
+    fun add(url: String, jobs: Set<Job>) = edit { RelayDraft.add(it, url, jobs) }
+    fun setOwnJob(url: String, job: Job, on: Boolean) = edit { RelayDraft.setJob(it, url, job, on) }
+
+    fun resetSearch() = edit {
+        RelayDraft.resetSearch(it, com.nostrvault.data.model.DEFAULT_SEARCH_RELAYS, pinned(configStore.config.value))
+    }
+
+    fun plan(): RelayDraft.Plan? {
+        val state = _draft.value ?: return null
+        val cfg = configStore.config.value
+        return RelayDraft.plan(state, cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)
+    }
+
+    /** The one place the relay lists are written and published. */
+    fun save() {
+        val state = _draft.value ?: return
+        val plan = plan() ?: return
+        configStore.update { cfg ->
+            RelayMatrix.applying(state.draft, cfg).let {
+                if (plan.dmRelays != null) it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) else it
+            }
+        }
+        plan.relayListTags?.let { nostrService.publishOwnerRelayListTags(it) }
+        plan.dmRelays?.let { nostrService.publishDMRelayList(it) }
+        _draft.value = RelayDraft.saved(state, plan)
+    }
 
     // ── Probe ────────────────────────────────────────────────────
+
 
     fun probe(urls: List<String>) {
         for (url in urls) {
@@ -205,56 +254,17 @@ class RelayMatrixViewModel @Inject constructor(
         else RelayProbeResult.Answered(((end - start) / 1_000_000).toInt())
     }
 
-    // ── Publishing ───────────────────────────────────────────────
-
-    private fun scheduleDM() {
-        dmPending = true
-        dmJob?.cancel()
-        dmJob = viewModelScope.launch {
-            delay(2_000)
-            publishDM()
-        }
-    }
-
-    private fun publishDM() {
-        if (!dmPending) return
-        dmPending = false
-        nostrService.publishOwnerDMInboxList()
-    }
-
-    private fun scheduleRelayList() {
-        relayListPending = true
-        relayListJob?.cancel()
-        relayListJob = viewModelScope.launch {
-            delay(2_000)
-            publishRelayList()
-        }
-    }
-
-    /** Read and Write are the public relay list: republish it when the owner publishes it. */
-    private fun publishRelayList() {
-        if (!relayListPending) return
-        relayListPending = false
-        val cfg = configStore.config.value
-        val owner = cfg.ownerNpub
-        if (owner.isNotEmpty() && cfg.publishRelayListPerAccount[owner] == true) {
-            nostrService.publishRelayList(owner)
-        }
-    }
-
     override fun onCleared() {
-        // Leaving inside the debounce still publishes the edit.
-        dmJob?.cancel()
-        relayListJob?.cancel()
         blockedJob?.cancel()
-        publishDM()
-        publishRelayList()
         publishBlocked()
         super.onCleared()
     }
 }
 
-private val ColumnWidth = 42.dp
+/** Five job columns fit a 360 dp phone with the name still readable. */
+private val ColumnWidth = 36.dp
+private val DotSize = 22.dp
+private val RemoveWidth = 36.dp
 private val SlowAmber = ZapOrange
 
 private fun healthColor(result: RelayProbeResult?): Color = when (result) {
@@ -272,28 +282,36 @@ fun RelayMatrixScreen(
 ) {
     val cfg by viewModel.config.collectAsState()
     val results by viewModel.results.collectAsState()
+    val state by viewModel.draft.collectAsState()
     val colors = LocalNostrVaultColors.current
     val accent = colors.primary
 
-    val lists = RelayMatrix.lists(cfg)
+    val lists = state?.draft ?: RelayMatrix.lists(cfg)
     val ownRelay = viewModel.ownRelay(cfg)
-    val rows = RelayMatrix.rows(lists, viewModel.pinned(cfg))
+    val rows = state?.let(RelayDraft::rows).orEmpty()
+    val liveRows = rows.filterNot { it.removed }
     // Only the owner's relays: the probe also times suggestions.
-    val yours = (listOf(ownRelay) + rows.map { it.url }).filter { it.isNotEmpty() }.map(RelayMatrix::key).toSet()
+    val yours = (listOf(ownRelay) + liveRows.map { it.entry.url }).filter { it.isNotEmpty() }.map(RelayMatrix::key).toSet()
     val unreachable = results.filterValues { it == RelayProbeResult.Unreachable }.keys.filter { it in yours }.sorted()
     val problems = RelayMatrix.problems(lists, cfg.ownHavenDMInboxURL, unreachable)
     val follow by viewModel.follow.collectAsState()
     val refusedCertificates by LocalTls.refused.collectAsState()
     val fixCount = problems.size + refusedCertificates.size
+    val changes = state?.let(RelayDraft::changeCount) ?: 0
 
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var showingAdd by remember { mutableStateOf(false) }
     var newRelay by remember { mutableStateOf("") }
     var recommended by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf(false) }
+    var leaving by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        viewModel.probe((listOf(ownRelay) + rows.map { it.url }).filter { it.isNotEmpty() })
-        viewModel.refreshSuggestions()
+    // Leaving with unsaved changes asks first: nothing is kept without Save.
+    BackHandler(enabled = changes > 0) { leaving = true }
+    val back = { if (changes > 0) leaving = true else onBack() }
+
+    LaunchedEffect(ownRelay) {
+        if (ownRelay.isNotEmpty()) viewModel.probe(listOf(ownRelay))
     }
     LaunchedEffect(recommended) {
         if (!recommended) return@LaunchedEffect
@@ -301,7 +319,7 @@ fun RelayMatrixScreen(
         viewModel.probe(RelayMatrix.wellKnownRelays.filterNot { RelayBlocklist.isBlocked(it) } +
             viewModel.follow.value.suggestions.map { it.url })
     }
-    val taken = (rows.map { it.id } + cfg.blockedRelays.map(RelayMatrix::key)).toSet()
+    val taken = (liveRows.map { it.entry.key } + cfg.blockedRelays.map(RelayMatrix::key)).toSet()
     // Not added since the page opened, and not down.
     val followSuggestions = follow.suggestions.filter {
         RelayMatrix.key(it.url) !in taken && results[RelayMatrix.key(it.url)] != RelayProbeResult.Unreachable
@@ -318,10 +336,10 @@ fun RelayMatrixScreen(
             TopAppBar(
                 title = { Text("Relays", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(NostrVaultIcons.Back, contentDescription = "Back") }
+                    IconButton(onClick = back) { Icon(NostrVaultIcons.Back, contentDescription = "Back") }
                 },
                 actions = {
-                    IconButton(onClick = { newRelay = ""; showingAdd = true }) {
+                    IconButton(onClick = { newRelay = ""; showingAdd = true }, enabled = state != null) {
                         Icon(NostrVaultIcons.Create, contentDescription = "Add relay", tint = accent)
                     }
                 },
@@ -331,6 +349,9 @@ fun RelayMatrixScreen(
                     navigationIconContentColor = PrimaryText,
                 ),
             )
+        },
+        bottomBar = {
+            if (state != null) SaveBar(changes, accent) { confirming = true }
         },
         containerColor = WindowBackground,
     ) { padding ->
@@ -354,7 +375,7 @@ fun RelayMatrixScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
-                    Chip("${rows.size + if (ownRelay.isEmpty()) 0 else 1} relays", SecondaryText)
+                    Chip("${liveRows.size + if (ownRelay.isEmpty()) 0 else 1} relays", SecondaryText)
                     if (times.isNotEmpty()) Chip("avg ${times.sum() / times.size} ms", SecondaryText)
                     if (fixCount > 0) {
                         Box(Modifier.clickable { recommended = true }) { Chip("⚠ $fixCount to fix", SlowAmber) }
@@ -393,10 +414,10 @@ fun RelayMatrixScreen(
                                 Text(problem.title, color = PrimaryText, fontSize = 15.sp)
                                 Text(problem.detail, color = SecondaryText, fontSize = 12.sp)
                             }
-                            val row = (problem as? RelayMatrix.Problem.Unreachable)?.let { p -> rows.firstOrNull { it.id == p.key } }
+                            val row = (problem as? RelayMatrix.Problem.Unreachable)?.let { p -> liveRows.firstOrNull { it.entry.key == p.key } }
                             if (row != null) {
                                 Button(
-                                    onClick = { viewModel.apply(RelayMatrix.removing(row.url, lists)) },
+                                    onClick = { viewModel.remove(row.entry.key) },
                                     colors = ButtonDefaults.buttonColors(containerColor = accent),
                                 ) { Text("Remove") }
                             } else if (problem == RelayMatrix.Problem.NoSearch) {
@@ -423,7 +444,7 @@ fun RelayMatrixScreen(
                 items(followSuggestions, key = { "f" + it.url }) { suggestion ->
                     SuggestionRow(suggestion.url, results[RelayMatrix.key(suggestion.url)],
                         "${suggestion.follows} follows write here", accent) {
-                        viewModel.apply(RelayMatrix.setting(Job.READ, true, suggestion.url, lists))
+                        viewModel.add(suggestion.url, setOf(Job.READ))
                     }
                 }
                 item {
@@ -443,83 +464,83 @@ fun RelayMatrixScreen(
                 }
                 items(fastest, key = { "s$it" }) { url ->
                     SuggestionRow(url, results[RelayMatrix.key(url)], null, accent) {
-                        viewModel.apply(RelayMatrix.adding(url, lists))
+                        viewModel.add(url, setOf(Job.READ, Job.WRITE))
                     }
                 }
                 item {
                     Text(
-                        "Well-known public relays, timed from here just now. Add puts it in Read and Write.",
+                        "Well-known public relays, timed from here just now. Add puts it in Yours with Read and Write; Save publishes it.",
                         color = SecondaryText, fontSize = 12.sp,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
                     )
                 }
-            } else {
-                // Grid header
+            } else if (state == null) {
                 item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-                    ) {
-                        Text("Relay", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f))
-                        Job.columns.forEach {
-                            // "SEARCH" is a hair wider than its column; let it spill
-                            // evenly into the gaps rather than wrap or clip.
-                            Box(Modifier.width(ColumnWidth), contentAlignment = Alignment.Center) {
-                                Text(it.title.uppercase(), color = SecondaryText, fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false,
-                                    modifier = Modifier.wrapContentWidth(unbounded = true))
-                            }
-                        }
+                    Text("Loading your relay lists…", color = SecondaryText, fontSize = 13.sp,
+                        modifier = Modifier.padding(16.dp))
+                }
+            } else {
+                val published = state!!.published
+                if (!published.relayListKnown || !published.dmListKnown) {
+                    item {
+                        Text(
+                            "Your relays didn't send your current " +
+                                listOfNotNull(
+                                    "relay list".takeIf { !published.relayListKnown },
+                                    "DM inbox".takeIf { !published.dmListKnown },
+                                ).joinToString(" or ") +
+                                ". Yours shows the last copy this phone saw, and Save keeps those changes on this device.",
+                            color = SlowAmber, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
                     }
                 }
 
+                item { SectionHeader("Yours", "Your published relay list and DM inbox, and relays you add") }
+                item { ColumnHeader() }
                 if (ownRelay.isNotEmpty()) {
                     item {
-                        GridRow(
-                            name = RelayMatrix.label(ownRelay),
-                            result = results[RelayMatrix.key(ownRelay)],
-                            tags = emptyList(),
-                            badge = "YOUR RELAY",
-                            onName = null,
-                            accent = accent,
-                        ) {
+                        OwnRelayRow(ownRelay, results[RelayMatrix.key(ownRelay)], accent) {
                             LockedDot(true, accent)
                             LockedDot(true, accent)
                             LockedDot(cfg.ownHavenDMInboxURL.isNotEmpty(), accent)
                             val searching = lists.search.any { RelayMatrix.key(it) == RelayMatrix.key(ownRelay) }
                             JobDot(searching, accent, "${Job.SEARCH.title}, ${RelayMatrix.label(ownRelay)}") {
-                                viewModel.apply(RelayMatrix.setting(Job.SEARCH, !searching, ownRelay, lists))
+                                viewModel.setOwnJob(ownRelay, Job.SEARCH, !searching)
                             }
+                            LockedDot(true, accent)
                         }
                     }
                 }
-                items(rows, key = { it.id }) { row ->
-                    GridRow(
-                        name = RelayMatrix.label(row.url),
-                        result = results[row.id],
-                        tags = Job.advanced.filter(row::has).map { it.title },
-                        badge = null,
-                        onName = { selectedKey = row.id },
-                        accent = accent,
-                    ) {
-                        Job.columns.forEach { job ->
-                            JobDot(row.has(job), accent, "${job.title}, ${RelayMatrix.label(row.url)}") {
-                                viewModel.apply(RelayMatrix.setting(job, !row.has(job), row.url, lists))
-                            }
-                        }
-                    }
+                val mine = rows.filter { it.entry.section == RelayDraft.Section.YOURS }
+                items(mine, key = { it.entry.key }) { row ->
+                    MatrixRow(row, results[row.entry.key], accent, viewModel, onName = { selectedKey = row.entry.key })
                 }
-                if (rows.isEmpty() && ownRelay.isEmpty()) {
+                if (mine.isEmpty()) {
                     item {
-                        Text("No relays yet. Tap + to add one.", color = SecondaryText, fontSize = 13.sp,
-                            modifier = Modifier.padding(16.dp))
+                        Text(
+                            if (published.relayListKnown) "No published relay list yet. Tap + to add a relay, then Save." else "Nothing loaded yet.",
+                            color = SecondaryText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+
+                val defaults = rows.filter { it.entry.section == RelayDraft.Section.DEFAULTS }
+                item { SectionHeader("App defaults", "Added by Nostr Vault. Used on this device only, never published.") }
+                if (defaults.isNotEmpty()) item { ColumnHeader() }
+                items(defaults, key = { it.entry.key }) { row ->
+                    MatrixRow(row, results[row.entry.key], accent, viewModel, onName = { selectedKey = row.entry.key })
+                }
+                if (defaults.isEmpty()) {
+                    item {
+                        Text("None.", color = SecondaryText, fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                 }
                 item {
                     Text(
-                        "Read + Write are your public relay list (10002). DMs are your DM inbox (10050). " +
-                            "Search is where searches go. Tap a relay's name for Import.",
+                        "Save publishes Read and Write (your relay list, 10002) and DMs (your DM inbox, 10050) from Yours. " +
+                            "App defaults, Search and Import stay on this device. Tap a relay's name for details.",
                         color = SecondaryText, fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
@@ -582,12 +603,12 @@ fun RelayMatrixScreen(
                     OutlinedTextField(value = newRelay, onValueChange = { newRelay = it },
                         placeholder = { Text("relay.example.com") }, singleLine = true)
                     Spacer(Modifier.height(8.dp))
-                    Text("It starts with Read and Write. Tap its name to change that.", color = SecondaryText, fontSize = 12.sp)
+                    Text("It goes in Yours with Read and Write. Save publishes it.", color = SecondaryText, fontSize = 12.sp)
                 }
             },
             confirmButton = {
                 TextButton(enabled = parsed != null, onClick = {
-                    parsed?.let { viewModel.apply(RelayMatrix.adding(it, lists)) }
+                    parsed?.let { viewModel.add(it, setOf(Job.READ, Job.WRITE)) }
                     showingAdd = false
                 }) { Text("Add") }
             },
@@ -595,32 +616,265 @@ fun RelayMatrixScreen(
         )
     }
 
-    val selected = selectedKey?.let { key -> rows.firstOrNull { it.id == key } }
+    val selected = selectedKey?.let { key -> liveRows.firstOrNull { it.entry.key == key } }
     if (selected != null) {
         ModalBottomSheet(onDismissRequest = { selectedKey = null }, containerColor = Surface2) {
             RelayDetail(
-                row = selected,
-                result = results[selected.id],
+                row = RelayMatrix.Row(selected.entry.url, selected.jobs),
+                result = results[selected.entry.key],
                 accent = accent,
-                onSet = { job, on -> viewModel.apply(RelayMatrix.setting(job, on, selected.url, lists)) },
+                onSet = { job, on -> if (selected.has(job) != on) viewModel.toggle(selected.entry.key, job) },
                 onBlock = {
-                    viewModel.block(selected.url)
+                    viewModel.block(selected.entry.url)
                     selectedKey = null
                 },
                 onRemove = {
-                    viewModel.apply(RelayMatrix.removing(selected.url, lists))
+                    viewModel.remove(selected.entry.key)
                     selectedKey = null
                 },
                 onDone = { selectedKey = null },
             )
         }
     }
+
+    val plan = if (confirming) viewModel.plan() else null
+    if (plan != null) {
+        SaveSheet(
+            plan = plan,
+            changes = changes,
+            accent = accent,
+            onSave = {
+                viewModel.save()
+                confirming = false
+            },
+            onDismiss = { confirming = false },
+        )
+    }
+
+    if (leaving) {
+        AlertDialog(
+            onDismissRequest = { leaving = false },
+            title = { Text("Discard ${changes.changesLabel()}?") },
+            text = { Text("Nothing has been saved or published.") },
+            confirmButton = {
+                TextButton(onClick = { leaving = false; onBack() }) { Text("Discard", color = ErrorRed) }
+            },
+            dismissButton = { TextButton(onClick = { leaving = false }) { Text("Keep editing") } },
+        )
+    }
+}
+
+private fun Int.changesLabel(): String = "$this change${if (this == 1) "" else "s"}"
+
+@Composable
+private fun SaveBar(changes: Int, accent: Color, onSave: () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(Surface1).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Button(
+            onClick = onSave,
+            enabled = changes > 0,
+            colors = ButtonDefaults.buttonColors(containerColor = accent),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (changes == 0) "No changes" else "Save (${changes.changesLabel()})", fontWeight = FontWeight.SemiBold)
+        }
+        Text("Only Save publishes. App defaults, Search and Import stay on this device.",
+            color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+}
+
+/** What Save publishes and what stays here, list by list. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SaveSheet(plan: RelayDraft.Plan, changes: Int, accent: Color, onSave: () -> Unit, onDismiss: () -> Unit) {
+    val publishes = plan.relayListTags != null || plan.dmRelays != null
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Surface1,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text("Save ${changes.changesLabel()}?", color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            ChangeGroup(
+                "Relay list (kind 10002)", "Published. Other apps use it to find your posts and reach you.",
+                plan.relayListChanges, accent,
+                held = plan.relayListHeld,
+            )
+            ChangeGroup(
+                "DM inbox (kind 10050)", "Published. People send your DMs here.",
+                plan.dmChanges, accent,
+                held = plan.dmListHeld,
+                warning = "Empty: nobody will be able to send you DMs.".takeIf { plan.dmRelays?.isEmpty() == true },
+            )
+            ChangeGroup("On this device only", "App defaults, Search and Import. Never published.", plan.localChanges, accent)
+            Text("Nothing else on your lists is touched.", color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 14.dp))
+            Button(
+                onClick = onSave,
+                colors = ButtonDefaults.buttonColors(containerColor = accent),
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+            ) { Text(if (publishes) "Save and publish" else "Save on this device", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Keep editing", color = accent) }
+        }
+    }
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(title.uppercase(), color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp, modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp))
+private fun ChangeGroup(
+    title: String,
+    detail: String,
+    changes: List<RelayDraft.Change>,
+    accent: Color,
+    held: Boolean = false,
+    warning: String? = null,
+) {
+    Text(title, color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
+    Text(
+        if (held) "Not published: your relays didn't send your current list, and publishing could replace one set in another app. Saved on this device."
+        else detail,
+        color = if (held) SlowAmber else SecondaryText, fontSize = 12.sp,
+    )
+    if (changes.isEmpty()) Text("Nothing changes", color = TertiaryText, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+    changes.forEach { change ->
+        val label = RelayMatrix.label(change.url)
+        fun names(jobs: Set<Job>) = Job.entries.filter { it in jobs }.joinToString(", ") { it.title }
+        val (text, tint) = when {
+            change.removed.isEmpty() -> "+  $label (${names(change.added)})" to accent
+            change.added.isEmpty() -> "−  $label (${names(change.removed)})" to ErrorRed
+            else -> "$label: + ${names(change.added)}, − ${names(change.removed)}" to PrimaryText
+        }
+        Text(text, color = tint, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+    }
+    if (warning != null) Text(warning, color = ErrorRed, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+}
+
+@Composable
+private fun ColumnHeader() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp + RemoveWidth - 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+    ) {
+        Text("Relay", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Job.entries.forEach {
+            // "SEARCH" and "IMPORT" are a hair wider than their columns; let
+            // them spill evenly into the gaps rather than wrap or clip.
+            Box(Modifier.width(ColumnWidth), contentAlignment = Alignment.Center) {
+                Text(it.title.uppercase(), color = SecondaryText, fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false,
+                    modifier = Modifier.wrapContentWidth(unbounded = true))
+            }
+        }
+    }
+}
+
+/** One relay: Remove (or Undo), its health and name, and a dot per job. Never moves while edited. */
+@Composable
+private fun MatrixRow(
+    row: RelayDraft.Row,
+    result: RelayProbeResult?,
+    accent: Color,
+    viewModel: RelayMatrixViewModel,
+    onName: () -> Unit,
+) {
+    val name = RelayMatrix.label(row.entry.url)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp),
+    ) {
+        if (row.removed) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(RemoveWidth).clickable { viewModel.undo(row.entry.key) }
+                    .semantics { contentDescription = "Undo remove $name" },
+            ) { Text("↺", color = accent, fontSize = 18.sp) }
+        } else {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(RemoveWidth).clickable { viewModel.remove(row.entry.key) }
+                    .semantics { contentDescription = "Remove $name" },
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(22.dp).background(ErrorRed, CircleShape)) {
+                    Box(Modifier.width(10.dp).height(2.dp).background(Color.White))
+                }
+            }
+        }
+        Box(Modifier.size(8.dp).background(if (row.removed) TertiaryText else healthColor(result), CircleShape))
+        Spacer(Modifier.width(8.dp))
+        Column(
+            modifier = Modifier.weight(1f).then(if (row.removed) Modifier else Modifier.clickable(onClick = onName)),
+        ) {
+            Text(
+                name, color = if (row.removed) TertiaryText else PrimaryText, fontSize = 15.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (row.removed) TextDecoration.LineThrough else null,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (row.removed) {
+                    Text("Removed", color = ErrorRed, fontSize = 12.sp)
+                } else {
+                    val (text, tint) = subtitle(result, emptyList())
+                    Text(text, color = tint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(6.dp))
+                if (row.entry.section == RelayDraft.Section.YOURS) Badge("YOURS", accent) else Badge("DEFAULT", SecondaryText)
+            }
+        }
+        Job.entries.forEach { job ->
+            if (row.removed) {
+                DimDot(job in row.jobs)
+            } else {
+                JobDot(row.has(job), accent, "${job.title}, $name") { viewModel.toggle(row.entry.key, job) }
+            }
+        }
+    }
+}
+
+/** The vault's own relay: always Read, Write, DMs and Import; only Search can change. */
+@Composable
+private fun OwnRelayRow(url: String, result: RelayProbeResult?, accent: Color, dots: @Composable RowScope.() -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 2.dp, bottom = 2.dp),
+    ) {
+        Spacer(Modifier.width(RemoveWidth))
+        Box(Modifier.size(8.dp).background(healthColor(result), CircleShape))
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(RelayMatrix.label(url), color = PrimaryText, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val (text, tint) = subtitle(result, emptyList())
+                Text(text, color = tint, fontSize = 12.sp, maxLines = 1)
+                Spacer(Modifier.width(6.dp))
+                Badge("YOUR RELAY", accent)
+            }
+        }
+        dots()
+    }
+}
+
+@Composable
+private fun Badge(text: String, tint: Color) {
+    Text(
+        text, color = tint, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+        modifier = Modifier.background(tint.copy(alpha = 0.15f), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
+    )
+}
+
+@Composable
+private fun DimDot(on: Boolean) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.width(ColumnWidth).height(44.dp)) {
+        Box(
+            Modifier.size(DotSize)
+                .background(if (on) TertiaryText.copy(alpha = 0.4f) else Color.Transparent, CircleShape)
+                .border(1.5.dp, TertiaryText.copy(alpha = 0.4f), CircleShape),
+        )
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String, detail: String? = null) {
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp)) {
+        Text(title.uppercase(), color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+        if (detail != null) Text(detail, color = TertiaryText, fontSize = 12.sp)
+    }
 }
 
 @Composable
@@ -628,42 +882,6 @@ private fun Chip(text: String, tint: Color) {
     Text(text, color = tint, fontSize = 12.sp,
         modifier = Modifier.background(tint.copy(alpha = 0.12f), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 5.dp))
-}
-
-@Composable
-private fun GridRow(
-    name: String,
-    result: RelayProbeResult?,
-    tags: List<String>,
-    badge: String?,
-    onName: (() -> Unit)?,
-    accent: Color,
-    dots: @Composable RowScope.() -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
-    ) {
-        Box(Modifier.size(8.dp).background(healthColor(result), CircleShape))
-        Spacer(Modifier.width(10.dp))
-        Column(
-            modifier = Modifier.weight(1f)
-                .then(if (onName != null) Modifier.clickable(onClick = onName) else Modifier),
-        ) {
-            Text(name, color = PrimaryText, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val (text, tint) = subtitle(result, tags)
-                Text(text, color = tint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (badge != null) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(badge, color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.background(accent.copy(alpha = 0.15f), RoundedCornerShape(3.dp))
-                            .padding(horizontal = 5.dp, vertical = 1.dp))
-                }
-            }
-        }
-        dots()
-    }
 }
 
 private fun subtitle(result: RelayProbeResult?, tags: List<String>): Pair<String, Color> {
@@ -688,7 +906,7 @@ private fun JobDot(on: Boolean, accent: Color, label: String, onClick: () -> Uni
             .semantics { contentDescription = label; stateDescription = if (on) "On" else "Off" },
     ) {
         Box(
-            Modifier.size(24.dp)
+            Modifier.size(DotSize)
                 .background(if (on) accent else Color.Transparent, CircleShape)
                 .border(1.5.dp, if (on) accent else TertiaryText, CircleShape),
         )
@@ -700,7 +918,7 @@ private fun LockedDot(on: Boolean, accent: Color) {
     Box(contentAlignment = Alignment.Center, modifier = Modifier.width(ColumnWidth).height(44.dp)) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(DotSize)
                 .background(if (on) accent else Color.Transparent, CircleShape)
                 .border(1.5.dp, if (on) accent else TertiaryText, CircleShape),
         ) {
@@ -739,17 +957,14 @@ private fun RelayDetail(
                 Text(speed, color = SecondaryText, fontSize = 15.sp)
             }
         }
-        Job.columns.forEach { JobSwitch(it, row.has(it), accent, onSet) }
-        Text("ADVANCED", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
-        Job.advanced.forEach { JobSwitch(it, row.has(it), accent, onSet) }
+        Job.entries.forEach { JobSwitch(it, row.has(it), accent, onSet) }
         if (RelayMatrix.isPublicRelay(DMInbox.normalizedRelayURL(row.url))) {
             Column(Modifier.fillMaxWidth().clickable(onClick = onBlock).padding(vertical = 8.dp)) {
                 Text("Never Connect", color = ErrorRed, fontSize = 15.sp)
                 Text("Remove it and block it everywhere in the app", color = SecondaryText, fontSize = 12.sp)
             }
         }
-        Text("Write without Read sends your posts here but never loads from it.",
+        Text("Write without Read sends your posts here but never loads from it. Changes wait for Save.",
             color = SecondaryText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.padding(top = 16.dp)) {
             Text("Used by", color = SecondaryText, fontSize = 14.sp, modifier = Modifier.weight(1f))

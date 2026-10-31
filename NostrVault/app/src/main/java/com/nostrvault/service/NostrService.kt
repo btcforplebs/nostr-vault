@@ -380,9 +380,14 @@ class NostrService @Inject constructor(
 
     fun publishRelayList(accountNpub: String) { publishRelayListImpl(accountNpub) }
 
-    fun republishDMRelayList() { republishDMRelayListImpl() }
+    fun adoptPublishedDMRelayList() { adoptPublishedDMRelayListImpl() }
 
-    fun publishOwnerDMInboxList() { publishOwnerDMInboxListImpl() }
+    /** On a saved Haven relay address change: swaps the inbox on the published 10050 only. */
+    fun publishOwnerDMInboxMove(oldInbox: String, newInbox: String) { publishOwnerDMInboxMoveImpl(oldInbox, newInbox) }
+
+    suspend fun lookupOwnerRelayLists(): com.nostrvault.relay.RelayDraft.Published = lookupOwnerRelayListsImpl()
+
+    fun publishOwnerRelayListTags(tags: List<List<String>>) { publishOwnerRelayListTagsImpl(tags) }
 
     suspend fun fetchNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? = fetchNewestReplaceableImpl(kind, pubkey, alsoAsk, timeoutMs)
 
