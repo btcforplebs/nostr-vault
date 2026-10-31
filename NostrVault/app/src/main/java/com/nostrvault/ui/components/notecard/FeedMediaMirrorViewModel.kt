@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
+import com.nostrvault.service.DELETE_NO_HASH_MESSAGE
 import com.nostrvault.service.deleteEverywhereLeftover
 import com.nostrvault.service.deleteOwnEvents
 import com.nostrvault.ui.screens.DeleteScope
@@ -133,7 +134,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
             if (ok) notificationManager.showToast(message) else notificationManager.showError(message)
             onDone()
         }
-        val sha = extractSha256(url) ?: return onMessage("Could not extract hash from URL", ok = false)
+        val sha = extractSha256(url) ?: return onMessage(DELETE_NO_HASH_MESSAGE, ok = false)
         if (_deleting.value) return
         viewModelScope.launch {
             _deleting.value = true

@@ -10,7 +10,9 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.DELETE_NO_HASH_MESSAGE
 import com.nostrvault.service.deleteEverywhereLeftover
+import com.nostrvault.service.isBlobHash
 import com.nostrvault.service.deleteOwnEvents
 import com.nostrvault.ui.notification.ErrorStyle
 import com.nostrvault.ui.notification.NotificationManager
@@ -119,8 +121,8 @@ class MediaViewerViewModel @Inject constructor(
 
     /** Delete the blob from the public servers; this phone and the home vault keep it. [onDone] runs after. */
     fun deleteFromMirrors(item: BlossomMediaItem, sticky: Boolean = false, onDone: () -> Unit = {}) {
-        if (item.sha256.isEmpty()) {
-            notificationManager.showError("No hash for this item")
+        if (!isBlobHash(item.sha256)) {
+            notificationManager.showError(DELETE_NO_HASH_MESSAGE)
             return
         }
         _deleteLeftover.value = null
@@ -225,8 +227,8 @@ class MediaViewerViewModel @Inject constructor(
         deletePosts: Boolean = false,
         onDone: (allGone: Boolean) -> Unit,
     ) {
-        if (item.sha256.isEmpty()) {
-            notificationManager.showError("No hash for this item")
+        if (!isBlobHash(item.sha256)) {
+            notificationManager.showError(DELETE_NO_HASH_MESSAGE)
             return
         }
         _deleteLeftover.value = null

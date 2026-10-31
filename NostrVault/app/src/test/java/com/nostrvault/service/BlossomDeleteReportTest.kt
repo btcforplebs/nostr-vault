@@ -2,6 +2,9 @@ package com.nostrvault.service
 
 import android.util.Base64
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.fips.DeviceRole
+import com.nostrvault.fips.FipsDevice
+import com.nostrvault.fips.FipsMeshSettings
 import com.nostrvault.relay.HavenConfig
 import io.mockk.coEvery
 import io.mockk.every
@@ -95,10 +98,18 @@ class BlossomDeleteReportTest {
         return "http://127.0.0.1:$port"
     }
 
-    private fun service(mirrors: List<String>, dataDir: File? = null, published: List<String> = emptyList()): BlossomService {
+    private fun service(
+        mirrors: List<String>,
+        dataDir: File? = null,
+        published: List<String> = emptyList(),
+        macs: List<FipsDevice> = emptyList(),
+    ): BlossomService {
         val configStore = mockk<ConfigStore>(relaxed = true)
         every { configStore.config } returns MutableStateFlow(
-            HavenConfig(ownerNpub = "npub1owner", blossomMirrors = mirrors, relayDataDir = dataDir?.absolutePath)
+            HavenConfig(
+                ownerNpub = "npub1owner", blossomMirrors = mirrors, relayDataDir = dataDir?.absolutePath,
+                fipsPeers = macs.map { it.npub }, fipsMesh = FipsMeshSettings(devices = macs),
+            )
         )
         val signer = mockk<NostrService>(relaxed = true)
         every { signer.ownerHexPubkey } returns "o".repeat(64)
@@ -171,6 +182,82 @@ class BlossomDeleteReportTest {
         assertTrue(report.allDeleted)
     }
 
+    // ── Mesh devices ────────────────────────────────────────────
+
+    private val macNpub = "npub1qgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpq2yz0cn"
+    private val mac = FipsDevice(macNpub, DeviceRole.MAC, name = "Studio Mac")
+
+    /**
+     * A Mac vault behind the mesh ingress (`<base>/<token>/<sha>`). [hasDelete] false is its mesh
+     * door, which a phone not in the Mac's My Devices reaches: no DELETE, so the file stays.
+     */
+    private fun meshVault(hasDelete: Boolean = true, requests: MutableList<String> = mutableListOf()): String {
+        var held = true
+        val port = startServer { method, path ->
+            synchronized(requests) { requests += "$method $path" }
+            when {
+                path != "/tok/$sha" -> 400 to ByteArray(0)
+                method == "DELETE" && hasDelete -> { held = false; 204 to ByteArray(0) }
+                method == "DELETE" -> 404 to ByteArray(0)
+                method == "HEAD" -> (if (held) 200 else 404) to ByteArray(0)
+                else -> 400 to ByteArray(0)
+            }
+        }
+        return "http://127.0.0.1:$port/tok"
+    }
+
+    @Test
+    fun `delete everywhere reaches a mesh-only mac`() = runTest {
+        val requests = mutableListOf<String>()
+        val base = meshVault(requests = requests)
+        val svc = service(listOf(mirror(200)), macs = listOf(mac))
+        svc.meshIngress = { if (it == macNpub) base else null }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
+        assertTrue(report.allDeleted)
+        assertTrue("fipsmesh://$macNpub/" in report.deleted)
+        // The DELETE, then the HEAD that proves it gone.
+        assertEquals(listOf("DELETE /tok/$sha", "HEAD /tok/$sha"), requests)
+    }
+
+    @Test
+    fun `a mac whose door has no delete is named, not counted gone`() = runTest {
+        val svc = service(emptyList(), macs = listOf(mac))
+        svc.meshIngress = { meshVault(hasDelete = false) }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
+        assertFalse(report.allDeleted)
+        assertEquals("Still on Studio Mac", deleteEverywhereLeftover(localDeleted = true, mirrors = report))
+    }
+
+    @Test
+    fun `an unreachable mac is still on the list`() = runTest {
+        val svc = service(listOf(mirror(200)), macs = listOf(mac))
+        svc.meshIngress = { null }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
+        assertEquals(listOf("fipsmesh://$macNpub/"), report.failed)
+        assertEquals(listOf("Studio Mac"), report.failedHosts)
+    }
+
+    @Test
+    fun `a link still coming up is retried`() = runTest {
+        val base = meshVault()
+        var forgotten = false
+        val svc = service(emptyList(), macs = listOf(mac))
+        // First dial: nothing listening (port 9); after the dropped link is forgotten, the vault.
+        svc.meshIngress = { if (forgotten) base else "http://127.0.0.1:9/tok" }
+        svc.meshForget = { forgotten = true }
+        svc.meshRetryDelayMs = 10
+        assertTrue(svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true).allDeleted)
+    }
+
+    @Test
+    fun `delete from mirrors never dials the mesh`() = runTest {
+        var dialled = false
+        val svc = service(listOf(mirror(200)), macs = listOf(mac))
+        svc.meshIngress = { dialled = true; null }
+        assertTrue(svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false).allDeleted)
+        assertFalse(dialled)
+    }
+
     // ── This device ─────────────────────────────────────────────
 
     @Test
@@ -215,6 +302,19 @@ class BlossomDeleteReportTest {
             "Still on this device",
             deleteEverywhereLeftover(localDeleted = false, mirrors = BlossomService.MirrorDeleteResult()),
         )
+    }
+
+    // ── No hash ─────────────────────────────────────────────────
+
+    @Test
+    fun `only a 64-hex hash can be deleted`() {
+        assertTrue(isBlobHash(sha))
+        assertTrue(isBlobHash("A".repeat(64)))
+        assertFalse(isBlobHash(""))
+        assertFalse(isBlobHash("photo"))  // a link's last path part, not a hash
+        assertFalse(isBlobHash("b".repeat(63)))
+        assertFalse(isBlobHash("g".repeat(64)))
+        assertEquals("Can't delete: this file's hash could not be read", DELETE_NO_HASH_MESSAGE)
     }
 
     // ── Presence after a delete ─────────────────────────────────
