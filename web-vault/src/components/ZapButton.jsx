@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks"
-import { actionContext } from "../net/actions.js"
+import { actionContext, addressOf } from "../net/actions.js"
 import { formatSats } from "../net/notifications.js"
 import { ensureWallet, onWallet, walletState } from "../net/wallet.js"
 import { MAX_ZAP_SATS, PRESET_SATS, onZapTotals, wantTotals, zap, zapTotal } from "../net/zaps.js"
@@ -31,7 +31,9 @@ export async function zapWithFeedback(ctx, { recipient, note, sats, name }, pay 
   const key = `zap:${++zapsShown}`, who = name || recipient.slice(0, 8)
   showToast({ key, ...zapFeedback("sending", who, sats) })
   try {
-    await pay(ctx, { recipient, note, sats })
+    // An article (any addressable note) is zapped by its address too, so clients counting by address see it.
+    const address = note ? addressOf(note) ?? undefined : undefined
+    await pay(ctx, { recipient, note, sats, ...(address ? { address } : {}) })
     showToast({ key, ...zapFeedback("sent", who, sats) })
   } catch (e) {
     showToast({ key, ...zapFeedback("failed", who, sats) })
@@ -50,9 +52,10 @@ export function useWallet() {
 /**
  * The zap button, as on the iPhone (FeedNoteRow+NoteBody, PersonProfileView.zapPill): a tap zaps the default
  * amount, a long press (or right-click) picks one. With no wallet a note still shows the sats others sent, and a
- * profile shows nothing. `note` zaps that note's author for it; `pubkey` alone zaps the person.
+ * profile shows nothing. `note` zaps that note's author for it; `pubkey` alone zaps the person. `pickFirst`: a tap opens
+ * the amounts with your default filled in, as the iPhone's article reader does (ArticleReaderView zapSheetContext).
  */
-export function ZapButton({ note, pubkey }) {
+export function ZapButton({ note, pubkey, pickFirst = false }) {
   const ctx = actionContext()
   const wallet = useWallet()
   const id = note?.id
@@ -104,7 +107,7 @@ export function ZapButton({ note, pubkey }) {
   const busy = state === "busy", zapped = state === "sent" || total?.mine, error = state?.error
   const verb = note ? "Zap" : `Zap ${formatSats(wallet.defaultSats)}`
   const name = error ? `Zap didn't go through: ${error}` : busy ? "Zapping…" : zapped ? `Zapped${sats ? `, ${formatSats(sats)} sats` : ""}`
-    : `${verb}${sats ? `, ${formatSats(sats)} sats zapped` : ""}. Hold to choose an amount`
+    : `${verb}${sats ? `, ${formatSats(sats)} sats zapped` : ""}${pickFirst ? ". Choose an amount" : ". Hold to choose an amount"}`
 
   // A hold opens the picker; the click that ends the hold must not also zap.
   const down = () => { held.current = false; hold.current = setTimeout(() => { held.current = true; setPicking(true) }, HOLD_MS) }
@@ -112,7 +115,7 @@ export function ZapButton({ note, pubkey }) {
   const click = () => {
     if (held.current) { held.current = false; return }
     if (noLightning) return setState({ error: "This profile has no lightning address, so it can't receive zaps" })
-    if (!busy) send(wallet.defaultSats)
+    if (!busy) pickFirst ? setPicking(true) : send(wallet.defaultSats)
   }
 
   return (

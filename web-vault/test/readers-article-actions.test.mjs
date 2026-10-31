@@ -83,7 +83,7 @@ test("liking the article is the notes' instant like: counted before the relay an
 test("the bar: the notes' heart and bolt, a Comment button, and a comment box that waits out the send delay", async () => {
   const src = readFileSync(new URL("../src/readers/ArticleActions.jsx", import.meta.url), "utf8")
   assert.match(src, /<ReactionButton ctx=\{ctx\} note=\{article\}/)
-  assert.match(src, /<ZapButton note=\{article\} \/>/)
+  assert.match(src, /<ZapButton note=\{article\} pickFirst \/>/)
   assert.match(src, /startCountdown\(\{ seconds: sendDelaySeconds\(\)/)
   const { CommentBox, ArticleActionBar } = await import("../src/readers/ArticleActions.jsx")
   assert.equal(typeof CommentBox, "function")
