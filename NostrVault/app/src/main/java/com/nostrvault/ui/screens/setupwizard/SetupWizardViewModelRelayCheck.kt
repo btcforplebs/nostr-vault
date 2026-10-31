@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.RelayDraft
 import com.nostrvault.service.RelayImportService
 import com.nostrvault.setup.RelayCheck
 import com.nostrvault.setup.RelayCheckProbe
@@ -36,8 +37,9 @@ import kotlinx.coroutines.launch
         _error.value = null
         viewModelScope.launch {
             _isCheckingRelays.value = true
+            // The indexers too: a list made in another app may live only there (RelayDraft.INDEXERS).
             val list = runCatching {
-                nostrService.fetchNewestReplaceable(10002, pubkey, alsoAsk = configStore.config.value.importSeedRelays)
+                nostrService.fetchNewestReplaceable(10002, pubkey, alsoAsk = configStore.config.value.importSeedRelays + RelayDraft.INDEXERS)
             }.getOrNull()
             _relayRows.value = RelayCheck.rows(list?.tags ?: emptyList(), HavenConfig().importSeedRelays)
             _relayRows.value.map { row ->
