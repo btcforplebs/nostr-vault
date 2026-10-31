@@ -17,34 +17,14 @@ import { Dialog } from "../components/Moderation.jsx"
 import { Avatar } from "../components/Avatar.jsx"
 import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
+import { PostResult } from "./compose/PostResult.jsx"
+import { draftKey, idbDrafts } from "./compose/drafts.js"
+import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
+import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
-
-const host = url => url.replace(/^wss?:\/\//, "")
-
-// The count reached first, then what failed. This machine's own relay is reported apart, and quietly:
-// it being off doesn't mean the note didn't go out.
-function PostResult({ result }) {
-  const network = result.relays.filter(r => !r.local)
-  const reached = network.filter(r => r.ok)
-  const failed = network.filter(r => !r.ok)
-  return (
-    <div class="result" role="status">
-      <strong class={reached.length ? "" : "error"}>
-        {reached.length ? `✓ Sent to ${reached.length} of ${network.length} relays` : `✗ No relay took it (0 of ${network.length})`}
-      </strong>
-      {reached.length > 0 && <div class="muted small">{reached.map(r => host(r.url)).join(" · ")}</div>}
-      {failed.map(r => <div key={r.url} class="error small">✗ {host(r.url)}: {r.message}</div>)}
-      <div class="muted small">✓ Saved to your relay in this browser</div>
-      {result.relays.filter(r => r.local).map(r => (
-        <div key={r.url} class="muted small">{r.ok ? "✓ Also on this Mac's vault relay" : `This Mac's vault relay (${host(r.url)}) didn't answer. That doesn't change the relays above.`}</div>
-      ))}
-      <a href="#/profile">See it on your profile</a>
-    </div>
-  )
-}
 
 /** The iPhone's countdown pill (PostActionPill): "Posting in 5s", a bar running down, Undo. */
 function SendPill({ pending, onUndo }) {
@@ -85,31 +65,7 @@ function ComposeTarget({ mode, note }) {
 /** The text of the note being replied to, without its media links and nostr: references, on one line. */
 export const replySnippet = content => content.replace(/https?:\/\/\S+|nostr:\S+/g, " ").replace(/\s+/g, " ").trim()
 
-// Drafts: one per account and per target (a new note, or a reply or quote to one note), in an IndexedDB database named
-// like Haven's own, "haven:<pubkey>:drafts", so sign-out's wipe (vault.js storeNames) deletes it with the rest.
-// Each write is its own short connection, and one asked to close for a delete closes, so it never blocks sign-out.
-export const draftKey = target => (target ? `${target.mode}:${target.id}` : "new")
-
-export function idbDrafts(pubkey, idb = globalThis.indexedDB) {
-  const run = (mode, op) => new Promise((resolve, reject) => {
-    const req = idb.open(`haven:${pubkey}:drafts`, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore("drafts")
-    req.onerror = () => reject(req.error)
-    req.onsuccess = () => {
-      const db = req.result
-      db.onversionchange = () => db.close()
-      const tx = db.transaction("drafts", mode)
-      const r = op(tx.objectStore("drafts"))
-      tx.oncomplete = () => { db.close(); resolve(r?.result) }
-      tx.onerror = tx.onabort = () => { db.close(); reject(tx.error) }
-    }
-  })
-  return {
-    get: key => run("readonly", s => s.get(key)),
-    put: (key, value) => run("readwrite", s => s.put(value, key)),
-    delete: key => run("readwrite", s => s.delete(key)),
-  }
-}
+export { draftKey, idbDrafts } from "./compose/drafts.js"
 
 /** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the media already uploaded. */
 export const draftOf = (text, mentions, photos) => ({
@@ -186,7 +142,12 @@ function useKeyboardFrame(on) {
 
 /** `fixed`: the reply or quote to write, instead of the one in the address (the desktop's inline reply under a thread).
  *  `inline`: drawn small, with no title and no copy of the note above it, since the thread is right there. */
-export function ComposeScreen({ ctx, fixed = null, inline = false }) {
+export function ComposeScreen(props) {
+  if (!props.fixed && !props.inline && composeType() === "article") return <ArticleCompose ctx={props.ctx} />
+  return <NoteCompose {...props} />
+}
+
+function NoteCompose({ ctx, fixed = null, inline = false }) {
   const [text, setText] = useState("")
   const [mentions, setMentions] = useState({}) // { "@Name": pubkey }
   const [photos, setPhotos] = useState([]) // photos and videos: { id, preview, status: "uploading" | "done" | "failed", error?, file?, url?, alt?, ... }
@@ -341,6 +302,7 @@ export function ComposeScreen({ ctx, fixed = null, inline = false }) {
         <h2>{title}</h2>
         {postButton("compose-post")}
       </header>}
+      {!target && !inline && <ComposeKinds type="note" />}
       {waiting && !inline && <p class="status-line">Finding the note…</p>}
       {target && note?.id === target.id && !parent && <p class="error status-line">That note couldn't be found, so there's nothing to {target.mode} to.</p>}
       {parent && !inline && <ComposeTarget mode={target.mode} note={parent} />}
