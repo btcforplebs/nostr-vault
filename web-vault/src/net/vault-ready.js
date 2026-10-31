@@ -8,6 +8,7 @@ import { readFeed, refreshAccount, syncFeed, syncOwn } from "./sync.js"
 import { fetchProfiles, namesIn } from "./profiles.js"
 import { noteAuthors } from "./feeds.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./pool.js"
+import { ownPostRelays } from "./own-relays.js"
 
 /** The steps, in the order the screen lists them. */
 export const STEPS = [
@@ -78,7 +79,8 @@ export async function prepareVault({ vault, pubkey, local, early, log = () => {}
   say("account", { state: accountState, count: account.follows.length })
 
   const readRelays = uniq([...account.relays.read, ...DEFAULT_RELAYS])
-  const writeRelays = uniq([...account.relays.write, ...account.relays.read, ...DEFAULT_RELAYS])
+  // Their own old posts: from the relays their list names (write or unmarked, public only) and the apps' five.
+  const writeRelays = ownPostRelays(account)
   const run = async (id, work) => {
     say(id, { state: "active" })
     const state = await within(work, limits[id])
