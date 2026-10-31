@@ -5,6 +5,7 @@ import SwiftUI
 struct AccountSwitcherView: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject private var nostrService = NostrService.shared
+    @ObservedObject private var unreadStore = AccountUnreadStore.shared
     @Environment(\.dismiss) private var dismiss
 
     // Key import sheet state
@@ -107,6 +108,18 @@ struct AccountSwitcherView: View {
                 }
 
                 Spacer()
+
+                // New notifications for an account you are not on.
+                if !isActive, let badge = AccountUnread.badge(unreadStore.count(npub: npub)) {
+                    Text(badge)
+                        .font(.appSystem(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(Capsule().fill(Color.havenPurple))
+                        .accessibilityLabel("\(badge) new")
+                }
 
                 // Key status / import
                 if !hasKey {
@@ -370,7 +383,17 @@ struct AccountMenuItem: View {
     let name: String
     let pictureURL: URL?
     let isActive: Bool
+    /// New notifications for this account since its Vault list was viewed
+    /// (AccountUnreadStore). Not shown on the active account, whose Vault tab
+    /// carries its own dot.
+    var unread: Int = 0
     let select: () -> Void
+
+    /// "3 new", or nil when there is nothing to show.
+    private var unreadText: String? {
+        guard !isActive, let badge = AccountUnread.badge(unread) else { return nil }
+        return "\(badge) new"
+    }
 
     var body: some View {
         let short = AccountSwitcherIdentity.shortNpub(npub)
@@ -378,20 +401,21 @@ struct AccountMenuItem: View {
             #if os(macOS)
             Label {
                 // A macOS menu item keeps one line of text.
-                Text("\(name)  \(short)")
+                Text(unreadText.map { "\(name)  ·  \($0)  \(short)" } ?? "\(name)  \(short)")
             } icon: {
                 icon
             }
             #else
             // An iOS menu reads a second Text as the subtitle only when the
             // texts and the image sit directly in the label; inside a Label
-            // the subtitle is dropped.
+            // the subtitle is dropped. A menu row takes no badge view, so the
+            // count leads the subtitle.
             Text(name)
-            Text(short)
+            Text(unreadText.map { "\($0) · \(short)" } ?? short)
             icon
             #endif
         }
-        .accessibilityLabel("\(name), \(short)")
+        .accessibilityLabel(unreadText.map { "\(name), \($0), \(short)" } ?? "\(name), \(short)")
     }
 
     @ViewBuilder private var icon: some View {

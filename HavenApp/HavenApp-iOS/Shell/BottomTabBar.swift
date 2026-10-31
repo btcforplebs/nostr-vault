@@ -17,6 +17,7 @@ struct BottomTabBar: View {
     @ObservedObject var feedService: FeedService
     // Rebuilds the account menu once each account's picture is cached.
     @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
+    @ObservedObject private var unreadStore = AccountUnreadStore.shared
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -317,7 +318,8 @@ struct BottomTabBar: View {
             npub: npub,
             name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
             pictureURL: profile?.pictureURL,
-            isActive: isCurrent
+            isActive: isCurrent,
+            unread: unreadStore.count(npub: npub)
         ) {
             configService.switchActiveAccount(to: npub)
         }

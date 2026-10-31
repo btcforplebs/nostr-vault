@@ -141,6 +141,7 @@ class VaultActivityViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
     private val seenStore: FollowersSeenStore,
+    private val accountUnread: com.nostrvault.data.local.AccountUnreadStore,
     logStore: com.nostrvault.relay.LogStore,
 ) : ViewModel() {
 
@@ -365,7 +366,8 @@ class VaultActivityViewModel @Inject constructor(
     /**
      * The list came on screen ([arriving]) or left it. Arriving keeps the last
      * visit's time, so lines newer than it show as unread; both move the mark
-     * to now. A first visit marks nothing: everything would be "new".
+     * to now and empty the account's switcher count. A first visit marks
+     * nothing: everything would be "new".
      */
     fun visit(arriving: Boolean) {
         val owner = nostrService.activeHexPubkey
@@ -375,6 +377,7 @@ class VaultActivityViewModel @Inject constructor(
             _unreadSince.value = if (last > 0) last else now
         }
         seenStore.markActivitySeen(owner, now)
+        accountUnread.markSeen(owner)
     }
 
     /** Followers seen here, as on the Followers list. */

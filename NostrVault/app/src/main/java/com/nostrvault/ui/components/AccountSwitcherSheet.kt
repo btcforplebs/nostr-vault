@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,9 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.data.model.AccountUnread
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -53,18 +59,22 @@ data class AccountInfo(
     val isActive: Boolean,
     val hasKey: Boolean,
     val avatarUrl: String? = null,
+    /** New notifications since this account's Vault list was viewed ([AccountUnread]). */
+    val unread: Int = 0,
 )
 
 /**
  * Build the account roster with resolved names/avatars from the profile map.
  * Shared by the global switcher (NavGraph) and the in-composer switcher.
  * [includeWhitelisted] adds relay-follow accounts (whitelistedNpubs) on top of
- * the multi-account roster (owner + accountNpubs).
+ * the multi-account roster (owner + accountNpubs). [unread] fills each row's
+ * count; the composer's switcher leaves it out.
  */
 fun buildAccountInfos(
     config: HavenConfig,
     profiles: Map<String, FeedProfile>,
     includeWhitelisted: Boolean = true,
+    unread: AccountUnread = AccountUnread(),
 ): List<AccountInfo> {
     val active = config.activeOrOwnerNpub()
     val roster = buildList {
@@ -84,6 +94,7 @@ fun buildAccountInfos(
             isActive = npub == active,
             hasKey = isOwner || npub in config.accountNpubs,
             avatarUrl = profile?.pictureURL,
+            unread = unread.count(hex),
         )
     }
 }
@@ -220,6 +231,26 @@ private fun AccountRow(
                 maxLines = 1,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
             )
+        }
+
+        // New notifications for an account you are not on. The active
+        // account's Vault tab carries its own dot.
+        val badge = if (account.isActive) null else AccountUnread.badge(account.unread)
+        if (badge != null) {
+            Text(
+                text = badge,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .semantics { contentDescription = "$badge new" }
+                    .background(themeColor, CircleShape)
+                    .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = 6.dp),
+            )
+            Spacer(modifier = Modifier.width(10.dp))
         }
 
         // Key status

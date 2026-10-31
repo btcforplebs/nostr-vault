@@ -305,6 +305,7 @@ class RelayForegroundService : Service() {
     interface LogStoreEntryPoint {
         fun logStore(): LogStore
         fun localNotifier(): com.nostrvault.service.LocalNotificationService
+        fun accountUnread(): com.nostrvault.data.local.AccountUnreadStore
         fun fipsMeshManager(): com.nostrvault.fips.FipsMeshManager
     }
 
@@ -355,7 +356,12 @@ class RelayForegroundService : Service() {
         // Route the relay's NOTIFY marker lines to the local notifier so inbound
         // mentions/DMs/zaps raise system notifications without a push server.
         localNotifier.ensureChannel()
-        logStore.notifySink = { line -> localNotifier.onLogLine(line) }
+        // The same markers count each account's new notifications for the switcher.
+        val accountUnread = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).accountUnread()
+        logStore.notifySink = { line ->
+            localNotifier.onLogLine(line)
+            accountUnread.onLogLine(line)
+        }
         logStore.startPolling(serviceScope)
         serviceScope.launch {
             restartRequests.collect {

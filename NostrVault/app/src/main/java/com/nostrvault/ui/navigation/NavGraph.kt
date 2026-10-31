@@ -116,6 +116,7 @@ fun NostrVaultNavHost(
     logStore: LogStore,
     dmUnreadCount: StateFlow<Int>,
     hasNewRelayActivity: StateFlow<Boolean>,
+    accountUnread: StateFlow<com.nostrvault.data.model.AccountUnread>,
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -142,6 +143,7 @@ fun NostrVaultNavHost(
     val activeHexState = configStore.activeAccountHexPubkey.collectAsState()
     val activeHex by activeHexState
     val profiles by nostrService.profiles.collectAsState()
+    val unread by accountUnread.collectAsState()
     val activeProfile = profiles[activeHex]
     val isOwner = config.activeAccountNpub.isNullOrBlank()
     val unreadDMsState = dmUnreadCount.collectAsState()
@@ -406,7 +408,7 @@ fun NostrVaultNavHost(
 
     // Account switcher bottom sheet
     if (showAccountSwitcher) {
-        val accounts = buildAccountInfos(config, profiles, includeWhitelisted = true)
+        val accounts = buildAccountInfos(config, profiles, includeWhitelisted = true, unread = unread)
 
         AccountSwitcherSheet(
             accounts = accounts,

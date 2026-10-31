@@ -81,6 +81,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var emojiList: com.nostrvault.service.EmojiListRepository
     @Inject lateinit var nostrService: NostrService
     @Inject lateinit var logStore: LogStore
+    @Inject lateinit var accountUnread: com.nostrvault.data.local.AccountUnreadStore
     @Inject lateinit var localNotificationService: LocalNotificationService
     @Inject lateinit var feedActivityNotifier: com.nostrvault.service.FeedActivityNotifier
     @Inject lateinit var notificationManager: NotificationManager
@@ -239,6 +240,7 @@ class MainActivity : FragmentActivity() {
                                     logStore = logStore,
                                     dmUnreadCount = dmService.totalUnreadCountFlow,
                                     hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
+                                    accountUnread = accountUnread.state,
                                 )
                             }
                             // Full-screen media viewer overlay — lives in the activity window
