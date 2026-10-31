@@ -63,18 +63,6 @@ struct MediaGridItem: View {
             )
             .background(Color.black.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(alignment: .bottomTrailing) {
-                // How many of your Blossom servers hold it, so you can spot
-                // what is not backed up without opening it.
-                if let hash, !configService.config.activeBlossomMirrors.isEmpty {
-                    BlossomBackupBadge(hash: hash, compact: true)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.black.opacity(0.55)))
-                        .padding(4)
-                        .allowsHitTesting(false)
-                }
-            }
             .contentShape(Rectangle())
             .scaleEffect(isHovered ? 1.04 : 1.0)
             .zIndex(isHovered ? 1.0 : 0.0)
@@ -110,8 +98,8 @@ struct MediaGridItem: View {
                 .disabled(isMirroringToLocal)
             }
 
-            // On the phone, and some Blossom server does not have it yet
-            if needsMirror {
+            // On the phone, and some Blossom server may not have it yet
+            if mayNeedMirror {
                 Button(action: {
                     pushToMirrors()
                 }) {
@@ -195,10 +183,11 @@ struct MediaGridItem: View {
 
     private var hash: String? { MediaCacheService.blossomHash(in: item.url) }
 
-    /// On the phone and at least one Blossom server is not known to have it.
-    private var needsMirror: Bool {
-        guard onPhone, let hash else { return false }
-        return backupStore.summary(hash: hash, mirrors: configService.config.activeBlossomMirrors)?.needsMirror == true
+    /// The menu also offers the upload when no server has been asked yet:
+    /// the grid no longer asks, and the upload checks the servers first.
+    private var mayNeedMirror: Bool {
+        guard onPhone, let hash, !configService.config.activeBlossomMirrors.isEmpty else { return false }
+        return backupStore.summary(hash: hash, mirrors: configService.config.activeBlossomMirrors)?.needsMirror ?? true
     }
 
     private func refreshOnPhone() {
