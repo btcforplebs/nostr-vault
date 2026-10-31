@@ -90,7 +90,7 @@ test("a big follow list asks for its contact lists in chunks of 250, all at once
     asks++; open++; most = Math.max(most, open)
     assert.deepEqual(r, ["wss://purplepag.es"]); assert.equal(f.authors.length, 250)
     await new Promise(res => setTimeout(res, 10)); open--
-    return [{ kind: 3, pubkey: f.authors[0], created_at: 1, tags: [["p", hex("7")]] }]
+    return f.authors.map(pk => ({ kind: 3, pubkey: pk, created_at: 1, tags: [["p", hex("7")]] }))
   }
   const set = await trustSet(hex("9"), follows, { query })
   assert.equal(asks, 4); assert.equal(most, 4, "not one after another")

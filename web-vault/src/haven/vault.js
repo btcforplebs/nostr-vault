@@ -93,7 +93,7 @@ export const streamClosed = e => e?.message === "haven stream closed"
 // unsent notes (ComposeScreen idbDrafts), nor "wallet": the NWC connection (net/wallet.js). Both only ever under the
 // pubkey, named like the routes so this wipe takes them.
 const ROUTES = ["private", "chat", "outbox", "inbox", "blossom", "feed", "blobs"]
-const PAGE_STORES = ["drafts", "wallet", "deleted", "followbackup"]
+const PAGE_STORES = ["drafts", "wallet", "deleted", "followbackup", "wotlists"]
 export async function storeNames(pubkey, idb = indexedDB) {
   const known = [...ROUTES.flatMap(r => [`haven:${pubkey}:${r}`, `haven:${r}`]), ...PAGE_STORES.map(s => `haven:${pubkey}:${s}`)]
   const mine = new RegExp(`^haven:(${pubkey}:)?[0-9A-Za-z_-]+$`) // pubkey is 64 lowercase hex: nothing to escape

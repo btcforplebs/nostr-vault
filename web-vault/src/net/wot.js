@@ -2,8 +2,10 @@
 // contact lists (kind 3). Popular counts votes with the same set (popular.js trustSet); the Web of Trust tab draws it
 // (wot-map.js) and lists it (My Web). The iPhone reads a deeper graph its relay builds every day (vouches, followers,
 // rebuild); the web has only the lists, so it shows three layers: follows, the extended network (people at least
-// EXTENDED_MIN of your follows follow) and further out. Everything here is other people's data and stays in memory.
+// EXTENDED_MIN of your follows follow) and further out. Everything here is other people's data and stays in memory,
+// except your own follows' lists, which this browser keeps so a reload doesn't download them again (wot-store.js).
 import { pool, PROFILE_RELAYS, uniq } from "./pool.js"
+import { emptyKept, wotStore } from "./wot-store.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 
@@ -21,9 +23,17 @@ export const EXTENDED_CAP = 2_500
 // download each list once.
 // Two caches: "home" for the user's own follows (the Web tab and Popular), "visit" for the person whose web "See their
 // web" put in the middle, so walking round other people's webs never empties the user's own. Each is for one person
-// at a time.
+// at a time. The user's own ("home") are also kept in this browser (wot-store.js) and read back on the next load, so a
+// reload doesn't download every follow's list again; a follow's list is only asked for again `since` the last check,
+// at most every REFRESH_MS, or in full when they are a new follow. Follows whose list didn't come back are kept too and
+// asked for again after REFRESH_MS, not on every load: purplepag.es sends only ~560 of 1,054 follows' lists, and asking
+// for the rest on each load was 8-18 MB of mostly older copies of lists.
 export const RETRY_MS = 60_000
-const newCache = me => ({ me, lists: new Map(), tried: new Map(), inflight: new Map() })
+export const REFRESH_MS = 6 * 3600_000
+// How long a group of 250 lists may take. A group is ~12 MB: in a first sign-in's busy page 8 s cut some off part way
+// (the relay itself sends them in ~3.5 s and ends with EOSE, which closes the ask sooner).
+export const LISTS_WAIT_MS = 20_000
+const newCache = me => ({ me, lists: new Map(), tried: new Map(), inflight: new Map(), disk: null, checkedAt: 0, refreshed: false, missed: new Map() })
 const caches = { home: newCache(""), visit: newCache("") }
 
 /**
@@ -33,25 +43,54 @@ const caches = { home: newCache(""), visit: newCache("") }
  * `slot` is "home" (the user's follows) or "visit" (someone else's, for See their web). `query` and `now` are for tests.
  * -> Map(follow pubkey -> kind 3), only the follows whose list has come back
  */
-export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home" } = {}) {
+export async function followLists(me, follows, { relays = PROFILE_RELAYS, query = (r, f, o) => pool.querySync(r, f, o), retryMs = RETRY_MS, now = Date.now, slot = "home", store = slot === "home" ? wotStore(me) : null, refreshMs = REFRESH_MS, reachable = relayUp, loadMs = LOAD_TIMEOUT_MS } = {}) {
   if (caches[slot].me !== me) caches[slot] = newCache(me)
-  const { lists, tried, inflight } = caches[slot]
+  const cache = caches[slot]
+  const { lists, tried, inflight } = cache
   const t = now()
+  // What this browser kept, once per page load: lists a relay has sent since then are newer and win. Read BOOT_GRACE_MS
+  // after the page starts, once it is idle: the screens build their sets from it straight away (Messages' trust and the
+  // unread badge, ~0.36 s for 1,054 follows), and done during boot that put a reload's first note ~0.4 s later. Still
+  // seconds sooner than the download it replaces.
+  // A read that never answers (an IndexedDB open that hangs) counts as nothing kept after loadMs.
+  if (store && !cache.disk) cache.disk = idle().then(() => within(store.load(), loadMs, emptyKept())).then(({ lists: kept, misses, checkedAt }) => {
+    for (const [pk, ev] of kept) if (!(lists.get(pk)?.created_at >= ev.created_at)) lists.set(pk, ev)
+    cache.missed = misses
+    cache.checkedAt = checkedAt
+  })
+  if (cache.disk) await cache.disk
+  const keep = (evs, always = false, misses = []) => { if (store && (evs.length || misses.length || always)) return store.save(evs, cache.checkedAt ||= Math.floor(t / 1000), misses, Math.floor(t / 1000)) }
+  if (store && cache.checkedAt && !cache.refreshed && t - cache.checkedAt * 1000 > refreshMs) {
+    cache.refreshed = true
+    refreshLists(cache, follows, { relays, query, keep, reachable, now, at: Math.floor(t / 1000) })
+  }
   const waits = new Set()
   const want = []
   for (const pk of uniq(follows)) {
     if (lists.has(pk)) continue
     if (inflight.has(pk)) { waits.add(inflight.get(pk)); continue }
     if (tried.has(pk) && t - tried.get(pk) < retryMs) continue
+    // Missing on an earlier load: not again until REFRESH_MS has passed (Try again, retryMs 0, asks now).
+    if (retryMs && cache.missed.has(pk) && t - cache.missed.get(pk) * 1000 < refreshMs) continue
     want.push(pk)
   }
   for (let i = 0; i < want.length; i += 250) {
     const chunk = want.slice(i, i + 250), wanted = new Set(chunk)
-    const job = query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: 8000 })
+    const started = now()
+    const job = query(uniq(relays), { kinds: [3], authors: chunk, limit: chunk.length }, { maxWait: LISTS_WAIT_MS })
       .catch(() => [])
       .then(evs => {
-        for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) lists.set(ev.pubkey, ev)
+        const got = []
+        for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(lists.get(ev.pubkey)?.created_at >= ev.created_at)) { lists.set(ev.pubkey, ev); got.push(ev) }
         for (const pk of chunk) { tried.set(pk, t); inflight.delete(pk) }
+        // An answer with some of the group's lists but not someone's: kept as missing. A failed or empty answer, or one
+        // cut off at LISTS_WAIT_MS (querySync ends a timeout as if the relay had sent EOSE), keeps nothing, so it is
+        // asked again after RETRY_MS as before.
+        // An answer as long as the limit may be a relay's cap rather than all it has: no misses from that either.
+        const cut = now() - started >= LISTS_WAIT_MS - 100 || evs.length >= chunk.length
+        const misses = !cut && evs.some(ev => wanted.has(ev?.pubkey)) ? chunk.filter(pk => !lists.has(pk)) : []
+        for (const pk of misses) cache.missed.set(pk, Math.floor(t / 1000))
+        return keep(got, false, misses)
       })
     for (const pk of chunk) inflight.set(pk, job)
     waits.add(job)
@@ -60,6 +99,42 @@ export async function followLists(me, follows, { relays = PROFILE_RELAYS, query 
   const mine = new Map()
   for (const pk of follows) if (lists.has(pk)) mine.set(pk, lists.get(pk))
   return mine
+}
+
+export const BOOT_GRACE_MS = 1500
+export const LOAD_TIMEOUT_MS = 5000
+const relayUp = urls => Promise.any(urls.map(url => pool.ensureRelay(url, { connectionTimeout: 5000 })))
+function within(p, ms, fallback) {
+  let timer
+  return Promise.race([p, new Promise(r => { timer = setTimeout(() => r(fallback), ms) })]).finally(() => clearTimeout(timer))
+}
+const idle = () => new Promise(r => {
+  if (!globalThis.requestIdleCallback) return r() // node (the tests)
+  setTimeout(() => requestIdleCallback(() => r(), { timeout: 3000 }), Math.max(0, BOOT_GRACE_MS - performance.now()))
+})
+
+// The lists already held that changed since the last check: a relay sends only those, so this is a few small answers
+// rather than every list again. Runs behind the caller; the next followLists call has what it found.
+async function refreshLists(cache, follows, { relays, query, keep, reachable, now, at }) {
+  const held = uniq(follows).filter(pk => cache.lists.has(pk))
+  const since = cache.checkedAt - 600
+  // An empty answer is the usual one (nobody changed their list), and it is also what an unreachable relay gives: only
+  // a check that reached a relay, and wasn't cut off, moves the check time on. Otherwise the next load asks again.
+  if (globalThis.navigator?.onLine === false) return
+  try { await reachable(uniq(relays)) } catch { return }
+  const started = now()
+  let ok = true
+  const got = []
+  await Promise.all(Array.from({ length: Math.ceil(held.length / 250) }, (_, k) => held.slice(k * 250, k * 250 + 250)).map(chunk => {
+    const wanted = new Set(chunk)
+    return query(uniq(relays), { kinds: [3], authors: chunk, since, limit: chunk.length }, { maxWait: 8000 })
+      .then(evs => { for (const ev of evs) if (ev?.kind === 3 && wanted.has(ev.pubkey) && !(cache.lists.get(ev.pubkey)?.created_at >= ev.created_at)) { cache.lists.set(ev.pubkey, ev); got.push(ev) } })
+      .catch(() => { ok = false })
+  }))
+  // A check that failed keeps the old time, so the next load asks from there again.
+  if (now() - started >= 8000 - 100) ok = false
+  if (ok) cache.checkedAt = at
+  await keep(got, ok)
 }
 
 /** How many of these follows' lists haven't come back (the Web tab says so, and offers to ask again). */
