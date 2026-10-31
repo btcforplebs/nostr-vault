@@ -37,7 +37,7 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
       } catch (e) {
         if (!live) return
         const tg = JSON.parse(lnurlKey)
-        setLookErr(tg.kind === "address" ? `Couldn't find the lightning address ${tg.address}. Check the spelling. (${e?.message ?? e})` : `Couldn't open this: ${e?.message ?? e}`)
+        setLookErr(tg.kind === "address" ? `Couldn't find the lightning address ${tg.address}. Check the spelling. (${e?.message ?? e})` : `Couldn't open this LNURL: ${e?.message ?? e}`)
       } finally { if (live) setLooking(false) }
     }, 400)
     return () => { live = false; clearTimeout(t) }
@@ -57,7 +57,9 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
     try {
       if (target.kind === "invoice") await payInvoiceText(wallet.conn, target.invoice)
       else await payAddress(wallet.conn, pay, { sats: n, comment })
-      setDone(target.kind === "invoice" && amount.sats == null ? "Payment sent." : `Sent ${(amount?.sats ?? n).toLocaleString()} sats.`)
+      // Who it went to, as on the iPhone (+LNURL payLNURL): the address typed, or the service's host for an LNURL.
+      setDone(target.kind === "invoice" ? (amount.sats == null ? "Payment sent." : `Sent ${amount.sats.toLocaleString()} sats.`)
+        : `Sent ${n.toLocaleString()} sats to ${target.address ?? pay.host}.`)
       setText(""); setSats("") // the balance and History reload themselves (wallet.js onPaid)
     } catch (e) {
       // No answer is not a failure: the wallet may still pay. Clear the box so Pay isn't one click from paying twice.
@@ -88,7 +90,8 @@ export function WalletSend({ wallet, resolve = resolvePayTarget, payInvoiceText 
               <input class="wallet-sats" type="number" inputmode="numeric" min={check.minSats} max={check.maxSats} placeholder="sats" value={sats}
                 onInput={e => { setSats(e.currentTarget.value); setConfirming(false) }} aria-label="Amount in sats" /></label>
             <p class={`small ${check.tooSmall || check.tooLarge ? "error" : "muted"}`}>
-              {check.tooSmall ? `At least ${check.minSats.toLocaleString()} sats.` : check.tooLarge ? `At most ${check.maxSats.toLocaleString()} sats.` : `${check.minSats.toLocaleString()} to ${check.maxSats.toLocaleString()} sats.`}</p></>}
+              {/* The iPhone's range hints (+LNURL rangeCaption). */}
+              {check.tooSmall ? `The smallest amount it accepts is ${check.minSats.toLocaleString()} sats.` : check.tooLarge ? `The largest amount it accepts is ${check.maxSats.toLocaleString()} sats.` : `Between ${check.minSats.toLocaleString()} and ${check.maxSats.toLocaleString()} sats.`}</p></>}
         {pay.commentAllowed > 0 && <label class="wallet-row"><span>Comment</span>
           <input type="text" maxLength={pay.commentAllowed} placeholder="Optional" value={comment} onInput={e => setComment(e.currentTarget.value)} /></label>}
       </div>}
