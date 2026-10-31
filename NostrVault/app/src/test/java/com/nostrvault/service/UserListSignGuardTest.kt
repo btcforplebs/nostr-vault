@@ -146,16 +146,17 @@ class UserListSignGuardTest {
     }
 
     @Test
-    fun `Save in Relays refuses when the list it opened with is not found at Save`() {
+    fun `Save in Relays refuses when the list it opened with is missing or older at Save`() {
         val file = src("com/nostrvault/service/nostr/NostrServiceListPublishing.kt")
         for ((fn, rebase) in listOf(
             "fun NostrService.publishOwnerRelayListTagsImpl" to "rebaseRelayList",
             "fun NostrService.publishDMRelayList" to "rebaseDMList",
         )) {
             val impl = file.substringAfter(fn).substringBefore(" fun ")
-            val guard = impl.indexOf("vanishedAtSave")
-            assertTrue("$fn must check vanishedAtSave", guard >= 0)
-            assertTrue("$fn must check vanishedAtSave before $rebase", guard < impl.indexOf(rebase))
+            val guard = impl.indexOf("staleAtSave(")
+            assertTrue("$fn must check staleAtSave", guard >= 0)
+            assertTrue("$fn must check staleAtSave before $rebase", guard < impl.indexOf(rebase))
+            assertTrue("$fn must pass the found copy's created_at", impl.contains("lookup.event?.createdAt"))
         }
     }
 }

@@ -386,8 +386,8 @@ class NostrService @Inject constructor(
 
     suspend fun lookupOwnerRelayLists(): com.nostrvault.relay.RelayDraft.Published = lookupOwnerRelayListsImpl()
 
-    fun publishOwnerRelayListTags(tags: List<List<String>>, before: List<List<String>>, onDone: (Boolean) -> Unit = {}) {
-        publishOwnerRelayListTagsImpl(tags, before, onDone)
+    fun publishOwnerRelayListTags(tags: List<List<String>>, before: List<List<String>>, openedAt: Long?, onDone: (Boolean) -> Unit = {}) {
+        publishOwnerRelayListTagsImpl(tags, before, openedAt, onDone)
     }
 
     suspend fun fetchNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? = fetchNewestReplaceableImpl(kind, pubkey, alsoAsk, timeoutMs)

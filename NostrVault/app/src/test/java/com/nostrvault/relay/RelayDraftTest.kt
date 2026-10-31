@@ -306,10 +306,37 @@ class RelayDraftTest {
             listOf(listOf("relay", "wss://new.example")),
             RelayDraft.rebaseDMList(listOf("wss://a.example"), listOf("wss://a.example", "wss://new.example"), emptyList()),
         )
-        assertTrue(RelayDraft.vanishedAtSave(openedWithList = true, foundAtSave = false))
-        // Fine: a copy was found, or the screen opened with no list (first publish).
-        assertFalse(RelayDraft.vanishedAtSave(openedWithList = true, foundAtSave = true))
-        assertFalse(RelayDraft.vanishedAtSave(openedWithList = false, foundAtSave = false))
+        assertTrue(RelayDraft.staleAtSave(openedWithList = true, openedAt = 100, foundAt = null))
+        // Fine: the screen opened with no list (first publish).
+        assertFalse(RelayDraft.staleAtSave(openedWithList = false, openedAt = null, foundAt = null))
+    }
+
+    @Test fun `Save that finds an older copy than the screen opened with is refused`() {
+        // Tron's second #1458 case: an indexer holds an old 10002 = [a] and answers first.
+        val opened = listOf(listOf("r", "wss://a.example"), listOf("r", "wss://b.example"), listOf("r", "wss://c.example"))
+        val saved = opened + listOf(listOf("r", "wss://new.example"))
+        val older = listOf(listOf("r", "wss://a.example"))
+        assertEquals(
+            listOf(listOf("r", "wss://a.example"), listOf("r", "wss://new.example")),
+            RelayDraft.rebaseRelayList(opened, saved, older),
+        )
+        assertTrue(RelayDraft.staleAtSave(openedWithList = true, openedAt = 200, foundAt = 100))
+        // Same or newer copy found: rebase onto it.
+        assertFalse(RelayDraft.staleAtSave(openedWithList = true, openedAt = 200, foundAt = 200))
+        assertFalse(RelayDraft.staleAtSave(openedWithList = true, openedAt = 200, foundAt = 300))
+    }
+
+    @Test fun `after Save the next Save refuses a copy older than the one just signed`() {
+        val s0 = RelayDraft.start(config, published.copy(relayListAt = 100, dmListAt = 100), pinned = listOf(ownRelay, ownInbox))
+        val s = RelayDraft.add(s0, "wss://mine.example", setOf(Job.READ, Job.WRITE, Job.DMS))
+        val plan = RelayDraft.plan(s, ownRelay, ownInbox)
+        assertNotNull(plan.relayListTags)
+        assertNotNull(plan.dmRelays)
+        val now = System.currentTimeMillis() / 1000
+        val after = RelayDraft.saved(s, plan).published
+        assertTrue(after.relayListAt!! >= now && after.dmListAt!! >= now)
+        // The pre-Save copy (100) found by the next Save is refused.
+        assertTrue(RelayDraft.staleAtSave(true, after.relayListAt, 100))
     }
 
     @Test fun `Save edits the newest DM inbox list`() {

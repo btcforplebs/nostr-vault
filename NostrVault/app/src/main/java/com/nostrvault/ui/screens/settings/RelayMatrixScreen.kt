@@ -210,11 +210,11 @@ class RelayMatrixViewModel @Inject constructor(
         // Save edits the newest copy, fetched now; the published copy the screen opened with is what it changed.
         plan.relayListTags?.let {
             nostrService.publishOwnerRelayListTags(
-                it, before = PublicRelayList.tags(emptyList(), p.read, p.write) + p.kept,
+                it, before = PublicRelayList.tags(emptyList(), p.read, p.write) + p.kept, openedAt = p.relayListAt,
                 onDone = notPublished("Relay list"),
             )
         }
-        plan.dmRelays?.let { nostrService.publishDMRelayList(it, before = p.dms, onDone = notPublished("DM inbox")) }
+        plan.dmRelays?.let { nostrService.publishDMRelayList(it, before = p.dms, openedAt = p.dmListAt, onDone = notPublished("DM inbox")) }
         _draft.value = RelayDraft.saved(state, plan)
     }
 

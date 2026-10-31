@@ -39,6 +39,13 @@ object RelayDraft {
          * (Tron, #1386; iOS `Published.kept`).
          */
         val kept: List<List<String>> = emptyList(),
+        /**
+         * created_at of the kind 10002 / 10050 the screen opened with (null
+         * when unknown). Save refuses a copy older than this: an indexer's
+         * stale copy would drop rows ([staleAtSave], Tron #1458).
+         */
+        val relayListAt: Long? = null,
+        val dmListAt: Long? = null,
     )
 
     /** Whether a relay can be a row of the published relay list: a wss:// address others can reach. */
@@ -268,12 +275,14 @@ object RelayDraft {
 
     /**
      * True when Save must not sign: the screen opened with a published list
-     * ([openedWithList]) but the lookup at Save found no copy at all. The
-     * indexers can answer "none" for a list that only lives on the owner's
-     * own relays; rebasing onto nothing would publish only the rows the
-     * screen added and drop the rest (Tron, #1458).
+     * ([openedWithList]) but the lookup at Save found no copy ([foundAt]
+     * null), or found one older than the copy the screen opened with
+     * ([openedAt]). The indexers can answer "none" or hold an old copy of a
+     * list that lives on the owner's own relays; rebasing onto that would
+     * drop rows the screen never touched (Tron, #1458).
      */
-    fun vanishedAtSave(openedWithList: Boolean, foundAtSave: Boolean): Boolean = openedWithList && !foundAtSave
+    fun staleAtSave(openedWithList: Boolean, openedAt: Long?, foundAt: Long?): Boolean =
+        openedWithList && (foundAt == null || (openedAt != null && foundAt < openedAt))
 
     /**
      * Save edits the newest kind 10002, fetched right before it is signed,
@@ -343,6 +352,10 @@ object RelayDraft {
                 )
             }
             if (plan.dmRelays != null) next = next.copy(dms = plan.dmRelays)
+            // The next Save must not edit a copy older than the one just signed.
+            val now = System.currentTimeMillis() / 1000
+            if (plan.relayListTags != null) next = next.copy(relayListAt = now)
+            if (plan.dmRelays != null) next = next.copy(dmListAt = now)
             next
         }
         return state.copy(

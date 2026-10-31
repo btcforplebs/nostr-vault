@@ -99,6 +99,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.answeredBy),
             dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.answeredBy),
             kept = kept,
+            relayListAt = rl?.event?.createdAt ?: relayListCreatedAt[owner],
+            dmListAt = dl?.event?.createdAt,
         ).also {
             Log.i(TAG, "Relay lists looked up: 10002 ${rl?.answered}/${rl?.asked} found=${rl?.event != null}, " +
                 "10050 ${dl?.answered}/${dl?.asked} found=${dl?.event != null}")
@@ -111,12 +113,14 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * goes onto the newest kind 10002, fetched now ([com.nostrvault.relay.RelayDraft.rebaseRelayList]).
      * Nothing is signed when the lookup didn't settle: a list set in another
      * app since would be overwritten. Nor when the screen opened with a list
-     * and Save found none ([com.nostrvault.relay.RelayDraft.vanishedAtSave]).
+     * and Save found none or an older copy than [openedAt]
+     * ([com.nostrvault.relay.RelayDraft.staleAtSave]).
      * [onDone] gets false then, on IO.
      */
     internal fun NostrService.publishOwnerRelayListTagsImpl(
         tags: List<List<String>>,
         before: List<List<String>>,
+        openedAt: Long?,
         onDone: (Boolean) -> Unit = {},
     ) {
         val owner = ownerHexPubkey
@@ -127,8 +131,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 Log.w(TAG, "kind 10002: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
                 return@launch onDone(false)
             }
-            if (com.nostrvault.relay.RelayDraft.vanishedAtSave(before.any { it.size >= 2 && it[0] == "r" }, lookup.event != null)) {
-                Log.w(TAG, "kind 10002: screen opened with a list but Save found none (${lookup.answered}/${lookup.asked}); not published")
+            if (com.nostrvault.relay.RelayDraft.staleAtSave(before.any { it.size >= 2 && it[0] == "r" }, openedAt, lookup.event?.createdAt)) {
+                Log.w(TAG, "kind 10002: Save found no copy or one older than the screen's (${lookup.event?.createdAt} < $openedAt); not published")
                 return@launch onDone(false)
             }
             val next = com.nostrvault.relay.RelayDraft.rebaseRelayList(before, tags, lookup.event?.tags.orEmpty())
@@ -175,9 +179,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * and removed since [before] (the kind 10050 as published when the screen
      * opened) go onto the newest kind 10050, fetched now. Nothing is signed
      * when the lookup didn't settle, or when the screen opened with a list
-     * and Save found none. [onDone] gets false then, on IO.
+     * and Save found none or an older copy than [openedAt]. [onDone] gets false then, on IO.
      */
-    fun NostrService.publishDMRelayList(dmRelays: List<String>, before: List<String>, onDone: (Boolean) -> Unit = {}) {
+    fun NostrService.publishDMRelayList(dmRelays: List<String>, before: List<String>, openedAt: Long?, onDone: (Boolean) -> Unit = {}) {
         val owner = ownerHexPubkey
         if (owner.isBlank()) return onDone(false)
         scope.launch(Dispatchers.IO) {
@@ -186,8 +190,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                 Log.w(TAG, "kind 10050: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
                 return@launch onDone(false)
             }
-            if (com.nostrvault.relay.RelayDraft.vanishedAtSave(before.isNotEmpty(), lookup.event != null)) {
-                Log.w(TAG, "kind 10050: screen opened with a list but Save found none (${lookup.answered}/${lookup.asked}); not published")
+            if (com.nostrvault.relay.RelayDraft.staleAtSave(before.isNotEmpty(), openedAt, lookup.event?.createdAt)) {
+                Log.w(TAG, "kind 10050: Save found no copy or one older than the screen's (${lookup.event?.createdAt} < $openedAt); not published")
                 return@launch onDone(false)
             }
             val newest = lookup.event?.tags.orEmpty().filter { !(it.size >= 2 && it[0] == "relay" && isLoopbackRelay(it[1])) }
