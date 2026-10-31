@@ -1,6 +1,12 @@
 import SwiftUI
 
 extension MenuBarView {
+    /// The account avatar's purple dot: an account you are not on has news
+    /// (the counts on the switcher rows). Clears when those are all zero.
+    var otherAccountHasNews: Bool {
+        unreadStore.othersHaveUnread(npubs: configService.allAccountNpubs, activeHex: activeHex)
+    }
+
     @ViewBuilder
     var sidebarLayout: some View {
                     // MARK: - Premium Desktop Sidebar Layout
@@ -56,6 +62,10 @@ extension MenuBarView {
                                                 lineWidth: isOwner ? 1.5 : 2
                                             )
                                     )
+                                    .overlay(alignment: .bottomTrailing) {
+                                        NewsDot(isShown: otherAccountHasNews, size: 9, color: NewsDot.otherAccount)
+                                            .offset(x: 2, y: 2)
+                                    }
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(nostrService.profiles[activeHex]?.bestName ?? (isOwner ? "Owner" : "User"))

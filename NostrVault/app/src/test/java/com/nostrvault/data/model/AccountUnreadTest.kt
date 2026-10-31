@@ -1,6 +1,8 @@
 package com.nostrvault.data.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -71,5 +73,27 @@ class AccountUnreadTest {
         assertEquals("7", AccountUnread.badge(7))
         assertEquals("99", AccountUnread.badge(99))
         assertEquals("99+", AccountUnread.badge(100))
+    }
+
+    @Test
+    fun otherAccountDot() {
+        var u = AccountUnread()
+        val both = listOf(alice, bob)
+        assertFalse(u.othersHaveUnread(both, alice))
+        // News for the active account alone: its Vault tab has the dot, not the avatar.
+        u = u.record(marker("reply", id = "1", to = alice))
+        assertFalse(u.othersHaveUnread(both, alice))
+        u = u.record(marker("zap", id = "2", to = bob))
+        assertTrue(u.othersHaveUnread(both, alice))
+        assertTrue(u.othersHaveUnread(both, alice.uppercase()))
+        assertTrue(u.othersHaveUnread(both, bob))
+        u = u.markSeen(bob)
+        assertFalse(u.othersHaveUnread(both, alice))
+    }
+
+    @Test
+    fun removedAccountDoesNotHoldTheDot() {
+        val u = AccountUnread().record(marker("reply", id = "1", to = bob))
+        assertFalse(u.othersHaveUnread(listOf(alice), alice))
     }
 }

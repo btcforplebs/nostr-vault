@@ -35,6 +35,12 @@ final class AccountUnreadStore: ObservableObject {
         return state.count(for: hex)
     }
 
+    /// The avatar dot: another signed-in account has news. `npubs` is every
+    /// account on the device, `activeHex` the one in use.
+    func othersHaveUnread(npubs: [String], activeHex: String) -> Bool {
+        state.othersHaveUnread(accounts: npubs.compactMap { Bech32.decode($0)?.hexString }, active: activeHex)
+    }
+
     private func save(_ next: AccountUnread) {
         state = next
         defaults.set(next.ids, forKey: Self.key)

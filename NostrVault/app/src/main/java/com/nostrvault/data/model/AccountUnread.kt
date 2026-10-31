@@ -25,6 +25,17 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
         return copy(ids = ids + (recipient to (list + id).takeLast(CAP)))
     }
 
+    /**
+     * Whether an account other than [active] has news: the dot on the bottom
+     * bar's avatar. Only [accounts] (the hex keys still signed in) are asked,
+     * so a removed account's leftover ids can't hold the dot up with no row
+     * left to clear them. iOS: othersHaveUnread(accounts:active:).
+     */
+    fun othersHaveUnread(accounts: Collection<String>, active: String): Boolean {
+        val a = active.lowercase()
+        return accounts.any { it.lowercase() != a && count(it) > 0 }
+    }
+
     /** The account's Vault list was viewed. */
     fun markSeen(hex: String): AccountUnread {
         val key = hex.lowercase()

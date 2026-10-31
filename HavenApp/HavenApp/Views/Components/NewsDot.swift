@@ -12,19 +12,24 @@ struct NewsDot: View {
     /// The red part's diameter. The ring is drawn outside it.
     var size: CGFloat = 10
     var ring: CGFloat = 1.5
+    /// Red for this account's news. The avatar's "another account has news"
+    /// dot passes `NewsDot.otherAccount` so the two never read as one.
+    var color: Color = NewsDot.red
 
     /// The system red, as a fixed color so the glow matches it.
-    private static let red = Color(red: 1, green: 0.23, blue: 0.19)
+    static let red = Color(red: 1, green: 0.23, blue: 0.19)
+    /// The account switcher's badge color.
+    static let otherAccount = Color.havenPurple
 
     var body: some View {
         ZStack {
             if isShown {
                 Circle()
-                    .fill(Self.red)
+                    .fill(color)
                     .frame(width: size, height: size)
                     .padding(ring)
                     .background(Circle().fill(Color.black.opacity(0.55)))
-                    .shadow(color: Self.red.opacity(0.7), radius: 3)
+                    .shadow(color: color.opacity(0.7), radius: 3)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
         }
