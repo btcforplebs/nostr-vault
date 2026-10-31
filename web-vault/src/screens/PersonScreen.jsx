@@ -12,7 +12,7 @@ import { useProfile } from "../components/useProfile.js"
 import { npubEncode } from "nostr-tools/nip19"
 import { fetchProfiles } from "../net/profiles.js"
 import { followsOf, relation, setFollow } from "../net/follows.js"
-import { fetchPersonArticles, fetchPersonLists, fetchTagged, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
+import { fetchPersonArticles, fetchPersonLists, fetchTagged, openPersonNotes, readPersonNotes, syncPersonNotes, PERSON_PAGE } from "../net/person.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { fetchShop } from "../net/profile-tabs.js"
 import "../styles/person.css"
@@ -65,15 +65,9 @@ export function PersonScreen({ ctx, pubkey }) {
     show(cached)
     if (!navigator.onLine) { setStatus(cached.length ? "Offline: showing saved notes" : "Offline"); return cached }
     try {
-      // The default relays are asked at once, not after their relay list, and shown as they come; then their own
-      // write relays that the defaults didn't cover.
-      const limit = () => Math.max(PERSON_PAGE, cached.length)
-      const early = syncPersonNotes(vault, pubkey, []).catch(() => 0).then(async () => show(await readPersonNotes(vault, pubkey, { limit: limit() })))
-      const l = await listsP
-      const theirs = l.relays.write.filter(u => !DEFAULT_RELAYS.includes(u))
-      await Promise.all([early, theirs.length && syncPersonNotes(vault, pubkey, theirs, { defaults: false }).catch(() => 0)])
+      const got = await openPersonNotes(vault, pubkey, listsP, { show, limit: Math.max(PERSON_PAGE, cached.length) })
       setStatus("")
-      return await readPersonNotes(vault, pubkey, { limit: limit() })
+      return got
     } catch (e) { setStatus(`Couldn't load notes: ${e?.message ?? e}`); return cached }
   }, async until => {
     // Haven first; their relays only when Haven runs short, as the Following feed does.

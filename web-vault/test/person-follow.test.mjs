@@ -5,7 +5,8 @@ import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { editedTags, wipeGuard, setFollow, followsOf, newestList, relation, askRelay, MAX_SKEW } from "../src/net/follows.js"
 import { pool, PROFILE_RELAYS } from "../src/net/pool.js"
-import { readPersonNotes, syncPersonNotes, fetchPersonLists } from "../src/net/person.js"
+import { readPersonNotes, syncPersonNotes, fetchPersonLists, openPersonNotes } from "../src/net/person.js"
+import { DEFAULT_RELAYS } from "../src/net/pool.js"
 
 const me = generateSecretKey(), mePk = getPublicKey(me)
 const pk = () => getPublicKey(generateSecretKey())
@@ -360,4 +361,52 @@ test("their lists: newest 10002 gives their write relays; their kind 3 says whet
   const l = await fetchPersonLists(them_pk, [], { query: async () => [rl(1, "wss://old.example"), rl(2, "wss://new.example"), k3] })
   assert.deepEqual(l.relays.write, ["wss://new.example"])
   assert.ok(followsOf(l.contacts).includes(mePk))
+})
+
+test("their lists: no 10002 on the first ask -> asked once more; found says whether one came back", async () => {
+  const them = generateSecretKey(), them_pk = getPublicKey(them)
+  const rl = finalizeEvent({ kind: 10002, created_at: 2, tags: [["r", "wss://theirs.example", "write"]], content: "" }, them)
+  const k3 = finalizeEvent({ kind: 3, created_at: 5, tags: [["p", mePk]], content: "" }, them)
+  let asks = 0
+  const late = await fetchPersonLists(them_pk, [], { query: async () => (++asks === 1 ? [k3] : [rl]) })
+  assert.equal(asks, 2)
+  assert.deepEqual(late.relays.write, ["wss://theirs.example"])
+  assert.ok(late.found)
+  assert.ok(followsOf(late.contacts).includes(mePk), "the kind 3 from the first ask is kept")
+  asks = 0
+  const none = await fetchPersonLists(them_pk, [], { query: async () => { asks++; return [] } })
+  assert.equal(asks, 2, "asked twice, no more")
+  assert.equal(none.found, false)
+  assert.deepEqual(none.relays.write, DEFAULT_RELAYS)
+  asks = 0
+  await fetchPersonLists(them_pk, [], { query: async () => { asks++; return [rl] } })
+  assert.equal(asks, 1, "a 10002 on the first ask: no second")
+})
+
+test("their opening notes: waits for their write relays, and asks once more when it found nothing", async () => {
+  const them = generateSecretKey(), them_pk = getPublicKey(them)
+  const note = finalizeEvent({ kind: 1, created_at: 100, tags: [], content: "late" }, them)
+  const lists = { relays: { read: DEFAULT_RELAYS, write: ["wss://theirs.example"] }, contacts: undefined, found: true }
+  // Defaults empty, their relay answers: done after one pass, nothing re-asked.
+  let calls = []
+  const sync = (answer) => async (v, p, relays, o = {}) => { calls.push({ relays, o }); return syncPersonNotes(v, p, relays, { ...o, query: async () => answer(relays, o) }) }
+  const got = await openPersonNotes(fakeVault(), them_pk, Promise.resolve(lists), { sync: sync(r => (r.includes("wss://theirs.example") ? [note] : [])) })
+  assert.deepEqual(got.map(n => n.id), [note.id])
+  assert.equal(calls.length, 2)
+  assert.deepEqual(calls[1].relays, ["wss://theirs.example"])
+  // Nothing anywhere on the first pass, the note on the retry: the retry asks theirs + defaults with a longer wait.
+  const them2 = generateSecretKey(), pk2 = getPublicKey(them2)
+  const note2 = finalizeEvent({ kind: 1, created_at: 100, tags: [], content: "retry" }, them2)
+  calls = []
+  const got2 = await openPersonNotes(fakeVault(), pk2, Promise.resolve(lists), { sync: sync((r, o) => (o.maxWait ? [note2] : [])) })
+  assert.deepEqual(got2.map(n => n.id), [note2.id])
+  assert.equal(calls.length, 3, "one retry")
+  assert.equal(calls[2].o.maxWait, 12000)
+  assert.notEqual(calls[2].o.defaults, false, "the retry also asks the defaults")
+  assert.deepEqual(calls[2].relays, ["wss://theirs.example"])
+  // Still nothing after the retry: no third ask.
+  calls = []
+  const pk3 = getPublicKey(generateSecretKey())
+  assert.deepEqual(await openPersonNotes(fakeVault(), pk3, Promise.resolve(lists), { sync: sync(() => []) }), [])
+  assert.equal(calls.length, 3)
 })
