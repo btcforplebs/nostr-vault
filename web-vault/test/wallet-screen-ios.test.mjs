@@ -20,3 +20,11 @@ test("the cards come Balance, Receive (headed by the lightning address), Send, H
   assert.ok(order.every(i => i > 0), "every card is there")
   assert.deepEqual([...order].sort((a, b) => a - b), order)
 })
+
+test("with no wallet linked the screen says so first, and the link form opens from Connect a wallet", () => {
+  const s = src("screens/WalletScreen.jsx")
+  assert.match(s, /if \(!open\) return \(/)
+  assert.match(s, /<h3>No Wallet Connected<\/h3>/)
+  assert.match(s, /Link a wallet you already use to send and receive zaps\./)
+  assert.match(s, /onClick=\{\(\) => setOpen\(true\)\}>Connect a wallet<\/button>/)
+})

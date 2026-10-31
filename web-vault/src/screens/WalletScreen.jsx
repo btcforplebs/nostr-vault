@@ -30,6 +30,8 @@ export function WalletScreen() {
 }
 
 function Connect() {
+  // Nothing linked yet: say so, and show the form only when asked (WalletLightningTab nwcNotConfiguredCard).
+  const [open, setOpen] = useState(false)
   const [uri, setUri] = useState("")
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
@@ -38,12 +40,20 @@ function Connect() {
     setBusy(true); setErr("")
     try { await connectWallet(uri); setUri("") } catch (x) { setErr(String(x?.message ?? x)) } finally { setBusy(false) }
   }
+  if (!open) return (
+    <section class="card wallet-card wallet-empty">
+      <svg class="wallet-empty-icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z" fill="currentColor" /><path d="M3 3l18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+      <h3>No Wallet Connected</h3>
+      <p class="muted small">Link a wallet you already use to send and receive zaps.</p>
+      <button type="button" class="primary" onClick={() => setOpen(true)}>Connect a wallet</button>
+    </section>
+  )
   return (
     <form class="card wallet-card" onSubmit={save}>
       <h3>Wallet Connect</h3>
       <p class="muted small">Paste a nostr+walletconnect:// link from your wallet (Alby Hub, Coinos, Primal, Zeus and others make one).</p>
       {/* A password field: the link spends money, so it isn't shown on screen or kept by the browser's autofill. */}
-      <input class="wallet-uri" type="password" autocomplete="off" autocapitalize="off" spellcheck={false}
+      <input class="wallet-uri" type="password" autofocus autocomplete="off" autocapitalize="off" spellcheck={false}
         placeholder="nostr+walletconnect://…" value={uri} onInput={e => setUri(e.currentTarget.value)} aria-label="Wallet connection link" />
       {err && <p class="error" role="alert">{err}</p>}
       <button class="primary" disabled={busy || !uri.trim()} aria-busy={busy || undefined}>{busy ? "Connecting…" : "Connect wallet"}</button>

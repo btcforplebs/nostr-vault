@@ -18,6 +18,10 @@
 .wallet-balance { display: flex; align-items: baseline; gap: 4px; margin: 0; font: 500 14px var(--font-round); }
 .wallet-sats-big { font: 700 28px/1.1 var(--font-round); color: var(--text); font-variant-numeric: tabular-nums; }
 button.danger { color: var(--danger); }
+/* No wallet yet (nwcNotConfiguredCard): centred, a struck-through bolt, one button. */
+.wallet-empty { align-items: center; text-align: center; padding: 24px; gap: 12px; }
+.wallet-empty-icon { color: var(--text-2); }
+.wallet-empty .primary { margin-top: 4px; }
 
 .zap { position: relative; display: inline-flex; }
 .note-actions .note-action.zap-button, .note-actions .note-action.zap-total, .person-actions .zap-button {
