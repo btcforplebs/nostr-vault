@@ -261,7 +261,7 @@ struct CondensedNoteLine: View, Equatable {
                         // QuotedNoteView decides what a tap does, as in the
                         // expanded feed: streams play, a quote of someone you
                         // blocked does nothing.
-                        QuotedNoteView(note: quoted, opensThread: true)
+                        QuotedNoteView(note: quoted, opensThread: true, condensedMedia: true)
                     case .loading(let id):
                         QuotedNoteSkeleton()
                             .onAppear { onMissingQuote?(id) }
@@ -433,25 +433,8 @@ struct CondensedNoteLine: View, Equatable {
     }
 
     private func mediaThumbnail(_ url: URL) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            FeedMediaView(url: url, isThumbnail: true, animatesThumbnail: true)
-                .meshMediaNote(author: note.pubkey, tags: note.tags)
-                .frame(width: isRoot ? 80 : 56, height: isRoot ? 80 : 56)
-                .aspectRatio(1, contentMode: .fill)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-            if mediaURLs.count > 1 {
-                Text("+\(mediaURLs.count - 1)")
-                    .font(.appSystem(size: 10, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.black.opacity(0.7))
-                    .clipShape(Capsule())
-                    .padding(4)
-            }
-        }
-        .accessibilityHidden(true)
+        CondensedMediaThumbnail(url: url, count: mediaURLs.count, size: isRoot ? 80 : 56,
+                                author: note.pubkey, tags: note.tags)
     }
 
     // MARK: - Chrome
@@ -670,5 +653,38 @@ private struct VaultDoorway: Shape {
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         p.closeSubpath()
         return p
+    }
+}
+
+/// The square photo at the right of a condensed line, with a +N badge when the
+/// note carries more than one. A quoted note on a condensed line uses the same
+/// square, so a quote's photo gets no bigger treatment than the note's own.
+struct CondensedMediaThumbnail: View {
+    let url: URL
+    let count: Int
+    var size: CGFloat = 56
+    let author: String
+    let tags: [[String]]
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            FeedMediaView(url: url, isThumbnail: true, animatesThumbnail: true)
+                .meshMediaNote(author: author, tags: tags)
+                .frame(width: size, height: size)
+                .aspectRatio(1, contentMode: .fill)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if count > 1 {
+                Text("+\(count - 1)")
+                    .font(.appSystem(size: 10, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.black.opacity(0.7))
+                    .clipShape(Capsule())
+                    .padding(4)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
