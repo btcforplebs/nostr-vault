@@ -86,6 +86,30 @@ test("Reset Everything removes every account, this app's settings and the keyrin
   assert.equal(isAppKey("display.threadedLineLimit"), true)
 })
 
+test("Reset Everything clears every nv-, nv: and nv. key, not just nv-", () => {
+  for (const k of ["nv:feed-layouts", "nv:feed-filters", "nv:fips-photos", "nv.search.recent", "nv.desk.listWidth", "nv-feed"]) assert.equal(isAppKey(k), true, k)
+  for (const k of ["nv-relay:fips-owners", "nvx", "unrelated"]) assert.equal(isAppKey(k), false, k)
+})
+
+test("Reset Everything's Retry asks again for another account whose store delete timed out", async () => {
+  const s = storage(), session = storage()
+  saveSession({ method: "nip07", pubkey: ME }, s)
+  rememberAccount({ method: "nip07", pubkey: OTHER }, s)
+  const stuck = `haven:${OTHER}:outbox`
+  let blocked = true
+  const db = { deleted: [], deleteDatabase(name) { const req = {}; if (!(blocked && name === stuck)) setTimeout(() => { db.deleted.push(name); req.onsuccess?.() }); return req } }
+  const first = await resetEverything({ vault: null, pubkey: ME, pool: null, storage: s, idb: db, session, waitMs: 50, sw: {} })
+  assert.ok(first.failed.includes(stuck))
+  assert.deepEqual(loadAccounts(s), [], "the account list is gone, so Retry can't find it there")
+  blocked = false
+  const retry = await resetEverything({ vault: null, pubkey: ME, pool: null, storage: s, idb: db, session, waitMs: 50, sw: {} })
+  assert.deepEqual(retry.failed, [])
+  assert.ok(db.deleted.includes(stuck))
+  const again = db.deleted.length
+  await resetEverything({ vault: null, pubkey: ME, pool: null, storage: s, idb: db, session, waitMs: 50, sw: {} })
+  assert.ok(!db.deleted.slice(again).includes(stuck), "once it's finished it isn't asked again")
+})
+
 test("Reset Everything asks first, in the iPhone's terms, and only an explicit { all: true } resets everything", async () => {
   const { resetAll } = await import("../src/screens/SettingsScreen.jsx")
   const calls = []

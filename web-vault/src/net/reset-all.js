@@ -9,20 +9,28 @@ import { forgetThisBrowser } from "../haven/vault.js"
 
 export const RESET_ALL_QUESTION = "Reset everything? This deletes every account on this browser, and the key of any account kept only here, along with all notes, messages, drafts, paired vaults and settings. A key with no backup elsewhere can't be recovered. Your phone's vault is untouched."
 
-/** This app's settings and marks in localStorage: "nv-…" (not /relay/'s "nv-relay:…") and the iPhone-named keys. */
-export const isAppKey = k => (k.startsWith("nv-") && !k.startsWith(RELAY_NS)) || /^(post|media|display)\./.test(k)
+/** This app's settings and marks in localStorage and sessionStorage: "nv-…", "nv:…" and "nv.…" (not /relay/'s
+ *  "nv-relay:…") and the iPhone-named keys. */
+export const isAppKey = k => (/^nv[-:.]/.test(k) && !k.startsWith(RELAY_NS)) || /^(post|media|display)\./.test(k)
 const KEYRING_DB = "nv-keyring" // signer/keyring.js
+// Other accounts whose removal didn't finish (a store delete timed out, the bunker didn't confirm, or it threw).
+// removeAccount has already dropped them from the account list, so Retry would never see them: it asks again here.
+const unfinished = new Map()
 const keysOf = store => { const out = []; try { for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k) out.push(k) } } catch {} return out }
 
 /** -> { failed: store names not deleted, revokeFailed: how many bunkers didn't confirm } */
 export async function resetEverything({ vault, pubkey, pool, storage = localStorage, idb = indexedDB, session = globalThis.sessionStorage, sw, waitMs = 5000, signerFor }) {
   const failed = []
   let revokeFailed = 0
-  for (const account of loadAccounts(storage).filter(a => a.pubkey !== pubkey)) {
+  const others = new Map(unfinished)
+  for (const a of loadAccounts(storage)) if (a.pubkey !== pubkey) others.set(a.pubkey, a)
+  for (const account of others.values()) {
+    unfinished.set(account.pubkey, account)
     try {
       const r = await removeAccount({ account, pool, storage, idb, session, waitMs, ...(signerFor ? { signerFor } : {}) })
       failed.push(...r.failed)
       if (r.revoked === false) revokeFailed++
+      if (!r.failed.length && r.revoked !== false) unfinished.delete(account.pubkey)
     } catch { failed.push(`account ${account.pubkey.slice(0, 8)}`) }
   }
   failed.push(...(await forgetThisBrowser({ vault, pubkey, storage, idb, waitMs, session, ...(sw ? { sw } : {}) })).failed)
