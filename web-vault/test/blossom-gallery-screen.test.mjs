@@ -106,3 +106,10 @@ test("opening Media again in the same visit draws the kept list without asking t
   assert.match(src, /if \(entering && !needsAsking\(shown\.get\(me\)\)\) return\n    load\(\)\n  \}, \[me, refreshes\]\)/)
   assert.match(src, /shown\.set\(me, \{ servers: s, found: \{ \.\.\.r, done: true \}, at: Date\.now\(\) \}\)/)
 })
+
+test("a video tile loads nothing until it is on screen; the viewer's video loads at once", () => {
+  const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
+  assert.match(src, /<video ref=\{ref\} src=\{on \? `\$\{blob\.url\}#t=0\.1` : undefined\} preload=\{on \? "metadata" : "none"\} muted playsinline \/>/)
+  assert.match(src, /new IntersectionObserver\(es => \{ if \(es\.some\(e => e\.isIntersecting\)\) \{ seen\.disconnect\(\); setOn\(true\) \} \}\)/)
+  assert.match(src, /big \? <video src=\{blob\.url\} preload="metadata" controls playsinline \/> : <VideoTile blob=\{blob\} \/>/)
+})
