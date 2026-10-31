@@ -62,6 +62,15 @@ struct VaultView: View {
     @State var activityHasLoadedOnce = false
     /// Lines newer than this (unix seconds) are new since your last visit.
     @State var activityUnreadSince: Int64 = .max
+    /// The account chip picked over the Vault list (VaultAccountChips). Nil
+    /// is the active account's own list, as with one account.
+    @State var accountChip: VaultAccountChip?
+    /// The other accounts' Vault lines, by account hex, before filtering.
+    @State var otherAccountActivity: [String: [VaultActivity]] = [:]
+    /// Per other account: its lines newer than this are new since its last visit.
+    @State var otherAccountUnreadSince: [String: Int64] = [:]
+    @State var otherAccountLoading = false
+    @State var otherAccountLoadTask: Task<Void, Never>?
     @State var displayLikedNotes: [NostrEvent] = []
     /// Maps note ID -> list of (reactor pubkey, reaction emoji) tuples
     @State var reactionMap: [String: [(pubkey: String, emoji: String)]] = [:]

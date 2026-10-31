@@ -213,13 +213,14 @@ fun VaultTabScreen(
                 dashboardColor = connectionDotColor(connectionColor),
                 onSelect = viewModel::selectMode,
                 onOpenDashboard = openDashboard,
-                onOpenLine = { line ->
+                onOpenLine = { line, forOtherAccount ->
                     val id = line.openId
                     when {
                         id != null && activity.kindOf(id) == VaultNoteScope.ARTICLE_KIND -> onArticleClick(id)
                         id != null -> onNoteClick(id)
                         // Several followed you that day: the Followers list.
-                        line.kind == VaultActivity.Kind.FOLLOW && line.actors.size > 1 -> viewModel.selectMode(VaultMode.FOLLOWERS)
+                        // (Another account's Followers list is not this one: open the newest.)
+                        line.kind == VaultActivity.Kind.FOLLOW && line.actors.size > 1 && !forOtherAccount -> viewModel.selectMode(VaultMode.FOLLOWERS)
                         else -> line.actors.firstOrNull()?.let(onProfileClick)
                     }
                 },
