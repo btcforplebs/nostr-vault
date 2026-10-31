@@ -212,8 +212,9 @@ struct MosaicView: View {
             // surface to show one on. This opens the Media tab with the app's
             // own paste already running, which is the same single tap.
             Link(destination: NVDeepLink.mediaPaste.url) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 11, weight: .semibold))
+                Image("MagicPaste")
+                    .resizable()
+                    .frame(width: 12, height: 12)
                     .foregroundStyle(NV.purple)
                     .padding(5)
                     .background(Circle().fill(Color.white.opacity(0.08)))
