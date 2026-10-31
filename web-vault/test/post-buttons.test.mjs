@@ -1,4 +1,4 @@
-// Settings › Post buttons (iPhone PostButtons): the zap button on posts is off until turned on, stored under the
+// Settings › Post buttons (iPhone PostButtons): the zap button on posts is on until turned off, stored under the
 // iPhone's key and value; NoteCard draws it only then. Profile zaps don't depend on it.
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -7,8 +7,11 @@ import { showsZap, zapButtonOn, setZapButton } from "../src/net/post-buttons.js"
 
 const store = () => { const m = new Map(); return { m, getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) } }
 
-test("off by default; the switch writes the iPhone's ⚡️ under postButtons; a bare ⚡ counts", () => {
+test("on by default (never set); the switch writes the iPhone's ⚡️ under postButtons; a bare ⚡ counts", () => {
   const s = store()
+  assert.equal(zapButtonOn(s), true)
+  setZapButton(false, s)
+  assert.equal(s.m.get("postButtons"), "")
   assert.equal(zapButtonOn(s), false)
   setZapButton(true, s)
   assert.equal(s.m.get("postButtons"), "⚡️")
@@ -17,7 +20,7 @@ test("off by default; the switch writes the iPhone's ⚡️ under postButtons; a
   assert.equal(zapButtonOn(s), false)
   assert.equal(showsZap("⚡"), true)
   assert.equal(showsZap("🔥"), false)
-  assert.equal(zapButtonOn(undefined), false)
+  assert.equal(zapButtonOn(undefined), true)
 })
 
 test("NoteCard draws the zap button only when it is on; the profile zap stays; Settings has the switch", () => {

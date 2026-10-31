@@ -156,7 +156,7 @@ function NoteMore({ note }) {
 }
 
 /** Reply · Repost · Quote · Like · Zap, in the iPhone's order (FeedNoteRow+NoteBody). Not shown before the app is up.
- *  Zap only once turned on in Settings › Post buttons, as on the iPhone. */
+ *  Zap unless turned off in Settings › Post buttons. */
 function NoteActions({ note }) {
   const ctx = actionContext()
   const [s, setS] = useState(() => actionState(note.id))

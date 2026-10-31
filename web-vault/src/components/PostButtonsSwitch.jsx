@@ -1,4 +1,4 @@
-// Settings › Post buttons (iPhone AppearanceSettingsView): the zap button under posts, off until turned on here.
+// Settings › Post buttons (iPhone AppearanceSettingsView): the zap button under posts, on until turned off here.
 import { useState } from "preact/hooks"
 import { zapButtonOn, setZapButton } from "../net/post-buttons.js"
 
