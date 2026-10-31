@@ -100,6 +100,9 @@ final class ProfileFeedLoader: ObservableObject {
     /// first: the phone's own relay always answers first, and for someone
     /// else it usually has nothing.
     var openingPending = Set<Int>()
+    /// The opening load came back empty once and was tried again. Cleared
+    /// when the page goes away or is refreshed.
+    var retriedEmptyLoad = false
     /// Notes received but not yet on screen. They go in together a moment
     /// later, in one sort and one redraw, instead of one of each per event.
     let pending = PendingProfileNotes()
