@@ -104,7 +104,9 @@ data class HavenConfig(
 
     // Blastr
     val blastrRelaysFile: String = "relays_blastr.json",
-    // Default broadcast relays, same as iOS HavenConfig.blastrRelays.
+    // Broadcast relays an install saved before 2026-10-31 reads back when the
+    // key is absent (defaults are not encoded), so this stays the old three.
+    // New installs start on the five read relays: see [newInstall].
     val blastrRelays: List<String> = listOf(
         "wss://relay.btcforplebs.com",
         "wss://relay.damus.io",
@@ -353,7 +355,15 @@ data class HavenConfig(
         fun postButtonsShowZap(value: String): Boolean = value.contains('\u26A1')
 
         /** The config for an install with none saved yet (or just reset). */
-        fun newInstall(): HavenConfig = HavenConfig(feedLayoutModes = NEW_INSTALL_FEED_LAYOUTS)
+        /**
+         * A brand-new install. Broadcast relays are the five read relays
+         * (Logen, 2026-10-31), so a new account writes to every server its
+         * kind 10002 lists as write. Same as iOS HavenConfig.blastrRelays.
+         */
+        fun newInstall(): HavenConfig = HavenConfig(
+            feedLayoutModes = NEW_INSTALL_FEED_LAYOUTS,
+            blastrRelays = DEFAULT_READ_RELAYS,
+        )
 
         /**
          * Default inbox/feed relays. Every entry answered a handshake from
