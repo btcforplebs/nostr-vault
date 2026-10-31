@@ -154,6 +154,20 @@ test("a like shows at once, then is sent once signed and a relay took it, and is
   assert.deepEqual(c.kept.map(e => e.id), [sent[0].ev.id])
 })
 
+test("a one-tap like sends the Default Reaction picked in Settings; a picked emoji still wins", async t => {
+  const sent = relaysSay(t, () => Promise.resolve(""))
+  const m = new Map(), was = globalThis.localStorage
+  globalThis.localStorage = { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }
+  t.after(() => { globalThis.localStorage = was })
+  const { setDefaultReaction } = await import("../src/net/reaction-pref.js")
+  setDefaultReaction("🔥")
+  const c = ctxFor(), a = note(), b = note()
+  await act(c, "like", a)
+  assert.equal(sent.at(-1).ev.content, "🔥")
+  await act(c, "like", b, "🤙")
+  assert.equal(sent.at(-1).ev.content, "🤙")
+})
+
 test("a second tap on a sent repost does nothing", async t => {
   const sent = relaysSay(t, () => Promise.resolve(""))
   const c = ctxFor(), n = note()
