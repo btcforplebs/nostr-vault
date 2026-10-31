@@ -958,42 +958,13 @@ class ConfigService: ObservableObject {
     /// Returns true for URLs that are already external, or local URLs when
     /// macRelayHttpsURL or an active Blossom mirror is configured.
     func hasExternalShareURL(for url: URL) -> Bool {
-        let host = url.host?.lowercased() ?? ""
-        let isLocal = host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0"
-        guard isLocal else { return true }
-        if !config.macRelayHttpsURL.isEmpty { return true }
-        if !config.activeBlossomMirrors.isEmpty { return true }
-        return false
+        guard MediaShareLink.isLoopback(url) else { return true }
+        return !config.macRelayHttpsURL.isEmpty || !config.activeBlossomMirrors.isEmpty
     }
 
-    /// Returns a shareable URL for a media item, rewriting local relay hosts
-    /// (127.0.0.1/localhost) to the configured Mac relay's https URL when available,
-    /// falling back to the first active Blossom mirror if no Mac relay URL is set.
-    /// External URLs (e.g. existing mirror URLs) are returned unchanged.
+    /// A shareable URL for a media item: see MediaShareLink.
     func externalShareURL(for url: URL) -> URL {
-        let host = url.host?.lowercased() ?? ""
-        let isLocal = host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0"
-        guard isLocal else { return url }
-
-        let macHTTPS = config.macRelayHttpsURL
-        if !macHTTPS.isEmpty, var components = URLComponents(string: macHTTPS) {
-            // Preserve the path (typically just the blossom hash) and any query string.
-            let path = url.path.isEmpty ? "/" : url.path
-            components.path = (components.path.hasSuffix("/") ? String(components.path.dropLast()) : components.path) + path
-            components.query = url.query
-            if let result = components.url { return result }
-        }
-
-        // Fallback: use the first active Blossom mirror for shareable links
-        if let mirror = config.activeBlossomMirrors.first,
-           var components = URLComponents(string: mirror) {
-            let path = url.path.isEmpty ? "/" : url.path
-            components.path = (components.path.hasSuffix("/") ? String(components.path.dropLast()) : components.path) + path
-            components.query = url.query
-            if let result = components.url { return result }
-        }
-
-        return url
+        MediaShareLink.external(for: url, macRelayHTTPS: config.macRelayHttpsURL, mirrors: config.activeBlossomMirrors)
     }
 
 }

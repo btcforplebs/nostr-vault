@@ -633,6 +633,7 @@
 		6FADE7F1EE93ECA61C279770 /* QuickBarRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207340FB8D3B36C2D991C22A /* QuickBarRow.swift */; };
 		7003613F2ACF40FAC274A6D1 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D86DC20FC17947852F5719 /* NostrService.swift */; };
 		7074C757D82E2F1DA9B77D5C /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28025DEECA1DBE5C1594358 /* FeedView.swift */; };
+		70C09988B3009E817EE8EC43 /* MediaShareLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70378B160E275AD7443C4260 /* MediaShareLink.swift */; };
 		70E914665ED783358BC1083F /* MediaUploadsIndicatorInfoProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A27BBEA5AA4EFCE0D51EE3 /* MediaUploadsIndicatorInfoProvider.swift */; };
 		711BFD75450E7D351ACB2690 /* ProfileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBFCD52C53864BA74263D0E7 /* ProfileActions.swift */; };
 		71482801ED1C62712D8736A2 /* ReferralSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C696946159C30CCFD23453 /* ReferralSuggestions.swift */; };
@@ -753,6 +754,7 @@
 		84C275292A48D2D98C281975 /* TrustWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE4905A56A56DDD6B06457D9 /* TrustWebView.swift */; };
 		84CEF5ED3CC7EB657B8046A1 /* NIP46Service+Methods.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */; };
 		854D4FE2870B12708A04B068 /* NIP46Service+NostrConnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0223D84738942A0EB44A1364 /* NIP46Service+NostrConnect.swift */; };
+		8554512043129BA9F169F86B /* MediaShareLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70378B160E275AD7443C4260 /* MediaShareLink.swift */; };
 		85A5074C622A9E4CD0FF2CD0 /* ProfileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F58012CD7192B288A68542B7 /* ProfileSection.swift */; };
 		8669D5E967AF7E8F56DAB283 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
 		869E22799F9A0329D1D7C56A /* NVWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCBFE5F177EF3E08A2B49DF /* NVWidgetSnapshot.swift */; };
@@ -1868,6 +1870,7 @@
 		6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicFeedFilter.swift; sourceTree = "<group>"; };
 		7018F50A59F15809E36371C9 /* NoteDetailView+EngagementPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+EngagementPanel.swift"; sourceTree = "<group>"; };
 		702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BunkerURI.swift; sourceTree = "<group>"; };
+		70378B160E275AD7443C4260 /* MediaShareLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaShareLink.swift; sourceTree = "<group>"; };
 		703A1EC22788CD262F92002E /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
 		70A6C2A292B935922711F19B /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
 		70AE6A634DDA4FCAD0EE552D /* LongFormComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongFormComposeView.swift; sourceTree = "<group>"; };
@@ -3089,6 +3092,7 @@
 				FEC8D69A1DD319E0BBC022F1 /* MediaDateGrouping.swift */,
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
 				177153C4A2D4AFBC483689BE /* MediaPostRetry.swift */,
+				70378B160E275AD7443C4260 /* MediaShareLink.swift */,
 				64BBE97369E66B2804EFFC5F /* MediaVaultLink.swift */,
 				CDFEEEE3A5F4A53B832E01EE /* MeshDevices.swift */,
 				CD94E113C1DDF3CF7D6351B2 /* MuteList.swift */,
@@ -4164,6 +4168,7 @@
 				D6D7B75E3B62CB8764254858 /* MediaPrivacy.swift in Sources */,
 				534A6A8C88AC4C715A31F92A /* MediaServersPage.swift in Sources */,
 				4E97E650FA9A20975EF820C2 /* MediaSettingsView.swift in Sources */,
+				70C09988B3009E817EE8EC43 /* MediaShareLink.swift in Sources */,
 				82226E9D704A71764A35BB7D /* MediaTabView.swift in Sources */,
 				1F0E85CA638E913E0179BA1D /* MediaTypeDetector.swift in Sources */,
 				93C8180861D99C946E1C2E29 /* MediaUploadNotificationBanner.swift in Sources */,
@@ -4922,6 +4927,7 @@
 				6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */,
 				EAC0A530327415264CAD67A2 /* MediaServersPage.swift in Sources */,
 				5ECBE5A5F20F52564E1EB939 /* MediaSettingsView.swift in Sources */,
+				8554512043129BA9F169F86B /* MediaShareLink.swift in Sources */,
 				68F697D47223F3BB082DC65B /* MediaTabView.swift in Sources */,
 				8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */,
 				0A43CE292E93C54C7040CBC8 /* MediaUploadNotificationBanner.swift in Sources */,
