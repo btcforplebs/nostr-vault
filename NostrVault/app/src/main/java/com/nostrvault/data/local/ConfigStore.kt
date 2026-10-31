@@ -490,9 +490,6 @@ class ConfigStore @Inject constructor(
         update { it.copy(accountBunkerConfigs = it.accountBunkerConfigs - npub) }
     }
 
-    fun setPublishRelayList(npub: String, enabled: Boolean) =
-        update { it.copy(publishRelayListPerAccount = it.publishRelayListPerAccount + (npub to enabled)) }
-
     /** Factory reset -- delete config and all data. */
     suspend fun resetApp() = withContext(Dispatchers.IO) {
         saveLock.withLock {

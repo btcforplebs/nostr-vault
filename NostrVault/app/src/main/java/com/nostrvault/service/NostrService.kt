@@ -378,8 +378,6 @@ class NostrService @Inject constructor(
         privateBefore: Collection<String> = emptyList(),
     ): String? = publishMuteListChangeImpl(accountNpub, add, remove, localBlocks, privateBefore)
 
-    /** Publishes the account's own relay list (never the app defaults); returns a note when it wasn't. */
-    suspend fun publishRelayList(accountNpub: String): String? = publishRelayListImpl(accountNpub)
 
     fun adoptPublishedDMRelayList() { adoptPublishedDMRelayListImpl() }
 

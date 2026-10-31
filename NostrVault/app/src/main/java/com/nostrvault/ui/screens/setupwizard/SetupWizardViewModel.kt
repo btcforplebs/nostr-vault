@@ -134,13 +134,6 @@ class SetupWizardViewModel @Inject constructor(
     private val _isAmberAvailable = MutableStateFlow(false)
     val isAmberAvailable = _isAmberAvailable.asStateFlow()
 
-    // Starter relay list (Create an account). Nothing is published unless
-    // the person taps Use on that step.
-    internal val _starterRelays = MutableStateFlow<List<String>>(emptyList())
-    val starterRelays = _starterRelays.asStateFlow()
-    internal var _starterRelaysPrepared = false
-    internal val _publishStarterRelays = MutableStateFlow(false)
-
     // Relays
     internal val _wizardRelays = MutableStateFlow(HavenConfig.DEFAULT_READ_RELAYS)
     val wizardRelays = _wizardRelays.asStateFlow()
@@ -301,8 +294,8 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
-    /** Steps for "New to Nostr" mode: keys, password, profile, the starter
-     *  relay list (published only on Use), done. The Fill your feed guide
+    /** Steps for "New to Nostr" mode: keys, password, profile, the servers
+     *  its relay list will name, done. The Fill your feed guide
      *  finds people after setup. */
     private val newUserSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,

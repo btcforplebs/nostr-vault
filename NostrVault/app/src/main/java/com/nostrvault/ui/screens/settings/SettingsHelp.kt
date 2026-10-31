@@ -28,11 +28,6 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Reveal Key",
         "Shows your secret key after verifying it's you.",
     ),
-    ACCOUNT_PUBLISH_INBOX(
-        "account.publishInbox",
-        "Publish Relay List",
-        "Tells other apps which relays you read from and write to, so they can find your posts and reach you. Your own relay is always included.",
-    ),
     ACCOUNT_BLOCKED(
         "account.blocked",
         "Blocked",
