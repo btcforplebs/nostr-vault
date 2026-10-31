@@ -34,7 +34,7 @@ test("guestRelays: a link's wss:// hints to public hosts, at most three, before 
   const h = "#/thread/x?r=wss://a.example/&r=ws://plain.example&r=wss://localhost&r=wss://10.0.0.1&r=wss://box.local&r=wss://u:p@b.example&r=wss://b.example&r=wss://c.example&r=wss://d.example"
   assert.deepEqual(guestRelays(h), ["wss://a.example", "wss://b.example", "wss://c.example", ...GUEST_RELAYS])
   assert.deepEqual(guestRelays(`#/thread/${ID}`), GUEST_RELAYS)
-  assert.deepEqual(GUEST_RELAYS, ["wss://relay.damus.io", "wss://relay.primal.net", "wss://relay.btcforplebs.com", "wss://relay.snort.social"],
+  assert.deepEqual(GUEST_RELAYS, ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"],
     "the same relays the thread page reads (thread-page/fetch.js READ_RELAYS)")
 })
 

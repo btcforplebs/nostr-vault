@@ -2,6 +2,7 @@
 // quote (NIP-18 q tag + nevent) carries. Signed by the user's signer, stored in Haven's outbox, sent to the relays
 // publishRelays picks. A repost reads as sent only once it is signed and a relay took it; a like shows at once
 // ("pending") and is rolled back if signing or every relay fails (FeedActions.react).
+import { primeKeyboard } from "../screens/compose/keyboard.js"
 import { neventEncode } from "nostr-tools/nip19"
 import { pool, publishRelays } from "./pool.js"
 import { appendClientTag } from "./client-tag.js"
@@ -302,6 +303,7 @@ export const shareLink = note => `https://nostrvault.app/thread/${neventEncode({
 const handed = new Map()
 export function compose(mode, note) {
   handed.set(note.id, note)
+  primeKeyboard() // inside the tap, so the reply opens with the keyboard up
   location.hash = `#/compose?${mode}=${note.id}`
 }
 

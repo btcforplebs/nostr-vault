@@ -78,6 +78,18 @@ final class NewAccountSetupTests: XCTestCase {
         XCTAssertEqual(tags, [["r", "wss://relay.primal.net"], ["r", "wss://relay.damus.io"], ["r", "wss://relay.snort.social"]])
     }
 
+    func testStarterRelaysAreTheReadAndWriteDefaults() {
+        let five = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social",
+                    "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"]
+        XCTAssertEqual(HavenConfig.starterRelays, five)
+        XCTAssertEqual(HavenConfig.default.feedRelays, five)
+        XCTAssertEqual(HavenConfig.default.blastrRelays, five)
+        XCTAssertEqual(HavenConfig.fallbackWriteRelays, five)
+        // A new account publishes all five, unmarked (read and write).
+        XCTAssertEqual(RelayConfiguration.newAccountRelayListTags(broadcastRelays: HavenConfig.default.blastrRelays),
+                       five.map { ["r", $0] })
+    }
+
     // MARK: The shipped starter packs
 
     func testEveryShippedStarterNpubIsValid() throws {

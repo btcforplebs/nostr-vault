@@ -137,7 +137,8 @@ export class LivePool extends SimplePool {
 
 export const pool = new LivePool({ enablePing: true, enableReconnect: true })
 
-export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://relay.primal.net"]
+// The five the apps read from (iPhone/Mac and Android, Logen 2026-10-31), and a new account's starter list.
+export const DEFAULT_RELAYS = ["wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"]
 // relay.nostr.band stopped answering (no EOSE, every query held to its timeout) on 2026-10-13.
 export const PROFILE_RELAYS = ["wss://purplepag.es"]
 

@@ -9,6 +9,7 @@ import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
 import { listBlobs, deleteBlob, deleteTargets, mirrorBlob, outcome, byDay, TYPE_FILTERS } from "../net/blossom-gallery.js"
 import { SkeletonGrid, Waiting } from "../components/Loading.jsx"
+import { BlossomThumb } from "../components/BlossomThumb.jsx"
 if (import.meta.env) import("../styles/blossom.css")
 
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
@@ -121,9 +122,23 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
 }
 
 function Thumb({ blob, big = false }) {
-  if (blob.kind === "video") return <video src={big ? blob.url : `${blob.url}#t=0.1`} preload="metadata" muted={!big} controls={big} playsinline />
+  if (blob.kind === "video") return big ? <video src={blob.url} preload="metadata" controls playsinline /> : <VideoTile blob={blob} />
   if (blob.kind === "other") return <span class="blossom-file" style={{ overflowWrap: "anywhere", textAlign: "center", padding: 4 }}>{isAudio(blob) ? "♪ " : ""}{blob.type || "file"}</span>
-  return <img src={blob.url} alt="" loading={big ? "eager" : "lazy"} decoding="async" />
+  return big ? <img src={blob.url} alt="" loading="eager" decoding="async" /> : <BlossomThumb blob={blob} />
+}
+
+/** A video tile asks its server for nothing until it is on screen (Tim's media-call audit): no src and preload "none"
+ *  before, then the first frame (#t=0.1, preload "metadata"). Without IntersectionObserver it loads at once. */
+export function VideoTile({ blob }) {
+  const ref = useRef(null)
+  const [on, setOn] = useState(typeof IntersectionObserver !== "function")
+  useEffect(() => {
+    if (on || !ref.current) return
+    const seen = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { seen.disconnect(); setOn(true) } })
+    seen.observe(ref.current)
+    return () => seen.disconnect()
+  }, [blob.url, on])
+  return <video ref={ref} src={on ? `${blob.url}#t=0.1` : undefined} preload={on ? "metadata" : "none"} muted playsinline />
 }
 
 /** The file before / after `sha` in the grid's order, or null at either end. */

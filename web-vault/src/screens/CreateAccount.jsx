@@ -8,14 +8,15 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { newKey, checkPassword, localSession, localSigner, MIN_PASSWORD, CREATING } from "../signer/local.js"
 import { assertCanSeal } from "../signer/keyring.js"
-import { starterPacks, newAccountTemplates, signAll, publishNewAccount } from "../net/new-account.js"
+import { starterPacks, newAccountTemplates, signAll, publishNewAccount, NEW_ACCOUNT_RELAYS } from "../net/new-account.js"
+import { StarterRelays } from "../components/StarterRelays.jsx"
 import { uploadPhoto, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { withTimeout } from "../signer/readonly.js"
 import { askToKeep, sevenDayErase, KEEP_IT } from "../components/StorageNote.jsx"
 import { KeyCard, painted } from "../components/KeyCard.jsx"
 import "../styles/onboarding.css"
 
-const STEPS = ["intro", "keys", "password", "profile", "follows", "done"]
+const STEPS = ["intro", "keys", "password", "profile", "follows", "relays", "done"]
 const PUBLISH_WAIT_MS = 12000
 
 /** `onSignedIn({ signer, session, firstEvents })`: main.jsx's. `onBack`: to the welcome screen. */
@@ -26,6 +27,7 @@ export function CreateAccount({ onSignedIn, onBack }) {
   const [name, setName] = useState("")
   const [photo, setPhoto] = useState(null) // { blob, url } a 512px JPEG, drawn here (its metadata left behind)
   const packs = useMemo(() => starterPacks(), [])
+  const [relays, setRelays] = useState(NEW_ACCOUNT_RELAYS)
   const [picked, setPicked] = useState(() => new Set(packs.filter(p => p.on).flatMap(p => p.accounts.map(a => a.pubkey))))
   const top = useRef()
   // Each step starts at its heading, for a screen reader and for a long step on a small phone.
@@ -52,7 +54,8 @@ export function CreateAccount({ onSignedIn, onBack }) {
         {id === "profile" && <Profile name={name} setName={setName} photo={photo} setPhoto={setPhoto} onContinue={next}
           onSkip={() => { setName(""); setPhoto(null); next() }} />}
         {id === "follows" && <Follows packs={packs} picked={picked} setPicked={setPicked} onContinue={next} />}
-        {id === "done" && <Done keyPair={key} password={password} name={name} photo={photo} follows={[...picked]} onSignedIn={onSignedIn} onBack={() => setStep(s => s - 1)} />}
+        {id === "relays" && <StarterRelays relays={relays} setRelays={setRelays} onContinue={next} />}
+        {id === "done" && <Done keyPair={key} password={password} name={name} photo={photo} follows={[...picked]} relays={relays} onSignedIn={onSignedIn} onBack={() => setStep(s => s - 1)} />}
       </div>
     </main>
   )
@@ -229,7 +232,7 @@ function Follows({ packs, picked, setPicked, onContinue }) {
 }
 
 /** The done step: "Welcome to Nostr!", and Start Exploring locks the key, signs the first events and sends them. */
-function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, safari = sevenDayErase() }) {
+function Done({ keyPair, password, name, photo, follows, relays, onSignedIn, onBack, safari = sevenDayErase() }) {
   const [busy, setBusy] = useState("")
   const [err, setErr] = useState("")
   const asked = useRef(false)
@@ -250,9 +253,9 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, saf
         catch {}
       }
       setBusy("Publishing your profile…")
-      const events = await signAll(signer, session.pubkey, newAccountTemplates({ name, picture, follows }))
+      const events = await signAll(signer, session.pubkey, newAccountTemplates({ name, picture, follows, relays }))
       // Done at the first relay that took each event; the rest carry on in the background.
-      await withTimeout(publishNewAccount(events), PUBLISH_WAIT_MS, "slow").catch(() => {})
+      await withTimeout(publishNewAccount(events, { relays }), PUBLISH_WAIT_MS, "slow").catch(() => {})
       keyPair.sk.fill(0)
       location.hash = "#/feed"
       onSignedIn({ signer, session, firstEvents: events })
@@ -267,7 +270,7 @@ function Done({ keyPair, password, name, photo, follows, onSignedIn, onBack, saf
       <p class="onboard-sub">Your account is ready. Here's what happens when you start:</p>
       <ul class="onboard-summary">
         <li>Your secret key is locked with your password and kept in this browser. Settings › Your Secret Key shows it again.</li>
-        {(name.trim() || photo) && <li>Your profile{name.trim() ? `, ${name.trim()},` : ""} goes out to your relays.</li>}
+        {(name.trim() || photo) && <li>Your profile{name.trim() ? `, ${name.trim()},` : ""} goes out to your {relays.length} {relays.length === 1 ? "server" : "servers"}.</li>}
         <li>{follows.length ? `You follow ${follows.length} ${follows.length === 1 ? "person" : "people"}, so your feed has posts right away.` : "You follow nobody yet: find people in Search or on the Global feed."}</li>
       </ul>
       {/* Safari's 7-day rule takes the key with the rest of the site's data: said here, before it can happen. */}

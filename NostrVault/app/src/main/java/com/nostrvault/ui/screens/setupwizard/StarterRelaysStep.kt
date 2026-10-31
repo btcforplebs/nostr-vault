@@ -24,7 +24,7 @@ import com.nostrvault.ui.theme.*
 @Composable
 internal fun StarterRelaysStep(viewModel: SetupWizardViewModel) {
     val cfg by viewModel.configStore.config.collectAsState()
-    val relays = StarterRelays.from(cfg.activeBlastrRelays)
+    val relays = StarterRelays.from(cfg.activeFeedRelays)
     var changing by remember { mutableStateOf(false) }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {

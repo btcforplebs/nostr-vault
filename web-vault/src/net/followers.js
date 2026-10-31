@@ -4,9 +4,10 @@
 // and primal answer COUNT, most others refuse it. Vertex (the iPhone's first choice) is off there until turned on
 // in Privacy and needs a local key, and the web has neither the setting nor the relay's follower ledger, so it is not
 // asked here.
-import { pool, DEFAULT_RELAYS } from "./pool.js"
+import { pool } from "./pool.js"
 
-export const COUNT_RELAYS = DEFAULT_RELAYS
+// Not the read defaults: of those five only damus and primal answer COUNT.
+export const COUNT_RELAYS = ["wss://relay.damus.io", "wss://relay.primal.net"]
 const ASK_MS = 6000
 /** Answers kept for this long, so opening a profile again shows its number at once. */
 export const KEEP_MS = 10 * 60 * 1000

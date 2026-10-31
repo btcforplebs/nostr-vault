@@ -110,7 +110,7 @@ import java.net.URL
 
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             if (!stillGenerated()) return@launch
-            val relayTags = StarterRelays.tags(configStore.config.value.activeBlastrRelays)
+            val relayTags = StarterRelays.tags(configStore.config.value.activeFeedRelays)
             if (relayTags.isNotEmpty()) {
                 runCatching { nostrService.signEventAsync(kind = 10002, content = "", tags = relayTags) }
                     .getOrNull()?.takeIf { signedByNewKey(it.pubkey, generated) }?.let { nostrService.postEvent(it) }
