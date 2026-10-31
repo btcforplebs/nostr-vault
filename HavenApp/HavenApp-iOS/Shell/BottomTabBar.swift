@@ -20,9 +20,6 @@ struct BottomTabBar: View {
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
-    @State private var availableWidth: CGFloat = 0
-    @State private var collapsedSize: CGSize = .zero
-    @State private var expandedHeight: CGFloat = 0
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
@@ -39,54 +36,18 @@ struct BottomTabBar: View {
     }
 
     var body: some View {
-        // Both layouts are always present and cross-fade with the scroll, so
-        // the bar can sit anywhere between them while the finger is down.
-        // The capsule's width and height are interpolated between the two
-        // measured sizes; the outer frame keeps the expanded height so the
-        // safe-area inset (and every tab's content under it) never relayouts
-        // per frame.
-        let p = chrome.progress
-        let fullWidth = max(availableWidth - 32, collapsedSize.width)
-        let width = availableWidth > 0 ? lerp(fullWidth, collapsedSize.width, p) : nil
-        let height = expandedHeight > 0 ? lerp(expandedHeight, collapsedSize.height, p) : nil
-
-        ZStack {
-            HStack(spacing: 0) { expandedContent }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 8)
-                .frame(width: availableWidth > 0 ? fullWidth : nil)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { expandedHeight = $0 }
-                // Shrinks with the capsule rather than being clipped by it,
-                // so every tab stays whole while it fades. Gone by 60%, and
-                // the folded layout only starts at 40%, so the two never
-                // read as overlapping.
-                .scaleEffect(width.map { $0 / fullWidth } ?? 1)
-                .opacity(ChromeCollapse.fadeOut(p))
-                .allowsHitTesting(p < 0.5)
-                .accessibilityHidden(p >= 0.5)
-
+        // The per-frame fold lives in `BottomTabBarFold`, so a scroll frame
+        // re-renders only the capsule, not every tab, badge and account menu
+        // built here.
+        BottomTabBarFold {
+            expandedContent
+        } collapsed: {
             collapsedContent
-                .padding(6)
-                .fixedSize()
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { collapsedSize = $0 }
-                .opacity(ChromeCollapse.fadeIn(p))
-                .scaleEffect(lerp(0.85, 1, p))
-                .allowsHitTesting(p >= 0.5)
-                .accessibilityHidden(p < 0.5)
         }
-        .frame(width: width, height: height)
-        .clipShape(Capsule())
-        .applyGlassCapsule()
-        .frame(maxWidth: .infinity, minHeight: expandedHeight > 0 ? expandedHeight : nil, alignment: .bottom)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
         .onChange(of: selectedTab) { _, _ in
             // A new tab starts with the bar fully open.
             chrome.reset()
         }
-    }
-
-    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
-        a + (b - a) * t
     }
 
     // MARK: - Expanded Content
@@ -360,5 +321,67 @@ struct BottomTabBar: View {
         ) {
             configService.switchActiveAccount(to: npub)
         }
+    }
+}
+
+// MARK: - Fold
+
+/// The tab bar's capsule and its scroll-linked fold. Its own view so that
+/// reading `ChromeCollapse.progress`, which changes every frame of a drag,
+/// re-renders only this wrapper (the same reason as `ChromeFold`): the tab
+/// items and account menu are built once by `BottomTabBar` and passed in.
+private struct BottomTabBarFold<Expanded: View, Collapsed: View>: View {
+    @ViewBuilder var expanded: Expanded
+    @ViewBuilder var collapsed: Collapsed
+
+    @State private var availableWidth: CGFloat = 0
+    @State private var collapsedSize: CGSize = .zero
+    @State private var expandedHeight: CGFloat = 0
+
+    var body: some View {
+        // Both layouts are always present and cross-fade with the scroll, so
+        // the bar can sit anywhere between them while the finger is down.
+        // The capsule's width and height are interpolated between the two
+        // measured sizes; the outer frame keeps the expanded height so the
+        // safe-area inset (and every tab's content under it) never relayouts
+        // per frame.
+        let p = ChromeCollapse.shared.progress
+        let fullWidth = max(availableWidth - 32, collapsedSize.width)
+        let width = availableWidth > 0 ? lerp(fullWidth, collapsedSize.width, p) : nil
+        let height = expandedHeight > 0 ? lerp(expandedHeight, collapsedSize.height, p) : nil
+
+        ZStack {
+            HStack(spacing: 0) { expanded }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+                .frame(width: availableWidth > 0 ? fullWidth : nil)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { expandedHeight = $0 }
+                // Shrinks with the capsule rather than being clipped by it,
+                // so every tab stays whole while it fades. Gone by 60%, and
+                // the folded layout only starts at 40%, so the two never
+                // read as overlapping.
+                .scaleEffect(width.map { $0 / fullWidth } ?? 1)
+                .opacity(ChromeCollapse.fadeOut(p))
+                .allowsHitTesting(p < 0.5)
+                .accessibilityHidden(p >= 0.5)
+
+            collapsed
+                .padding(6)
+                .fixedSize()
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { collapsedSize = $0 }
+                .opacity(ChromeCollapse.fadeIn(p))
+                .scaleEffect(lerp(0.85, 1, p))
+                .allowsHitTesting(p >= 0.5)
+                .accessibilityHidden(p < 0.5)
+        }
+        .frame(width: width, height: height)
+        .clipShape(Capsule())
+        .applyGlassCapsule()
+        .frame(maxWidth: .infinity, minHeight: expandedHeight > 0 ? expandedHeight : nil, alignment: .bottom)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
+        a + (b - a) * t
     }
 }
