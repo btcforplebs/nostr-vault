@@ -119,3 +119,8 @@
 .condensed-mark.article { color: rgb(230 115 38 / .7); }
 .condensed-mark.highlight { color: rgb(255 214 10 / .7); }
 .condensed-mark.poll { color: rgb(100 210 255 / .7); }
+
+/* While a post is open in place, room under the list so one near the end can still glide up to the tap line
+   (components/feed-tap.js, the iPhone's TapLandingLine.bottomRoom). The desktop pane doesn't glide. */
+.tap-room { height: calc(100dvh - 75px); }
+.desk-app .tap-room { display: none; }

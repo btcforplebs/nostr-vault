@@ -43,7 +43,7 @@ export function shownId(note) {
  *  The card's own click goes to the thread: the second tap. */
 function OpenNote({ note, depth, memoryOnly }) {
   return (
-    <div class={`thread-open${depth ? " reply" : ""}`} style={depth ? `--indent: ${Math.min(depth, 4) * 14}px` : undefined}>
+    <div class={`thread-open${depth ? " reply" : ""}`} data-tap-open style={depth ? `--indent: ${Math.min(depth, 4) * 14}px` : undefined}>
       {depth > 0 && <span class="condensed-rail" aria-hidden="true" />}
       <NoteCard event={note} memoryOnly={memoryOnly} />
     </div>
