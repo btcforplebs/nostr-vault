@@ -85,6 +85,8 @@ targets:
       # Bundle.main.url(forResource:), so it has to be in Resources or the
       # Initial Follows step silently shows nothing.
       - path: HavenApp/Resources/starter_packs.json
+      # Every Unicode emoji with names, for the emoji picker (EmojiCatalog).
+      - path: HavenApp/Resources/emoji.tsv
 
     # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
     configFiles:
@@ -185,6 +187,8 @@ targets:
       # Bundle.main.url(forResource:), so it has to be in Resources or the
       # Initial Follows step silently shows nothing.
       - path: HavenApp/Resources/starter_packs.json
+      # Every Unicode emoji with names, for the emoji picker (EmojiCatalog).
+      - path: HavenApp/Resources/emoji.tsv
 
     # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
     configFiles:
