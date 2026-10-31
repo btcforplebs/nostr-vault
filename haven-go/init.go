@@ -260,6 +260,24 @@ func relayServiceURL(path string) string {
 	return scheme + "://" + host + path
 }
 
+// serviceURLFromHost (HAVEN_SERVICE_URL_FROM_HOST=1, set by the Linux box's
+// havend when it has no fixed NV_RELAY_URL): the relay's NIP-42 URL is the
+// name the client connected with (the box's front door keeps the Host), plus
+// the mount path. One box is reached as its LAN IP, its hostname and its
+// mesh address; a pinned 127.0.0.1 URL failed every owner AUTH through it.
+func serviceURLFromHost(rl *khatru.Relay, path string) {
+	if os.Getenv("HAVEN_SERVICE_URL_FROM_HOST") != "1" || config.RelayURL != "" {
+		return
+	}
+	rl.ServiceURLFor = func(r *http.Request) string {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		return scheme + "://" + r.Host + path
+	}
+}
+
 // feedReadPolicy is /feed's read policy where no localhost bind protects it.
 var feedReadPolicy []func(ctx context.Context, filter nostr.Filter) (bool, string)
 
@@ -296,6 +314,7 @@ func initRelays(ctx context.Context) error {
 	privateRelay.Info.Version = config.RelayVersion
 	privateRelay.Info.Software = config.RelaySoftware
 	privateRelay.ServiceURL = relayServiceURL("/private")
+	serviceURLFromHost(privateRelay, "/private")
 
 	if !privateRelayLimits.AllowEmptyFilters {
 		privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.NoEmptyFilters)
@@ -371,6 +390,7 @@ func initRelays(ctx context.Context) error {
 	chatRelay.Info.Version = config.RelayVersion
 	chatRelay.Info.Software = config.RelaySoftware
 	chatRelay.ServiceURL = relayServiceURL("/chat")
+	serviceURLFromHost(chatRelay, "/chat")
 
 	if !chatRelayLimits.AllowEmptyFilters {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoEmptyFilters)
@@ -457,6 +477,7 @@ func initRelays(ctx context.Context) error {
 	outboxRelay.Info.Version = config.RelayVersion
 	outboxRelay.Info.Software = config.RelaySoftware
 	outboxRelay.ServiceURL = relayServiceURL("")
+	serviceURLFromHost(outboxRelay, "")
 
 	if !outboxRelayLimits.AllowEmptyFilters {
 		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoEmptyFilters)
@@ -586,6 +607,7 @@ func initRelays(ctx context.Context) error {
 	inboxRelay.Info.Version = config.RelayVersion
 	inboxRelay.Info.Software = config.RelaySoftware
 	inboxRelay.ServiceURL = relayServiceURL("/inbox")
+	serviceURLFromHost(inboxRelay, "/inbox")
 
 	if !inboxRelayLimits.AllowEmptyFilters {
 		inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, policies.NoEmptyFilters)
@@ -684,6 +706,7 @@ func initRelays(ctx context.Context) error {
 	feedRelay.Info.Version = config.RelayVersion
 	feedRelay.Info.Software = config.RelaySoftware
 	feedRelay.ServiceURL = relayServiceURL("/feed")
+	serviceURLFromHost(feedRelay, "/feed")
 
 	// Reuse the outbox limiter numbers: the feed route is localhost-facing,
 	// and localhost connections bypass the connection limiter anyway.

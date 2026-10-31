@@ -29,7 +29,7 @@ func newTestAPI(t *testing.T) (*httptest.Server, testKey, *API) {
 		t.Fatal(err)
 	}
 	mesh := filepath.Join(base, "mesh.json")
-	os.WriteFile(mesh, []byte(`{"running":true,"peers":2}`), 0o600)
+	os.WriteFile(mesh, []byte(`{"up":true,"peers":2}`), 0o600)
 	eng := &fakeEngine{dir: vault}
 	api := &API{
 		Auth: NewOwnerAuth(owner.pk), Version: "test-1", Started: time.Now().Add(-time.Minute),
@@ -95,7 +95,7 @@ func TestAPIStatusStorageDevices(t *testing.T) {
 	if st["version"] != "test-1" || st["uptime"].(float64) < 59 || st["device"] != api.Key.Npub {
 		t.Errorf("status %v", st)
 	}
-	if mesh := st["mesh"].(map[string]any); mesh["peers"] != float64(2) {
+	if mesh := st["mesh"].(map[string]any); mesh["peers"] != float64(2) || mesh["up"] != true || mesh["npub"] != api.Key.Npub {
 		t.Errorf("mesh %v", mesh)
 	}
 	if disk := st["disk"].(map[string]any); disk["total"].(float64) <= 0 {
@@ -106,10 +106,14 @@ func TestAPIStatusStorageDevices(t *testing.T) {
 	if code != 200 || sto["databaseBytes"].(float64) < 2*5000 || sto["blobCount"].(float64) != 1 || sto["blossomBytes"].(float64) < 4 || sto["otherBytes"].(float64) < 2 {
 		t.Fatalf("storage %d %v", code, sto)
 	}
+	// The screens' storage shape (web-vault/src/box/api.js).
+	if sto["path"] != api.Mover.Engine.VaultDir() || sto["total"].(float64) <= 0 || sto["free"].(float64) <= 0 || sto["used"].(float64) <= 0 {
+		t.Fatalf("storage shape %v", sto)
+	}
 
 	code, dev := call(t, srv, &owner, "GET", "/api/box/devices", nil)
 	box := dev["box"].(map[string]any)
-	if code != 200 || box["npub"] != api.Key.Npub || box["approved"] != false {
+	if code != 200 || box["npub"] != api.Key.Npub || box["approved"] != false || box["name"] == "" {
 		t.Fatalf("devices %d %v", code, dev)
 	}
 }
@@ -118,7 +122,7 @@ func TestAPIMissingMeshStatus(t *testing.T) {
 	srv, owner, api := newTestAPI(t)
 	api.MeshStatus = filepath.Join(t.TempDir(), "none.json")
 	_, st := call(t, srv, &owner, "GET", "/api/box/status", nil)
-	if m := st["mesh"].(map[string]any); m["running"] != false {
+	if m := st["mesh"].(map[string]any); m["up"] != false || m["npub"] != api.Key.Npub {
 		t.Fatalf("mesh %v", m)
 	}
 }
@@ -126,7 +130,7 @@ func TestAPIMissingMeshStatus(t *testing.T) {
 func TestAPIUpdateWritesRequest(t *testing.T) {
 	srv, owner, api := newTestAPI(t)
 	code, res := call(t, srv, &owner, "POST", "/api/box/update", nil)
-	if code != 202 || res["via"] != "file" {
+	if code != 202 || res["via"] != "file" || res["started"] != true || res["from"] != "test-1" {
 		t.Fatalf("update %d %v", code, res)
 	}
 	if _, err := os.Stat(filepath.Join(api.Updater.BoxDir, "update-request.json")); err != nil {
@@ -157,7 +161,7 @@ func TestAPIMove(t *testing.T) {
 	}
 	target := filepath.Join(api.Mover.Root, "usb", "vault")
 	code, res := call(t, srv, &owner, "POST", "/api/box/move", []byte(`{"path":"`+target+`"}`))
-	if code != 202 || res["to"] != target {
+	if code != 202 || res["to"] != target || res["ok"] != true || res["path"] != target || !strings.Contains(res["message"].(string), target) {
 		t.Fatalf("move %d %v", code, res)
 	}
 	if s := waitMove(t, api.Mover); s.Phase != "done" {

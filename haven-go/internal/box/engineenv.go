@@ -35,9 +35,10 @@ var (
 
 // engineDifferences documents where the box departs from the Mac's env.
 var engineDifferences = map[string]string{
-	"RELAY_BIND_ADDRESS": "127.0.0.1: only the box's front door reaches the engine",
-	"NOTIFY_KINDS":       "unset: a box has no screen to notify on",
-	"HAVEN_ENABLE_TLS":   "0: the LAN and the mesh reach the front door over plain HTTP, like the Mac",
+	"RELAY_BIND_ADDRESS":          "127.0.0.1: only the box's front door reaches the engine",
+	"NOTIFY_KINDS":                "unset: a box has no screen to notify on",
+	"HAVEN_ENABLE_TLS":            "0: the LAN and the mesh reach the front door over plain HTTP, like the Mac",
+	"HAVEN_SERVICE_URL_FROM_HOST": "1 without NV_RELAY_URL: NIP-42 AUTH names the address the client used (LAN IP, hostname, mesh), not 127.0.0.1",
 }
 
 // EngineEnv is the engine's environment for a vault in vaultDir.
@@ -129,9 +130,10 @@ func EngineEnv(c Config, vaultDir string) map[string]string {
 		"BACKUP_PROVIDER":       "none",
 		"BACKUP_INTERVAL_HOURS": "24",
 
-		"BLASTR_RELAYS_FILE":        "relays_blastr.json",
-		"WOT_FETCH_TIMEOUT_SECONDS": "60",
-		"HAVEN_ENABLE_TLS":          "0",
+		"BLASTR_RELAYS_FILE":          "relays_blastr.json",
+		"WOT_FETCH_TIMEOUT_SECONDS":   "60",
+		"HAVEN_ENABLE_TLS":            "0",
+		"HAVEN_SERVICE_URL_FROM_HOST": "1",
 	}
 	return env
 }

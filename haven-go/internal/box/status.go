@@ -38,6 +38,11 @@ func DiskOf(path string) (Disk, error) {
 // Mem is the box's memory, in bytes. System figures come from /proc/meminfo
 // and are 0 where there is none (macOS test runs).
 type Mem struct {
+	// Used and Total are the box's memory for the screens (Total minus
+	// MemAvailable). Absent, not 0, where /proc/meminfo is missing.
+	Used  *uint64 `json:"used,omitempty"`
+	Total *uint64 `json:"total,omitempty"`
+
 	SystemTotal     uint64 `json:"systemTotal"`
 	SystemAvailable uint64 `json:"systemAvailable"`
 	EngineRSS       uint64 `json:"engineRss"`
@@ -50,6 +55,10 @@ func readMem(enginePid int) Mem {
 	if kv := procKV("/proc/meminfo"); kv != nil {
 		m.SystemTotal = kv["MemTotal"]
 		m.SystemAvailable = kv["MemAvailable"]
+		if m.SystemTotal > 0 && m.SystemAvailable <= m.SystemTotal {
+			total, used := m.SystemTotal, m.SystemTotal-m.SystemAvailable
+			m.Total, m.Used = &total, &used
+		}
 	}
 	if kv := procKV("/proc/self/status"); kv != nil {
 		m.BoxRSS = kv["VmRSS"]
@@ -97,29 +106,46 @@ func procKV(path string) map[string]uint64 {
 
 // Status is GET /api/box/status.
 type Status struct {
-	Version string          `json:"version"`
-	Uptime  int64           `json:"uptime"` // seconds since havend started
-	Mem     Mem             `json:"mem"`
-	Disk    Disk            `json:"disk"`
-	Mesh    json.RawMessage `json:"mesh"`
-	Engine  EngineState     `json:"engine"`
-	Owner   string          `json:"owner"`
-	Device  string          `json:"device"` // the box's own npub
-	Move    *MoveState      `json:"move,omitempty"`
+	Version string         `json:"version"`
+	Uptime  int64          `json:"uptime"` // seconds since havend started
+	Mem     Mem            `json:"mem"`
+	Disk    Disk           `json:"disk"`
+	Mesh    map[string]any `json:"mesh"`
+	Engine  EngineState    `json:"engine"`
+	Owner   string         `json:"owner"`
+	Device  string         `json:"device"` // the box's own npub
+	Move    *MoveState     `json:"move,omitempty"`
 }
 
-// readMesh returns the mesh process's status file as-is, or
-// {"running":false} when there is none or it is not JSON.
-func readMesh(path string) json.RawMessage {
-	b, err := os.ReadFile(path)
-	if err != nil || len(b) > 64<<10 || !json.Valid(b) {
-		return json.RawMessage(`{"running":false}`)
+// readMesh returns the mesh process's status file, an object with at least
+// {up, npub, peers} (web-vault/src/box/api.js). No file, or one that is not
+// a JSON object, reads as {"up": false}. npub defaults to the box's own
+// npub: the mesh runs as the box's device key.
+func readMesh(path, boxNpub string) map[string]any {
+	m := map[string]any{}
+	if b, err := os.ReadFile(path); err == nil && len(b) <= 64<<10 {
+		_ = json.Unmarshal(b, &m)
+		if m == nil {
+			m = map[string]any{}
+		}
 	}
-	return json.RawMessage(b)
+	if _, ok := m["up"].(bool); !ok {
+		m["up"] = false
+	}
+	if s, _ := m["npub"].(string); s == "" && boxNpub != "" {
+		m["npub"] = boxNpub
+	}
+	return m
 }
 
 // Storage is GET /api/box/storage.
 type Storage struct {
+	// The screens' shape (api.js): the vault folder and its filesystem.
+	Path  string `json:"path"`
+	Used  uint64 `json:"used"`
+	Free  uint64 `json:"free"`
+	Total uint64 `json:"total"`
+
 	VaultDir      string `json:"vaultDir"`
 	DatabaseBytes uint64 `json:"databaseBytes"`
 	BlossomBytes  uint64 `json:"blossomBytes"`
@@ -152,6 +178,7 @@ func (s *StorageMeter) Measure(vaultDir string) Storage {
 	}
 	st := Storage{VaultDir: vaultDir, MeasuredAt: time.Now().Unix()}
 	st.Disk, _ = DiskOf(vaultDir)
+	st.Path, st.Used, st.Free, st.Total = vaultDir, st.Disk.Used, st.Disk.Free, st.Disk.Total
 	// The engine keeps its databases in db/ (DATABASE_PATH's data/ too, if used).
 	dbDirs := []string{filepath.Join(vaultDir, "db"), filepath.Join(vaultDir, "data")}
 	blobDir := filepath.Join(vaultDir, "blossom")

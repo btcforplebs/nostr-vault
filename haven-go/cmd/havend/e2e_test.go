@@ -194,6 +194,27 @@ func TestBoxEndToEnd(t *testing.T) {
 	}
 	relay.Close()
 
+	// NIP-42: the owner can AUTH under whichever name reached the box (the web
+	// re-signs AUTH as the owner for the URL it connected to), not only the
+	// engine's own 127.0.0.1:<engine port>.
+	for _, host := range []string{"127.0.0.1", "localhost"} {
+		privURL := "ws://" + host + ":" + strconv.Itoa(port) + "/private"
+		pr, err := nostr.RelayConnect(ctx, privURL)
+		if err != nil {
+			t.Fatalf("connect %s: %v", privURL, err)
+		}
+		time.Sleep(500 * time.Millisecond) // the challenge arrives on connect
+		if err := pr.Auth(ctx, func(e *nostr.Event) error { return e.Sign(owner.sk) }); err != nil {
+			t.Fatalf("owner AUTH at %s refused: %v", privURL, err)
+		}
+		pn := nostr.Event{Kind: 1, CreatedAt: nostr.Now(), Content: "private via " + host}
+		pn.Sign(owner.sk)
+		if err := pr.Publish(ctx, pn); err != nil {
+			t.Fatalf("owner publish at %s after AUTH: %v", privURL, err)
+		}
+		pr.Close()
+	}
+
 	// Blossom: owner upload, public read.
 	blob := []byte("box e2e blob " + note.ID)
 	sum := sha256.Sum256(blob)

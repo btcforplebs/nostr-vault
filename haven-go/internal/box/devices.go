@@ -25,12 +25,19 @@ type MeshEntry struct {
 	Npub   string `json:"npub"`
 	Pubkey string `json:"pubkey"`
 	This   bool   `json:"thisBox,omitempty"`
+	// The screens' fields (api.js). The list carries no names, roles or
+	// last-seen times: name is "", role is known only for this box, and
+	// listed means approved.
+	Name     string `json:"name"`
+	Role     string `json:"role,omitempty"`
+	Approved bool   `json:"approved"`
 }
 
 // DevicesReport is GET /api/box/devices.
 type DevicesReport struct {
 	Box struct {
 		Npub     string `json:"npub"`
+		Name     string `json:"name"`
 		Approved bool   `json:"approved"`
 		// Address is what the owner pastes into My Devices.
 		Address string `json:"address"`
@@ -205,6 +212,7 @@ func (d *Devices) Report(ctx context.Context) DevicesReport {
 func BuildDevicesReport(key DeviceKey, list *nostr.Event, src string) DevicesReport {
 	var r DevicesReport
 	r.Box.Npub = key.Npub
+	r.Box.Name = "Nostr Vault box"
 	r.Box.Address = "fipsmesh://" + key.Npub + "/"
 	r.Devices = []MeshEntry{}
 	r.Source = "none"
@@ -214,7 +222,9 @@ func BuildDevicesReport(key DeviceKey, list *nostr.Event, src string) DevicesRep
 		r.ListID = list.ID
 		r.Source = src
 		for _, e := range MeshEntries(list) {
+			e.Approved = true
 			if e.Pubkey == key.Pubkey {
+				e.Role = "homeVault"
 				e.This = true
 				r.Box.Approved = true
 			}

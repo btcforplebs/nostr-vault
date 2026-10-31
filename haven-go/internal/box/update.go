@@ -21,6 +21,11 @@ import (
 
 // UpdateResult is the API's answer.
 type UpdateResult struct {
+	// The screens' fields (api.js). To and rollback are the container
+	// side's to know; the box leaves them out rather than guess.
+	Started bool   `json:"started"`
+	From    string `json:"from,omitempty"`
+
 	Queued bool   `json:"queued"`
 	Via    string `json:"via"` // "hook" or "file"
 	At     int64  `json:"requestedAt"`
@@ -46,7 +51,7 @@ func (u *Updater) Request() (UpdateResult, error) {
 		if err := os.WriteFile(filepath.Join(u.BoxDir, "update-request.json"), b, 0o600); err != nil {
 			return UpdateResult{}, err
 		}
-		return UpdateResult{Queued: true, Via: "file", At: now}, nil
+		return UpdateResult{Started: true, Queued: true, Via: "file", At: now}, nil
 	}
 	u.mu.Lock()
 	if u.running {
@@ -64,5 +69,5 @@ func (u *Updater) Request() (UpdateResult, error) {
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		_ = cmd.Run()
 	}()
-	return UpdateResult{Queued: true, Via: "hook", At: now}, nil
+	return UpdateResult{Started: true, Queued: true, Via: "hook", At: now}, nil
 }

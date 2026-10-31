@@ -83,6 +83,12 @@ func (a *OwnerAuth) Check(r *http.Request) ([]byte, error) {
 	if ok, err := ev.CheckSignature(); err != nil || !ok {
 		return nil, unauthorized("authorization signature is invalid")
 	}
+	// The signature covers the serialized event, not the id as sent, and the
+	// replay cache is keyed on the id: an unchecked id lets one captured
+	// header be replayed under any number of made-up ids.
+	if !ev.CheckID() {
+		return nil, unauthorized("authorization event id does not match its content")
+	}
 
 	method := tagValue(ev.Tags, "method")
 	if !strings.EqualFold(method, r.Method) {
@@ -118,7 +124,10 @@ func (a *OwnerAuth) Check(r *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-// firstUse records id; false if it was seen within the window. Entries older
+// firstUse records id; false if it was seen within the window. The cache is
+// memory only: a header captured in the last authWindow works once more
+// after havend restarts. Accepted: a restart takes longer than most of the
+// window, and the replay is limited to the same method, URL and body. Entries older
 // than twice the window are dropped: an event that old fails the time check.
 func (a *OwnerAuth) firstUse(id string, now time.Time) bool {
 	a.mu.Lock()

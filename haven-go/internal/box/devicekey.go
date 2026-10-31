@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,14 @@ func LoadOrCreateDeviceKey(dir string) (DeviceKey, error) {
 	path := filepath.Join(dir, deviceKeyFile)
 	raw, err := os.ReadFile(path)
 	if err == nil {
+		// A key restored or copied in by hand may be group/world readable.
+		if info, serr := os.Stat(path); serr == nil && info.Mode().Perm()&0o077 != 0 {
+			if cerr := os.Chmod(path, 0o600); cerr != nil {
+				log.Printf("box: %s is readable by others (%v) and could not be tightened: %v", path, info.Mode().Perm(), cerr)
+			} else {
+				log.Printf("box: %s was readable by others (%v); set to 0600", path, info.Mode().Perm())
+			}
+		}
 		return deviceKeyFrom(strings.TrimSpace(string(raw)), path)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {

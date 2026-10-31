@@ -142,3 +142,33 @@ func TestOwnerAuthBodyCap(t *testing.T) {
 		t.Fatalf("want 413, got %v", err)
 	}
 }
+
+// Tron, PR 1407: the signature does not cover the id as sent, so a replay
+// under a rewritten id must be refused by the id check, not slip past the
+// replay cache.
+func TestOwnerAuthReplayWithRewrittenIDRefused(t *testing.T) {
+	owner := newTestKey(t)
+	a := NewOwnerAuth(owner.pk)
+	h := owner.authHeader(t, "POST", "http://b/api/box/update", nil, time.Now())
+	try := func(header string) error {
+		r := httptest.NewRequest("POST", "/api/box/update", nil)
+		r.Host = "b"
+		r.Header.Set("Authorization", header)
+		_, err := a.Check(r)
+		return err
+	}
+	if err := try(h); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(h, "Nostr "))
+	for i := 0; i < 5; i++ {
+		var ev map[string]any
+		json.Unmarshal(raw, &ev)
+		ev["id"] = strings.Repeat(string("0123456789"[i]), 64)
+		forged, _ := json.Marshal(ev)
+		err := try("Nostr " + base64.StdEncoding.EncodeToString(forged))
+		if err == nil || err.(*AuthError).Status != http.StatusUnauthorized || !strings.Contains(err.Error(), "id") {
+			t.Fatalf("replay %d with rewritten id: want 401 on the id, got %v", i, err)
+		}
+	}
+}

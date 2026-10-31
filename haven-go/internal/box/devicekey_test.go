@@ -58,3 +58,23 @@ func TestDeviceKeyCorruptIsAnErrorNotANewKey(t *testing.T) {
 		t.Fatal("corrupt key file was overwritten")
 	}
 }
+
+func TestDeviceKeyLooseModeTightened(t *testing.T) {
+	dir := t.TempDir()
+	k, err := LoadOrCreateDeviceKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, deviceKeyFile)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	k2, err := LoadOrCreateDeviceKey(dir)
+	if err != nil || k2.Pubkey != k.Pubkey {
+		t.Fatalf("reload: %v %v", err, k2)
+	}
+	info, _ := os.Stat(path)
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v, want 0600", info.Mode().Perm())
+	}
+}

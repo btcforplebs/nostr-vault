@@ -61,6 +61,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the update"})
 			return
 		}
+		res.From = a.Version
 		log.Printf("box: update requested via %s", res.Via)
 		writeJSON(w, http.StatusAccepted, res)
 	case "POST /api/box/move":
@@ -81,7 +82,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("box: moving the vault from %s to %s", st.From, st.To)
-		writeJSON(w, http.StatusAccepted, st)
+		writeJSON(w, http.StatusAccepted, MoveStarted{
+			OK: true, Path: st.To, MoveState: st,
+			Message: "Moving your vault to " + st.To + ". The box stops serving while it copies, then starts again.",
+		})
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such box API route"})
 	}
@@ -95,12 +99,21 @@ func (a *API) status() Status {
 		Uptime:  int64(time.Since(a.Started).Seconds()),
 		Mem:     readMem(eng.Pid),
 		Disk:    disk,
-		Mesh:    readMesh(a.MeshStatus),
+		Mesh:    readMesh(a.MeshStatus, a.Key.Npub),
 		Engine:  eng,
 		Owner:   a.Owner,
 		Device:  a.Key.Npub,
 		Move:    a.Mover.State(),
 	}
+}
+
+// MoveStarted is POST move's answer: the screens' {ok, path, message}
+// (api.js) plus the move's first progress. Progress continues in status.move.
+type MoveStarted struct {
+	OK      bool   `json:"ok"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
+	*MoveState
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

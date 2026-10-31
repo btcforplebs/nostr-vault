@@ -73,6 +73,10 @@ func TestDevicesApprovalFollowsTheNewestList(t *testing.T) {
 	if !r.Box.Approved || len(r.Devices) != 2 || !r.Devices[1].This || r.Hint != "" || r.Source != "vault" {
 		t.Fatalf("listed: %+v", r)
 	}
+	// Screens' fields: listed = approved; only this box has a known role.
+	if !r.Devices[0].Approved || !r.Devices[1].Approved || r.Devices[1].Role != "homeVault" || r.Devices[0].Role != "" {
+		t.Fatalf("devices shape %+v", r.Devices)
+	}
 
 	// Revoked: the newest list no longer names the box.
 	src.ev = owner.sign(t, nostr.Event{Kind: 10063, CreatedAt: nostr.Now() + 1, Tags: nostr.Tags{
