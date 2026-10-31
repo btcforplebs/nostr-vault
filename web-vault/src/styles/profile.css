@@ -30,3 +30,9 @@
 @container (max-width: 320px) { .profile-tabs .tab-count { display: none; } }
 /* Following and Followers on one line, 18 apart as on the iPhone (followCountsRow). */
 .profile-header .counts span + span { margin-left: 18px; }
+
+/* Share profile (components/ShareProfile.jsx): the QR, the link, Copy / Share / Done. */
+.share-profile { display: grid; justify-items: center; gap: 12px; text-align: center; }
+.share-profile h3 { margin: 0; }
+.share-link { max-width: 100%; overflow-wrap: anywhere; color: var(--text-2); user-select: all; margin: 0; }
+.share-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
