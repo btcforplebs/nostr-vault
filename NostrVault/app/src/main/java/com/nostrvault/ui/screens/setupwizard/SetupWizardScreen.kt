@@ -115,6 +115,7 @@ fun SetupWizardScreen(
                     WizardStep.RELAY_CHECK -> RelayCheckStep(viewModel)
                     WizardStep.IMPORT_TOUR -> ImportTourStep(viewModel, onComplete)
                     WizardStep.PROFILE -> ProfileStep(viewModel)
+                    WizardStep.STARTER_RELAYS -> StarterRelaysStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
                     WizardStep.RELAYS -> RelayStep(viewModel)
                     WizardStep.IMPORT_NOTES -> ImportNotesStep(viewModel)

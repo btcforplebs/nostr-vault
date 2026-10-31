@@ -242,6 +242,8 @@ internal fun AccountDetail(
                 colors = SwitchDefaults.colors(checkedThumbColor = PrimaryText, checkedTrackColor = colors.primary),
             )
         }
+        val publishNote by viewModel.publishNote.collectAsState()
+        publishNote[npub]?.let { Text(it, color = SecondaryText, fontSize = 12.sp) }
 
         if (!isOwner) {
             TextButton(onClick = { confirmRemoveAccount = true }) {
