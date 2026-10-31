@@ -13,9 +13,16 @@
 .dm-row-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .dm-row-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .dm-row-head .author-name { flex: 1; }
-.dm-row-last { font: var(--t-sub); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-row-last { font: var(--t-sub); color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
+/* DMInboxView's row: the unread dot on the face, the time in the accent while unread, the count past 1 by the preview. */
+.dm-avatar { position: relative; flex: none; display: inline-flex; }
+.dm-dot { position: absolute; top: -1px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--s1); }
+.dm-row-foot { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.dm-row-foot .dm-row-last { flex: 1; min-width: 0; }
+.dm-row.unread .dm-time { color: var(--accent); }
 /* Unread (DMInboxView): the name and last line bold, the count in an accent pill. */
-.dm-row.unread .author-name, .dm-row.unread .dm-row-last { font-weight: 700; color: var(--text); }
+.dm-row.unread .author-name { font-weight: 700; color: var(--text); }
+.dm-row.unread .dm-row-last { font-weight: 500; color: var(--text); opacity: .8; }
 .dm-unread { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-grad); color: #fff; font: var(--t-cap); font-weight: 700;
   line-height: 20px; text-align: center; }
 
