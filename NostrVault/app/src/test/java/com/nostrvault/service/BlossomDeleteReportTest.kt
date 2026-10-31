@@ -133,7 +133,7 @@ class BlossomDeleteReportTest {
     @Test
     fun `every mirror deleting is all deleted`() = runTest {
         val a = mirror(200); val b = mirror(204)
-        val report = service(listOf(a, b)).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        val report = service(listOf(a, b)).deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
         assertEquals(listOf(a, b), report.deleted)
         assertTrue(report.failed.isEmpty())
         assertTrue(report.allDeleted)
@@ -142,7 +142,7 @@ class BlossomDeleteReportTest {
     @Test
     fun `one mirror refusing is not all deleted`() = runTest {
         val ok = mirror(200); val refuses = mirror(401)
-        val report = service(listOf(ok, refuses)).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        val report = service(listOf(ok, refuses)).deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
         assertFalse(report.allDeleted)
         assertEquals(listOf(refuses), report.failed)
         assertEquals(listOf("127.0.0.1"), report.failedHosts)
@@ -150,21 +150,21 @@ class BlossomDeleteReportTest {
 
     @Test
     fun `a 404 counts as deleted`() = runTest {
-        val report = service(listOf(mirror(404))).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        val report = service(listOf(mirror(404))).deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
         assertTrue(report.allDeleted)
     }
 
     @Test
     fun `an unreachable mirror counts as failed`() = runTest {
         // Port 9 (discard): nothing listens, the connection is refused.
-        val report = service(listOf(mirror(200), "http://127.0.0.1:9")).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        val report = service(listOf(mirror(200), "http://127.0.0.1:9")).deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
         assertEquals(listOf("http://127.0.0.1:9"), report.failed)
         assertFalse(report.allDeleted)
     }
 
     @Test
     fun `no mirrors is neither deleted nor failed`() = runTest {
-        val report = service(emptyList()).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        val report = service(emptyList()).deleteFromServers(sha, photoUrl = null, includeHomeVault = true)
         assertFalse(report.allDeleted)
         assertTrue(report.failed.isEmpty())
     }
@@ -175,7 +175,7 @@ class BlossomDeleteReportTest {
         // photo URL named stayed public after "Delete from mirrors".
         val configured = mirror(200); val listed = mirror(200); val posted = mirror(200)
         val report = service(listOf(configured), published = listOf(listed, configured))
-            .deleteFromServers(sha, photoUrl = "$posted/$sha.jpg", includeHomeVault = false)
+            .deleteFromServers(sha, photoUrl = "$posted/$sha.jpg", includeHomeVault = true)
         // Loopback photo hosts are this phone's vault and skipped; the test
         // servers are loopback, so only the two listed servers are asked here.
         assertEquals(listOf(configured, listed), report.deleted)
@@ -254,8 +254,68 @@ class BlossomDeleteReportTest {
         var dialled = false
         val svc = service(listOf(mirror(200)), macs = listOf(mac))
         svc.meshIngress = { dialled = true; null }
-        assertTrue(svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false).allDeleted)
+        svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
         assertFalse(dialled)
+    }
+
+    // ── The owner's own vaults ──────────────────────────────────
+    // Tron ship check 2026-10-31: "Delete from mirrors" skipped only the Mac
+    // URL this device knows; the same vault under another name got the delete.
+
+    @Test
+    fun `delete from mirrors keeps a server the owner runs`() = runTest {
+        val otherPhonesMac = "https://studio-mac.example.net"
+        val asked = mutableListOf<String>()
+        val svc = service(emptyList(), published = listOf(otherPhonesMac))
+        svc.serverOwner = { server, owner -> asked += server; assertEquals("o".repeat(64), owner); BlossomService.ServerOwner.OWNER }
+        val report = svc.deleteFromServers(sha, photoUrl = "$otherPhonesMac/$sha.jpg", includeHomeVault = false)
+        assertEquals(listOf(otherPhonesMac), asked)
+        // No DELETE went out: it would have failed (no such host) and been listed.
+        assertTrue(report.deleted.isEmpty())
+        assertTrue(report.failed.isEmpty())
+    }
+
+    @Test
+    fun `a server that cannot say who runs it is not deleted from`() = runTest {
+        val svc = service(emptyList(), published = listOf("https://maybe-mine.example.net"))
+        svc.serverOwner = { _, _ -> BlossomService.ServerOwner.UNKNOWN }
+        val report = svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
+        assertEquals(listOf("https://maybe-mine.example.net"), report.failed)
+        assertEquals(listOf("maybe-mine.example.net"), report.failedHosts)
+    }
+
+    @Test
+    fun `delete everywhere does not ask who runs a server`() = runTest {
+        val svc = service(listOf(mirror(200)))
+        svc.serverOwner = { _, _ -> error("asked") }
+        assertTrue(svc.deleteFromServers(sha, photoUrl = null, includeHomeVault = true).allDeleted)
+    }
+
+    private fun infoServer(code: Int, body: String): String {
+        val port = startServer { method, path ->
+            if (method == "GET" && path == "/") code to body.toByteArray() else 400 to ByteArray(0)
+        }
+        return "http://127.0.0.1:$port"
+    }
+
+    @Test
+    fun `a haven vault names its owner in its relay info`() {
+        val owner = "a".repeat(64)
+        val svc = service(emptyList())
+        val vault = infoServer(200, """{"name":"outbox","pubkey":"${owner.uppercase()}","software":"https://github.com/barrydeen/haven"}""")
+        assertEquals(BlossomService.ServerOwner.OWNER, svc.askServerOwner("$vault/$sha.jpg", owner))
+        assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(vault, "b".repeat(64)))
+        assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(vault, ""))
+    }
+
+    @Test
+    fun `other answers are someone else's server, no answer is unknown`() {
+        val owner = "a".repeat(64)
+        val svc = service(emptyList())
+        assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(infoServer(200, "<html>blossom</html>"), owner))
+        assertEquals(BlossomService.ServerOwner.OTHER, svc.askServerOwner(infoServer(404, ""), owner))
+        assertEquals(BlossomService.ServerOwner.UNKNOWN, svc.askServerOwner(infoServer(502, ""), owner))
+        assertEquals(BlossomService.ServerOwner.UNKNOWN, svc.askServerOwner("http://127.0.0.1:9", owner))
     }
 
     // ── This device ─────────────────────────────────────────────

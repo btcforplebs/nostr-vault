@@ -546,10 +546,21 @@ data class HavenConfig(
      * reads only, and a `.fips` name must never reach DNS: [FipsHostGuard]).
      * A loopback photo URL is this phone's own vault, which
      * [BlossomService.deleteFromLocal] deletes from, so its host is not added.
+     *
+     * "Delete from mirrors" never targets the owner's own vaults, under any
+     * name: the configured Mac, and every server only a home network can reach
+     * (LAN and Tailscale addresses, `.local`, plain http, loopback). The 10063
+     * keeps other devices' entries, so a Mac this phone knows by another name
+     * still showed up there and got the delete; if it held the last copy, the
+     * photo was gone (Tron ship check, 2026-10-31). A public name for another
+     * device's vault is caught by [BlossomService.deleteFromServers], which
+     * asks each server who runs it before deleting.
      */
     fun blossomDeleteTargets(published: List<String>, photoUrl: String?, includeHomeVault: Boolean): List<String> {
         val home = macRelayHttpsURL
-        val homeKey = blossomOrigin(home)?.let(::serverKey)
+        // The same address typed with its default port is the same server.
+        fun key(origin: String) = serverKey(origin).removeSuffix(if (origin.startsWith("https")) ":443" else ":80")
+        val homeKey = blossomOrigin(home)?.let(::key)
         val candidates = listOf(home) +
             (blossomMirrors + published).mapNotNull { blossomUploadServer(it) } +
             listOfNotNull(photoUrl?.let(::blossomOrigin)?.takeUnless(::isLoopbackServer))
@@ -557,7 +568,9 @@ data class HavenConfig(
         return candidates.mapNotNull { it.trim().takeIf(String::isNotEmpty) }.filter { server ->
             val origin = blossomOrigin(server) ?: return@filter false
             if (com.nostrvault.fips.FipsHostGuard.isFipsHost(java.net.URI(origin).host)) return@filter false
-            if (!includeHomeVault && serverKey(origin) == homeKey) return@filter false
+            if (!includeHomeVault && (key(origin) == homeKey || !com.nostrvault.fips.HomeVaultRules.isPublicServer(origin))) {
+                return@filter false
+            }
             seen.add(serverKey(server))
         }
     }

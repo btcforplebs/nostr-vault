@@ -53,6 +53,34 @@ class BlossomDeleteTargetsTest {
         assertEquals(listOf("https://blossom.primal.net"), targets)
     }
 
+    /**
+     * Tron ship check 2026-10-31: the 10063 keeps other devices' entries, so
+     * the home vault can be listed under a name this device does not use. A
+     * mirror delete to it removed what may be the last copy.
+     */
+    @Test fun mirrorsNeverTargetsTheOwnersOwnVaultsUnderAnyName() {
+        val sameMacOtherSpelling = "https://MAC.example.com:443/"
+        val ownVaults = listOf(
+            "http://192.168.1.20:3355", "https://studio.local", "https://mac.tail1234.ts.net",
+            "http://other-mac.example.com", "http://127.0.0.1:3355", "https://10.0.0.7",
+            "http://npub1abc.fips:3355", "fipsmesh://npub1abc/",
+        )
+        val targets = config.blossomDeleteTargets(
+            listOf("https://mac.example.com/", sameMacOtherSpelling) + ownVaults + "https://nostr.download",
+            photoUrl = "http://192.168.1.20:3355/${"a".repeat(64)}.jpg",
+            includeHomeVault = false,
+        )
+        assertEquals(listOf("https://blossom.primal.net", "https://cdn.satellite.earth/", "https://nostr.download"), targets)
+    }
+
+    @Test fun everywhereStillReachesHomeNetworkServers() {
+        val targets = config.blossomDeleteTargets(listOf("http://192.168.1.20:3355", "https://studio.local"), null, includeHomeVault = true)
+        assertEquals(
+            listOf("https://mac.example.com", "https://blossom.primal.net", "https://cdn.satellite.earth/", "http://192.168.1.20:3355", "https://studio.local"),
+            targets,
+        )
+    }
+
     @Test fun nothingConfiguredIsEmpty() {
         assertEquals(emptyList<String>(), HavenConfig().blossomDeleteTargets(emptyList(), null, includeHomeVault = true))
     }

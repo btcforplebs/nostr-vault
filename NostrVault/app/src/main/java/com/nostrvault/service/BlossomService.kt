@@ -646,8 +646,17 @@ class BlossomService @Inject constructor(
         val mesh = com.nostrvault.fips.MeshDeleteTargets.of(config, includeHomeVault)
         if (mirrors.isEmpty() && mesh.isEmpty()) return@withContext MirrorDeleteResult()
 
+        val owner = nostrService.ownerHexPubkey
         val outcomes = mirrors.map { mirror ->
             async {
+                // Delete from mirrors: a server the owner runs is a home vault under a name this
+                // device does not know (another phone's Mac, a tunnel). Its copy stays; a server
+                // that cannot say who runs it is not deleted from either (Tron ship check, 2026-10-31).
+                if (!includeHomeVault) when (serverOwner(mirror, owner)) {
+                    ServerOwner.OWNER -> return@async null
+                    ServerOwner.UNKNOWN -> return@async mirror to false
+                    ServerOwner.OTHER -> Unit
+                }
                 mirror to try {
                     val authHeader = createAuthHeader("delete", sha256)
                     val request = Request.Builder()
@@ -672,13 +681,50 @@ class BlossomService @Inject constructor(
         val meshOutcomes = mesh.map { target ->
             async { target.key to (meshAuth.isNotEmpty() && deleteOverMesh(target.npub, sha256, meshAuth)) }
         }
-        val all = outcomes.awaitAll() + meshOutcomes.awaitAll()
+        val all = outcomes.awaitAll().filterNotNull() + meshOutcomes.awaitAll()
         MirrorDeleteResult(
             deleted = all.filter { it.second }.map { it.first },
             failed = all.filterNot { it.second }.map { it.first },
             names = mesh.associate { it.key to it.name },
         )
     }
+
+    /** Who runs a Blossom server, as [askServerOwner] reads it. */
+    enum class ServerOwner { OWNER, OTHER, UNKNOWN }
+
+    /** [askServerOwner], swapped in tests. */
+    internal var serverOwner: suspend (server: String, ownerHex: String) -> ServerOwner = { server, owner -> askServerOwner(server, owner) }
+
+    /**
+     * Whether [ownerHex] runs [server]: a Haven vault serves its NIP-11 relay info at the root of
+     * the same address as its Blossom server, with the owner as `pubkey` (OUTBOX_RELAY_NPUB, every
+     * platform). Any other answer, or a 4xx, is someone else's server. No answer (offline, 5xx from
+     * a tunnel whose Mac is down) is [ServerOwner.UNKNOWN]: it may be the vault, so no delete.
+     */
+    internal fun askServerOwner(server: String, ownerHex: String): ServerOwner {
+        val origin = com.nostrvault.relay.blossomOrigin(server) ?: return ServerOwner.UNKNOWN
+        val request = try {
+            Request.Builder().url("$origin/").get().header("Accept", "application/nostr+json").build()
+        } catch (_: IllegalArgumentException) {
+            return ServerOwner.UNKNOWN
+        }
+        return try {
+            ownerProbeClient.newCall(request).execute().use { response ->
+                when {
+                    response.code >= 500 -> ServerOwner.UNKNOWN
+                    !response.isSuccessful -> ServerOwner.OTHER
+                    relayInfoPubkey(response.peekBody(64 * 1024).string()).equals(ownerHex.trim(), ignoreCase = true) &&
+                        ownerHex.isNotBlank() -> ServerOwner.OWNER
+                    else -> ServerOwner.OTHER
+                }
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "Who runs $origin: ${e.message}")
+            ServerOwner.UNKNOWN
+        }
+    }
+
+    private val ownerProbeClient by lazy { remoteClient.newBuilder().callTimeout(10, TimeUnit.SECONDS).build() }
 
     /** The loopback base reaching [npub]'s vault over the mesh, or null. Swapped in tests. */
     internal var meshIngress: (String) -> String? = { com.nostrvault.fips.FipsMediaRouter.ingressBase(it) }
@@ -863,4 +909,11 @@ class BlossomService @Inject constructor(
             val byteCount: Long get() = file.length()
         }
     }
+}
+
+/** The `pubkey` of a NIP-11 relay info document, or "" for anything else. */
+internal fun relayInfoPubkey(body: String): String = try {
+    (Json.parseToJsonElement(body) as? JsonObject)?.get("pubkey")?.let { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+} catch (_: Exception) {
+    ""
 }
