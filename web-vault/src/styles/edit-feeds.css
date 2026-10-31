@@ -1,0 +1,32 @@
+/* Edit Feeds (components/EditFeeds.jsx): a sheet over the Feed, as the iPhone's FeedMenuEditor. */
+.edit-feeds-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+  background: rgb(0 0 0 / .5); }
+.edit-feeds { width: min(420px, 100%); max-height: min(640px, 90vh); display: flex; flex-direction: column; overflow: hidden;
+  background: var(--s1); border: 1px solid var(--hair); border-radius: 16px; box-shadow: 0 10px 30px rgb(0 0 0 / .5); }
+.edit-feeds-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 50px; padding: 0 8px;
+  border-bottom: 1px solid var(--hair); }
+.edit-feeds-head strong { font: var(--t-headline); }
+.edit-feeds-done { justify-self: end; min-height: 40px; padding: 0 10px; border: 0; background: none; color: var(--accent);
+  font: var(--t-sub); font-weight: 700; cursor: pointer; }
+.edit-feeds-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+.edit-feeds-list li { display: flex; align-items: center; border-radius: 10px; }
+.edit-feeds-list li.dragging { background: var(--s2); }
+.edit-feeds-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 10px; border: 0;
+  background: none; color: var(--text-3); font: var(--t-sub); text-align: left; cursor: pointer; border-radius: 10px; }
+.edit-feeds-row:hover { background: var(--s2); }
+.edit-feeds-list li.shown .edit-feeds-row { color: var(--text); }
+.edit-feeds-check { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--text-3); font-size: 12px; font-weight: 800; color: #fff; }
+.edit-feeds-list li.shown .edit-feeds-check { background: var(--accent); border-color: var(--accent); }
+.edit-feeds-list li.shown .edit-feeds-check.pinned { background: var(--text-3); border-color: var(--text-3); }
+.edit-feeds-icon { display: grid; place-items: center; width: 24px; }
+.edit-feeds-list li.shown .edit-feeds-icon { color: var(--accent); }
+.edit-feeds-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-feeds-handle { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; background: none;
+  color: var(--text-3); cursor: grab; touch-action: none; border-radius: 10px; }
+.edit-feeds-list li.dragging .edit-feeds-handle { cursor: grabbing; }
+.edit-feeds-handle:focus-visible, .edit-feeds-row:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.edit-feeds-foot { margin: 0; padding: 8px 16px; color: var(--text-3); font: var(--t-foot); }
+.edit-feeds-reset { margin: 0 12px 12px; min-height: 44px; border: 0; border-radius: 10px; background: var(--s2); color: var(--accent);
+  font: var(--t-sub); cursor: pointer; }
+.edit-feeds-reset:disabled { color: var(--text-3); cursor: default; }
