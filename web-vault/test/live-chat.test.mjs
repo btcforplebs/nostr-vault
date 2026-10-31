@@ -27,6 +27,7 @@ const { parseStream } = await import("../src/readers/live.js")
 const { zapRequestTemplate } = await import("../src/net/zaps.js")
 await import("../src/readers/LiveChat.jsx") // loads: the row component and its imports
 const { shareNoteText } = await import("../src/readers/LiveActions.jsx")
+const { liveQuoteTags } = await import("../src/net/live-note.js")
 
 const NOW = 1_800_000_000
 const host = generateSecretKey(), HOST = getPublicKey(host)
@@ -102,11 +103,14 @@ test("sharing: the nostrvault.app link by naddr, the host's profile page, and th
   const d = decode(link.split("/thread/")[1]).data
   assert.deepEqual([d.kind, d.pubkey, d.identifier], [30311, SERVICE, "room"])
   assert.match(profileShareLink(HOST), /^https:\/\/nostrvault\.app\/p\/npub1/)
-  assert.equal(noteText({ title: "Late set", hostName: "Ann", picture: "https://p/x.jpg", streaming: "https://s/i.m3u8", naddr: "naddr1x" }),
-    "Late set, live now with Ann\n\nhttps://p/x.jpg\nhttps://s/i.m3u8\nnostr:naddr1x")
-  assert.equal(noteText({ hostName: "Ann" }), "Ann is live now")
+  assert.equal(noteText({ hostName: "Ann", naddr: "naddr1x" }), "Live now: Ann\n\nnostr:naddr1x")
+  assert.equal(noteText({ hostName: "Ann" }), "Live now: Ann")
+  // Only the host and the naddr: no title (the host republishes one event per show), no picture, no playlist.
   const text = shareNoteText(stream)
-  assert.match(text, /^Late set, live now with /); assert.match(text, /\nhttps:\/\/cdn\.example\/cover\.jpg\nhttps:\/\/cdn\.example\/live\/index\.m3u8\nnostr:naddr1/)
+  assert.match(text, /^Live now: [^\n]+\n\nnostr:naddr1[a-z0-9]+$/)
+  assert.doesNotMatch(text, /Late set|cover\.jpg|m3u8/)
+  const [q] = liveQuoteTags(text)
+  assert.deepEqual(q, ["q", stream.address, "wss://relay.example"], "the q tag names the 30311 by its address")
 })
 
 test("Tron #1309: one real zap request wrapped in forged receipts is one row, and names nobody unless the host's zap service published it", () => {

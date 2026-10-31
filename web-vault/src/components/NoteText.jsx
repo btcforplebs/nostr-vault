@@ -5,7 +5,7 @@ import { npubEncode } from "nostr-tools/nip19"
 import { useEffect, useState } from "preact/hooks"
 import { useProfile } from "./useProfile.js"
 import { fetchProfiles } from "../net/profiles.js"
-import { onQuotes, parseRef, quoteSource } from "../net/quotes.js"
+import { getQuote, onQuotes, parseRef, quoteSource } from "../net/quotes.js"
 import { QuotedNote } from "./QuotedNote.jsx"
 import { splitHashtags } from "../net/hashtags.js"
 import { mediaType } from "../net/media.js"
@@ -16,6 +16,7 @@ import { inlineMarks } from "../net/inline-md.js"
 import { LinkCard } from "./LinkCard.jsx"
 import { BlossomMedia } from "./BlossomMedia.jsx"
 import { parseBlossomUri } from "../net/blossom-uri.js"
+import { liveDrops, liveRefs, trimAroundLive } from "../net/live-note.js"
 
 // A BUD-10 blossom:<sha256>.<ext>?… link is one token too, so its query never reads as text (BlossomMedia).
 const TOKEN = /(https?:\/\/[^\s<>"]+|nostr:[a-z0-9]+|blossom:[0-9a-fA-F]{64}\.[A-Za-z0-9]{1,10}(?:\?[^\s<>"]*)?)/gi
@@ -31,7 +32,11 @@ const MAX_QUOTE_DEPTH = 1
  *  as iOS FeedNoteRow does. `author`: the note's pubkey, for a photo on the author's mesh vault (MediaImage). */
 /*  `linkCards`: a feed card's links (not media, not nostr:) become up to three link cards under the text and leave it,
  *  as iOS LinkCards does. */
-export function NoteText({ content, tags, author, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false }) {
+/*  `streams`: the kind 30311 events of the live streams the text embeds (live-note.js), filled in by LiveNoteText. */
+export function NoteText(props) {
+  const { content, tags, author, depth = 0, dm = false, memoryOnly = false, images = !dm, linkCards = false, streams } = props
+  const lives = depth < MAX_QUOTE_DEPTH ? liveRefs(content) : []
+  if (lives.length && !streams) return <LiveNoteText {...props} refs={lives} />
   let parts = String(content).split(TOKEN)
   // Punctuation that ends a sentence goes back into the text after the link.
   for (let i = 1; i < parts.length; i += 2) {
@@ -39,11 +44,20 @@ export function NoteText({ content, tags, author, depth = 0, dm = false, memoryO
     parts[i + 1] = parts[i].slice(url.length) + parts[i + 1]
     parts[i] = url
   }
+  // A live stream's card is the post: its playlist and picture links leave the text, and so do the blank lines.
+  if (lives.length) {
+    const drop = liveDrops(parts.filter((p, i) => i % 2 && /^https?:\/\//i.test(p)), true, streams)
+    if (drop.size) parts = withoutLinks(parts, drop)
+  }
   // blossom: links are drawn where they stand (BlossomMedia), never as an https picture in the carousel.
   const media = !dm && images ? noteMedia(parts.filter((p, i) => i % 2 && /^https?:\/\//i.test(p)), tags) : []
   if (media.length) parts = withoutLinks(parts, new Set(media.map(m => m.url)))
   const cards = linkCards && !dm ? cardLinks(parts) : []
   if (cards.length) parts = withoutLinks(parts, new Set(cards))
+  if (lives.length) {
+    const keys = new Set(lives.map(r => r.ref.toLowerCase()))
+    parts = trimAroundLive(parts, s => /^nostr:/i.test(s) && keys.has(s.slice(6).toLowerCase()))
+  }
   return (
     <div class="note-text">
       {parts.map((s, i) => {
@@ -63,6 +77,14 @@ export function NoteText({ content, tags, author, depth = 0, dm = false, memoryO
       {cards.map(url => <LinkCard key={url} url={url} />)}
     </div>
   )
+}
+
+/** NoteText for a note embedding a live stream: draws again once each stream's event is loaded (QuotedNote fetches
+ *  it into the quote cache), so that stream's own picture and links leave the text too. */
+function LiveNoteText({ refs, ...props }) {
+  const [, setTick] = useState(0)
+  useEffect(() => onQuotes(() => setTick(t => t + 1)), [])
+  return <NoteText {...props} streams={refs.map(r => getQuote(r.key) ?? null)} />
 }
 
 /** The web links in [text, link, text, …] that get a card: not media, once each, at most MAX_LINK_CARDS. */

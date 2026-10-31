@@ -259,3 +259,29 @@ test("a .fips link left in the text is plain text: no <img>, <video>, <a> or lin
   }
   assert.deepEqual(cardLinks(["", page, " ", "https://x.example/a", ""]), ["https://x.example/a"])
 })
+
+test("a note embedding a live stream: the card is the post, its playlist and picture links and the blank lines go", async () => {
+  const { liveRefs, liveQuoteTags } = await import("../src/net/live-note.js")
+  const service = "c3".repeat(32)
+  const naddr = naddrEncode({ kind: 30311, pubkey: service, identifier: "lot-radio", relays: ["wss://relay.zap.stream"] })
+  // Logen's note from Android's old share: title, cover, playlist, naddr, one per line.
+  const content = `Live now: The Lot Radio: Love Injection\nhttps://img.example/cover.png\nhttps://x.livepeercdn.studio/hls/abc/index.m3u8\nnostr:${naddr}`
+  const loading = [NoteText({ content, streams: [null] }).props.children].flat(Infinity).filter(c => c !== "" && c !== false)
+  // Before the event loads the playlist goes, but the cover can't yet be told from a picture of the author's own,
+  // so it stays in the media row; once loaded, the stream's own image leaves too.
+  assert.deepEqual(loading.map(c => (typeof c === "string" ? c : c.type)), ["Live now: The Lot Radio: Love Injection", QuotedNote, NoteMedia],
+    "no stream link, no trailing newline before the card")
+  const ev = { kind: 30311, pubkey: service, tags: [["d", "lot-radio"], ["image", "https://img.example/cover.png"], ["streaming", "https://x.livepeercdn.studio/hls/abc/index.m3u8"]] }
+  const after = [NoteText({ content, streams: [ev] }).props.children].flat(Infinity).filter(c => c !== "" && c !== false)
+  assert.deepEqual(after.map(c => (typeof c === "string" ? c : c.type)), ["Live now: The Lot Radio: Love Injection", QuotedNote])
+  // Without streams, NoteText hands off to the component that waits for them.
+  assert.notEqual(NoteText({ content }).type, "div")
+  // The new share text, and a note quoting a normal post, are untouched.
+  const fresh = [NoteText({ content: `Live now: Ann\n\nnostr:${naddr}`, streams: [ev] }).props.children].flat(Infinity).filter(c => c !== "" && c !== false)
+  assert.deepEqual(fresh.map(c => (typeof c === "string" ? c : c.type)), ["Live now: Ann", QuotedNote])
+  assert.deepEqual(parts("look https://x.example/live/index.m3u8\n\nok"), ["look ", { type: "a", href: "https://x.example/live/index.m3u8", target: "_blank", rel: "noopener noreferrer", children: ["x.example/live/index.m3u8", ""] }, "\n\nok"], "a playlist link with no live card stays")
+  // q tags: one per live stream, an naddr of another kind is no stream.
+  const article = naddrEncode({ kind: 30023, pubkey: service, identifier: "a" })
+  assert.equal(liveRefs(`nostr:${naddr} nostr:${naddr} nostr:${article}`).length, 1)
+  assert.deepEqual(liveQuoteTags(`x nostr:${naddr}`), [["q", `30311:${service}:lot-radio`, "wss://relay.zap.stream"]])
+})
