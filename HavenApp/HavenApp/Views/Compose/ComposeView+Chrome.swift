@@ -98,8 +98,9 @@ extension ComposeView {
                             if isPastingVideo {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.appTitle3)
+                                Image("MagicPaste")
+                                    .resizable()
+                                    .frame(width: 20, height: 20)
                             }
                         }
                         .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)

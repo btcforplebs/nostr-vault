@@ -26,6 +26,7 @@ import { Sidebar } from "./Sidebar.jsx"
 import { SplitPane } from "./SplitPane.jsx"
 import { PeekCard } from "./PeekCard.jsx"
 import { ContextMenu } from "./ContextMenu.jsx"
+import { MagicPasteIcon } from "../components/MagicPasteIcon.jsx"
 import "../styles/desktop.css"
 
 const HEX = /^[0-9a-f]{64}$/
@@ -169,7 +170,7 @@ function ComposeDialog({ ctx, onClose }) {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
         <ComposeScreen ctx={ctx} />
-        <p class="muted small desk-compose-hint">Drop or paste images · ⌘/Ctrl Enter posts</p>
+        <p class="muted small desk-compose-hint"><MagicPasteIcon size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />Drop or paste images · ⌘/Ctrl Enter posts</p>
       </div>
     </div>
   )

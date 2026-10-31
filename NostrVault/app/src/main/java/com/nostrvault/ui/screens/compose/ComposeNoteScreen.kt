@@ -19,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
+import com.nostrvault.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -509,7 +512,7 @@ fun ComposeNoteScreen(
                     enabled = !attachmentLimitReached
                 ) {
                     Icon(
-                        imageVector = Icons.Default.AutoAwesome,
+                        imageVector = ImageVector.vectorResource(R.drawable.ic_magic_paste),
                         contentDescription = "Paste from clipboard",
                         tint = colors.primary,
                         modifier = Modifier.size(20.dp)

@@ -247,7 +247,7 @@ extension MediaGalleryView {
                 Label("Files", systemImage: "folder")
             }
             Button(action: handlePasteFromClipboard) {
-                Label("Magic Paste", systemImage: "wand.and.stars")
+                Label { Text("Magic Paste") } icon: { Image("MagicPaste") }
             }
             .disabled(isPastingContent)
         } label: {
