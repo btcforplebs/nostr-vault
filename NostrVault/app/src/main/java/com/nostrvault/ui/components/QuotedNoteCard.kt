@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -35,7 +36,7 @@ import kotlinx.coroutines.delay
  * Matches the iOS QuotedNoteView layout:
  * - 18dp avatar + author name (12sp bold) + timestamp (10sp)
  * - Content (13sp, secondary, 3-line max)
- * - First media thumbnail (if present, 180dp max height)
+ * - First media, whole at its own shape (tall 220dp max, others 180dp)
  * - TertiaryGroupedBg background, themed border, 8dp corner radius
  *
  * A quoted long-form post gets a different body: its content is a whole
@@ -161,20 +162,32 @@ fun QuotedNoteCard(
                 // First media thumbnail
                 if (note.mediaURLs.isNotEmpty()) {
                     val context = LocalContext.current
+                    val url = note.mediaURLs.first()
+                    // The photo's own width/height once it loads. Like iOS, the
+                    // whole photo shows at that shape instead of being cropped.
+                    var ratio by remember(url) { mutableStateOf<Float?>(null) }
                     Spacer(Modifier.height(6.dp))
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(note.mediaURLs.first())
-                            .size(360) // Max 180dp at 2x density
+                            .data(url)
+                            .size(720) // a 220dp portrait at ~3x density
                             .crossfade(100)
                             .build(),
                         contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
+                        contentScale = ContentScale.Fit,
+                        onSuccess = { state ->
+                            val size = state.painter.intrinsicSize
+                            if (size.width > 0f && size.height > 0f) ratio = size.width / size.height
+                        },
+                        modifier = (ratio?.let { r ->
+                            Modifier
+                                .heightIn(max = quoteImageMaxHeight(r))
+                                .aspectRatio(r)
+                        } ?: Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(TertiaryGroupedBg),
+                            .heightIn(max = quoteImageMaxHeight(null))
+                            .background(TertiaryGroupedBg))
+                            .clip(RoundedCornerShape(6.dp)),
                     )
                 }
             }
@@ -351,3 +364,7 @@ fun QuotedNotePlaceholder(
         }
     }
 }
+
+/** iOS QuotedNoteView: tall photos up to 220, landscape/square/unknown up to 180. */
+internal fun quoteImageMaxHeight(ratio: Float?): Dp =
+    if (ratio != null && ratio < 1f) 220.dp else 180.dp
