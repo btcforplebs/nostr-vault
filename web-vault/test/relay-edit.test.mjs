@@ -5,7 +5,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { pool } from "../src/net/pool.js"
-import { latestList, publishList, askRelay, knownFrom, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem } from "../src/net/list-edit.js"
+import { askRelay } from "../src/net/follows.js"
+import { latestList, publishList, listKnown, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem } from "../src/net/list-edit.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const OTHER_SK = generateSecretKey()
@@ -21,6 +22,10 @@ function fakeCtx({ outbox = [] } = {}) {
     vault: { outbox: { query: async () => outbox, event: async ev => { stored.push(ev); return { ok: true } } } },
   }
 }
+
+/** A fake relay answer: events with an EOSE. */
+const says = events => ({ events, answered: true })
+const down = async () => ({ events: [], answered: false })
 
 test("a typed relay gets wss://, loses its trailing slash; other schemes, spaces and loopback are refused", () => {
   assert.equal(relayUrl("relay.example.com"), "wss://relay.example.com")
@@ -69,7 +74,7 @@ test("an edit starts from the newest copy: the relays' newer one wins and is kep
   const fresh = list(SK, 200, [["r", "wss://new.example"]])
   const ctx = fakeCtx({ outbox: [old] })
   const asked = []
-  const r = await latestList(ctx, 10002, { online: true, query: async (relays, filter) => { asked.push({ relays, filter }); return [fresh, list(OTHER_SK, 999, [])] } })
+  const r = await latestList(ctx, 10002, { online: true, ask: async (relay, filter) => { asked.push({ relays: [relay], filter }); return says([fresh, list(OTHER_SK, 999, [])]) } })
   assert.equal(r.event.id, fresh.id)
   assert.equal(r.checked, true)
   assert.deepEqual(asked[0].filter, { kinds: [10002], authors: [ME] })
@@ -87,7 +92,7 @@ test("the page can draw Haven's copy at once and each newer copy as it lands; th
   const slow = new Promise(r => { release = r })
   const seen = []
   let done = false
-  const p = latestList(ctx, 10002, { online: true, on: x => seen.push(x.event.created_at), query: async ([relay]) => relay === "wss://w.example" ? (await slow, [list(SK, 150, [])]) : relay === "wss://r.example" ? [newer] : [] })
+  const p = latestList(ctx, 10002, { online: true, on: x => seen.push(x.event.created_at), ask: async relay => says(relay === "wss://w.example" ? (await slow, [list(SK, 150, [])]) : relay === "wss://r.example" ? [newer] : []) })
   p.then(() => { done = true })
   await new Promise(r => setTimeout(r, 10))
   assert.deepEqual(seen, [100, 200], "Haven's copy, then the newer one, before the slow relay answers")
@@ -101,10 +106,10 @@ test("the page can draw Haven's copy at once and each newer copy as it lands; th
 test("Haven's copy stands when it's newer or the relays have none; offline it isn't checked", async () => {
   const mine = list(SK, 300, [["r", "wss://mine.example"]])
   const ctx = fakeCtx({ outbox: [mine] })
-  assert.equal((await latestList(ctx, 10002, { online: true, query: async () => [list(SK, 100, [])] })).event.id, mine.id)
-  const down = await latestList(ctx, 10002, { online: true, query: async () => { throw new Error("down") } })
-  assert.deepEqual([down.event.id, down.checked], [mine.id, false], "every relay failed: Haven's copy shown, not checked")
-  const off = await latestList(ctx, 10002, { online: false, query: () => assert.fail("asked offline") })
+  assert.equal((await latestList(ctx, 10002, { online: true, ask: async () => says([list(SK, 100, [])]) })).event.id, mine.id)
+  const gone = await latestList(ctx, 10002, { online: true, ask: async () => { throw new Error("down") } })
+  assert.deepEqual([gone.event.id, gone.checked], [mine.id, false], "every relay failed: Haven's copy shown, not checked")
+  const off = await latestList(ctx, 10002, { online: false, ask: () => assert.fail("asked offline") })
   assert.deepEqual([off.event.id, off.checked], [mine.id, false])
   assert.deepEqual(ctx.stored, [])
 })
@@ -112,42 +117,48 @@ test("Haven's copy stands when it's newer or the relays have none; offline it is
 /** A Save-time read that finds the same copy the page had. */
 const same = event => async () => ({ event, checked: true })
 
-test("a relay that never answered is not a relay that has none: the list is known only when relays answered", async () => {
+test("only the account's own relays count: a copy from one of them, or most answering; every one to say there is none", async () => {
   const mine = list(SK, 100, [["r", "wss://mine.example"]])
-  const ctx = fakeCtx()
-  const empty = async () => []
-  const fail = async () => { throw new Error("down") }
+  const ctx = fakeCtx() // own relays: r.example and w.example
+  const by = map => async relay => (map[relay] ?? down)()
+  const none = async () => says([])
   // Every relay failed and there's no copy: unknown, not "you have none".
-  assert.deepEqual(await latestList(ctx, 10002, { online: true, query: fail }), { event: undefined, checked: false, answered: 0 })
-  // One relay said "none", the rest failed: still unknown.
-  let first = true
-  const one = await latestList(ctx, 10002, { online: true, query: async () => { if (first) { first = false; return [] } throw new Error("down") } })
+  assert.deepEqual(await latestList(ctx, 10002, { online: true, ask: down }), { event: undefined, checked: false, asked: 2, answered: 0 })
+  // The defaults and purplepag.es all say "none" but the user's relays are down: unknown (Tron #1456 2).
+  const publicOnly = await latestList(ctx, 10002, { online: true, ask: async relay => relay.endsWith(".example") ? down() : none() })
+  assert.deepEqual([publicOnly.event, publicOnly.checked, publicOnly.answered], [undefined, false, 0])
+  // One of the two own relays says "none": still unknown; both: known to have none.
+  const one = await latestList(ctx, 10002, { online: true, ask: by({ "wss://r.example": none }) })
   assert.deepEqual([one.event, one.checked, one.answered], [undefined, false, 1])
-  // Two relays said "none": known to have none.
-  let n = 0
-  const two = await latestList(ctx, 10002, { online: true, query: async () => { if (n++ < 2) return []; throw new Error("down") } })
-  assert.deepEqual([two.event, two.checked, two.answered], [undefined, true, 2])
-  // One relay sent a copy: known, that copy.
-  let k = 0
-  const found = await latestList(ctx, 10002, { online: true, query: async () => { if (k++ === 0) return [mine]; throw new Error("down") } })
+  const both = await latestList(ctx, 10002, { online: true, ask: by({ "wss://r.example": none, "wss://w.example": none }) })
+  assert.deepEqual([both.event, both.checked, both.answered], [undefined, true, 2])
+  // One own relay sent a copy: known, that copy.
+  const found = await latestList(ctx, 10002, { online: true, ask: by({ "wss://w.example": async () => says([mine]) }) })
   assert.deepEqual([found.event.id, found.checked], [mine.id, true])
-  assert.deepEqual([knownFrom(0, true), knownFrom(1, true), knownFrom(1, false), knownFrom(2, false)], [false, true, false, true])
-  assert.ok(await latestList(ctx, 10002, { online: true, query: empty }).then(r => r.checked && !r.event), "every relay answered none")
+  // A copy from a default relay only, the own relays down: shown, not known.
+  const elsewhere = await latestList(ctx, 10002, { online: true, ask: async relay => relay.endsWith(".example") ? down() : says([mine]) })
+  assert.deepEqual([elsewhere.event.id, elsewhere.checked], [mine.id, false])
+  // Haven's copy and one own relay of two answering empty: not most of them, so not known (Tron #1456 2).
+  const local = await latestList(fakeCtx({ outbox: [mine] }), 10002, { online: true, ask: by({ "wss://r.example": none }) })
+  assert.deepEqual([local.event.id, local.checked], [mine.id, false])
+  assert.deepEqual([listKnown({ asked: 0, answered: 0, found: false }), listKnown({ asked: 3, answered: 2, found: true }), listKnown({ asked: 3, answered: 1, found: true, netFound: true }), listKnown({ asked: 4, answered: 2, found: true }), listKnown({ asked: 3, answered: 2, found: false }), listKnown({ asked: 3, answered: 3, found: false })], [false, true, true, false, false, true])
 })
 
-test("askRelay: an EOSE is an answer (even an empty one); a closed or silent relay is not", async t => {
-  const ev = list(SK, 1, [])
-  let opts
-  const fake = how => t.mock.method(pool, "subscribe", (relays, filter, o) => { opts = o; setTimeout(() => how(o)); return { close: () => {} } })
-  fake(o => { o.onevent(ev); o.oneose() })
-  assert.deepEqual((await askRelay("wss://a.example", {})).map(e => e.id), [ev.id])
-  assert.ok(opts.maxWait > 5000, "the pool's own EOSE timer runs past ours, so a timeout can't pass as an answer")
-  pool.subscribe.mock.restore(); fake(o => o.oneose())
-  assert.deepEqual(await askRelay("wss://a.example", {}), [])
-  pool.subscribe.mock.restore(); fake(o => o.onclose("connection failed"))
-  await assert.rejects(askRelay("wss://a.example", {}), /didn't answer/)
-  pool.subscribe.mock.restore(); fake(() => {})
-  await assert.rejects(askRelay("wss://a.example", {}, 20), /didn't answer/)
+test("a copy dated far ahead is skipped, so a bad clock can't pin the list", async () => {
+  const at = 1_000_000
+  const ahead = list(SK, at + 3600, [["r", "wss://future.example"]])
+  const now = list(SK, at - 10, [["r", "wss://now.example"]])
+  const r = await latestList(fakeCtx({ outbox: [ahead] }), 10002, { online: true, at, ask: async () => says([ahead, now]) })
+  assert.equal(r.event.id, now.id)
+})
+
+test("real pool, no mocks: relays that refuse the connection are not answers (Tron #1456 1)", async () => {
+  const ctx = fakeCtx()
+  ctx.account.relays = { read: ["ws://127.0.0.1:1"], write: ["ws://127.0.0.1:2"] }
+  const quick = (url, filter) => askRelay(url, filter, 1500)
+  const r = await latestList(ctx, 10063, { online: true, ask: quick })
+  assert.deepEqual([r.event, r.checked, r.answered], [undefined, false, 0])
+  assert.deepEqual(await askRelay("ws://127.0.0.1:1", { kinds: [10063] }, 1500), { events: [], answered: false })
 })
 
 test("Save reads the list again: refuses when relays don't answer, or when it changed since the page opened", async t => {
@@ -166,12 +177,10 @@ test("Save reads the list again: refuses when relays don't answer, or when it ch
   const appeared = await publishList(ctx, 10002, [["r", "wss://a.example"]], { latest: same(elsewhere) }).catch(e => e)
   assert.ok(appeared instanceof ListNotSaved && appeared.latest.id === elsewhere.id)
   assert.deepEqual(signed, [], "nothing was signed")
-  // With no `latest` given it reads through latestList and askRelay itself (every relay refusing here): refused.
-  const asked = []
-  t.mock.method(pool, "subscribe", ([relay], filter, o) => { asked.push(relay); setTimeout(() => o.onclose("connection failed")); return { close: () => {} } })
+  // With no `latest` given it reads through latestList and the real askRelay (the own relays refuse here): refused.
+  ctx.account.relays = { read: ["ws://127.0.0.1:1"], write: ["ws://127.0.0.1:2"] }
   const real = await publishList(ctx, 10002, [], { previous }).catch(e => e)
   assert.ok(real instanceof ListNotSaved && real.checked === false, String(real))
-  assert.ok(asked.includes("wss://r.example") && asked.includes("wss://purplepag.es"), "it asked the relays at Save")
   assert.deepEqual(signed, [], "nothing was signed")
 })
 

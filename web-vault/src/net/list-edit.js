@@ -4,59 +4,60 @@
 import { pool, publishRelays, uniq, DEFAULT_RELAYS, PROFILE_RELAYS } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { serverUrl } from "./upload.js"
+import { askRelay, MAX_SKEW } from "./follows.js"
+import { verifyEvent } from "nostr-tools/pure"
 
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 const now = () => Math.floor(Date.now() / 1000)
+/** verifyEvent on a fresh copy: it trusts a "verified" flag an event object carries (follows.js does the same). */
+const verifiedCopy = ({ id, pubkey, created_at, kind, tags, content, sig }) => {
+  try { return verifyEvent({ id, pubkey, created_at, kind, tags, content, sig }) } catch { return false }
+}
 
 /** Where a list is looked for and sent: the account's relays, the defaults and the profile index (purplepag.es). */
 const listRelays = ctx => uniq([...ctx.account.relays.read, ...ctx.account.relays.write, ...DEFAULT_RELAYS, ...PROFILE_RELAYS])
 
 /**
- * Ask one relay: -> its events, or throws when it didn't answer (no connection, closed, or no EOSE within `wait`). An
- * empty answer and a relay that never answered are different things: only the first says "nothing here". querySync
- * can't tell them apart (both resolve []), so the EOSE is watched here and the relay's own EOSE timer is set past ours.
+ * Whether the newest list is known, by follows.js's rule for kind 3 (wipeGuard, Logen 2026-10-14), counting only the
+ * account's own relays (`asked` of them, `answered` sent their EOSE; the defaults and purplepag.es are asked too but
+ * don't count): a copy came from one of them (`netFound`), or most of them answered; and to say there is no list at
+ * all, every one of them answered. A copy from this browser or a default relay alone, with the user's relays down,
+ * says nothing about what those relays hold.
  */
-export function askRelay(relay, filter, wait = 5000) {
-  return new Promise((resolve, reject) => {
-    const events = []
-    let sub, done = false
-    const finish = answered => {
-      if (done) return
-      done = true; clearTimeout(timer); sub?.close("done")
-      answered ? resolve(events) : reject(new Error(`${relay} didn't answer`))
-    }
-    const timer = setTimeout(() => finish(false), wait)
-    sub = pool.subscribe([relay], filter, { maxWait: wait + 2000, onevent: e => events.push(e), oneose: () => finish(true), onclose: () => finish(false) })
-  })
+export function listKnown({ asked, answered, netFound, found }) {
+  if (!asked) return false
+  if (!found) return answered === asked
+  return netFound || answered * 2 > asked
 }
 
-/** How many relays must answer before the list is known: one if a copy turned up, two to say there is none. */
-export const knownFrom = (answered, found) => answered >= (found ? 1 : 2)
-
 /**
- * The newest `kind` list the account signed. -> { event, checked, answered }; `checked` is true only when relays
- * answered: at least one when a copy was found, at least two to say there is none (one "none" may be a relay that lost
- * it). Offline, or with every relay failing, it is false, and a page must not save: its copy may be old, or "no list"
- * may be a list nobody could reach. A newer copy from the relays is kept in Haven.
+ * The newest `kind` list the account signed. -> { event, checked, asked, answered }; `checked` is listKnown. Offline,
+ * or with the user's relays not answering, it is false, and a page must not save: its copy may be old, or "no list"
+ * may be a list nobody could reach. Each relay is asked with follows.js's askRelay, which counts only a real EOSE (a
+ * relay that never connected, closed the subscription or timed out is not an answer). Copies dated MAX_SKEW or more
+ * ahead are skipped, as follows.js does, so one bad clock can't pin the list in the future. A newer copy from the
+ * relays is kept in Haven.
  * Each relay is asked on its own: `on({ event })` gets Haven's copy at once and each newer one as a relay sends it, so
- * a page can draw before the slowest relay answers. The promise still waits for every relay (or its 5 s), because an
- * edit must start from the newest copy anywhere.
+ * a page can draw before the slowest relay answers. The promise still waits for every relay (or its timeout), because
+ * an edit must start from the newest copy anywhere. `ask` and `at` are for tests.
  */
-export async function latestList(ctx, kind, { query = (r, f) => askRelay(r[0], f), online = globalThis.navigator?.onLine !== false, on } = {}) {
+export async function latestList(ctx, kind, { ask = askRelay, online = globalThis.navigator?.onLine !== false, on, at = now() } = {}) {
   const me = ctx.session.pubkey
   const filter = { kinds: [kind], authors: [me] }
-  const mine = evs => evs.filter(e => e?.kind === kind && e.pubkey === me)
-  const local = newest(mine(await ctx.vault.outbox.query(filter).catch(() => [])))
-  if (!online) return { event: local, checked: false, answered: 0 }
+  const ok = e => e?.kind === kind && e.pubkey === me && e.created_at < at + MAX_SKEW && verifiedCopy(e)
+  const own = uniq([...ctx.account.relays.read, ...ctx.account.relays.write])
+  const local = newest((await ctx.vault.outbox.query(filter).catch(() => [])).filter(ok))
+  if (!online) return { event: local, checked: false, asked: own.length, answered: 0 }
   if (local) on?.({ event: local })
-  let best = local, answered = 0
-  await Promise.all(listRelays(ctx).map(relay => query([relay], filter, { maxWait: 5000 }).then(evs => {
-    answered++
-    const ev = newest(mine(evs ?? []))
+  let best = local, answered = 0, netFound = false
+  await Promise.all(listRelays(ctx).map(relay => ask(relay, filter).catch(() => ({ events: [], answered: false })).then(r => {
+    const evs = (r?.events ?? []).filter(ok)
+    if (own.includes(relay)) { if (r?.answered) answered++; if (evs.length) netFound = true }
+    const ev = newest(evs)
     if (ev && (!best || ev.created_at > best.created_at)) { best = ev; on?.({ event: ev }) }
-  }).catch(() => {})))
+  })))
   if (best && best !== local) await ctx.vault.outbox.event(best).catch(() => {})
-  return { event: best, checked: knownFrom(answered, !!best), answered }
+  return { event: best, checked: listKnown({ asked: own.length, answered, netFound, found: !!best }), asked: own.length, answered }
 }
 
 /** Thrown by publishList instead of signing: the list couldn't be read just now, or it changed since the page read it.
