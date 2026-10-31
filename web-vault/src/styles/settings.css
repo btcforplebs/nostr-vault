@@ -175,6 +175,11 @@ a.settings-row:hover { background: var(--s2); }
 .seg-pill button.on { background: #636366; box-shadow: 0 1px 3px rgb(0 0 0 / .3); font-weight: 600; } /* iOS dark selected segment */
 .seg-pill button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .seg-pill button:active { transform: none; }
+/* Settings › Feed Text: "5 lines" and a − + pill, the phone's Stepper. */
+.line-stepper-value { flex: none; font-variant-numeric: tabular-nums; }
+.seg-pill button:disabled { color: var(--text-3); cursor: default; }
+.line-stepper { gap: 10px; }
+.line-stepper .seg-pill button { min-width: 40px; padding: 0 8px; font-size: 18px; }
 
 /* Search's header (iPhone SearchView): an icon pill of result tabs on the left, the filter circle on the right, then
    the field with its glass. Section headers are Title case, as the phone's. */

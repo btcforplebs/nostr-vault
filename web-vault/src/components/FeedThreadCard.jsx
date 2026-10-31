@@ -9,8 +9,10 @@ import { CondensedNote } from "./CondensedNote.jsx"
 import { NoteCard } from "./NoteCard.jsx"
 import { COLLAPSED_REPLIES, latestReplies, repliesOf } from "../net/feed-layout.js"
 import { repostInner } from "../net/thread.js"
+import { lineLimit } from "../net/line-limits.js"
 
-export function FeedThreadCard({ thread, lines = 3, openId, setOpenId, rootUnavailable = false, memoryOnly = false }) {
+// `lines`: the root's lines (Settings › Feed Text, Threaded View, 5 by default); a reply shows one fewer.
+export function FeedThreadCard({ thread, lines = lineLimit("threaded"), openId, setOpenId, rootUnavailable = false, memoryOnly = false }) {
   const [unfolded, setUnfolded] = useState(false)
   const all = repliesOf(thread)
   const shown = unfolded ? all : latestReplies(thread, COLLAPSED_REPLIES)

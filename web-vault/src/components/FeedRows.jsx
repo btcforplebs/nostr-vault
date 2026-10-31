@@ -14,16 +14,18 @@ import { tileNote } from "../net/media.js"
 import { fetchNotes } from "../net/notifications.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { replyRefs } from "../net/thread.js"
+import { lineLimit } from "../net/line-limits.js"
 
 export function FeedRows({ notes, layout, keepFeedOrder = false, memoryOnly = false, fetchRoots }) {
   // The open post glides to the tap line (feed-tap.js); while one is open, room under the list lets the last ones reach it.
   const [openId, setOpenId] = useFeedTap()
   const room = openId && <div class="tap-room" aria-hidden="true" />
+  const compactLines = lineLimit("compact") // Settings › Feed Text, Compact View
   if (layout === "condensed") return <><div class="condensed-list">{notes.map(n => {
     const shown = tileNote(n) ?? n
     return openId && shown.id === openId
       ? <div key={n.id} data-tap-open><NoteCard event={n} memoryOnly={memoryOnly} /></div>
-      : <CondensedNote key={n.id} event={n} card onOpen={x => setOpenId(x.id)} />
+      : <CondensedNote key={n.id} event={n} card lines={compactLines} onOpen={x => setOpenId(x.id)} />
   })}</div>{room}</>
   if (layout === "threaded") return <><Threads notes={notes} keepFeedOrder={keepFeedOrder} fetchRoots={fetchRoots} memoryOnly={memoryOnly} openId={openId} setOpenId={setOpenId} />{room}</>
   // A reply shows the note it answers above it, unless that note is the very next row (the iPhone's parentIsNext).

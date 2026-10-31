@@ -21,9 +21,9 @@ export const PRIVACY_URL = "https://nostrvault.app/privacy.html"
  * Relay screen with its FIPS panel, which is the web's "Who Can Reach You"). Rows the phone has and the web
  * doesn't are left out rather than shown dead: Feed, Appearance,
  * Media & Cache, Notifications, Sync with Vault on Mac, Tutorials, Proof of Work, Start Relay Automatically.
- * Some of their settings sit on the index itself instead of a page: the Notifications switch, Feed's Posting
- * section (Send Delay, components/SendDelayPicker.jsx) and Media & Cache's Autoplay Videos
- * (components/AutoplaySwitch.jsx).
+ * Some of their settings sit on the index itself instead of a page: the Notifications switch, Appearance's Feed Text
+ * (components/LineLimitSteppers.jsx), Feed's Posting section (Send Delay, components/SendDelayPicker.jsx) and Media &
+ * Cache's Autoplay Videos (components/AutoplaySwitch.jsx).
  */
 export const SETTINGS_GROUPS = [
   { title: "Account", rows: [
