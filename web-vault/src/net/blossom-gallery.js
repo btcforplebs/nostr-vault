@@ -109,21 +109,73 @@ export async function listBlobs(servers, pubkey, { ctx, fetch = globalThis.fetch
 }
 
 /**
+ * A host only the owner's own devices can be on (HavenConfig.isPrivateNetworkHost, iOS/Mac #1404, Android #1403):
+ * loopback, a LAN or CGNAT/Tailscale address, a unique-local or link-local IPv6, or a home-network name (.local,
+ * .lan, .home.arpa, .internal, .localhost, .ts.net). Such a server is one of the owner's vaults, never a mirror.
+ */
+export function isHomeNetworkHost(hostname) {
+  let h = String(hostname ?? "").toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "")
+  if (h.startsWith("::ffff:") && h.includes(".")) h = h.slice(7)
+  if (!h || h === "localhost") return true
+  if ([".localhost", ".local", ".lan", ".home.arpa", ".internal", ".ts.net"].some(x => h.endsWith(x))) return true
+  if (h.includes(":")) return h === "::1" || h === "::" || /^(fc|fd|fe[89ab])/.test(h)
+  const o = h.split(".")
+  if (o.length !== 4 || !o.every(x => /^\d{1,3}$/.test(x))) return false
+  const [a, b] = o.map(Number)
+  return a === 10 || a === 127 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+    (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127)
+}
+
+/**
  * Where "Delete from mirrors" goes (Tim's facts, nv-fips 68c16689: one list on every app): the account's media servers
  * (its 10063, the web's mirrors) whether or not their list showed the file, any other server whose list had it, and
  * the server in the file's own link, once each. A server's list can miss a file it still serves, and a server dropped
- * from the 10063 can still hold it. The web has no home vault to skip: a FIPS vault is only ever read (fips-media.js).
+ * from the 10063 can still hold it. No home-network or mesh server is a target (http other than loopback and `.fips`
+ * never pass serverUrl; loopback and the rest are dropped here): any of them may be one of the owner's vaults. A vault
+ * with a public https name (a Mac's tunnel in the 10063) looks like a mirror here; deleteBlob asks it first.
  */
 export function deleteTargets(blob, servers = []) {
   let own = null
   try { own = serverUrl(new URL(blob.url).origin) } catch {}
   return [...new Set([...servers, ...(blob.servers ?? []), own].map(s => s && serverUrl(s)).filter(Boolean))]
+    .filter(s => !isHomeNetworkHost(hostnameOf(s)))
 }
 
-/** Delete a file from every server in deleteTargets. A server that says 404 doesn't have it: that counts as done.
- *  -> [{ server, ok, message }] */
-export async function deleteBlob(blob, { ctx, fetch = globalThis.fetch, servers = [] }) {
+/**
+ * Is this server one of the owner's vaults? (HavenConfig.vaultCheckVerdict) `info` is what it answered to
+ * `Accept: application/nostr+json` at its address, or null for no answer. Every vault's relay names its owner as
+ * `pubkey` whatever address it is reached by; a public media server answers with a page, an error or another key.
+ * -> "mirror" | "ownVault" | "unknown"
+ */
+export function vaultCheckVerdict(info, ownerHex) {
+  if (info == null) return "unknown"
+  let pubkey
+  try { pubkey = JSON.parse(info)?.pubkey } catch { return "mirror" }
+  if (typeof pubkey !== "string") return "mirror"
+  const owner = String(ownerHex ?? "").trim().toLowerCase()
+  if (!owner) return "unknown"
+  return pubkey.trim().toLowerCase() === owner ? "ownVault" : "mirror"
+}
+
+/** Asks a server for its relay info (NIP-11). No answer, or a server error (a tunnel whose vault is down), is null. */
+async function vaultCheck(server, ownerHex, { fetch, timeoutMs }) {
+  let info = null
+  try {
+    const res = await fetch(server, { headers: { Accept: "application/nostr+json" }, signal: AbortSignal.timeout?.(timeoutMs) })
+    if (res.status < 500) info = await res.text()
+  } catch {}
+  return vaultCheckVerdict(info, ownerHex)
+}
+
+/** Delete a file from every server in deleteTargets that isn't one of the owner's vaults. Each is asked first
+ *  (vaultCheck): a vault keeps its copy (that copy may be the last one), and one that can't be asked gets nothing and
+ *  is reported as still holding the file. A server that says 404 doesn't have it: that counts as done.
+ *  -> [{ server, ok, message, kept? }] */
+export async function deleteBlob(blob, { ctx, fetch = globalThis.fetch, servers = [], timeoutMs = 15_000 }) {
   return Promise.all(deleteTargets(blob, servers).map(async server => {
+    const verdict = await vaultCheck(server, ctx?.session?.pubkey, { fetch, timeoutMs })
+    if (verdict === "ownVault") return { server, ok: false, kept: true, message: "your vault, kept" }
+    if (verdict === "unknown") return { server, ok: false, message: "couldn't check it isn't your vault, so nothing was sent" }
     try {
       const auth = await signAuth(ctx, "delete", blob.sha256, hostnameOf(server))
       const res = await fetch(`${server}/${blob.sha256}`, { method: "DELETE", headers: { Authorization: auth } })
@@ -150,9 +202,12 @@ export async function mirrorBlob(blob, servers, { ctx, fetch = globalThis.fetch 
 
 /** "3 of 4 servers" style summary of a delete or mirror, naming the ones that refused. */
 export function outcome(results, verb) {
-  const ok = results.filter(r => r.ok).length
-  const bad = results.filter(r => !r.ok).map(r => `${hostOf(r.server)}: ${r.message}`)
-  return `${verb} on ${ok} of ${results.length} server${results.length === 1 ? "" : "s"}${bad.length ? `. ${bad.join(" · ")}` : "."}`
+  const kept = results.filter(r => r.kept).map(r => hostOf(r.server))
+  const asked = results.filter(r => !r.kept)
+  const ok = asked.filter(r => r.ok).length
+  const bad = asked.filter(r => !r.ok).map(r => `${hostOf(r.server)}: ${r.message}`)
+  const keptLine = kept.length ? ` Your vault keeps its copy: ${kept.join(", ")}.` : ""
+  return `${verb} on ${ok} of ${asked.length} server${asked.length === 1 ? "" : "s"}${bad.length ? `. ${bad.join(" · ")}` : "."}${keptLine}`
 }
 
 /** The first day of the week in `locale` (0 Sunday … 6 Saturday), as the phone's calendar has it; Sunday if unknown. */
