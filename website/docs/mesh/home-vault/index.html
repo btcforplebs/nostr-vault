@@ -141,16 +141,21 @@
                 <h2 id="kiosk">1. Turn the spare phone into a kiosk</h2>
                 <ol class="steps">
                     <li>Install Nostr Vault on the spare phone and sign in with the same account.</li>
+                    <li>On iPhone, add your main phone under My Devices first (step 2). Kiosk mode won't start with an empty
+                        list.</li>
                     <li>Open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh</span>, switch on <span class="ui">Mesh</span>,
                         and under <span class="ui">Share With Others</span> switch on <span class="ui">Kiosk mode</span>.</li>
-                    <li>Leave the app open on a charger. Kiosk mode keeps the screen on so the phone keeps serving.</li>
+                    <li>Leave it on a charger.</li>
                 </ol>
                 <ul>
-                    <li>Leaving the app pauses kiosk mode. It turns on again when you come back, and after a restart if it was on.</li>
+                    <li>On iPhone, kiosk mode keeps the screen on, pauses when you leave the app and turns on again when you come
+                        back. On Android it keeps serving in the background while the vault relay runs, and after a restart.</li>
                     <li>Your devices in My Devices reach the kiosk in full.</li>
                     <li>Anyone else on the mesh can read only the photos in your posts, and slowly: 1 MB/s for all of them together,
-                        at most 256 MB each, and 1 GB per session before they wait. They can't read your notes or change anything.</li>
-                    <li>On Android, <span class="ui">Pause after</span> sets how much the mesh may download before sharing pauses.</li>
+                        at most 256 MB each. On iPhone they get 1 GB a day in total, then wait until the next day. They can't read your
+                        notes or change anything.</li>
+                    <li>On Android, <span class="ui">Pause after</span> (250 MB, 1 GB or 5 GB, 1 GB to start) sets how much the mesh
+                        may download in one session. When it's reached, kiosk mode turns off until you turn it on again.</li>
                 </ul>
 
                 <div class="shots">
@@ -162,8 +167,9 @@
                 <ol class="steps">
                     <li>On the kiosk phone, under <span class="ui">This Device</span>, copy its mesh address (or show its QR code).</li>
                     <li>On your main phone, open <span class="ui">FIPS Mesh</span> &rarr; <span class="ui">Add a device by address</span>,
-                        paste or scan it, and pick <span class="ui">Home vault</span>. On Android, a kiosk your account already lists
-                        shows under <span class="ui">In Your Media Servers</span>; tap it to use its address.</li>
+                        paste or scan it, and pick <span class="ui">Home vault</span>. A kiosk your account already lists shows under
+                        Address as In your media servers (on Android, <span class="ui">In Your Media Servers</span>). Tap it to use
+                        its address.</li>
                     <li>Add the main phone to the kiosk's My Devices too.</li>
                 </ol>
                 <p>From then on, your new notes and media also go to the kiosk phone over the mesh, and it sends your notes on to your
@@ -178,8 +184,8 @@
 
                 <h2 id="photos">Photos go to</h2>
                 <p>Under Share With Others, <span class="ui">Photos go to</span> (<span class="ui">Public server</span>,
-                    <span class="ui">My Mac</span> or <span class="ui">Both</span>) is where you want the photos you post to go. For now,
-                    posting a photo still needs a public media server.</p>
+                    <span class="ui">My Mac</span> or <span class="ui">Both</span>) saves where you want photos to go, but it doesn't
+                    change anything yet: posting a photo still needs a public media server.</p>
             </article>
             <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">

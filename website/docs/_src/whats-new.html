@@ -7,14 +7,47 @@
   "eyebrow": "Help",
   "h1": "What's new in <span>Nostr Vault</span>",
   "lede": "The release notes for iPhone, Mac and Android, newest first. Where a change is on only some of the apps, it says which.",
-  "description": "Nostr Vault release notes for iPhone, Mac and Android: 3.0.0 with the FIPS mesh, and the earlier 2.7.2 builds.",
+  "description": "Nostr Vault release notes for iPhone, Mac and Android: 3.0.1, 3.0.0 with the FIPS mesh, and the earlier 2.7.2 builds.",
   "labels": {
-    "ios": ["FIPS Mesh", "Vault on Mac", "Check sync with Vault on Mac", "Open in Fanfares", "Already unlocked?"],
+    "ios": ["FIPS Mesh", "Vault on Mac", "Check sync with Vault on Mac", "Open in Fanfares", "Already unlocked?", "Save", "Delete from mirrors", "Delete everywhere", "Share as a note", "No signing key"],
     "mac": ["FIPS Mesh", "Vault on Mac", "Open in Fanfares", "Already unlocked?"],
-    "android": ["FIPS Mesh", "Vault on Mac", "Pause after"]
+    "android": ["FIPS Mesh", "Vault on Mac", "Pause after", "Delete from mirrors", "Delete everywhere", "Share as a note"],
+    "web": ["Delete from mirrors", "Share as a note"]
   }
 }
 -->
+
+<section id="v3-0-1">
+<p class="eyebrow">iPhone, Mac and Android</p>
+<h2>3.0.1</h2>
+<ul>
+    <li><strong>Relays publish only when you Save.</strong> Changes in <span class="path">Settings &rarr; Relays</span>
+        are a draft until you tap <strong>Save</strong>. New accounts start on five relays, and setup shows the
+        servers your posts will go through before anything is published.</li>
+    <li><strong>Delete a photo properly.</strong> In Media, hold a photo: <strong>Delete from mirrors</strong> takes
+        it off your outside media servers and keeps your own copies, and <strong>Delete everywhere</strong> takes it
+        off your devices too. See <a class="inline" href="/docs/media/#delete">Deleting a photo</a>.</li>
+    <li><strong>More than one account.</strong> Alerts say which account they're for. The Vault list has chips to
+        switch between All and each account, the account switcher shows each account's new count, and a dot on
+        your picture means another account has news.</li>
+    <li><strong>A new emoji picker</strong>, with search and every emoji in one grid.</li>
+    <li><strong>One Magic Paste icon</strong> on every device: a clipboard with sparkles.</li>
+    <li><strong>Live streams:</strong> <strong>Share as a note</strong> starts a short "Live now" note with the
+        stream's card.</li>
+    <li><strong>Web:</strong> the WoT tab now looks like the iPhone's, with My Web and Rebuild your web.</li>
+</ul>
+<h3>Fixes</h3>
+<ul>
+    <li><strong>Android:</strong> a read-only account now says <strong>No signing key</strong> instead of Local
+        Key.</li>
+    <li><strong>Android:</strong> your posts now go to all five of your servers.</li>
+    <li><strong>Web:</strong> notifications check about once a minute while the tab is open, and every five minutes
+        while it's in the background.</li>
+    <li>New profiles keep loading until their relays answer, instead of showing up empty.</li>
+    <li>Smoother photo swipes in the feed and in full screen.</li>
+    <li>Fewer requests to your signer app.</li>
+</ul>
+</section>
 
 <section id="v3-0-0">
 <p class="eyebrow">Build 41 &middot; iPhone, Mac and Android</p>

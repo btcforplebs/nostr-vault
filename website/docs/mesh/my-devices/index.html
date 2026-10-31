@@ -177,8 +177,8 @@
                     <figure><img src="/docs/img/ios/device.webp" alt="A device on the list" width="900" height="1957" loading="lazy"><figcaption>A device on the list</figcaption></figure>
                 </div>
 
-                <div class="done"><p><strong>You're done when</strong> both devices show each other as <span class="ui">In reach</span>
-                    under My Devices. It can take a moment after the mesh turns on.</p></div>
+                <div class="done"><p><strong>You're done when</strong> the phone shows the other device as <span class="ui">In reach</span>
+                    under My Devices (the Mac's list doesn't show reach). It can take a moment after the mesh turns on.</p></div>
 
                 <div class="shots mac">
                     <figure><img src="/docs/img/mac/fips-mesh.webp" alt="FIPS Mesh on Mac, with a phone in My Devices" width="1200" height="1102" loading="lazy"><figcaption>FIPS Mesh on Mac, with a phone in My Devices</figcaption></figure>
@@ -186,12 +186,15 @@
 
                 <h2 id="list">The list</h2>
                 <ul>
-                    <li>Each device shows <span class="ui">In reach</span> or <span class="ui">Not in reach</span>. A Mac is in reach
+                    <li>On a phone, each device shows <span class="ui">In reach</span>, or <span class="ui">Not in reach</span>
+                        (Android shows when it was last seen instead, and Not in reach on the device's own page). The Mac's list
+                        shows only each device's role and a short address. A Mac is in reach
                         while Nostr Vault is open on it; a phone while the app is open or in kiosk mode.</li>
                     <li>Tap a device to rename it, copy its address, or remove it. On Android, <span class="ui">What It Gets</span>
                         chooses whether it gets <span class="ui">Send new notes</span> and <span class="ui">Send new media</span>.</li>
                     <li>Once a device is on the list, only the devices on the list learn this phone's address. Anyone else on the mesh
-                        gets public photos only.</li>
+                        gets public photos only. On Android, until you add your first device, anyone on the mesh can learn this
+                        phone's address.</li>
                 </ul>
 
                 <h2 id="next">Next</h2>

@@ -190,7 +190,7 @@
                 <p class="eyebrow">Where messages go</p>
                 <h2 id="dm-relays-and-who-can-reach-you">DM relays and who can reach you</h2>
                 <p>Your DM inbox is a list of relays (the DMs column under
-                    <span class="path">Settings &rarr; Relays &rarr; Relays</span>). Other apps send your messages there. Keep at
+                    <span class="path">Settings &rarr; Relays &rarr; Relays</span>, then tap Save). Other apps send your messages there. Keep at
                     least two: with <strong>No DM relay</strong> people can't message you, and with <strong>Only one DM
                     relay</strong> nobody can if it goes down. If your Mac is your vault, its inbox is listed first.</p>
                 <p>When you send, Nostr Vault uses the other person's DM inbox, and falls back to their normal relays if they
@@ -198,7 +198,10 @@
                 <p>Someone delivering straight to your vault's own inbox has to be in your
                     <a class="inline" href="/docs/web-of-trust/">web of trust</a>. <strong>Follow Distance</strong> under
                     <span class="path">Settings &rarr; Your Vault Relay &rarr; Who Can Reach You</span> sets how far out that
-                    goes (<a class="inline" href="/docs/vault/who-can-reach-you/">more</a>). There is no separate requests folder. Messages from people you've blocked are hidden.</p>
+                    goes (<a class="inline" href="/docs/vault/who-can-reach-you/">more</a>). </p>
+                <p>Messages from people outside your web of trust whom you've never written to wait under
+                    <strong>Requests</strong>, at the bottom of Messages. They don't notify you and don't count as unread. Reply
+                    to one to move it to your inbox. Messages from people you've blocked are hidden.</p>
                 </section>
 
                 <section id="notifications">
@@ -208,6 +211,9 @@
                     zaps and new followers. Likes, zaps and reposts on the same post fold into one line ("Ann and 3 others"), and
                     new followers fold per day. Tap <strong>Mentions</strong> to see only replies, mentions and quotes. The web
                     app has the same list under <strong>Notifications</strong>.</p>
+                <p>With more than one account, chips above the list switch between All and each account, and each chip shows
+                    that account's new count. A line for another account says For <em>name</em>. In the account switcher, each
+                    other account shows how many new things it has, and a dot on your avatar means one of them has news.</p>
                 </section>
 
                 <section id="settings">
@@ -219,10 +225,12 @@
                     <li><strong>New Notes in Your Feed</strong> tells you when new posts arrive.</li>
                     <li><strong>Sound</strong> picks the alert sound.</li>
                     <li>For each account: <strong>Mentions</strong>, <strong>Replies</strong>, <strong>Direct Messages</strong>,
-                        <strong>Zaps</strong>, <strong>Reactions</strong>, <strong>Reposts</strong> and
+                        <strong>Zaps</strong>, <strong>Reactions</strong> (hidden in Zaps Only mode), <strong>Reposts</strong> and
                         <strong>New Followers</strong>.</li>
                 </ul>
-                <p>Only people in your web of trust can set off an alert. Messages, zaps and follows always come through. A new
+                <p>Only people in your web of trust can set off an alert. Zaps and follows always come through. A message alerts
+                    only if it's from someone in your web of trust or someone you've written to. Other messages wait silently
+                    under Requests. A new
                     follower outside your web is counted ("3 new followers") instead of named.</p>
                 <p>A message alert says who it's from. If you don't see it, the copy left in Notification Center just says
                     "New message", without the sender or the text.</p>

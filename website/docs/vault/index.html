@@ -149,8 +149,9 @@
                         out over time.</li>
                     <li><strong>Your media</strong>, in its Blossom media server.</li>
                 </ul>
-                <p>The vault's address (<code>ws://127.0.0.1:&hellip;</code>) only works on that device, so nobody else can
-                    connect to it. Your notes still go to your normal relays too. The vault is the copy you own.</p>
+                <p>The vault's address (<code>wss://127.0.0.1:&hellip;</code> on a phone) only works on that device. Other apps
+                    and people can't connect to it directly. What reaches it over the mesh or the web is set out in
+                    <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>. Your notes still go to your normal relays too. The vault is the copy you own.</p>
                 <p>To see it explained in the app, open <span class="path">Settings &rarr; Help &rarr; Tutorials</span> and
                     play <strong>Vault in Your Pocket</strong> or <strong>How Your Vault Works</strong>.</p>
                 </section>
@@ -158,21 +159,29 @@
                 <section id="vault-tab">
                 <p class="eyebrow">iPhone and Android</p>
                 <h2 id="the-vault-tab">The Vault tab</h2>
-                <p>The Vault tab shows how your vault is doing. At the top it says <strong>Your vault is running</strong>,
+                <p>The Vault tab opens on <strong>Vault</strong>, a list of everything new. Tap the Vault button at the bottom
+                    right (or pick <strong>Vault Dashboard</strong> at the end of the mode menu) to see how your vault is doing.
+                    At the top it says <strong>Your vault is running</strong>,
                     starting, paused or needs a restart, with how long it's been up. If it stops, a button lets you start it
                     again so it catches up on new notes and messages. The menu on that card has <strong>Copy Address</strong>,
                     <strong>Restart</strong>, <strong>Stop</strong> and <strong>Start</strong>.</p>
                 <p>Below that:</p>
                 <ul>
-                    <li><strong>Who can reach you</strong>: how many people can send to your inbox.</li>
+                    <li><strong>Is it safe?</strong>: four checks (your key, a saved follow list, a copy on your Mac, a backup
+                        file), with a button to make a backup.</li>
+                    <li><strong>Who can reach you</strong>: how many people can send to your inbox, and how many people you've
+                        blocked.</li>
                     <li><strong>In your vault</strong>: how many events it holds and how much space notes, media and cache use.
                         The cache is other people's media kept for quick loading, and you can clear it.</li>
                     <li><strong>Keep it full</strong>: <strong>Import notes</strong>, import media, back up media and export
                         notes.</li>
-                    <li><strong>Vault settings</strong>: shortcuts to Relays, Who Can Reach You, Media Servers and starting
-                        automatically.</li>
+                    <li><strong>Vault settings</strong>: shortcuts to Relays, Who Can Reach You, Media Servers, Sync with Vault on
+                        Mac and Start automatically.</li>
+                    <li>Then relay activity, and <strong>Advanced</strong> with relay details and media servers.</li>
                 </ul>
-                <p>On Android the same screen is called <strong>Vault Dashboard</strong>.</p>
+                <p>On iPhone and Android this screen is called <strong>Vault Dashboard</strong>.</p>
+                <p>With more than one account on the device, chips over the Vault list switch between All and each account.
+                    Each chip shows that account's new count, and each line is marked with its account.</p>
                 </section>
 
                 <section id="settings">
@@ -201,8 +210,8 @@
                 <ol>
                     <li>Open <span class="path">Settings &rarr; Your Vault Relay &rarr; Import Notes</span> and set the
                         <strong>Start Date</strong>.</li>
-                    <li>On iPhone, run it from the Vault tab: <span class="path">Keep it full &rarr; Import notes</span>. On
-                        Android, tap <strong>Start Import</strong> on the same page.</li>
+                    <li>Run it from the Vault Dashboard: <span class="path">Keep it full &rarr; Import notes</span>. On
+                        Android you can also tap <strong>Start Import</strong> on the Import Notes page.</li>
                 </ol>
                 <p>It reads from the relays that have Import switched on in <span class="path">Settings &rarr; Relays</span>.
                     Notes that tag you are kept only if they come from people you trust, or if they reply to or quote your own
@@ -216,12 +225,13 @@
                 <table>
                     <tr><th></th><th>Where the vault runs</th><th>What's different</th></tr>
                     <tr><td>iPhone</td><td>Inside the app</td><td>Vault tab with the full dashboard.</td></tr>
-                    <tr><td>Android</td><td>Inside the app</td><td>Same as iPhone; the dashboard is called Vault Dashboard.</td></tr>
+                    <tr><td>Android</td><td>Inside the app</td><td>Same as iPhone.</td></tr>
                     <tr><td>Mac</td><td>Inside the menu bar app</td><td>A simpler Relay Dashboard. <strong>Domain &amp; Port</strong>
                         lets you give the vault your own domain so your other devices can reach it, and
                         <strong>Startup</strong> has <strong>Launch at Login</strong>.</td></tr>
-                    <tr><td>Web</td><td>In your browser's storage</td><td>No relay settings. Import with
-                        <strong>Import from my relays</strong>. Signing out deletes this browser's copy; your phone's vault is
+                    <tr><td>Web</td><td>In your browser's storage</td><td>A Vault Dashboard like the phone's, without Start/Stop,
+                        Import media or Sync with Vault on Mac. Import with <span class="path">Keep it full &rarr; Import
+                        notes</span> or <strong>Import from my relays</strong> in Settings. Signing out deletes this browser's copy; your phone's vault is
                         untouched.</td></tr>
                 </table>
                 </div>

@@ -32,6 +32,8 @@
         (<a class="inline" href="/docs/messages/#settings">more</a>). Likes and reposts are off until you turn
         them on.</li>
     <li>While the app is open, new things show as a pill at the top, not as a system alert.</li>
+    <li>With more than one account, each alert shows which account it's for, and each account's alerts are grouped
+        together. In the account switcher, each other account shows how many new things it has.</li>
     <li>Something older than 24 hours never sets off an alert. When the vault catches up after being away, the first
         five items alert and the rest fold into one summary.</li>
 </ul>
@@ -110,8 +112,9 @@
 <section id="web">
 <p class="eyebrow">Web app</p>
 <h2>Web: only while a tab is open</h2>
-<p><strong>What wakes it:</strong> nothing. There is no Web Push. While Nostr Vault is open in a tab, even a
-    background tab, it asks your relays about once a minute what tags you.</p>
+<p><strong>What wakes it:</strong> nothing. There is no Web Push. While Nostr Vault is open in a tab, it asks your
+    relays what tags you about once a minute, or every five minutes while the tab is in the background. It checks
+    again as soon as you come back to the tab.</p>
 <ul>
     <li><strong>Open:</strong> the tab's title shows how many new things are in your Vault list. If you're looking
         at that list, no alert pops up.</li>
