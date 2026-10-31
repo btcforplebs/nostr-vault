@@ -99,8 +99,9 @@ test("a highlight counts by coordinate or version id, needs a passage, and refus
 })
 
 test("an overlong passage isn't a highlight; one dated in the future is refused", () => {
-  assert.equal(en.highlight(ev(9802, [["e", ID]], { content: "x".repeat(en.MAX_PASSAGE + 1) }), ID, COORD, NOW), null)
-  assert.ok(en.highlight(ev(9802, [["e", ID]], { content: "x".repeat(en.MAX_PASSAGE) }), ID, COORD, NOW))
+  // "xy", not one letter: 20 of one character in a row is spam (spam.js).
+  assert.equal(en.highlight(ev(9802, [["e", ID]], { content: "xy".repeat(en.MAX_PASSAGE / 2) + "x" }), ID, COORD, NOW), null)
+  assert.ok(en.highlight(ev(9802, [["e", ID]], { content: "xy".repeat(en.MAX_PASSAGE / 2) }), ID, COORD, NOW))
   assert.equal(en.highlight(ev(9802, [["e", ID]], { content: "x", at: NOW + 3600 }), ID, COORD, NOW), null)
   assert.ok(en.highlight(ev(9802, [["e", ID]], { content: "x", at: NOW + 60 - n }), ID, COORD, NOW), "clock drift allowed")
 })

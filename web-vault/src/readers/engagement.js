@@ -2,6 +2,7 @@
 // ArticleEngagement, ArticleTally, ArticleHighlight and ArticleBlockFilter, Models/ArticleEngagement.swift). Liking,
 // commenting, zapping and highlighting sign or spend, so they aren't here. Nothing is stored.
 import { zapSats } from "../net/notifications.js"
+import { isNoiseOrSpam } from "./spam.js"
 
 export const REACTION = 7, NOTE = 1, COMMENT = 1111, ZAP_RECEIPT = 9735, HIGHLIGHT = 9802
 /** NIP-84 passages are a sentence or a paragraph; anything longer isn't a highlight. */
@@ -57,6 +58,8 @@ export function tally(evs, articleId, coord, now = Math.floor(Date.now() / 1000)
       if (pointsHere(tags) && content !== "-") out.likers.add(ev.pubkey) // "-" is a dislike (NIP-25)
     } else if (ev.kind === ZAP_RECEIPT) {
       if (pointsHere(tags)) { out.zaps++; out.zapSats += zapSats(ev) }
+    } else if ((ev.kind === COMMENT || ev.kind === NOTE) && isNoiseOrSpam(content, tags)) {
+      continue // spam comments are dropped as the thread view drops them (ArticleReaderView.showEngagement)
     } else if (ev.kind === COMMENT) {
       if (!pointsHere(tags, true, true)) continue
       // Lowercase tags name the parent: the article means top-level, else the comment its `e` names.
@@ -81,6 +84,7 @@ export function tally(evs, articleId, coord, now = Math.floor(Date.now() / 1000)
  *  coordinate or by this version's id, with a passage no longer than MAX_PASSAGE, not dated in the future. */
 export function highlight(ev, articleId, coord, now = Math.floor(Date.now() / 1000)) {
   if (ev?.kind !== HIGHLIGHT || !ev.id || !Array.isArray(ev.tags) || typeof ev.content !== "string" || !(ev.created_at <= now + MAX_FUTURE_SKEW)) return null
+  if (isNoiseOrSpam(ev.content, ev.tags)) return null // spam dropped as the thread view drops it
   const here = ev.tags.some(t => t.length >= 2 && ((t[0] === "e" && t[1] === articleId) || (t[0] === "a" && coord != null && t[1] === coord)))
   const passage = ev.content.trim()
   if (!here || !passage || [...passage].length > MAX_PASSAGE) return null
