@@ -8,13 +8,13 @@ import { visibleNotes } from "../src/net/blocks.js"
 const memStorage = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) } }
 const A = "a".repeat(64), B = "b".repeat(64)
 
-test("the picker offers Following, Global, Hashtag, Popular and Media, in the iPhone's order", () => {
-  assert.deepEqual(FEEDS.map(f => f.label), ["Following", "Global", "Hashtag", "Popular", "Media"])
+test("the picker offers Following, Discover, Global, Hashtag, Popular and Media, in the iPhone's order", () => {
+  assert.deepEqual(FEEDS.map(f => f.label), ["Following", "Discover", "Global", "Hashtag", "Popular", "Media"])
 })
 
 test("readers take their iPhone FeedMode place in the picker, and a saved reader is remembered", () => {
   const readers = [{ id: "music", label: "Music" }, { id: "articles", label: "Articles" }, { id: "live", label: "Live" }]
-  assert.deepEqual(feedList(readers).map(f => f.id), ["following", "global", "hashtag", "popular", "media", "articles", "live", "music"])
+  assert.deepEqual(feedList(readers).map(f => f.id), ["following", "discovery", "global", "hashtag", "popular", "media", "articles", "live", "music"])
   assert.deepEqual(feedList().map(f => f.id), FEEDS.map(f => f.id))
   const s = memStorage()
   saveChoice({ mode: "articles", tag: "" }, s)

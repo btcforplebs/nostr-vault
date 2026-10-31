@@ -11,10 +11,10 @@ export const MAX_DEPTH = 4
 export const COLLAPSED_REPLIES = 3
 
 /** Feeds of note rows. Media, the readers (Articles, Live…) and grids have nothing to condense, so no layouts. */
-export const hasLayouts = mode => ["following", "global", "popular", "hashtag"].includes(mode)
+export const hasLayouts = mode => ["following", "discovery", "global", "popular", "hashtag"].includes(mode)
 /** The iPhone's default for a new install: every timeline feed opens in Threaded View (HavenConfig.feedLayoutModes,
  *  Logen 2026-10-08). A layout picked in this browser is kept. */
-const DEFAULTS = { following: "threaded", hashtag: "threaded", global: "threaded", popular: "threaded" }
+const DEFAULTS = { following: "threaded", discovery: "threaded", hashtag: "threaded", global: "threaded", popular: "threaded" }
 
 /** The next layout in the cycle. */
 export const nextLayout = layout => LAYOUTS[(LAYOUTS.indexOf(layout) + 1) % LAYOUTS.length]

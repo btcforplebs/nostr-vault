@@ -19,13 +19,13 @@ test("the layout cycles Expanded -> Compact -> Threaded and back; only note feed
   assert.equal(nextLayout("expanded"), "condensed")
   assert.equal(nextLayout("condensed"), "threaded")
   assert.equal(nextLayout("threaded"), "expanded")
-  for (const m of ["following", "global", "popular", "hashtag"]) assert.ok(hasLayouts(m), m)
+  for (const m of ["following", "discovery", "global", "popular", "hashtag"]) assert.ok(hasLayouts(m), m)
   for (const m of ["media", "articles", "live"]) assert.ok(!hasLayouts(m), m)
 })
 
 test("each feed keeps its own layout; the defaults are the iPhone's (every timeline feed threaded)", () => {
   const store = new Map(), storage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
-  for (const m of ["following", "global", "popular", "hashtag"]) assert.equal(loadLayout(m, storage), "threaded", m)
+  for (const m of ["following", "discovery", "global", "popular", "hashtag"]) assert.equal(loadLayout(m, storage), "threaded", m)
   saveLayout("following", "expanded", storage)
   assert.equal(loadLayout("following", storage), "expanded")
   assert.equal(loadLayout("global", storage), "threaded")
