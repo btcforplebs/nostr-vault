@@ -93,14 +93,16 @@ enum RelayCheck {
     /// The servers their kind 10002 says their notes are on: write and
     /// unmarked `r` tags, normalized, without duplicates. Only wss:// on a
     /// public host: a ws:// or LAN relay in someone's list is their own
-    /// box, which this device can't reach (Logen 2026-10-31).
+    /// box, which this device can't reach (Logen 2026-10-31). Also the
+    /// published-list rule (`RelayDraft.listable`, as Android): IPv6
+    /// private ranges and tailnet names are skipped too.
     static func ownWriteRelays(relayListTags: [[String]]) -> [String] {
         var seen = Set<String>()
         var out: [String] = []
         for tag in relayListTags where tag.first == "r" && tag.count >= 2 {
             let marker = tag.count >= 3 ? tag[2] : ""
             guard marker != "read", let url = normalize(tag[1]), url.hasPrefix("wss://"),
-                  !isLANHost(url), seen.insert(url).inserted else { continue }
+                  !isLANHost(url), RelayDraft.listable(url), seen.insert(url).inserted else { continue }
             out.append(url)
         }
         return out

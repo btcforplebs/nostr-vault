@@ -139,8 +139,9 @@ struct RelayCheckStep: View {
     private func runCheck() async {
         // Their relay list says where their notes are; the defaults are
         // where most people's notes also land.
+        // The indexers too: a list made in another app may live only there.
         let list = await NostrService.shared.fetchNewestReplaceable(
-            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays
+            kind: 10002, for: pubkey, alsoAsk: configService.config.importSeedRelays + RelayDraft.indexers
         )
         rows = RelayCheck.rows(relayListTags: list?.tags ?? [], defaults: HavenConfig().importSeedRelays)
         await withTaskGroup(of: (String, RelayCheck.Result).self) { group in

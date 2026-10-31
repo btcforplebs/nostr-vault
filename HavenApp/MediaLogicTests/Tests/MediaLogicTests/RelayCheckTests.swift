@@ -73,7 +73,8 @@ final class RelayCheckTests: XCTestCase {
                     ["r", "wss://192.168.1.20:4869"], ["r", "wss://10.0.0.5"], ["r", "wss://172.20.1.1"],
                     ["r", "wss://100.70.1.1"], ["r", "wss://127.0.0.1:4869"], ["r", "wss://umbrel.local"],
                     ["r", "wss://box.lan"], ["r", "wss://localhost:4869"], ["r", "WSS://Relay.Damus.io/"],
-                    ["r", "wss://172.32.0.1"], ["p", "x"]]
+                    ["r", "wss://172.32.0.1"], ["r", "wss://[fd00::1]:4869"], ["r", "wss://box.tail1234.ts.net"],
+                    ["p", "x"]]
         XCTAssertEqual(RelayCheck.ownWriteRelays(relayListTags: tags),
                        ["wss://relay.damus.io", "wss://nostr.wine", "wss://172.32.0.1"])
     }
