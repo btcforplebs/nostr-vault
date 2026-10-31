@@ -238,10 +238,19 @@ internal fun HeroNoteCard(
             // bigger here, with who picked each option.
             val poll = remember(note.id, note.kind) { note.poll }
             // Lightning invoices: cut from the text, drawn as pay cards under the links.
-            val invoices = remember(note.content) {
-                if (poll == null && note.kind != com.nostrvault.data.model.SnoObject.KIND) NoteInvoices.find(note.content) else emptyList()
+            // A quoted live stream's own links leave the note: its card draws them (LiveNoteLinks).
+            val liveHidden = remember(note.id, quotedNotes) {
+                com.nostrvault.ui.components.LiveNoteLinks.hidden(note.mediaURLs + note.linkURLs, note.quotedEventIds, quotedNotes)
             }
-            val invoiceBody = remember(note.content, invoices) { NoteInvoices.textWithout(invoices, note.content) }
+            val liveBody = remember(note.content, liveHidden) {
+                com.nostrvault.ui.components.LiveNoteLinks.body(note.content, liveHidden, com.nostrvault.relay.HavenQuoteDecoder)
+            }
+            val shownMedia = remember(note.mediaURLs, liveHidden) { note.mediaURLs - liveHidden }
+            val shownCards = remember(note.cardLinkURLs, liveHidden) { note.cardLinkURLs - liveHidden }
+            val invoices = remember(liveBody) {
+                if (poll == null && note.kind != com.nostrvault.data.model.SnoObject.KIND) NoteInvoices.find(liveBody) else emptyList()
+            }
+            val invoiceBody = remember(liveBody, invoices) { NoteInvoices.textWithout(invoices, liveBody) }
             if (note.kind == com.nostrvault.data.model.SnoObject.KIND) {
                 // A 3D object (SNO): a stage to turn instead of its JSON.
                 com.nostrvault.ui.components.sno.SnoHeroBody(note)
@@ -250,8 +259,8 @@ internal fun HeroNoteCard(
                 PollCard(poll = poll, isFocused = true, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
                 Spacer(Modifier.height(12.dp))
             } else if (invoiceBody.isNotBlank()) {
-                val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
-                val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
+                val mediaSet = remember(shownMedia) { shownMedia.toSet() }
+                val linkSet = remember(shownCards) { shownCards.toSet() }
                 TranslatableNoteText(
                     noteKey = note.effectiveEventId,
                     content = invoiceBody,
@@ -267,7 +276,7 @@ internal fun HeroNoteCard(
                     // Each link's card sits where the link was written (iOS #1246).
                     NoteTextWithLinkCards(
                         content = invoiceBody,
-                        cards = note.cardLinkURLs,
+                        cards = shownCards,
                         emojis = note.customEmojis,
                         profiles = profiles,
                         mediaURLs = mediaSet,
@@ -281,13 +290,13 @@ internal fun HeroNoteCard(
             }
 
             // Media, then links, then quotes, as on iOS.
-            if (note.mediaURLs.isNotEmpty()) {
-                MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
+            if (shownMedia.isNotEmpty()) {
+                MediaPreviewRow(urls = shownMedia, tags = note.tags, author = note.pubkey)
                 Spacer(Modifier.height(12.dp))
             }
 
             // A poll's links get their cards here; a text note draws them inline.
-            if (poll != null || invoiceBody.isBlank()) for (link in note.cardLinkURLs) {
+            if (poll != null || invoiceBody.isBlank()) for (link in shownCards) {
                 LinkPreviewCard(url = link)
                 Spacer(Modifier.height(12.dp))
             }

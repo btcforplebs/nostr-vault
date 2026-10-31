@@ -547,15 +547,24 @@ private fun NoteBody(
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
 ) {
+    // A quoted live stream's own links leave the note: its card draws them (LiveNoteLinks).
+    val liveHidden = remember(note.id, quotedNotes) {
+        LiveNoteLinks.hidden(note.mediaURLs + note.linkURLs, note.quotedEventIds, quotedNotes)
+    }
+    val body = remember(note.content, liveHidden) {
+        LiveNoteLinks.body(note.content, liveHidden, com.nostrvault.relay.HavenQuoteDecoder)
+    }
+    val shownMedia = note.mediaURLs - liveHidden
+
     // Content text (iOS lines 296-311)
-    if (note.content.isNotBlank()) {
+    if (body.isNotBlank()) {
         // Each link's card sits where the link was written (iOS #1248).
         NoteTextWithLinkCards(
-            content = note.content,
-            cards = note.cardLinkURLs,
+            content = body,
+            cards = note.cardLinkURLs - liveHidden,
             emojis = note.customEmojis,
             profiles = profiles,
-            mediaURLs = note.mediaURLs.toSet(),
+            mediaURLs = shownMedia.toSet(),
             onProfileClick = onProfileClick,
             onPlainTextClick = { onNoteClick(note.id) },
             lineHeight = 20.sp,
@@ -563,8 +572,8 @@ private fun NoteBody(
     }
 
     // Media previews (iOS lines 314-330)
-    if (note.mediaURLs.isNotEmpty()) {
-        MediaPreviewRow(urls = note.mediaURLs, tags = note.tags, author = note.pubkey)
+    if (shownMedia.isNotEmpty()) {
+        MediaPreviewRow(urls = shownMedia, tags = note.tags, author = note.pubkey)
     }
 
     // Quoted events. This card already knew a quote existed — it suppressed
