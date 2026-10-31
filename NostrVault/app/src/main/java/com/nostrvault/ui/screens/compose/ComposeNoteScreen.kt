@@ -96,7 +96,9 @@ fun ComposeNoteScreen(
     // there is something worth keeping (iOS ComposeView).
     var showDraftPrompt by remember { mutableStateOf(false) }
     // Backgrounded: the draft goes to the relay now, signed once (typing only saves it here).
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.syncDraftToRelay() }
+    // A photo or video picker stops this screen too; that isn't leaving.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onComposerStopped() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onComposerStarted() }
     val requestClose: () -> Unit = {
         if (viewModel.shouldAskToSaveDraft()) showDraftPrompt = true else onBack()
     }
@@ -459,6 +461,7 @@ fun ComposeNoteScreen(
                 // Image picker button
                 IconButton(
                     onClick = {
+                        viewModel.pickerOpening()
                         imagePickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
@@ -479,6 +482,7 @@ fun ComposeNoteScreen(
                 // Video picker button
                 IconButton(
                     onClick = {
+                        viewModel.pickerOpening()
                         videoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
                         )
