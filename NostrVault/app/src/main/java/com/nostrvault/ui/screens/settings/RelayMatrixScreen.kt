@@ -30,6 +30,7 @@ import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.PublicRelayList
 import com.nostrvault.relay.RelayBlocklist
 import com.nostrvault.relay.RelayDraft
 import com.nostrvault.relay.RelayMatrix
@@ -44,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job as CoroutineJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,6 +92,10 @@ class RelayMatrixViewModel @Inject constructor(
     /** Null until the published lists have been looked up. */
     private val _draft = MutableStateFlow<RelayDraft.State?>(null)
     val draft = _draft.asStateFlow()
+
+    private val _notPublished = MutableStateFlow<List<String>>(emptyList())
+    /** Lists the last Save kept on this device: the newest copy couldn't be read at Save. */
+    val notPublished = _notPublished.asStateFlow()
 
     private var blockedJob: CoroutineJob? = null
     private var blockedPending = false
@@ -198,8 +204,17 @@ class RelayMatrixViewModel @Inject constructor(
                 if (plan.dmRelays != null) it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) else it
             }
         }
-        plan.relayListTags?.let { nostrService.publishOwnerRelayListTags(it) }
-        plan.dmRelays?.let { nostrService.publishDMRelayList(it) }
+        _notPublished.value = emptyList()
+        val p = state.published
+        val notPublished = { name: String -> { ok: Boolean -> if (!ok) _notPublished.update { it + name } } }
+        // Save edits the newest copy, fetched now; the published copy the screen opened with is what it changed.
+        plan.relayListTags?.let {
+            nostrService.publishOwnerRelayListTags(
+                it, before = PublicRelayList.tags(emptyList(), p.read, p.write) + p.kept,
+                onDone = notPublished("Relay list"),
+            )
+        }
+        plan.dmRelays?.let { nostrService.publishDMRelayList(it, before = p.dms, onDone = notPublished("DM inbox")) }
         _draft.value = RelayDraft.saved(state, plan)
     }
 
@@ -300,6 +315,7 @@ fun RelayMatrixScreen(
     val refusedCertificates by LocalTls.refused.collectAsState()
     val fixCount = problems.size + refusedCertificates.size
     val changes = state?.let(RelayDraft::changeCount) ?: 0
+    val notPublished by viewModel.notPublished.collectAsState()
 
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var showingAdd by remember { mutableStateOf(false) }
@@ -382,6 +398,20 @@ fun RelayMatrixScreen(
                     if (fixCount > 0) {
                         Box(Modifier.clickable { recommended = true }) { Chip("⚠ $fixCount to fix", SlowAmber) }
                     }
+                }
+            }
+
+            if (notPublished.isNotEmpty()) item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text("!", color = SlowAmber, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.width(20.dp))
+                    Text(
+                        "${notPublished.joinToString(" and ")} not published: your relays didn't answer, so the newest copy " +
+                            "couldn't be read. Saved on this device only.",
+                        color = SecondaryText, fontSize = 12.sp,
+                    )
                 }
             }
 

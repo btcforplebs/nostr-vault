@@ -42,7 +42,15 @@ class FeedServiceFollowListTest {
     private val lockA = PostingAccount.Lock(npub = "npub1alice", hex = alice)
     private lateinit var nostr: NostrService
     private lateinit var feed: FeedService
+    private val carol = "c".repeat(64)
     private val signed = Collections.synchronizedList(mutableListOf<NostrEvent>())
+    /** What the relays hold right before Save: null and answered 0 means none answered. */
+    @Volatile private var onRelays: NostrService.ReplaceableLookup = NostrService.ReplaceableLookup(null, 2, 2, setOf("wss://one", "wss://two"))
+
+    private fun relayCopy(at: Long, tags: List<List<String>>) = NostrService.ReplaceableLookup(
+        NostrEvent(id = "f".repeat(64), pubkey = alice, createdAt = at, kind = 3, tags = tags, content = "{}", sig = ""),
+        asked = 2, answered = 1,
+    )
 
     @Before
     fun setUp() {
@@ -61,6 +69,7 @@ class FeedServiceFollowListTest {
                 tags = tags.captured, content = "", sig = "",
             ).also { signed.add(it) }
         }
+        coEvery { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) } answers { onRelays }
         feed = FeedService(
             appContext = mockk(relaxed = true),
             configStore = mockk<ConfigStore>(relaxed = true) {
@@ -111,7 +120,7 @@ class FeedServiceFollowListTest {
 
     @Test
     fun `the list is signed locked to the account it belongs to`() {
-        feed.publishContactList(listOf(alice, bob))
+        feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(alice, bob)))
         coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), lockA, any()) }
     }
 
@@ -120,7 +129,7 @@ class FeedServiceFollowListTest {
         coEvery { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) } throws PostingAccount.AccountChangedException()
         var failed = false
         feed._followedPubkeys.value = listOf(alice, bob)
-        feed.publishContactList(listOf(alice, bob), rollback = listOf(alice)) { failed = true }
+        feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(bob)), rollback = listOf(alice)) { failed = true }
         coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
         Thread.sleep(200)
         coVerify(exactly = 0) { nostr.postEvent(any(), any()) }
@@ -129,9 +138,9 @@ class FeedServiceFollowListTest {
     }
 
     @Test
-    fun `a publish keeps the loaded list's other tags`() {
-        feed.contactListTags = listOf(listOf("t", "bitcoin"), listOf("p", alice, "wss://r.example"), listOf("p", "bitcoin"))
-        feed.publishContactList(listOf(alice, bob))
+    fun `a publish keeps the newest list's other tags`() {
+        onRelays = relayCopy(100, listOf(listOf("t", "bitcoin"), listOf("p", alice, "wss://r.example"), listOf("p", "bitcoin")))
+        feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(bob)))
         coVerify(timeout = 5_000) { nostr.postEvent(any(), any()) }
         assertEquals(
             listOf(listOf("t", "bitcoin"), listOf("p", alice, "wss://r.example"), listOf("p", bob)),
@@ -141,18 +150,51 @@ class FeedServiceFollowListTest {
 
     @Test
     fun `two publishes in one second get different created_at`() {
-        feed.publishContactList(listOf(alice))
-        feed.publishContactList(listOf(alice, bob))
+        feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)))
+        feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(bob)))
         coVerify(timeout = 5_000, exactly = 2) { nostr.postEvent(any(), any()) }
         val times = signed.map { it.createdAt }
         assertTrue("created_at must increase, got $times", times[1] > times[0])
+        // The second edit went onto the first one's signed copy, not the empty one fetched.
+        assertEquals(listOf(listOf("p", alice), listOf("p", bob)), signed[1].tags)
+    }
+
+    @Test
+    fun `a follow tap edits the newest copy, not the one read at launch`() {
+        // Launch read bob; since then another app followed carol.
+        feed._followedPubkeys.value = listOf(bob)
+        feed.contactListTags = listOf(listOf("p", bob))
+        onRelays = relayCopy(200, listOf(listOf("p", bob), listOf("p", carol)))
+        feed.publishContactList(listOf(bob, alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = listOf(bob))
+        coVerify(timeout = 5_000) { nostr.postEvent(any(), any()) }
+        assertEquals(listOf(listOf("p", bob), listOf("p", carol), listOf("p", alice)), signed.single().tags)
+        assertTrue("signed in a later second than the copy it edits", signed.single().createdAt > 200)
+    }
+
+    @Test
+    fun `no list signed when only some relays answer none`() {
+        onRelays = NostrService.ReplaceableLookup(null, asked = 3, answered = 1)
+        feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = emptyList())
+        coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) }
+        Thread.sleep(300)
+        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
+        assertEquals(0, feed.contactEditsInFlight.get())
+    }
+
+    @Test
+    fun `a follow already on the newest copy signs nothing`() {
+        onRelays = relayCopy(200, listOf(listOf("p", alice)))
+        feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)))
+        coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) }
+        Thread.sleep(300)
+        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
     fun `a new list makes Discovery count the follows' follows again`() {
         feed.lastExtendedNetworkLoadTime = System.currentTimeMillis()
         assertTrue(!feed.needsExtendedNetworkRefresh())
-        feed.publishContactList(listOf(alice))
+        feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)))
         assertTrue("an unfollow kept the old follows-of-follows tally", feed.needsExtendedNetworkRefresh())
     }
 }

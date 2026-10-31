@@ -45,8 +45,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // No relay answered: "none found" is unknown, not empty. A new install
         // of an existing account would otherwise publish the defaults over
         // the real list.
-        if (lookup.event == null && lookup.answered == 0) {
-            Log.w(TAG, "DM inbox sync: no relay answered; not published")
+        if (lookup.event == null && !lookup.confirmedNone) {
+            Log.w(TAG, "DM inbox sync: no list found, not every relay answered; nothing adopted")
             return
         }
         val newest = lookup.event?.let { profileRepository.parseDMRelayListTags(it.tags) to it.createdAt }
@@ -105,9 +105,38 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
     }
 
-    /** Publishes [tags] as the owner's kind 10002. Only Save in Settings > Relays calls this. */
-    internal fun NostrService.publishOwnerRelayListTagsImpl(tags: List<List<String>>) {
-        signAndPost(kind = 10002, content = "", tags = tags, forceOwner = true)
+    /**
+     * The owner's Save in Settings > Relays, the only caller: the change from
+     * [before] (the kind 10002 as published when the screen opened) to [tags]
+     * goes onto the newest kind 10002, fetched now ([com.nostrvault.relay.RelayDraft.rebaseRelayList]).
+     * Nothing is signed when the lookup didn't settle: a list set in another
+     * app since would be overwritten. [onDone] gets false then, on IO.
+     */
+    internal fun NostrService.publishOwnerRelayListTagsImpl(
+        tags: List<List<String>>,
+        before: List<List<String>>,
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return onDone(false)
+        scope.launch(Dispatchers.IO) {
+            val lookup = runCatching { lookupNewestReplaceable(10002, owner, relayListLookupRelays()) }.getOrNull()
+            if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy)) {
+                Log.w(TAG, "kind 10002: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
+                return@launch onDone(false)
+            }
+            val next = com.nostrvault.relay.RelayDraft.rebaseRelayList(before, tags, lookup.event?.tags.orEmpty())
+            if (lookup.event != null && next == lookup.event.tags) return@launch onDone(true)
+            signAndPost(kind = 10002, content = lookup.event?.content.orEmpty(), tags = next, forceOwner = true)
+            onDone(true)
+        }
+    }
+
+    /** Where Save looks up the owner's relay lists: the same relays the screen read them from. */
+    private fun NostrService.relayListLookupRelays(): List<String> {
+        val config = configStore.config.value
+        return (config.writeRelays + config.readRelays.take(3) + NostrService.PROFILE_RELAYS + com.nostrvault.relay.RelayDraft.INDEXERS +
+            config.dmInboxRelays).filterNot(::isLoopbackRelay).distinctBy(com.nostrvault.relay.RelayMatrix::key)
     }
 
     /**
@@ -135,7 +164,30 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         if (added.isNotEmpty()) Log.i(TAG, "Adopted ${added.size} media server(s) from the published kind 10063")
     }
 
-    fun NostrService.publishDMRelayList(dmRelays: List<String>) {
+    /**
+     * The owner's Save of the DM inbox in Settings > Relays: the relays added
+     * and removed since [before] (the kind 10050 as published when the screen
+     * opened) go onto the newest kind 10050, fetched now. Nothing is signed
+     * when the lookup didn't settle. [onDone] gets false then, on IO.
+     */
+    fun NostrService.publishDMRelayList(dmRelays: List<String>, before: List<String>, onDone: (Boolean) -> Unit = {}) {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return onDone(false)
+        scope.launch(Dispatchers.IO) {
+            val lookup = runCatching { lookupNewestReplaceable(10050, owner, relayListLookupRelays()) }.getOrNull()
+            if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy)) {
+                Log.w(TAG, "kind 10050: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
+                return@launch onDone(false)
+            }
+            val newest = lookup.event?.tags.orEmpty().filter { !(it.size >= 2 && it[0] == "relay" && isLoopbackRelay(it[1])) }
+            val tags = com.nostrvault.relay.RelayDraft.rebaseDMList(before, dmRelays.filter { !isLoopbackRelay(it) }, newest)
+            if (lookup.event != null && tags == lookup.event.tags) return@launch onDone(true)
+            signDMRelayList(tags)
+            onDone(true)
+        }
+    }
+
+    private fun NostrService.signDMRelayList(tags: List<List<String>>) {
         // A kind 10050 is a PUBLIC announcement of where others should deliver
         // DMs to us. The embedded Haven relay lives on 127.0.0.1 and is never
         // reachable by anyone else, so loopback URLs must be stripped — otherwise
@@ -143,11 +195,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // Exactly what the owner saved: an emptied list goes out empty rather
         // than as the app's defaults, or the removed relays come back on the
         // next launch's adopt.
-        val relays = dmRelays.filter { !isLoopbackRelay(it) }
         // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
         // which no other client reads — they saw an empty list and had nowhere
         // to deliver our DMs.
-        val tags = relays.map { listOf("relay", it) }
         signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
     }
 
@@ -226,8 +276,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
     /**
      * Publishes [kind] for [author] built by [build] from the newest
-     * published one (null when there is none). Skips when no relay answered,
-     * since publishing then would overwrite a list this device never saw.
+     * published one (null when there is none). Skips when none was found and
+     * not every relay answered, since publishing then would overwrite a list
+     * this device never saw.
      */
     private fun NostrService.publishMergedList(
         kind: Int,
@@ -242,8 +293,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             val lookup = runCatching {
                 lookupNewestReplaceable(kind, author, configStore.config.value.readRelays.take(3))
             }.getOrElse { NostrService.ReplaceableLookup(null, 0, 0) }
-            if (lookup.event == null && lookup.answered == 0) {
-                Log.w(TAG, "kind $kind: no relay answered; not published")
+            // One relay saying "none" is not "you have none" (Logen 2026-10-31):
+            // with no copy found, every relay asked must have answered.
+            if (lookup.event == null && !lookup.confirmedNone) {
+                Log.w(TAG, "kind $kind: ${lookup.answered}/${lookup.asked} relays answered, none had it; not published")
                 return@launch
             }
             val (tags, content) = build(lookup.event) ?: run {

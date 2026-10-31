@@ -40,9 +40,9 @@ import javax.inject.Singleton
  * Loads, caches and publishes the active account's interest list (kind
  * 10015): the hashtags it follows. Port of iOS `InterestListService`.
  *
- * Never publishes against a list it hasn't seen: the first publish per
- * account waits for one relay to answer a fetch of the newest list, or the
- * change is put back. State lives on Main, like the iOS `@MainActor` service.
+ * Never publishes against a list it hasn't seen: each publish fetches the
+ * newest list first and edits that. No list found counts as "none" only
+ * when every relay asked answered; otherwise the change is put back. State lives on Main, like the iOS `@MainActor` service.
  */
 @Singleton
 class InterestListService @Inject constructor(
@@ -67,7 +67,7 @@ class InterestListService @Inject constructor(
 
     private var list = InterestList()
     private var accountHex = ""
-    /** True once a relay answered for this account, so a publish can't overwrite a list we never saw. */
+    /** True once this account's list is known (found, or every relay answered none). */
     private var confirmed = false
     private var fetch: Deferred<Boolean>? = null
 
@@ -102,9 +102,13 @@ class InterestListService @Inject constructor(
         // Optimistic: the button flips now.
         _hashtags.value = applied(list).hashtags
 
-        // A key setup just made has no list anywhere: nothing to wait for.
-        if (!confirmed && FreshAccountKeys.isFresh(context, hex)) confirmed = true
-        if (!confirmed) {
+        // Every Save reads the newest copy first and edits that (Logen
+        // 2026-10-31), not the one read at launch: a hashtag followed in
+        // another app since is kept. A key setup just made has no list
+        // anywhere: nothing to wait for.
+        if (FreshAccountKeys.isFresh(context, hex)) {
+            confirmed = true
+        } else {
             val pending = fetch ?: startFetch()
             // An account switch cancels the fetch; that is a "no", not our own cancellation.
             val ok = try {
@@ -200,10 +204,13 @@ class InterestListService @Inject constructor(
         return urls.filter { it.isNotBlank() && seen.add(LookupSocketPool.relayKey(it)) }
     }
 
-    /** Relays answered ([newest] null when they have none). */
+    /** The list is known: [newest] found, or null when every relay answered that it has none. */
     private class FetchResult(val newest: InterestList?)
 
-    /** The newest kind 10015 by [author]; null when no relay answered. */
+    /**
+     * The newest kind 10015 by [author]. Null when it is unknown: none found
+     * and not every relay answered (one "none" is not "you have none").
+     */
     private suspend fun fetchLatest(author: String, relays: List<String>): FetchResult? {
         if (relays.isEmpty()) return null
         val answered = AtomicInteger(0)
@@ -217,7 +224,6 @@ class InterestListService @Inject constructor(
                     val outcome = try {
                         lookupPool.query(url, subId, listOf(filter), FETCH_TIMEOUT_MS) { msg ->
                             parseEvent(msg, author)?.let { found ->
-                                answered.incrementAndGet()
                                 synchronized(lock) {
                                     if (found.createdAt > (newest?.createdAt ?: -1)) newest = found
                                 }
@@ -232,7 +238,8 @@ class InterestListService @Inject constructor(
                 }
             }.awaitAll()
         }
-        return if (answered.get() > 0) FetchResult(synchronized(lock) { newest }) else null
+        val found = synchronized(lock) { newest }
+        return if (found != null || answered.get() >= relays.size) FetchResult(found) else null
     }
 
     /** A validly signed kind 10015 by [author] from an EVENT frame, else null. */

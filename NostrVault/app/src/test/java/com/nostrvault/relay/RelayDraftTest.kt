@@ -281,4 +281,26 @@ class RelayDraftTest {
         assertNotNull(value)
         return value!!
     }
+
+    @Test fun `Save edits the newest relay list, keeping a relay added elsewhere since`() {
+        val opened = listOf(listOf("r", "wss://a.example"), listOf("r", "wss://b.example", "read"))
+        // The screen took b off and made a write-only.
+        val saved = listOf(listOf("r", "wss://a.example", "write"))
+        // Since the screen opened, another app added c.
+        val newest = opened + listOf(listOf("r", "wss://c.example"))
+        assertEquals(
+            listOf(listOf("r", "wss://a.example", "write"), listOf("r", "wss://c.example")),
+            RelayDraft.rebaseRelayList(opened, saved, newest),
+        )
+        // Nothing changed on the screen: the newest list goes out as it is.
+        assertEquals(newest, RelayDraft.rebaseRelayList(opened, opened, newest))
+    }
+
+    @Test fun `Save edits the newest DM inbox list`() {
+        val newest = listOf(listOf("relay", "wss://inbox.example"), listOf("relay", "wss://other-app.example"))
+        assertEquals(
+            listOf(listOf("relay", "wss://other-app.example"), listOf("relay", "wss://new.example")),
+            RelayDraft.rebaseDMList(before = listOf("wss://inbox.example"), after = listOf("wss://new.example"), newest = newest),
+        )
+    }
 }

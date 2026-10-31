@@ -97,6 +97,7 @@ import java.util.concurrent.ConcurrentHashMap
                         _followedPubkeys.value = pubkeys
                         contactListContent = content
                         contactListTags = tags
+                        knownContactList = ContactManager.ListCopy(nostrService.activeHexPubkey, tags, content, createdAt)
                         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, createdAt)
                         lastContactListCreatedAt.updateAndGet { maxOf(it, createdAt) }
                         _hasAttemptedContactLoad.value = true
@@ -119,31 +120,28 @@ import java.util.concurrent.ConcurrentHashMap
                 } else if (result != null) {
                     // The newest relay kind-3 is OLDER than the list we last
                     // published/committed locally — our latest edit (e.g. a fresh
-                    // follow) hasn't propagated to these relays yet, so committing it
-                    // would silently drop follows. Keep the local set and re-publish
-                    // so the network catches up (self-heal).
-                    Log.w(TAG, "loadContactList: relay kind-3 stale (relay created_at=${result.createdAt} < local $ownContactListCreatedAt) — keeping ${_followedPubkeys.value.size} local follows and re-publishing")
+                    // follow) hasn't propagated to these relays yet. Keep showing the
+                    // local set, but never sign it here (Logen 2026-10-31: a list is
+                    // signed only by a Save). The next follow tap fetches the newest
+                    // copy again and edits that.
+                    Log.w(TAG, "loadContactList: relay kind-3 stale (relay created_at=${result.createdAt} < local $ownContactListCreatedAt) — keeping ${_followedPubkeys.value.size} local follows, not re-publishing")
                     withContext(Dispatchers.Main.immediate) {
                         contactListConfirmed = true
                         lastContactListCreatedAt.updateAndGet { maxOf(it, result.createdAt) }
                         // After a relaunch the local list's other tags are not in
                         // memory; the relay copy's are the newest known.
                         if (contactListTags.isEmpty()) contactListTags = result.tags
+                        val known = knownContactList
+                        if (known == null || known.owner != nostrService.activeHexPubkey || known.createdAt < result.createdAt) {
+                            knownContactList = ContactManager.ListCopy(nostrService.activeHexPubkey, result.tags, result.content, result.createdAt)
+                        }
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
-                        // Not over a relay copy more than twice its size: the
-                        // local list may be an old cached one, not a fresh edit.
                         // A cached list from before the parse fix can hold you and
                         // your other accounts, added by the app, not by you.
-                        val local = ContactManager.withoutAddedAccounts(
+                        _followedPubkeys.value = ContactManager.withoutAddedAccounts(
                             _followedPubkeys.value, result.pubkeys, deviceAccountHexes(),
                         )
-                        _followedPubkeys.value = local
-                        if (ContactManager.mayRepublish(local.size, relaySize = result.pubkeys.size)) {
-                            publishContactList(local)
-                        } else {
-                            Log.w(TAG, "loadContactList: not re-publishing ${local.size} local follows over ${result.pubkeys.size} on relays")
-                        }
                     }
                 } else {
                     Log.w(TAG, "loadContactList: no contact list found (confirmed new account=${fetched?.confirmed == true})")

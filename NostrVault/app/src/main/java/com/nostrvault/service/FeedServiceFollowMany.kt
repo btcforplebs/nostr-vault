@@ -35,7 +35,7 @@ internal suspend fun FeedService.followManyImpl(pubkeys: List<String>, account: 
     if (added.isEmpty()) return
     val next = previous + added
     _followedPubkeys.value = next
-    publishContactList(next, rollback = previous) {
+    publishContactList(next, ContactManager.FollowEdit(add = added), rollback = previous) {
         notificationManager.showFollow(label, FollowKind.FAILED(followFailedMessage(follow = true)))
     }
     recomputeFilteredNotes()
