@@ -5,15 +5,19 @@
   "section": "start",
   "order": 2,
   "description": "Install Nostr Vault on an Android phone, choose where your notes live, create a Nostr account or bring yours, with Amber or another signer.",
-  "checked": "Nostr Vault 3.0.0 (41) for Android",
+  "checked": "Nostr Vault 3.0.1 (54) for Android",
   "labels": {
     "android": ["Create an account", "I already use Nostr", "What's inside?",
                 "Where should your notes live?", "Built-in Relay", "A Relay You Already Run", "Relay URL", "Blossom URL (optional)",
                 "Welcome to Nostr", "Create My Account", "Your Keys", "I saved my secret key", "Protect Your Key", "Your Profile",
                 "Skip for Now", "Welcome to Nostr!", "Start Exploring", "Who are you on Nostr?", "Read-only", "You can post",
                 "Encrypted key · you can post", "Signer link · you can post", "Use Amber", "Use a signer app", "Sign in with a signer app",
-                "Scan your key or signer link", "Checking your relays", "Start import", "Bringing your notes home",
-                "Keep it running in the background", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Tutorials"]
+                "Scan a QR code", "Checking your relays", "Ready to import", "Change import relays", "Start import",
+                "Bringing your notes home", "Keep it running in the background", "Next", "Enter", "Jump in",
+                "Citrine is on this phone", "Use Nostr Vault", "Use Citrine", "Database & Reset", "Use External Relay",
+                "Your posts will be shared through these servers", "Continue", "Change",
+                "Do you have a Vault backup?", "Yes, restore my backup", "No, import from my relays",
+                "Who told you about Nostr Vault?", "Find them", "Not them? Change", "Skip", "Feed", "Search", "Profile", "WoT", "Vault", "Settings", "Tutorials"]
   }
 }
 -->
@@ -27,7 +31,7 @@
     Android asks you to allow installs from that app the first time.</p>
 
 <h2>Pick a way in</h2>
-<p>The first screen has two buttons. <span class="ui">What's inside?</span> under them lists what the app does.</p>
+<p>The first screen has two buttons. <span class="ui">What's inside?</span>, above them, lists what the app does.</p>
 <ul>
     <li><span class="ui">Create an account</span> if you're new to Nostr.</li>
     <li><span class="ui">I already use Nostr</span> if you have an account from another Nostr app. Your old notes come
@@ -46,13 +50,18 @@
     <li><span class="ui">A Relay You Already Run</span>: a relay app on this phone, such as Citrine, or your own relay
         elsewhere, such as Nostr Vault on your Mac. Fill in <span class="ui">Relay URL</span>, and
         <span class="ui">Blossom URL (optional)</span> for media. The built-in relay never starts, and setup skips
-        importing your notes.</li>
+        importing your notes and media. Notifications and the Popular feed need the built-in relay, so they stay
+        off.</li>
 </ul>
+<p>If Citrine is installed, the screen says <strong>Citrine is on this phone</strong> instead and asks which one
+    should keep your notes: <span class="ui">Use Nostr Vault</span> (recommended) or
+    <span class="ui">Use Citrine</span>.</p>
 <div class="shots">
     <figure><img src="/docs/img/android/relay-choice.webp" alt="Where should your notes live?" width="900" height="2000" loading="lazy"><figcaption>Where should your notes live?</figcaption></figure>
 </div>
 
-<p>You can change it later in <span class="path">Settings &rarr; Advanced</span>.</p>
+<p>You can change it later in <span class="path">Settings &rarr; Database &amp; Reset &rarr; Use External Relay</span>.
+    (The setup screen itself still says "Settings &gt; Advanced"; that wording is out of date.)</p>
 
 <h2 id="new">Create an account</h2>
 <ol class="steps">
@@ -64,6 +73,10 @@
     <li><strong>Protect Your Key.</strong> Choose a password of at least 8 characters. This password locks the secret key you just saved.
         It stays on this device only and is never sent to us or any server. We cannot recover or reset it. If you forget it, the secret key you saved is your only way back in.</li>
     <li><strong>Your Profile.</strong> Add a photo and a name, or tap <span class="ui">Skip for Now</span>.</li>
+    <li><strong>Who told you about Nostr Vault?</strong> See <a href="#who-told-you">below</a>.</li>
+    <li><strong>Your posts will be shared through these servers.</strong> The relays your posts go out to. Tap
+        <span class="ui">Continue</span> to keep them, or <span class="ui">Change</span> to pick others. You can change
+        them any time in Settings &rarr; Relays.</li>
     <li><strong>Welcome to Nostr!</strong> Tap <span class="ui">Start Exploring</span>, then follow the short guide
         that helps you find people. Five follows build your web of trust, which fills your feed and filters out
         spam.</li>
@@ -81,8 +94,8 @@
     <li>Paste your npub or name@domain (<span class="ui">Read-only</span>), your nsec
         (<span class="ui">You can post</span>, and you choose a password), an ncryptsec
         (<span class="ui">Encrypted key · you can post</span>), or a bunker:// link
-        (<span class="ui">Signer link · you can post</span>). <span class="ui">Scan your key or signer link</span>
-        reads a QR code.</li>
+        (<span class="ui">Signer link · you can post</span>). The QR icon in the box
+        (<span class="ui">Scan a QR code</span>) reads a QR code.</li>
     <li>Or use a signer, so your secret key never enters Nostr Vault:
         <ul>
             <li><span class="ui">Use Amber</span> shows when Amber is installed on this phone.</li>
@@ -90,9 +103,19 @@
                 Amber or another signer on this phone, or shows a code to scan with a signer on another device.</li>
         </ul>
         See <a href="/docs/keys/signers/">Signers</a>.</li>
-    <li><strong>Checking your relays.</strong> Tap <span class="ui">Start import</span>.</li>
-    <li><strong>Bringing your notes home.</strong> Wait for the import, or tap
-        <span class="ui">Keep it running in the background</span> and start using the app.</li>
+    <li><strong>Who told you about Nostr Vault?</strong> If you can post, see <a href="#who-told-you">below</a>.</li>
+    <li><strong>Do you have a Vault backup?</strong> If you have a backup .zip from Nostr Vault, tap
+        <span class="ui">Yes, restore my backup</span> and pick it: your notes come back at once and the relay import is
+        skipped. Otherwise tap <span class="ui">No, import from my relays</span>.</li>
+    <li><strong>Checking your relays.</strong> The app looks for your notes on the import relays, and also on the
+        write relays you published yourself (marked <strong>yours</strong>; read for this import only, never saved).
+        When it's done the title says <span class="ui">Ready to import</span>.
+        <span class="ui">Change import relays</span> lets you turn relays off or add one. Tap
+        <span class="ui">Start import</span>.</li>
+    <li><strong>Bringing your notes home.</strong> A few cards explain the import: <span class="ui">Next</span> moves
+        on, and the last card has <span class="ui">Enter</span>. On the last card you can also tap
+        <span class="ui">Keep it running in the background</span> and start using the app; when the import is done,
+        tap <span class="ui">Jump in</span>.</li>
 </ol>
 
 <div class="shots">
@@ -101,17 +124,18 @@
 
 <h2 id="who-told-you">Who told you about Nostr Vault?</h2>
 <p>If you create an account, or bring one you can post with, setup asks <strong>Who told you about Nostr
-    Vault?</strong> It comes after <strong>Your Profile</strong>, or after <strong>Checking your relays</strong>.
-    Read-only accounts skip it.</p>
+    Vault?</strong> It comes after <strong>Your Profile</strong>, or after <strong>Who are you on
+    Nostr?</strong>. Read-only accounts skip it.</p>
 <ol class="steps">
-    <li>Tap <span class="ui">Scan their profile code</span>, or paste their profile link or npub. Their link
-        comes from <strong>Share profile</strong>; see <a href="/docs/share-links/profile/">Share your profile</a>.
-        If you opened their link before setting up, they're already filled in.</li>
-    <li>Check their profile card, and follow them. <span class="ui">Not them? Try another</span> goes back.</li>
+    <li>Scan their profile code with the QR icon, or paste their profile link or npub, and tap
+        <span class="ui">Find them</span>. Their link comes from <strong>Share profile</strong>; see
+        <a href="/docs/share-links/profile/">Share your profile</a>. If you opened their link before setting up,
+        they're already filled in.</li>
+    <li>Check their profile card, and follow them. <span class="ui">Not them? Change</span> goes back.</li>
     <li>Up to 10 people they follow come next, the most followed first, all ticked. Untick anyone you don't want,
         and follow the rest.</li>
 </ol>
-<p>Nobody told you? Tap <span class="ui">Skip, nobody told me</span>.</p>
+<p>Nobody told you? Tap <span class="ui">Skip</span>.</p>
 
 <h2>Find your way around</h2>
 <p>The tab bar along the bottom has <span class="ui">Feed</span>, <span class="ui">Search</span>,

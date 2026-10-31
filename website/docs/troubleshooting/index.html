@@ -168,7 +168,7 @@
                 <p>You see "Your post wasn't sent: no outside media server is set up". A photo has to sit on a public media
                     server so other people can see it, even with the mesh.</p>
                 <p><strong>Fix:</strong> add a server in <span class="path">Settings &rarr; Relays &rarr; Media Servers</span>,
-                    then post again. (Android's message says "Settings &rarr; Blossom"; the row is called Media Servers.)</p>
+                    then post again.</p>
                 <p>If it says your Mac didn't take the photo, check that Nostr Vault is open on your Mac. "Saved on this device"
                     means the post will send itself as soon as the server answers.</p>
                 </section>
@@ -176,8 +176,10 @@
                 <section id="relays">
                 <h2 id="a-relay-isn-t-answering">A relay isn't answering</h2>
                 <p>In the relay list you see "<em>relay</em> isn't answering". It didn't answer just now. Relays go down.</p>
-                <p><strong>Fix:</strong> leave it a while. If it stays down, remove it. "No Write relay" means none of your relays
-                    is set to Write, so your posts have nowhere to go: mark at least one as Write.</p>
+                <p><strong>Fix:</strong> leave it a while. If it stays down, remove it, then tap <strong>Save</strong>: nothing in
+                    the relay list changes until you save. "No Write relay" means none of your relays is set to Write. Your posts
+                    still go out, to the default relays the message names, but mark at least one of yours as Write so they go where
+                    you choose.</p>
                 </section>
 
                 <section id="android-update">
@@ -199,7 +201,7 @@
 
                 <section id="check-sync">
                 <h2 id="check-sync-stops-early">Check sync stops early</h2>
-                <p>On iPhone, <strong>Check sync with Vault on Mac</strong> ends on "Stopped · N still missing", "Copy didn't
+                <p>On iPhone and Android, <strong>Check sync with Vault on Mac</strong> ends on "Stopped · N still missing", "Copy didn't
                     finish" with a reason, or "Copy was interrupted". The button is greyed out while a copy is running or when
                     your vault relay isn't running.</p>
                 <p><strong>Fix:</strong> read the reason line. "Copy was interrupted" means the app closed during the copy; it
@@ -220,8 +222,8 @@
                 <h2 id="kiosk-mode-paused">Kiosk mode paused</h2>
                 <p>On iPhone you get "Kiosk mode paused". Leaving the app pauses kiosk mode.</p>
                 <p><strong>Fix:</strong> tap the notification or open the app again; kiosk mode turns back on by itself. If it
-                    won't start, add your other phone or your Mac under My Devices first. If it says you hit the limit for one
-                    session, it starts again next session. See <a class="inline" href="/docs/mesh/#kiosk">Kiosk mode</a>.</p>
+                    won't start, add your other phone or your Mac under My Devices first. If it says the mesh downloaded today's
+                    limit, others can read again at the time it shows; your own devices are never limited. See <a class="inline" href="/docs/mesh/#kiosk">Kiosk mode</a>.</p>
                 </section>
 
                 <section id="more">

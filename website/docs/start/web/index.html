@@ -131,7 +131,7 @@
         <main class="docs-main">
             <p class="eyebrow">Get started</p>
             <h1>Use Nostr Vault in a browser</h1>
-            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#create">New to Nostr</a></li><li><a href="#sign-in">Sign in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#browsers">Browsers</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
+            <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#create">New to Nostr</a></li><li><a href="#sign-in">Sign in</a></li><li><a href="#first-sign-in">The first sign-in</a></li><li><a href="#shared">Opening a shared post</a></li><li><a href="#find-your-way-around">Find your way around</a></li><li><a href="#browsers">Browsers</a></li><li><a href="#backup">Your data in this browser</a></li><li><a href="#next">Next</a></li></ul></div>
 
             <article class="docs-article">
                 <p>The web app is Nostr Vault in a browser tab, with nothing to install. Open
@@ -140,9 +140,13 @@
                     storage.</p>
 
                 <h2 id="create">New to Nostr</h2>
-                <p>Click <span class="ui">Create an account</span>. The web app makes your keys in this browser and shows both. Save
-                    the secret key somewhere safe, tick <span class="ui">I saved my secret key</span>, and choose a password. Add a
-                    name and photo if you like, pick some people to follow, and click <span class="ui">Start Exploring</span>.</p>
+                <p>Click <span class="ui">Create an account</span>, then <span class="ui">Create My Account</span>. The web app makes
+                    your keys in this browser and shows both. Save the secret key somewhere safe, tick
+                    <span class="ui">I saved my secret key</span>, and choose a password of at least 8 characters, typed twice. Add a
+                    name and photo if you like, or <span class="ui">Skip for Now</span>. Pick some people to follow. The next screen,
+                    <strong>Your posts will be shared through these servers</strong>, lists the relays your posts go out to:
+                    <span class="ui">Continue</span> keeps them, <span class="ui">Change</span> picks others. Then click
+                    <span class="ui">Start Exploring</span>.</p>
                 <p>The secret key stays in this browser, locked with your password; it is never sent anywhere. To see it again, open
                     <span class="path">Settings &rarr; Your Secret Key</span> and type your password. Signing out, or the browser
                     clearing this site's data, deletes it from this browser, and nobody can recover it for you. The web app can't sign
@@ -153,21 +157,34 @@
                 <p>Already use Nostr? Click <span class="ui">I already use Nostr</span>. The web app never asks for the secret key of
                     an account you already have. Sign in with something that holds the key for you:</p>
                 <ul>
-                    <li><strong>A browser extension.</strong> If a Nostr signing extension is installed in this browser,
-                        <span class="ui">Sign in with extension</span> shows. Click it and approve in the extension. On iPhone and
-                        iPad, use Safari with <a href="https://apps.apple.com/us/app/nostr-build-shack/id6752591477">Nostr Build Shack</a>
-                        or <a href="https://apps.apple.com/us/app/nostash/id6744309333">Nostash</a>.</li>
-                    <li><strong>A remote signer.</strong> Paste a bunker:// link from your signer app into
+                    <li><strong>A browser extension.</strong> Click <span class="ui">Sign in with extension</span> and approve in the
+                        extension. If this browser has no Nostr extension, the button shows which one to install instead: Sidecar for
+                        Chrome, Brave, Edge and Firefox; Nostash on a Mac; and on iPhone and iPad, Safari with
+                        <a href="https://apps.apple.com/us/app/nostr-build-shack/id6752591477">Nostr Build Shack</a>
+                        or <a href="https://apps.apple.com/us/app/nostash/id6744309333">Nostash</a>. Android browsers can't add one
+                        yet, so use a bunker link from Amber.</li>
+                    <li><strong>A remote signer.</strong> Paste a bunker:// link (or your name@domain) from your signer app into
                         <span class="ui">Bunker link (NIP-46)</span>, click <span class="ui">Connect bunker</span>, and approve the
                         connection in your signer. See <a href="/docs/keys/signers/">Signers</a>.</li>
-                    <li><strong>Read-only.</strong> Type your name, npub or name@domain and click <span class="ui">Find me</span>. You
-                        can read your feed but not post.</li>
+                    <li><strong>Read-only.</strong> Type your npub or name@domain and click
+                        <span class="ui">Sign in read-only</span>, or type a plain name and click <span class="ui">Find me</span> to pick
+                        yourself from the results. You can read your feed but not post.</li>
                 </ul>
                 <div class="shots wide">
                     <figure><img src="/docs/img/web/signin.webp" alt="The sign-in screen in a desktop browser" width="900" height="563" loading="lazy"><figcaption>The sign-in screen in a desktop browser</figcaption></figure>
                 </div>
 
-                <p>Accounts you've used in this browser are listed at the top next time, so one click signs you back in.</p>
+                <p>Accounts you've used in this browser are listed at the top next time, so one click signs you back in. To keep
+                    several accounts signed in, use <span class="path">Settings &rarr; Accounts &amp; Keys &rarr; Add Account</span>.</p>
+                <p>Just want to look? <span class="ui">Just look around</span> on the first screen finds anyone on Nostr by name, npub
+                    or NIP-05, without an account.</p>
+
+                <h2 id="first-sign-in">The first sign-in</h2>
+                <p>The first time an account signs in here, <strong>Getting your vault ready</strong> starts your relay in the browser,
+                    finds your account and fetches your notes and the notes of people you follow. Wait, or click
+                    <span class="ui">Open now, finish in the background</span>. To fetch your older posts later, open
+                    <span class="path">Settings &rarr; Import Notes</span>, pick a start date and click
+                    <span class="ui">Import from my relays</span>.</p>
 
                 <h2 id="shared">Opening a shared post</h2>
                 <p>A post shared from Nostr Vault opens in the web app, and anyone can read it without signing in. The top says
@@ -179,6 +196,9 @@
                     <span class="ui">Profile</span>, <span class="ui">WoT</span> and <span class="ui">Vault</span>. On a phone they're
                     a tab bar at the bottom; in a wide window they're a sidebar, and a post opens next to the list. Settings is the
                     gear on your profile.</p>
+                <p>Your relays are in <span class="path">Settings &rarr; Relays</span>. Changes are kept only when you click
+                    <span class="ui">Save and publish</span>, which publishes your relay list for other apps; your phone uses the same
+                    list.</p>
 
                 <h2 id="browsers">Browsers</h2>
                 <p>The web app runs in Chrome, Edge, Firefox and Safari. On iPhone and iPad it needs <strong>iOS 16.4</strong> or
@@ -193,16 +213,19 @@
 
                 <h2 id="backup">Your data in this browser</h2>
                 <p>Your relay, notes, messages and drafts live in this browser's storage on this device, not on our server. After you
-                    sign in the app asks the browser to keep them. The Relay screen shows how much space they take and the browser's
-                    answer: <span class="ui">Kept on this browser</span> or <span class="ui">This browser may clear it</span>.</p>
+                    sign in the app asks the browser to keep them. <span class="path">Vault &rarr; In your vault</span> shows how much
+                    space they take and the browser's answer: <span class="ui">Kept on this browser</span> or
+                    <span class="ui">This browser may clear it</span>.</p>
                 <ul>
-                    <li><span class="path">Settings &rarr; Backup &amp; Restore &rarr; Export notes</span> saves your notes,
-                        private notes, messages and feed cache as a .zip, the same file the phone apps make. Photos and videos
+                    <li><span class="path">Settings &rarr; Backup &amp; Restore &rarr; Export notes</span>, then
+                        <span class="ui">Save backup file</span>, saves your notes, private notes, messages and feed cache as a .zip, the same file the phone apps make. Photos and videos
                         aren't in it.</li>
                     <li><span class="ui">Import notes</span> puts a .zip back into this browser, from the web or a phone. Nothing is
                         published.</li>
-                    <li>Under <span class="ui">This browser's copy</span>, <span class="ui">Sign out and delete this browser's copy</span>
-                        removes everything this browser holds. Your phone's vault is untouched.</li>
+                    <li>In <span class="path">Settings &rarr; Database &amp; Reset</span>, under <span class="ui">This browser's copy</span>,
+                        <span class="ui">Sign out and delete this browser's copy</span> removes everything this browser holds for the
+                        current account. <span class="ui">Reset Everything</span> signs every account out and deletes all of it. Your
+                        phone's vault is untouched.</li>
                 </ul>
                 <div class="note"><p>Clearing your browser's site data deletes the web app's copy too. Your posts are still on public
                     relays and in your phone or Mac vault.</p></div>
