@@ -70,7 +70,10 @@ object RelayCheck {
 
     /** Their write relays first (marked yours), then the defaults, without
      *  duplicates. [relayListTags] are the kind-10002 `r` tags; a relay marked
-     *  "read" only is where they read, not where their notes are. */
+     *  "read" only is where they read, not where their notes are. Their ws://,
+     *  home-network, .local and loopback entries are skipped: this phone
+     *  can't reach most of them from elsewhere, and setup only reads from what
+     *  others can too (Logen d149d0f7). Nothing here saves or publishes their list. */
     fun rows(relayListTags: List<List<String>>, defaults: List<String>): List<Row> {
         val seen = mutableSetOf<String>()
         val rows = mutableListOf<Row>()
@@ -78,6 +81,7 @@ object RelayCheck {
             if (tag.firstOrNull() != "r" || tag.size < 2) continue
             if (tag.getOrNull(2) == "read") continue
             val url = normalize(tag[1]) ?: continue
+            if (!com.nostrvault.relay.RelayDraft.listable(url)) continue
             if (seen.add(url)) rows.add(Row(url, isYours = true))
         }
         for (raw in defaults) {

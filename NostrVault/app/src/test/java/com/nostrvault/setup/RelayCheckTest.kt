@@ -24,6 +24,17 @@ class RelayCheckTest {
         assertEquals(listOf(true, true, true, false, false), rows.map { it.isYours })
     }
 
+    @Test fun theirWsHomeNetworkAndLocalRelaysAreSkipped() {
+        // Setup reads only from servers others can reach too (Logen d149d0f7); a positive control stays.
+        val tags = listOf(
+            listOf("r", "ws://relay.example.com"), listOf("r", "wss://192.168.1.20:4869"), listOf("r", "wss://box.local"),
+            listOf("r", "wss://100.64.3.4"), listOf("r", "wss://127.0.0.1:4869"), listOf("r", "wss://nostr.land"),
+        )
+        val rows = RelayCheck.rows(tags, defaults)
+        assertEquals(listOf("wss://nostr.land") + defaults, rows.map { it.url })
+        assertEquals(listOf(true, false, false, false), rows.map { it.isYours })
+    }
+
     @Test fun noRelayListMeansDefaults() {
         assertEquals(defaults, RelayCheck.rows(emptyList(), defaults).map { it.url })
     }
