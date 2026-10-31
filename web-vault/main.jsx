@@ -19,6 +19,7 @@ import { setQuoteSource } from "./src/net/quotes.js"
 import { setMeshPeople } from "./src/net/fips-media.js"
 import { GuestApp } from "./src/guest/GuestApp.jsx"
 import { FeedScreen } from "./src/screens/FeedScreen.jsx"
+import { startNavDepth } from "./src/components/nav-depth.js"
 import { ComposeScreen } from "./src/screens/ComposeScreen.jsx"
 import { ProfileScreen } from "./src/screens/ProfileScreen.jsx"
 import { RelayScreen } from "./src/screens/RelayScreen.jsx"
@@ -63,6 +64,8 @@ const routeOf = () => {
 // The address the page opened with, before the desktop layout rewrites it: a shared post's link carries its relay
 // hints there (src/guest). Someone signed in starts downloading haven.wasm now; a guest never needs it.
 const bootHash = location.hash
+// Compose closes back to the page it came from, or shows Done when it was the first page (src/components/nav-depth.js).
+startNavDepth()
 if (loadSession()) preloadHaven()
 
 // 760px and up is the desktop layout (src/desktop). The address is fixed up for the layout before anything renders:

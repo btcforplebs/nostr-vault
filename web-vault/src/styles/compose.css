@@ -102,3 +102,4 @@ body:has(.compose-sheet) .tabbar { display: none; }
 
 /* The desktop dialog's × sat on top of Post: a sheet with its own bar already has Cancel (and Esc), so the × goes. */
 .desk-compose:has(.compose-bar) > .desk-x { display: none; }
+.compose-done { display: block; width: calc(100% - 2 * var(--gutter)); margin: 12px var(--gutter) 0; }

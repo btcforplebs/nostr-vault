@@ -120,7 +120,7 @@ globalThis.document = {
 }
 globalThis.location = { hash: "#/compose", hostname: "nostrvault.app" }
 let backs = 0
-globalThis.history = { back: () => { backs++ } }
+globalThis.history = { state: null, back: () => { backs++ } }
 const local = new Map()
 globalThis.localStorage = store(local)
 // An in-memory IndexedDB, just what idbDrafts asks of it.
@@ -142,11 +142,12 @@ globalThis.indexedDB = {
     return req
   },
 }
-const { ComposeScreen, replySnippet } = await import("../src/screens/ComposeScreen.jsx")
+const { ComposeScreen, replySnippet, reachedRelay } = await import("../src/screens/ComposeScreen.jsx")
 // Preact runs effects after a paint timer (~35 ms without requestAnimationFrame); setTimeout isn't mocked.
 const flush = async () => { for (let i = 0; i < 3; i++) { await new Promise(r => setTimeout(r, 50)); await new Promise(r => setImmediate(r)) } }
 
-async function composer() {
+let relayAnswer = () => Promise.resolve("ok")
+async function composer(props = {}) {
   const sk = generateSecretKey(), pubkey = getPublicKey(sk)
   const signed = [], stored = [], published = []
   const ctx = {
@@ -155,9 +156,9 @@ async function composer() {
     vault: { outbox: { event: async e => { stored.push(e); return { ok: true } } }, feed: {} },
     account: { relays: { write: ["wss://relay.example"] } },
   }
-  pool.publish = (urls, e) => { published.push({ urls, e }); return urls.map(() => Promise.resolve("ok")) }
+  pool.publish = (urls, e) => { published.push({ urls, e }); return urls.map(() => relayAnswer()) }
   const root = new Node(1, "div")
-  render(h(ComposeScreen, { ctx }), root)
+  render(h(ComposeScreen, { ctx, ...props }), root)
   await flush()
   const box = root.all(n => n.localName === "textarea")[0]
   const type = async t => { box.value = t; box.fire("input"); await flush() }
@@ -293,4 +294,50 @@ test("Cancel during the countdown stops it: nothing is signed or sent", async t 
 test("the reply strip's text drops media links and nostr: references, on one line", () => {
   assert.equal(replySnippet("Look at this\nhttps://x.example/a.jpg\nnostr:nevent1abc and more"), "Look at this and more")
   assert.equal(replySnippet("https://x.example/a.jpg"), "")
+})
+
+// After a send, as the iPhone's sheet does: closed back to the page it came from, or Done when there's none.
+async function sendOff(t, props) {
+  mock.timers.enable({ apis: ["setInterval", "Date"] })
+  t.after(() => { mock.timers.reset(); history.state = null; relayAnswer = () => Promise.resolve("ok") })
+  local.clear(); local.set(SEND_DELAY_KEY, "0"); backs = 0
+  const c = await composer(props)
+  await c.type("tory close probe")
+  c.button(props?.fixed ? "Reply" : "Post").click(); await flush()
+  return c
+}
+
+test("a sent note closes the composer back to the page it was opened from", async t => {
+  history.state = { nvDepth: 2 }
+  const c = await sendOff(t)
+  assert.equal(c.published.length, 1)
+  assert.equal(backs, 1, "went back once")
+  assert.equal(c.button("Done"), undefined)
+  c.unmount()
+})
+
+test("opened as the first page: the note sends, nothing goes back, and Done shows", async t => {
+  history.state = { nvDepth: 0 }
+  const c = await sendOff(t)
+  assert.equal(c.published.length, 1)
+  assert.equal(backs, 0)
+  assert.ok(c.button("Done"))
+  assert.match(c.text(), /✓ Sent to \d+ of \d+ relays/)
+  c.unmount()
+})
+
+test("a note no relay took stays open with its errors", async t => {
+  history.state = { nvDepth: 2 }
+  relayAnswer = () => Promise.reject(new Error("blocked: test"))
+  const c = await sendOff(t)
+  assert.equal(backs, 0)
+  assert.equal(c.button("Done"), undefined)
+  assert.match(c.text(), /No relay took it/)
+  c.unmount()
+})
+
+test("only a relay other than this machine's own counts as sent", () => {
+  assert.equal(reachedRelay({ relays: [{ url: "ws://127.0.0.1", local: true, ok: true }, { url: "wss://a", ok: false }] }), false)
+  assert.equal(reachedRelay({ relays: [{ url: "wss://a", ok: true }] }), true)
+  assert.equal(reachedRelay(null), false)
 })
