@@ -12,8 +12,14 @@ import { loadSession } from "../session.js"
 
 const KEY = "nv-dm-cache"
 const HEX64 = /^[0-9a-f]{64}$/
-/** Plain text per chunk before it is encrypted: NIP-44 takes at most 65,535 bytes. */
-export const CHUNK_BYTES = 60_000
+/**
+ * A chunk's size, counted as it travels inside a JSON string (quotes and backslashes escaped). NIP-44 takes at most
+ * 65,535 bytes. Through a bunker (NIP-46) a chunk rides inside a request, and its ciphertext comes back in the answer,
+ * each NIP-44 again in a kind 24133 that relays cap at about 64 KB: there a chunk must stay small enough that both
+ * the request and the answer fit (Tron, #1376). test/dm-cache.test.mjs measures it with the real BunkerSigner.
+ */
+export const CHUNK_BYTES = { nip46: 24_000, other: 60_000 }
+export const chunkBytesFor = method => (method === "nip46" ? CHUNK_BYTES.nip46 : CHUNK_BYTES.other)
 /** At most this many chunks (about 1.3 MB stored); past it the oldest goes, and its messages are opened again. */
 export const MAX_CHUNKS = 16
 /** How long a chunk gets to open before it counts as failed: the inbox doesn't wait on a signer that's away. */
@@ -22,7 +28,7 @@ export const OPEN_WAIT = 10_000
 export const WRITE_AFTER = 1500
 
 export const cacheKey = me => `${KEY}:${me}`
-const bytes = s => new TextEncoder().encode(s).length
+const bytes = s => new TextEncoder().encode(JSON.stringify(s)).length // as it travels in a JSON string
 const row = m => [m.id, m.from, m.peer, m.content, m.at, m.legacy ? 1 : 0]
 const fromRow = r => Array.isArray(r) && HEX64.test(r[0] ?? "") && HEX64.test(r[1] ?? "") && HEX64.test(r[2] ?? "") && typeof r[3] === "string" && Number.isFinite(r[4])
   ? { id: r[0], from: r[1], peer: r[2], content: r[3], at: r[4], legacy: r[5] === 1 } : null
@@ -40,7 +46,7 @@ function readStored(storage, me) {
  * One account's kept inbox. `crypto` is the session's (dms.js cryptoFor): encrypt / decrypt with NIP-44.
  * restore() -> { messages, junk } from what was kept; add(message) and junk(id) keep more, written shortly after.
  */
-export function dmCache(me, crypto, { storage = globalThis.localStorage, wait = OPEN_WAIT, writeAfter = WRITE_AFTER, signedIn = () => !!storage && loadSession(storage)?.pubkey === me } = {}) {
+export function dmCache(me, crypto, { chunkBytes = CHUNK_BYTES.other, storage = globalThis.localStorage, wait = OPEN_WAIT, writeAfter = WRITE_AFTER, signedIn = () => !!storage && loadSession(storage)?.pubkey === me } = {}) {
   let sealed = [] // full chunks, as stored
   let tail = { m: [], j: [] } // the last chunk, still filling, in memory only
   const known = new Set() // ids in the cache
@@ -66,7 +72,7 @@ export function dmCache(me, crypto, { storage = globalThis.localStorage, wait = 
     }
     // The last chunk keeps filling; the others stay as they were stored. A chunk that didn't open is dropped.
     const last = good.at(-1)
-    if (last && last === opened.at(-1) && bytes(chunkText(me, { m: last.m.map(row), j: last.j })) < CHUNK_BYTES) {
+    if (last && last === opened.at(-1) && bytes(chunkText(me, { m: last.m.map(row), j: last.j })) < chunkBytes) {
       sealed = good.slice(0, -1).map(c => c.ct)
       tail = { m: [...last.m.map(row), ...early.m], j: [...last.j, ...early.j] }
     } else { sealed = good.map(c => c.ct); tail = early }
@@ -81,11 +87,11 @@ export function dmCache(me, crypto, { storage = globalThis.localStorage, wait = 
     const full = []
     let cur = { m: [], j: [] }
     for (const r of tail.m) {
-      if (cur.m.length && bytes(chunkText(me, { m: [...cur.m, r], j: cur.j })) > CHUNK_BYTES) { full.push(cur); cur = { m: [], j: [] } }
+      if (cur.m.length && bytes(chunkText(me, { m: [...cur.m, r], j: cur.j })) > chunkBytes) { full.push(cur); cur = { m: [], j: [] } }
       cur.m.push(r)
     }
     for (const id of tail.j) {
-      if (bytes(chunkText(me, { m: cur.m, j: [...cur.j, id] })) > CHUNK_BYTES) { full.push(cur); cur = { m: [], j: [] } }
+      if (bytes(chunkText(me, { m: cur.m, j: [...cur.j, id] })) > chunkBytes) { full.push(cur); cur = { m: [], j: [] } }
       cur.j.push(id)
     }
     try {
@@ -114,7 +120,7 @@ export function dmCache(me, crypto, { storage = globalThis.localStorage, wait = 
     add(m) {
       if (!m?.id || m.pending || m.failed || known.has(m.id) || !HEX64.test(m.id)) return
       const r = row(m)
-      if (bytes(chunkText(me, { m: [r], j: [] })) > CHUNK_BYTES) return
+      if (bytes(chunkText(me, { m: [r], j: [] })) > chunkBytes) return
       known.add(m.id); tail.m.push(r); dirty = true; schedule()
     },
     /** Keep the id of a wrap that isn't the user's, so it isn't asked about again. */

@@ -16,7 +16,7 @@ import { pool, DEFAULT_RELAYS, isLoopback, relayLists, uniq } from "./pool.js"
 import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
 import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
-import { dmCache } from "./dm-cache.js"
+import { chunkBytesFor, dmCache } from "./dm-cache.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -276,7 +276,7 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   const c = crypto ?? cryptoFor(session, { signer })
   if (c.reason) { state = { ...state, note: c.reason, loaded: true }; changed(); return { stored: 0 } }
   const store = chat ?? chatStore(vault)
-  if (!kept && cache) await restoreKept(me, c, cache)
+  if (!kept && cache) await restoreKept(me, c, { chunkBytes: chunkBytesFor(session.method), ...cache })
   let budget = openLimit(session)
   budget -= (await take(await store.query({ kinds: [1059], "#p": [me] }).catch(() => []), c, me, { limit: budget })).asked
   // What Haven held is on screen: no skeleton while the relays are asked.

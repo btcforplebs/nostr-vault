@@ -7,6 +7,7 @@ import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure
 import * as nip44 from "nostr-tools/nip44"
 import { rumorFor, wrapFor, loadMessages, getMessages, resetMessages } from "../src/net/dms.js"
 import { dmCache, cacheKey, CHUNK_BYTES } from "../src/net/dm-cache.js"
+import { BunkerSigner } from "nostr-tools/nip46"
 import { isAppKey } from "../src/net/reset-all.js"
 import { accountKeys } from "../src/haven/vault.js"
 
@@ -148,7 +149,7 @@ test("chunks stay under the NIP-44 limit and fill before a new one starts", asyn
   const { chunks } = JSON.parse(storage.getItem(cacheKey(ME)))
   assert.equal(chunks.length, 3)
   const sizes = chunks.map(c => new TextEncoder().encode(nip44.decrypt(c, nip44.getConversationKey(A, ME))).length)
-  assert.ok(sizes.every(s => s <= CHUNK_BYTES), String(sizes))
+  assert.ok(sizes.every(s => s <= CHUNK_BYTES.other), String(sizes))
   const k2 = dmCache(ME, cryptoOf(A), { storage })
   assert.equal((await k2.restore()).messages.length, 30)
 })
@@ -166,3 +167,42 @@ test("a message kept while the cache was still opening isn't lost", async () => 
   const k3 = dmCache(ME, cryptoOf(A), { storage })
   assert.deepEqual((await k3.restore()).messages.map(x => x.content).sort(), ["m1", "m2"])
 })
+
+// Through a bunker each chunk is one NIP-46 request, and its ciphertext one answer: both NIP-44 (at most 65,535 bytes
+// of plain text) inside a kind 24133, which relays such as strfry cap at 64 KB. A full chunk of the worst text (every
+// character one JSON escapes doubles) goes through nostr-tools' own BunkerSigner here, and every leg must fit.
+test("through a bunker a full chunk, its request and the bunker's answer all fit NIP-44 and a 64 KB event", async () => {
+  // Text JSON escapes (the chunk's escaped size doubles), and plain text (then the chunk itself is largest).
+  for (const big of ['"\\'.repeat(400) + "é🙂".repeat(100), "plain words ".repeat(100)]) await bunkerLegs(big)
+})
+
+async function bunkerLegs(big) {
+  const LIMIT = 65_535, EVENT = 64 * 1024
+  const written = []
+  const k = dmCache(ME, { encrypt: async (peer, t) => { written.push(t); return nip44.encrypt(t, nip44.getConversationKey(A, peer)) } }, { storage: fakeStorage(), writeAfter: 0, chunkBytes: CHUNK_BYTES.nip46 })
+  for (let i = 0; i < 80; i++) k.add({ id: i.toString(16).padStart(64, "0"), from: pk(B), peer: pk(B), content: big, at: i, legacy: false })
+  await k.flush()
+  const full = written.reduce((a, b) => (b.length > a.length ? b : a))
+  assert.ok(written.length >= 2, "it filled at least one chunk")
+
+  // The real BunkerSigner, its relay a stub that keeps what it would publish (nothing leaves this test).
+  const client = generateSecretKey(), bunker = generateSecretKey()
+  const sent = []
+  const pool = { publish: (_r, ev) => { sent.push(ev); return [Promise.resolve("")] }, subscribe: () => ({ close() {} }), subscribeMany: () => ({ close() {} }) }
+  const signer = BunkerSigner.fromBunker(client, { pubkey: pk(bunker), relays: ["wss://bunker.example"], secret: null }, { pool })
+  const ciphertext = nip44.encrypt(full, nip44.getConversationKey(A, ME))
+  signer.nip44Encrypt(ME, full).catch(() => {})
+  signer.nip44Decrypt(ME, ciphertext).catch(() => {})
+  await settle()
+  assert.equal(sent.length, 2)
+  const ck = nip44.getConversationKey(bunker, pk(client))
+  const legs = sent.map(ev => ({ plain: new TextEncoder().encode(nip44.decrypt(ev.content, ck)).length, event: new TextEncoder().encode(JSON.stringify(ev)).length }))
+  // The bunker's answers: the ciphertext to an encrypt, the chunk to a decrypt.
+  for (const result of [ciphertext, full]) {
+    const body = JSON.stringify({ id: "x".repeat(16), result })
+    const ev = finalizeEvent({ kind: 24133, created_at: 1, tags: [["p", pk(client)]], content: nip44.encrypt(body, ck) }, bunker)
+    legs.push({ plain: new TextEncoder().encode(body).length, event: new TextEncoder().encode(JSON.stringify(ev)).length })
+  }
+  for (const l of legs) assert.ok(l.plain <= LIMIT && l.event <= EVENT, JSON.stringify(legs))
+  signer.close?.()
+}
