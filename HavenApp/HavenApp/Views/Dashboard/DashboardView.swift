@@ -278,7 +278,7 @@ struct DashboardView: View {
                 }
                 .disabled(isPreparingImport || relayManager.isImporting)
 
-                ActionButton(icon: "photo.on.rectangle.angled", title: "Import Blossom", isLoading: mirrorService.state == .mirroring) {
+                ActionButton(icon: "photo.on.rectangle.angled", title: "Import Media", isLoading: mirrorService.state == .mirroring) {
                     mirrorService.runMirror(configService: configService, nostrService: nostrService)
                 }
                 .disabled(mirrorService.state == .mirroring)
@@ -288,7 +288,7 @@ struct DashboardView: View {
                 }
                 .disabled(exporter.isBusy)
 
-                ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: exporter.running == .media, emphasis: .secondary) {
+                ActionButton(icon: "photo.stack", title: "Export Media", isLoading: exporter.running == .media, emphasis: .secondary) {
                     exporter.export(.media, relayManager: relayManager, config: configService.config)
                 }
                 .disabled(exporter.isBusy)

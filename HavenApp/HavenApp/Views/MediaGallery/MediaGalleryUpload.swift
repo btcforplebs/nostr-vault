@@ -156,7 +156,7 @@ extension MediaGalleryView {
                                 MediaUploadNotificationManager.shared.markSuccess(id: notificationId)
                                 self.loadLocalMedia(force: true)
                             } else {
-                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to upload video to local relay.")
+                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Couldn't save the video to your vault.")
                             }
                         }
                     } catch {
@@ -219,7 +219,7 @@ extension MediaGalleryView {
                                 MediaUploadNotificationManager.shared.markSuccess(id: notificationId)
                                 self.loadLocalMedia(force: true)
                             } else {
-                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to upload image to local relay.")
+                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Couldn't save the image to your vault.")
                             }
                         }
                     } catch {
@@ -318,7 +318,7 @@ extension MediaGalleryView {
                             MediaUploadNotificationManager.shared.markSuccess(id: notificationId)
                             loadLocalMedia(force: true)
                         } else {
-                            MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to upload to local relay.")
+                            MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Couldn't save it to your vault.")
                         }
                     }
                 }

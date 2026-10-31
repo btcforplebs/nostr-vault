@@ -202,7 +202,7 @@ struct MenuBarStatusView: View {
                     icon: relayManager.isRunning ? "arrow.clockwise" : "play.fill",
                     title: relayManager.isBooting
                         ? "Booting…"
-                        : (relayManager.isRunning ? "Restart Relay" : "Start Relay"),
+                        : (relayManager.isRunning ? "Restart Vault" : "Start Vault"),
                     tint: relayManager.isRunning ? .havenPurple : .havenOnline
                 )
             }

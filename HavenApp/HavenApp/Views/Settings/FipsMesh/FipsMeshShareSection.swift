@@ -18,7 +18,7 @@ struct FipsMeshShareSection: View {
                 set: { on in on ? mesh.startKiosk() : mesh.stopKiosk() }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Kiosk mode").font(.appBody)
+                    Text("Home vault mode").font(.appBody)
                     Text("Share this vault on the mesh while the app stays open")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
@@ -43,7 +43,7 @@ struct FipsMeshShareSection: View {
         } header: {
             Text("Share With Others")
         } footer: {
-            Text("Kiosk mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, at most 1 GB a day (then they wait until the next day), and 256 MB each. Leaving the app pauses kiosk mode, and it turns on again when you come back.")
+            Text("Home vault mode keeps the screen on. The devices in My Devices reach this vault in full. Anyone else on the mesh can read only the photos in your posts: 1 MB/s for all of them together, at most 1 GB a day (then they wait until the next day), and 256 MB each. Leaving the app pauses home vault mode, and it turns on again when you come back.")
         }
     }
 

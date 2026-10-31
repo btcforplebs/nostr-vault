@@ -69,7 +69,7 @@ struct MediaSettingsView: View {
 
     static func clearMessage(_ bytes: Int64?) -> String {
         let size = bytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) + " of " } ?? ""
-        return "Removes \(size)temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched."
+        return "Removes \(size)temporary copies of images and videos. They download again when you view them. Your vault and your media servers are not touched."
     }
 
     private func measureCache() async {

@@ -32,7 +32,7 @@ struct StatsSection: View {
             )
 
             StatsCard(
-                title: "Active Mirrors",
+                title: "Active Servers",
                 value: "\(stats.mirrorCount)",
                 icon: "server.rack",
                 color: .green,

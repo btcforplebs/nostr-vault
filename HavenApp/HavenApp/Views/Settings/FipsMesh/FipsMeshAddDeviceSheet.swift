@@ -50,7 +50,7 @@ struct FipsMeshAddDeviceSheet: View {
                 } header: {
                     Text("Address")
                 } footer: {
-                    Text("Open FIPS Mesh on the other device and copy the address under This Device.")
+                    Text("Open Mesh on the other device and copy the address under This Device.")
                 }
 
                 Section {

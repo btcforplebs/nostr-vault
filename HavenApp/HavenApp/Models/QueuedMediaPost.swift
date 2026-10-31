@@ -97,7 +97,7 @@ enum MediaUploadOutcomeMessage {
     /// photos on (the Mac, or a kiosk) did not take it. Saying "no server is
     /// set up" here sent us looking at settings when the Mac app was closed.
     static let vaultDidNotTake =
-        "Your post wasn't sent: your Mac didn't take the photo. Check that Nostr Vault is open on your Mac (or your home vault is on), then post again."
+        "Your post wasn't sent: your home vault didn't take the photo. Check that your home vault is on and Nostr Vault is open on it, then post again."
 
     /// The blob never reached this device's own relay.
     static let notSavedOnDevice =
@@ -108,7 +108,7 @@ enum MediaUploadOutcomeMessage {
     static func queued(hosts: [String], macHost: String?) -> String {
         let waitingFor: String
         if let macHost, hosts.contains(macHost) {
-            waitingFor = hosts.count == 1 ? "your Mac vault" : "your Mac vault or another media server"
+            waitingFor = hosts.count == 1 ? "your home vault" : "your home vault or another media server"
         } else if hosts.count == 1, let only = hosts.first {
             waitingFor = only
         } else {

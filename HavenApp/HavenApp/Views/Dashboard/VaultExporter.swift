@@ -50,7 +50,7 @@ final class VaultExporter: ObservableObject {
 
         var noun: String { self == .notes ? "Notes" : "Media" }
         var fileStem: String { self == .notes ? "haven-backup" : "blossom-backup" }
-        var panelTitle: String { self == .notes ? "Save JSONL Backup" : "Save Blossom Backup" }
+        var panelTitle: String { self == .notes ? "Save JSONL Backup" : "Save Media Backup" }
     }
 
     @Published private(set) var running: Kind?

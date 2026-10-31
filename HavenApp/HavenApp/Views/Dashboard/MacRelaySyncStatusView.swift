@@ -58,7 +58,7 @@ struct MacRelaySyncStatusView: View {
                 checkRequested = true
                 RequestMacSyncCheckC()
             } label: {
-                Label("Check sync with Vault on Mac", systemImage: "arrow.triangle.2.circlepath")
+                Label("Check home vault sync", systemImage: "arrow.triangle.2.circlepath")
                     .font(.appSystem(size: 12, weight: .bold))
             }
             .buttonStyle(.borderedProminent)

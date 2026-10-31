@@ -555,7 +555,7 @@ struct RelayActivityWindow: View {
             .padding(.vertical, 10)
         }
         .background(Color.platformWindowBackground.ignoresSafeArea())
-        .navigationTitle("Relay Activity")
+        .navigationTitle("Vault Activity")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -586,7 +586,7 @@ struct RelayActivityWindow: View {
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Your relay is running normally.")
+                    Text("Your vault is running normally.")
                         .font(.appFootnote)
                         .foregroundColor(.secondary)
                 }

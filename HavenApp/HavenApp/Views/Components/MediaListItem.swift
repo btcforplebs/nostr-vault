@@ -168,7 +168,7 @@ struct MediaListItem: View {
                 Button(action: {
                     pushToMirrors()
                 }) {
-                    Label(isPushingToMirrors ? "Mirroring..." : "Mirror to Blossom", systemImage: "arrow.up.circle")
+                    Label(isPushingToMirrors ? "Copying..." : "Copy to your media servers", systemImage: "arrow.up.circle")
                 }
                 .disabled(isPushingToMirrors)
             }
@@ -179,7 +179,7 @@ struct MediaListItem: View {
                         Button(role: .destructive, action: {
                             pendingDelete = .mirrors
                         }) {
-                            Label("Delete from mirrors", systemImage: "trash")
+                            Label("Delete from media servers", systemImage: "trash")
                         }
                     }
                     if onDeleteEverywhere != nil {

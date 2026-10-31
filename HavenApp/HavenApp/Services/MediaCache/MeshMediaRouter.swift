@@ -270,7 +270,7 @@ enum MeshMediaPhase: Equatable, Sendable {
     func text(video: Bool = false) -> String? {
         switch self {
         case .loading: return nil
-        case .meshLookup: return video ? "Loading video over FIPS…" : "Loading image over FIPS…"
+        case .meshLookup: return video ? "Loading video over the mesh…" : "Loading image over the mesh…"
         case .unreached: return "Couldn't reach the owner's vault"
         case .notReachable: return video ? "Video not reachable" : "Photo not reachable"
         case .notFound: return video ? "Video not found" : "Photo not found"

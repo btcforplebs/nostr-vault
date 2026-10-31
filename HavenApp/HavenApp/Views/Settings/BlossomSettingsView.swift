@@ -74,7 +74,7 @@ struct BlossomSettingsView: View {
                         
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 8) {
-                                Text("Mac Relay Sync Server")
+                                Text("Home vault sync")
                                     .font(.appSubheadline.bold())
                                     .foregroundColor(.white)
                                 
@@ -106,10 +106,10 @@ struct BlossomSettingsView: View {
                             .frame(width: 24, height: 24)
                         
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("No Mac Sync Relay Configured")
+                            Text("No home vault sync set up")
                                 .font(.appSubheadline.bold())
                                 .foregroundColor(.secondary)
-                            Text("Add it under Sync with Vault on Mac and it's used here automatically.")
+                            Text("Add it under Home vault sync and it's used here automatically.")
                                 .font(.appCaption)
                                 .foregroundColor(.secondary.opacity(0.7))
                         }
@@ -125,7 +125,7 @@ struct BlossomSettingsView: View {
             Section {
                 let mirrors = configService.config.blossomMirrors
                 if mirrors.isEmpty {
-                    Text("No additional Blossom servers configured.")
+                    Text("No other media servers added.")
                         .foregroundColor(.secondary)
                         .font(.appSubheadline)
                         .padding(.vertical, 4)
@@ -191,7 +191,7 @@ struct BlossomSettingsView: View {
                         Text("Mirror from Servers")
                             .font(.appBody)
                             .foregroundColor(.white)
-                        Text("Download your media from external Blossom mirrors to local storage")
+                        Text("Download your media from your media servers into your vault")
                             .font(.appCaption)
                             .foregroundColor(.secondary)
                     }
@@ -243,18 +243,18 @@ struct BlossomSettingsView: View {
             Section {
                 FipsMeshLinkRow()
             } header: {
-                Text("FIPS")
+                Text("Mesh")
             } footer: {
-                Text("Your .fips address and what you share on the mesh are under FIPS Mesh.")
+                Text("Your mesh address and what you share on the mesh are under Mesh.")
             }
             #else
             Section {
-                Text("To load media from a .fips server, turn on Mesh under FIPS Mesh, then add the server's .fips address under Other Servers above.")
+                Text("To load media from a .fips server, turn on the mesh under Mesh, then add the server's .fips address under Other Servers above.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
                 FipsMeshLinkRow()
             } header: {
-                Text("FIPS")
+                Text("Mesh")
             }
             #endif
         }

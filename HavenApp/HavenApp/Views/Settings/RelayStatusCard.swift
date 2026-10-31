@@ -62,7 +62,7 @@ struct RelayStatusCard: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Your Vault Relay")
+            Text("Your Vault")
                 .font(.appHeadline)
                 // Wraps at the word in a narrow column, never "Rel…".
                 .fixedSize(horizontal: false, vertical: true)
@@ -115,7 +115,7 @@ struct RelayStatusCard: View {
                 Button {
                     relayManager.startRelay(config: configService.config)
                 } label: {
-                    Label("Start Relay", systemImage: "play.fill")
+                    Label("Start Vault", systemImage: "play.fill")
                         .font(.appSubheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)

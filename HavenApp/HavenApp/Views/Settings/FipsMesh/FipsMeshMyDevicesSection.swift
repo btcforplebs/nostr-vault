@@ -33,7 +33,7 @@ struct FipsMeshMyDevicesSection: View {
         } header: {
             Text("My Devices")
         } footer: {
-            Text("Your Mac, phones, home vault and browser page, in one list. These are the devices this phone reaches over the mesh.")
+            Text("Your home vaults, phones and browser vault, in one list. These are the devices this phone reaches over the mesh.")
         }
     }
 

@@ -35,7 +35,7 @@ extension FeedMediaViewer {
                configService.hasExternalShareURL(for: localURL) {
                 if isOnMirror {
                     actionCapsule(icon: "checkmark.circle.fill", label: "Mirrored", showLabel: showLabels, fill: Self.doneGreen)
-                        .accessibilityLabel("Mirrored to Blossom")
+                        .accessibilityLabel("Copied to your media servers")
                     Button {
                         PlatformClipboard.copy(getMirroredLink())
                         withAnimation(Motion.pop) { isCopied = true }
@@ -59,7 +59,7 @@ extension FeedMediaViewer {
                         actionCapsule(icon: "arrow.down.circle.fill", label: "Mirror", showLabel: showLabels, fill: Color.black.opacity(0.6))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Mirror to Blossom")
+                    .accessibilityLabel("Copy to your media servers")
                 }
             }
         }
@@ -145,7 +145,7 @@ extension FeedMediaViewer {
                             mirrorStatus = .success
                             isOnMirror = true
                         } else {
-                            mirrorStatus = .failed("Failed to save to local relay")
+                            mirrorStatus = .failed("Couldn't save to your vault")
                         }
                     }
                 }
@@ -366,7 +366,7 @@ extension FeedMediaViewer {
                 HStack(spacing: 10) {
                     ProgressView()
                         .tint(.white)
-                    Text("Mirroring to Blossom...")
+                    Text("Copying to your media servers...")
                         .font(.appSystem(size: 14, weight: .semibold))
                 }
                 .padding(.vertical, 12)
@@ -378,7 +378,7 @@ extension FeedMediaViewer {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.appSystem(size: 14, weight: .semibold))
-                    Text("Mirrored to Blossom")
+                    Text("Copied to your media servers")
                         .font(.appSystem(size: 14, weight: .semibold))
                 }
                 .padding(.vertical, 12)

@@ -75,7 +75,7 @@ struct BackupSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Export Media")
                             .font(.appBody)
-                        Text("Save all Blossom media files as a backup")
+                        Text("Save all your vault's media as a backup")
                             .font(.appCaption)
                             .foregroundColor(.secondary)
                     }
@@ -98,7 +98,7 @@ struct BackupSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Import Media")
                             .font(.appBody)
-                        Text("Restore media from a Blossom backup (.zip)")
+                        Text("Restore media from a media backup (.zip)")
                             .font(.appCaption)
                             .foregroundColor(.secondary)
                     }
@@ -240,7 +240,7 @@ struct BackupSettingsView: View {
     
     private func exportBlossom() {
         isExportingBlossom = true
-        statusMessage = "Preparing Blossom export..."
+        statusMessage = "Preparing media export..."
         
         let tempDir = NSTemporaryDirectory()
         let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
@@ -249,13 +249,13 @@ struct BackupSettingsView: View {
             Task { @MainActor in
                 isExportingBlossom = false
                 guard success else {
-                    statusMessage = "Blossom export failed"
+                    statusMessage = "Media export failed"
                     clearStatus()
                     return
                 }
                 VaultHistory.lastMediaBackup = Date()
                 #if os(macOS)
-                presentSavePanel(title: "Save Blossom Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
+                presentSavePanel(title: "Save Media Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
                 #else
                 shareFile(at: tempPath)
                 statusMessage = ""
@@ -269,7 +269,7 @@ struct BackupSettingsView: View {
     private func importBlossom() {
         #if os(macOS)
         let panel = NSOpenPanel()
-        panel.title = "Choose Blossom Backup"
+        panel.title = "Choose Media Backup"
         panel.allowedContentTypes = [.zip]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false

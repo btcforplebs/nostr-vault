@@ -217,7 +217,7 @@ final class HomeVaultSender: ObservableObject {
         for item in queue where HomeVaultLogic.isExpired(item, now: now) {
             appLog("gave up on \(item.kind.rawValue) \(item.id.prefix(8)) after \(item.attempts) tries", level: "WARN")
             gaveUp.append(item.kind == .mirror
-                ? "a photo a note links never reached your public server"
+                ? "a photo a note links never reached your media servers"
                 : "a \(item.kind == .event ? "note" : "photo") never reached your home vault")
             remove(item)
         }
@@ -250,7 +250,7 @@ final class HomeVaultSender: ObservableObject {
             if item.kind == .mirror {
                 let blossom = BlossomService(configService: ConfigService.shared, nostrService: NostrService.shared)
                 let ok = await blossom.mirrorFromLocal(sha256: item.id, contentType: item.contentType ?? "application/octet-stream", server: item.server)
-                result = ok ? .sent : .unreachable("no public server took it yet")
+                result = ok ? .sent : .unreachable("no media server took it yet")
             } else {
                 // Notes go to a kiosk only; media also to a Mac set by mesh npub.
                 guard let vault = item.kind == .event ? homeVault : mediaVault, vault.ownerHex == item.ownerHex,

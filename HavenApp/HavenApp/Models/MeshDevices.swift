@@ -12,10 +12,10 @@ enum MeshDeviceRole: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .mac: return "Vault on Mac"
+        case .mac: return "Home vault · full history"
         case .phone: return "Phone"
-        case .homeVault: return "Home vault"
-        case .browser: return "Browser page"
+        case .homeVault: return "Home vault · new posts"
+        case .browser: return "Browser vault"
         }
     }
 
@@ -31,9 +31,9 @@ enum MeshDeviceRole: String, Codable, CaseIterable, Identifiable {
     /// What this device does for you, in one line.
     var job: String {
         switch self {
-        case .mac: return "Keeps your full history. Syncs both ways."
+        case .mac: return "Keeps all your history. Syncs both ways."
         case .phone: return "Another phone of yours on the mesh."
-        case .homeVault: return "Gets your new notes and media, and sends your notes on."
+        case .homeVault: return "Keeps your new posts and media, and sends your notes on."
         case .browser: return "Gets your new notes while this app is open."
         }
     }
@@ -75,8 +75,8 @@ enum MeshPhotoDestination: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .publicServer: return "Public server"
-        case .mac: return "My Mac"
+        case .publicServer: return "Media servers"
+        case .mac: return "Home vault"
         case .both: return "Both"
         }
     }

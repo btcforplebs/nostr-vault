@@ -5,10 +5,10 @@ struct WhatsInsideSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private let features: [(icon: String, title: String, line: String)] = [
-        ("externaldrive.connected.to.line.below", "Personal Relay", "Run your own relay on-device. Notes are stored locally and broadcast to the network — you always have a copy."),
+        ("externaldrive.connected.to.line.below", "Your Vault", "Your own relay, on this device. Notes are kept here and sent to the network, so you always have a copy."),
         ("doc.text.image", "Full Nostr Client", "Browse your feed, post notes, reply, repost, and discover content from the network."),
         ("lock.shield", "Private Messaging", "NIP-17 encrypted DMs that stay on your device. No third-party server reads your conversations."),
-        ("photo.stack", "Blossom Media", "Host images and videos on your device with Blossom. Mirror media from the network to your local storage."),
+        ("photo.stack", "Your Media", "Keep images and videos in your vault, and copy them to your media servers."),
         ("bolt.fill", "Lightning Zaps", "Send and receive zaps over Lightning by connecting your own wallet with Nostr Wallet Connect.")
     ]
 

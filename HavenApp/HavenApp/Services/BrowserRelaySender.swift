@@ -85,7 +85,7 @@ final class BrowserRelaySender: ObservableObject {
             pending.removeFirst(batch.count)
             guard let data = try? JSONSerialization.data(withJSONObject: batch),
                   let json = String(data: data, encoding: .utf8) else { continue }
-            lastResult = "Sending \(batch.count) to the browser relay…"
+            lastResult = "Sending \(batch.count) to the browser vault…"
             let result = await FipsMeshService.shared.relayPush(relayNpub: relay.meshNpub, eventsJSON: json)
             lastResult = Self.describe(result, count: batch.count)
             print("BrowserRelay: \(lastResult ?? "")")
@@ -110,15 +110,15 @@ final class BrowserRelaySender: ObservableObject {
             return error.message
         case .success(let json):
             guard let parsed = try? JSONDecoder().decode(PushResult.self, from: Data(json.utf8)) else {
-                return "The browser relay sent an answer this app can't read"
+                return "The browser vault sent an answer this app can't read"
             }
             let accepted = parsed.acks?.filter(\.accepted).count ?? 0
-            if parsed.ok { return "The browser relay kept \(accepted) of \(count)" }
+            if parsed.ok { return "The browser vault kept \(accepted) of \(count)" }
             if parsed.acks?.isEmpty ?? true {
-                return "The browser relay did not answer. Start FIPS on the page after this phone is connected, then send again."
+                return "The browser vault did not answer. Tap Start mesh on the page after this phone is connected, then send again."
             }
             let reason = parsed.acks?.first(where: { !$0.accepted })?.message ?? parsed.error ?? ""
-            return "The browser relay kept \(accepted) of \(count)" + (reason.isEmpty ? "" : ": \(reason)")
+            return "The browser vault kept \(accepted) of \(count)" + (reason.isEmpty ? "" : ": \(reason)")
         }
     }
 

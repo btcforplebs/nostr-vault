@@ -17,12 +17,12 @@ struct BrowserRelaySection: View {
             if !isForOwner {
                 // Set up under another account. It still makes the mesh join the
                 // public seeds, so it must stay removable from here.
-                Text("This browser page is set up for another account on this phone.")
+                Text("This browser vault is set up for another account on this phone.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
             } else {
                 if let npub = mesh.status?.relay_link == true ? mesh.ownMeshNpub : nil {
-                    Text("This phone's mesh address. Paste it into the page's mesh address box, put your Nostr account npub in the box below it, tap Save owners, then Start FIPS:")
+                    Text("This phone's mesh address. Paste it into the page's mesh address box, put your Nostr account npub in the box below it, tap Save owners, then Start mesh:")
                         .font(.appCaption)
                         .foregroundColor(.secondary)
                     Text(npub)
@@ -60,7 +60,7 @@ struct BrowserRelaySection: View {
         } header: {
             Text("Sending")
         } footer: {
-            Text("Your new notes also go to a Nostr Vault page in a browser, over the mesh, while this app is open. The page keeps no key: it stores notes you already signed and checks each one. To connect, this phone joins the middle server (FIPS Mesh → Advanced), which sees its IP address the way any server does. While a browser page is set up, it joins whenever the mesh is on, kiosk mode and home vault included. Nothing is listed in public.")
+            Text("Your new notes also go to your browser vault, a Nostr Vault page in a browser, over the mesh, while this app is open. The page keeps no key: it stores notes you already signed and checks each one. To connect, this phone joins the middle server (Mesh → Advanced), which sees its IP address the way any server does. While a browser vault is set up, it joins whenever the mesh is on, home vault mode included. Nothing is listed in public.")
         }
     }
 }

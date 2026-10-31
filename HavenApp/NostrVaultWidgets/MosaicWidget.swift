@@ -25,7 +25,7 @@ enum MosaicStyle: String, AppEnum {
 
 struct MosaicIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Mosaic"
-    static var description = IntentDescription("Your Blossom media, live on the Home Screen.")
+    static var description = IntentDescription("Your media, live on the Home Screen.")
 
     @Parameter(title: "Layout", default: .grid)
     var style: MosaicStyle
@@ -276,7 +276,7 @@ struct MosaicWidget: Widget {
                 .containerBackground(NV.background, for: .widget)
         }
         .configurationDisplayName("Mosaic")
-        .description("Your Blossom media as a living grid.")
+        .description("Your media as a living grid.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
     }
 }

@@ -304,7 +304,7 @@ struct MediaGalleryView: View {
                     HStack(spacing: 6) {
                         Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(inVaultTab ? "Vault" : "Blossom")
+                        Text(inVaultTab ? "Vault" : "Media")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -425,7 +425,7 @@ struct MediaGalleryView: View {
                     HStack(spacing: 6) {
                         Image(systemName: inVaultTab ? VaultDashboard.symbol : "camera.macro")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(inVaultTab ? "Vault" : "Blossom")
+                        Text(inVaultTab ? "Vault" : "Media")
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -472,7 +472,7 @@ struct MediaGalleryView: View {
                 // compiled, shipped, and could not be opened.
                 IconFilterButton(
                     icon: "camera.macro",
-                    tooltip: "Blossom Dashboard",
+                    tooltip: "Media Dashboard",
                     isSelected: true,
                     color: .havenPurple,
                     action: { showingBlossomMediaList = true }

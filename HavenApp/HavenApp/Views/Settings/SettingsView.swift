@@ -57,9 +57,9 @@ struct SettingsView: View {
         case pushNotifications = "Notifications"
         case relays = "Relays"
         case blossom = "Media Servers"
-        case macRelay = "Sync with Vault on Mac"
+        case macRelay = "Home vault sync"
         case relayAccess = "Who Can Reach You"
-        case fipsMesh = "FIPS Mesh"
+        case fipsMesh = "Mesh"
         case importNotes = "Import Notes"
         case backup = "Backup & Restore"
         case startup = "Startup"
@@ -136,7 +136,7 @@ struct SettingsView: View {
             ("Feed & Display", [.feed, .appearance, .media]),
             ("Notifications", [.pushNotifications]),
             ("Relays", [.relays, .blossom]),
-            ("Your Vault Relay", relayTabs),
+            ("Your Vault", relayTabs),
             ("Mesh", [.fipsMesh]),
             ("Help", [.tutorials]),
             ("Advanced", [.proofOfWork, .advanced, .bitcoin, .logs]),
@@ -473,12 +473,12 @@ struct SettingsView: View {
                     ForEach(group.tabs) { tab in
                         tabLink(tab)
                     }
-                    if group.title == "Your Vault Relay" {
+                    if group.title == "Your Vault" {
                         // One switch, so it lives here rather than behind a
                         // page of its own (the Mac has a Startup page).
                         Toggle(isOn: $configService.config.autoStartRelay) {
                             Label {
-                                Text("Start Relay Automatically")
+                                Text("Start Vault Automatically")
                                     .font(.appBody)
                                     .settingInfo(.relayAutoStart)
                             } icon: {

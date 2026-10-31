@@ -84,7 +84,7 @@ struct BlossomMediaPickerSheet: View {
                         Image(systemName: "camera.macro")
                             .font(.appSystem(size: 48, weight: .thin))
                             .foregroundColor(Color.havenPurple.opacity(0.6))
-                        Text("No media on Blossom")
+                        Text("No media on your media servers")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
                     }

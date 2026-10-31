@@ -135,7 +135,7 @@ struct VaultDashboardView: View {
             return "It isn't saving new notes or messages. Start it to catch up."
         case .needsFix:
             return relayManager.isPortConflict
-                ? "Another app is using port \(config.relayPort). Restarting clears it."
+                ? "Another app is blocking your vault. Restarting clears it."
                 : "The last session didn't shut down cleanly. Restarting clears the lock."
         default:
             return nil
@@ -374,7 +374,7 @@ struct VaultDashboardView: View {
                 detail: macSyncDetail,
                 state: config.macRelayURL.isEmpty ? .todo : .done
             ) {
-                MacSyncSettingsPage().settingsPage("Sync with Vault on Mac")
+                MacSyncSettingsPage().settingsPage("Home vault sync")
             }
             DashboardDivider()
             DashboardRow(
@@ -392,7 +392,7 @@ struct VaultDashboardView: View {
     }
 
     private var macSyncDetail: String {
-        guard !config.macRelayURL.isEmpty else { return "Not set up. Your Mac can keep a copy that's always on." }
+        guard !config.macRelayURL.isEmpty else { return "Not set up. A home vault keeps a copy that's always on." }
         guard let finished = macSync?.finishedAt, finished > 0 else { return "Set up. Not synced yet." }
         return "Last synced \(relative(Date(timeIntervalSince1970: TimeInterval(finished))))."
     }
@@ -549,8 +549,8 @@ struct VaultDashboardView: View {
                 BlossomSettingsView().settingsPage("Media Servers")
             }
             DashboardDivider()
-            SettingLink(icon: "laptopcomputer", title: "Sync with Vault on Mac", value: config.macRelayURL.isEmpty ? "Off" : "On") {
-                MacSyncSettingsPage().settingsPage("Sync with Vault on Mac")
+            SettingLink(icon: "laptopcomputer", title: "Home vault sync", value: config.macRelayURL.isEmpty ? "Off" : "On") {
+                MacSyncSettingsPage().settingsPage("Home vault sync")
             }
             DashboardDivider()
             Toggle(isOn: Binding(

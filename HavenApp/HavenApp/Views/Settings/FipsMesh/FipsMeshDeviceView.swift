@@ -65,7 +65,7 @@ struct FipsMeshDeviceView: View {
         }
 
         Section {
-            Button("Remove from my devices", role: .destructive) { confirmRemove = true }
+            Button("Remove from My Devices", role: .destructive) { confirmRemove = true }
         } footer: {
             Text(removeFooter(device))
         }

@@ -243,7 +243,7 @@ struct FeedMediaViewer: View {
                         Button(role: .destructive) {
                             pendingDelete = .mirrors
                         } label: {
-                            Label("Delete from mirrors", systemImage: "trash")
+                            Label("Delete from media servers", systemImage: "trash")
                         }
 
                         Button(role: .destructive) {

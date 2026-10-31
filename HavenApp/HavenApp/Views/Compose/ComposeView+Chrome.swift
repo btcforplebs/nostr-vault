@@ -146,7 +146,7 @@ extension ComposeView {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .help("Pick from your Blossom media")
+                    .help("Pick from your media")
                 }
             }
         }

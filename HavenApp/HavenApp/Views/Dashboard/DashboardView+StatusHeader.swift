@@ -180,7 +180,7 @@ extension DashboardView {
                 HStack(spacing: 6) {
                     Image(systemName: relayManager.isRunning ? "arrow.clockwise" : "play.fill")
                         .font(.appSystem(size: 11, weight: .bold))
-                    Text(relayManager.isRunning ? "Restart" : "Start Relay")
+                    Text(relayManager.isRunning ? "Restart" : "Start Vault")
                         .font(.appSystem(size: 12, weight: .bold))
                 }
                 .foregroundColor(.white)
@@ -270,14 +270,14 @@ extension DashboardView {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)
-                        Text(relayManager.isPortConflict ? "Port \(configService.config.relayPort) is already in use" : "Database lock detected")
+                        Text(relayManager.isPortConflict ? "Another app is blocking your vault" : "Database lock detected")
                             .font(.appSystem(size: 13, weight: .medium))
                             .foregroundColor(.primary)
                         Spacer()
                     }
 
                     Text(relayManager.isPortConflict
-                        ? "Another process is using the relay port. Close other Nostr Vault instances or restart your computer."
+                        ? "Another app is in your vault's way. Close other copies of Nostr Vault or restart your computer. The port is under Settings › Advanced."
                         : "A previous session did not shut down cleanly. Clear locks to restart the relay.")
                         .font(.appSystem(size: 12))
                         .foregroundColor(.secondary)

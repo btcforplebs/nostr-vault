@@ -120,7 +120,7 @@ struct WelcomeStepView: View {
     // MARK: Chips
 
     private static let chipItems: [(icon: String, label: String)] = [
-        ("externaldrive.connected.to.line.below", "Own relay"),
+        ("externaldrive.connected.to.line.below", "Own vault"),
         ("lock.shield", "Private DMs"),
         ("bolt.fill", "Zaps")
     ]

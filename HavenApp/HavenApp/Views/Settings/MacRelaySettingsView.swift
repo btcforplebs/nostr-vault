@@ -94,7 +94,7 @@ struct MacRelaySettingsView: View {
                             .foregroundColor(.havenOnline)
                             .font(.appBody)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Blossom Mirror")
+                            Text("Media server")
                                 .font(.appSubheadline.bold())
                             Text(httpsURL)
                                 .font(.appSystem(size: 12, design: .monospaced))
