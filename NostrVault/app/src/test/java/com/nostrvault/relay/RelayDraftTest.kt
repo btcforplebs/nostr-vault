@@ -213,12 +213,41 @@ class RelayDraftTest {
         assertEquals(RelayDraft.Entry(key("wss://relay.vertexlab.io"), "wss://relay.vertexlab.io", Section.DEFAULTS), s.layout.last())
     }
 
+    private val defaultsAnswered = listOf(
+        "wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.primal.net",
+    )
+
     @Test
-    fun `a list is settled when found or when half the relays answered without it`() {
-        assertTrue(RelayDraft.settled(found = true, asked = 6, answered = 1))
-        assertTrue(RelayDraft.settled(found = false, asked = 6, answered = 3))
-        assertFalse(RelayDraft.settled(found = false, asked = 6, answered = 2))
-        assertFalse(RelayDraft.settled(found = false, asked = 0, answered = 0))
+    fun `a list found anywhere is settled`() {
+        assertTrue(RelayDraft.settled(found = true, answeredBy = listOf("wss://relay.primal.net")))
+    }
+
+    @Test
+    fun `indexers silent and only defaults answering leaves the list held`() {
+        // A 10002 made in another app lives on the indexers and the owner's relays;
+        // our defaults answering empty says nothing about it.
+        assertFalse(RelayDraft.settled(found = false, answeredBy = defaultsAnswered))
+        assertFalse(RelayDraft.settled(found = false, answeredBy = defaultsAnswered + "wss://purplepag.es"))
+        assertFalse(RelayDraft.settled(found = false, answeredBy = emptyList()))
+    }
+
+    @Test
+    fun `both indexers answering without it settles an empty list`() {
+        assertTrue(RelayDraft.settled(found = false, answeredBy = listOf("wss://purplepag.es/", "wss://User.KindPag.es")))
+    }
+
+    @Test
+    fun `a held list from that lookup never publishes over the real one`() {
+        val held = RelayDraft.Published(
+            relayListKnown = RelayDraft.settled(false, defaultsAnswered),
+            dmListKnown = RelayDraft.settled(false, defaultsAnswered),
+        )
+        var s = RelayDraft.add(RelayDraft.start(config, held), "wss://mine.example", setOf(Job.READ, Job.WRITE, Job.DMS))
+        s = RelayDraft.remove(s, key("wss://relay.damus.io"))
+        val plan = RelayDraft.plan(s, ownRelay, ownInbox)
+        assertNull(plan.relayListTags)
+        assertNull(plan.dmRelays)
+        assertTrue(plan.relayListHeld && plan.dmListHeld)
     }
 
     private fun <T> assertNotNullAndGet(value: T?): T {

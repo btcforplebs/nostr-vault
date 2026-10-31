@@ -34,13 +34,22 @@ object RelayDraft {
         val dmListKnown: Boolean = false,
     )
 
+    /** The relays that index every account's lists; a "none" counts only when both answered. */
+    val INDEXERS = listOf("wss://purplepag.es", "wss://user.kindpag.es")
+
     /**
-     * Whether a lookup settled the list: it was found, or at least half the
-     * relays asked answered without it. Requiring every relay made a new
-     * account's empty list "unknown" whenever one relay was rate-limiting.
+     * Whether a lookup settled the list: it was found, or every one of the
+     * [INDEXERS] answered without it. Any other relay answering empty proves
+     * little: most of them are this device's own defaults, and a list made
+     * in another app may never have reached them (Tron, PR 1378). Requiring
+     * every relay instead made a new account's empty list "unknown" whenever
+     * one relay was rate-limiting.
      */
-    fun settled(found: Boolean, asked: Int, answered: Int): Boolean =
-        found || (asked > 0 && answered * 2 >= asked)
+    fun settled(found: Boolean, answeredBy: Collection<String>): Boolean {
+        if (found) return true
+        val answered = answeredBy.map(RelayMatrix::key).toSet()
+        return INDEXERS.all { RelayMatrix.key(it) in answered }
+    }
 
     data class State(
         /** The lists when the screen opened, or at the last Save. */

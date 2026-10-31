@@ -64,7 +64,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     /**
      * The owner's published relay list (kind 10002) and DM inbox (kind
      * 10050), for Settings > Relays. A list counts as known when it was
-     * found, or at least half the relays asked answered without one
+     * found, or both indexer relays answered without one
      * ([com.nostrvault.relay.RelayDraft.settled]); otherwise the cached copy
      * is shown and Save won't publish over it.
      */
@@ -72,10 +72,13 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val owner = ownerHexPubkey
         if (owner.isBlank()) return@coroutineScope com.nostrvault.relay.RelayDraft.Published()
         val config = configStore.config.value
-        val ask = (config.writeRelays + config.readRelays.take(3) + NostrService.PROFILE_RELAYS).filterNot(::isLoopbackRelay).distinct()
+        val ask = (config.writeRelays + config.readRelays.take(3) + NostrService.PROFILE_RELAYS + com.nostrvault.relay.RelayDraft.INDEXERS)
+            .filterNot(::isLoopbackRelay).distinctBy(com.nostrvault.relay.RelayMatrix::key)
         val relayList = async { runCatching { lookupNewestReplaceable(10002, owner, ask) }.getOrNull() }
         val dmList = async {
-            runCatching { lookupNewestReplaceable(10050, owner, (ask + config.dmInboxRelays).filterNot(::isLoopbackRelay).distinct()) }.getOrNull()
+            runCatching {
+                lookupNewestReplaceable(10050, owner, (ask + config.dmInboxRelays).filterNot(::isLoopbackRelay).distinctBy(com.nostrvault.relay.RelayMatrix::key))
+            }.getOrNull()
         }
         val rl = relayList.await()
         val dl = dmList.await()
@@ -86,8 +89,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             read = read.filterNot(::isLoopbackRelay),
             write = write.filterNot(::isLoopbackRelay),
             dms = dms.filterNot(::isLoopbackRelay),
-            relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.asked, rl.answered),
-            dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.asked, dl.answered),
+            relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.answeredBy),
+            dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.answeredBy),
         ).also {
             Log.i(TAG, "Relay lists looked up: 10002 ${rl?.answered}/${rl?.asked} found=${rl?.event != null}, " +
                 "10050 ${dl?.answered}/${dl?.asked} found=${dl?.event != null}")
