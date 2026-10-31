@@ -81,18 +81,22 @@ const LiveEmpty = ({ title, message, action, onGlobal, onRetry }) =>
 
 /** A tile: the live frame (else the cover), LIVE and viewers over it, then title and host. The title is also a real
  *  link to zap.stream for right-click or middle-click. */
-export function LiveTile({ stream: s, onOpen }) {
+/** `ended`: a stream quoted in a note that is no longer on air (LiveStreamEmbedView): an ENDED pill, dimmed, no tap. */
+export function LiveTile({ stream: s, onOpen, ended = false }) {
   const [pic, setPic] = useState(0)
   const src = s.previews[pic]
+  if (ended) onOpen = null
   return (
-    <article class="live-tile" tabindex="0" onClick={onOpen} onKeyDown={e => { if (e.key === "Enter") onOpen() }}>
+    <article class={`live-tile${ended ? " ended" : ""}`} tabindex={ended ? undefined : "0"} aria-label={ended ? `${s.title || "Untitled stream"}, this stream has ended` : undefined}
+      onClick={onOpen ?? undefined} onKeyDown={onOpen ? e => { if (e.key === "Enter") onOpen() } : undefined}>
       <div class="live-thumb">
         {src ? <img src={src} alt="" loading="lazy" referrerpolicy="no-referrer" onError={() => setPic(pic + 1)} /> : <div class="live-blank" aria-hidden="true" />}
-        <span class="live-pills"><span class="live-badge"><span class="live-dot">●</span> LIVE</span>
-          {s.viewers != null && <span class="live-viewers" aria-label={`${s.viewers} watching`}>👥 {s.viewers}</span>}</span>
+        <span class="live-pills">{ended ? <span class="live-badge live-ended">ENDED</span> : <span class="live-badge"><span class="live-dot">●</span> LIVE</span>}
+          {!ended && s.viewers != null && <span class="live-viewers" aria-label={`${s.viewers} watching`}>👥 {s.viewers}</span>}</span>
       </div>
       <div class="live-text">
-        <h3><a href={streamLink(s)} target="_blank" rel="noopener noreferrer" onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen() }}>{s.title || "Untitled stream"}</a></h3>
+        <h3>{ended ? s.title || "Untitled stream"
+          : <a href={streamLink(s)} target="_blank" rel="noopener noreferrer" onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen() }}>{s.title || "Untitled stream"}</a>}</h3>
         <span class="muted small"><AuthorName pubkey={s.host} /></span>
       </div>
     </article>

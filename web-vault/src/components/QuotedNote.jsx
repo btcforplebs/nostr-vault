@@ -6,6 +6,7 @@ import { AuthorName } from "./NoteCard.jsx"
 import { NoteText } from "./NoteText.jsx"
 import { SnoCard } from "./SnoObject.jsx"
 import { SNO_KIND } from "../readers/sno.js"
+import { LiveEmbed, embeddedStream } from "../readers/LiveEmbed.jsx"
 import { ago } from "./time.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { getBlocks, isBlockedNote, onBlocks } from "../net/blocks.js"
@@ -54,6 +55,10 @@ export function QuotedNote({ q, short, depth = 0, memoryOnly = false }) {
   if (ev === undefined) return <div class="quote quote-pending"><span class="quote-ref">{short}</span> Loading…</div>
   if (ev === null) return <div class="quote quote-missing"><span class="quote-ref">{short}</span> Note not found</div>
   if (blocked && isBlockedNote(ev, blocked)) return <div class="quote quote-missing">Quote from someone you blocked</div>
+
+  // A live stream is its Live tile, ENDED once it is off air (LiveStreamEmbedView).
+  const stream = embeddedStream(ev)
+  if (stream) return <LiveEmbed stream={stream} />
 
   const open = e => {
     if (e.target.closest("a, button, video, audio, .media-box")) return

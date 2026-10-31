@@ -37,7 +37,7 @@ test("chat lines carry a short time", () => {
 
 test("tiles: Untitled stream, LIVE and viewers together top-left; Global without follows says it's unfiltered; a failed load ends", () => {
   assert.equal(/"Live stream"/.test(src), false)
-  assert.match(src, /<span class="live-pills"><span class="live-badge">/)
+  assert.match(src, /<span class="live-pills">\{ended \? <span class="live-badge live-ended">ENDED<\/span> : <span class="live-badge">/)
   assert.match(src, /Unfiltered: people you don't know yet/)
   assert.match(src, /setFailed\(true\); setStreams\(\[\]\)/)
 })
