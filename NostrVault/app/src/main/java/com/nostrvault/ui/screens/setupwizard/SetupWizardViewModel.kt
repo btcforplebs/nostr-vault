@@ -56,7 +56,7 @@ import javax.inject.Inject
 internal const val IMPORT_TOUR_START_DATE = "2023-01-01"
 
 enum class WizardStep {
-    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, USE_NOSTR_KEY, REFERRER, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
+    WELCOME, RELAY_CHOICE, NOSTR_INTRO, KEY_PASSWORD, PROFILE, STARTER_RELAYS, USE_NOSTR_KEY, REFERRER, BACKUP_QUESTION, RELAY_CHECK, IMPORT_TOUR,
     ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, NOTIFICATIONS, COMPLETE
 }
 
@@ -133,6 +133,13 @@ class SetupWizardViewModel @Inject constructor(
 
     private val _isAmberAvailable = MutableStateFlow(false)
     val isAmberAvailable = _isAmberAvailable.asStateFlow()
+
+    // Starter relay list (Create an account). Nothing is published unless
+    // the person taps Use on that step.
+    internal val _starterRelays = MutableStateFlow<List<String>>(emptyList())
+    val starterRelays = _starterRelays.asStateFlow()
+    internal var _starterRelaysPrepared = false
+    internal val _publishStarterRelays = MutableStateFlow(false)
 
     // Relays
     internal val _wizardRelays = MutableStateFlow(HavenConfig.DEFAULT_READ_RELAYS)
@@ -294,11 +301,12 @@ class SetupWizardViewModel @Inject constructor(
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
-    /** Steps for "New to Nostr" mode: keys, password, profile, done. The
-     *  Fill your feed guide finds people after setup. */
+    /** Steps for "New to Nostr" mode: keys, password, profile, the starter
+     *  relay list (published only on Use), done. The Fill your feed guide
+     *  finds people after setup. */
     private val newUserSteps = listOf(
         WizardStep.WELCOME, WizardStep.RELAY_CHOICE,
-        WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.COMPLETE,
+        WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.STARTER_RELAYS, WizardStep.COMPLETE,
     )
 
     /** Steps for "I already use Nostr": your key, ("Who told you", added by

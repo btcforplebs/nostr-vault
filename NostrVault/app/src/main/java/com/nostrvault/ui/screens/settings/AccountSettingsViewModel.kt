@@ -17,7 +17,9 @@ import com.nostrvault.setup.IdentityInput
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -253,9 +255,20 @@ class AccountSettingsViewModel @Inject constructor(
         _keysChanged.value++
     }
 
+    /** Why turning on "Publish relay list" sent nothing, by npub. */
+    private val _publishNote = MutableStateFlow<Map<String, String>>(emptyMap())
+    val publishNote = _publishNote.asStateFlow()
+
+    /** On publishes the account's own relay list, never the app defaults; nothing sent turns it back off. */
     fun togglePublishRelayList(npub: String, enabled: Boolean) {
         configStore.setPublishRelayList(npub, enabled)
-        if (enabled) nostrService.publishRelayList(npub)
+        _publishNote.value = _publishNote.value - npub
+        if (!enabled) return
+        viewModelScope.launch {
+            val note = nostrService.publishRelayList(npub) ?: return@launch
+            configStore.setPublishRelayList(npub, false)
+            _publishNote.value = _publishNote.value + (npub to note)
+        }
     }
 
     /** Resolve the nsec for an account (call only after biometric auth). */

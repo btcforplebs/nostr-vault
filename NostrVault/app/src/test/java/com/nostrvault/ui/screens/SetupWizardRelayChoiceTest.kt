@@ -125,10 +125,13 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `new to nostr is keys, password, profile, who told you, done`() {
+    fun `new to nostr is keys, password, profile, who told you, starter relay list, done`() {
         viewModel.setSetupPath(SetupPath.NEW_TO_NOSTR)
         assertEquals(
-            listOf(WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.REFERRER, WizardStep.COMPLETE),
+            listOf(
+                WizardStep.NOSTR_INTRO, WizardStep.KEY_PASSWORD, WizardStep.PROFILE, WizardStep.REFERRER,
+                WizardStep.STARTER_RELAYS, WizardStep.COMPLETE,
+            ),
             viewModel.activeSteps.drop(2),
         )
     }

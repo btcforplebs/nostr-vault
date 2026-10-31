@@ -274,11 +274,13 @@ internal fun VaultDashboardContent(
             )
             if (viewModel.hasPublishableOwnRelay(cfg)) {
                 val publishes = viewModel.publishesRelayList(cfg)
+                val publishNote by viewModel.publishNote.collectAsState()
                 DashDivider()
                 DashRow(
                     icon = Icons.Filled.Hub,
                     title = if (publishes) "Your relay list points here" else "Your relay list leaves out your vault",
-                    detail = if (publishes) "Other apps find you at your vault." else "Other apps can't find you here until you publish it.",
+                    detail = publishNote ?: if (publishes) "Other apps find you at your vault."
+                    else "Publish adds your vault to your own relay list. The app's default relays aren't added.",
                     state = if (publishes) RowState.DONE else RowState.TODO,
                 ) {
                     if (!publishes) {

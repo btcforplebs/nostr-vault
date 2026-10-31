@@ -302,11 +302,18 @@ class VaultDashboardViewModel @Inject constructor(
 
     fun publishesRelayList(cfg: HavenConfig): Boolean = cfg.publishRelayListPerAccount[activeNpub(cfg)] == true
 
+    /** Why the last Publish sent nothing, shown under the row; null when it went out. */
+    private val _publishNote = MutableStateFlow<String?>(null)
+    val publishNote = _publishNote.asStateFlow()
+
     fun publishRelayList() {
         val npub = activeNpub(configStore.config.value)
         if (npub.isEmpty()) return
-        configStore.setPublishRelayList(npub, true)
-        nostrService.publishRelayList(npub)
+        viewModelScope.launch {
+            val note = nostrService.publishRelayList(npub)
+            _publishNote.value = note
+            if (note == null) configStore.setPublishRelayList(npub, true)
+        }
     }
 
     /**

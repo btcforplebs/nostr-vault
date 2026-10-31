@@ -68,8 +68,11 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      * ([com.nostrvault.relay.RelayDraft.settled]); otherwise the cached copy
      * is shown and Save won't publish over it.
      */
-    internal suspend fun NostrService.lookupOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published = coroutineScope {
-        val owner = ownerHexPubkey
+    internal suspend fun NostrService.lookupOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published =
+        lookupRelayListsImpl(ownerHexPubkey)
+
+    /** [lookupOwnerRelayListsImpl] for any account, by hex pubkey. */
+    internal suspend fun NostrService.lookupRelayListsImpl(owner: String): com.nostrvault.relay.RelayDraft.Published = coroutineScope {
         if (owner.isBlank()) return@coroutineScope com.nostrvault.relay.RelayDraft.Published()
         val config = configStore.config.value
         val ask = (config.writeRelays + config.readRelays.take(3) + NostrService.PROFILE_RELAYS + com.nostrvault.relay.RelayDraft.INDEXERS)
@@ -283,14 +286,27 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
     }
 
-    internal fun NostrService.publishRelayListImpl(accountNpub: String) {
+    /**
+     * The "Publish relay list" switch and the dashboard's Publish: sends
+     * [accountNpub]'s own relay list (kind 10002), the relays on the list it
+     * already published, plus the vault's relay for the owner. The app's
+     * default relays never go in (Logen 2026-10-31). Returns what to tell
+     * the person when nothing was published.
+     */
+    internal suspend fun NostrService.publishRelayListImpl(accountNpub: String): String? {
         val forceOwner = forceOwnerFor(accountNpub) ?: run {
             Log.w(TAG, "publishRelayList: ${accountNpub.take(12)} is not the owner or active account; not published")
-            return
+            return "Only the active account's relay list can be published."
         }
-        val tags = configStore.config.value.publicRelayListTags
-        if (tags.isEmpty()) return
+        val cfg = configStore.config.value
+        val author = npubToHex(accountNpub.ifEmpty { cfg.ownerNpub }) ?: ownerHexPubkey
+        val published = lookupRelayListsImpl(author)
+        val ownRelay = if (forceOwner) cfg.macRelayWssURL else ""
+        val tags = com.nostrvault.relay.RelayDraft.yoursRelayListTags(published, ownRelay)
+            ?: return if (published.relayListKnown) "Nothing to publish: your relay list is empty. Add relays in Settings > Relays."
+            else "Not published: your relays didn't send your current relay list. Try again later."
         signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
+        return null
     }
 
     /** Runs [syncOwnerDMInboxList] off the main thread: adopts a newer published 10050, never publishes. */
