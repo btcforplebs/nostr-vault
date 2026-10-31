@@ -9,15 +9,20 @@ const HEX64 = /^[0-9a-f]{64}$/
 const hostOf = url => { try { return new URL(url).host } catch { return url } }
 const now = () => Math.floor(Date.now() / 1000)
 
-/** Kind 24242 for one action ("list", "delete", "upload" for a mirror), good for ten minutes; `x` scopes it to a file. */
-export const blossomAuthTemplate = (action, sha256, at = now()) => ({
+/** Kind 24242 for one action ("list", "delete", "upload" for a mirror), good for ten minutes; `x` scopes it to a file.
+ *  A delete names the one server it is sent to (BUD-11 `server`) and lasts five minutes: the same token used to go to
+ *  every server, so any of them could replay it against the others, the home vault included. */
+export const blossomAuthTemplate = (action, sha256, at = now(), server = null) => ({
   kind: 24242, created_at: at,
   content: sha256 ? `${action[0].toUpperCase()}${action.slice(1)} blob ${sha256.slice(0, 8)}...` : `${action[0].toUpperCase()}${action.slice(1)} blobs`,
-  tags: [["t", action], ...(sha256 ? [["x", sha256]] : []), ["expiration", String(at + 600)]],
+  tags: [["t", action], ...(sha256 ? [["x", sha256]] : []), ...(server ? [["server", server]] : []),
+    ["expiration", String(at + (action === "delete" ? 300 : 600))]],
 })
 
-async function signAuth(ctx, action, sha256) {
-  const t = blossomAuthTemplate(action, sha256)
+const hostnameOf = url => { try { return new URL(url).hostname.toLowerCase() } catch { return null } }
+
+async function signAuth(ctx, action, sha256, server = null) {
+  const t = blossomAuthTemplate(action, sha256, now(), server)
   return authHeader(checkSigned(await ctx.signer.signEvent(t), t, ctx.session.pubkey))
 }
 
@@ -118,9 +123,9 @@ export function deleteTargets(blob, servers = []) {
 /** Delete a file from every server in deleteTargets. A server that says 404 doesn't have it: that counts as done.
  *  -> [{ server, ok, message }] */
 export async function deleteBlob(blob, { ctx, fetch = globalThis.fetch, servers = [] }) {
-  const auth = await signAuth(ctx, "delete", blob.sha256)
   return Promise.all(deleteTargets(blob, servers).map(async server => {
     try {
+      const auth = await signAuth(ctx, "delete", blob.sha256, hostnameOf(server))
       const res = await fetch(`${server}/${blob.sha256}`, { method: "DELETE", headers: { Authorization: auth } })
       return { server, ok: res.ok || res.status === 404, message: res.ok ? "" : res.headers?.get?.("X-Reason") || `HTTP ${res.status}` }
     } catch (e) { return { server, ok: false, message: String(e?.message ?? e) } }
