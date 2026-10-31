@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mesh settings: finder relays and middle server — Nostr Vault Docs</title>
-    <meta name="description" content="What the finder relays and the middle server do in Nostr Vault's FIPS mesh settings, what they can see, and when to change them.">
+    <meta name="description" content="What the finder relays and the middle server do in Nostr Vault's mesh settings, what they can see, and when to change them.">
     <link rel="canonical" href="https://nostrvault.app/docs/mesh/advanced/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/mesh/advanced/">
     <meta property="og:title" content="Mesh settings: finder relays and middle server — Nostr Vault Docs">
-    <meta property="og:description" content="What the finder relays and the middle server do in Nostr Vault's FIPS mesh settings, what they can see, and when to change them.">
+    <meta property="og:description" content="What the finder relays and the middle server do in Nostr Vault's mesh settings, what they can see, and when to change them.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/" aria-current="page">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -133,11 +133,11 @@
             <h1>Mesh settings: finder relays and middle server</h1>
 
             <article class="docs-article">
-                <p>Open <span class="path">Settings &rarr; Mesh &rarr; FIPS Mesh &rarr; Advanced</span>. Most people never need to
+                <p>Open <span class="path">Settings &rarr; Mesh &rarr; Advanced</span>. Most people never need to
                     change these. On iPhone, changes apply the next time the mesh starts. On Android they apply right away.</p>
 
                 <div class="shots">
-                    <figure><img src="/docs/img/ios/mesh-advanced.webp" alt="FIPS Mesh, Advanced" width="900" height="1957" loading="lazy"><figcaption>FIPS Mesh, Advanced</figcaption></figure>
+                    <figure><img src="/docs/img/ios/mesh-advanced.webp" alt="Mesh, Advanced" width="900" height="1957" loading="lazy"><figcaption>Mesh, Advanced</figcaption></figure>
                 </div>
 
                 <h2 id="finder-relays">Finder Relays</h2>
@@ -147,21 +147,21 @@
 
                 <h2 id="middle-server">Middle Server</h2>
                 <p>The middle server links two devices that can't reach each other directly. It's how this phone reaches anyone
-                    outside My Devices: the photos of people you follow, a browser page, and visitors to your kiosk. They never get
+                    outside My Devices: the photos of people you follow, a browser vault, and visitors to your home vault. They never get
                     this phone's address, but the middle server does see it. Which follows' photos your app loads is up to
                     you; who can see your photos isn't a setting.</p>
                 <ul>
                     <li><span class="ui">Public (fips1, fips2.iris.to)</span>: the default on iPhone. On Android the default is
-                        None, so pick Public for follows' photos, a browser page and kiosk visitors.</li>
+                        None, so pick Public for follows' photos, a browser vault and home vault visitors.</li>
                     <li><span class="ui">None</span>: only devices on the same network can connect. Follows' photos load from their web
-                        addresses instead, a browser page only connects on the same network, and a kiosk takes no visitors.</li>
+                        addresses instead, a browser vault only connects on the same network, and a home vault takes no visitors.</li>
                 </ul>
                 <p><span class="ui">Reset to defaults</span> puts both lists back.</p>
             </article>
             <p class="docs-checked">Checked against Nostr Vault 3.0.0 (41).</p>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
                 <a class="prev" href="/docs/mesh/remove-a-device/"><span>Previous</span>Remove a device</a>
-                <a class="next" href="/docs/browser-relay/"><span>Next</span>Browser relay</a>
+                <a class="next" href="/docs/browser-relay/"><span>Next</span>Browser vault</a>
             </div>
         </main>
     </div>

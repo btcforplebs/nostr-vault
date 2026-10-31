@@ -6,14 +6,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Docs — Nostr Vault</title>
-    <meta name="description" content="Nostr Vault docs: getting started on iPhone, Android, Mac and the web, your keys and signers, the mesh, My Devices and kiosk mode.">
+    <meta name="description" content="Nostr Vault docs: getting started on iPhone, Android, Mac and the web, your keys and signers, the mesh, My Devices and Home vault mode.">
     <link rel="canonical" href="https://nostrvault.app/docs/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/">
     <meta property="og:title" content="Docs — Nostr Vault">
-    <meta property="og:description" content="Nostr Vault docs: getting started on iPhone, Android, Mac and the web, your keys and signers, the mesh, My Devices and kiosk mode.">
+    <meta property="og:description" content="Nostr Vault docs: getting started on iPhone, Android, Mac and the web, your keys and signers, the mesh, My Devices and Home vault mode.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -207,23 +207,23 @@
                                 <div class="docs-cards">
                                     <a class="docs-card" href="/docs/mesh/">
                                         <h3>The mesh</h3>
-                                        <p>How Nostr Vault's mesh works: your phone or Mac serves your own photos over the FIPS mesh, with no public IP, domain or cloud. My Devices, kiosk mode, share pages and privacy.</p>
+                                        <p>How Nostr Vault's mesh works: your phone or Mac serves your own photos over the mesh, with no public IP, domain or cloud. My Devices, Home vault mode, share pages and privacy.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/my-devices/">
                                         <h3>My Devices</h3>
-                                        <p>Connect your iPhone, Android phone, Mac, home vault and browser page over the FIPS mesh, by address or QR code, so they sync with each other.</p>
+                                        <p>Connect your iPhone, Android phone, Mac, home vault and browser vault over the mesh, by address or QR code, so they sync with each other.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/sync/">
-                                        <h3>Sync with your Mac</h3>
+                                        <h3>Home vault sync</h3>
                                         <p>Send each new note and photo from your phone to Nostr Vault on your Mac over the mesh, get your history back from the Mac, and check that everything arrived.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/home-vault/">
-                                        <h3>Home vault and kiosk mode</h3>
-                                        <p>Turn a spare phone into an always-on home vault with kiosk mode: it keeps your new posts and media, passes your notes on to your relays, and serves your public photos.</p>
+                                        <h3>Home vault</h3>
+                                        <p>Your home vault is the always-on one: a Mac, Linux box, Pi, box or spare phone that stays on. What each kind does, and how to turn a spare phone into one with Home vault mode.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/photo-server/">
                                         <h3>Your Mac as your photo server</h3>
-                                        <p>Let Nostr Vault on your Mac serve your photos over the FIPS mesh, listed in your media servers, with no public IP, domain or port forwarding.</p>
+                                        <p>Let Nostr Vault on your Mac serve your photos over the mesh, listed in your media servers, with no public IP, domain or port forwarding.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/remove-a-device/">
                                         <h3>Remove a device, or a lost phone</h3>
@@ -231,11 +231,11 @@
                                     </a>
                                     <a class="docs-card" href="/docs/mesh/advanced/">
                                         <h3>Mesh settings: finder relays and middle server</h3>
-                                        <p>What the finder relays and the middle server do in Nostr Vault's FIPS mesh settings, what they can see, and when to change them.</p>
+                                        <p>What the finder relays and the middle server do in Nostr Vault's mesh settings, what they can see, and when to change them.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/browser-relay/">
-                                        <h3>The browser relay</h3>
-                                        <p>The Nostr Vault browser relay at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the FIPS mesh. Pairing, Start FIPS, the screensaver, My Devices and limits.</p>
+                                        <h3>The browser vault</h3>
+                                        <p>The Nostr Vault browser vault at nostrvault.app/relay/: a browser tab that keeps your notes and serves them to your own devices over the mesh. Pairing, Start mesh, the screensaver, My Devices and limits.</p>
                                     </a>
                                 </div>
                             </section>
@@ -243,8 +243,8 @@
                                 <h2 id="vault">Your vault</h2>
                                 <div class="docs-cards">
                                     <a class="docs-card" href="/docs/vault/">
-                                        <h3>Your vault relay</h3>
-                                        <p>What the Nostr Vault vault relay keeps on your phone or Mac: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.</p>
+                                        <h3>Your vault</h3>
+                                        <p>What your vault keeps on each device: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/vault/who-can-reach-you/">
                                         <h3>Who Can Reach You</h3>
@@ -278,7 +278,7 @@
                                 <div class="docs-cards">
                                     <a class="docs-card" href="/docs/troubleshooting/">
                                         <h3>Troubleshooting</h3>
-                                        <p>Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, kiosk mode paused.</p>
+                                        <p>Fixes for common Nostr Vault problems: empty feed, signer not answering, read-only account, photo posts failing, relays not answering, mesh devices not in reach, Check sync stopping, Home vault mode paused.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/faq/">
                                         <h3>FAQ</h3>
@@ -286,7 +286,7 @@
                                     </a>
                                     <a class="docs-card" href="/docs/whats-new/">
                                         <h3>What's new</h3>
-                                        <p>Nostr Vault release notes for iPhone, Mac and Android: 3.0.1, 3.0.0 with the FIPS mesh, and the earlier 2.7.2 builds.</p>
+                                        <p>Nostr Vault release notes for iPhone, Mac and Android: 3.0.1, 3.0.0 with the mesh, and the earlier 2.7.2 builds.</p>
                                     </a>
                                     <a class="docs-card" href="/docs/roadmap/">
                                         <h3>Roadmap</h3>

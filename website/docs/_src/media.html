@@ -9,10 +9,10 @@
   "lede": "A note on Nostr is text. The photos in it live on media servers, and the note links to them. This page explains which servers Nostr Vault uses, how to change them, and how to keep your own copies.",
   "description": "Media servers (Blossom) in Nostr Vault: where photos go when you post, adding and removing servers, mirroring copies back to your device, the Media & Cache settings, and uploading from the share sheet.",
   "labels": {
-    "ios": ["Media Servers", "Media & Cache", "Waiting to send", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Sync with Vault on Mac", "Add to Blossom upload queue", "Suggested", "Delete from mirrors", "Delete everywhere"],
+    "ios": ["Media Servers", "Media & Cache", "Waiting to send", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Home vault sync", "Add to the upload queue", "Suggested", "Delete from media servers", "Delete everywhere"],
     "mac": ["Media Servers", "Media & Cache", "Waiting to send", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache"],
-    "android": ["Media Servers", "Media & Cache", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "Sync with Vault on Mac", "Delete from mirrors", "Delete everywhere"],
-    "web": ["Media Servers", "Add", "Remove", "Save and publish", "Discard changes", "Test", "Load photos over FIPS mesh", "Delete from mirrors"]
+    "android": ["Media Servers", "Media & Cache", "Try sending now", "Mirror Now", "Auto-Mirror Media", "Autoplay Videos", "Prefetch Profile Pictures", "Disable Media Cache", "Keep Media For", "Clear Media Cache", "Use Local Blossom Cache", "Home vault sync", "Delete from media servers", "Delete everywhere"],
+    "web": ["Media Servers", "Add", "Remove", "Save and publish", "Discard changes", "Test", "Load photos over the mesh", "Delete from media servers"]
   }
 }
 -->
@@ -59,7 +59,7 @@
 <p>Under <strong>Suggested</strong>, tap Add next to a well-known server to add it. Prices and limits are set by
     each server.</p>
 <p>Each change is saved and your updated list is published to your relays.</p>
-<p>If you set up <span class="path">Sync with Vault on Mac</span>, your Mac is used as a media server too. It
+<p>If you set up <span class="path">Home vault sync</span>, your Mac is used as a media server too. It
     shows at the top of the page and you don't need to add it by hand.</p>
 <p><strong>In the web app</strong>, the same page is <span class="path">Settings &rarr; Media Servers</span>.
     Use <strong>Add</strong> and <strong>Remove</strong>, or add one from Suggested. Each saved server is checked
@@ -87,12 +87,12 @@
 <h2>Deleting a photo</h2>
 <p>In Media, hold a photo:</p>
 <ul>
-    <li><strong>Delete from mirrors</strong> removes it from your outside media servers, any server in your
+    <li><strong>Delete from media servers</strong> removes it from your outside media servers, any server in your
         published list and the server in its link. It keeps the copy on this device and on your home vault.</li>
     <li><strong>Delete everywhere</strong> removes those copies too, and offers to delete the posts that use
         it.</li>
 </ul>
-<p>The web app has only Delete from mirrors.</p>
+<p>The web app has only Delete from media servers.</p>
 </section>
 
 <section id="cache">
@@ -129,7 +129,7 @@
     <tbody>
         <tr><td>Android</td><td>Pick Nostr Vault in the share sheet. The upload to Blossom starts straight away,
             one file at a time, with a notification while it runs.</td></tr>
-        <tr><td>iPhone</td><td>Pick Nostr Vault, then tap <strong>Add to Blossom upload queue</strong>. The
+        <tr><td>iPhone</td><td>Pick Nostr Vault, then tap <strong>Add to the upload queue</strong>. The
             files are added to a queue. Open Nostr Vault or tap its notification to finish the upload.</td></tr>
     </tbody>
 </table>
@@ -144,6 +144,6 @@
 <p>Your phone or Mac can also serve your photos to others over the mesh. That is
     covered on <a href="/docs/mesh/">The mesh</a>. It adds to your media servers and doesn't replace them,
     so you still need a public one to post.</p>
-<p>The web app can already load photos over the mesh. The <strong>Load photos over FIPS mesh</strong> switch
+<p>The web app can already load photos over the mesh. The <strong>Load photos over the mesh</strong> switch
     on its Media Servers page turns that off. It is on by default.</p>
 </section>

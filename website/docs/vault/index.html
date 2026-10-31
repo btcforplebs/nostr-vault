@@ -5,15 +5,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Your vault relay — Nostr Vault Docs</title>
-    <meta name="description" content="What the Nostr Vault vault relay keeps on your phone or Mac: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.">
+    <title>Your vault — Nostr Vault Docs</title>
+    <meta name="description" content="What your vault keeps on each device: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.">
     <link rel="canonical" href="https://nostrvault.app/docs/vault/">
     <meta name="theme-color" content="#000000">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="Nostr Vault">
     <meta property="og:url" content="https://nostrvault.app/docs/vault/">
-    <meta property="og:title" content="Your vault relay — Nostr Vault Docs">
-    <meta property="og:description" content="What the Nostr Vault vault relay keeps on your phone or Mac: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.">
+    <meta property="og:title" content="Your vault — Nostr Vault Docs">
+    <meta property="og:description" content="What your vault keeps on each device: your notes, mentions, messages and media. The Vault tab, starting and stopping it, Import Notes, and the Mac and web differences.">
     <meta property="og:image" content="https://nostrvault.app/assets/og-image.jpg">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
@@ -86,12 +86,12 @@
                 <ul>
                     <li><a href="/docs/mesh/">The mesh</a></li>
                     <li><a href="/docs/mesh/my-devices/">My Devices</a></li>
-                    <li><a href="/docs/mesh/sync/">Sync with your Mac</a></li>
-                    <li><a href="/docs/mesh/home-vault/">Home vault and kiosk</a></li>
-                    <li><a href="/docs/mesh/photo-server/">Mac photo server</a></li>
+                    <li><a href="/docs/mesh/sync/">Home vault sync</a></li>
+                    <li><a href="/docs/mesh/home-vault/">Home vault</a></li>
+                    <li><a href="/docs/mesh/photo-server/">Photo server</a></li>
                     <li><a href="/docs/mesh/remove-a-device/">Remove a device</a></li>
                     <li><a href="/docs/mesh/advanced/">Advanced mesh settings</a></li>
-                    <li><a href="/docs/browser-relay/">Browser relay</a></li>
+                    <li><a href="/docs/browser-relay/">Browser vault</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -131,7 +131,7 @@
         <main class="docs-main">
             <p class="eyebrow">Your vault</p>
             <h1>A Nostr relay <span>in your pocket</span>.</h1>
-            <p class="docs-lede">Nostr Vault runs a real Nostr relay and a Blossom media server on your own phone or Mac. It keeps a full copy of your notes and media, so they don't depend on anyone else's server.</p>
+            <p class="docs-lede">Your vault is a full copy of your notes and media on your own device. Underneath it's a real Nostr relay and media server. It keeps everything, so they don't depend on anyone else's server.</p>
             <div class="docs-onpage" role="navigation" aria-label="On this page"><p>On this page</p><ul><li><a href="#what-your-vault-is">What your vault is</a></li><li><a href="#the-vault-tab">The Vault tab</a></li><li><a href="#vault-settings">Vault settings</a></li><li><a href="#import-your-past-notes">Import your past notes</a></li><li><a href="#phone-mac-and-web">Phone, Mac and web</a></li></ul></div>
 
             <article class="docs-article">
@@ -139,7 +139,7 @@
                 <p class="eyebrow">The basics</p>
                 <h2 id="what-your-vault-is">What your vault is</h2>
                 <p>Most Nostr apps only read and write to other people's relays. Nostr Vault also runs one on your device.
-                    Your vault is a personal Nostr relay and a Blossom media server, and it keeps a copy of:</p>
+                    Your vault is a Nostr relay and media server of your own, and it keeps a copy of:</p>
                 <ul>
                     <li><strong>Your own notes</strong>, everything you post, like, zap and save.</li>
                     <li><strong>Notes that mention you</strong>, from people you trust (see
@@ -147,13 +147,13 @@
                     <li><strong>Your direct messages</strong>, still encrypted.</li>
                     <li><strong>Recent notes from people you follow</strong>, so your feed loads fast. Older ones are cleared
                         out over time.</li>
-                    <li><strong>Your media</strong>, in its Blossom media server.</li>
+                    <li><strong>Your media</strong>, in its own media server.</li>
                 </ul>
                 <p>The vault's address (<code>wss://127.0.0.1:&hellip;</code> on a phone) only works on that device. Other apps
                     and people can't connect to it directly. What reaches it over the mesh or the web is set out in
                     <a class="inline" href="/docs/vault/who-can-reach-you/">Who Can Reach You</a>. Your notes still go to your normal relays too. The vault is the copy you own.</p>
                 <p>To see it explained in the app, open <span class="path">Settings &rarr; Help &rarr; Tutorials</span> and
-                    play <strong>Vault in Your Pocket</strong> or <strong>How Your Vault Works</strong>.</p>
+                    play <strong>Your Vault at Work</strong> or <strong>How Your Vault Works</strong>.</p>
                 </section>
 
                 <section id="vault-tab">
@@ -187,12 +187,12 @@
                 <section id="settings">
                 <p class="eyebrow">Settings</p>
                 <h2 id="vault-settings">Vault settings</h2>
-                <p>Everything about the vault is grouped under <span class="path">Settings &rarr; Your Vault Relay</span>.
-                    The card at the top of Settings shows whether it's running, with a <strong>Start Relay</strong> button if it
+                <p>Everything about the vault is grouped under <span class="path">Settings &rarr; Your Vault</span>.
+                    The card at the top of Settings shows whether it's running, with a <strong>Start Vault</strong> button if it
                     isn't.</p>
                 <ul>
-                    <li><strong>Start Relay Automatically</strong>: start the vault when the app opens. Leave it on.</li>
-                    <li><strong>Sync with Vault on Mac</strong>: send your notes and photos to Nostr Vault on your Mac
+                    <li><strong>Start Vault Automatically</strong>: start the vault when the app opens. Leave it on.</li>
+                    <li><strong>Home vault sync</strong>: send your notes and photos to Nostr Vault on your Mac
                         (see <a class="inline" href="/docs/mesh/">The mesh</a>).</li>
                     <li><strong>Who Can Reach You</strong>: who may send to your inbox and messages.
                         <a class="inline" href="/docs/vault/who-can-reach-you/">More</a>.</li>
@@ -208,7 +208,7 @@
                 <p>A new vault starts empty. <strong>Import Notes</strong> pulls your old notes, and notes where you are
                     tagged, from your other relays into the vault, starting at a date you pick.</p>
                 <ol>
-                    <li>Open <span class="path">Settings &rarr; Your Vault Relay &rarr; Import Notes</span> and set the
+                    <li>Open <span class="path">Settings &rarr; Your Vault &rarr; Import Notes</span> and set the
                         <strong>Start Date</strong>.</li>
                     <li>Run it from the Vault Dashboard: <span class="path">Keep it full &rarr; Import notes</span>. On
                         Android you can also tap <strong>Start Import</strong> on the Import Notes page.</li>
@@ -230,7 +230,7 @@
                         lets you give the vault your own domain so your other devices can reach it, and
                         <strong>Startup</strong> has <strong>Launch at Login</strong>.</td></tr>
                     <tr><td>Web</td><td>In your browser's storage</td><td>A Vault Dashboard like the phone's, without Start/Stop,
-                        Import media or Sync with Vault on Mac. Import with <span class="path">Keep it full &rarr; Import
+                        Import media or Home vault sync. Import with <span class="path">Keep it full &rarr; Import
                         notes</span> or <strong>Import from my relays</strong> in Settings. Signing out deletes this browser's copy; your phone's vault is
                         untouched.</td></tr>
                 </table>
@@ -243,7 +243,7 @@
                 </section>
             </article>
             <div class="docs-pager" role="navigation" aria-label="Next and previous">
-                <a class="prev" href="/docs/browser-relay/"><span>Previous</span>Browser relay</a>
+                <a class="prev" href="/docs/browser-relay/"><span>Previous</span>Browser vault</a>
                 <a class="next" href="/docs/vault/who-can-reach-you/"><span>Next</span>Who Can Reach You</a>
             </div>
         </main>
