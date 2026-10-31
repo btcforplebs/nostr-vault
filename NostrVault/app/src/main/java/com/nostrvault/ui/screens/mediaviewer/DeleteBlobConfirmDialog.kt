@@ -63,12 +63,12 @@ internal fun DeleteBlobConfirmDialog(
     when (scope) {
         DeleteScope.MIRRORS -> {
             title = "Delete from mirrors?"
-            body = "Removes this blob from all external Blossom mirrors. Your local copy is kept."
+            body = "Removes this file from your public Blossom servers. This phone and your home vault keep their copies."
             confirmLabel = "Delete from mirrors"
         }
         DeleteScope.EVERYWHERE -> {
             title = "Delete everywhere?"
-            body = "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
+            body = "Permanently removes this file from this phone, your home vault and your public Blossom servers. This cannot be undone."
             confirmLabel = "Delete everywhere"
         }
     }

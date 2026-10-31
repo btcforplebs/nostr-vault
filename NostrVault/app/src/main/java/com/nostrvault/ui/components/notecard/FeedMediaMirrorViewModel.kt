@@ -140,7 +140,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
             try {
                 when (scope) {
                     DeleteScope.MIRRORS -> {
-                        val report = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(sha) }
+                        val report = withContext(Dispatchers.IO) { blossomService.deleteFromServers(sha, url, includeHomeVault = false) }
                         refreshCloudBadges(sha)
                         when {
                             report.allDeleted -> onMessage("Deleted from mirrors", ok = true)
@@ -157,7 +157,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
                         }
                         val (localOk, report) = withContext(Dispatchers.IO) {
                             val local = async { blossomService.deleteFromLocal(sha) }
-                            val mirrors = async { blossomService.deleteFromMirrors(sha) }
+                            val mirrors = async { blossomService.deleteFromServers(sha, url, includeHomeVault = true) }
                             local.await() to mirrors.await()
                         }
                         refreshCloudBadges(sha)

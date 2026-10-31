@@ -23,7 +23,7 @@ import java.nio.file.Files
 
 /**
  * "Delete everywhere" used to say so when any one server deleted the file.
- * [BlossomService.deleteFromMirrors] now reports each server, and
+ * [BlossomService.deleteFromServers] now reports each server, and
  * [deleteEverywhereLeftover] names every place the file is still on.
  * Port of the iOS checks in #458.
  */
@@ -95,12 +95,14 @@ class BlossomDeleteReportTest {
         return "http://127.0.0.1:$port"
     }
 
-    private fun service(mirrors: List<String>, dataDir: File? = null): BlossomService {
+    private fun service(mirrors: List<String>, dataDir: File? = null, published: List<String> = emptyList()): BlossomService {
         val configStore = mockk<ConfigStore>(relaxed = true)
         every { configStore.config } returns MutableStateFlow(
             HavenConfig(ownerNpub = "npub1owner", blossomMirrors = mirrors, relayDataDir = dataDir?.absolutePath)
         )
         val signer = mockk<NostrService>(relaxed = true)
+        every { signer.ownerHexPubkey } returns "o".repeat(64)
+        every { signer.serverLists } returns MutableStateFlow(mapOf("o".repeat(64) to published))
         coEvery { signer.signEventAsync(any(), any(), any(), any(), any()) } returns NostrEvent(
             id = "e".repeat(64), pubkey = "p".repeat(64), createdAt = 1_700_000_000L,
             kind = 24242, tags = listOf(listOf("t", "delete")), content = "Blossom delete", sig = "s".repeat(128),
@@ -120,7 +122,7 @@ class BlossomDeleteReportTest {
     @Test
     fun `every mirror deleting is all deleted`() = runTest {
         val a = mirror(200); val b = mirror(204)
-        val report = service(listOf(a, b)).deleteFromMirrors(sha)
+        val report = service(listOf(a, b)).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
         assertEquals(listOf(a, b), report.deleted)
         assertTrue(report.failed.isEmpty())
         assertTrue(report.allDeleted)
@@ -129,7 +131,7 @@ class BlossomDeleteReportTest {
     @Test
     fun `one mirror refusing is not all deleted`() = runTest {
         val ok = mirror(200); val refuses = mirror(401)
-        val report = service(listOf(ok, refuses)).deleteFromMirrors(sha)
+        val report = service(listOf(ok, refuses)).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
         assertFalse(report.allDeleted)
         assertEquals(listOf(refuses), report.failed)
         assertEquals(listOf("127.0.0.1"), report.failedHosts)
@@ -137,23 +139,36 @@ class BlossomDeleteReportTest {
 
     @Test
     fun `a 404 counts as deleted`() = runTest {
-        val report = service(listOf(mirror(404))).deleteFromMirrors(sha)
+        val report = service(listOf(mirror(404))).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
         assertTrue(report.allDeleted)
     }
 
     @Test
     fun `an unreachable mirror counts as failed`() = runTest {
         // Port 9 (discard): nothing listens, the connection is refused.
-        val report = service(listOf(mirror(200), "http://127.0.0.1:9")).deleteFromMirrors(sha)
+        val report = service(listOf(mirror(200), "http://127.0.0.1:9")).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
         assertEquals(listOf("http://127.0.0.1:9"), report.failed)
         assertFalse(report.allDeleted)
     }
 
     @Test
     fun `no mirrors is neither deleted nor failed`() = runTest {
-        val report = service(emptyList()).deleteFromMirrors(sha)
+        val report = service(emptyList()).deleteFromServers(sha, photoUrl = null, includeHomeVault = false)
         assertFalse(report.allDeleted)
         assertTrue(report.failed.isEmpty())
+    }
+
+    @Test
+    fun `the 10063 servers and the photo's host are asked too`() = runTest {
+        // Tim 2026-10-31: a file on a server only the published list or the
+        // photo URL named stayed public after "Delete from mirrors".
+        val configured = mirror(200); val listed = mirror(200); val posted = mirror(200)
+        val report = service(listOf(configured), published = listOf(listed, configured))
+            .deleteFromServers(sha, photoUrl = "$posted/$sha.jpg", includeHomeVault = false)
+        // Loopback photo hosts are this phone's vault and skipped; the test
+        // servers are loopback, so only the two listed servers are asked here.
+        assertEquals(listOf(configured, listed), report.deleted)
+        assertTrue(report.allDeleted)
     }
 
     // ── This device ─────────────────────────────────────────────
