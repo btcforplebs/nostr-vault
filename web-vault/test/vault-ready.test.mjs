@@ -58,7 +58,7 @@ function relays(t, { slow = new Set() } = {}) {
   t.mock.method(pool, "querySync", async (_urls, f) => {
     asked.push(f)
     const k = f.kinds.join()
-    if (k === "0,3,10002") return slow.has("account") ? new Promise(() => {}) : [ev(0, ME), ev(3, ME, FOLLOWS.map(p => ["p", p]))]
+    if (k === "0,3,10002,10006") return slow.has("account") ? new Promise(() => {}) : [ev(0, ME), ev(3, ME, FOLLOWS.map(p => ["p", p]))]
     if (k === "1" || k === "30023") return slow.has("notes") ? new Promise(() => {}) : k === "1" ? [ev(1, ME), ev(1, ME)] : []
     if (k === "0") return slow.has("profiles") ? new Promise(() => {}) : f.authors.map(p => ev(0, p))
     return slow.has("feed") ? new Promise(() => {}) : f.authors.slice(0, 3).map(p => ev(1, p))
@@ -123,7 +123,7 @@ test("the screen lets go once the first page and its authors' names are stored; 
   t.mock.method(pool, "ensureRelay", async () => ({}))
   t.mock.method(pool, "querySync", async (_urls, f) => {
     const k = f.kinds.join()
-    if (k === "0,3,10002") return [ev(0, ME), ev(3, ME, FOLLOWS2.map(p => ["p", p]))]
+    if (k === "0,3,10002,10006") return [ev(0, ME), ev(3, ME, FOLLOWS2.map(p => ["p", p]))]
     if (k === "1" || k === "30023") return []
     if (k === "0") {
       asked.push(f.authors)
@@ -161,7 +161,7 @@ test("the first page counts as in once a page of notes is stored, without waitin
   t.mock.method(pool, "ensureRelay", async () => ({}))
   t.mock.method(pool, "querySync", async (urls, f) => {
     const k = f.kinds.join()
-    if (k === "0,3,10002") return [ev(0, ME), ev(3, ME, FOLLOWS.map(p => ["p", p]))]
+    if (k === "0,3,10002,10006") return [ev(0, ME), ev(3, ME, FOLLOWS.map(p => ["p", p]))]
     if (k === "1" || k === "30023") return []
     if (k === "0") return f.authors.map(p => ev(0, p))
     // One relay sends a full page at once; every other relay never answers.

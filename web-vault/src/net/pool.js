@@ -2,6 +2,7 @@
 // what comes in is written to the in-page Haven and read back from it.
 import { SimplePool } from "nostr-tools/pool"
 import { normalizeURL } from "nostr-tools/utils"
+import { blocklist } from "./never-connect.js"
 
 // Hosts the iPhone app strips from saved lists because they stopped answering (HavenConfig.deadRelayHosts).
 export const DEAD_RELAY_HOSTS = new Set(["nos.lol", "nostr.mom", "offchain.pub"])
@@ -39,11 +40,22 @@ export class LivePool extends SimplePool {
   lastUsed = new WeakMap()
   closing = new Set() // sockets of relays that closed or failed, until they reach CLOSED
   watched = new WeakSet()
-  /** Relays a signer (a bunker link) named: the dead list never refuses these. */
+  neverConnect = blocklist([])
+  /** Relays a signer (a bunker link) named: neither the dead list nor Never Connect refuses these. */
   keepForSigner(urls) { for (const u of urls ?? []) try { this.signerRelays.add(normalizeURL(u)) } catch {} }
+  /** The user's Never Connect list (kind 10006, never-connect.js): refused from now on, and closed if open. */
+  setNeverConnect(urls) {
+    this.neverConnect = blocklist(urls)
+    for (const [key, r] of this.relays) {
+      if (!this.neverConnect(key) || this.signerRelays.has(key)) continue
+      this.relays.delete(key)
+      r.close()
+    }
+  }
   async ensureRelay(url, params) {
     const key = normalizeURL(url)
     if (isDead(url) && !this.signerRelays.has(key)) throw new Error(`dead relay skipped: ${url}`)
+    if (this.neverConnect(url) && !this.signerRelays.has(key)) throw new Error(`on your Never Connect list: ${url}`)
     const deadline = Date.now() + (this.strictCap ? SLOT_WAIT_MS : 0)
     // Nothing is awaited between the last check and super.ensureRelay, which adds the relay to this.relays
     // synchronously, so relays opening at the same moment can't all take the same free slot.

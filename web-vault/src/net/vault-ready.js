@@ -56,7 +56,7 @@ function within(p, ms) {
 }
 
 /**
- * Fill Haven for a first sign-in: the account (kind 0, 3, 10002), then the user's own notes, their follows' notes
+ * Fill Haven for a first sign-in: the account (kind 0, 3, 10002, 10006), then the user's own notes, their follows' notes
  * and their follows' profiles at once. `onStep(id, { state, done, of, count })` reports each step: state is
  * "active", "done", "slow" (still going in the background) or "failed". Returns once the first page of the feed and
  * its authors' names are stored (or the feed step's limit passes); the steps carry on after it and keep reporting.

@@ -80,7 +80,7 @@ export function RelaysPage({ ctx }) {
         note="Your DM inbox (10050): where people send you private messages. Messages here read from these relays too."
         empty="No messages list of yours was found, so people send to your Read relays." />
       <RelayUrlList ctx={ctx} kind={10006} title="Never Connect" removeLabel="Unblock"
-        note="The app won't open a connection to these, even when someone you follow uses them. Published as your blocked relay list (10006)."
+        note="The app won't open a connection to these, even when someone you follow uses them (your bunker's own relay excepted). Published as your blocked relay list (10006)."
         empty="No relays are on your never-connect list." />
     </>
   )
