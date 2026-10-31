@@ -40,20 +40,39 @@ extension BlossomService {
     /// One mirror succeeding used to count as success, so a file left on two
     /// of three servers was reported as deleted. The servers are
     /// `HavenConfig.blossomDeleteTargets`: `photoURL` adds the server in the
-    /// file's own link, and `includeHomeVault` false keeps the Mac relay's
-    /// and the FIPS address's copy ("Delete from mirrors").
+    /// file's own link, and `includeHomeVault` false ("Delete from mirrors")
+    /// sends nothing to any of the owner's vaults: home-network and mesh
+    /// addresses are not targets, and every other server is asked first
+    /// whether it is a vault (NIP-11 pubkey = owner). One that can't be asked
+    /// is reported as still holding the file.
     func deleteFromMirrorsReport(sha256: String, photoURL: URL?, includeHomeVault: Bool) async -> MirrorDeleteResult {
-        let mirrors = await MainActor.run {
-            configService.config.blossomDeleteTargets(
+        let (targets, ownerHex) = await MainActor.run {
+            (configService.config.blossomDeleteTargets(
                 ownerServerList: nostrService.serverLists[nostrService.activeHexPubkey] ?? [],
-                photoURL: photoURL, includeHomeVault: includeHomeVault)
+                photoURL: photoURL, includeHomeVault: includeHomeVault),
+             nostrService.activeHexPubkey)
         }
-        guard !mirrors.isEmpty else {
+        guard !targets.isEmpty else {
             logger.warning("No Blossom mirrors configured for deletion")
             return MirrorDeleteResult()
         }
 
         var result = MirrorDeleteResult()
+        var mirrors = targets
+        if !includeHomeVault {
+            // "Delete from mirrors" must never reach one of the owner's own
+            // vaults, whatever name it is listed under (another phone's Mac
+            // in 10063): that copy may be the last one.
+            let verdicts = await vaultCheckVerdicts(targets, ownerHex: ownerHex)
+            mirrors = targets.filter { verdicts[$0] == .mirror }
+            for server in targets where verdicts[server] == .ownVault {
+                logger.info("Skipping \(server): it is one of the owner's vaults")
+            }
+            for server in targets where verdicts[server] == .unknown {
+                logger.warning("Not deleting from \(server): couldn't check it isn't a vault")
+                result.failed.append(server)
+            }
+        }
         for mirror in mirrors {
             guard var mirrorURL = URL(string: mirror) else {
                 result.failed.append(mirror)
@@ -158,6 +177,31 @@ extension BlossomService {
         // Nothing to delete is the outcome asked for, like a mirror's 404.
         logger.info("Media file already absent from local storage: \(sha256.prefix(8))")
         return true
+    }
+
+    /// Asks each server for its relay info (NIP-11) to tell the owner's
+    /// vaults from public mirrors (`HavenConfig.vaultCheckVerdict`).
+    private func vaultCheckVerdicts(_ servers: [String], ownerHex: String) async -> [String: HavenConfig.VaultCheckVerdict] {
+        await withTaskGroup(of: (String, HavenConfig.VaultCheckVerdict).self) { group in
+            for server in servers {
+                group.addTask { [remoteSession] in
+                    guard var components = URLComponents(string: server) else { return (server, .unknown) }
+                    if components.scheme == "http" { components.scheme = "https" }
+                    guard let url = components.url else { return (server, .unknown) }
+                    var request = URLRequest(url: url)
+                    request.setValue("application/nostr+json", forHTTPHeaderField: "Accept")
+                    request.timeoutInterval = 15
+                    // A server error (a tunnel whose vault is down) is no answer.
+                    var info: Data?
+                    if let (data, response) = try? await remoteSession.data(for: request),
+                       ((response as? HTTPURLResponse)?.statusCode ?? 0) < 500 { info = data }
+                    return (server, HavenConfig.vaultCheckVerdict(info: info, ownerHex: ownerHex))
+                }
+            }
+            var verdicts: [String: HavenConfig.VaultCheckVerdict] = [:]
+            for await (server, verdict) in group { verdicts[server] = verdict }
+            return verdicts
+        }
     }
 
     /// Check if a URL is localhost
