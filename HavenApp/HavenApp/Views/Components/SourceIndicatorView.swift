@@ -18,14 +18,33 @@ struct BlossomBackupSummary: Equatable {
     var needsMirror: Bool { total > 0 && present < total }
 }
 
-/// Per-hash results of asking each Blossom server, kept for the session and
-/// refreshed after any action that changes them.
+/// Per-hash results of asking each Blossom server, kept for a day (on disk,
+/// see `BlossomPresenceDisk`) and refreshed after any action that changes them.
 @MainActor
 final class BlossomBackupStore: ObservableObject {
     static let shared = BlossomBackupStore()
 
     @Published private var results: [String: [String: BlobPresence]] = [:]
+    /// When each hash in `results` was last asked.
+    private var checkedAt: [String: Date] = [:]
     private var inFlight: [String: Task<Void, Never>] = [:]
+    private var disk = BlossomPresenceDisk()
+    private var saveTask: Task<Void, Never>?
+
+    private static var diskURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("blossom_presence.json")
+    }
+
+    private init() {
+        guard let url = Self.diskURL, let data = try? Data(contentsOf: url),
+              let saved = try? JSONDecoder().decode(BlossomPresenceDisk.self, from: data) else { return }
+        disk = saved.pruned()
+        for (hash, entry) in disk.entries {
+            results[hash] = entry.servers.mapValues { $0 == "present" ? .present : .absent }
+            checkedAt[hash] = Date(timeIntervalSince1970: entry.checkedAt)
+        }
+    }
 
     /// Each server's answer for `hash`, nil until checked.
     func presence(hash: String) -> [String: BlobPresence]? { results[hash] }
@@ -40,6 +59,7 @@ final class BlossomBackupStore: ObservableObject {
         results[hash, default: [:]].merge(presence) { old, new in
             new == .unreachable && old != .unreachable ? old : new
         }
+        if checkedAt[hash] == nil { checkedAt[hash] = Date() }
     }
 
     /// nil until the first check for this hash has finished.
@@ -68,16 +88,37 @@ final class BlossomBackupStore: ObservableObject {
         if let running = inFlight[hash] {
             await running.value
             if !force { return }
-        } else if !force, results[hash] != nil {
+        } else if !force, results[hash] != nil, isFresh(hash) {
             return
         }
         let task = Task { @MainActor in
             let presence = await service.checkMirrorPresence(sha256: hash)
             self.results[hash] = presence
+            self.checkedAt[hash] = Date()
+            self.disk.store(hash: hash, servers: presence.mapValues { $0 == .unreachable ? nil : $0 == .present })
+            self.scheduleSave()
         }
         inFlight[hash] = task
         await task.value
         if inFlight[hash] == task { inFlight[hash] = nil }
+    }
+
+    private func isFresh(_ hash: String) -> Bool {
+        guard let date = checkedAt[hash] else { return false }
+        return Date().timeIntervalSince(date) < BlossomPresenceDisk.maxAge
+    }
+
+    /// Writes the day's answers a moment after the last check, so a burst of
+    /// checks is one write.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled, let url = Self.diskURL else { return }
+            disk = disk.pruned()
+            guard let data = try? JSONEncoder().encode(disk) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
     }
 }
 

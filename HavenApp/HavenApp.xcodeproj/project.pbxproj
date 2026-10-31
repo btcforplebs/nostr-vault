@@ -296,6 +296,7 @@
 		326C354948213E62EBB67757 /* ScrollChromeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E73FBAE7710CD17916B73EB /* ScrollChromeModifier.swift */; };
 		32D2EEB37F6725FE61495429 /* FeedProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */; };
 		32DF0A4A4B9E0DFE32F94675 /* FeedService+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332F03725477EEBFD25F9939 /* FeedService+Lifecycle.swift */; };
+		32FD41A6A136EC3CC6833772 /* BlossomPresenceDisk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD3CB3C64B69F90BC5AC4F7 /* BlossomPresenceDisk.swift */; };
 		332286964CF79A632A9B088B /* NIP44Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5717FE059897D5903CA56549 /* NIP44Service.swift */; };
 		3324BB9222C391CF8AE84F4D /* HashtagFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9BF8915977BBEB966F333A8 /* HashtagFeedModel.swift */; };
 		3396ACABC418FE7CE9773F3D /* LinkPreviewCacheKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */; };
@@ -1471,6 +1472,7 @@
 		F7ACEB2AC974E83FA7B89D77 /* FeedService+Relays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B34BEF72503E04EC348EF2B /* FeedService+Relays.swift */; };
 		F7C3C3187940546368A041BD /* FeedService+NoteStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0CF308038EED2246C1A5B2 /* FeedService+NoteStats.swift */; };
 		F7DA9A4C222DB17EAA3826A6 /* LongFormComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70AE6A634DDA4FCAD0EE552D /* LongFormComposeView.swift */; };
+		F7DB53EC4F75BBF25215260F /* BlossomPresenceDisk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD3CB3C64B69F90BC5AC4F7 /* BlossomPresenceDisk.swift */; };
 		F7E4D75941ED6FAE9AF5480E /* FeedThreadCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCC2C40E48A867FA28814D4 /* FeedThreadCard.swift */; };
 		F7E8DA3139B3A267667DA744 /* BlobCopyRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9053BAEF74D259A303D5CD57 /* BlobCopyRun.swift */; };
 		F80156DA67A9D5317824B729 /* SearchView+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52363CAD66E59C0ACEFFD19 /* SearchView+Search.swift */; };
@@ -1589,6 +1591,7 @@
 		09FE947064FD17B7489222A4 /* BrowserRelaySender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserRelaySender.swift; sourceTree = "<group>"; };
 		0A715D3FE88115AC004FCA65 /* NoteSplitPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteSplitPane.swift; sourceTree = "<group>"; };
 		0AB55D0A09A0123F9C8A2B32 /* NoteDetailViewWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteDetailViewWrapper.swift; sourceTree = "<group>"; };
+		0AD3CB3C64B69F90BC5AC4F7 /* BlossomPresenceDisk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomPresenceDisk.swift; sourceTree = "<group>"; };
 		0B164C72D0777F09A5D027B5 /* FipsMeshDeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshDeviceView.swift; sourceTree = "<group>"; };
 		0B3AD149CCC00D7662019EA1 /* RelaySaveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelaySaveSheet.swift; sourceTree = "<group>"; };
 		0B5E98764373253F27F8526F /* VertexReputation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VertexReputation.swift; sourceTree = "<group>"; };
@@ -3065,6 +3068,7 @@
 				54E29020BA039397A6D8AFB8 /* BitcoinAddress.swift */,
 				93478F128B3552096C953E1B /* BitcoinSweepEstimate.swift */,
 				E8B8BF0CFACC02D638AEDA16 /* BlockedPeople.swift */,
+				0AD3CB3C64B69F90BC5AC4F7 /* BlossomPresenceDisk.swift */,
 				EA0A686E5FF7B46AC8AB9776 /* BlossomURI.swift */,
 				EC971B12438093F727E8967F /* Bolt11.swift */,
 				702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */,
@@ -3880,6 +3884,7 @@
 				BDA2EED14D678BC16890F89F /* BlossomDashboardView.swift in Sources */,
 				E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */,
 				29FDF203010DFCDF7E9BA986 /* BlossomMediaPickerSheet.swift in Sources */,
+				F7DB53EC4F75BBF25215260F /* BlossomPresenceDisk.swift in Sources */,
 				35108990B103EC071DA3AF0A /* BlossomRefusals.swift in Sources */,
 				34ABB371B2BBB34885D7DF24 /* BlossomService+Delete.swift in Sources */,
 				B47625D1EBF2AD53AF3E7BBD /* BlossomService+Download.swift in Sources */,
@@ -4651,6 +4656,7 @@
 				DD81E21B30BB4122081806C1 /* BlossomDashboardView.swift in Sources */,
 				8FEB6F24A3984B98CCF81E56 /* BlossomMediaCache.swift in Sources */,
 				16F6670579A7DABAC4B5BDBE /* BlossomMediaPickerSheet.swift in Sources */,
+				32FD41A6A136EC3CC6833772 /* BlossomPresenceDisk.swift in Sources */,
 				D57485896D44F977C83F4A5C /* BlossomRefusals.swift in Sources */,
 				B1B790EA826AFAA926ADC444 /* BlossomService+Delete.swift in Sources */,
 				8448DD5389D070385122456E /* BlossomService+Download.swift in Sources */,

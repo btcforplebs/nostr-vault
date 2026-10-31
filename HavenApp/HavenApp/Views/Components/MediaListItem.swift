@@ -84,9 +84,6 @@ struct MediaListItem: View {
                             }
                             .foregroundColor(.blue)
                         }
-                        if let hash {
-                            BlossomBackupBadge(hash: hash)
-                        }
                     }
                 }
 
@@ -167,7 +164,7 @@ struct MediaListItem: View {
                 .disabled(isMirroringToLocal)
             }
 
-            if needsMirror {
+            if mayNeedMirror {
                 Button(action: {
                     pushToMirrors()
                 }) {
@@ -255,6 +252,13 @@ struct MediaListItem: View {
     private var needsMirror: Bool {
         guard onPhone, let hash else { return false }
         return backupStore.summary(hash: hash, mirrors: configService.config.activeBlossomMirrors)?.needsMirror == true
+    }
+
+    /// The menu also offers the upload when no server has been asked yet:
+    /// the grid no longer asks, and the upload checks the servers first.
+    private var mayNeedMirror: Bool {
+        guard onPhone, let hash, !configService.config.activeBlossomMirrors.isEmpty else { return false }
+        return backupStore.summary(hash: hash, mirrors: configService.config.activeBlossomMirrors)?.needsMirror ?? true
     }
 
     private func refreshOnPhone() {

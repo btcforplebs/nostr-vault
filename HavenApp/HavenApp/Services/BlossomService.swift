@@ -41,28 +41,37 @@ class BlossomService: @unchecked Sendable {
     let configService: ConfigService
     let nostrService: NostrService
     let logger = Logger(subsystem: "com.bitvora.haven", category: "blossom")
-    private let localhostDelegate: LocalhostTrustDelegate
     let localhostSession: URLSession
     let remoteSession: URLSession
+
+    // One pair of sessions for the whole app. A BlossomService is made at
+    // each call site (each viewer page, each action), and each used to build
+    // two URLSessions that were never invalidated: they leaked, and no
+    // connection was reused, so every request paid a fresh TLS handshake.
+    private static let sharedLocalhostDelegate = LocalhostTrustDelegate()
+
+    // Trusts self-signed certs for localhost.
+    private static let sharedLocalhostSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 600  // 10 minutes
+        config.timeoutIntervalForResource = 900  // 15 minutes
+        return URLSession(configuration: config, delegate: sharedLocalhostDelegate, delegateQueue: nil)
+    }()
+
+    // Remote mirrors.
+    private static let sharedRemoteSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 600  // 10 minutes
+        config.timeoutIntervalForResource = 900  // 15 minutes
+        config.waitsForConnectivity = true  // Wait for network availability
+        return URLSession(configuration: config, delegate: nil, delegateQueue: nil)
+    }()
 
     init(configService: ConfigService, nostrService: NostrService) {
         self.configService = configService
         self.nostrService = nostrService
-
-        // Create a session that trusts self-signed certs for localhost
-        // Store delegate as property to ensure it stays alive for the lifetime of the session
-        let localhostConfig = URLSessionConfiguration.default
-        localhostConfig.timeoutIntervalForRequest = 600  // 10 minutes
-        localhostConfig.timeoutIntervalForResource = 900  // 15 minutes
-        self.localhostDelegate = LocalhostTrustDelegate()
-        self.localhostSession = URLSession(configuration: localhostConfig, delegate: localhostDelegate, delegateQueue: nil)
-
-        // Create a session for remote mirrors with proper timeout configuration
-        let remoteConfig = URLSessionConfiguration.default
-        remoteConfig.timeoutIntervalForRequest = 600  // 10 minutes
-        remoteConfig.timeoutIntervalForResource = 900  // 15 minutes
-        remoteConfig.waitsForConnectivity = true  // Wait for network availability
-        self.remoteSession = URLSession(configuration: remoteConfig, delegate: nil, delegateQueue: nil)
+        self.localhostSession = Self.sharedLocalhostSession
+        self.remoteSession = Self.sharedRemoteSession
     }
 
     /// Mirror a message into the app's own log as well as OSLog.
