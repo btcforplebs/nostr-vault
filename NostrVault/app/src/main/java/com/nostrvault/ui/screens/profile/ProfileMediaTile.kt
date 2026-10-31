@@ -43,7 +43,7 @@ internal fun profileTileImageModel(context: android.content.Context, url: String
 
 /**
  * One Media grid tile. Audio has no picture, so it gets iOS's dark tile with
- * a waveform. A Blossom file carries the backup badge bottom-right, as iOS.
+ * a waveform.
  * Long-press opens iOS `MediaGridItem`'s menu: the same on your own profile,
  * plus Report Media / Block User on someone else's.
  */
@@ -87,7 +87,6 @@ internal fun ProfileMediaTile(
     if (isAudio) {
         Box(contentAlignment = Alignment.Center, modifier = tileModifier.semantics { contentDescription = "Audio" }) {
             Icon(NostrVaultIcons.Waveform, contentDescription = null, tint = colors.primary, modifier = Modifier.size(36.dp))
-            ProfileTileBackupBadge(url, Modifier.align(Alignment.BottomEnd))
         }
     } else {
         val model = remember(url, author) { profileTileImageModel(context, url, author) }
@@ -103,7 +102,6 @@ internal fun ProfileMediaTile(
                     modifier = Modifier.size(40.dp),
                 )
             }
-            ProfileTileBackupBadge(url, Modifier.align(Alignment.BottomEnd))
         }
     }
 

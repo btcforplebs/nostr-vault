@@ -2,27 +2,11 @@ package com.nostrvault.ui.screens.profile
 
 import com.nostrvault.data.model.FeedNote
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import java.util.Date
 
-/** Article card text and the media tile backup badge, as iOS ArticleCardView and MediaGridItem. */
+/** Article card text, as iOS ArticleCardView. */
 class ProfileContentCardsTest {
-    private val hash = "a".repeat(64)
-    private val mirrors = listOf("https://blossom.example")
-
-    @Test
-    fun badgeShowsForABlossomFileOnceYouHaveAServer() {
-        assertEquals(hash, ProfileTileBackup.badgeHash("https://cdn.example/$hash.jpg", mirrors))
-        assertEquals(hash, ProfileTileBackup.badgeHash("https://cdn.example/${hash.uppercase()}?x=1", mirrors))
-    }
-
-    @Test
-    fun noBadgeWithoutAServerOrWithoutAHash() {
-        assertNull(ProfileTileBackup.badgeHash("https://cdn.example/$hash.jpg", emptyList()))
-        assertNull(ProfileTileBackup.badgeHash("https://i.example/photo.jpg", mirrors))
-    }
-
     @Test
     fun topicsAreTheFirstThreeLowercased() {
         val tags = listOf(listOf("t", "Bitcoin"), listOf("d", "x"), listOf("t", "nostr"), listOf("t", "bitcoin"),

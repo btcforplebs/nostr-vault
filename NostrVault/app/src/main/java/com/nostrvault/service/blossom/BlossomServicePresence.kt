@@ -4,10 +4,12 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.*
 
-    /** Drops every cached answer, so the next look asks the servers again (pull to refresh). */
-    fun BlossomService.forgetMirrorPresence() {
-        _mirrorPresence.value = emptyMap()
-    }
+    /**
+     * Whether a saved answer can stand in for asking: every configured server
+     * is in it and every one of them answered. A "could not ask" is asked again.
+     */
+    internal fun reusablePresence(cached: Map<String, BlobPresence>, mirrors: List<String>): Boolean =
+        mirrors.all { mirror -> cached[mirror].let { it != null && it != BlobPresence.UNREACHABLE } }
 
     /**
      * A 2xx alone is not enough: some servers answer 200 with an HTML page for

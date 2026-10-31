@@ -48,18 +48,24 @@ class MediaViewerViewModel @Inject constructor(
     /** The blob the viewer is showing, so a late push result doesn't re-check another page. */
     private var currentSha: String? = null
 
-    fun checkMirrors(sha256: String) {
+    /**
+     * Shows which servers hold [sha256]. A swipe ([force] false) uses an
+     * answer from the last day; after a save, push or delete, [force] asks
+     * the servers again.
+     */
+    fun checkMirrors(sha256: String, force: Boolean = true) {
         currentSha = sha256
         viewModelScope.launch {
             _isCheckingMirrors.value = true
             _mirrorStatus.value = emptyMap()
             try {
                 val status = withContext(Dispatchers.IO) {
-                    blossomService.checkMirrorStatus(sha256)
+                    blossomService.checkMirrorStatus(sha256, force)
                 }
-                _mirrorStatus.value = status
+                // A slow answer for a page already swiped past doesn't replace this one's.
+                if (currentSha == sha256) _mirrorStatus.value = status
             } finally {
-                _isCheckingMirrors.value = false
+                if (currentSha == sha256) _isCheckingMirrors.value = false
             }
         }
     }
@@ -250,7 +256,7 @@ class MediaViewerViewModel @Inject constructor(
                 notificationManager.showToast("Deleted everywhere")
             } else {
                 reportLeftover(leftover, sticky)
-                // The cloud badge caches each server's answer for the session;
+                // The cloud badge keeps each server's answer for a day;
                 // ask again so it stops showing the pre-delete count.
                 checkMirrors(item.sha256)
             }

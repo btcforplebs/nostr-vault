@@ -151,21 +151,6 @@ internal fun MediaGridCell(
             )
         }
 
-        // How many of your Blossom servers hold it, so you can spot what is
-        // not backed up without opening it.
-        if (backup.mirrorCount > 0) {
-            BlossomBackupBadge(
-                backup = backup,
-                compact = true,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 5.dp, vertical = 2.dp),
-            )
-        }
-
         // Context menu
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,

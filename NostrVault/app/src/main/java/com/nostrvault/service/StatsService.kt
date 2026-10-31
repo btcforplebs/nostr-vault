@@ -425,6 +425,17 @@ class StatsService @Inject constructor(
     // Blossom blob listing
     // ══════════════════════════════════════════════════════════════════
 
+    /** One client per kind of server for every `/list`, so connections are reused. */
+    private val listClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** This device's relay and LAN relays; shares [listClient]'s connection pool. */
+    private val localListClient by lazy { listClient.newBuilder().applyLocalhostTrust().build() }
+
     suspend fun fetchBlobList(pubkey: String): List<BlobDescriptor> =
         fetchBlobList(pubkey, configStore.config.value.localBlossomBaseURL)
 
@@ -442,16 +453,10 @@ class StatsService @Inject constructor(
                 .get()
                 .build()
 
-            val clientBuilder = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            if (isLocalhost(resolvedBase)) clientBuilder.applyLocalhostTrust()
-            val client = clientBuilder.build()
-
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
-
-            val body = response.body?.string() ?: return@withContext emptyList()
+            val client = if (isLocalhost(resolvedBase)) localListClient else listClient
+            val body = client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) null else response.body?.string()
+            } ?: return@withContext emptyList()
             json.decodeFromString<List<BlobDescriptor>>(body)
         } catch (e: Exception) {
             Log.w(TAG, "Blob list fetch failed: ${e.message}")

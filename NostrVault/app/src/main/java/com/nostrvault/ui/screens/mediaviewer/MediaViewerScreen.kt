@@ -82,9 +82,10 @@ fun MediaViewerScreen(
         pageCount = { items.size },
     )
 
-    // Check mirrors whenever the visible page changes
+    // Show the mirror count for the visible page: a saved answer if one is
+    // under a day old, else the servers are asked.
     LaunchedEffect(pagerState.currentPage) {
-        items.getOrNull(pagerState.currentPage)?.let { viewModel.checkMirrors(it.sha256) }
+        items.getOrNull(pagerState.currentPage)?.let { viewModel.checkMirrors(it.sha256, force = false) }
         // A delete's leftover names one file; it doesn't follow the swipe.
         viewModel.dismissDeleteLeftover()
     }

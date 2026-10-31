@@ -86,8 +86,8 @@ internal fun MediaItemContextMenu(
                     backup.onSaveToVault()
                 },
             )
-        } else if (backup.summary?.needsMirror == true) {
-            // On the phone, and some Blossom server does not have it yet.
+        } else if (backup.mayNeedMirror) {
+            // On the phone, and some Blossom server may not have it yet.
             DropdownMenuItem(
                 text = { Text(if (backup.busy) "Mirroring…" else "Mirror to Blossom") },
                 enabled = !backup.busy,
