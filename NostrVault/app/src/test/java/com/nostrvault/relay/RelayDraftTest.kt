@@ -218,8 +218,11 @@ class RelayDraftTest {
     )
 
     @Test
-    fun `a list found anywhere is settled`() {
-        assertTrue(RelayDraft.settled(found = true, answeredBy = listOf("wss://relay.primal.net")))
+    fun `a list found on a lagging relay is not settled until both indexers answer`() {
+        // The newest copy may have timed out on the indexers: re-signing the older one would roll it back (Tron, #1386).
+        assertFalse(RelayDraft.settled(found = true, answeredBy = listOf("wss://relay.primal.net")))
+        assertFalse(RelayDraft.settled(found = true, answeredBy = listOf("wss://relay.primal.net", "wss://purplepag.es")))
+        assertTrue(RelayDraft.settled(found = true, answeredBy = listOf("wss://purplepag.es", "wss://user.kindpag.es")))
     }
 
     @Test
@@ -248,6 +251,30 @@ class RelayDraftTest {
         assertNull(plan.relayListTags)
         assertNull(plan.dmRelays)
         assertTrue(plan.relayListHeld && plan.dmListHeld)
+    }
+
+    @Test
+    fun `save carries published entries the screen can't show, and drops none of them`() {
+        val kept = listOf(listOf("r", "ws://relay.example.com"), listOf("r", "wss://192.168.1.20:4869", "read"), listOf("r", "wss://box.local"))
+        val withKept = published.copy(kept = kept)
+        val s = RelayDraft.toggle(RelayDraft.start(config, withKept, pinned = listOf(ownRelay, ownInbox)), key("wss://nostr.land"), Job.WRITE)
+        val plan = RelayDraft.plan(s, ownRelay, ownInbox)
+        val tags = assertNotNullAndGet(plan.relayListTags)
+        for (tag in kept) assertTrue("kept $tag", tag in tags)
+        // The confirm sheet shows no change for them: they go out as they were.
+        assertFalse(plan.relayListChanges.any { key(it.url) in kept.map { k -> key(k[1]) } })
+        // After Save they stay off the screen's rows but still in what's kept.
+        val after = RelayDraft.saved(s, plan)
+        assertFalse(after.published.read.any { key(it) in kept.map { k -> key(k[1]) } })
+        assertEquals(kept, after.published.kept)
+    }
+
+    @Test
+    fun `only reachable wss relays are rows of the published list`() {
+        assertTrue(RelayDraft.listable("wss://relay.primal.net"))
+        assertFalse(RelayDraft.listable("ws://relay.example.com"))
+        assertFalse(RelayDraft.listable("wss://192.168.1.20:4869"))
+        assertFalse(RelayDraft.listable("wss://box.local"))
     }
 
     private fun <T> assertNotNullAndGet(value: T?): T {

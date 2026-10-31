@@ -32,21 +32,32 @@ object RelayDraft {
         val dms: List<String> = emptyList(),
         val relayListKnown: Boolean = false,
         val dmListKnown: Boolean = false,
+        /**
+         * Published kind 10002 tags this screen can't show or edit (ws://,
+         * home network, .local, CGNAT, .ts.net). Save carries them through as
+         * published, so editing one relay never drops another app's entries
+         * (Tron, #1386; iOS `Published.kept`).
+         */
+        val kept: List<List<String>> = emptyList(),
     )
+
+    /** Whether a relay can be a row of the published relay list: a wss:// address others can reach. */
+    fun listable(url: String): Boolean = PublicRelayList.tags(listOf(url), emptyList(), emptyList()).isNotEmpty()
 
     /** The relays that index every account's lists; a "none" counts only when both answered. */
     val INDEXERS = listOf("wss://purplepag.es", "wss://user.kindpag.es")
 
     /**
-     * Whether a lookup settled the list: it was found, or every one of the
-     * [INDEXERS] answered without it. Any other relay answering empty proves
-     * little: most of them are this device's own defaults, and a list made
-     * in another app may never have reached them (Tron, PR 1378). Requiring
+     * Whether a lookup settled the list: every one of the [INDEXERS]
+     * answered, found or not. Any other relay answering proves little: most
+     * of them are this device's own defaults, a list made in another app may
+     * never have reached them (Tron, PR 1378), and one of them may hold an
+     * older copy that re-signing would bring back (Tron, #1386). Requiring
      * every relay instead made a new account's empty list "unknown" whenever
-     * one relay was rate-limiting.
+     * one relay was rate-limiting. [found] is kept for the iOS twin's shape.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun settled(found: Boolean, answeredBy: Collection<String>): Boolean {
-        if (found) return true
         val answered = answeredBy.map(RelayMatrix::key).toSet()
         return INDEXERS.all { RelayMatrix.key(it) in answered }
     }
@@ -220,9 +231,12 @@ object RelayDraft {
         val writeNow = yoursOnly(draft.write, yours)
         val relayListEdited = keys(readNow) != keys(yoursOnly(start.read, yours)) ||
             keys(writeNow) != keys(yoursOnly(start.write, yours)) || movedAny(state, setOf(Job.READ, Job.WRITE))
-        val newTags = PublicRelayList.tags(listOf(ownRelay), readNow, writeNow)
+        val shown = PublicRelayList.tags(listOf(ownRelay), readNow, writeNow)
+        val shownKeys = shown.map { RelayMatrix.key(it[1]) }.toSet()
+        // The published entries the screen can't show go out again untouched.
+        val newTags = shown + p.kept.filter { RelayMatrix.key(it[1]) !in shownKeys }
         val relayListChanges = if (relayListEdited) diff(
-            before = PublicRelayList.tags(emptyList(), p.read, p.write), after = newTags,
+            before = PublicRelayList.tags(emptyList(), p.read, p.write) + p.kept, after = newTags,
         ) else emptyList()
         val publishRelayList = relayListEdited && p.relayListKnown && relayListChanges.isNotEmpty()
 
@@ -264,9 +278,10 @@ object RelayDraft {
         val published = state.published.let { p ->
             var next = p
             if (plan.relayListTags != null) {
+                val rows = plan.relayListTags.filter { listable(it[1]) }
                 next = next.copy(
-                    read = plan.relayListTags.filter { it.size == 2 || it.getOrNull(2) == "read" }.map { it[1] },
-                    write = plan.relayListTags.filter { it.size == 2 || it.getOrNull(2) == "write" }.map { it[1] },
+                    read = rows.filter { it.size == 2 || it.getOrNull(2) == "read" }.map { it[1] },
+                    write = rows.filter { it.size == 2 || it.getOrNull(2) == "write" }.map { it[1] },
                 )
             }
             if (plan.dmRelays != null) next = next.copy(dms = plan.dmRelays)
