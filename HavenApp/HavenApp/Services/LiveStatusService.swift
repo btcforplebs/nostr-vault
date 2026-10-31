@@ -25,7 +25,7 @@ final class LiveStatusService: ObservableObject {
     private var lookups: [UUID: (clients: [WebSocketClient], subscriptions: [AnyCancellable])] = [:]
 
     /// Pause before a batch goes out, so a screenful of avatars is one REQ.
-    private static let batchDelay: TimeInterval = 0.6
+    private static let batchDelay = RelayRequestBudget.liveRingBatchDelay
     /// Relays cap filter sizes; larger batches are split.
     private static let maxPerFilter = 150
     /// A lookup is closed after this, answered or not.
@@ -85,7 +85,7 @@ final class LiveStatusService: ObservableObject {
         let lookup = UUID()
         var clients: [WebSocketClient] = []
         var subscriptions: [AnyCancellable] = []
-        for url in LiveFeedService.relayURLs {
+        for url in RelayRequestBudget.liveRingRelays.compactMap({ URL(string: $0) }) {
             let client = WebSocketClient()
             client.isTemporary = true
             subscriptions.append(client.messageSubject

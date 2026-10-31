@@ -103,7 +103,7 @@ extension FeedService {
 
     private func scheduleNoteFetchFlush() {
         guard noteFetchTimer == nil else { return }
-        noteFetchTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+        noteFetchTimer = Timer.scheduledTimer(withTimeInterval: RelayRequestBudget.noteFetchWindow, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.flushNoteFetchRequests()
             }

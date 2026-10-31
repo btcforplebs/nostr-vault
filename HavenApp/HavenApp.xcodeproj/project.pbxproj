@@ -1183,6 +1183,7 @@
 		CE12923E39ACFDE970D61E88 /* TopicFeedFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F893631E7565E9BB00A8EEC /* TopicFeedFilter.swift */; };
 		CE12AE67E50B1FDB1B643D65 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F57E728F782BF1D8DD5B13 /* NetworkSyncService.swift */; };
 		CE327C629EB23A23D858B7B7 /* FipsMeshAdvancedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D6D0338C56E23B350F9FCD0 /* FipsMeshAdvancedView.swift */; };
+		CE4A586E41C95E02C4A1B7F3 /* RelayRequestBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E944BA26FF2F1C88F23319A /* RelayRequestBudget.swift */; };
 		CE50FBB4E33CAEAE5056B052 /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
 		CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
 		CEBA8A8FAE1C365867C7E9E3 /* VaultDashboardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67ADBC1563448EB3D0AE077 /* VaultDashboardDetails.swift */; };
@@ -1303,6 +1304,7 @@
 		DEC4A341373E2B216E485E52 /* RelayAccessSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A881B1453D48D90B2F1242FA /* RelayAccessSettingsView.swift */; };
 		DED9A13B12AEAFFFC0B44BDC /* starter_packs.json in Resources */ = {isa = PBXBuildFile; fileRef = E76B268D327BDC761BB5AC1E /* starter_packs.json */; };
 		DF0BAA44D98386C78D9999E6 /* ImportSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1255DBAAFB357995BFAAC5F /* ImportSettingsView.swift */; };
+		DF233A4AC33F055B884A640C /* RelayRequestBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E944BA26FF2F1C88F23319A /* RelayRequestBudget.swift */; };
 		DF334F134363929C956118D8 /* SidebarTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE56AF7542C25844828CE9F /* SidebarTabButton.swift */; };
 		DF41EBC4F8B4951C81DB7698 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA979A3F7ED54EAB8F501F2E /* WalletLightningTab.swift */; };
 		DF611F7704238D2428B42622 /* VaultContentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C479523C73672690926ABDA0 /* VaultContentsSection.swift */; };
@@ -1908,6 +1910,7 @@
 		7D6D901711AB80C224DA70D6 /* NostrIntroStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrIntroStep.swift; sourceTree = "<group>"; };
 		7DBB01D87B267D0ACA43B8EC /* VaultView+Content.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VaultView+Content.swift"; sourceTree = "<group>"; };
 		7E73FBAE7710CD17916B73EB /* ScrollChromeModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollChromeModifier.swift; sourceTree = "<group>"; };
+		7E944BA26FF2F1C88F23319A /* RelayRequestBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRequestBudget.swift; sourceTree = "<group>"; };
 		7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayMatrix.swift; sourceTree = "<group>"; };
 		7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
@@ -3130,6 +3133,7 @@
 				E80C9464564EDE937ADDFDDC /* RelayCountSession.swift */,
 				49BC980E7F628F8AB17AA216 /* RelayFrame.swift */,
 				7E9E5172FB10D6FD12D46EBA /* RelayMatrix.swift */,
+				7E944BA26FF2F1C88F23319A /* RelayRequestBudget.swift */,
 				E0039FDA639F750CD6823F0C /* ReturnSummary.swift */,
 				5A45C528A229C534E4FCA016 /* SearchRecommendations.swift */,
 				556F8A537ED16749390E20E4 /* ServerListAdoption.swift */,
@@ -4380,6 +4384,7 @@
 				5718556DCD5068820B77FD2F /* RelayProcessManager+Start.swift in Sources */,
 				3ACECF311F81E8488C8DEE33 /* RelayProcessManager+StopRestart.swift in Sources */,
 				68FF85AB0479AECDE076D18D /* RelayProcessManager.swift in Sources */,
+				DF233A4AC33F055B884A640C /* RelayRequestBudget.swift in Sources */,
 				4FDB23D8D103801D3C588B16 /* RelayStatusCard.swift in Sources */,
 				69F558CD9D801A6F41CD6405 /* RepostedNoteView.swift in Sources */,
 				41C29C2EB2A531C24E5E2991 /* ResetLeftovers.swift in Sources */,
@@ -5129,6 +5134,7 @@
 				7853177DDC1C5533C0636BD6 /* RelayProcessManager+Start.swift in Sources */,
 				15A6933BA45B8F3CEB4A186D /* RelayProcessManager+StopRestart.swift in Sources */,
 				AAABCCC974BE94C9B2626D3B /* RelayProcessManager.swift in Sources */,
+				CE4A586E41C95E02C4A1B7F3 /* RelayRequestBudget.swift in Sources */,
 				D016ED896705E2C8A0C450E5 /* RelayStatusCard.swift in Sources */,
 				E57940E9526A319B7172ED31 /* RepostedNoteView.swift in Sources */,
 				1390B120F0BFF45F0071CBD3 /* ResetLeftovers.swift in Sources */,

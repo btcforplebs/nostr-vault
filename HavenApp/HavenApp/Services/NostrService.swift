@@ -85,6 +85,12 @@ class NostrService: ObservableObject {
     var profilesInFlight = Set<String>()
     var profileFetchQueue = Set<String>()
     var profileFlushCancellable: AnyCancellable?
+    /// One profile lookup socket per relay, kept between batches so a tick is
+    /// a REQ, not a new connection. Closed when idle and in the background.
+    var profileLookupClients: [String: WebSocketClient] = [:]
+    /// Batches waiting for their relay's lookup socket to connect.
+    var profileLookupPending: [String: [[String]]] = [:]
+    var profileLookupLastUse: Date = .distantPast
     /// The UI is hidden (`enterBackground`): profiles queue up, and the fetch
     /// timer waits for `enterForeground` instead of starting on enqueue.
     var profileFetchPaused = false
@@ -95,6 +101,7 @@ class NostrService: ObservableObject {
         profileFetchPaused = true
         profileFlushCancellable?.cancel()
         profileFlushCancellable = nil
+        closeProfileLookupSockets()
         #if DEBUG
         print("NostrService: entering background mode — profile timer paused")
         #endif
@@ -162,17 +169,9 @@ class NostrService: ObservableObject {
 
     var lastConnectLog: Date = .distantPast
 
-    /// Asked for profile metadata on top of the broadcast relays; the same list
-    /// as Android's `PROFILE_RELAYS`. Without them a profile the phone had not
-    /// cached never loaded: of the default broadcast relays nos.lol and
-    /// nostr.mom are down and primal lacks most profiles, while purplepag.es
-    /// had every one tried (jack, ODELL, fiatjaf; 2026-10-06). offchain.pub
-    /// dropped: it refuses connections (2026-10-12).
-    static let profileIndexRelays = [
-        "wss://relay.damus.io",
-        "wss://user.kindpag.es",
-        "wss://purplepag.es",
-    ]
+    /// Asked for profile metadata on top of the Read relays: see
+    /// `RelayRequestBudget.profileIndexRelays`.
+    static let profileIndexRelays = RelayRequestBudget.profileIndexRelays
 
     // Unified cache structure
     var lastProfileSave: Date = .distantPast
