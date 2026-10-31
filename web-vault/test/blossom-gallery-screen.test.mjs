@@ -84,3 +84,12 @@ test("a second visit draws the last list at once; the servers last used are aske
   m.set("nv-gallery-servers:pk", "[1]"); assert.equal(rememberedServers("pk", st), null)
   m.set("nv-gallery-servers:pk", "nope"); assert.equal(rememberedServers("pk", st), null)
 })
+
+test("the delete button says Delete from mirrors, names every server it goes to, and says the home vault keeps its copy", () => {
+  const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.meta.url), "utf8")
+  assert.match(src, /"Deleting…" : "Delete from mirrors"/)
+  assert.doesNotMatch(src, /"Delete everywhere"/)
+  assert.match(src, /deleteBlob\(blob, \{ ctx, servers \}\)/)
+  assert.match(src, /targets\.map\(hostOf\)\.join/)
+  assert.match(src, /home vault \(Nostr Vault on your Mac\) has a copy, it stays: the web can't delete from it/)
+})
