@@ -20,6 +20,7 @@ import { importOwn, IMPORT_START_DATE } from "../net/sync.js"
 import { DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { learn } from "../shell.js"
 import { NotifySwitch } from "../components/NotifySwitch.jsx"
+import { RESET_ALL_QUESTION } from "../net/reset-all.js"
 import { SendDelayPicker } from "../components/SendDelayPicker.jsx"
 import { AutoplaySwitch } from "../components/AutoplaySwitch.jsx"
 import { LineLimitSteppers } from "../components/LineLimitSteppers.jsx"
@@ -276,7 +277,14 @@ export function resetBrowser(ctx, ask = q => globalThis.confirm(q)) {
   return true
 }
 
-/** The phone's Database & Reset: here, what this browser keeps and the one way to clear it (sign out). */
+/** The phone's Factory Reset: every account here and this app's settings. Asks first; nothing goes on Cancel. */
+export function resetAll(ctx, ask = q => globalThis.confirm(q)) {
+  if (!ask(RESET_ALL_QUESTION)) return false
+  ctx.signOut({ all: true })
+  return true
+}
+
+/** The phone's Database & Reset: what this browser keeps, sign-out for this account, and Reset Everything. */
 function Database({ ctx }) {
   const [usage, setUsage] = useState(null)
   useEffect(() => { navigator.storage?.estimate?.().then(e => setUsage((e.usage / 1048576).toFixed(1))).catch(() => {}) }, [])
@@ -286,6 +294,9 @@ function Database({ ctx }) {
       <div class="stats"><div><div class="k">storage</div><div class="v">{usage ?? "–"} MB</div></div></div>
       <p class="muted small">Your relay's data lives in this browser's storage. Signing out deletes it all: notes, messages, keys and paired vaults. Your phone's vault is untouched.</p>
       <button onClick={() => resetBrowser(ctx)}>Sign out and delete this browser's copy</button>
+      <h3 class="danger-zone">Danger Zone</h3>
+      <p class="muted small">Reset Everything signs every account on this browser out and deletes all of it, keys kept here included, and puts every setting back.</p>
+      <button class="danger" onClick={() => resetAll(ctx)}>Reset Everything</button>
     </div>
   )
 }

@@ -124,9 +124,11 @@ test("a list signed far in the future is skipped: it can't pin its author on top
   assert.deepEqual(readLists(ME, storage).map(l => l.pubkey), [ALICE], "and from a stored list")
 })
 
+// Every "<name>:<pubkey>" key goes with the account (forgetAccountKeys); signout-leftovers.test.mjs checks the follower
+// lists among them.
 test("sign-out forgets the kept follower lists", () => {
   const src = readFileSync(new URL("../src/haven/vault.js", import.meta.url), "utf8")
-  assert.match(src, /storage\.removeItem\(`nv-vault-follower-lists:\$\{pubkey\}`\)/)
+  assert.match(src, /forgetAccountKeys\(pubkey, \{ storage, session \}\)/)
 })
 
 test("itemsFor builds the mode's rows, follow lines included; peopleOf names whoever those rows show", () => {

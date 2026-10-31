@@ -26,3 +26,11 @@ export function markSynced(pubkey, follows, { now = Date.now(), storage = global
   if (!pubkey) return
   try { storage?.setItem(KEY, JSON.stringify({ ...read(storage), [pubkey]: { at: now, key: followsKey(follows) } })) } catch {}
 }
+
+/** Sign-out: this account's mark goes with it. */
+export function forgetSynced(pubkey, { storage = globalThis.sessionStorage } = {}) {
+  const all = read(storage)
+  if (!(pubkey in all)) return
+  delete all[pubkey]
+  try { Object.keys(all).length ? storage.setItem(KEY, JSON.stringify(all)) : storage.removeItem(KEY) } catch {}
+}

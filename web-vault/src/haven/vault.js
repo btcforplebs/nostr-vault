@@ -10,8 +10,10 @@ import { makeAuthEvent } from "nostr-tools/nip42"
 import { loadHaven } from "../../../web-relay/src/haven/haven.js"
 import { HavenClient } from "../../../web-relay/src/haven/client.js"
 import { loadOwners } from "../../../web-relay/src/fips/owners.js"
-import { VAULT_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
+import { VAULT_NS, RELAY_NS, pageStorage } from "../../../web-relay/src/page-storage.js"
 import { clearSession } from "../session.js"
+import { forgetSynced } from "../net/feed-synced.js"
+import { closeShownNotices } from "../net/notify-show.js"
 
 // Haven's ServiceURL is https://RELAY_HOST/<route>; NIP-42 compares the AUTH relay tag against it as wss.
 const RELAY_HOST = "vault.local"
@@ -107,13 +109,36 @@ export async function storeNames(pubkey, idb = indexedDB) {
 const LOCAL_KEYS = [DEVICE_KEY, ...FIPS_ITEMS.map(k => VAULT_NS + k), ...FIPS_ITEMS, "nv-log", "nv-ready"]
 const SESSION_KEY = "nv-session"
 
-/** Sign-out: stop Haven, delete its stores, and drop the session, the device and FIPS keys and the log. -> { failed } */
-export async function forgetThisBrowser({ vault, pubkey, storage = localStorage, idb = indexedDB, waitMs = 5000 }) {
+/**
+ * The localStorage keys this page names for one account, "<name>:<pubkey>": the Vault list's seen marks and history,
+ * notification and DM-notification marks, DM read state, follower lists, gallery servers, Never Connect. Found by
+ * their ending, so a key added later goes too. Never /relay/'s (RELAY_NS), which is the same origin.
+ */
+export function accountKeys(pubkey, storage = localStorage) {
+  const out = []
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i)
+      if (k && k.endsWith(`:${pubkey}`) && !k.startsWith(RELAY_NS)) out.push(k)
+    }
+  } catch {}
+  return out
+}
+/** Drops an account's leftovers in this browser (iPhone ResetLeftovers): its named keys and its feed-sync mark. */
+export function forgetAccountKeys(pubkey, { storage = localStorage, session = globalThis.sessionStorage } = {}) {
+  for (const k of accountKeys(pubkey, storage)) storage.removeItem(k)
+  forgetSynced(pubkey, { storage: session })
+}
+
+/** Sign-out: stop Haven, delete its stores, and drop the session, the device and FIPS keys, the log, the account's own
+ *  keys and the notifications it has showing. -> { failed } */
+export async function forgetThisBrowser({ vault, pubkey, storage = localStorage, idb = indexedDB, waitMs = 5000, session = globalThis.sessionStorage, sw = globalThis.navigator?.serviceWorker }) {
   await vault?.haven.stop().catch(() => {})
   // Removing the session is also what tells this page's other tabs to stop (see onSignedOutElsewhere).
   clearSession(storage)
   for (const k of LOCAL_KEYS) storage.removeItem(k)
-  storage.removeItem(`nv-vault-follower-lists:${pubkey}`) // the Vault's follower lists (net/vault-lists.js keepLists)
+  forgetAccountKeys(pubkey, { storage, session })
+  await closeShownNotices(sw)
   const failed = []
   await Promise.all((await storeNames(pubkey, idb)).map(name => new Promise(resolve => {
     // "blocked" means a connection is still open (another tab still stopping); the delete finishes when it closes.
@@ -124,6 +149,7 @@ export async function forgetThisBrowser({ vault, pubkey, storage = localStorage,
   })))
   // Another tab that was still running while the stores were deleted may have written a key back; drop it again.
   for (const k of LOCAL_KEYS) storage.removeItem(k)
+  forgetAccountKeys(pubkey, { storage, session })
   return { failed: failed.sort() }
 }
 
