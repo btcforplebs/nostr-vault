@@ -11,6 +11,7 @@ import { painted } from "./src/components/KeyCard.jsx"
 import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } from "./src/haven/vault.js"
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
+import { readKept, keep as keepNeverConnect } from "./src/net/never-connect.js"
 import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
@@ -122,6 +123,8 @@ function App() {
   useEffect(() => {
     if (!session) return
     let live = true
+    // Never Connect holds from the first socket: the list this browser kept last time, until the account's own arrives.
+    pool.setNeverConnect(readKept(session.pubkey))
     // The account's relays are asked while haven.wasm downloads (seconds on a first visit), not after Haven is up.
     const early = navigator.onLine ? fetchAccount(session.pubkey, uniq([...DEFAULT_RELAYS, ...PROFILE_RELAYS])) : null
     // An account this browser hasn't prepared gets the steps screen from the start, not the splash, so starting the
@@ -217,6 +220,12 @@ function App() {
   if (!vault || !account) return <Splash>Starting your relay…</Splash>
 
   // After a follow or unfollow: the new list is in Haven's outbox, so read the account back and the feed follows it.
+  // The account's Never Connect list (kind 10006), from Haven or the network: the pool refuses those relays.
+  useEffect(() => {
+    if (!account?.neverConnect || !session) return
+    pool.setNeverConnect(account.neverConnect)
+    keepNeverConnect(session.pubkey, account.neverConnect)
+  }, [session?.pubkey, (account?.neverConnect ?? []).join(" "), !!account?.neverConnect])
   const reloadAccount = async () => setAccount({ ...(await readAccount(vault, session.pubkey)), loaded: true })
   const ctx = { vault, session, signer, account, signOut, reloadAccount }
   setActionContext(ctx)

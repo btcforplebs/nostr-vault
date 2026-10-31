@@ -4,6 +4,7 @@ import { verifyEvent } from "nostr-tools/pure"
 import { normalizeURL } from "nostr-tools/utils"
 import { pool, publishRelays, relayLists, uniq } from "./pool.js"
 import { appendClientTag } from "./client-tag.js"
+import { neverConnectUrls } from "./never-connect.js"
 
 // Notes and reposts, plus the articles, polls, highlights, comments, pictures and generic reposts the iPhone shows in
 // Following (FeedServiceTypes.timelineKinds). feed-kinds.js timelineShows decides which comments and kind 16s draw.
@@ -11,9 +12,12 @@ export const FEED_KINDS = [1, 6, 30023, 1068, 9802, 1111, 16, 20]
 const now = () => Math.floor(Date.now() / 1000)
 const newest = evs => evs.reduce((a, e) => (!a || e.created_at > a.created_at ? e : a), undefined)
 
-/** The account as Haven has it: kind 0, 3 and 10002 from the outbox route. Works offline. */
+// Profile, follows, relay list and Never Connect list (10006: the pool refuses those relays).
+const ACCOUNT_KINDS = [0, 3, 10002, 10006]
+
+/** The account as Haven has it: ACCOUNT_KINDS from the outbox route. Works offline. */
 export async function readAccount(vault, pubkey) {
-  const evs = await vault.outbox.query({ kinds: [0, 3, 10002], authors: [pubkey] })
+  const evs = await vault.outbox.query({ kinds: ACCOUNT_KINDS, authors: [pubkey] })
   return account(evs)
 }
 
@@ -25,14 +29,15 @@ function account(evs) {
     contacts: k3,
     follows: uniq((k3?.tags ?? []).filter(t => t[0] === "p" && /^[0-9a-f]{64}$/.test(t[1] ?? "")).map(t => t[1])),
     relays: relayLists(by(10002)),
+    neverConnect: by(10006) ? neverConnectUrls(by(10006)) : null, // null: no list here yet, keep what the pool has
   }
 }
 
 const norm = url => { try { return normalizeURL(url) } catch { return url } }
-const accountQuery = (relays, pubkey) => pool.querySync(relays, { kinds: [0, 3, 10002], authors: [pubkey] }, { maxWait: 6000 })
+const accountQuery = (relays, pubkey) => pool.querySync(relays, { kinds: ACCOUNT_KINDS, authors: [pubkey] }, { maxWait: 6000 })
 
 /**
- * The account's kind 0, 3 and 10002 from `relays`, asked before Haven is up: boot starts this while haven.wasm
+ * The account's ACCOUNT_KINDS from `relays`, asked before Haven is up: boot starts this while haven.wasm
  * downloads, so the relays are connected and the answer is in hand when Haven starts. Hand it to refreshAccount.
  */
 export function fetchAccount(pubkey, relays) {
@@ -50,7 +55,7 @@ export async function refreshAccount(vault, pubkey, hintRelays, { log = () => {}
   const asked = new Set(early?.relays.map(norm))
   const rest = hintRelays.filter(u => !asked.has(norm(u)))
   const evs = (await Promise.all([early?.events ?? [], rest.length ? accountQuery(rest, pubkey) : []])).flat()
-  for (const k of [0, 3, 10002]) {
+  for (const k of ACCOUNT_KINDS) {
     const ev = newest(evs.filter(e => e.kind === k))
     if (!ev) continue
     const r = await vault.outbox.event(ev)

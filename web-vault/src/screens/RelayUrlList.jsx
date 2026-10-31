@@ -34,6 +34,7 @@ export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false, 
       const { event, relays } = await publishList(ctx, kind, urlTags(urls, loaded.event), { previous: loaded.event })
       setLoaded({ event, checked: true }); setUrls(urlEntries(event))
       setStatus(`Published to ${relays.filter(r => r.ok).length} of ${relays.length} relays.`)
+      if (kind === 10006) ctx.reloadAccount?.().catch(() => {}) // the pool takes the new Never Connect list now
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }
 
