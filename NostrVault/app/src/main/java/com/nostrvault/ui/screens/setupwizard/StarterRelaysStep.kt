@@ -54,7 +54,11 @@ internal fun StarterRelaysStep(viewModel: SetupWizardViewModel) {
             onDismissRequest = { changing = false },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) {
-            RelayMatrixScreen(onBack = { changing = false }, onOpenMediaServers = {})
+            RelayMatrixScreen(
+                onBack = { changing = false },
+                onOpenMediaServers = {},
+                onSaved = { published -> viewModel.noteStarterRelaysSaved(published) },
+            )
         }
     }
 }
