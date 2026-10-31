@@ -36,6 +36,10 @@ type SimplePool struct {
 	penaltyBoxMu sync.Mutex
 	penaltyBox   map[string][2]float64
 	relayOptions []RelayOption
+
+	// HAVEN PATCH: see WithDialGate.
+	dialBlocked func(url string) error
+	dialFailed  func(url string, err error)
 }
 
 // DirectedFilter combines a Filter with a specific relay URL.
@@ -93,6 +97,23 @@ type WithAuthHandler func(ctx context.Context, authEvent RelayEvent) error
 
 func (h WithAuthHandler) ApplyPoolOption(pool *SimplePool) {
 	pool.authHandler = h
+}
+
+// HAVEN PATCH: WithDialGate lets the host refuse relays it has decided not to
+// talk to (blocked reports a non-nil error) before EnsureRelay reuses or dials
+// a connection, and tells it about every failed dial (failed) so it can decide.
+func WithDialGate(blocked func(url string) error, failed func(url string, err error)) PoolOption {
+	return withDialGateOpt{blocked, failed}
+}
+
+type withDialGateOpt struct {
+	blocked func(url string) error
+	failed  func(url string, err error)
+}
+
+func (h withDialGateOpt) ApplyPoolOption(pool *SimplePool) {
+	pool.dialBlocked = h.blocked
+	pool.dialFailed = h.failed
 }
 
 // WithPenaltyBox just sets the penalty box mechanism so relays that fail to connect
@@ -164,6 +185,11 @@ var (
 // If the relay is not connected, it attempts to connect.
 func (pool *SimplePool) EnsureRelay(url string) (*Relay, error) {
 	nm := NormalizeURL(url)
+	if pool.dialBlocked != nil {
+		if err := pool.dialBlocked(nm); err != nil {
+			return nil, err
+		}
+	}
 	defer namedLock(nm)()
 
 	relay, ok := pool.Relays.Load(nm)
@@ -192,6 +218,9 @@ func (pool *SimplePool) EnsureRelay(url string) (*Relay, error) {
 
 	relay = NewRelay(context.Background(), url, pool.relayOptions...)
 	if err := relay.Connect(ctx); err != nil {
+		if pool.dialFailed != nil {
+			pool.dialFailed(nm, err)
+		}
 		if pool.penaltyBox != nil {
 			// putting relay in penalty box
 			pool.penaltyBoxMu.Lock()

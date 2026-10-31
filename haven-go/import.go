@@ -448,6 +448,9 @@ func subscribeInboxAndChat(ctx context.Context) {
 					if ctx.Err() != nil {
 						return
 					}
+					if relayBanned(url) {
+						continue
+					}
 					if !relaySupportsNegentropy(ctx, url) {
 						fallback = append(fallback, url)
 						continue
@@ -491,8 +494,10 @@ func subscribeInboxAndChat(ctx context.Context) {
 						// 503s). Cache like unsupported for the retry TTL.
 						slog.Warn("negentropy sync refused, plain catch-up until retry TTL", "relay", url, "err", err)
 						markNegentropyUnsupported(url)
+						noteRelayRefusal(url, err)
 						fallback = append(fallback, url)
 					default:
+						noteRelayRefusal(url, err)
 						slog.Warn("negentropy sync failed, plain catch-up this round", "relay", url, "err", err)
 						fallback = append(fallback, url)
 					}

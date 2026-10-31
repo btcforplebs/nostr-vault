@@ -261,6 +261,7 @@ func StartRelayC(importMode bool) {
 
 		cycle.pool = nostr.NewSimplePool(cycle.ctx,
 			nostr.WithPenaltyBox(),
+			poolDialGate(),
 			nostr.WithRelayOptions(
 				nostr.WithRequestHeader{
 					"User-Agent": []string{config.UserAgent},
@@ -427,6 +428,7 @@ func runImportCycle() {
 	ctx, cancel := c.ctx, c.cancel
 	c.pool = nostr.NewSimplePool(ctx,
 		nostr.WithPenaltyBox(),
+		poolDialGate(),
 		nostr.WithRelayOptions(
 			nostr.WithRequestHeader{
 				"User-Agent": []string{config.UserAgent},

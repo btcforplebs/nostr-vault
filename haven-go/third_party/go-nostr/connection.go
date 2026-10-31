@@ -17,10 +17,25 @@ type Connection struct {
 	conn *ws.Conn
 }
 
+// HandshakeStatusError is a websocket upgrade the relay answered with a non-101
+// HTTP status. (HAVEN PATCH)
+type HandshakeStatusError struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *HandshakeStatusError) Error() string { return e.Err.Error() }
+func (e *HandshakeStatusError) Unwrap() error { return e.Err }
+
 // NewConnection creates a new websocket connection to a Nostr relay.
 func NewConnection(ctx context.Context, url string, requestHeader http.Header, tlsConfig *tls.Config) (*Connection, error) {
-	c, _, err := ws.Dial(ctx, url, getConnectionOptions(requestHeader, tlsConfig))
+	c, resp, err := ws.Dial(ctx, url, getConnectionOptions(requestHeader, tlsConfig))
 	if err != nil {
+		// HAVEN PATCH: keep the HTTP status of a refused upgrade (429, 403,
+		// 503) so callers can tell "the relay said no" from "no network".
+		if resp != nil && resp.StatusCode != 0 && resp.StatusCode != http.StatusSwitchingProtocols {
+			return nil, &HandshakeStatusError{StatusCode: resp.StatusCode, Err: err}
+		}
 		return nil, err
 	}
 
