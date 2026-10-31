@@ -5,6 +5,7 @@ import android.util.Log
 import com.nostrvault.data.model.BlockedPeople
 import com.nostrvault.data.remote.LocalTls
 import com.nostrvault.relay.AccountBunkerConfig
+import com.nostrvault.relay.DamusDefaults
 import com.nostrvault.relay.DeadRelays
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
@@ -182,6 +183,8 @@ class ConfigStore @Inject constructor(
         // Same for relays that went dark after they were defaults; a saved
         // list that names them stays saved, so they are removed here, once.
         loaded = DeadRelays.droppingOnce(loaded, File(context.filesDir, "dead_relays_pruned"))
+        // And relay.damus.io from an untouched default import list (it bans busy IPs).
+        loaded = DamusDefaults.droppingOnce(loaded, File(context.filesDir, "damus_import_dropped"))
 
         // Multi-account migration: seed the owner's signing mode so
         // activeSigningMode() is stable for legacy single-owner configs. The

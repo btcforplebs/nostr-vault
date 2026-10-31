@@ -181,6 +181,21 @@ class WebSocketClient(
             _connectionState.value = ConnectionState.DISCONNECTED
             return
         }
+        // This host answered 429 lately: no dial until its hold is over
+        // ([RateLimitBackoff]). A pooled socket just fails; the pool cools down.
+        val heldMs = RateLimitBackoff.remainingMs(url)
+        if (heldMs > 0) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "Rate-limited host, waiting ${heldMs / 1000}s: $url")
+            _connectionState.value = ConnectionState.DISCONNECTED
+            reconnectJob?.cancel()
+            if (shouldReconnect && autoReconnect) {
+                reconnectJob = scope.launch(Dispatchers.IO) {
+                    delay(heldMs)
+                    doConnect()
+                }
+            }
+            return
+        }
 
         _connectionState.value = if (reconnectAttempts > 0) {
             ConnectionState.RECONNECTING
@@ -225,9 +240,12 @@ class WebSocketClient(
                 Log.w(TAG, "WebSocket failure ($url): ${t.message}")
                 lastError = t.message
                 _connectionState.value = ConnectionState.DISCONNECTED
-                // 429 = rate-limited by the relay; retrying immediately makes it worse.
-                // Switch directly to slow-retry mode so we back off for 2 minutes.
+                // 429 = rate-limited by the relay; retrying soon makes it worse
+                // (damus bans and lists the IP). Every socket to this host
+                // holds off for an hour or more; see [RateLimitBackoff].
                 if (response?.code == 429) {
+                    val holdMs = RateLimitBackoff.limited(url)
+                    Log.w(TAG, "429 from $url, holding the host for ${holdMs / 60_000} min")
                     reconnectAttempts = MAX_RECONNECT_ATTEMPTS
                 }
                 scheduleReconnect()
@@ -246,7 +264,10 @@ class WebSocketClient(
     }
 
     private fun scheduleReconnect() {
-        if (stayedUp(openedAtMs, System.currentTimeMillis())) reconnectAttempts = 0
+        if (stayedUp(openedAtMs, System.currentTimeMillis())) {
+            reconnectAttempts = 0
+            RateLimitBackoff.recovered(url)
+        }
         openedAtMs = 0L
         if (!shouldReconnect || !autoReconnect) return
 

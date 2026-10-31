@@ -84,11 +84,11 @@ data class HavenConfig(
     // Import
     val importStartDate: String = "2023-01-01",
     val importSeedRelaysFile: String = "relays_import.json",
-    // Same as iOS HavenConfig.importSeedRelays: relay.damus.io replaced
-    // nos.lol and nostr.mom (2026-10-07).
+    // relay.damus.io replaced nos.lol and nostr.mom (2026-10-07) and left
+    // again on 2026-10-31: damus bans and publicly lists an IP that sends it
+    // too many requests in a day, and this list is asked every inbox round.
     val importSeedRelays: List<String> = listOf(
         "wss://relay.primal.net",
-        "wss://relay.damus.io",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net",
     ),
@@ -115,7 +115,8 @@ data class HavenConfig(
     // inbox tagged-event (#p = owner) subscription. Was hardcoded empty on
     // Android, so tagged notes on relays not in importSeedRelays never
     // reached the inbox. Mirrors iOS HavenConfig.dmRelays. relay.damus.io
-    // replaced nos.lol, which stopped answering (2026-10-12, see [DeadRelays]).
+    // replaced nos.lol (2026-10-12, see [DeadRelays]) and was dropped from the
+    // default on 2026-10-31 (see importSeedRelays); a saved list keeps it.
     val dmRelays: List<String> = DEFAULT_DM_RELAYS,
     /**
      * When [dmRelays] last changed, in Unix seconds: the created_at of a
@@ -367,10 +368,9 @@ data class HavenConfig(
             "wss://relay.snort.social",
         )
 
-        /** Default DM (kind 10050) relays. Same as iOS. */
+        /** Default DM (kind 10050) relays. No relay.damus.io (see importSeedRelays). */
         val DEFAULT_DM_RELAYS: List<String> = listOf(
             "wss://relay.primal.net",
-            "wss://relay.damus.io",
             "wss://relay.btcforplebs.com",
         )
     }

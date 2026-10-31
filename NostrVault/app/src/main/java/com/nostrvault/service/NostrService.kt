@@ -76,7 +76,10 @@ class NostrService @Inject constructor(
         internal const val MAX_EVENTS = 10_000
         internal const val BUFFER_FLUSH_DELAY_MS = 300L
         internal const val PROFILE_SAVE_THROTTLE_MS = 5_000L
-        internal const val PROFILE_FLUSH_DELAY_MS = 100L
+        // Every flush re-sends the whole pending filter to each pooled relay, damus
+        // among them, so a short window turned a feed's scroll into a REQ every
+        // 100 ms. Two seconds gathers a screenful into one.
+        internal const val PROFILE_FLUSH_DELAY_MS = 2_000L
         internal const val PROFILE_EMIT_DEBOUNCE_MS = 200L
         internal const val PROFILE_UPDATE_DEBOUNCE_MS = 100L
         // A cached profile is "fresh" for this long before we'll re-fetch its metadata.

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import com.nostrvault.service.FeedService.Companion.NOTE_FETCH_TIMEOUT_MS
+import com.nostrvault.data.remote.isDamus
 import com.nostrvault.service.FeedService.Companion.FALLBACK_NOTE_RELAYS
 import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_MAX
 import com.nostrvault.service.FeedService.Companion.PARENT_CACHE_TRIM_TO
@@ -48,7 +49,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
     /**
      * Two passes, mirroring iOS FeedService.flushNoteFetchRequests:
      *  1. your relays (local, inbox, feed, blastr) for every id, plus each
-     *     id's relay hint and its author's write relays;
+     *     id's relay hint and its author's write relays, all but relay.damus.io;
      *  2. for what's still missing, [FALLBACK_NOTE_RELAYS] and a bigger hint
      *     budget, since the authors' relay lists have usually arrived by then.
      * Then anything still missing is marked unavailable.
@@ -72,14 +73,14 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             config.inboxRelays?.let { addAll(it) }
             addAll(config.activeFeedRelays)
             addAll(config.activeBlastrRelays)
-        }.distinct()
+        }.distinct().filterNot(::isDamus) // damus only in the second pass, for what nobody else had
 
         // Arrivals are tracked here, not read back from the cache: the cache's
         // over-500 trim drops notes the feed doesn't reference (one opened
         // from Search, say), and those must not then be called unavailable.
         val arrived = ConcurrentHashMap.newKeySet<String>()
         requestRelayListsFor(chunk)
-        val firstHints = hintRelays(chunk, ownRelays, cap = 12)
+        val firstHints = hintRelays(chunk, ownRelays, cap = 12).filterKeys { !isDamus(it) }
         requestNotes(ownRelays.associateWith { chunk } + firstHints, arrived)
 
         val stillMissing = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }
