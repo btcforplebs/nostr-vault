@@ -1,0 +1,6 @@
+*
+!fips-v2/src/stack.rs
+!web-relay-vault
+!fips-v2-android
+!linux/mesh
+**/target

@@ -1,0 +1,24 @@
+[package]
+name = "nv-mesh"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# The FIPS mesh for Nostr Vault on Linux (the nostr-vault-linux container):
+# the engine the Mac app runs (fips-v2-android, lib nvfips), as its own
+# process next to havend. Same start options as the Mac (MeshDevices.swift
+# macEngineOptions); see README.md.
+[dependencies]
+nvfips = { package = "fips-v2-android", path = "../../fips-v2-android" }
+# Only to read this box's npub from its key before the engine starts. Must be
+# the same rev as fips-v2-android, so one fips is linked.
+fips = { package = "fips-mesh", git = "https://github.com/btcforplebs/fips", rev = "e831d6d5" }
+serde_json = "1"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt", "macros", "signal", "time"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
