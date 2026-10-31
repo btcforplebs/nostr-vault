@@ -109,9 +109,10 @@ extension NostrService {
     }
 
     /// The Publish relay list switch and the dashboard Publish button (Logen
-    /// 1A): the vault's own relays plus the account's own published relay
-    /// list, never this device's defaults. Nothing goes out when the relays
-    /// didn't settle whether a list exists, or when it already lists them.
+    /// 1A): the account's own published relay list plus, for the owner, the
+    /// vault's own relays; never this device's defaults. Nothing goes out
+    /// when the relays didn't settle whether a list exists, or when there is
+    /// nothing to add. Same rule as Android `publishRelayListImpl`.
     @MainActor
     func publishOwnRelaysInRelayList(forNpub npub: String) {
         guard let hex = Bech32.decode(npub)?.hexString else { return }
@@ -129,7 +130,8 @@ extension NostrService {
             // relays put first when missing.
             let existing = lookup.event?.tags.filter { $0.count >= 2 && $0[0] == "r" } ?? []
             let listed = Set(existing.map { RelayMatrix.key($0[1]) })
-            let missing = HavenConfig.publicRelayListTags(ownRelays: config.ownPublicRelays, read: [], write: [])
+            let ownRelays = npub == config.ownerNpub ? config.ownPublicRelays : []
+            let missing = HavenConfig.publicRelayListTags(ownRelays: ownRelays, read: [], write: [])
                 .filter { !listed.contains(RelayMatrix.key($0[1])) }
             guard !missing.isEmpty else { return }
             let tags = missing + existing
