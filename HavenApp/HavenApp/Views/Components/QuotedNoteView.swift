@@ -6,6 +6,10 @@ struct QuotedNoteView: View {
     /// which would open the blocked note in full, nor for a stream, whose tap
     /// plays it and which has no thread.
     var opensThread = false
+    /// On a condensed line (feed and thread replies) the quote's photo is the
+    /// same 56 pt square at the right that a plain note gets, not a full-width
+    /// picture. The opened note, the expanded card and compose keep it big.
+    var condensedMedia = false
     @EnvironmentObject var nostrService: NostrService
     @State private var blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
 
@@ -143,6 +147,32 @@ struct QuotedNoteView: View {
 
     @ViewBuilder
     private var noteBody: some View {
+        if condensedMedia, let first = note.mediaURLs.first {
+            HStack(alignment: .top, spacing: 8) {
+                noteText
+                Spacer(minLength: 0)
+                CondensedMediaThumbnail(url: first, count: note.mediaURLs.count,
+                                        author: note.pubkey, tags: note.tags)
+                    .allowsHitTesting(false)
+            }
+        } else {
+            noteText
+
+            if !note.mediaURLs.isEmpty {
+                FeedMediaView(
+                    url: note.mediaURLs[0],
+                    maxHeight: 180,
+                    portraitMaxHeight: 220,
+                    isThumbnail: false
+                )
+                .meshMediaNote(author: note.pubkey, tags: note.tags)
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var noteText: some View {
         let formattedContent = NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs)
         if !formattedContent.characters.isEmpty {
             Text(formattedContent)
@@ -150,17 +180,6 @@ struct QuotedNoteView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
-        }
-
-        if !note.mediaURLs.isEmpty {
-            FeedMediaView(
-                url: note.mediaURLs[0],
-                maxHeight: 180,
-                portraitMaxHeight: 220,
-                isThumbnail: false
-            )
-            .meshMediaNote(author: note.pubkey, tags: note.tags)
-            .allowsHitTesting(false)
         }
     }
 
