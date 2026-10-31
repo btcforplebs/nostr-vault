@@ -74,6 +74,8 @@ class DMService: ObservableObject {
     var signerWaiting: [String: NostrEvent] = [:]
     var signerRetryTask: Task<Void, Never>?
     var signerRetryAttempt = 0
+    /// Parks the queue while a remote signer is not answering.
+    var signerGate = SignerWaitGate()
 
     /// /inbox (NIP-04 and the gift wraps stored there) reconnects on its own,
     /// like /chat. Before, it came back only when the app returned to the

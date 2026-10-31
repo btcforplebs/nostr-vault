@@ -37,7 +37,8 @@ extension ComposeView {
     func performDismiss() {
         autoSaveTask?.cancel()
 
-        // Final save to local cache if content changed since last save
+        // The one relay save of this composer session (it signs the draft),
+        // only if the content changed since the relay copy
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty
             && (trimmed.contains(" ") || trimmed.count > 10)
@@ -76,7 +77,7 @@ extension ComposeView {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Don't save empty content or very short fragments
         guard !trimmed.isEmpty, trimmed.contains(" ") || trimmed.count > 10 else { return }
-        // Don't save if nothing changed since last save
+        // Don't save if nothing changed since the last relay copy
         guard trimmed != lastSavedContent else { return }
 
         autoSaveTask = Task {
@@ -90,15 +91,19 @@ extension ComposeView {
                 await MainActor.run { draftId = id }
             }
 
-            let canonicalContent = await MainActor.run { convertMentionsToNostr(content) }
-            await DraftService.shared.saveDraft(
-                draftId: id,
-                content: canonicalContent,
-                replyTo: effectiveReplyTo,
-                quoteTo: effectiveQuoteTo,
-                taggedPubkeys: taggedPubkeys
-            )
-            await MainActor.run { lastSavedContent = trimmed }
+            // Device copy only. Signing the relay copy here asked a remote
+            // signer on every typing pause (about ten signs per note); it is
+            // signed once, when the composer closes (performDismiss), so
+            // `lastSavedContent` (what the relay has) is left alone.
+            await MainActor.run {
+                DraftService.shared.saveDraftLocally(
+                    draftId: id,
+                    content: convertMentionsToNostr(content),
+                    replyTo: effectiveReplyTo,
+                    quoteTo: effectiveQuoteTo,
+                    taggedPubkeys: taggedPubkeys
+                )
+            }
         }
     }
 

@@ -111,4 +111,16 @@ final class RelayCountSessionTests: XCTestCase {
         XCTAssertEqual(s.receive(#"["EOSE","x"]"#), .wait)
         XCTAssertEqual(s.receive(count("total", 2)), .finished(["total": 2]))
     }
+
+    /// A kept /private socket is logged in already: the count there is
+    /// asked like an open route and signs nothing, even if the relay sends
+    /// a challenge or another session's AUTH is answered on that socket.
+    func testKeptLoggedInSocketCountsWithoutSigning() {
+        var s = session(needsAuth: false)
+        XCTAssertEqual(s.connected(), .sendCounts)
+        XCTAssertEqual(s.receive(#"["AUTH","again"]"#), .wait)
+        XCTAssertEqual(s.receive(#"["OK","someone-elses-auth",true,""]"#), .wait)
+        XCTAssertEqual(s.receive(count("total", 3)), .wait)
+        XCTAssertEqual(s.receive(count("k1", 1)), .finished(["total": 3, "k1": 1]))
+    }
 }
