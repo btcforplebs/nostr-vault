@@ -55,19 +55,20 @@ private struct ReferencedNoteObserver: ViewModifier {
 }
 
 extension FeedView {
-    /// Warms the rows just below `noteId` — photos, avatars, parent and quoted
-    /// notes — so they are ready when they scroll on screen instead of starting
-    /// to load there.
+    /// Warms `noteId` itself and the rows just below it — every photo (all of
+    /// a carousel's pages, not just the first), avatars, parent and quoted
+    /// notes — so they are ready when they scroll or swipe on screen instead
+    /// of starting to load there. Already-warmed notes are skipped.
     private func prefetchAhead(ofNote noteId: String) {
         let notes = feedService.filteredNotes
         guard let index = notes.firstIndex(where: { $0.id == noteId }) else { return }
-        FeedPrefetcher.warm(notes[(index + 1)..<min(index + 1 + FeedPrefetcher.lookahead, notes.count)],
+        FeedPrefetcher.warm(notes[index..<min(index + 1 + FeedPrefetcher.lookahead, notes.count)],
                             feedService: feedService, nostrService: nostrService)
     }
 
     private func prefetchAhead(ofThread rootId: String) {
         guard let index = feedThreads.firstIndex(where: { $0.rootId == rootId }) else { return }
-        let upcoming = feedThreads[(index + 1)..<min(index + 1 + FeedPrefetcher.lookahead, feedThreads.count)]
+        let upcoming = feedThreads[index..<min(index + 1 + FeedPrefetcher.lookahead, feedThreads.count)]
         // A collapsed card shows its root and first reply; warm those.
         FeedPrefetcher.warm(upcoming.flatMap { $0.entries.prefix(2).map(\.note) },
                             feedService: feedService, nostrService: nostrService)

@@ -925,6 +925,7 @@
 		9F97B93898DEBC880AEBC084 /* ComposerDraftKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 991ECEC99B30D283ED937F6D /* ComposerDraftKeeper.swift */; };
 		9F9CDDF321235EC17C00A9A3 /* FeedView+FeedList.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FEDF9367CC166604398159 /* FeedView+FeedList.swift */; };
 		A01AE7A841456CFE286E720B /* HavenConfig+OwnerKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3EF8E9C5B0D5EB2E673007 /* HavenConfig+OwnerKeys.swift */; };
+		A01C63A9FF0DD90277108ED6 /* PagerNeighbors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */; };
 		A02E8133985155B2B29F7287 /* WalletLightningTab+LNURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF12EBE0F3A10E9A0AA2D2C6 /* WalletLightningTab+LNURL.swift */; };
 		A036232BAFC92A70B8441CCB /* PushNotificationStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */; };
 		A0EBE7F0C28E518A0FDB57C5 /* FipsMeshAddDeviceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF12652463CF2FA67F55AFF /* FipsMeshAddDeviceSheet.swift */; };
@@ -1302,6 +1303,7 @@
 		DC040E2F965DE84F4C1BE9CC /* AvatarImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6558C31748490E315EA4DE8E /* AvatarImageCache.swift */; };
 		DC0B0458630C076A2CFA0CA0 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41A8E188B7B23F83A3EA49AA /* DashboardView.swift */; };
 		DC564055F17E779B59E55881 /* FeedServiceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */; };
+		DC9A0FA4F0780BAE878C7E23 /* PagerNeighbors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */; };
 		DCBA54C084A1E420260053AF /* TrustWebView+WOTTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A7E86F4A80054401A68579 /* TrustWebView+WOTTabBar.swift */; };
 		DCE772251391A5A6446A595C /* DivineComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8274D5B92BF5C6640FBDBD5F /* DivineComposeView.swift */; };
 		DCE9E17677F4ED12996F22AC /* NWCService+Call.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC7DCEB33F7289E0020D079 /* NWCService+Call.swift */; };
@@ -1678,6 +1680,7 @@
 		260B4B664CE91A3427693ED5 /* NoteDetailView+ThreadEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+ThreadEngagement.swift"; sourceTree = "<group>"; };
 		26251868EAC178C0BAF356A8 /* EventBroadcastSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBroadcastSheet.swift; sourceTree = "<group>"; };
 		26298D9F25210DA7D5ED7418 /* RevealKeyGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealKeyGate.swift; sourceTree = "<group>"; };
+		264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagerNeighbors.swift; sourceTree = "<group>"; };
 		27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletedNotesStore.swift; sourceTree = "<group>"; };
 		279617C6C46FE95602AF2F5B /* MediaGridItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGridItem.swift; sourceTree = "<group>"; };
 		27A87225270090D65AC98D48 /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = build/libhaven.a; sourceTree = SDKROOT; };
@@ -3159,6 +3162,7 @@
 				7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */,
 				FF9413A39E4C5825C455EB73 /* NWCBackup.swift */,
 				27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */,
+				264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */,
 				44FA8B5C2592FA9E88658049 /* PlainLog.swift */,
 				CC8C3E65ED03CD249289CAA9 /* PlayableLinks.swift */,
 				5F0C028D1E2DC57C43CED675 /* PopularRanking.swift */,
@@ -4346,6 +4350,7 @@
 				2BC448FBF2F8B14E77FFFE92 /* OpenInWebButton.swift in Sources */,
 				C0CFE203CCC8B542BFD2541C /* OtherResponseCard.swift in Sources */,
 				33C3DBA932813117EFD2AB23 /* OwnerSessionWarmup.swift in Sources */,
+				A01C63A9FF0DD90277108ED6 /* PagerNeighbors.swift in Sources */,
 				FCCCFD519D53A12A81C43930 /* PendingPostManager.swift in Sources */,
 				E9D274D706419EC3343C6F38 /* PersonProfileView.swift in Sources */,
 				7C227BD34B8AB5B7878BE831 /* PiPManager.swift in Sources */,
@@ -5107,6 +5112,7 @@
 				D060107D62CCECE6BE12F68D /* OpenInWebButton.swift in Sources */,
 				F6F032EECDD7BDAE6BA492FB /* OtherResponseCard.swift in Sources */,
 				C71CE09138EF387FD0B1448E /* OwnerSessionWarmup.swift in Sources */,
+				DC9A0FA4F0780BAE878C7E23 /* PagerNeighbors.swift in Sources */,
 				27BBFB192439FAD50AEB34EC /* PendingPostManager.swift in Sources */,
 				4106C6045599C6DAD5BE65A4 /* PersonProfileView.swift in Sources */,
 				3B4E633BA61CFF38AAD71471 /* PiPManager.swift in Sources */,

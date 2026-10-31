@@ -19,7 +19,8 @@ extension FeedNoteRow {
             .meshMediaNote(author: bodySource.pubkey, tags: bodySource.tags)
             .frame(maxWidth: .infinity)
         } else {
-            // Multiple media — quick snappy fade carousel
+            // Multiple media — swipeable carousel. No fade on the pages: a page
+            // swiped to fading in from clear showed the grey placeholder first.
             MediaPagerView(items: urls) { url in
                 FeedMediaView(
                     url: url,
@@ -31,9 +32,6 @@ extension FeedNoteRow {
                 .meshMediaNote(author: bodySource.pubkey, tags: bodySource.tags)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
-                #if os(iOS)
-                .transition(.opacity.animation(Motion.media))
-                #endif
             }
             // Every page fills the whole carousel (fillsFrame) rather than
             // sitting letterboxed in it.
