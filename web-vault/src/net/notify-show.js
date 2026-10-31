@@ -58,3 +58,12 @@ export function listenNoticeClicks(sw = globalThis.navigator?.serviceWorker) {
   sw.addEventListener("message", on)
   return () => sw.removeEventListener("message", on)
 }
+
+/** Sign-out closes the notifications this page has showing (the iPhone clears its delivered ones), so a signed-out
+ *  account's names and messages don't stay in the system tray. */
+export async function closeShownNotices(sw = globalThis.navigator?.serviceWorker) {
+  try {
+    const reg = await sw?.getRegistration?.()
+    for (const n of (await reg?.getNotifications?.()) ?? []) n.close()
+  } catch {}
+}

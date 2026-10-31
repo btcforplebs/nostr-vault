@@ -204,3 +204,5 @@ a.settings-row:hover { background: var(--s2); }
 .for-you-title { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
 .for-you-title svg { color: var(--accent); }
 .vault-search-about { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+/* Settings › Database & Reset: the phone's Danger Zone header above Reset Everything. */
+.card .danger-zone { margin-top: 18px; color: var(--danger); }

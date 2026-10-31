@@ -12,6 +12,7 @@ import { startVault, forgetThisBrowser, onSignedOutElsewhere, preloadHaven } fro
 import { readAccount, refreshAccount, fetchAccount } from "./src/net/sync.js"
 import { pool, DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "./src/net/pool.js"
 import { readKept, keep as keepNeverConnect } from "./src/net/never-connect.js"
+import { resetEverything } from "./src/net/reset-all.js"
 import { putProfile } from "./src/net/profiles.js"
 import { setActionContext } from "./src/net/actions.js"
 import { setQuoteSource } from "./src/net/quotes.js"
@@ -187,24 +188,29 @@ function App() {
   }), [session?.pubkey, vault, signer])
 
   // Anything that throws lands on the sign-out screen with its buttons, never on a splash with none.
-  const signOut = async () => {
-    setLeaving({ busy: true })
+  // `all` (Settings › Reset Everything): every account on this browser and this app's settings, not just this one.
+  // A click handler may pass its event here: only an explicit { all: true } resets everything.
+  const wipe = all => all ? resetEverything({ vault, pubkey: session.pubkey, pool }) : forgetThisBrowser({ vault, pubkey: session.pubkey })
+  const signOut = async opts => {
+    const all = opts?.all === true
+    setLeaving({ busy: true, all })
     logging = false
     let revoked = null
     try {
       // A bunker is asked to drop this browser's grant; null means there was no grant to drop (extension).
       revoked = signer?.revoke ? await signer.revoke() : (signer?.close?.(), null)
-      const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
-      if (failed.length || revoked === false) setLeaving({ failed, revoked })
+      const { failed, revokeFailed = 0 } = await wipe(all)
+      if (revokeFailed) revoked = false
+      if (failed.length || revoked === false) setLeaving({ failed, revoked, all })
       else restart()
     } catch (e) {
-      setLeaving({ failed: [], revoked, error: String(e?.message ?? e) })
+      setLeaving({ failed: [], revoked, all, error: String(e?.message ?? e) })
     }
   }
   const retryWipe = async () => {
     setLeaving(l => ({ ...l, busy: true, error: "" }))
     try {
-      const { failed } = await forgetThisBrowser({ vault, pubkey: session.pubkey })
+      const { failed } = await wipe(leaving?.all)
       setLeaving(l => ({ ...l, busy: false, failed }))
     } catch (e) {
       setLeaving(l => ({ ...l, busy: false, error: String(e?.message ?? e) }))
