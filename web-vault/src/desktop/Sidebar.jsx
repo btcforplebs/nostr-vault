@@ -9,6 +9,9 @@ import { badgeCount, useUnreadTotal } from "../components/useUnreadTotal.js"
 import { useVaultUnread } from "../components/useVaultUnread.js"
 import { learn } from "../shell.js"
 import { resetBrowser } from "../screens/SettingsScreen.jsx"
+import { methodLabel } from "../screens/SignInScreen.jsx"
+import { loadAccounts } from "../session.js"
+import { switchAccount } from "../signer/accounts.js"
 
 const ICON = {
   post: "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z",
@@ -91,12 +94,13 @@ function AccountButton({ ctx, rail }) {
         <Avatar pubkey={session.pubkey} size={rail ? 36 : 32} />
         <span class="side-label side-account-names">
           <span class="side-account-name">{name}</span>
-          <span class="side-account-kind">{signer?.readOnly ? "Read-only" : "Owner key"}</span>
+          <span class="side-account-kind">{signer?.readOnly ? "Read-only" : methodLabel(session)}</span>
         </span>
         <span class="side-label side-chevron"><Icon d={ICON.chevron} size={14} /></span>
       </button>
       {open && (
         <div class="side-pop" role="menu" onClick={e => { if (e.target.closest("[role=menuitem]")) setOpen(false) }}>
+          <SwitchRows ctx={ctx} />
           <a role="menuitem" href="#/accounts">Accounts</a>
           <a role="menuitem" href="#/wallet">Wallet</a>
           <hr />
@@ -105,6 +109,31 @@ function AccountButton({ ctx, rail }) {
       )}
     </div>
   )
+}
+
+/** The other accounts on this browser, as the iPhone's Switch Account menu; picking one reloads into it. None with one
+ *  account. */
+function SwitchRows({ ctx }) {
+  const [err, setErr] = useState("")
+  const accounts = loadAccounts()
+  if (accounts.length < 2) return null
+  const go = async (e, account) => {
+    e.stopPropagation() // keep the menu open: a switch reloads, a refused one shows why here
+    setErr("")
+    try { await switchAccount({ account, vault: ctx.vault, signer: ctx.signer }) } catch (x) { setErr(String(x?.message ?? x)) }
+  }
+  return (<>
+    <p class="side-pop-title" aria-hidden="true">Switch Account</p>
+    {accounts.map(a => a.pubkey === ctx.session.pubkey
+      ? <span key={a.pubkey} role="menuitemradio" aria-checked="true" class="side-switch on"><Avatar pubkey={a.pubkey} size={22} /><SwitchName account={a} /></span>
+      : <button key={a.pubkey} role="menuitemradio" aria-checked="false" type="button" class="side-switch" onClick={e => go(e, a)}><Avatar pubkey={a.pubkey} size={22} /><SwitchName account={a} /></button>)}
+    {err && <p class="side-pop-error" role="alert">{err}</p>}
+    <hr />
+  </>)
+}
+const SwitchName = ({ account }) => {
+  const p = useProfile(account.pubkey)
+  return <span class="side-switch-name">{p?.display_name || p?.name || npubEncode(account.pubkey).slice(0, 12) + "…"}</span>
 }
 
 /** The in-page relay's status and event count; Restart reloads the page, which restarts the relay. */
