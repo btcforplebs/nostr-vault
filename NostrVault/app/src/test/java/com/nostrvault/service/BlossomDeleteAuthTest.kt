@@ -34,4 +34,9 @@ class BlossomDeleteAuthTest {
             ),
         )
     }
+
+    @Test fun `a host with an underscore is still named`() {
+        val tags = BlossomDeleteAuth.tags(sha, "https://my_mirror.example.com/$sha", nowSeconds = 1_700_000_000)
+        assertEquals(listOf(listOf("server", "my_mirror.example.com")), tags.filter { it[0] == "server" })
+    }
 }
