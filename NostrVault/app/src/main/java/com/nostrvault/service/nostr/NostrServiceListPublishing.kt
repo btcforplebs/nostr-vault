@@ -111,8 +111,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     }
 
     /**
-     * Adds the servers on the owner's published media server list (kind
-     * 10063, set in another app) to this device's upload servers. See
+     * Takes the owner's published media server list (kind 10063, set in
+     * another app) as this device's upload servers, in their order. See
      * [ServerListAdoption]. Nothing is published here.
      */
     internal suspend fun NostrService.syncOwnerServerList() {
@@ -276,6 +276,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         name: String,
         local: List<String>,
         extraRelays: () -> List<String> = { emptyList() },
+        publishedFirst: Boolean = false,
         adjust: (List<List<String>>) -> List<List<String>>? = { it },
     ) {
         val owner = ownerHexPubkey
@@ -283,7 +284,12 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val baseKey = "$kind:$owner"
         publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
-            val tags = ListMerge.tags(name, local, published?.tags.orEmpty()) { base == null || ListMerge.key(it) !in base }
+            val keep = { value: String -> base == null || ListMerge.key(value) !in base }
+            val tags = if (publishedFirst) {
+                ListMerge.tagsPublishedFirst(name, local, published?.tags.orEmpty(), keep)
+            } else {
+                ListMerge.tags(name, local, published?.tags.orEmpty(), keep)
+            }
             // Null: [adjust] refused the list. Nothing goes out, so the base stays what was last published.
             val adjusted = adjust(tags) ?: return@publishMergedList null
             bases?.put(baseKey, local)
@@ -352,7 +358,9 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         val extraRelays = {
             ServerListRelays.extra(_outboxRelays.value[ownerHexPubkey], config.activeBlastrRelays)
         }
-        publishOwnerEntryList(10063, "server", mirrors, extraRelays) { tags ->
+        // Their published order stays first (BUD-03: the first server is their default); a server
+        // only this device has goes after it.
+        publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
             val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(
                 servers, servers, home, dropMesh, macs, myDevices = config.fipsPeers,
@@ -415,6 +423,33 @@ internal object ListMerge {
             }
         }
         return mine + kept
+    }
+
+    /**
+     * The [published] tags first, in their order: every tag of another name,
+     * a [name] tag that is [local], and one that is not when [keepPublished]
+     * says so. Then the [local] entries not already there, in order. For a
+     * list whose first entry means something (a 10063's default server), so
+     * a device's own order never moves the owner's.
+     */
+    fun tagsPublishedFirst(
+        name: String,
+        local: List<String>,
+        published: List<List<String>>,
+        keepPublished: (String) -> Boolean,
+    ): List<List<String>> {
+        val localKeys = local.filter { it.isNotBlank() }.map(::key).toSet()
+        val seen = HashSet<String>()
+        val kept = published.filter { tag ->
+            when {
+                tag.isEmpty() -> false
+                tag[0] != name -> true
+                else -> tag.size >= 2 && tag[1].isNotBlank() &&
+                    (key(tag[1]) in localKeys || keepPublished(tag[1])) && seen.add(key(tag[1]))
+            }
+        }
+        val mine = local.filter { it.isNotBlank() && seen.add(key(it)) }.map { listOf(name, it) }
+        return kept + mine
     }
 
     /**

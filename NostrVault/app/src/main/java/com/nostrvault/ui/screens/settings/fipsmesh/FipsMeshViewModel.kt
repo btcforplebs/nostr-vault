@@ -133,18 +133,7 @@ class FipsMeshViewModel @Inject constructor(
         configStore.updateAsync { it.copy(fipsMesh = it.fipsMesh.copy(devices = change.labels)) }
         if (change.peers != before.fipsPeers) mesh.setPeers(change.peers)
         if (change.homeVault != before.homeVaultNpub) homeVault.setHomeVault(change.homeVault)
-        republishIfListedChanged(before)
-    }
-
-    /**
-     * This phone lists its home vault and its linked Macs in the owner's 10063 (iOS 8af86b0d): when either
-     * changed, republish, dropping the entries that went.
-     */
-    private fun republishIfListedChanged(before: com.nostrvault.relay.HavenConfig) {
-        val after = configStore.config.value
-        val listedBefore = listOfNotNull(before.homeVaultNpub) + com.nostrvault.service.linkedMacs(before)
-        val listedAfter = listOfNotNull(after.homeVaultNpub) + com.nostrvault.service.linkedMacs(after)
-        if (listedBefore.toSet() != listedAfter.toSet()) nostrService.publishServerList(dropMesh = listedBefore - listedAfter.toSet())
+        // The 10063 is not republished here: only Save in Media servers publishes it (Logen 2026-10-31).
     }
 
     /**
