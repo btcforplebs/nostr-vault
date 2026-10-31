@@ -65,8 +65,11 @@ function gatedRelays() {
   const gates = []
   pool.ensureRelay = async () => ({})
   pool.querySync = async (_, f) => !f.kinds.includes(1) ? [] : new Promise(resolve => gates.push(() => resolve(f.authors.slice(0, 3).map((pk, i) => ({ id: hex(parseInt(pk, 16) * 10 + i), pubkey: pk, kind: 1, created_at: now - i, tags: [], content: `note from ${pk.slice(-3)}`, sig: "" })))))
+  // The live subscription for new notes (net/feed-live.js): recorded, never opened.
+  const live = []
+  pool.subscribeMany = (urls, filter, params) => { const sub = { filter, params, closed: false, close() { sub.closed = true } }; live.push(sub); return sub }
   // Each relay is asked on its own: a chunk is one gate per relay (two here, the default relays).
-  return { pending: () => gates.length, release: () => gates.shift()(), releaseChunk: () => { for (const g of gates.splice(0)) g() } }
+  return { live, pending: () => gates.length, release: () => gates.shift()(), releaseChunk: () => { for (const g of gates.splice(0)) g() } }
 }
 
 function mount(account) {
@@ -170,4 +173,33 @@ test("two syncs at once (Refresh during the background tick) don't fail on a not
   const vault = { feed }
   const [a, b] = await Promise.all([syncFeed(vault, follows.slice(0, 3), ["wss://a", "wss://b"]), syncFeed(vault, follows.slice(0, 3), ["wss://a", "wss://b"])])
   assert.equal(a + b, 150, "every note saved once, neither sync failed")
+})
+
+test("a follow's new note arrives live, is saved and waits behind the pill; leaving the Feed closes the subscription", async () => {
+  const relays = gatedRelays()
+  const m = mount({ follows: [], relays: { read: [] }, loaded: false })
+  await tick(20)
+  m.rerender({ follows, relays: { read: [] }, loaded: true })
+  // The pill listens for scrolls on the window, which this DOM doesn't have: just enough of one, for this test.
+  const window = { addEventListener() {}, removeEventListener() {}, scrollY: 0 }
+  Object.assign(globalThis, window)
+  await until(() => relays.pending() === 2, "chunk 1 asked")
+  relays.releaseChunk()
+  await until(() => relays.pending() === 4, "chunks 2 and 3 asked")
+  relays.releaseChunk()
+  await until(() => /notes saved to your relay/.test(text(m.el)), "the finished sync")
+  // One REQ per 250 follows, from now on, for the feed's kinds.
+  const open = relays.live.filter(s => !s.closed)
+  assert.deepEqual(open.map(s => s.filter.authors.length), [250, 250, 195])
+  assert.ok(open.every(s => s.filter.kinds.includes(1) && s.filter.since >= now - 5))
+  const fresh = { id: hex(9_999_999), pubkey: follows[300], kind: 1, created_at: now + 60, tags: [], content: "live from a follow", sig: "" }
+  open[1].params.onevent(fresh)
+  open[1].params.onevent(fresh) // a second relay's copy
+  open[0].params.onevent({ ...fresh, id: hex(9_999_998), pubkey: hex(9_999) }) // not a follow: dropped
+  for (let i = 0; i < 100 && !/1 New Post(?!s)/.test(text(m.el)); i++) await tick(50) // a batch waits LIVE_BATCH_MS
+  assert.match(text(m.el), /1 New Post(?!s)/)
+  assert.doesNotMatch(text(m.el), /live from a follow/, "held behind the pill, not drawn under the reader")
+  render(null, m.el)
+  for (const k of Object.keys(window)) delete globalThis[k]
+  assert.ok(relays.live.every(s => s.closed), "every live REQ closed")
 })
