@@ -25,9 +25,23 @@ export const actionContext = () => actx
  *  (net/reaction-pref.js), ❤️ unless they picked another. */
 export const REACTION = "❤️"
 
-/** NIP-25 reaction to `note`, tagged as the iPhone tags it (FeedActions.react). */
-export const reactionTemplate = (note, content = REACTION) =>
-  ({ kind: 7, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey], ["k", String(note.kind)]], content })
+/** An event's address ("kind:pubkey:d"), or null (NIP10Thread.coordinate): addressable kinds by their d tag, replaceable
+ *  ones (0, 3, 10000-19999) with an empty d. Likes, zaps and reposts carry it, so clients counting by address see them. */
+export function addressOf(ev) {
+  const k = ev?.kind
+  if (k >= 30000 && k < 40000) {
+    const d = ev.tags?.find(t => t[0] === "d")?.[1]
+    return d === undefined ? null : `${k}:${ev.pubkey}:${d}`
+  }
+  return k === 0 || k === 3 || (k >= 10000 && k < 20000) ? `${k}:${ev.pubkey}:` : null
+}
+
+/** NIP-25 reaction to `note`, tagged as the iPhone tags it (FeedActions.react; an article's a tag as
+ *  ArticleEngagement.reactionTags). */
+export function reactionTemplate(note, content = REACTION) {
+  const a = addressOf(note)
+  return { kind: 7, created_at: now(), tags: [["e", note.id, ""], ...(a ? [["a", a, ""]] : []), ["p", note.pubkey], ["k", String(note.kind)]], content }
+}
 
 /** NIP-18 repost, the reposted event as the content. Kind 6 is only for kind 1 notes; anything else (an article, a
  *  poll, a picture, a comment) is a kind 16 generic repost with a k tag naming its kind (PendingPostManager), plus the
@@ -35,8 +49,8 @@ export const reactionTemplate = (note, content = REACTION) =>
 export function repostTemplate(note) {
   if (note.kind === 1) return { kind: 6, created_at: now(), tags: [["e", note.id, ""], ["p", note.pubkey]], content: JSON.stringify(note) }
   const tags = [["e", note.id, ""], ["p", note.pubkey], ["k", String(note.kind)]]
-  const d = note.tags?.find(t => t[0] === "d")?.[1]
-  if (note.kind >= 30000 && note.kind < 40000 && d !== undefined) tags.push(["a", `${note.kind}:${note.pubkey}:${d}`])
+  const a = note.kind >= 30000 && note.kind < 40000 ? addressOf(note) : null
+  if (a) tags.push(["a", a])
   return { kind: 16, created_at: now(), tags, content: JSON.stringify(note) }
 }
 

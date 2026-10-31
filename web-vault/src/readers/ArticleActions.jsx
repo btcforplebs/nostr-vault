@@ -1,6 +1,7 @@
 // The article reader's Like / Comment / Zap bar (the iPhone's ArticleReaderView actionBar). Like is the notes' heart
 // (shown at once, tapback, "Liked" pill: ReactionButton) with the article's like count beside it, your own like in it
-// straight away. Zap is the notes' bolt (ZapButton: default amount on a tap, amounts on a hold, the Zapping pill).
+// straight away. Zap is the notes' bolt, a tap opening the amounts with your default filled in (ArticleReaderView's
+// zap sheet), and the Zapping pill.
 // Comment opens a box under the bar that sends a NIP-22 comment, after the same send delay and Undo as Compose.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { ReactionButton } from "../components/ReactionButton.jsx"
@@ -40,7 +41,7 @@ export function ArticleActionBar({ ctx, article, likers, comments, onComment }) 
           </button>
           {comments > 0 && <span class="reader-count" aria-label={`${comments} comments`}>{compact(comments)}</span>}
         </span>
-        <ZapButton note={article} />
+        <ZapButton note={article} pickFirst />
       </div>
       {writing && <CommentBox ctx={ctx} article={article} onSent={ev => { setWriting(false); onComment?.(ev) }} onCancel={() => setWriting(false)} />}
     </>
