@@ -494,6 +494,11 @@ class FeedService @Inject constructor(
     // One follow list signed at a time, each in a later second than the last (see publishContactList).
     internal val contactListPublishMutex = kotlinx.coroutines.sync.Mutex()
     internal val lastContactListCreatedAt = java.util.concurrent.atomic.AtomicLong(0L)
+    // The newest real kind 3 this device holds (loaded from relays or signed here), so a Save
+    // never edits a copy older than one already seen. See ContactManager.saveBase.
+    @Volatile internal var knownContactList: ContactManager.ListCopy? = null
+    // Follow edits not yet signed or refused; only the last one to finish sets the shown list.
+    internal val contactEditsInFlight = java.util.concurrent.atomic.AtomicInteger(0)
     // created_at of the contact list we last published/committed locally. The
     // relay-fetch overwrite is only accepted when its created_at is >= this value;
     // otherwise the relay copy is older than our latest local edit (e.g. a fresh

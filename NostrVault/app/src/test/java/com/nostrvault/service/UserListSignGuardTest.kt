@@ -3,7 +3,6 @@ package com.nostrvault.service
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import java.io.File
 
@@ -14,8 +13,8 @@ import java.io.File
  * Paths from Tron's audit at 633d5552 (RESEARCH/NV_LIST_OVERWRITE_AUDIT_633D5552.md). Model:
  * [ServerListPublishOnlyOnSaveTest] (10063 only from Save in Media servers).
  *
- * The `@Ignore`d tests are live paths the audit found that can overwrite a list. They fail today on purpose and
- * are kept to show what is open; Logen decides the fixes. Un-ignore one when its fix lands.
+ * The last tests pin the fixes for the live paths the audit found (Logen 2026-10-31: never sign a list
+ * automatically, fetch the newest copy right before Save and edit that, one "none" is not "you have none").
  */
 class UserListSignGuardTest {
 
@@ -68,7 +67,7 @@ class UserListSignGuardTest {
     fun `only these places sign a user list`() {
         assertEquals(
             mapOf(
-                // Follow / unfollow taps, and (⛔ below) the self-heal on load, through publishContactList.
+                // Follow / unfollow taps, follow-many and Restore, through publishContactList.
                 "com/nostrvault/service/FeedServiceFollow.kt" to setOf(3),
                 // Interests: the hashtag follow tap.
                 "com/nostrvault/service/InterestListService.kt" to setOf(10015),
@@ -116,38 +115,48 @@ class UserListSignGuardTest {
 
     private fun src(path: String) = sources.getValue(path)
 
-    // MARK: known live paths (Tron audit 633d5552). They fail today; Logen decides the fixes.
+    // MARK: the live paths Tron's audit at 633d5552 found, now closed.
 
-    @Ignore("KNOWN LIVE PATH ⛔ (Tron 633d5552): kind 3 self-heal re-signs on load, FeedServiceContactList.kt:142-143")
     @Test
     fun `loading the follow list never re-signs it`() {
         assertFalse(src("com/nostrvault/service/FeedServiceContactList.kt").contains("publishContactList("))
     }
 
-    @Ignore("KNOWN LIVE PATH ⚠️ (Tron 633d5552): follow/unfollow edits the launch copy, no re-fetch, FeedServiceFollow.kt:60-85")
     @Test
     fun `a follow tap reads the newest kind 3 before signing`() {
         val follow = src("com/nostrvault/service/FeedServiceFollow.kt")
         assertTrue(Regex("(lookup|fetch)NewestReplaceable\\(\\s*(kind\\s*=\\s*)?3\\b").containsMatchIn(follow))
     }
 
-    @Ignore("KNOWN LIVE PATH ⚠️ (Tron 633d5552): one 'none' answer counts as known, publishes local/empty 10063/10006, NostrServiceListPublishing.kt:245")
     @Test
     fun `one relay saying none is not enough to publish a 10063 or 10006`() {
         assertFalse(src("com/nostrvault/service/nostr/NostrServiceListPublishing.kt").contains("lookup.event == null && lookup.answered == 0"))
     }
 
-    @Ignore("KNOWN LIVE PATH ⚠️ (Tron 633d5552): 10015 one relay answering = known, InterestListService.kt:235")
     @Test
     fun `one relay answering is not enough to publish a 10015`() {
         assertFalse(src("com/nostrvault/service/InterestListService.kt").contains("answered.get() > 0"))
     }
 
-    @Ignore("KNOWN LIVE PATH 🔵 (Tron 633d5552): 10002/10050 Save uses the copy read when Relays opened, not at Save")
     @Test
     fun `Save in Relays reads the newest 10002 at Save`() {
         val impl = src("com/nostrvault/service/nostr/NostrServiceListPublishing.kt")
             .substringAfter("fun NostrService.publishOwnerRelayListTagsImpl").substringBefore(" fun ")
         assertTrue(impl.contains("lookupNewestReplaceable"))
+    }
+
+    @Test
+    fun `Save in Relays refuses when the list it opened with is missing or older at Save`() {
+        val file = src("com/nostrvault/service/nostr/NostrServiceListPublishing.kt")
+        for ((fn, rebase) in listOf(
+            "fun NostrService.publishOwnerRelayListTagsImpl" to "rebaseRelayList",
+            "fun NostrService.publishDMRelayList" to "rebaseDMList",
+        )) {
+            val impl = file.substringAfter(fn).substringBefore(" fun ")
+            val guard = impl.indexOf("staleAtSave(")
+            assertTrue("$fn must check staleAtSave", guard >= 0)
+            assertTrue("$fn must check staleAtSave before $rebase", guard < impl.indexOf(rebase))
+            assertTrue("$fn must pass the found copy's created_at", impl.contains("lookup.event?.createdAt"))
+        }
     }
 }

@@ -107,6 +107,40 @@ object ContactManager {
         hasAttemptedLoad && !isLoading && listConfirmed
 
     /** True when a list was found, or when every relay asked answered with none. */
+    /** One real copy of [owner]'s kind 3: its tags, content and created_at. */
+    data class ListCopy(val owner: String, val tags: List<List<String>>, val content: String, val createdAt: Long)
+
+    /**
+     * One deliberate change to the follow list. It is applied at Save to the
+     * newest copy fetched then, never to the list read at launch.
+     */
+    data class FollowEdit(
+        val add: List<String> = emptyList(),
+        val remove: List<String> = emptyList(),
+        /** Restore from Following Backup: these follows replace the list's. */
+        val replaceWith: List<String>? = null,
+    ) {
+        fun applyTo(pubkeys: List<String>): List<String> {
+            val gone = remove.toSet()
+            val kept = (replaceWith ?: pubkeys).filter { it !in gone }
+            return (kept + add.filter { it !in gone }).distinct()
+        }
+    }
+
+    /**
+     * The copy a Save edits (Logen 2026-10-31: never overwrite a user's
+     * list). The newest of the copy fetched right before Save and the one
+     * this device already holds ([known], loaded or signed here) for the same
+     * account. No copy found counts as "you have none" only when every relay
+     * asked answered ([confirmedNone]) or the key was made on this device
+     * ([freshKey]); one relay saying none is not enough. Null: refuse to Save.
+     */
+    fun saveBase(owner: String, fetched: ListCopy?, confirmedNone: Boolean, freshKey: Boolean, known: ListCopy?): ListCopy? {
+        if (fetched == null && !confirmedNone && !freshKey) return null
+        return listOfNotNull(fetched, known?.takeIf { it.owner == owner }).maxByOrNull { it.createdAt }
+            ?: ListCopy(owner, emptyList(), "", 0L)
+    }
+
     fun loadConfirmsList(foundList: Boolean, relaysAsked: Int, relaysAnswered: Int): Boolean =
         foundList || (relaysAsked > 0 && relaysAnswered >= relaysAsked)
 
@@ -217,15 +251,6 @@ object ContactManager {
         val newPubkeys = currentPubkeys.filter { it != pubkey }
         return Result.success(FollowResult(newPTags, newPubkeys))
     }
-
-    /**
-     * The self-heal re-publish of the local list over an older relay copy.
-     * Never an empty list, and never one under half a relay copy of more than
-     * 10: one tap changes one follow, so a local list that much smaller is a
-     * stale or partly loaded one, and publishing it would wipe follows.
-     */
-    fun mayRepublish(localSize: Int, relaySize: Int): Boolean =
-        localSize > 0 && (relaySize <= 10 || localSize * 2 >= relaySize)
 
     /**
      * Count mutual follows from a kind-3 event's tags, excluding the user's own follows.

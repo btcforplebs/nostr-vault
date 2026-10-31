@@ -10,30 +10,38 @@ import com.nostrvault.service.FeedService.Companion.TAG
 import com.nostrvault.ui.notification.FollowKind
 
     /**
-     * [rollback]: the list before this edit. If signing fails or every relay
-     * refuses the event, and nothing has changed the list since, it is put
-     * back so the screen never shows a follow that was not published; then
-     * [onFailed] runs, on the main thread.
+     * Signs [edit] onto the newest kind 3 (Logen 2026-10-31: never overwrite
+     * a user's list). Right before signing it fetches the newest copy from
+     * the relays and edits that, not the list read at launch: a follow made in
+     * another app since is kept. When the relays don't answer, nothing is
+     * signed (one "none" is not "you have none", see [ContactManager.saveBase]).
+     *
+     * [shown]: the list the screen shows for this edit. [rollback]: the list
+     * before it. If the relays don't answer, signing fails, or every relay
+     * refuses the event, and nothing has changed the list since, [rollback]
+     * is put back so the screen never shows a follow that was not published;
+     * then [onFailed] runs, on the main thread.
      */
     internal fun FeedService.publishContactList(
-        pubkeys: List<String>,
+        shown: List<String>,
+        edit: ContactManager.FollowEdit,
         rollback: List<String>? = null,
         onFailed: (() -> Unit)? = null,
     ) {
-        // The key has a list now; from here on its load must find it.
-        FreshAccountKeys.clear(appContext, nostrService.activeHexPubkey)
         // Discovery's follows-of-follows tally is an hour-long cache of the
         // old list: after an unfollow it kept everyone that follow brought
         // in. The next Discovery visit counts again. (The relay's web reloads
         // itself: it rebuilds on a new list and the FileObserver re-reads it.)
         lastExtendedNetworkLoadTime = 0L
-        val tags = ContactManager.contactListTags(pubkeys, contactListTags)
+        val owner = nostrService.activeHexPubkey
+        // A key set up on this device has no list anywhere yet.
+        val freshKey = FreshAccountKeys.isFresh(appContext, owner)
         // Signed as the account this list belongs to: a switch while a signer
         // prompt is open must not put A's follows under B's key.
         val lock = nostrService.lockPostingAccount()
         val fail: (refusedAt: Long?) -> Unit = { refusedAt ->
             scope.launch(Dispatchers.Main.immediate) {
-                val restore = followRollback(_followedPubkeys.value, pubkeys, rollback)
+                val restore = followRollback(_followedPubkeys.value, shown, rollback)
                 if (restore != null) {
                     if (refusedAt != null) refusedContactListCreatedAt = refusedAt
                     _followedPubkeys.value = restore
@@ -46,44 +54,83 @@ import com.nostrvault.ui.notification.FollowKind
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a
         // stale relay copy and drop the edit we're about to publish.
-        val accountKey = configStore.config.value.activeAccountNpub
-            ?: configStore.config.value.ownerNpub
+        val config = configStore.config.value
+        val accountKey = config.activeAccountNpub ?: config.ownerNpub
         ownContactListAccountKey = accountKey
         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, System.currentTimeMillis() / 1000L)
-        val content = contactListContent
+        val alsoAsk = (config.inboxRelays.orEmpty() + config.readRelays.take(3)).distinct()
+        contactEditsInFlight.incrementAndGet()
         scope.launch(Dispatchers.IO) {
+            var last = false
             // One at a time, each in a later second than the newest list
             // signed or loaded: two in one second tie, and relays keep the
             // lower id, dropping the other's follows.
-            val event = contactListPublishMutex.withLock {
-                delay(ContactManager.followListSignDelayMs(System.currentTimeMillis(), lastContactListCreatedAt.get()))
-                runCatching { nostrService.signEventAsync(
-                    kind = 3,
-                    content = content,
-                    tags = tags,
-                    lockedTo = lock,
-                ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }
-                    .getOrElse { e ->
-                        // The list is the previous account's: nothing to roll back here.
-                        if (e is PostingAccount.AccountChangedException) return@launch
-                        null
+            val saved = try {
+                contactListPublishMutex.withLock {
+                    val lookup = runCatching { nostrService.lookupNewestReplaceable(3, owner, alsoAsk) }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .getOrNull()
+                    val fetched = lookup?.event?.let { ContactManager.ListCopy(owner, it.tags, it.content, it.createdAt) }
+                    val base = ContactManager.saveBase(owner, fetched, lookup?.confirmedNone == true, freshKey, knownContactList)
+                    if (base == null) {
+                        Log.w(TAG, "contact list not signed: relays didn't answer (${lookup?.answered ?: 0}/${lookup?.asked ?: 0})")
+                        return@withLock null
                     }
-                    ?.also { signed -> lastContactListCreatedAt.updateAndGet { maxOf(it, signed.createdAt) } }
+                    knownContactList = base
+                    lastContactListCreatedAt.updateAndGet { maxOf(it, base.createdAt) }
+                    val basePubkeys = contactManager.parseContactList(base.tags).pubkeys
+                    val pubkeys = edit.applyTo(basePubkeys)
+                    // Already so on the newest copy (done in another app): nothing to sign.
+                    if (pubkeys == basePubkeys) return@withLock base
+                    val tags = ContactManager.contactListTags(pubkeys, base.tags)
+                    delay(ContactManager.followListSignDelayMs(System.currentTimeMillis(), lastContactListCreatedAt.get()))
+                    val event = runCatching { nostrService.signEventAsync(
+                        kind = 3,
+                        content = base.content,
+                        tags = tags,
+                        lockedTo = lock,
+                    ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }
+                        .getOrElse { e ->
+                            // The list is the previous account's: nothing to roll back here.
+                            if (e is PostingAccount.AccountChangedException) return@launch
+                            null
+                        } ?: return@withLock null
+                    lastContactListCreatedAt.updateAndGet { maxOf(it, event.createdAt) }
+                    // The key has a list now; from here on its load must find it.
+                    FreshAccountKeys.clear(appContext, owner)
+                    ContactManager.ListCopy(owner, tags, base.content, event.createdAt).also {
+                        knownContactList = it
+                        // Record the published list's created_at + a durable backup so a
+                        // later relay fetch returning an older copy can't clobber this edit.
+                        ownContactListCreatedAt = maxOf(ownContactListCreatedAt, event.createdAt)
+                        followingBackupService.maybeCreateSnapshot(
+                            pubkeys = pubkeys,
+                            pTags = tags,
+                            contactListContent = base.content,
+                            contactListCreatedAt = event.createdAt,
+                            forAccountKey = accountKey,
+                        )
+                        nostrService.postEvent(event) { outcome ->
+                            if (outcome == BroadcastTally.Outcome.REFUSED) fail(event.createdAt)
+                        }
+                    }
+                }
+            } finally {
+                last = contactEditsInFlight.decrementAndGet() == 0
             }
-            if (event == null) fail(null)
-            event?.let {
-                // Record the published list's created_at + a durable backup so a
-                // later relay fetch returning an older copy can't clobber this edit.
-                ownContactListCreatedAt = maxOf(ownContactListCreatedAt, it.createdAt)
-                followingBackupService.maybeCreateSnapshot(
-                    pubkeys = pubkeys,
-                    pTags = tags,
-                    contactListContent = content,
-                    contactListCreatedAt = it.createdAt,
-                    forAccountKey = accountKey,
-                )
-                nostrService.postEvent(it) { outcome ->
-                    if (outcome == BroadcastTally.Outcome.REFUSED) fail(it.createdAt)
+            if (saved == null) {
+                fail(null)
+                return@launch
+            }
+            // The list as saved: the newest copy with this edit. Shown once no other edit is still on its way.
+            val pubkeys = contactManager.parseContactList(saved.tags).pubkeys
+            withContext(Dispatchers.Main.immediate) {
+                contactListTags = saved.tags
+                contactListContent = saved.content
+                if (last && _followedPubkeys.value != pubkeys && nostrService.activeHexPubkey == owner) {
+                    _followedPubkeys.value = pubkeys
+                    recomputeFilteredNotes()
+                    resubscribePrimaryToConnected()
                 }
             }
         }
@@ -142,7 +189,7 @@ import com.nostrvault.ui.notification.FollowKind
             onSuccess = { followResult ->
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys, rollback = previous) {
+                publishContactList(followResult.pubkeys, ContactManager.FollowEdit(add = listOf(pubkey)), rollback = previous) {
                     notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = true)))
                 }
                 // Re-filter so already-loaded notes from the newly-followed author
@@ -194,7 +241,7 @@ import com.nostrvault.ui.notification.FollowKind
             onSuccess = { followResult ->
                 val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys, rollback = previous) {
+                publishContactList(followResult.pubkeys, ContactManager.FollowEdit(remove = listOf(pubkey)), rollback = previous) {
                     notificationManager.showFollow(displayName, FollowKind.FAILED(followFailedMessage(follow = false)))
                 }
                 // Re-filter so the unfollowed author's notes disappear from the
@@ -225,7 +272,7 @@ import com.nostrvault.ui.notification.FollowKind
         // The backup's own tags, plus the current list's non-follow tags it
         // lacks (a relay-history backup holds only its p tags).
         contactListTags = pTags + contactListTags.filter { it.isNotEmpty() && it[0] != "p" && it !in pTags }
-        publishContactList(contactResult.pubkeys)
+        publishContactList(contactResult.pubkeys, ContactManager.FollowEdit(replaceWith = contactResult.pubkeys))
     }
 
     /**

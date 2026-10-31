@@ -39,6 +39,13 @@ object RelayDraft {
          * (Tron, #1386; iOS `Published.kept`).
          */
         val kept: List<List<String>> = emptyList(),
+        /**
+         * created_at of the kind 10002 / 10050 the screen opened with (null
+         * when unknown). Save refuses a copy older than this: an indexer's
+         * stale copy would drop rows ([staleAtSave], Tron #1458).
+         */
+        val relayListAt: Long? = null,
+        val dmListAt: Long? = null,
     )
 
     /** Whether a relay can be a row of the published relay list: a wss:// address others can reach. */
@@ -266,6 +273,66 @@ object RelayDraft {
         )
     }
 
+    /**
+     * True when Save must not sign: the screen opened with a published list
+     * ([openedWithList]) but the lookup at Save found no copy ([foundAt]
+     * null), or found one older than the copy the screen opened with
+     * ([openedAt]). The indexers can answer "none" or hold an old copy of a
+     * list that lives on the owner's own relays; rebasing onto that would
+     * drop rows the screen never touched (Tron, #1458).
+     */
+    fun staleAtSave(openedWithList: Boolean, openedAt: Long?, foundAt: Long?): Boolean =
+        openedWithList && (foundAt == null || (openedAt != null && foundAt < openedAt))
+
+    /**
+     * Save edits the newest kind 10002, fetched right before it is signed,
+     * not the copy read when Relays opened (Logen 2026-10-31). The screen's
+     * edit is what changed from [before] (the list as published at open) to
+     * [after] (what Save would publish), per relay and per Read / Write; it
+     * is applied to [newest]. A relay another app added or changed since is
+     * kept; every tag that is not an `r` tag stays as published.
+     */
+    fun rebaseRelayList(before: List<List<String>>, after: List<List<String>>, newest: List<List<String>>): List<List<String>> {
+        fun pairs(tags: List<List<String>>) = tags.filter { it.size >= 2 && it[0] == "r" }.flatMap { t ->
+            val k = RelayMatrix.key(t[1])
+            when (t.getOrNull(2)) {
+                "read" -> listOf(k to Job.READ)
+                "write" -> listOf(k to Job.WRITE)
+                else -> listOf(k to Job.READ, k to Job.WRITE)
+            }
+        }.toSet()
+        val was = pairs(before)
+        val now = pairs(after)
+        val result = pairs(newest) - (was - now) + (now - was)
+        val urls = LinkedHashMap<String, String>()
+        for (t in newest + after) if (t.size >= 2 && t[0] == "r") urls.putIfAbsent(RelayMatrix.key(t[1]), t[1])
+        val rTags = urls.mapNotNull { (k, url) ->
+            val read = (k to Job.READ) in result
+            val write = (k to Job.WRITE) in result
+            when {
+                read && write -> listOf("r", url)
+                read -> listOf("r", url, "read")
+                write -> listOf("r", url, "write")
+                else -> null
+            }
+        }
+        return rTags + newest.filter { it.isNotEmpty() && it[0] != "r" }
+    }
+
+    /**
+     * [rebaseRelayList] for the DM inbox (kind 10050): the relays added and
+     * removed between [before] and [after], applied to the [newest] tags.
+     */
+    fun rebaseDMList(before: List<String>, after: List<String>, newest: List<List<String>>): List<List<String>> {
+        val was = before.map(RelayMatrix::key).toSet()
+        val now = after.map(RelayMatrix::key).toSet()
+        return com.nostrvault.service.ListMerge.edit(
+            "relay", newest,
+            add = after.filter { RelayMatrix.key(it) !in was },
+            remove = before.filter { RelayMatrix.key(it) !in now },
+        )
+    }
+
     private fun movedAny(state: State, jobs: Set<Job>): Boolean = state.layout.any { entry ->
         movedToYours(state, entry) && jobs(state.draft, entry.key).any { it in jobs }
     }
@@ -285,6 +352,10 @@ object RelayDraft {
                 )
             }
             if (plan.dmRelays != null) next = next.copy(dms = plan.dmRelays)
+            // The next Save must not edit a copy older than the one just signed.
+            val now = System.currentTimeMillis() / 1000
+            if (plan.relayListTags != null) next = next.copy(relayListAt = now)
+            if (plan.dmRelays != null) next = next.copy(dmListAt = now)
             next
         }
         return state.copy(

@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -57,14 +58,33 @@ class FollowListWipeGuardTest {
         assertEquals(0, tally.answeredCount())
     }
 
-    @Test fun selfHealNeverRepublishesAListUnderHalfTheRelayCopy() {
-        // A cached 5 over 500 on relays is a stale or partial list, not a fresh edit.
-        assertFalse(ContactManager.mayRepublish(localSize = 5, relaySize = 500))
-        assertFalse(ContactManager.mayRepublish(localSize = 0, relaySize = 3))
-        // A fresh follow or unfollow the relays haven't caught up on.
-        assertTrue(ContactManager.mayRepublish(localSize = 499, relaySize = 500))
-        assertTrue(ContactManager.mayRepublish(localSize = 501, relaySize = 500))
-        // Small lists: one unfollow may halve them.
-        assertTrue(ContactManager.mayRepublish(localSize = 1, relaySize = 2))
+    private fun copy(at: Long, vararg follows: String, owner: String = me) =
+        ContactManager.ListCopy(owner, follows.map { listOf("p", it) }, "", at)
+
+    @Test fun oneRelaySayingNoneIsNotAnEmptyList() {
+        // Some relays answered "none", others didn't: unknown, refuse to Save.
+        assertNull(ContactManager.saveBase(me, fetched = null, confirmedNone = false, freshKey = false, known = null))
+        // Every relay answered none, or the key was made here: the list really is empty.
+        assertEquals(0, ContactManager.saveBase(me, null, confirmedNone = true, freshKey = false, known = null)!!.tags.size)
+        assertEquals(0, ContactManager.saveBase(me, null, confirmedNone = false, freshKey = true, known = null)!!.tags.size)
+    }
+
+    @Test fun saveEditsTheNewestCopyNotTheLaunchCopy() {
+        val launch = copy(100, "b".repeat(64))
+        val elsewhere = copy(200, "b".repeat(64), "c".repeat(64))
+        assertEquals(elsewhere, ContactManager.saveBase(me, elsewhere, false, false, known = launch))
+        // A lagging relay never wins over a copy this device already holds.
+        assertEquals(elsewhere, ContactManager.saveBase(me, launch, false, false, known = elsewhere))
+        // Another account's copy is never the base.
+        val other = copy(300, "d".repeat(64), owner = "e".repeat(64))
+        assertEquals(launch, ContactManager.saveBase(me, launch, false, false, known = other))
+    }
+
+    @Test fun anEditAppliesToWhateverTheNewestCopyHolds() {
+        val b = "b".repeat(64); val c = "c".repeat(64); val d = "d".repeat(64)
+        assertEquals(listOf(b, c, d), ContactManager.FollowEdit(add = listOf(d)).applyTo(listOf(b, c)))
+        assertEquals(listOf(c), ContactManager.FollowEdit(remove = listOf(b)).applyTo(listOf(b, c)))
+        assertEquals(listOf(b, c), ContactManager.FollowEdit(add = listOf(c)).applyTo(listOf(b, c)))
+        assertEquals(listOf(d), ContactManager.FollowEdit(replaceWith = listOf(d)).applyTo(listOf(b, c)))
     }
 }
