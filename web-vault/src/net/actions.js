@@ -1,6 +1,7 @@
 // Note actions, as on the iPhone's note row: like (kind 7), repost (kind 6, or 16 for other kinds), and the tags a reply (NIP-10) or a
 // quote (NIP-18 q tag + nevent) carries. Signed by the user's signer, stored in Haven's outbox, sent to the relays
-// publishRelays picks. A like or repost reads as sent only once it is signed and a relay took it.
+// publishRelays picks. A repost reads as sent only once it is signed and a relay took it; a like shows at once
+// ("pending") and is rolled back if signing or every relay fails (FeedActions.react).
 import { neventEncode } from "nostr-tools/nip19"
 import { pool, publishRelays } from "./pool.js"
 import { appendClientTag } from "./client-tag.js"
@@ -130,8 +131,8 @@ export async function loadDeletions(ctx) {
   markDeleted(mine.flatMap(ev => (ev.tags ?? []).filter(t => t[0] === "e" && HEX64.test(t[1] ?? "")).map(t => t[1])))
 }
 
-// What this account has done to each note: { like, repost } as "busy" | "sent" | { error }. One store, so the same
-// note shown twice (feed and thread) reads the same.
+// What this account has done to each note: { like, repost } as "busy" | "pending" | "sent" | { error }. "pending" is a
+// like shown before a relay took it. One store, so the same note shown twice (feed and thread) reads the same.
 const state = new Map()
 const listeners = new Set()
 export const actionState = id => state.get(id) ?? {}
@@ -173,20 +174,47 @@ export async function loadSent(ctx, id) {
  *  swaps it, the old kind 7 deleted before the new one is signed (FeedActions.react). */
 export async function act(ctx, kind, note, emoji) {
   const cur = actionState(note.id)[kind]
-  if (cur === "busy") return
+  if (cur === "busy" || cur === "pending") return
   // A failed Unlike says so on the heart ({ error, unlike }); a tap on it tries the rest again.
   if (kind === "like" && (cur === "sent" || cur?.unlike)) {
     if (!emoji || cur?.unlike || emoji === emojiOf.get(note.id)) return unlike(ctx, note).catch(() => {})
     try { await unlike(ctx, note) } catch { return }
   } else if (cur === "sent") return
+  if (kind === "like") return like(ctx, note, emoji ?? REACTION)
   put(note.id, kind, "busy")
   try {
-    const { event } = await publishAction(ctx, kind === "like" ? reactionTemplate(note, emoji ?? REACTION) : repostTemplate(note))
-    if (kind === "like") { addLikes(note.id, [event.id]); emojiOf.set(note.id, emoji ?? REACTION) }
+    await publishAction(ctx, repostTemplate(note))
     put(note.id, kind, "sent")
   } catch (e) {
     put(note.id, kind, { error: String(e?.message ?? e) })
   }
+}
+
+/** A like shows at once, filled heart or emoji and counted, as on the iPhone (FeedActions.react); signing and the
+ *  relays come after. If either fails it is taken off again and the heart says why. */
+async function like(ctx, note, emoji) {
+  emojiOf.set(note.id, emoji)
+  put(note.id, "like", "pending")
+  try {
+    const { event } = await publishAction(ctx, reactionTemplate(note, emoji))
+    addLikes(note.id, [event.id])
+    put(note.id, "like", "sent")
+  } catch (e) {
+    emojiOf.delete(note.id)
+    put(note.id, "like", { error: String(e?.message ?? e) })
+  }
+}
+
+/** This account's reaction as the counts should show it: { emoji } once liked here (also while it is going out),
+ *  { emoji: null } once taken back or failed here, null when this session hasn't changed it (the relays' answer
+ *  stands). */
+export function myReaction(id) {
+  const st = actionState(id)
+  if (!("like" in st)) return null
+  const like = st.like
+  if (like === "pending" || like === "sent") return { emoji: emojiOf.get(id) ?? REACTION }
+  if (like === undefined || (like?.error && !like.unlike)) return { emoji: null }
+  return null
 }
 
 /**

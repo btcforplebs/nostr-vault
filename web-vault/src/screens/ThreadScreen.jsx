@@ -9,7 +9,7 @@ import { isBlockedNote, visibleReplies } from "../net/blocks.js"
 import { useBlocks } from "../components/useBlocks.js"
 import { ArticleReader } from "../readers/ArticlesScreen.jsx"
 import { SkeletonRows } from "../components/FeedExtras.jsx"
-import { compose } from "../net/actions.js"
+import { compose, myReaction, onActionState } from "../net/actions.js"
 import { quotedById } from "../net/quotes.js"
 import { SNO_KIND } from "../readers/sno.js"
 import { landOn, onReaderScroll, tapLine } from "../components/tap-line.js"
@@ -225,9 +225,10 @@ function Focus({ on, children, summary }) {
 }
 
 /** The focused note's reactions as chips, as under the iPhone's focused note: each emoji with how many people sent it,
- *  then reposts. One per person per emoji; "-" is a dislike (NIP-25) and not shown. Pure, for the tests.
- *  -> { reactions: [{ emoji, count }] most first, reposts } */
-export function reactionSummary(events, noteId) {
+ *  then reposts. One per person per emoji; "-" is a dislike (NIP-25) and not shown. `mine` ({ pubkey, emoji }) is this
+ *  account's reaction as made here, counted at once and in place of what the relays had for it (emoji null: taken
+ *  back). Pure, for the tests. -> { reactions: [{ emoji, count }] most first, reposts } */
+export function reactionSummary(events, noteId, mine = null) {
   const byEmoji = new Map(), reposters = new Set(), seen = new Set()
   for (const ev of events) {
     if (!ev?.id || seen.has(ev.id) || !Array.isArray(ev.tags)) continue
@@ -241,6 +242,12 @@ export function reactionSummary(events, noteId) {
     if (!byEmoji.has(emoji)) byEmoji.set(emoji, new Set())
     byEmoji.get(emoji).add(ev.pubkey)
   }
+  if (mine?.pubkey) {
+    for (const who of byEmoji.values()) who.delete(mine.pubkey)
+    const e = mine.emoji === "" || mine.emoji === "+" ? "❤️" : mine.emoji
+    if (e) { if (!byEmoji.has(e)) byEmoji.set(e, new Set()); byEmoji.get(e).add(mine.pubkey) }
+  }
+  for (const [e, who] of byEmoji) if (!who.size) byEmoji.delete(e)
   const reactions = [...byEmoji].map(([emoji, who]) => ({ emoji, count: who.size }))
     .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji))
   return { reactions, reposts: reposters.size }
@@ -248,16 +255,20 @@ export function reactionSummary(events, noteId) {
 
 /** Read-only: asks the read relays for the note's reactions and reposts once, and draws nothing until some arrive. */
 function ReactionSummary({ ctx, note, relays }) {
-  const [sum, setSum] = useState(null)
+  const [evs, setEvs] = useState(null)
+  const [, redraw] = useState(0)
   const { blocked } = useBlocks(ctx)
   useEffect(() => {
     let live = true
-    setSum(null)
+    setEvs(null)
     pool.querySync(relays, { kinds: [7, 6], "#e": [note.id], limit: 500 }, { maxWait: 6000 })
-      .then(evs => { if (live) setSum(reactionSummary(evs.filter(ev => !blocked?.has?.(ev.pubkey)), note.id)) })
+      .then(got => { if (live) setEvs(got.filter(ev => !blocked?.has?.(ev.pubkey))) })
       .catch(() => {})
-    return () => { live = false }
+    const off = onActionState(id => { if (id === note.id) redraw(n => n + 1) })
+    return () => { live = false; off() }
   }, [note.id])
+  const own = myReaction(note.id)
+  const sum = evs || own?.emoji ? reactionSummary(evs ?? [], note.id, own && { pubkey: ctx?.session?.pubkey, ...own }) : null
   if (!sum || (!sum.reactions.length && !sum.reposts)) return null
   return (
     <div class="reaction-summary" aria-label="Reactions">
