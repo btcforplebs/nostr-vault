@@ -110,10 +110,20 @@ function walk(node, out = []) {
   if (Array.isArray(node)) { node.forEach(n => walk(n, out)); return out }
   if (!node || typeof node !== "object") return out
   out.push(node)
+  if (node.type?.name === "MdImage") return out // hooks; its <img> is checked below
   if (typeof node.type === "function") walk(node.type(node.props), out)
   else walk(node.props?.children, out)
   return out
 }
+
+test("an article image is a button that opens it full screen on its own, as MarkdownBodyView's onImageTap", async () => {
+  const nodes = walk(Markdown({ body: "Intro\n\n![](https://img.example/a.jpg)\n\n![](https://img.example/b.jpg)" }))
+  assert.deepEqual(nodes.filter(n => n.type?.name === "MdImage").map(n => n.props.url), ["https://img.example/a.jpg", "https://img.example/b.jpg"])
+  const src = readFileSync(new URL("../src/readers/Markdown.jsx", import.meta.url), "utf8")
+  assert.match(src, /<button type="button" class="md-image-open"[^>]*onClick=\{e => \{ e\.stopPropagation\(\); setOpen\(true\) \}\}>/)
+  assert.match(src, /<MediaLightbox items=\{\[imageItem\(url\)\]\} onClose=\{\(\) => setOpen\(false\)\} \/>/)
+  assert.match(src, /<img class="md-image" src=\{url\} alt="" loading="lazy" referrerpolicy="no-referrer" \/>/)
+})
 
 test("the body is built as elements, never HTML: a <script> in an article stays text", () => {
   const nodes = walk(Markdown({ body: "<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>" }))
