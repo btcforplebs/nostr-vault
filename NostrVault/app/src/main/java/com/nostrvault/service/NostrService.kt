@@ -508,8 +508,8 @@ class NostrService @Inject constructor(
         var onContacts: ((Int, Boolean) -> Unit)? = null
         /** A pubkey whose contact list includes [pubkey] (a follower). */
         var onFollower: ((String) -> Unit)? = null
-        /** EOSE subId — prefix is "profile-" (initial), "older-", or "older-tagged-". */
-        var onEose: ((String) -> Unit)? = null
+        /** EOSE (subId, relay URL). subId prefix is "profile-" (initial), "older-", or "older-tagged-". */
+        var onEose: ((String, String) -> Unit)? = null
 
         /** Relay keys this stream has asked, so [addRelays] opens only new ones. */
         private val asked = java.util.Collections.synchronizedSet(mutableSetOf<String>())
@@ -533,7 +533,7 @@ class NostrService @Inject constructor(
                 jobs.add(scope.launch {
                     client.messages
                         .onSubscription { subscribed.complete(Unit) }
-                        .collect { msg -> handleMessage(msg) }
+                        .collect { msg -> handleMessage(msg, relayUrl) }
                 })
                 // (Re)send the combined REQ on every CONNECTED transition.
                 jobs.add(scope.launch {
@@ -581,13 +581,13 @@ class NostrService @Inject constructor(
             clients.clear()
         }
 
-        private fun handleMessage(msg: String) {
+        private fun handleMessage(msg: String, relayUrl: String) {
             try {
                 val parsed = json.parseToJsonElement(msg).jsonArray
                 if (parsed.size < 2) return
                 val type = parsed[0].jsonPrimitive.contentOrNull ?: return
                 val sid = parsed[1].jsonPrimitive.contentOrNull ?: return
-                if (type == "EOSE") { onEose?.invoke(sid); return }
+                if (type == "EOSE") { onEose?.invoke(sid, relayUrl); return }
                 if (type != "EVENT" || parsed.size < 3) return
                 val ev = parsed[2].jsonObject
                 val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return

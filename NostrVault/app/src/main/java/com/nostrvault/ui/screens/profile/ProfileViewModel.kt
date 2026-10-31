@@ -122,6 +122,8 @@ class ProfileViewModel @Inject constructor(
         private val COUNT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
         /** How long a profile waits for its relay list before giving up on the outbox. */
         private const val OUTBOX_WAIT_MS = 30_000L
+        /** Spinner cap: two tries of relay list wait + EOSE wait, plus slack. */
+        private const val FIRST_LOAD_CAP_MS = 2 * (ProfileFirstLoad.LIST_WAIT_MS + ProfileFirstLoad.EOSE_WAIT_MS) + 2_000L
     }
 
     /** The Shop tab: this person's marketplace listings. */
@@ -444,13 +446,15 @@ class ProfileViewModel @Inject constructor(
             // loaded (their notes are in seenNoteIds, so they won't come back).
             if (cached.isNotEmpty()) mergeNotes(cached)
 
+            retriedEmpty = false
             startStream(pk)
 
-            // Fallback: stop the spinner after 10s even if no EOSE arrives —
-            // unless a later load (a refresh) has started since.
+            // Fallback: stop the spinner even if no EOSE arrives (relay list
+            // wait + EOSE wait, twice with the retry) — unless a later load
+            // (a refresh) has started since.
             val token = ++loadToken
             launch {
-                delay(10_000)
+                delay(FIRST_LOAD_CAP_MS)
                 if (_pubkey.value == pk && token == loadToken) _isLoading.value = false
             }
         }
@@ -519,31 +523,80 @@ class ProfileViewModel @Inject constructor(
                 }
             }
         }
-        s.onEose = { subId ->
-            // Initial combined REQ finished → drop the spinner. An older
-            // page's EOSE ends that page (see loadOlder).
-            if (subId.startsWith("profile-")) _isLoading.value = false
+        val load = ProfileFirstLoad().also { firstLoad = it }
+        s.onEose = { subId, relayUrl ->
+            // The first page is over once their own relays answered, not on
+            // the vault's instant empty EOSE (see ProfileFirstLoad). An
+            // older page's EOSE ends that page (see loadOlder).
+            if (subId.startsWith("profile-")) settleFirstLoad(pk, load) { it.onEose(relayUrl) }
             olderPage?.onEose(subId)
         }
         stream = s
         _streamOpen.value = true
         s.start()
-        askOutboxWhenKnown(pk, s)
+        askOutboxWhenKnown(pk, s, load)
+    }
+
+    /** The first load in progress; null once it is over. */
+    @Volatile private var firstLoad: ProfileFirstLoad? = null
+    /** Set once an empty first load has been asked again. */
+    @Volatile private var retriedEmpty = false
+
+    /** Applies [step] to [load] and ends the first load if that finished it. */
+    private fun settleFirstLoad(pk: String, load: ProfileFirstLoad, step: (ProfileFirstLoad) -> Unit) {
+        val done = synchronized(load) { step(load); load.isDone() }
+        if (done) finishFirstLoad(pk, load)
     }
 
     /**
-     * Someone far out in the web of trust has no relay list cached, so the
-     * stream never asked their own relays. Fetch their kind 10002 and, when
-     * the outbox arrives, open the same REQ there too.
+     * Their relays answered (or ran out of time). Nothing at all → ask once
+     * more on a fresh stream, which now includes the outbox it found.
      */
-    private fun askOutboxWhenKnown(pk: String, s: NostrService.ProfileStream) {
-        if (!nostrService.outboxRelays.value[pk].isNullOrEmpty()) return
-        nostrService.fetchRelayList(pk)
+    private fun finishFirstLoad(pk: String, load: ProfileFirstLoad) {
+        synchronized(this) {
+            if (firstLoad !== load || _pubkey.value != pk) return
+            firstLoad = null
+        }
+        if (_profileNotes.value.isEmpty() && !retriedEmpty) {
+            retriedEmpty = true
+            stream?.close(); stream = null
+            pageToken++
+            startStream(pk)
+            return
+        }
+        _isLoading.value = false
+    }
+
+    /**
+     * Their own write relays hold their posts. Cached: ask them all now.
+     * Someone far out in the web of trust has no relay list cached, so fetch
+     * their kind 10002 and open the same REQ there when it arrives. None in
+     * [ProfileFirstLoad.LIST_WAIT_MS]: ask the fallback relays, and still add
+     * the outbox if it turns up late.
+     */
+    private fun askOutboxWhenKnown(pk: String, s: NostrService.ProfileStream, load: ProfileFirstLoad) {
+        val listed = { nostrService.outboxRelays.mapNotNull { it[pk]?.take(3)?.takeIf(List<String>::isNotEmpty) } }
         viewModelScope.launch {
-            val outbox = withTimeoutOrNull(OUTBOX_WAIT_MS) {
-                nostrService.outboxRelays.mapNotNull { it[pk]?.takeIf(List<String>::isNotEmpty) }.first()
-            } ?: return@launch
-            if (stream === s) s.addRelays(outbox.take(3))
+            val cached = nostrService.outboxRelays.value[pk].orEmpty().take(3)
+            val outbox = cached.ifEmpty {
+                nostrService.fetchRelayList(pk)
+                withTimeoutOrNull(ProfileFirstLoad.LIST_WAIT_MS) { listed().first() }.orEmpty()
+            }
+            if (stream !== s) return@launch
+            if (outbox.isNotEmpty()) {
+                // profileRelayUrls caps the list, so a cached third outbox may not be open yet.
+                s.addRelays(outbox)
+                settleFirstLoad(pk, load) { it.outboxKnown(outbox) }
+            } else {
+                s.addRelays(ProfileFirstLoad.FALLBACK_RELAYS)
+                settleFirstLoad(pk, load) { it.noOutbox() }
+                launch {
+                    val late = withTimeoutOrNull(OUTBOX_WAIT_MS) { listed().first() } ?: return@launch
+                    if (stream === s) s.addRelays(late)
+                }
+            }
+            delay(ProfileFirstLoad.EOSE_WAIT_MS)
+            finishFirstLoad(pk, load)
         }
     }
 
