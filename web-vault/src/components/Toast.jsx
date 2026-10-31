@@ -16,9 +16,10 @@ const emit = () => { for (const f of listeners) f(toasts) }
 /** The pills on screen now, oldest first. For the tests. */
 export const currentToasts = () => toasts
 
-/** Show or replace the pill for `key`. tone: "accent" (default) | "success" | "error". icon: "heart" | "bolt" | "warn". */
-export function showToast({ key = "feedback", message, icon = "heart", tone = "accent", label, seconds }) {
-  const toast = { key, icon, message, tone, label: label ?? message }
+/** Show or replace the pill for `key`. tone: "accent" (default) | "success" | "error". icon: "heart" | "bolt" | "warn" |
+ *  "repost". `action` ({ label, onClick }): a button in the pill, such as a countdown's Undo; only such a pill takes taps. */
+export function showToast({ key = "feedback", message, icon = "heart", tone = "accent", label, seconds, action }) {
+  const toast = { key, icon, message, tone, label: label ?? message, action: action ?? null }
   toasts = [...toasts.filter(t => t.key !== key), toast]
   clearTimeout(timers.get(key))
   const s = seconds ?? (tone === "error" ? 4 : 2.5)
@@ -49,6 +50,7 @@ function mount() {
 const ICONS = {
   heart: <path d="M12 20.5S3.5 15.3 3.5 9.2A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.5 2.8c0 6.1-8.5 11.3-8.5 11.3z" fill="currentColor" />,
   bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor" />,
+  repost: <path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />,
   warn: <><path d="M12 3 2 21h20z" fill="currentColor" /><path d="M12 10v5M12 18v.01" stroke="#000" stroke-width="2" stroke-linecap="round" /></>,
 }
 
@@ -58,10 +60,11 @@ export function Toasts() {
   return (
     <div class="toasts" aria-live="polite">
       {list.map(t => (
-        <div key={t.key} class={`toast toast-${t.tone}${t.icon === "bolt" && t.tone === "accent" ? " toast-busy" : ""}`}
-          role={t.tone === "error" ? "alert" : "status"} aria-label={t.label}>
+        <div key={t.key} class={`toast toast-${t.tone}${t.icon === "bolt" && t.tone === "accent" ? " toast-busy" : ""}${t.action ? " toast-has-action" : ""}`}
+          role={t.tone === "error" ? "alert" : "status"} aria-label={t.action ? undefined : t.label}>
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">{ICONS[t.icon] ?? ICONS.heart}</svg>
           <span>{t.message}</span>
+          {t.action && <button type="button" class="toast-action" onClick={t.action.onClick}>{t.action.label}</button>}
         </div>
       ))}
     </div>

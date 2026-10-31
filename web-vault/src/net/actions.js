@@ -8,6 +8,7 @@ import { appendClientTag } from "./client-tag.js"
 import { checkSigned } from "./sync.js"
 import { repostInner, repostedId, verifiedCopy } from "./thread.js"
 import { keepDeletedCopy } from "./recently-deleted.js"
+import { sendDelaySeconds, startCountdown } from "./send-delay.js"
 import { defaultReaction } from "./reaction-pref.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
@@ -148,7 +149,7 @@ export async function loadDeletions(ctx) {
 }
 
 // What this account has done to each note: { like, repost } as "busy" | "pending" | "sent" | { error }. "pending" is a
-// like shown before a relay took it. One store, so the same note shown twice (feed and thread) reads the same.
+// like shown before a relay took it, or a repost waiting out its send delay. One store, so the same note shown twice (feed and thread) reads the same.
 const state = new Map()
 const listeners = new Set()
 export const actionState = id => state.get(id) ?? {}
@@ -204,6 +205,28 @@ export async function act(ctx, kind, note, emoji) {
   } catch (e) {
     put(note.id, kind, { error: String(e?.message ?? e) })
   }
+}
+
+/**
+ * A repost after the send delay, as the iPhone's PendingPostManager.startRepost: nothing is signed until the countdown
+ * ends, and cancel() before then leaves nothing signed or sent. While it counts down the repost reads "pending" (a
+ * second tap does nothing). `seconds` 0 (Off) sends at once. `onTick(remaining)` drives the countdown pill.
+ * -> { cancel(): true if it stopped one still counting, done: Promise<"sent" | "failed" | "undone" | "skipped"> }
+ */
+export function repostAfterDelay(ctx, note, { seconds = sendDelaySeconds(), onTick = () => {}, countdown = startCountdown } = {}) {
+  const cur = actionState(note.id).repost
+  if (cur === "busy" || cur === "pending" || cur === "sent") return { cancel: () => false, done: Promise.resolve("skipped") }
+  put(note.id, "repost", "pending")
+  let settle
+  const done = new Promise(r => { settle = r })
+  const timer = countdown({
+    seconds, onTick,
+    onDone: () => {
+      put(note.id, "repost", undefined)
+      act(ctx, "repost", note).then(() => settle(actionState(note.id).repost === "sent" ? "sent" : "failed"))
+    },
+  })
+  return { cancel: () => { if (!timer.cancel()) return false; put(note.id, "repost", cur); settle("undone"); return true }, done }
 }
 
 /** A like shows at once, filled heart or emoji and counted, as on the iPhone (FeedActions.react); signing and the
