@@ -8,6 +8,7 @@ import { feedPostOpen, useFeedSpot } from "../components/feed-tap.js"
 import { FeedModeMenu, FeedToolbar } from "../components/FeedPickerMenu.jsx"
 import { EditFeeds } from "../components/EditFeeds.jsx"
 import { readFeed, syncFeed, FEED_KINDS } from "../net/sync.js"
+import { watchFollowing } from "../net/feed-live.js"
 import { pool, DEFAULT_RELAYS, uniq } from "../net/pool.js"
 import { fetchProfiles } from "../net/profiles.js"
 import { backgroundFill } from "../net/vault-ready.js"
@@ -28,7 +29,6 @@ import { EmptyFollowing, NewPostsPill, OlderButton, PullIndicator, SkeletonRows,
 if (import.meta.env) import("../styles/feeds.css")
 
 const PAGE = 100
-const BACKGROUND_SYNC_MS = 120_000 // new notes from the people you follow, held behind the pill
 const MEDIA_PAGE = 300 // most notes have no media, so Media reads more at a time (the iPhone asks for 300)
 const FEEDS = feedList(READERS)
 const readerFor = mode => READERS.find(r => r.id === mode)
@@ -160,26 +160,27 @@ export function FeedScreen({ ctx }) {
     setNotes(prev => [...(prev ?? []), ...more.filter(m => !prev?.some(n => n.id === m.id))])
     return more.length
   })
-  // Every two minutes while the Feed is on screen, sync quietly and hold what's new behind the pill: the list never
-  // moves under the reader. With Auto-load on and the feed at the top, new notes go straight in (the iPhone's).
+  // While the Feed is on screen, the follows' new notes arrive live (net/feed-live.js), are saved to /feed and wait
+  // behind the pill: the list never moves under the reader. With Auto-load on and the feed at the top, they go straight
+  // in (the iPhone's). A dropped subscription opens again and syncs what it missed.
   const notesNow = useRef(notes)
   notesNow.current = notes
   useEffect(() => {
     if (!following || !follows.length) return
-    const tick = async () => {
-      if (document.hidden || !navigator.onLine || !notesNow.current) return
-      try {
-        await syncFeed(vault, follows, relays, {})
-        markSynced(me, follows)
-        const fresh = newerNotes(notesNow.current, await readFeed(vault, follows, { limit: PAGE }))
-        if (!fresh.length) return
-        if (filters.autoLoad && scrollY < 80 && !feedPostOpen()) setNotes(prev => [...fresh, ...(prev ?? [])])
-        else setPending(fresh)
-      } catch {}
+    const show = async () => {
+      if (!notesNow.current) return // the first read is still coming and will have them
+      const fresh = newerNotes(notesNow.current, await readFeed(vault, follows, { limit: PAGE }))
+      if (!fresh.length) return
+      if (filters.autoLoad && scrollY < 80 && !feedPostOpen()) setNotes(prev => [...fresh, ...(prev ?? [])])
+      else setPending(fresh)
     }
-    const t = setInterval(tick, BACKGROUND_SYNC_MS)
-    t.unref?.() // node (the tests) only: a timer must not keep the process up
-    return () => clearInterval(t)
+    const catchUp = async () => {
+      if (!navigator.onLine) return
+      try { await syncFeed(vault, follows, relays, {}); markSynced(me, follows); await show() } catch {}
+    }
+    const close = watchFollowing({ vault, follows, relays, onNotes: () => show().catch(() => {}), onReopen: catchUp })
+    globalThis.addEventListener?.("online", catchUp)
+    return () => { close(); globalThis.removeEventListener?.("online", catchUp) }
   }, [following, follows.length, filters.autoLoad])
   const showPending = () => { setNotes(prev => [...pending, ...(prev ?? [])]); setPending([]); scrollTo({ top: 0, behavior: "smooth" }) }
 
