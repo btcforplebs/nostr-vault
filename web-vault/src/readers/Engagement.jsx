@@ -4,6 +4,7 @@
 import { useEffect, useState } from "preact/hooks"
 import { Avatar } from "../components/Avatar.jsx"
 import { AuthorName } from "../components/NoteCard.jsx"
+import { NoteText } from "../components/NoteText.jsx"
 import { useBlocks } from "../components/useBlocks.js"
 import { ago } from "../components/time.js"
 import { formatSats } from "../net/notifications.js"
@@ -84,7 +85,8 @@ export function EngagementView({ article, events }) {
             onKeyDown={e => { if (e.key === "Enter") location.hash = `#/thread/${c.id}` }}>
             <div class="reader-byline muted small"><a href={`#/profile/${c.pubkey}`} class="reader-author"><Avatar pubkey={c.pubkey} size={20} /><AuthorName pubkey={c.pubkey} /></a>
               <time datetime={new Date(c.created_at * 1000).toISOString()}>{ago(c.created_at)}</time></div>
-            <p class="reader-comment-text">{String(c.content ?? "").trim()}</p>
+            {/* Names and links, as ArticleCommentRow's NostrContentFormatter; a stranger's quotes and names stay in memory. */}
+            <div class="reader-comment-text"><NoteText content={String(c.content ?? "").trim()} tags={c.tags} author={c.pubkey} memoryOnly /></div>
             {t.replyCounts.get(c.id) > 0 && <span class="muted small">{plural(t.replyCounts.get(c.id), "reply", "replies")}</span>}
           </div>
         ))}

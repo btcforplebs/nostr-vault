@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { transformSync } from "rolldown/utils"
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure"
+import { npubEncode } from "nostr-tools/nip19"
 import * as en from "../src/readers/engagement.js"
 
 registerHooks({
@@ -128,7 +129,7 @@ const walk = (node, out = []) => {
   if (Array.isArray(node)) { node.forEach(x => walk(x, out)); return out }
   if (typeof node !== "object") { out.push(String(node)); return out }
   out.push(node)
-  if (["AuthorName", "Avatar"].includes(node.type?.name)) return out // hooks
+  if (["AuthorName", "Avatar", "Mention"].includes(node.type?.name)) return out // hooks
   if (typeof node.type === "function") walk(node.type(node.props), out)
   else walk(node.props?.children, out)
   return out
@@ -153,6 +154,17 @@ test("the section: counts, highlights with their comment, comments with reply co
   assert.match(t, /Comments · 2/)
   assert.match(t, /Great read/)
   assert.match(t, /1 reply/)
+})
+
+test("comment text is drawn as a note's is: nostr:npub becomes the person's name, links stay links", () => {
+  const now = Math.floor(Date.now() / 1000) - 1000
+  const npub = npubEncode("b".repeat(64))
+  const c = ev(1111, [["a", COORD]], { content: `Agree with nostr:${npub} see https://example.com/post`, at: now })
+  const nodes = walk(EngagementView({ article, events: [c] }))
+  const t = nodes.filter(x => typeof x === "string").join("")
+  assert.doesNotMatch(t, /nostr:npub/)
+  assert.ok(nodes.some(x => x?.type?.name === "Mention" && x.props.pubkey === "b".repeat(64)))
+  assert.ok(nodes.some(x => x?.type === "a" && x.props.href === "https://example.com/post"))
 })
 
 test("nothing yet says so; the section offers no like, comment or zap button (read-only)", () => {
