@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -67,8 +68,12 @@ func clientFromProxy(r *http.Request) *http.Request {
 	}
 	parts := strings.Split(xff, ",")
 	client := "0.0.0.0"
-	if ip := net.ParseIP(strings.TrimSpace(parts[len(parts)-1])); ip != nil {
-		client = ip.String()
+	// netip, not net.ParseIP: a link-local IPv6 client arrives zoned
+	// (fe80::1%eth0), which ParseIP refuses, and every such client would
+	// share the 0.0.0.0 bucket. The zone is dropped: it names our interface,
+	// not the client.
+	if ip, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
+		client = ip.WithZone("").Unmap().String()
 	}
 	out := r.WithContext(r.Context())
 	out.Header = r.Header.Clone()
