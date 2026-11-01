@@ -50,6 +50,9 @@ final class DockHoldMenu: ObservableObject {
     /// Rows in menu order. The overlay draws them bottom-up, so the first one
     /// sits right above the finger.
     @Published private(set) var entries: [DockHoldEntry] = []
+    /// Centered on screen and growing up from the middle (the account
+    /// picker, Logen 2026-11-01); otherwise on its tab's side of the screen.
+    @Published private(set) var centered = false
     /// Each row's frame, global coordinates.
     var rowFrames: [String: CGRect] = [:]
     private var onPick: ((String) -> Void)?
@@ -60,8 +63,9 @@ final class DockHoldMenu: ObservableObject {
         }?.key
     }
 
-    func open(from anchor: CGRect, entries: [DockHoldEntry], onPick: @escaping (String) -> Void) {
+    func open(from anchor: CGRect, entries: [DockHoldEntry], centered: Bool = false, onPick: @escaping (String) -> Void) {
         self.anchor = anchor
+        self.centered = centered
         self.entries = entries
         self.onPick = onPick
         rowFrames = [:]
@@ -90,6 +94,8 @@ struct DockHoldButton<Label: View>: View {
     let onTap: () -> Void
     let entries: () -> [DockHoldEntry]
     let onPick: (String) -> Void
+    /// Draw the menu centered on screen instead of on the tab's side.
+    var centered = false
     @ViewBuilder let label: () -> Label
 
     @ObservedObject private var menu = DockHoldMenu.shared
@@ -161,7 +167,7 @@ struct DockHoldButton<Label: View>: View {
         openedHere = true
         openHaptic?.impactOccurred()
         tickHaptic?.prepare()
-        menu.open(from: frame, entries: entries(), onPick: onPick)
+        menu.open(from: frame, entries: entries(), centered: centered, onPick: onPick)
     }
 
     private func ended(_ value: DragGesture.Value) {
@@ -194,7 +200,8 @@ struct DockHoldButton<Label: View>: View {
 // MARK: - Overlay
 
 /// The open menu, drawn over the whole screen so it can rise above the bar.
-/// It lines up with the side of the screen its tab is on.
+/// It lines up with the side of the screen its tab is on, or sits centered
+/// and grows up from the middle when the menu asks for it.
 struct DockHoldMenuOverlay: View {
     @ObservedObject private var menu = DockHoldMenu.shared
 
@@ -202,7 +209,8 @@ struct DockHoldMenuOverlay: View {
         GeometryReader { geo in
             let space = geo.frame(in: .global)
             let trailing = menu.anchor.midX > space.midX
-            let alignment: Alignment = trailing ? .bottomTrailing : .bottomLeading
+            let alignment: Alignment = menu.centered ? .bottom : (trailing ? .bottomTrailing : .bottomLeading)
+            let grow: UnitPoint = menu.centered ? .bottom : (trailing ? .bottomTrailing : .bottomLeading)
             ZStack(alignment: alignment) {
                 if menu.isOpen {
                     Color.black.opacity(0.28)
@@ -212,11 +220,11 @@ struct DockHoldMenuOverlay: View {
                         .transition(.opacity)
 
                     list
-                        .padding(.leading, trailing ? 12 : max(12, menu.anchor.minX - space.minX))
-                        .padding(.trailing, trailing ? max(12, space.maxX - menu.anchor.maxX) : 12)
+                        .padding(.leading, menu.centered || trailing ? 12 : max(12, menu.anchor.minX - space.minX))
+                        .padding(.trailing, !menu.centered && trailing ? max(12, space.maxX - menu.anchor.maxX) : 12)
                         .padding(.bottom, max(12, space.maxY - menu.anchor.minY + 10))
                         .transition(
-                            .scale(scale: 0.6, anchor: trailing ? .bottomTrailing : .bottomLeading)
+                            .scale(scale: 0.6, anchor: grow)
                                 .combined(with: .opacity)
                         )
                 }
