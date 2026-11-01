@@ -141,23 +141,22 @@ extension NostrService {
             }
             .store(in: &cancellables)
 
+        // The .disconnected a new client publishes before .connecting is not
+        // a close: taking it for one threw every first batch away.
+        var watch = ProfileLookupBatch.OpenWatch()
         client.$connectionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak client] state in
                 guard let self, let client else { return }
-                switch state {
-                case .connected:
+                if state == .connected {
                     for batch in self.profileLookupPending.removeValue(forKey: key) ?? [] {
                         self.sendProfileRequest(to: client, pubkeys: batch)
                     }
-                case .disconnected, .error:
-                    // Only forget it if it is still the socket on file.
-                    if self.profileLookupClients[key] === client {
-                        self.profileLookupClients.removeValue(forKey: key)
-                        self.profileLookupPending.removeValue(forKey: key)
-                    }
-                case .connecting:
-                    break
+                }
+                // Only forget it if it is still the socket on file.
+                if watch.isClosed(state.lookupState), self.profileLookupClients[key] === client {
+                    self.profileLookupClients.removeValue(forKey: key)
+                    self.profileLookupPending.removeValue(forKey: key)
                 }
             }
             .store(in: &cancellables)
@@ -222,7 +221,14 @@ extension NostrService {
     }
 
 
+    /// One REQ per `ProfileLookupBatch.authorsPerRequest` authors.
     private func sendProfileRequest(to client: WebSocketClient, pubkeys: [String]) {
+        for chunk in ProfileLookupBatch.chunks(pubkeys) {
+            sendProfileChunk(to: client, pubkeys: chunk)
+        }
+    }
+
+    private func sendProfileChunk(to client: WebSocketClient, pubkeys: [String]) {
         let subscriptionId = "meta-\(UUID().uuidString.prefix(8))"
         let filter: [String: Any] = [
             "kinds": [0, 10002, 10050, 10000, 10063],
@@ -239,6 +245,17 @@ extension NostrService {
             DispatchQueue.main.asyncAfter(deadline: .now() + RelayRequestBudget.profileSubscriptionSeconds) { [weak client] in
                 client?.send(text: "[\"CLOSE\",\"\(subscriptionId)\"]")
             }
+        }
+    }
+}
+
+private extension WebSocketClient.ConnectionState {
+    var lookupState: ProfileLookupBatch.SocketState {
+        switch self {
+        case .disconnected: return .disconnected
+        case .connecting: return .connecting
+        case .connected: return .connected
+        case .error: return .error
         }
     }
 }

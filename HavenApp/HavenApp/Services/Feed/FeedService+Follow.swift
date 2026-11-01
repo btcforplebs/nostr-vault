@@ -110,8 +110,6 @@ extension FeedService {
             DispatchQueue.main.async { fail(nil) }
             return
         }
-        // The key has a list now; from here on its load must find it.
-        FreshAccountKeys.clear(ConfigService.shared.activeAccountHexPubkey)
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a
         // stale relay copy and drop the edit we're about to publish.
@@ -123,6 +121,10 @@ extension FeedService {
             return
         }
         let owner = ConfigService.shared.activeAccountHexPubkey
+        // A key setup made here has no list anywhere yet. Read now, cleared
+        // only once a list is signed: clearing it before a publish that then
+        // failed made every retry wait on every relay (Android FeedServiceFollow).
+        let fresh = FreshAccountKeys.isFresh(owner)
         // One at a time, so a second tap builds on the first one's list.
         let previousPublish = Self.contactListPublishTail
         let publish = Task { @MainActor [weak self] in
@@ -135,7 +137,9 @@ extension FeedService {
                 kind: 3, for: owner, alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers, skipAhead: true)
             guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(nil); return }
             let base: (tags: [[String]], content: String, createdAt: Int64)
-            switch ListMerge.editBase(lookup, held: Self.lastSignedContactList[owner], own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at }) {
+            let held = Self.lastSignedContactList[owner]
+            let found = ListMerge.editBase(lookup, held: held, own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at })
+            switch ListMerge.freshKeyBase(found, fresh: fresh, lookup: lookup, held: held, createdAt: { $0.created_at }) {
             case .noRelayList:
                 // onFailure's message says why (ContactManager.publishFailedMessage).
                 fail(nil)
@@ -167,6 +171,8 @@ extension FeedService {
                 return
             }
             Self.lastSignedContactList[owner] = event
+            // The key has a list now; from here on its load must find it.
+            FreshAccountKeys.clear(owner)
             // What went out is now the list, unless another tap is already on screen.
             if self.contactListPTags == attempted {
                 let parsed = ContactManager.parseContactList(pTags: tags.filter { $0.count >= 2 && $0[0] == "p" })
