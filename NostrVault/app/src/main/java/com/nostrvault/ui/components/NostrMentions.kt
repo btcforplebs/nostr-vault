@@ -56,11 +56,15 @@ object NostrMentions {
      * of reading the whole profile map, which is what makes a feed row's
      * profile lookups narrowable to that row.
      */
-    fun mentionedPubkeys(content: String): List<String> =
+    fun mentionedPubkeys(content: String): List<String> = mentionCache.getOrPut(content) {
         MENTION_REGEX.findAllOnce(BareNostrRefs.prefixBare(content))
             .mapNotNull { resolvePubkey(it.groupValues[1]) }
             .distinct()
             .toList()
+    }
+
+    /** Asked 2–3 times per row as it appears; once per text instead ([TextParseCache]). */
+    private val mentionCache = TextParseCache<String, List<String>>(TextParseCache.NOTES)
 
     /** Display label for a mention: the profile's best name, else a short pubkey. */
     private fun displayName(pubkey: String, profiles: Map<String, FeedProfile>): String =
