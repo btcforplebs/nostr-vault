@@ -4,6 +4,7 @@
 // sent (replies, mentions, quotes, reposts, likes, zaps, follows) is read from the user's relays and kept in Haven's
 // inbox route when it takes them, so the list still shows after a reload or offline. Nothing here signs.
 import { pool, uniq } from "./pool.js"
+import { settleWatch } from "./settle-early.js"
 import { MAX_SKEW } from "./follows.js"
 import { groupNotifications, replyTarget, reactionEmoji, zapRequest, zapSats, isOutside } from "./notifications.js"
 import { isMutedNote } from "./blocks.js"
@@ -305,18 +306,21 @@ async function storeEach(route, evs) {
 /**
  * Asks each relay on its own and hands each answer to `on` as it lands, so one slow relay never holds the list
  * back (one querySync over all of them waited ~8.5 s for the slowest). An event a faster relay already handed on is
- * dropped by id. Rejects only when every relay failed. -> every event handed on, once all have answered
+ * dropped by id. Rejects only when every relay failed. `onSettled` is called once enough relays have answered, even
+ * with nothing (settle-early.js), so an empty list needn't wait for the slowest. -> every event handed on, once all
+ * have answered
  */
-export async function eachRelay(relays, filter, on = () => {}, { maxWait = 8000, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+export async function eachRelay(relays, filter, on = () => {}, { maxWait = 8000, query = (r, f, o) => pool.querySync(r, f, o), onSettled } = {}) {
   const seen = new Set(), all = [], urls = uniq(relays)
+  const watch = onSettled ? settleWatch(urls.length, onSettled) : null // settle-early.js: empty answers count too
   let failed = 0, last
   await Promise.all(urls.map(async url => {
     let evs
-    try { evs = await query([url], filter, { maxWait }) } catch (e) { failed++; last = e; return }
+    try { evs = await query([url], filter, { maxWait }) } catch (e) { failed++; last = e; watch?.failed(); return }
     const fresh = evs.filter(e => e && !seen.has(e.id) && seen.add(e.id))
-    if (!fresh.length) return
-    all.push(...fresh)
-    await on(fresh)
+    // An answer counts once it has been handed on, so a settled screen already shows what that relay sent.
+    if (fresh.length) { all.push(...fresh); await on(fresh) }
+    watch?.answered()
   }))
   if (urls.length && failed === urls.length) throw last
   return all
@@ -330,7 +334,7 @@ const isZap = e => e.kind === 9735
  * service), so a forged one is never drawn or kept. A receipt that can't be checked now is drawn, not kept: the
  * screen checks it again. -> events
  */
-export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs, on = () => {}, query } = {}) {
+export async function fetchInbound(vault, me, relays, { limit = 200, since, trust = async evs => evs, on = () => {}, query, onSettled } = {}) {
   const keep = evs => vault.inbox ? storeEach(vault.inbox, evs) : null
   const evs = await eachRelay(relays, { kinds: INBOUND_KINDS, "#p": [me], limit, ...sinceOf(since) }, async fresh => {
     const rest = fresh.filter(e => !isZap(e)), zaps = fresh.filter(isZap)
@@ -338,7 +342,7 @@ export async function fetchInbound(vault, me, relays, { limit = 200, since, trus
     if (!zaps.length) return
     const checked = await trust(zaps).then(ok => ({ ok, sure: true }), () => ({ ok: zaps, sure: false }))
     if (checked.ok.length) { on(checked.ok); if (checked.sure) await keep(checked.ok) }
-  }, { query })
+  }, { query, onSettled })
   return dedupe(evs)
 }
 
@@ -346,16 +350,20 @@ export async function fetchInbound(vault, me, relays, { limit = 200, since, trus
  * The user's own reactions and highlights from the network into Haven's outbox: Import Notes (sync.js syncOwn) only
  * brings notes and articles, and a like made on the phone never passes through this page. -> stored
  */
-export async function fetchOwnExtras(vault, me, relays, { limit = 200, since } = {}) {
-  const evs = await pool.querySync(relays, { kinds: [7, HIGHLIGHT_KIND], authors: [me], limit, ...sinceOf(since) }, { maxWait: 8000 })
-  return (await storeEach(vault.outbox, evs)).filter(r => r.ok).length
+export async function fetchOwnExtras(vault, me, relays, { limit = 200, since, query, onSettled } = {}) {
+  let stored = 0
+  // Each relay's answer is kept as it lands, so `onSettled` (settle-early.js) finds Haven holding what came so far.
+  await eachRelay(relays, { kinds: [7, HIGHLIGHT_KIND], authors: [me], limit, ...sinceOf(since) }, async evs => {
+    stored += (await storeEach(vault.outbox, evs)).filter(r => r.ok).length
+  }, { query, onSettled })
+  return stored
 }
 
 /** Kind 3 lists naming the user, from the network, each relay's handed to `on` as it lands (compactLists). */
-export async function fetchFollowerLists(me, relays, { limit = 500, since, on = () => {}, query } = {}) {
+export async function fetchFollowerLists(me, relays, { limit = 500, since, on = () => {}, query, onSettled } = {}) {
   // `followedAt` is this browser's own note (mergeLists): a relay can add any key to an event's JSON, and the
   // signature does not cover it.
-  return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs.map(({ followedAt, ...ev }) => ev), me)), { query })
+  return eachRelay(relays, { kinds: [3], "#p": [me], limit, ...sinceOf(since) }, evs => on(compactLists(evs.map(({ followedAt, ...ev }) => ev), me)), { query, onSettled })
 }
 
 /** Zap receipts whose request the user signed (NIP-57 `P` tag), from the network, each relay's handed to `on` once
@@ -372,17 +380,20 @@ export async function fetchGivenZaps(me, relays, { limit = 100, since, trust = a
  * once, every relay on its own. Each answer is handed to `on` as it lands (`on.inbound`, `on.lists` and `on.given`
  * may be called once per relay), so the list on screen draws from the first answer and never waits on the slowest:
  * checking zaps given resolves every payee's zap service, ~20 s for 60 payees. `on.own` is called once, after the
- * user's own likes and highlights are in Haven. `since` asks only for what came after it. -> once all are done,
+ * user's own likes and highlights are in Haven. `on.settled(kind)` ("inbound", "lists", "own") is called once
+ * enough relays answered that kind, even with nothing (settle-early.js), so an empty mode needn't wait on the
+ * slowest relay; zaps given still wait for every payee check. `since` asks only for what came after it. -> once all are done,
  * the first error, or null
  */
 export async function fetchVault(vault, me, relays, { trust = async evs => evs, on = {}, fetchers = {}, since } = {}) {
   const f = { fetchInbound, fetchFollowerLists, fetchGivenZaps, fetchOwnExtras, ...fetchers }
   const hand = cb => evs => { if (evs?.length) cb?.(evs) }
+  const settled = kind => () => on.settled?.(kind)
   const results = await Promise.allSettled([
-    f.fetchInbound(vault, me, relays, { trust, since, on: hand(on.inbound) }),
-    f.fetchFollowerLists(me, relays, { since, on: hand(on.lists) }).catch(() => []),
+    f.fetchInbound(vault, me, relays, { trust, since, on: hand(on.inbound), onSettled: settled("inbound") }),
+    f.fetchFollowerLists(me, relays, { since, on: hand(on.lists), onSettled: settled("lists") }).catch(() => []),
     f.fetchGivenZaps(me, relays, { since, trust, on: hand(on.given) }).catch(() => []),
-    f.fetchOwnExtras(vault, me, relays, { since }).catch(() => 0).then(n => on.own?.(n)),
+    f.fetchOwnExtras(vault, me, relays, { since, onSettled: settled("own") }).catch(() => 0).then(n => on.own?.(n)),
   ])
   return results.find(r => r.status === "rejected")?.reason ?? null
 }

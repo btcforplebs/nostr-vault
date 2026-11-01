@@ -55,7 +55,9 @@ const src = readFileSync(new URL("../src/screens/BlossomGallery.jsx", import.met
 test("every tile shows how many servers hold it; the iPhone's loading and empty wording", () => {
   assert.match(src, /\{servers\.length > 0 && <span class="blossom-badge"/)
   for (const w of ["Loading media…", "No media found", "Try changing your filter settings"]) assert.ok(src.includes(w), w)
-  assert.match(src, /found\.blobs\.length > 0 && <p class="muted small">Try changing your filter settings/)
+  assert.match(src, /found\.blobs\.length > 0 \? <p class="muted small">Try changing your filter settings/)
+  // No files at all: the reason when a server didn't list them (a read-only sign-in can't sign the list request).
+  assert.match(src, /: why && <p class="muted small">\{why\}<\/p>/)
 })
 
 test("the Vault's Refresh asks the media servers again", () => {

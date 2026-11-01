@@ -113,14 +113,23 @@ export async function syncFeed(vault, follows, relays, { onProgress = () => {}, 
 /** How many groups of 250 follows syncFeed asks the relays for at once: one REQ each per relay. */
 export const FEED_CHUNKS_AT_ONCE = 3
 
-/** The user's own notes and articles from their write relays into Haven's outbox route. */
-export async function syncOwn(vault, pubkey, relays) {
+/**
+ * The user's own notes and articles from their write relays into Haven's outbox route. Each relay is asked on its
+ * own and its answer kept as it lands, then `on()` is called when it brought something new, so Profile draws the
+ * notes from the first relay instead of after the slowest (10 s vs 1.4 s for someone else's, Ted's web sweep
+ * 2026-11-01). -> how many were stored
+ */
+export async function syncOwn(vault, pubkey, relays, { on, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
+  let stored = 0
+  const ask = filter => Promise.all(uniq(relays).map(async url => {
+    const evs = await query([url], filter, { maxWait: 8000 }).catch(() => [])
+    const n = evs.length ? await storeAll(vault.outbox, evs) : 0
+    stored += n
+    if (n) await on?.()
+  }))
   // Articles get their own filter: with one shared limit, a busy account's notes fill it and no article comes back.
-  const [notes, articles] = await Promise.all([
-    pool.querySync(relays, { kinds: [1], authors: [pubkey], limit: 300 }, { maxWait: 8000 }),
-    pool.querySync(relays, { kinds: [30023], authors: [pubkey], limit: 50 }, { maxWait: 8000 }),
-  ])
-  return storeAll(vault.outbox, [...notes, ...articles])
+  await Promise.all([ask({ kinds: [1], authors: [pubkey], limit: 300 }), ask({ kinds: [30023], authors: [pubkey], limit: 50 })])
+  return stored
 }
 
 /** The phone's Import window and default start date: haven-go/import.go importOwnerNotes, HavenConfig.importStartDate. */

@@ -155,6 +155,9 @@ export function VaultScreen({ ctx, desk = false }) {
       lists: l => { arrive("lists", l); setListsFetched(true) },
       given: g => { setGiven(prev => merge(prev, g)); setGivenFetched(true) },
       own: async () => { const fresh = await readOwn(vault, me).catch(() => []); setOwn(prev => merge(prev, fresh)); setOwnFetched(true) },
+      // Enough relays answered, maybe with nothing: an empty mode says so now, not after the slowest (a new account).
+      settled: kind => kind === "inbound" ? setFetched(true) : kind === "lists" ? setListsFetched(true)
+        : kind === "own" && readOwn(vault, me).catch(() => []).then(fresh => { setOwn(prev => merge(prev, fresh)); setOwnFetched(true) }),
     } })
     setStatus(err ? `Couldn't reach your relays (${err?.message ?? err})` : "")
     settled()

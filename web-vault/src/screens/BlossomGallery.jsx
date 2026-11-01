@@ -4,6 +4,7 @@
 // it, and Delete from mirrors (every media server, any other that listed it and the server in its link, after asking). "In your notes" keeps the pictures your notes carry.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
+import { emptyMediaReason } from "../net/media-empty-reason.js"
 import { mediaServers } from "../net/upload.js"
 import { BlossomStats } from "./BlossomStats.jsx"
 import { BlossomUpload } from "./BlossomUpload.jsx"
@@ -83,6 +84,7 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
 
   if (!found || (!found.done && !found.blobs.length)) return <><Waiting>Loading media…</Waiting><SkeletonGrid count={12} gridClass="vault-grid" tileClass="vault-thumb blossom-tile" label="Asking your media servers" /></>
   const blobs = found.blobs.filter(TYPE_FILTERS[filter] ?? TYPE_FILTERS.all)
+  const why = found.done && !found.blobs.length ? emptyMediaReason({ servers, status: found.status, readOnly: !!ctx.signer?.readOnly }) : ""
   const groups = sections(blobs, sort)
   const order = groups.flatMap(g => g.blobs) // the viewer steps through the grid's order
   const current = found.blobs.find(b => b.sha256 === open)
@@ -99,7 +101,8 @@ export function BlossomGallery({ ctx, filter = "all", refreshes = 0 }) {
           </select>
         </label>
       )}
-      {!blobs.length ? <div class="empty"><p><strong>No media found</strong></p>{found.blobs.length > 0 && <p class="muted small">Try changing your filter settings</p>}</div>
+      {!blobs.length ? <div class="empty"><p><strong>No media found</strong></p>{found.blobs.length > 0 ? <p class="muted small">Try changing your filter settings</p>
+        : why && <p class="muted small">{why}</p>}</div>
         : groups.map(g => (
         <section key={g.day || "all"}>
           {g.day && <div class="section-label blossom-day">{g.day}</div>}
