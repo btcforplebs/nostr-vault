@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The live preview of the note. On a phone the keyboard owns the bottom
-/// half, so Write and Preview take turns (a toggle in the title bar) rather
+/// half, so writing and the preview take turns (one button beside Post) rather
 /// than sharing the screen; on the Mac, and an iPad sheet wide enough, the
 /// preview sits beside the editor.
 extension ComposeView {
@@ -73,21 +73,22 @@ extension ComposeView {
     }
 
     #if os(iOS)
-    /// Write | Preview, in the title bar so it takes no room from the text.
-    var writePreviewToggle: some View {
-        Picker("Mode", selection: Binding(
-            get: { showingPreview },
-            set: { preview in
-                showingPreview = preview
-                isEditorFocused = !preview
-            }
-        )) {
-            Text("Write").tag(false)
-            Text("Preview").tag(true)
+    /// One Preview button in the title bar. Tapping it shows the note as it
+    /// will post; tapping it again (now "Edit") goes back to typing. It sits
+    /// beside Post, so the bar holds Cancel and drafts on the left and
+    /// Preview and Post on the right without overlapping on a phone.
+    var previewButton: some View {
+        Button {
+            showingPreview.toggle()
+            isEditorFocused = !showingPreview
+        } label: {
+            Text(showingPreview ? "Edit" : "Preview")
+                .fontWeight(.semibold)
+                .foregroundColor(.havenPurple)
+                .lineLimit(1)
+                .fixedSize()
         }
-        .pickerStyle(.segmented)
-        .frame(width: 180)
-        .accessibilityLabel("Write or preview")
+        .accessibilityLabel(showingPreview ? "Edit note" : "Preview note")
     }
     #endif
 }
