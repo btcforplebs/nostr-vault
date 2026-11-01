@@ -34,6 +34,10 @@ struct NoteSplitPane<Content: View>: View {
     /// Placeholder shown in the detail column before anything is selected.
     let emptyTitle: String
     let emptyMessage: String
+    /// Two columns are allowed (iPad landscape). When false the pane shows one
+    /// column, a selected note covering the list, but stays the same view, so
+    /// rotating never rebuilds the tab or drops a sheet opened inside it.
+    var allowsTwoColumns: Bool = true
     @ViewBuilder var content: () -> Content
 
     @StateObject private var selection = NoteDetailSelection()
@@ -66,12 +70,12 @@ struct NoteSplitPane<Content: View>: View {
             let maxListWidth = max(NoteSplitMetrics.minList, geo.size.width - NoteSplitMetrics.minDetail)
             let width = min(max(listWidth, NoteSplitMetrics.minList), maxListWidth)
 
-            // Too narrow for two columns (a narrow window):
+            // Portrait, or too narrow for two columns (a narrow window):
             // the list fills the pane and a selected note covers it, with
             // Back to return, the way the phone pushes one. The list keeps
             // its place in the hierarchy either way, so crossing the width
             // keeps its scroll position and the open note.
-            let singleColumn = geo.size.width < NoteSplitMetrics.minSplit
+            let singleColumn = !allowsTwoColumns || geo.size.width < NoteSplitMetrics.minSplit
             let showsDetailColumn = !singleColumn && !detailHidden
 
             HStack(spacing: 0) {
