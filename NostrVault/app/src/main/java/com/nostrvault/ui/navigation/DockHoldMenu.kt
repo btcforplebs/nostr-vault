@@ -152,10 +152,20 @@ class DockHoldMenu<T> {
 
 /** The numbers PR #1505 set on iOS, in Android units. */
 object DockHold {
-    /** Hold before the menu opens: a tap lifts sooner; anything longer is a hold (Logen 11-01). */
-    const val HOLD_MS = 100L
-    /** A slide this far while pressed opens the menu at once, without waiting for the hold. */
+    /** Hold before the menu opens (iOS holdDelay, #1516). */
+    const val HOLD_MS = 120L
+    /** A slide this far from touch-down while pressed opens the menu at once (iOS slideOpen). */
     val OPEN_SLIDE = 6.dp
+    /**
+     * A slow tap the hold opened the menu under: let go within this, on the
+     * button, never having slid or reached a row, and it is still a tap
+     * (iOS tapGrace).
+     */
+    const val TAP_GRACE_MS = 300L
+
+    /** Letting go with the menu open and no row under the finger: the button's tap, or nothing. */
+    fun graceTap(heldMs: Long, slid: Boolean, visitedRow: Boolean, onButton: Boolean): Boolean =
+        !slid && !visitedRow && onButton && heldMs < TAP_GRACE_MS
     /** Row hit area: the row plus this either side, and 1 dp up and down. */
     val ROW_SLACK_X = 28.dp
     val ROW_SLACK_Y = 1.dp
@@ -251,22 +261,32 @@ internal fun <T> Modifier.dockHold(
 
         // Held, or slid: open, and track the finger from this frame on.
         DockHold.perform(view, DockHold.Haptic.OPEN)
-        menu.open(coordinates()?.boundsInRoot() ?: Rect.Zero)
+        val button = coordinates()?.boundsInRoot() ?: Rect.Zero
+        menu.open(button)
+        var slid = early == DockHold.Early.OPEN
+        var visitedRow = false
         var last = toRoot(at)
+        var upAt = down.uptimeMillis
         menu.track(last, slackX, slackY)
+        visitedRow = menu.hovered != null
         while (true) {
             val ev = awaitPointerEvent()
             val change = ev.changes.firstOrNull { it.id == down.id } ?: break
             change.consume()
             last = toRoot(change.position)
+            upAt = change.uptimeMillis
+            if ((change.position - down.position).getDistance() >= openPx) slid = true
             if (!change.pressed) break
             if (menu.track(last, slackX, slackY)) DockHold.perform(view, DockHold.Haptic.ROW)
+            if (menu.hovered != null) visitedRow = true
         }
         val picked = menu.itemAt(last, slackX, slackY)
         menu.close()
         if (picked != null) {
             DockHold.perform(view, DockHold.Haptic.PICK)
             onPick(picked)
+        } else if (DockHold.graceTap(upAt - down.uptimeMillis, slid, visitedRow, button.contains(last))) {
+            onTap()
         }
     }
 }
@@ -282,6 +302,8 @@ data class DockHoldRow(
     val hasNews: Boolean = false,
     /** An account row: its pubkey and picture, drawn in place of [icon]. */
     val avatar: Pair<String, String?>? = null,
+    /** A second, smaller line (an account's short npub); the row grows to 50 dp. */
+    val subtitle: String? = null,
 )
 
 /**
@@ -392,7 +414,7 @@ private fun DockHoldMenuRow(
             .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
             .scale(scale)
             .width(210.dp)
-            .height(42.dp)
+            .height(if (spec.subtitle == null) 42.dp else 50.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(if (hovered) accent else Color.Transparent)
             .clickable(onClick = onClick)
@@ -418,15 +440,19 @@ private fun DockHoldMenuRow(
             }
         }
         Spacer(Modifier.width(10.dp))
-        Text(
-            text = spec.label,
-            color = tint,
-            fontSize = 16.sp,
-            fontWeight = if (spec.current) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                text = spec.label,
+                color = tint,
+                fontSize = 16.sp,
+                fontWeight = if (spec.current) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            spec.subtitle?.let {
+                Text(it, color = tint.copy(alpha = 0.7f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
         if (spec.current) {
             Spacer(Modifier.width(16.dp))
             Icon(NostrVaultIcons.Check, contentDescription = "Showing now", tint = tint, modifier = Modifier.size(13.dp))

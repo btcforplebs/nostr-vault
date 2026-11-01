@@ -12,8 +12,9 @@ import org.junit.Test
 class DockHoldTest {
 
     @Test fun `numbers match iOS`() {
-        assertEquals(100L, DockHold.HOLD_MS)
+        assertEquals(120L, DockHold.HOLD_MS)
         assertEquals(6f, DockHold.OPEN_SLIDE.value)
+        assertEquals(300L, DockHold.TAP_GRACE_MS)
         assertEquals(28f, DockHold.ROW_SLACK_X.value)
         assertEquals(1f, DockHold.ROW_SLACK_Y.value)
         assertEquals(0.94f, DockHold.PRESSED_SCALE)
@@ -60,6 +61,22 @@ class DockHoldTest {
         menu.listed = listOf(VaultMode.NOTES)
         assertNull(menu.itemAt(Offset(700f, 950f), 56f, 2f))
         assertEquals(VaultMode.NOTES, menu.itemAt(Offset(700f, 890f), 56f, 2f))
+    }
+
+    @Test fun `a slow tap the hold opened the menu under is still a tap`() {
+        assertEquals(true, DockHold.graceTap(heldMs = 200, slid = false, visitedRow = false, onButton = true))
+    }
+
+    @Test fun `past the grace, or after a slide, a row, or off the button, it cancels`() {
+        assertEquals(false, DockHold.graceTap(heldMs = 300, slid = false, visitedRow = false, onButton = true))
+        assertEquals(false, DockHold.graceTap(heldMs = 200, slid = true, visitedRow = false, onButton = true))
+        assertEquals(false, DockHold.graceTap(heldMs = 200, slid = false, visitedRow = true, onButton = true))
+        assertEquals(false, DockHold.graceTap(heldMs = 200, slid = false, visitedRow = false, onButton = false))
+    }
+
+    @Test fun `account rows carry a short npub`() {
+        assertEquals("npub1jak…c35y", shortAccountNpub("npub1jak2ysvfyffj8gnas474kdwfclkclz3hehm9mw4dryhf8ett6z6qc8c35y"))
+        assertEquals("npub1short", shortAccountNpub("npub1short"))
     }
 
     @Test fun `the highlight follows rows that move under a still finger`() {

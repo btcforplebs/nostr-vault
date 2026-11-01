@@ -32,10 +32,11 @@ fun AccountTabPickerOverlay(
             val a = byNpub[npub]
             DockHoldRow(
                 icon = null,
-                label = a?.displayName ?: npub.take(12),
+                label = a?.displayName ?: shortAccountNpub(npub),
                 current = a?.isActive == true,
                 hasNews = (a?.unread ?: 0) > 0 && a?.isActive != true,
                 avatar = (a?.hexPubkey ?: "") to a?.avatarUrl,
+                subtitle = shortAccountNpub(npub),
             )
         },
         closeLabel = "Close account list",
@@ -43,3 +44,7 @@ fun AccountTabPickerOverlay(
         modifier = modifier,
     )
 }
+
+/** "npub1abc…wxyz", as iOS AccountSwitcherIdentity.shortNpub. */
+internal fun shortAccountNpub(npub: String): String =
+    if (npub.length <= 12) npub else npub.take(8) + "…" + npub.takeLast(4)
