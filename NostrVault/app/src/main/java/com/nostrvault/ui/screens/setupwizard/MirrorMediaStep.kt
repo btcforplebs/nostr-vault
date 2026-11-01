@@ -56,7 +56,7 @@ internal fun MirrorMediaStep(viewModel: SetupWizardViewModel) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Sync your media from an external Blossom server to your device.",
+            text = "Sync your media from a media server to your vault.",
             color = SecondaryText,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -77,7 +77,7 @@ internal fun MirrorMediaStep(viewModel: SetupWizardViewModel) {
                     // Server sync
                     WizardCard {
                         Text(
-                            text = "Sync from Blossom Server",
+                            text = "Sync from a media server",
                             color = PrimaryText,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -86,7 +86,7 @@ internal fun MirrorMediaStep(viewModel: SetupWizardViewModel) {
                         OutlinedTextField(
                             value = blossomURL,
                             onValueChange = viewModel::setBlossomURL,
-                            label = { Text("Blossom server URL") },
+                            label = { Text("Media server URL") },
                             singleLine = true,
                             colors = wizardTextFieldColors(),
                             modifier = Modifier.fillMaxWidth(),

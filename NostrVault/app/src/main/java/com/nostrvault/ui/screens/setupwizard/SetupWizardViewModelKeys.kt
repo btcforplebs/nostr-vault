@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
                 return
             }
             if (blossomURL.isNotEmpty() && normalizeExternalBlossomURL(blossomURL) == null) {
-                _error.value = "Enter a Blossom address on this phone (http://127.0.0.1:port) or an https:// address"
+                _error.value = "Enter a media server address on this phone (http://127.0.0.1:port) or an https:// address"
                 return
             }
         }

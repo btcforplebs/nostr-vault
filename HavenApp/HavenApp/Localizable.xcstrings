@@ -2493,7 +2493,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select a Blossom backup (.zip)"
+            "value" : "Select a media backup (.zip)"
           }
         }
       }
@@ -2534,7 +2534,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Blossom Server URL"
+            "value" : "Media server URL"
           }
         }
       }
@@ -2554,7 +2554,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync your images and videos from a Blossom server to your local relay."
+            "value" : "Sync your images and videos from a media server to your vault."
           }
         }
       }

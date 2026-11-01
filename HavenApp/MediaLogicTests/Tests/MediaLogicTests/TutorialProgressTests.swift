@@ -198,6 +198,56 @@ final class TutorialProgressTests: XCTestCase {
         }
     }
 
+    /// Setup and the widgets use the same words as the tips: what the user
+    /// sees there never says Blossom, FIPS or personal relay (nv-tutorial
+    /// 2026-11-01). Reads the shipped strings and sources from this checkout.
+    func testSetupAndWidgetCopyUsesTheGlossary() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        var shown: [(String, String)] = []
+
+        let catalog = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: app.appendingPathComponent("HavenApp/Localizable.xcstrings"))) as? [String: Any]
+        let strings = catalog?["strings"] as? [String: Any] ?? [:]
+        XCTAssertFalse(strings.isEmpty, "Localizable.xcstrings not read")
+        for (key, entry) in strings where key.hasPrefix("setup.") {
+            let localizations = (entry as? [String: Any])?["localizations"] as? [String: Any] ?? [:]
+            for (lang, value) in localizations {
+                let unit = (value as? [String: Any])?["stringUnit"] as? [String: Any]
+                if let text = unit?["value"] as? String { shown.append(("\(key) [\(lang)]", text)) }
+            }
+        }
+
+        // Literal prose in the setup screens and widgets (anything with a
+        // space: URLs, folder names and identifiers have none).
+        let literal = try NSRegularExpression(pattern: #""((?:[^"\\\n]|\\.)* (?:[^"\\\n]|\\.)*)""#)
+        var files = 0
+        for dir in ["HavenApp/Views/SetupWizard", "NostrVaultWidgets"] {
+            let folder = app.appendingPathComponent(dir)
+            for name in try FileManager.default.contentsOfDirectory(atPath: folder.path) where name.hasSuffix(".swift") {
+                files += 1
+                for line in try String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)
+                    .components(separatedBy: "\n") {
+                    let code = line.trimmingCharacters(in: .whitespaces)
+                    if code.hasPrefix("//") || code.contains("Logger") || code.contains("print(") { continue }
+                    let range = NSRange(line.startIndex..., in: line)
+                    for match in literal.matches(in: line, range: range) {
+                        shown.append(("\(dir)/\(name)", (line as NSString).substring(with: match.range(at: 1))))
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(files, 5, "setup and widget sources not found under \(app.path)")
+        XCTAssertGreaterThan(shown.count, 50)
+
+        for (place, text) in shown {
+            for word in ["can connect to it", "blossom", "fips", "personal relay", "in your pocket"] {
+                XCTAssertFalse(text.lowercased().contains(word), "\(place): \(word) in \"\(text)\"")
+            }
+        }
+    }
+
     /// Only a tutorial that can run is offered as next, so the last card
     /// never starts one with nothing to draw.
     func testNextSkipsTutorialsWithoutCards() {
