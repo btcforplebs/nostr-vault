@@ -2,6 +2,8 @@ package com.nostrvault.fips
 
 import com.nostrvault.di.AppModule
 import com.nostrvault.service.MediaCacheService
+import com.nostrvault.service.MediaTypeDetector
+import com.nostrvault.ui.screens.MediaGalleryViewModel
 import com.nostrvault.widget.WidgetImages
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -23,6 +25,8 @@ class FipsHostGuardTest {
         "coil" to AppModule.imageHttpClient(),
         "mediaCache" to MediaCacheService.buildHttpClient(),
         "widget" to WidgetImages.client,
+        "reelsHeadProbe" to MediaTypeDetector.buildHttpClient(),
+        "mediaGallery" to MediaGalleryViewModel.buildHttpClient(),
     )
 
     @Test
@@ -35,9 +39,10 @@ class FipsHostGuardTest {
                     throw UnknownHostException(hostname)
                 }
             }).build()
-            for (url in listOf("http://$npub.fips:3355/abc.jpg", "https://share.FIPS./x.png")) {
+            for (url in listOf("http://$npub.fips:3355/abc.jpg", "https://share.FIPS./x.png")) for (head in listOf(false, true)) {
                 try {
-                    spy.newCall(Request.Builder().url(url).build()).execute().close()
+                    val req = Request.Builder().url(url).apply { if (head) head() }.build()
+                    spy.newCall(req).execute().close()
                     fail("$name fetched $url")
                 } catch (e: FipsHostGuard.Refused) {
                     // refused before any network
