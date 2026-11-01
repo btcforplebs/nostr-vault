@@ -357,6 +357,7 @@
 		3C763EAE43BA54A88B82CEB9 /* SnoScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04E0F5ADF9DEBE1B0772D48 /* SnoScene.swift */; };
 		3C87BD1637BAF76B322EA8AE /* HashtagsFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB986CD40CF9532CA6B250 /* HashtagsFeedViews.swift */; };
 		3C92F74F6D8341C0B3C6101F /* DMService+Reconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */; };
+		3CA6B95D5AB3AE67033E63D1 /* AppTypeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */; };
 		3CD06862A7872E34C7293253 /* LiveStatusService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 937CB610C3601ECF3B4BBD0E /* LiveStatusService.swift */; };
 		3CF633ADEDF48E775F9E1ABE /* MediaCacheService+Download.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51880D00BCBEDFB44A21F4EC /* MediaCacheService+Download.swift */; };
 		3D00F9E30D5216784C53ADDD /* TrustMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8222A5F6E491EA57892ADC3 /* TrustMap.swift */; };
@@ -517,6 +518,7 @@
 		57BF98E0375DB253352AD39F /* ConfigFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */; };
 		57EBB30401CBC87C13A7A9B5 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		57FED2A701DF696811DE4001 /* FollowingFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4464865603517B64343AFC9 /* FollowingFeedState.swift */; };
+		581018DEDAD645E329211DF9 /* DMReadAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */; };
 		581195B0C389081A7ECDB31B /* FipsMeshDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B164C72D0777F09A5D027B5 /* FipsMeshDeviceView.swift */; };
 		583AA09A62B650E722BCE759 /* FeedService+FeedSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */; };
 		5847D6E37160D84ADF6839D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716EDC59763B44048B40E416 /* SettingsView.swift */; };
@@ -1276,6 +1278,7 @@
 		D4CBE6AF3405EF25C9A0AD6C /* PushNotificationStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */; };
 		D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */; };
 		D50939A6B0EB9A8CEED1E6D6 /* DMService+Reconnect.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AF9325362206BD88D81991 /* DMService+Reconnect.swift */; };
+		D56D8A5ECEB9ADEC829CB872 /* AppTypeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */; };
 		D57485896D44F977C83F4A5C /* BlossomRefusals.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A3A9D3D2878269C564C1BA /* BlossomRefusals.swift */; };
 		D5778075947AE59D116895E3 /* MusicFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81C57462038DBEB1BF287B09 /* MusicFeedState.swift */; };
 		D5794DC4F8D3DA7EE45B7094 /* ProfileLookupBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9670761629748C0E0753F7FC /* ProfileLookupBatch.swift */; };
@@ -1300,6 +1303,7 @@
 		D82E6B7E8F48027A2A29D7BA /* RecipeFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */; };
 		D836F792618248C8A0771D7D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
 		D8539D3F01467070FA9F195D /* SearchView+Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */; };
+		D88848DFFE3875AE38EEF8AA /* DMReadAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */; };
 		D8ECF7A788BE7549276AF043 /* FeedService+FeedSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */; };
 		D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB6A6872532B023E705FC6C /* RelayListEditor.swift */; };
 		D977A7ED44CBAEA08DAA2E9F /* InterestList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC5D952C2744229EB2046 /* InterestList.swift */; };
@@ -1498,7 +1502,6 @@
 		F52FF1D6107C9A96C675090E /* RelayDraftSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C78CB6980894E9D6055973 /* RelayDraftSections.swift */; };
 		F5357A352DC309F2E4BB19CA /* DMMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34BABC97D5D35D3EA50A1D6 /* DMMessage.swift */; };
 		F54364280E4C6D188B35F73C /* ZapComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76AE561EEB95A58E4DD97077 /* ZapComment.swift */; };
-		D5728F91707845C8508A6BCB /* AppTypeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8942C847B657B27A52ABF8 /* AppTypeScale.swift */; };
 		F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
 		F5C34D13E951219A71472A03 /* VideoPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */; };
 		F5CC0BCC0CC2388F7CD8D8CD /* SettingsHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7507E56424A5CF8EA46857DA /* SettingsHelp.swift */; };
@@ -1577,7 +1580,6 @@
 		FF3796326AA660DE673215DB /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F43AE6D03159B7716D9F71 /* LogStore.swift */; };
 		FF4441376B46784E5BF598AD /* PopularRankControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD61246C5617D0FAF9A4D5F /* PopularRankControls.swift */; };
 		FFAF10F2042C64AE6A598D79 /* ZapComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76AE561EEB95A58E4DD97077 /* ZapComment.swift */; };
-		5E996B38FAF392C27E2FEB0C /* AppTypeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8942C847B657B27A52ABF8 /* AppTypeScale.swift */; };
 		FFEA19EB5659CCFDB4E69ED7 /* SuggestedMediaServersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0040BB6771C3E16494146D8E /* SuggestedMediaServersSection.swift */; };
 /* End PBXBuildFile section */
 
@@ -1733,6 +1735,7 @@
 		27BB588F35E19129A12047AE /* BottomTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomTabBar.swift; sourceTree = "<group>"; };
 		288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DMService+ExternalFetch.swift"; sourceTree = "<group>"; };
 		28CDA4D972E3E7E90396580D /* StarterRelayListStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarterRelayListStep.swift; sourceTree = "<group>"; };
+		299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypeScale.swift; sourceTree = "<group>"; };
 		2B14053AFA5E916B43335BEE /* LNURLService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LNURLService.swift; sourceTree = "<group>"; };
 		2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetKit.swift; sourceTree = "<group>"; };
 		2CFB0B9F42290F34B8AD6C57 /* GlobeSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeSpace.swift; sourceTree = "<group>"; };
@@ -1972,7 +1975,6 @@
 		75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
 		76A27BBEA5AA4EFCE0D51EE3 /* MediaUploadsIndicatorInfoProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaUploadsIndicatorInfoProvider.swift; sourceTree = "<group>"; };
 		76AE561EEB95A58E4DD97077 /* ZapComment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapComment.swift; sourceTree = "<group>"; };
-		9C8942C847B657B27A52ABF8 /* AppTypeScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypeScale.swift; sourceTree = "<group>"; };
 		76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationStep.swift; sourceTree = "<group>"; };
 		771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteReferenceIDs.swift; sourceTree = "<group>"; };
 		775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMService.swift; sourceTree = "<group>"; };
@@ -2268,6 +2270,7 @@
 		CF4EE3A08A385329682E48B6 /* SoundOnlyStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundOnlyStream.swift; sourceTree = "<group>"; };
 		CF57E75767BD80C1504D555C /* VaultExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultExporter.swift; sourceTree = "<group>"; };
 		CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigFileStore.swift; sourceTree = "<group>"; };
+		CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMReadAuth.swift; sourceTree = "<group>"; };
 		CFD316B1F53D755B6C3CBED9 /* FeedNoteRow+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedNoteRow+Layout.swift"; sourceTree = "<group>"; };
 		D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+MyWeb.swift"; sourceTree = "<group>"; };
 		D073E928415EAF56E0DB8924 /* ZapFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapFlightView.swift; sourceTree = "<group>"; };
@@ -3139,6 +3142,7 @@
 			children = (
 				ADE20F9D5EC5160587318D28 /* AccountUnread.swift */,
 				7FA8251E55F8473F7A55C6E0 /* AdaptiveGridLayout.swift */,
+				299FAAEDC2A8F8F9CEBC02E1 /* AppTypeScale.swift */,
 				17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */,
 				0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */,
 				54E29020BA039397A6D8AFB8 /* BitcoinAddress.swift */,
@@ -3157,6 +3161,7 @@
 				27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */,
 				6F46900B31B7943F8CBF7892 /* DeletedPost.swift */,
 				155D5690C7C6EF350165A21F /* DMAttachment.swift */,
+				CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */,
 				1682A24F97C40C3570CB32C1 /* DMTrust.swift */,
 				75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */,
 				9B51A8C730F9E0715F991CD2 /* EmojiListParse.swift */,
@@ -3289,7 +3294,6 @@
 				5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */,
 				1D0CB43F06264D9D65C7787C /* WotZombies.swift */,
 				76AE561EEB95A58E4DD97077 /* ZapComment.swift */,
-				9C8942C847B657B27A52ABF8 /* AppTypeScale.swift */,
 				83B7AE001906426D0D833C0D /* ZapHistory.swift */,
 			);
 			name = Models;
@@ -3957,6 +3961,7 @@
 				390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */,
 				D10FC5CE1D299504F63FDAD2 /* AnimatedThumbnail.swift in Sources */,
 				2F2E46994E838BCF6F8FCA7B /* AppDelegate.swift in Sources */,
+				3CA6B95D5AB3AE67033E63D1 /* AppTypeScale.swift in Sources */,
 				9DBA13DB50ECFF3FFF4832F8 /* AppearanceSettingsView.swift in Sources */,
 				0A7375CB08C83F8D842FB499 /* ArticleBlockFilter.swift in Sources */,
 				B6774D0A3A537A8FD5BBD0B7 /* ArticleCardView.swift in Sources */,
@@ -4043,6 +4048,7 @@
 				4F3CAF2E7950AE6814FDD0B8 /* DMConversation.swift in Sources */,
 				67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */,
 				EEADBCA880B3902FEAF6C231 /* DMMessage.swift in Sources */,
+				581018DEDAD645E329211DF9 /* DMReadAuth.swift in Sources */,
 				F3C9E614C2F1210872FA3B7B /* DMService+Conversations.swift in Sources */,
 				FBCF14F6C8AABAE90DDC2EA9 /* DMService+ExternalFetch.swift in Sources */,
 				4D4F65FFA3B6C568ACC21D09 /* DMService+GiftWrap.swift in Sources */,
@@ -4696,7 +4702,6 @@
 				C17A3803719E5D1E539CFA99 /* WotZombiesRow.swift in Sources */,
 				876A3213A547A96B0D26E7A9 /* ZapBurstView.swift in Sources */,
 				F54364280E4C6D188B35F73C /* ZapComment.swift in Sources */,
-				D5728F91707845C8508A6BCB /* AppTypeScale.swift in Sources */,
 				9311DBEC8D73D7A39BCD6B9A /* ZapFlightView.swift in Sources */,
 				8226645A0193B8454E903651 /* ZapHistory.swift in Sources */,
 				52C253E70122E23F588C589C /* ZapHistoryService.swift in Sources */,
@@ -4752,6 +4757,7 @@
 				0550886023E5A566CEFD6FC3 /* AnimatedImage.swift in Sources */,
 				FC7A7E5FE57DB163429FB829 /* AnimatedThumbnail.swift in Sources */,
 				639693F76606BDA634926A35 /* AppDelegate.swift in Sources */,
+				D56D8A5ECEB9ADEC829CB872 /* AppTypeScale.swift in Sources */,
 				A3258A0341853E49D016C521 /* AppearanceSettingsView.swift in Sources */,
 				8215148CFF06A7B523C2EA5F /* ArticleBlockFilter.swift in Sources */,
 				846EBFA278C3A78142966B52 /* ArticleCardView.swift in Sources */,
@@ -4836,6 +4842,7 @@
 				CB0EBB49C9E66A3BBBB9F5F1 /* DMConversation.swift in Sources */,
 				52B1CF6FDF93928ECC60D213 /* DMInboxView.swift in Sources */,
 				F5357A352DC309F2E4BB19CA /* DMMessage.swift in Sources */,
+				D88848DFFE3875AE38EEF8AA /* DMReadAuth.swift in Sources */,
 				B584E2B874D869370E468154 /* DMService+Conversations.swift in Sources */,
 				5384D881E60795935AD9044E /* DMService+ExternalFetch.swift in Sources */,
 				F287853E144CD0FA91C4CAAB /* DMService+GiftWrap.swift in Sources */,
@@ -5477,7 +5484,6 @@
 				2EEBEE921B774EA1ACEBCECA /* WotZombiesRow.swift in Sources */,
 				067B8021AC2BAF187223891B /* ZapBurstView.swift in Sources */,
 				FFAF10F2042C64AE6A598D79 /* ZapComment.swift in Sources */,
-				5E996B38FAF392C27E2FEB0C /* AppTypeScale.swift in Sources */,
 				64353876FABFAB7F823B12FA /* ZapFlightView.swift in Sources */,
 				BADF96FFDAD0786D3A218C25 /* ZapHistory.swift in Sources */,
 				AB14121B77BC337AD50021FB /* ZapHistoryService.swift in Sources */,
