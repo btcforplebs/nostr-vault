@@ -93,9 +93,21 @@ final class FipsMeshService: ObservableObject {
         }
     }
 
+    /// Set when the paused note is posted, so coming back on screen only
+    /// talks to the notification centre after kiosk mode was used. Those calls
+    /// wait on an XPC reply, so they also run off the main thread.
+    private static let pausedNotePostedKey = "fipsMesh.pausedNotePosted"
+
     private func resumeIfWanted() {
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.pausedNoteID])
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.pausedNoteID])
+        if UserDefaults.standard.bool(forKey: Self.pausedNotePostedKey) {
+            UserDefaults.standard.set(false, forKey: Self.pausedNotePostedKey)
+            let id = Self.pausedNoteID
+            DispatchQueue.global(qos: .utility).async {
+                let center = UNUserNotificationCenter.current()
+                center.removeDeliveredNotifications(withIdentifiers: [id])
+                center.removePendingNotificationRequests(withIdentifiers: [id])
+            }
+        }
         guard UserDefaults.standard.bool(forKey: Self.kioskWantedKey), !kioskActive, !starting else { return }
         print("FipsMesh: app back on screen, turning kiosk mode on again")
         startKiosk()
@@ -110,6 +122,7 @@ final class FipsMeshService: ObservableObject {
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         let request = UNNotificationRequest(identifier: Self.pausedNoteID, content: content, trigger: trigger)
+        UserDefaults.standard.set(true, forKey: Self.pausedNotePostedKey)
         UNUserNotificationCenter.current().add(request) { error in
             if let error { print("FipsMesh: kiosk paused notification failed: \(error)") }
         }
