@@ -45,4 +45,9 @@ class MyWebWordsTest {
         assertEquals("–", MyWebWords.count(null))
         assertEquals("0", MyWebWords.count(0))
     }
+
+    /** Zombies are cleaned up on Plebs vs. Zombies; My Web only links there (Logen 2026-11-01). */
+    @Test fun plebsVsZombiesLink() {
+        assertEquals("https://plebsvszombies.cc", MyWebWords.PLEBS_VS_ZOMBIES_URL)
+    }
 }

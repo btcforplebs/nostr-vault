@@ -129,11 +129,13 @@ struct MyWebDashboardView: View {
     @AppStorage(LiveArcsSetting.key(.discover)) private var discoverOn = true
     @AppStorage(LiveArcsSetting.key(.global)) private var globalOn = true
 
+    @Environment(\.openURL) private var openURL
+    static let plebsVsZombiesURL = URL(string: "https://plebsvszombies.cc")!
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 headline
-                WotZombiesCard()
                 DashboardSection(title: "Who you can see") {
                     ForEach(Array(layers.enumerated()), id: \.element) { index, item in
                         if index > 0 { DashboardDivider() }
@@ -172,6 +174,12 @@ struct MyWebDashboardView: View {
                                  detail: rebuiltText, state: .info) {
                         RowButton(title: "Rebuild", isLoading: rebuilding, action: onRebuild)
                             .disabled(rebuilding)
+                    }
+                    DashboardDivider()
+                    // Cleaning up follows happens on Plebs vs. Zombies, not in this app (Logen 2026-11-01).
+                    DashboardRow(icon: "arrow.up.right.square", title: "Plebs vs Zombies",
+                                 detail: "Clean up your follows on plebsvszombies.cc", state: .info) {
+                        RowButton(title: "Open") { openURL(Self.plebsVsZombiesURL) }
                     }
                 }
             }
