@@ -7,7 +7,17 @@ final class RelayRequestBudgetTests: XCTestCase {
     func testScrollLookupsLeaveDamusOut() {
         XCTAssertFalse(RelayRequestBudget.profileIndexRelays.contains(RelayRequestBudget.damus))
         XCTAssertFalse(RelayRequestBudget.fallbackNoteRelays.contains(RelayRequestBudget.damus))
-        XCTAssertEqual(RelayRequestBudget.liveRingRelays, ["wss://relay.zap.stream"])
+        XCTAssertFalse(RelayRequestBudget.liveRingRelays(feedRelays: [RelayRequestBudget.damus]).contains(RelayRequestBudget.damus))
+    }
+
+    /// zap.stream alone went stale (2026-11-01); rings also ask the feed relays.
+    func testLiveRingAsksZapStreamAndFeedRelays() {
+        XCTAssertEqual(RelayRequestBudget.liveRingRelays(feedRelays: []), ["wss://relay.zap.stream"])
+        XCTAssertEqual(RelayRequestBudget.liveRingRelays(feedRelays: ["wss://nos.lol", RelayRequestBudget.damus,
+                                                                      "wss://relay.zap.stream", "wss://nos.lol"]),
+                       ["wss://relay.zap.stream", "wss://nos.lol"])
+        let many = (1...10).map { "wss://r\($0).example" }
+        XCTAssertEqual(RelayRequestBudget.liveRingRelays(feedRelays: many).count, RelayRequestBudget.liveRingMaxRelays)
     }
 
     func testLookupsStillHaveSomewhereToAsk() {
@@ -41,7 +51,7 @@ final class RelayRequestBudgetTests: XCTestCase {
         XCTAssertTrue(try src("Feed/FeedService+NoteFetching.swift").contains("withTimeInterval: RelayRequestBudget.noteFetchWindow"))
         let live = try src("LiveStatusService.swift")
         XCTAssertTrue(live.contains("RelayRequestBudget.liveRingBatchDelay"))
-        XCTAssertTrue(live.contains("for url in RelayRequestBudget.liveRingRelays"))
+        XCTAssertTrue(live.contains("RelayRequestBudget.liveRingRelays(feedRelays: ConfigService.shared.config.activeFeedRelays)"))
         XCTAssertFalse(live.contains("LiveFeedService.relayURLs"))
     }
 }

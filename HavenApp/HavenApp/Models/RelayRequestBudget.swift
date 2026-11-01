@@ -27,9 +27,18 @@ enum RelayRequestBudget {
     /// A profile REQ is closed after this, answered or not.
     static let profileSubscriptionSeconds: TimeInterval = 5
 
-    /// Live rings ask zap.stream alone: it is where streams are published,
-    /// and the only relay that answered for the Live tab (2026-09-05).
-    static let liveRingRelays = [LiveChat.streamRelay]
+    /// Live rings ask zap.stream and the user's feed relays, like Android.
+    /// zap.stream alone went stale: on 2026-11-01 its newest kind 30311 was
+    /// 4.7 days old while nos.lol had 11 live streams from the last hour.
+    /// Damus stays out (this fires on every scroll); at most six relays.
+    static func liveRingRelays(feedRelays: [String]) -> [String] {
+        var relays = [LiveChat.streamRelay]
+        for relay in feedRelays where relay != damus && !relays.contains(relay) {
+            relays.append(relay)
+        }
+        return Array(relays.prefix(liveRingMaxRelays))
+    }
+    static let liveRingMaxRelays = 6
     /// Pause before a live-ring batch goes out. Was 0.6 s.
     static let liveRingBatchDelay: TimeInterval = 3
 
