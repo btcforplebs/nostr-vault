@@ -86,18 +86,6 @@ object ContactManager {
     }
 
     /**
-     * How long to wait before signing a follow list so its created_at (the
-     * signer's current second) is later than [lastCreatedAt], the newest list
-     * signed or loaded. Two lists in one second tie, relays keep the lower id,
-     * and the follows in the other one vanish. A clock more than [maxWaitMs]
-     * behind is not waited out.
-     */
-    fun followListSignDelayMs(nowMs: Long, lastCreatedAt: Long, maxWaitMs: Long = 3_000): Long {
-        val wait = (lastCreatedAt + 1) * 1000 - nowMs
-        return if (wait <= 0 || wait > maxWaitMs) 0 else wait
-    }
-
-    /**
      * Whether the user's real follow list is known: a kind 3 came back, or
      * every relay answered (EOSE) with none, i.e. a genuinely new account.
      * Follow / unfollow and queued taps publish only when this is true

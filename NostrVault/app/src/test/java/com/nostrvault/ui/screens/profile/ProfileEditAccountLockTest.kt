@@ -49,7 +49,7 @@ class ProfileEditAccountLockTest {
         every { nostr.relayLists } returns MutableStateFlow(emptyMap())
         every { nostr.lockPostingAccount() } returns lockA
         coEvery { nostr.lookupNewestReplaceable(0, "hex-a", any(), any(), any()) } coAnswers { lookup.await() }
-        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             NostrEvent("id", "hex-a", 0, 0, emptyList(), "{}", "sig")
         val config = mockk<ConfigStore>()
         every { config.activeAccountHexPubkey } returns MutableStateFlow("hex-a")
@@ -66,7 +66,7 @@ class ProfileEditAccountLockTest {
         scope.advanceUntilIdle()
 
         coVerify(exactly = 1) {
-            nostr.signEventAsync(kind = 0, content = any(), tags = any(), password = any(), forceOwner = any(), lockedTo = lockA, silentOnly = any())
+            nostr.signEventAsync(kind = 0, content = any(), tags = any(), password = any(), forceOwner = any(), lockedTo = lockA, silentOnly = any(), notBefore = any())
         }
     }
 
@@ -86,7 +86,7 @@ class ProfileEditAccountLockTest {
         every { nostr.lockPostingAccount() } answers { if (active.value == "hex-a") lockA else lockB }
         coEvery { nostr.lookupNewestReplaceable(0, "hex-a", any(), any(), any()) } returns
             NostrService.ReplaceableLookup(event = null, asked = 1, answered = 1)
-        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) } throws
+        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } throws
             PostingAccount.AccountChangedException()
         val config = mockk<ConfigStore>()
         every { config.activeAccountHexPubkey } returns active
@@ -120,7 +120,7 @@ class ProfileEditAccountLockTest {
         every { nostr.lockPostingAccount() } answers { PostingAccount.Lock(npub = "npub-" + active.value, hex = active.value) }
         coEvery { nostr.lookupNewestReplaceable(any(), any(), any(), any(), any()) } returns
             NostrService.ReplaceableLookup(event = null, asked = 1, answered = 1)
-        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             NostrEvent("id", "hex-b", 0, 0, emptyList(), "{}", "sig")
         val config = mockk<ConfigStore>()
         every { config.activeAccountHexPubkey } returns active
@@ -132,7 +132,7 @@ class ProfileEditAccountLockTest {
         vm.save()
         scope.advanceUntilIdle()
 
-        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { nostr.postEvent(any(), any()) }
         vm.open()
         assertEquals("b", vm.name.value)

@@ -52,7 +52,7 @@ class ProfileEditWrongAccountTest {
         every { nostr.lockPostingAccount() } answers { PostingAccount.Lock(npub = "npub-" + active.value, hex = active.value) }
         coEvery { nostr.lookupNewestReplaceable(any(), any(), any(), any(), any()) } returns
             NostrService.ReplaceableLookup(event = null, asked = 1, answered = 1)
-        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) } answers {
+        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
             NostrEvent("id", signedAs ?: active.value, 0, 0, emptyList(), "{}", "sig")
         }
         return nostr
@@ -140,7 +140,7 @@ class ProfileEditWrongAccountTest {
         vm.close()
         scope.advanceUntilIdle()
 
-        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { nostr.postEvent(any(), any()) }
         // A changed form can't be swiped or backed away by accident.
         assertFalse(ProfileEditGuard.closesOnSwipe(hasChanges = true, uploading = false))

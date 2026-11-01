@@ -350,7 +350,8 @@ class NostrService @Inject constructor(
         forceOwner: Boolean = false,
         lockedTo: PostingAccount.Lock? = null,
         silentOnly: Boolean = false,
-    ): NostrEvent? = signEventAsyncImpl(kind, content, tags, password, forceOwner, lockedTo, silentOnly)
+        notBefore: Long = 0,
+    ): NostrEvent? = signEventAsyncImpl(kind, content, tags, password, forceOwner, lockedTo, silentOnly, notBefore)
 
     fun lockPostingAccount(): PostingAccount.Lock = lockPostingAccountImpl()
 

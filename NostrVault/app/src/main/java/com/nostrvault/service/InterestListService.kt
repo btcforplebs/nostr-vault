@@ -144,6 +144,7 @@ class InterestListService @Inject constructor(
                 content = next.content,
                 tags = next.tags,
                 lockedTo = lock,
+                notBefore = list.createdAt + 1,
             )?.takeIf { it.pubkey == hex }
         } catch (e: CancellationException) {
             throw e

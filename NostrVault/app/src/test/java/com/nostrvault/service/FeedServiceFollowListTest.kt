@@ -65,10 +65,11 @@ class FeedServiceFollowListTest {
         every { nostr.activeHexPubkey } returns alice
         every { nostr.lockPostingAccount() } returns lockA
         val tags = slot<List<List<String>>>()
-        coEvery { nostr.signEventAsync(3, any(), capture(tags), any(), any(), any(), any()) } answers {
+        coEvery { nostr.signEventAsync(3, any(), capture(tags), any(), any(), any(), any(), any()) } answers {
             NostrEvent(
                 id = signed.size.toString().padStart(64, '0'), pubkey = alice,
-                createdAt = System.currentTimeMillis() / 1000, kind = 3,
+                // As the real signer: max(now, notBefore).
+                createdAt = maxOf(System.currentTimeMillis() / 1000, arg<Long>(7)), kind = 3,
                 tags = tags.captured, content = "", sig = "",
             ).also { signed.add(it) }
         }
@@ -125,16 +126,16 @@ class FeedServiceFollowListTest {
     @Test
     fun `the list is signed locked to the account it belongs to`() {
         feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(alice, bob)))
-        coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), lockA, any()) }
+        coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), lockA, any(), any()) }
     }
 
     @Test
     fun `a switch during signing neither publishes nor rolls back`() {
-        coEvery { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) } throws PostingAccount.AccountChangedException()
+        coEvery { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) } throws PostingAccount.AccountChangedException()
         var failed = false
         feed._followedPubkeys.value = listOf(alice, bob)
         feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(bob)), rollback = listOf(alice)) { failed = true }
-        coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
+        coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
         Thread.sleep(200)
         coVerify(exactly = 0) { nostr.postEvent(any(), any()) }
         assertEquals(listOf(alice, bob), feed._followedPubkeys.value)
@@ -181,7 +182,7 @@ class FeedServiceFollowListTest {
         feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = emptyList())
         coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) }
         Thread.sleep(300)
-        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
         assertEquals(0, feed.contactEditsInFlight.get())
     }
 
@@ -192,7 +193,7 @@ class FeedServiceFollowListTest {
         feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = emptyList())
         coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) }
         Thread.sleep(300)
-        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
         assertEquals(0, feed.contactEditsInFlight.get())
     }
 
@@ -202,7 +203,7 @@ class FeedServiceFollowListTest {
         onRelays = relayCopy(200, listOf(listOf("p", bob)), sentBy = "wss://own-only.example")
         feed.publishContactList(listOf(bob, alice), ContactManager.FollowEdit(add = listOf(alice)))
         coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, match { "wss://own-only.example" in it }, any(), any()) }
-        coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
+        coVerify(timeout = 5_000) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -211,7 +212,7 @@ class FeedServiceFollowListTest {
         feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)))
         coVerify(timeout = 5_000) { nostr.lookupNewestReplaceable(3, alice, any(), any(), any()) }
         Thread.sleep(300)
-        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { nostr.signEventAsync(3, any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test

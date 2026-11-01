@@ -66,7 +66,7 @@ class TwoAccountFollowListTest {
         coEvery { nostr.lookupNewestReplaceable(3, accountA, any(), any(), any()) } returns
             NostrService.ReplaceableLookup(null, asked = 1, answered = 1, answeredBy = setOf("wss://own.example"))
         val tags = slot<List<List<String>>>()
-        coEvery { nostr.signEventAsync(3, any(), capture(tags), any(), any(), any(), any()) } answers {
+        coEvery { nostr.signEventAsync(3, any(), capture(tags), any(), any(), any(), any(), any()) } answers {
             NostrEvent(
                 id = signed.size.toString().padStart(64, '0'), pubkey = accountA,
                 createdAt = System.currentTimeMillis() / 1000, kind = 3,

@@ -92,12 +92,14 @@ import com.nostrvault.ui.notification.FollowKind
                     // Already so on the newest copy (done in another app): nothing to sign.
                     if (pubkeys == basePubkeys) return@withLock base
                     val tags = ContactManager.contactListTags(pubkeys, base.tags)
-                    delay(ContactManager.followListSignDelayMs(System.currentTimeMillis(), lastContactListCreatedAt.get()))
+                    // Signed later than the base and anything signed or loaded since, even when that is dated a
+                    // little ahead (MAX_SKEW): signed older, relays keep that copy and this edit is lost.
                     val event = runCatching { nostrService.signEventAsync(
                         kind = 3,
                         content = base.content,
                         tags = tags,
                         lockedTo = lock,
+                        notBefore = lastContactListCreatedAt.get() + 1,
                     ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }
                         .getOrElse { e ->
                             // The list is the previous account's: nothing to roll back here.
