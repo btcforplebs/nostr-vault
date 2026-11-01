@@ -43,6 +43,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
     lateinit var deletedPostsStore: com.nostrvault.service.deleted.DeletedPostsStore
 
     override fun onCreate() {
+        warmUpOffMain()
         super.onCreate()
         ProfileRepository.init(this)
         com.nostrvault.data.local.DeletedNotesStore.init(this)
@@ -76,6 +77,23 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                 com.nostrvault.service.LocalBlossomCache.enabled = it.useLocalBlossomCache
             }
         }
+    }
+
+    /**
+     * Opens the key store and loads the Go library on a background thread
+     * while Hilt builds the app's singletons, instead of on main when the
+     * first of them asks. Nothing waits for it and nothing changes order:
+     * [com.nostrvault.data.local.CredentialStore.init] is synchronized and
+     * HavenBridge loads in its class initializer, so a main-thread caller
+     * that gets there first, or while this runs, simply waits for the one
+     * open or load to finish, the same as before. The config is still read
+     * on main (MainActivity.onCreate) before anything is drawn or saved.
+     */
+    private fun warmUpOffMain() {
+        Thread({
+            runCatching { com.nostrvault.data.local.CredentialStore.init(this) }
+            runCatching { com.nostrvault.relay.HavenBridge.isLoaded }
+        }, "nv-startup-warmup").start()
     }
 
     override fun newImageLoader(): ImageLoader = imageLoaderProvider.get()
