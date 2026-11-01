@@ -1,6 +1,7 @@
 package com.nostrvault.ui.components
 
 import com.nostrvault.data.model.BareNostrRefs
+import com.nostrvault.util.ParseCache
 import com.nostrvault.util.findAllOnce
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.QuoteRef
@@ -57,10 +58,18 @@ object NostrMentions {
      * profile lookups narrowable to that row.
      */
     fun mentionedPubkeys(content: String): List<String> =
-        MENTION_REGEX.findAllOnce(BareNostrRefs.prefixBare(content))
-            .mapNotNull { resolvePubkey(it.groupValues[1]) }
-            .distinct()
-            .toList()
+        mentionCache.getOrPut(content) {
+            MENTION_REGEX.findAllOnce(BareNostrRefs.prefixBare(content))
+                .mapNotNull { resolvePubkey(it.groupValues[1]) }
+                .distinct()
+                .toList()
+        }
+
+    // A feed row asks for its note's mentions each time it appears (head and
+    // shown pubkeys, FeedNoteList + FeedFullNoteRow), and `remember` is gone
+    // once the row scrolls off. Keyed by text: same text, same answer.
+    private val mentionCache = ParseCache<String, List<String>>(MENTION_CACHE_SIZE)
+    private const val MENTION_CACHE_SIZE = 1_000
 
     /** Display label for a mention: the profile's best name, else a short pubkey. */
     private fun displayName(pubkey: String, profiles: Map<String, FeedProfile>): String =
