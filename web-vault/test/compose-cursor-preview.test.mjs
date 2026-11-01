@@ -75,6 +75,7 @@ test("the post body: placed links stay where they are, unplaced ones go at the e
 test("a [photo N] the user typed is left alone (Tron, #1510)", () => {
   assert.equal(placeBody("see [photo 3] below", [{ id: 1, url: "https://m/1.png" }], [2]), "see [photo 3] below\nhttps://m/1.png")
   assert.equal(withoutTokens("a\n[photo 4]\nb [photo 9]", [4]), "a\nb [photo 9]")
+  assert.equal(withoutTokens("a\n[photo 4]\nb\n[photo 4]\nc [photo 4]", [4]), "a\nb\nc ", "every copy, a pasted one too")
 })
 
 test("a server URL with $ patterns goes in as it is, not expanded (Tron, #1510)", () => {

@@ -75,12 +75,8 @@ export function placeBody(text, photos, drop = []) {
  *  they upload: read back later, they'd have nothing behind them. */
 export function withoutTokens(text, ids) {
   let t = text
-  for (const id of ids) {
-    const mark = photoToken(id), i = t.indexOf(mark)
-    if (i < 0) continue
-    const nl = t[i + mark.length] === "\n" ? 1 : 0
-    t = t.slice(0, i) + t.slice(i + mark.length + nl)
-  }
+  // Every copy (one pasted twice too, Tron #1510), each with the line break after it.
+  for (const id of ids) t = t.split(photoToken(id) + "\n").join("").split(photoToken(id)).join("")
   return t.replace(/\n{3,}/g, "\n\n")
 }
 
