@@ -126,15 +126,15 @@ enum ListMerge {
     static let maxSkew: Int64 = 15 * 60
 
     /// What to tell the person when an edit was refused for `.noRelayList`.
-    static let noRelayListMessage = "You have no relay list yet, so your newest list can't be checked. Nothing was changed. Add your relays in Settings › Relays first."
+    static let noRelayListMessage = "Your own relays aren't known: you have no relay list yet, or every relay in it is unreachable, so your newest list can't be checked. Nothing was changed. Fix your relays in Settings › Relays first."
 
     /// The account's own relays for checking a list: the write relays named
     /// in its own kind 10002 (`published`, nil when none is known here),
-    /// loopback dropped. Never the app's defaults: with no 10002 this is
+    /// `unusable` ones (loopback, known-dead hosts) dropped. Never the app's defaults: with no 10002 this is
     /// empty, and editBase says `.noRelayList`.
-    static func ownRelays(published: [String]?, isLoopback: (String) -> Bool) -> [String] {
+    static func ownRelays(published: [String]?, unusable: (String) -> Bool) -> [String] {
         var seen = Set<String>()
-        return (published ?? []).filter { !isLoopback($0) && seen.insert(relayKey($0)).inserted }
+        return (published ?? []).filter { !unusable($0) && seen.insert(relayKey($0)).inserted }
     }
 
     /// The created_at for an edit of a list dated `base`: now, or one second

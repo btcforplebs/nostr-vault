@@ -80,14 +80,17 @@ extension NostrService {
                 let parsed = ProfileRepository.parseRelayListTags(event.tags)
                 let pubkey = event.pubkey
                 let createdAt = event.created_at
+                // The account's own write relays here decide whether a list edit
+                // knows the newest copy (ownListRelays), and the cache is saved to
+                // disk: a relay can serve any event under any author, so an
+                // unsigned list is dropped, and its date can't block the real one
+                // (Tron #1467). Checked here, off the main thread, as for 10063.
+                let signed = NostrEventVerifier.isValid(eventDict)
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.relaysInFlight.remove(pubkey)
-                    if let known = self.relayListCreatedAt[pubkey], createdAt < known { return }
-                    self.relayListCreatedAt[pubkey] = createdAt
-                    if !parsed.inbox.isEmpty { self.relayLists[pubkey] = parsed.inbox }
-                    if !parsed.write.isEmpty { self.outboxRelays[pubkey] = parsed.write }
-                    self.saveProfilesThrottled()
+                    guard signed else { return }
+                    self.applyRelayList(parsed, pubkey: pubkey, createdAt: createdAt)
                 }
                 return
             }

@@ -127,10 +127,47 @@ final class ListSaveRulesTests: XCTestCase {
     /// none at all (never the defaults), loopback and repeats dropped.
     func testOwnRelaysAreOnlyTheOnesInTheAccountsRelayList() {
         let loopback: (String) -> Bool = { $0.contains("127.0.0.1") || $0.contains("localhost") }
-        XCTAssertEqual(ListMerge.ownRelays(published: nil, isLoopback: loopback), [])
-        XCTAssertEqual(ListMerge.ownRelays(published: [], isLoopback: loopback), [])
+        XCTAssertEqual(ListMerge.ownRelays(published: nil, unusable: loopback), [])
+        XCTAssertEqual(ListMerge.ownRelays(published: [], unusable: loopback), [])
         XCTAssertEqual(ListMerge.ownRelays(published: ["wss://a.example", "ws://127.0.0.1:3355", "wss://A.example/", "wss://b.example"],
-                                           isLoopback: loopback), ["wss://a.example", "wss://b.example"])
+                                           unusable: loopback), ["wss://a.example", "wss://b.example"])
+    }
+
+    /// The own relays decide whether a list is known, and are saved to disk:
+    /// only a kind 10002 signed by its author may set them, and the app's own
+    /// 10002 sets them the moment it is signed, or a new account's first
+    /// follow is refused (Tron #1467). Dead hosts don't count (as web).
+    func testOwnRelayListIsSignedAndTakenWhenSigned() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("HavenApp")
+        func src(_ path: String) throws -> String {
+            try String(contentsOf: app.appendingPathComponent(path), encoding: .utf8)
+        }
+        let processing = try src("Services/Nostr/NostrService+MessageProcessing.swift")
+        let branch = try XCTUnwrap(processing.range(of: "if event.kind == 10002 {"))
+        let body = String(processing[branch.upperBound...].prefix(1400))
+        let end = try XCTUnwrap(body.range(of: "return\n            }", options: .regularExpression)).lowerBound
+        let k10002 = String(body[..<end])
+        XCTAssertTrue(k10002.contains("let signed = NostrEventVerifier.isValid(eventDict)"), k10002)
+        XCTAssertTrue(k10002.contains("guard signed else { return }"), k10002)
+        XCTAssertFalse(k10002.contains("outboxRelays["), "the 10002 branch writes the caches only through applyRelayList")
+
+        // applyRelayList is the only writer of the own-relay caches.
+        let writers = try FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil).map { walk in
+            try walk.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }.filter {
+                try String(contentsOf: $0, encoding: .utf8).range(of: "outboxRelays\\[[^\\]]+\\] = ", options: .regularExpression) != nil
+            }.map(\.lastPathComponent)
+        }
+        XCTAssertEqual(writers, ["NostrService+RelayListSave.swift"])
+
+        let save = try src("Services/Nostr/NostrService+RelayListSave.swift")
+        XCTAssertTrue(save.contains("noteOwnRelayList(event)\n            postEvent(event)"), "Save in Settings › Relays takes its own 10002")
+        let wizard = try src("Views/SetupWizard/SetupWizardView.swift")
+        XCTAssertTrue(wizard.contains("nostr.noteOwnRelayList(relayList)\n                nostr.postEvent(relayList)"), "a new account takes its starter 10002")
+
+        let own = try src("Services/Nostr/NostrService+ListPublishing.swift")
+        XCTAssertTrue(own.contains("unusable: { isLoopbackRelay($0) || HavenConfig.isDeadRelay($0) }"))
     }
 
     func testFollowMessageSaysThereIsNoRelayList() {

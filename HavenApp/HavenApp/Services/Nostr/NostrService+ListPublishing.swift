@@ -283,12 +283,15 @@ extension NostrService {
 
     /// The relays that decide whether a list edit knows the newest copy
     /// (ListMerge.editBase): the write relays named in `pubkey`'s own kind
-    /// 10002, loopback dropped. Never the app's defaults (config.writeRelays
-    /// falls back to them, and a new account's grid starts as them): with no
-    /// 10002 known here this is empty and the edit is refused with
-    /// ListMerge.noRelayListMessage. lookupNewestReplaceable asks these too.
+    /// 10002, loopback and known-dead hosts dropped (as web relayLists). Never
+    /// the app's defaults (config.writeRelays falls back to them, and a new
+    /// account's grid starts as them): with no 10002 known here this is empty
+    /// and the edit is refused with ListMerge.noRelayListMessage.
+    /// lookupNewestReplaceable asks these too. `outboxRelays` only takes a
+    /// 10002 signed by its author (applyRelayList).
     static func ownListRelays(for pubkey: String) -> [String] {
-        ListMerge.ownRelays(published: shared.outboxRelays[pubkey], isLoopback: isLoopbackRelay)
+        ListMerge.ownRelays(published: shared.outboxRelays[pubkey],
+                            unusable: { isLoopbackRelay($0) || HavenConfig.isDeadRelay($0) })
     }
 
     /// A loopback address means "this machine". Advertising one to the network,
