@@ -25,10 +25,20 @@ class BottomBarRoutesTest {
         assertFalse(showsBottomBar(null))
     }
 
-    @Test fun miniPlayerStaysOffCompose() {
-        assertFalse(showsMiniPlayer(Screen.ComposeNote.route))
-        listOf(Screen.Feed, Screen.Dashboard, Screen.NoteDetail, Screen.Profile, Screen.Settings).forEach {
+    @Test fun miniPlayerShowsWhereTheBarShows() {
+        listOf(Screen.Feed, Screen.Search, Screen.Dashboard, Screen.WOT,
+            Screen.NoteDetail, Screen.Profile, Screen.ArticleReader, Screen.AddressLink, Screen.FollowList).forEach {
             assertTrue(it.route, showsMiniPlayer(it.route))
         }
+    }
+
+    @Test fun miniPlayerStaysOffEveryOtherScreen() {
+        listOf(Screen.ComposeNote, Screen.ModeCompose, Screen.Drafts, Screen.Settings, Screen.AppearanceSettings,
+            Screen.DMInbox, Screen.DMThread, Screen.NewMessage, Screen.HashtagFeed, Screen.MediaViewer,
+            Screen.Wallet, Screen.BitcoinWallet, Screen.SetupWizard, Screen.FeedDashboard,
+            Screen.RelayActivity, Screen.LogViewer).forEach {
+            assertFalse(it.route, showsMiniPlayer(it.route))
+        }
+        assertFalse(showsMiniPlayer(null))
     }
 }
