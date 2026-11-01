@@ -51,5 +51,7 @@ struct ComposeNotePreview: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color.platformSecondaryGroupedBackground)
+        // Inside the composer's sheet: a link must not push behind it.
+        .environment(\.pushNoteID, nil)
     }
 }

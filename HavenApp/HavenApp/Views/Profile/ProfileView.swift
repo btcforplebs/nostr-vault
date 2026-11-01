@@ -12,5 +12,8 @@ struct ProfileView: View {
         // Skipped when only the host redrew; see `PersonProfileView`.
         PersonProfileView(pubkey: pubkey, embeddedInNavigation: embeddedInNavigation, onDismiss: onDismiss)
             .equatable()
+            // As a sheet, a stack behind it must not take its links: they
+            // would push out of sight. Its notes open as sheets (Logen).
+            .transformEnvironment(\.pushNoteID) { if !embeddedInNavigation { $0 = nil } }
     }
 }

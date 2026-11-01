@@ -29,6 +29,7 @@ struct FeedNoteRow: View {
     /// The openURL of the screen around this row: the row overrides it for
     /// its own subtree, and hands hashtag links back up to it.
     @Environment(\.openURL) private var inheritedOpenURL
+    @Environment(\.pushNoteID) private var pushNoteID
 
     @State var showingEmojiPicker = false
     @State var showingTapbackPopover = false
@@ -114,7 +115,13 @@ struct FeedNoteRow: View {
                     return .handled
                 }
                 if identifier.hasPrefix("note1") || identifier.hasPrefix("nevent1") || identifier.hasPrefix("naddr1") {
-                    showingNoteIdInRow = identifier
+                    // Pushed like a feed tap where the stack can; a sheet
+                    // only where nothing can push (Search, profiles).
+                    if let pushNoteID {
+                        pushNoteID(identifier)
+                    } else {
+                        showingNoteIdInRow = identifier
+                    }
                     return .handled
                 }
             }

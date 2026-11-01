@@ -41,6 +41,8 @@ struct NoteDetailViewWrapper: View {
             .onAppear {
                 fetchNote()
             }
+            // A sheet: links stay out of the stack it covers.
+            .environment(\.pushNoteID, nil)
         }
     }
 
