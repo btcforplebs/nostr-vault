@@ -69,6 +69,18 @@ enum NotificationPolicy {
         return kinds.isEmpty ? [silentKind] : kinds.sorted()
     }
 
+    /// A note, like, zap or repost from one of your accounts on this device
+    /// to another of them (A tags B). With "Notify me when my own accounts
+    /// tag each other" off it makes no Vault line, no count and no alert.
+    /// An account tagging itself is not this: the relay already keeps that
+    /// quiet. `accounts` holds every account on the device, by hex.
+    static func hidesOwnAccountTag(author: String, recipient: String, accounts: Set<String>, notify: Bool) -> Bool {
+        guard !notify else { return false }
+        let a = author.lowercased(), r = recipient.lowercased()
+        guard !a.isEmpty, !r.isEmpty, a != r else { return false }
+        return accounts.contains { $0.lowercased() == a } && accounts.contains { $0.lowercased() == r }
+    }
+
     /// Whether a notification marker may be shown while phone notifications are
     /// switched off. Only a DM, and only as the in-app banner while the app is
     /// open: that banner is part of the app, not a phone notification, so the

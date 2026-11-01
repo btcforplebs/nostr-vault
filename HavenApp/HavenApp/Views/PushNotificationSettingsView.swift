@@ -31,6 +31,17 @@ struct PushNotificationSettingsView: View {
 
                 NotificationSoundSection()
 
+                if configService.allAccountNpubs.count > 1 {
+                    Section {
+                        Toggle("Notify me when my own accounts tag each other", isOn: $configService.config.notifyOwnAccountTags)
+                            .onChange(of: configService.config.notifyOwnAccountTags) { _, _ in
+                                configService.save()
+                            }
+                    } footer: {
+                        Text("Off: when one of your accounts tags another, nothing lands in the Vault and no alert plays.")
+                    }
+                }
+
                 ForEach(configService.allAccountNpubs, id: \.self) { npub in
                     AccountNotificationSection(npub: npub)
                 }

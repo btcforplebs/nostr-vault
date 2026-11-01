@@ -41,6 +41,27 @@ struct AccountUnread: Equatable {
         return (recipient, id, type, fields["author"]?.lowercased() ?? "")
     }
 
+    /// The inbox kinds in a batch that came in only as one of your accounts
+    /// tagging another (`isOwnAccountTag(recipient, author)`), so the Vault
+    /// tab's red dot can leave them out the way the list does. A kind that
+    /// also came from anyone else stays.
+    static func ownAccountOnlyKinds(markers: [String], isOwnAccountTag: (String, String) -> Bool) -> Set<Int> {
+        var own = Set<Int>(), other = Set<Int>()
+        for body in markers {
+            let head = body.range(of: "|preview=").map { String(body[..<$0.lowerBound]) } ?? body
+            var fields: [String: String] = [:]
+            for part in head.split(separator: "|") {
+                guard let eq = part.firstIndex(of: "=") else { continue }
+                fields[String(part[..<eq])] = String(part[part.index(after: eq)...])
+            }
+            guard let kind = fields["kind"].flatMap(Int.init) else { continue }
+            let recipient = fields["recipient"]?.lowercased() ?? ""
+            let author = fields["author"]?.lowercased() ?? ""
+            if isOwnAccountTag(recipient, author) { own.insert(kind) } else { other.insert(kind) }
+        }
+        return own.subtracting(other)
+    }
+
     /// What the Vault list drops before it draws a line, so the count only
     /// counts what that list can show (sweep 11-01 #11): a like in Zaps Only
     /// mode, anything from a blocked person, and a mention, reply or quote
@@ -52,6 +73,9 @@ struct AccountUnread: Equatable {
         var isBlocked: (String, String) -> Bool = { _, _ in false }
         /// (recipient hex, author hex) → outside that account's web.
         var isOutside: (String, String) -> Bool = { _, _ in false }
+        /// (recipient hex, author hex) → one of your accounts tagging another
+        /// with that switch off (NotificationPolicy.hidesOwnAccountTag).
+        var isOwnAccountTag: (String, String) -> Bool = { _, _ in false }
 
         static let showsAll = ListRules()
 
@@ -59,6 +83,7 @@ struct AccountUnread: Equatable {
             if zapsOnly && type == "reaction" { return false }
             guard !author.isEmpty else { return true }
             if isBlocked(recipient, author) { return false }
+            if isOwnAccountTag(recipient, author) { return false }
             if Self.webGatedTypes.contains(type) && isOutside(recipient, author) { return false }
             return true
         }
