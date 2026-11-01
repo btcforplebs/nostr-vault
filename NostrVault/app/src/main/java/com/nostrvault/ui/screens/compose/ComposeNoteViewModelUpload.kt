@@ -175,7 +175,9 @@ import java.io.File
         media.forEach { item ->
             val sha = item.sha256 ?: return@forEach
             scope.launch {
-                runCatching { blossomService.deleteFromServers(sha, item.url, includeHomeVault = false) }
+                // No photo URL: only the servers alreadyOutThere asked, so the
+                // set deleted from is exactly the set checked before the upload.
+                runCatching { blossomService.deleteFromServers(sha, null, includeHomeVault = false) }
                     .onFailure { Log.w("ComposeNote", "Could not delete a dropped upload", it) }
             }
         }

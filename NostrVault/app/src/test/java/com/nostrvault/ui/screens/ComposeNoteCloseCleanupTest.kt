@@ -120,7 +120,7 @@ class ComposeNoteCloseCleanupTest {
         val vm = viewModel().withPhotoAtTheEnd()
         assertEquals(listOf(fresh.url), vm.closeCleanup()?.map { it.url })
         vm.close()
-        coVerify(exactly = 1, timeout = 2_000) { blossom.deleteFromServers(fresh.sha256!!, fresh.url, false) }
+        coVerify(exactly = 1, timeout = 2_000) { blossom.deleteFromServers(fresh.sha256!!, null, false) }
     }
 
     /** The data loss Tron found: after a successful post, closing must delete nothing. */
