@@ -5,6 +5,7 @@
 import { pool, uniq } from "./pool.js"
 import { checkSigned } from "./sync.js"
 import { withoutLocation } from "./media-privacy.js"
+import { abortError, xhrPut } from "./upload-progress.js"
 
 /** HavenConfig.newAccountBlossomMirrors: nostr.build first (Logen's call), Primal second. */
 export const DEFAULT_MEDIA_SERVERS = ["https://blossom.nostr.build", "https://blossom.primal.net"]
@@ -68,17 +69,27 @@ const hostOf = url => { try { return new URL(url).host } catch { return url } }
  * Hash, sign and upload one photo or video to the first server that takes it. -> { url, sha256, mime, size, server };
  * throws with every server's reason when none did. A server whose answer names another hash, or none, is not used.
  * Where it was taken is removed first (media-privacy.js); one whose location can't be removed isn't uploaded.
+ * `signal` stops it (an AbortError; before the signer is asked, if it hasn't been yet); `onProgress(0..1)` follows the PUT.
  */
-export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch }) {
+export async function uploadPhoto(file, { ctx, servers, fetch, signal, onProgress }) {
+  const stopped = () => { if (signal?.aborted) throw abortError() }
   const bytes = withoutLocation(new Uint8Array(await file.arrayBuffer()))
   const sha256 = await sha256Hex(bytes)
+  stopped() // removed before its turn came: no signer prompt for it
   const template = uploadAuthTemplate(sha256)
   const auth = authHeader(checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey))
   const mime = file.type || "application/octet-stream"
+  // With a progress callback (the composer's ring) the PUT goes through XMLHttpRequest, which reports progress;
+  // otherwise fetch, as before. A fetch passed in (tests) is always used.
+  const put = fetch ?? (onProgress && globalThis.XMLHttpRequest
+    ? (url, o) => xhrPut(url, { ...o, signal, onProgress })
+    : (url, o) => globalThis.fetch(url, { ...o, signal }))
   const errors = []
   for (const server of servers) {
+    stopped()
     try {
-      const res = await fetch(`${server}/upload`, { method: "PUT", headers: { Authorization: auth, "Content-Type": mime }, body: bytes })
+      onProgress?.(0)
+      const res = await put(`${server}/upload`, { method: "PUT", headers: { Authorization: auth, "Content-Type": mime }, body: bytes })
       if (!res.ok) { errors.push(`${hostOf(server)}: ${refusal(res, bytes.length)}`); continue }
       const d = await res.json()
       // A BUD-02 blob descriptor always names the hash; no hash is as unproven as a wrong one.
@@ -87,6 +98,7 @@ export async function uploadPhoto(file, { ctx, servers, fetch = globalThis.fetch
       if (!url) { errors.push(`${hostOf(server)}: no link in its answer`); continue }
       return { url, sha256, mime: d.type || mime, size: bytes.length, server }
     } catch (e) {
+      if (e?.name === "AbortError") throw e
       errors.push(`${hostOf(server)}: ${e?.message ?? e}`)
     }
   }
