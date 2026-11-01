@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy - NOSTR VAULT</title>
-    <link rel="stylesheet" href="style.css?v=20261025">
+    <link rel="stylesheet" href="style.css?v=20261101">
     <link rel="stylesheet" href="menu.css?v=20261025">
     <link rel="icon" type="image/png" href="assets/haven_icon.png">
     <style>
@@ -67,7 +67,7 @@
 
     <div class="privacy-content fade-in-up">
         <h1>Privacy Policy</h1>
-        <p><strong>Last Updated:</strong> October 23, 2026</p>
+        <p><strong>Last Updated:</strong> November 1, 2026</p>
 
         <p>This Privacy Policy describes how your information is handled when you use the Nostr Vault apps for iPhone,
             iPad, Mac and Android, the web app at nostrvault.app/vault/, and the nostrvault.app website. Nostr Vault is
@@ -78,8 +78,8 @@
             notifications are made on your device. We do not build profiles of people, score them or index anyone who
             doesn't use the app. Two things we run do receive data, and one copy of the website runs elsewhere:</p>
         <ul>
-            <li><strong>Our relay, relay.btcforplebs.com.</strong> It is one of the default relays in the apps and the
-                web app. Like any Nostr relay, it receives and stores the notes and other events you publish to it, and
+            <li><strong>Our relay, relay.btcforplebs.com.</strong> It is one of the relays the apps and the web app
+                recommend to a new account, which you can keep or leave out. Like any Nostr relay, it receives and stores the notes and other events you publish to it, and
                 it answers the apps' requests for your follows' notes, your inbox and your messages (which arrive
                 encrypted). It sees your IP address and public key when you connect. You can remove it in Settings
                 &rarr; Relays.</li>
@@ -106,8 +106,9 @@
         <p>To show your feed, the apps connect to other people's servers. Each of them sees your IP address, like any
             website does.</p>
         <ul>
-            <li><strong>Default relays.</strong> Besides ours: relay.damus.io, relay.primal.net, relay.snort.social,
-                purplepag.es and other profile relays, the relays your follows publish to, and the relays
+            <li><strong>Your relays.</strong> The relays in your own relay list, which you pick. A new account is offered
+                a recommended set (ours, relay.damus.io, relay.primal.net, relay.snort.social and nostr-pub.wellorder.net),
+                and your posts go only to the relays you keep. The apps also read from purplepag.es and other profile relays, the relays your follows publish to, and the relays
                 behind some tabs (zap.stream, divine.video, zap.cooking and the marketplace). They see your follow list
                 through the requests and the profiles you look up. You can change them in Settings &rarr; Relays.</li>
             <li><strong>Profile pictures through wsrv.nl.</strong> The iPhone, Mac and Android apps load profile
@@ -174,8 +175,9 @@
             Some things stay in the browser until you clear the site's data
             in your browser settings: your search history, your feed and message relay choices, which posts you have
             seen, the list of accounts used on this browser and the page's offline copy of the app.</p>
-        <p>The web app connects to the same kinds of services as the apps (section 3), except wsrv.nl: our relay,
-            relay.damus.io, relay.primal.net and relay.snort.social for reading and posting, purplepag.es for profiles,
+        <p>The web app connects to the same kinds of services as the apps (section 3), except wsrv.nl: your own relays
+            for posting (only the ones in your relay list, or the recommended set if you have none yet), the recommended
+            relays for reading, purplepag.es for profiles,
             search.nos.today for search, Wavlake, zap.stream and zap.cooking, media hosts, link previews and zap
             services.</p>
 
@@ -202,7 +204,7 @@
     </footer>
 
     <script src="script.js?v=20261025"></script>
-    <script src="menu.js?v=20261025"></script>
+    <script src="menu.js?v=20261101"></script>
 </body>
 
 </html>

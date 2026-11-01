@@ -185,11 +185,11 @@ function renderPage(page, sections, flat, aliases) {
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" type="image/png" href="/assets/haven_icon.png">
     <link rel="apple-touch-icon" href="/assets/haven_icon.png">
-    <link rel="stylesheet" href="/style.css?v=20261025">
+    <link rel="stylesheet" href="/style.css?v=20261101">
     <link rel="stylesheet" href="/menu.css?v=20261025">
     <link rel="stylesheet" href="/docs/docs.css?v=20261025">
     <script src="/docs/docs.js?v=20261025" defer></script>
-    <script src="/menu.js?v=20261025" defer></script>
+    <script src="/menu.js?v=20261101" defer></script>
 </head>
 
 <body class="docs-body"${aliasAttr}>
@@ -204,7 +204,6 @@ function renderPage(page, sections, flat, aliases) {
             <a href="/#web">Web</a>
             <a href="/#platforms">Download</a>
             <a href="/docs/" aria-current="page">Docs</a>
-            <a href="/blog-what-is-nostr-vault.html">Blog</a>
         </div>
         <div class="actions">
             <a href="/docs/" class="pill pill-docs"${isHome ? ' aria-current="page"' : ''}>Docs</a>

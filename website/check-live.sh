@@ -84,6 +84,9 @@ for p in /v3 /v3/ /v3/x; do
   get "$p"; loc=$(header location)
   [ "$code" = 301 ] && [ "$loc" = "$want" ] && ok "$p 301 $loc" || bad "$p is $code \"$loc\", want 301 $want"
 done
+# The removed blog post redirects home.
+get /blog-what-is-nostr-vault.html; loc=$(header location)
+[ "$code" = 301 ] && [ "$loc" = / ] && ok "blog 301 /" || bad "blog is $code \"$loc\", want 301 /"
 get /v3/sw.js
 [ "$code" = 200 ] && grep -q unregister "$tmp/b" && ok "/v3/sw.js 200, unregisters" || bad "/v3/sw.js is $code or doesn't unregister"
 
