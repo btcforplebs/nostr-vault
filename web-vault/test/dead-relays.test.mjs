@@ -17,6 +17,8 @@ test("a NIP-65 list drops dead hosts from read and write, and falls back when no
   assert.deepEqual(relayLists(ev), { read: ["wss://relay.primal.net"], write: ["wss://relay.primal.net"], listed: ["wss://relay.primal.net"] })
   assert.deepEqual(relayLists({ tags: [["r", "wss://nos.lol"]] }), { read: DEFAULT_RELAYS, write: DEFAULT_RELAYS, listed: [] }, "every listed relay is dead: none of the user's own")
   assert.deepEqual(relayLists(undefined).listed, [], "no 10002: the defaults are used, but they aren't the user's own")
+  assert.deepEqual(relayLists({ tags: [["r", "wss://in.example", "read"], ["r", "wss://out.example", "write"], ["r", "wss://both.example"]] }).listed,
+    ["wss://out.example", "wss://both.example"], "own = write relays only (as iOS ownListRelays): a read-only inbox relay doesn't hold your lists (Tron #1464)")
 })
 
 test("a query naming only dead relays answers at once without opening them", async () => {

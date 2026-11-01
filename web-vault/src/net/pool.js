@@ -154,8 +154,10 @@ export function relayLists(ev) {
   }
   // `listed`: only the relays the 10002 names, never the defaults. With no 10002 it is empty: the user's own relays
   // aren't known, so the defaults (used to read and write meanwhile) must not stand in for them when deciding whether
-  // a list is known (list-edit.js latestList, follows.js setFollow).
-  return { read: read.length ? read : DEFAULT_RELAYS, write: write.length ? write : DEFAULT_RELAYS, listed: uniq([...read, ...write]) }
+  // a list is known (list-edit.js latestList, follows.js setFollow). Write relays only, as iOS (NostrService
+  // ownListRelays): under NIP-65 your own lists live on your write (outbox) relays, so a read-only inbox relay that
+  // never holds them must not count toward the majority (Tron #1464).
+  return { read: read.length ? read : DEFAULT_RELAYS, write: write.length ? write : DEFAULT_RELAYS, listed: uniq(write) }
 }
 
 export const uniq = a => [...new Set(a)]
