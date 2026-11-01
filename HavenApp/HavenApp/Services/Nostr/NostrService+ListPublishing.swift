@@ -23,14 +23,22 @@ extension NostrService {
             // The relays the mute list is read from at launch, so a block
             // builds on the list another app last wrote, not an older copy.
             let alsoAsk = Array(Set(ConfigService.shared.config.readRelays + MuteListStore.extraRelays))
-            let lookup = await lookupNewestReplaceable(kind: 10000, for: author, alsoAsk: alsoAsk)
+            let lookup = await lookupNewestReplaceable(kind: 10000, for: author, alsoAsk: alsoAsk, skipAhead: true)
             let base: (tags: [[String]], content: String)
+            let baseAt: Int64?
             switch ListMerge.editBase(lookup, held: MuteListStore.shared.storedEvent(forHex: author),
-                                            own: Self.ownListRelays(), createdAt: { $0.created_at }) {
+                                            own: Self.ownListRelays(for: author), createdAt: { $0.created_at }) {
             case .list(let event):
                 base = (event.tags, event.content)
+                baseAt = event.created_at
             case .none:
                 base = (hexKeys(localBlocks).map { ["p", $0] }, "")
+                baseAt = nil
+            case .noRelayList:
+                ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                               message: "\(action) saved on this device only. \(ListMerge.noRelayListMessage)",
+                                               tone: .error)
+                return
             case .unknown:
                 #if DEBUG
                 print("NostrService: Kind 10000: list not fetched (\(lookup.answered)/\(lookup.asked) relays answered); not published")
@@ -59,7 +67,8 @@ extension NostrService {
                 return
             }
             let tags = ListMerge.edit(name: "p", base: base.tags, add: hexKeys(add), remove: hexKeys(remove))
-            guard let event = await signEventAsync(kind: 10000, content: content, tags: tags, signAsNpub: accountNpub) else {
+            guard let event = await signEventAsync(kind: 10000, content: content, tags: tags, signAsNpub: accountNpub,
+                                                   notBefore: baseAt.map { ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: $0) }) else {
                 ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
                                                message: "\(action) saved on this device only: your signer didn't answer",
                                                tone: .error)
@@ -85,13 +94,17 @@ extension NostrService {
                                    build: (NostrEvent?) -> (tags: [[String]], content: String)) async -> NostrEvent? {
         guard !author.isEmpty else { return nil }
         let alsoAsk = Array(ConfigService.shared.config.readRelays.prefix(3))
-        let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk)
+        let lookup = await lookupNewestReplaceable(kind: kind, for: author, alsoAsk: alsoAsk, skipAhead: true)
         // The newest list, or "none" only when the relays agree there is none:
         // one relay saying none may just not hold it (Logen 2026-10-31).
         let published: NostrEvent?
-        switch ListMerge.editBase(lookup, held: nil, own: Self.ownListRelays(), createdAt: { $0.created_at }) {
+        switch ListMerge.editBase(lookup, held: nil, own: Self.ownListRelays(for: author), createdAt: { $0.created_at }) {
         case .list(let event): published = event
         case .none: published = nil
+        case .noRelayList:
+            ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                           message: ListMerge.noRelayListMessage, tone: .error)
+            return nil
         case .unknown:
             #if DEBUG
             print("NostrService: Kind \(kind): list not known (\(lookup.answered)/\(lookup.asked) relays answered); not published")
@@ -99,7 +112,8 @@ extension NostrService {
             return nil
         }
         let (tags, content) = build(published)
-        guard let event = await signEventAsync(kind: kind, content: content, tags: tags, signAsNpub: signAsNpub) else {
+        guard let event = await signEventAsync(kind: kind, content: content, tags: tags, signAsNpub: signAsNpub,
+                                               notBefore: published.map { ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: $0.created_at) }) else {
             #if DEBUG
             print("NostrService: Failed to sign Kind \(kind) list")
             #endif
@@ -199,13 +213,15 @@ extension NostrService {
             // Start from the newest list on the relays, never this phone's
             // cache: when the relays can't say (none answered, or only one said
             // "none"), nothing is published (Logen 2026-10-31).
-            let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [RelayConfiguration.serverListIndexerRelay])
+            let lookup = await lookupNewestReplaceable(kind: 10063, for: owner, alsoAsk: [RelayConfiguration.serverListIndexerRelay], skipAhead: true)
             // The account may have changed during the lookup: never sign one
             // account's servers as another.
             guard owner == activeHexPubkey else { return }
             let existing: [String]
-            switch ListMerge.editBase(lookup, held: nil, own: Self.ownListRelays(), createdAt: { $0.created_at }) {
+            var baseAt: Int64?
+            switch ListMerge.editBase(lookup, held: nil, own: Self.ownListRelays(for: owner), createdAt: { $0.created_at }) {
             case .list(let newest):
+                baseAt = newest.created_at
                 // lookupNewestReplaceable keeps only events whose author and signature it checked.
                 if acceptServerListStamp(pubkey: owner, createdAt: newest.created_at, id: newest.id, signedByAuthor: true) {
                     serverLists[owner] = ProfileRepository.parseServerListTags(newest.tags)
@@ -214,6 +230,11 @@ extension NostrService {
                 existing = serverLists[owner] ?? ProfileRepository.parseServerListTags(newest.tags)
             case .none:
                 existing = []
+            case .noRelayList:
+                #if DEBUG
+                print("NostrService: Kind 10063: no relay list of the account's own; not published")
+                #endif
+                return
             case .unknown:
                 #if DEBUG
                 print("NostrService: Kind 10063: list not known (\(lookup.answered)/\(lookup.asked) relays answered); not published")
@@ -239,7 +260,8 @@ extension NostrService {
                 return
             }
             let tags = merged.map { ["server", $0] }
-            if let event = await signEventAsync(kind: 10063, content: "", tags: tags),
+            if let event = await signEventAsync(kind: 10063, content: "", tags: tags,
+                                                notBefore: baseAt.map { ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: $0) }),
                event.pubkey.lowercased() == owner.lowercased() {
                 // Ours is now the newest: merge from it next time, even before it echoes back.
                 // Signed here, by this account.
@@ -260,9 +282,16 @@ extension NostrService {
     }
 
     /// The relays that decide whether a list edit knows the newest copy
-    /// (ListMerge.editBase): the account's write relays, loopback dropped.
-    static func ownListRelays() -> [String] {
-        ConfigService.shared.config.writeRelays.filter { !isLoopbackRelay($0) }
+    /// (ListMerge.editBase): the write relays named in `pubkey`'s own kind
+    /// 10002, loopback and known-dead hosts dropped (as web relayLists). Never
+    /// the app's defaults (config.writeRelays falls back to them, and a new
+    /// account's grid starts as them): with no 10002 known here this is empty
+    /// and the edit is refused with ListMerge.noRelayListMessage.
+    /// lookupNewestReplaceable asks these too. `outboxRelays` only takes a
+    /// 10002 signed by its author (applyRelayList).
+    static func ownListRelays(for pubkey: String) -> [String] {
+        ListMerge.ownRelays(published: shared.outboxRelays[pubkey],
+                            unusable: { isLoopbackRelay($0) || HavenConfig.isDeadRelay($0) })
     }
 
     /// A loopback address means "this machine". Advertising one to the network,

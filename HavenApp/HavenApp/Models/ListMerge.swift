@@ -113,6 +113,36 @@ enum ListMerge {
         case none
         /// Not known: publishing could replace a list this device never saw.
         case unknown
+        /// Not known because the account has no relay list (kind 10002) of its
+        /// own yet, so there are no relays of its own to check. The app's
+        /// default relays are not the account's: their "none" says nothing
+        /// about a list kept elsewhere (Tron #1456/#1459 follow-up).
+        case noRelayList
+    }
+
+    /// A copy dated this far ahead of now or more is skipped, as the web's
+    /// follows.js MAX_SKEW: signed after it, an edit would have to be dated in
+    /// the future too, and signed before it, relays keep the old copy.
+    static let maxSkew: Int64 = 15 * 60
+
+    /// What to tell the person when an edit was refused for `.noRelayList`.
+    static let noRelayListMessage = "Your own relays aren't known: you have no relay list yet, or every relay in it is unreachable, so your newest list can't be checked. Nothing was changed. Fix your relays in Settings › Relays first."
+
+    /// The account's own relays for checking a list: the write relays named
+    /// in its own kind 10002 (`published`, nil when none is known here),
+    /// `unusable` ones (loopback, known-dead hosts) dropped. Never the app's defaults: with no 10002 this is
+    /// empty, and editBase says `.noRelayList`.
+    static func ownRelays(published: [String]?, unusable: (String) -> Bool) -> [String] {
+        var seen = Set<String>()
+        return (published ?? []).filter { !unusable($0) && seen.insert(relayKey($0)).inserted }
+    }
+
+    /// The created_at for an edit of a list dated `base`: now, or one second
+    /// after the base when the base is ahead (a phone clock behind the other
+    /// app's), so relays keep the edit. editBase never picks a base dated
+    /// `maxSkew` or more ahead, so this is never further ahead than that.
+    static func signedAt(now: Int64, base: Int64?) -> Int64 {
+        max(now, (base ?? 0) + 1)
     }
 
     /// The newest of the list the relays returned and the one this device
@@ -121,18 +151,28 @@ enum ListMerge {
     /// relays, loopback dropped) count. A list is the base when one of them
     /// sent it or most of them answered; "none" needs knowsNone and every one
     /// of them answering. A copy from purplepag.es or a read relay alone, with
-    /// the own relays silent, can be older than theirs. No own relays: unknown.
+    /// the own relays silent, can be older than theirs. No own relays (no
+    /// kind 10002 yet): `.noRelayList`. Copies dated `maxSkew` or more ahead of
+    /// `now` are skipped, and one being found (here or by the lookup, `ahead`)
+    /// means a list exists, so it is never "none".
     /// `own` has no default, so every call site has to name them (Tron #1459).
     static func editBase<Event>(_ lookup: ReplaceableLookup<Event>, held: Event?, own: [String],
+                                now: Int64 = Int64(Date().timeIntervalSince1970),
                                 createdAt: (Event) -> Int64) -> EditBase<Event> {
         let mine = Set(own.map(relayKey))
-        guard !mine.isEmpty, lookup.answered > 0 else { return .unknown }
+        guard !mine.isEmpty else { return .noRelayList }
+        guard lookup.answered > 0 else { return .unknown }
         let ownAnswered = mine.intersection(Set(lookup.answeredBy.map(relayKey))).count
-        if let newest = [lookup.event, held].compactMap({ $0 }).max(by: { createdAt($0) < createdAt($1) }) {
-            let vouched = lookup.from.contains { mine.contains(relayKey($0)) } || ownAnswered * 2 > mine.count
+        let copies = [lookup.event, held].compactMap { $0 }
+        let usable = copies.filter { createdAt($0) < now + maxSkew }
+        if let newest = usable.max(by: { createdAt($0) < createdAt($1) }) {
+            // The lookup's copy was skipped: whoever sent it vouches for nothing.
+            let fromLookup = lookup.event.map { createdAt($0) < now + maxSkew } ?? false
+            let vouched = (fromLookup && lookup.from.contains { mine.contains(relayKey($0)) }) || ownAnswered * 2 > mine.count
             return vouched ? .list(newest) : .unknown
         }
-        return knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
+        let ahead = lookup.ahead || usable.count < copies.count
+        return !ahead && knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
     }
 
     /// "You have no list" is known only when at least two relays answered and

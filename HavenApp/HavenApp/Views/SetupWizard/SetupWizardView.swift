@@ -587,6 +587,7 @@ struct SetupWizardView: View {
             if !relayTags.isEmpty,
                let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags, signAsNpub: ownerNpub),
                relayList.pubkey.lowercased() == ownerHex.lowercased() {
+                nostr.noteOwnRelayList(relayList)
                 nostr.postEvent(relayList)
             }
 

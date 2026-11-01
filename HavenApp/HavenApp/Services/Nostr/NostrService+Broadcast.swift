@@ -169,8 +169,12 @@ extension NostrService {
                     guard let self else { return }
                     let list = await self.fetchNewestReplaceable(kind: 10002, for: event.pubkey,
                                                                  alsoAsk: ["wss://purplepag.es", "wss://user.kindpag.es"], timeout: 4)
-                    let write = list.map { ProfileRepository.parseRelayListTags($0.tags).write } ?? []
-                    if !write.isEmpty, self.outboxRelays[event.pubkey] == nil { self.outboxRelays[event.pubkey] = write }
+                    let parsed = list.map { ProfileRepository.parseRelayListTags($0.tags) }
+                    let write = parsed?.write ?? []
+                    // fetchNewestReplaceable only returns a signed copy.
+                    if let list, let parsed, !write.isEmpty, self.outboxRelays[event.pubkey] == nil {
+                        self.applyRelayList(parsed, pubkey: event.pubkey, createdAt: list.created_at)
+                    }
                     send(write)
                 }
             }

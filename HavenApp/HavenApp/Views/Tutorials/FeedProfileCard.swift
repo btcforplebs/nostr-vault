@@ -34,7 +34,8 @@ enum FollowActions {
     static func publishFailed(_ name: String, follow: Bool) -> () -> Void {
         {
             FollowNotificationManager.shared.add(recipientName: name, kind: .failed(
-                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly)))
+                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly,
+                                                   noRelayList: FeedService.activeAccountHasNoRelayList)))
         }
     }
 

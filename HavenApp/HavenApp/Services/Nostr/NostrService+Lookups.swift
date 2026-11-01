@@ -24,7 +24,9 @@ extension NostrService {
 
     /// `fetchNewestReplaceable`, also saying whether "none" was confirmed:
     /// every relay asked answered EOSE for this request without the event.
-    func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], dTag: String? = nil, timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
+    /// `skipAhead`: copies dated ListMerge.maxSkew or more ahead are left out
+    /// (and `ahead` set), for a list about to be edited (ListMerge.editBase).
+    func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], dTag: String? = nil, timeout: TimeInterval = 6, skipAhead: Bool = false) async -> ReplaceableLookup<NostrEvent> {
         var urls = ConfigService.shared.config.writeRelays
         for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
             urls.append(extra)
@@ -40,6 +42,10 @@ extension NostrService {
             var finished = Set<Int>()
             var answered = Set<Int>()
             var newestBy: [Int: NostrEvent] = [:]
+            var ahead = false
+            // A copy dated ListMerge.maxSkew or more ahead is skipped: an edit
+            // signed now would lose to it on every relay.
+            let latestAllowed = skipAhead ? Int64(Date().timeIntervalSince1970) + ListMerge.maxSkew : Int64.max
             var resumed = false
             var clients: [WebSocketClient] = []
             var subs = Set<AnyCancellable>()
@@ -51,7 +57,7 @@ extension NostrService {
                 let from = newestBy.filter { $0.value.id == best?.id }.keys.map { targets[$0].absoluteString }
                 let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count,
                                                answeredBy: Set(answered.map { targets[$0].absoluteString }),
-                                               from: Set(from))
+                                               from: Set(from), ahead: ahead)
                 lock.unlock()
                 DispatchQueue.main.async {
                     clients.forEach { $0.disconnect() }
@@ -79,8 +85,12 @@ extension NostrService {
                                let str = String(data: raw, encoding: .utf8),
                                NostrEventVerifier.isValid(json: str) {
                                 lock.lock()
-                                if best == nil || event.created_at > best!.created_at { best = event }
-                                if newestBy[index].map({ event.created_at > $0.created_at }) ?? true { newestBy[index] = event }
+                                if event.created_at >= latestAllowed {
+                                    ahead = true
+                                } else {
+                                    if best == nil || event.created_at > best!.created_at { best = event }
+                                    if newestBy[index].map({ event.created_at > $0.created_at }) ?? true { newestBy[index] = event }
+                                }
                                 lock.unlock()
                             } else if type == "EOSE" || type == "CLOSED" {
                                 lock.lock()

@@ -28,7 +28,7 @@ extension NostrService {
     ///   mute/relay list) — temporarily mutating the shared active-account pointer is
     ///   observed by every subscriber (FeedService/NostrService's own account-switch
     ///   handlers), making a background publish look like a real user-driven switch.
-    func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil) -> NostrEvent? {
+    func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) -> NostrEvent? {
         var sk: String?
         let config = ConfigService.shared.config
 
@@ -88,7 +88,7 @@ extension NostrService {
         let signingPubkey = signingAsOwner ? ownerHexPubkey : (Bech32.decode(activeNpub)?.hexString ?? activeHexPubkey)
 
         let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
-        let eventDict = EventPublisher.buildUnsignedEvent(pubkey: signingPubkey, kind: kind, content: content, tags: finalTags)
+        let eventDict = EventPublisher.buildUnsignedEvent(pubkey: signingPubkey, kind: kind, content: content, tags: finalTags, notBefore: notBefore)
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
               let jsonStr = String(data: jsonData, encoding: .utf8) else {
@@ -107,7 +107,7 @@ extension NostrService {
     ///   without touching config.activeAccountNpub. A non-active account that signs
     ///   with a bunker is refused (returns nil): the bunker connection belongs to the
     ///   active account, and a background publish can't switch it.
-    func signEventAsync(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil) async -> NostrEvent? {
+    func signEventAsync(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil, notBefore: Int64? = nil) async -> NostrEvent? {
         let config = ConfigService.shared.config
         let mode = config.activeSigningMode()
 
@@ -125,7 +125,7 @@ extension NostrService {
                 #endif
                 return nil
             }
-            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target)
+            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target, notBefore: notBefore)
         }
 
         #if DEBUG
@@ -142,10 +142,10 @@ extension NostrService {
             // The session is looked up by the key the Go core files it under
             // (the link's host), not the account's own signerPubkey.
             guard config.ownerSignsWithBunker, let ownerSigner = config.ownerSessionKey else {
-                return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true)
+                return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true, notBefore: notBefore)
             }
             let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
-            let eventDict = EventPublisher.buildUnsignedEvent(pubkey: ownerHexPubkey, kind: kind, content: content, tags: finalTags)
+            let eventDict = EventPublisher.buildUnsignedEvent(pubkey: ownerHexPubkey, kind: kind, content: content, tags: finalTags, notBefore: notBefore)
             guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
                   let jsonStr = String(data: jsonData, encoding: .utf8) else { return nil }
             do {
@@ -179,7 +179,7 @@ extension NostrService {
             }
 
             let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
-            let eventDict = EventPublisher.buildUnsignedEvent(pubkey: signingPubkey, kind: kind, content: content, tags: finalTags)
+            let eventDict = EventPublisher.buildUnsignedEvent(pubkey: signingPubkey, kind: kind, content: content, tags: finalTags, notBefore: notBefore)
 
             guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
                   let jsonStr = String(data: jsonData, encoding: .utf8) else {
@@ -226,7 +226,7 @@ extension NostrService {
                 return nil
             }
         } else {
-            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: signAsNpub)
+            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: signAsNpub, notBefore: notBefore)
         }
     }
 

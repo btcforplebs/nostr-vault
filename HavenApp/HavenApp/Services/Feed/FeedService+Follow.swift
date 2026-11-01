@@ -132,10 +132,14 @@ extension FeedService {
             // now and apply only this tap's change to it (Logen 2026-10-31).
             let config = ConfigService.shared.config
             let lookup = await NostrService.shared.lookupNewestReplaceable(
-                kind: 3, for: owner, alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
+                kind: 3, for: owner, alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers, skipAhead: true)
             guard owner == ConfigService.shared.activeAccountHexPubkey else { fail(nil); return }
             let base: (tags: [[String]], content: String, createdAt: Int64)
-            switch ListMerge.editBase(lookup, held: Self.lastSignedContactList[owner], own: NostrService.ownListRelays(), createdAt: { $0.created_at }) {
+            switch ListMerge.editBase(lookup, held: Self.lastSignedContactList[owner], own: NostrService.ownListRelays(for: owner), createdAt: { $0.created_at }) {
+            case .noRelayList:
+                // onFailure's message says why (ContactManager.publishFailedMessage).
+                fail(nil)
+                return
             case .unknown:
                 #if DEBUG
                 print("FeedService: follow list not published — relays didn't answer (\(lookup.answered)/\(lookup.asked))")
@@ -154,10 +158,9 @@ extension FeedService {
                 return
             }
             // A later second than the list it replaces, or relays may keep that
-            // one. A list dated further ahead than a clock skew isn't waited for.
-            let wait = base.createdAt + 1 - Int64(Date().timeIntervalSince1970)
-            if wait > 0, wait <= 2 { try? await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000) }
-            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: base.content, tags: tags),
+            // one. editBase never picks a base dated ListMerge.maxSkew or more ahead.
+            let signedAt = ListMerge.signedAt(now: Int64(Date().timeIntervalSince1970), base: base.createdAt)
+            guard let event = await NostrService.shared.signEventAsync(kind: 3, content: base.content, tags: tags, notBefore: signedAt),
                   event.pubkey.lowercased() == owner.lowercased(),
                   owner == ConfigService.shared.activeAccountHexPubkey else {
                 fail(nil)
@@ -187,6 +190,12 @@ extension FeedService {
     @MainActor static var lastSignedContactList: [String: NostrEvent] = [:]
     /// The follow-list publish still running, so the next one waits for it.
     @MainActor static var contactListPublishTail: Task<Void, Never>?
+
+    /// The active account has no kind 10002 of its own known here, so a
+    /// follow list edit is refused (ListMerge.EditBase.noRelayList).
+    static var activeAccountHasNoRelayList: Bool {
+        NostrService.ownListRelays(for: ConfigService.shared.activeAccountHexPubkey).isEmpty
+    }
 
     /// The active account has no key here and no bunker, so nothing it
     /// publishes can be signed.

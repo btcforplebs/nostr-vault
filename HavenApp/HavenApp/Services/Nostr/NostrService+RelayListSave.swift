@@ -53,8 +53,28 @@ extension NostrService {
                 #endif
                 return
             }
+            noteOwnRelayList(event)
             postEvent(event)
         }
+    }
+
+    /// Takes a kind 10002 this app just signed as the author's newest list.
+    /// Nothing else would: the relays echo it back only to a later fetch, so
+    /// until then a new account (or a Save in Settings › Relays) had no own
+    /// relays and its first follow was refused (Tron #1467).
+    func noteOwnRelayList(_ event: NostrEvent) {
+        applyRelayList(ProfileRepository.parseRelayListTags(event.tags), pubkey: event.pubkey, createdAt: event.created_at)
+    }
+
+    /// The one place a kind 10002 reaches the caches. Only a list signed by
+    /// `pubkey` gets here (the message branch checks the signature; the other
+    /// caller signed it). An older list than the one held is ignored.
+    func applyRelayList(_ parsed: (inbox: [String], write: [String]), pubkey: String, createdAt: Int64) {
+        if let known = relayListCreatedAt[pubkey], createdAt < known { return }
+        relayListCreatedAt[pubkey] = createdAt
+        if !parsed.inbox.isEmpty { relayLists[pubkey] = parsed.inbox }
+        if !parsed.write.isEmpty { outboxRelays[pubkey] = parsed.write }
+        saveProfilesThrottled()
     }
 
     /// Publishes exactly `relays` as the owner's kind 10050 and stamps it as
