@@ -254,13 +254,11 @@ import kotlinx.coroutines.withTimeoutOrNull
             Log.i(TAG, "Go relay started successfully and health check passed")
             restoreMesh()
 
-            // Staggered startup: brief delay before client connections so the relay
-            // settles first. The TCP health check above already proved it's listening,
-            // so 500ms of margin is plenty for localhost.
-            serviceScope.launch {
-                delay(500)
-                _readyForConnections.value = true
-            }
+            // Clients may connect now. The health check above already had the
+            // relay answer its NIP-11 document as this app's relay, so it is
+            // serving; the 500 ms "settle" wait that used to sit here only held
+            // the feed back on every launch.
+            _readyForConnections.value = true
 
             // Start the health watchdog so we detect if Go dies post-startup
             startHealthWatchdog()
