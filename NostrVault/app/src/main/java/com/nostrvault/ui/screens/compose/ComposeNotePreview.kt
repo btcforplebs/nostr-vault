@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -24,10 +26,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NoteTagging
+import com.nostrvault.data.model.QuoteRef
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.SecondaryText
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The note as it will post, drawn by the feed's own [NoteCard]: links,
@@ -59,6 +64,33 @@ internal fun ComposeNoteViewModel.previewNote(draft: ComposeNoteDraft): FeedNote
 
 private const val PREVIEW_ID = "compose-preview"
 
+/** The notes [content] quotes by a pasted `note1` / `nevent1`, bare or with `nostr:`. */
+internal fun pastedNotes(content: String): List<QuoteRef.EventPointer> =
+    QuoteRef.pastedNotes(content, HavenBridge::decodeNote, HavenBridge::decodeNeventPointer)
+
+/**
+ * The `q` + `p` tags for the notes [content] quotes by paste. A `note1` names
+ * no author, so one the app has not loaded is looked up the way the feed
+ * looks up a quote (vault first, then relays and hints), for up to
+ * [waitMs]; past that it posts with the `q` tag alone.
+ */
+internal suspend fun ComposeNoteViewModel.pastedQuoteTags(
+    content: String,
+    existing: List<List<String>>,
+    waitMs: Long = 3_000,
+): List<List<String>> {
+    val pasted = pastedNotes(content)
+    if (pasted.isEmpty()) return emptyList()
+    val unknown = pasted.filter { it.author == null && feedService.quotedNoteFor(it.id) == null }.map { it.id }
+    if (unknown.isNotEmpty()) {
+        feedService.fetchMissingQuotedNotes(unknown)
+        withTimeoutOrNull(waitMs) {
+            feedService.quotedNotes.first { _ -> unknown.all { feedService.quotedNoteFor(it) != null } }
+        }
+    }
+    return QuoteRef.pastedQuoteTags(pasted, existing) { feedService.quotedNoteFor(it)?.pubkey }
+}
+
 /** The top bar button's word: "Preview" while writing, "Edit" to get back to typing (Logen 2026-11-01). */
 internal fun previewButtonLabel(previewing: Boolean): String = if (previewing) "Edit" else "Preview"
 
@@ -88,6 +120,20 @@ internal fun ComposeNotePreview(viewModel: ComposeNoteViewModel, modifier: Modif
     val quoted by viewModel.feedService.quotedNotes.collectAsState()
     val quotedNote by viewModel.quotedNote.collectAsState()
     val note = viewModel.previewNote(draft)
+    // A pasted note1 / nevent: look it up as the feed does, so its card fills in.
+    LaunchedEffect(note.quotedEventIds) {
+        if (note.quotedEventIds.isNotEmpty()) {
+            viewModel.feedService.fetchMissingQuotedNotes(note.quotedEventIds)
+            viewModel.feedService.quotedNotes.first { _ ->
+                viewModel.feedService.fetchMissingQuotedProfiles(note.quotedEventIds)
+                note.quotedEventIds.all { viewModel.feedService.quotedNoteFor(it) != null }
+            }
+        }
+    }
+    val quotedCards = remember(note.quotedEventIds, quoted, quotedNote) {
+        note.quotedEventIds.mapNotNull { id -> viewModel.feedService.quotedNoteFor(id)?.let { id to it } }.toMap() +
+            listOfNotNull(quotedNote).associateBy { it.id }
+    }
     Column(modifier.verticalScroll(rememberScrollState())) {
         if (draft.text.isBlank() && draft.attachments.isEmpty()) {
             Text("Nothing to preview yet.", color = SecondaryText, fontSize = 15.sp, modifier = Modifier.padding(16.dp))
@@ -112,7 +158,7 @@ internal fun ComposeNotePreview(viewModel: ComposeNoteViewModel, modifier: Modif
             note = note,
             profile = profiles[note.pubkey],
             profiles = profiles,
-            quotedNotes = quoted + listOfNotNull(quotedNote).associateBy { it.id },
+            quotedNotes = quotedCards,
             onNoteClick = {},
             onProfileClick = {},
             modifier = Modifier.fillMaxWidth(),

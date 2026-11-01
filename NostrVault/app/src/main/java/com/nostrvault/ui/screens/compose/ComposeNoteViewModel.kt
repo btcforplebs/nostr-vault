@@ -783,6 +783,8 @@ class ComposeNoteViewModel @Inject constructor(
                 com.nostrvault.ui.screens.live.LiveStreamShare.quoteTags(baseContent).forEach { q ->
                     if (tags.none { it.size >= 2 && it[0] == "q" && it[1] == q[1] }) tags.add(q)
                 }
+                // NIP-18: `q` + author `p` for each note1 / nevent pasted into the text.
+                tags.addAll(pastedQuoteTags(baseContent, tags))
 
                 // NIP-30: an `emoji` tag for each custom emoji the post uses.
                 tags.addAll(customEmojiTags(baseContent))

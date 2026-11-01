@@ -227,6 +227,43 @@ object QuoteRef {
         return null
     }
 
+    /**
+     * The notes a draft's text quotes: every `note1…` / `nevent1…`, with or
+     * without `nostr:`, in order, once each. The author is the one the nevent
+     * names; a `note1` names none. Articles and live streams (`naddr1`) are
+     * left to their own tags ([LiveStream] share).
+     */
+    fun pastedNotes(content: String, decodeNote: (String) -> String?, decodeNevent: (String) -> EventPointer?): List<EventPointer> =
+        identifiers(content).mapNotNull { identifier ->
+            when {
+                identifier.startsWith("note1", ignoreCase = true) ->
+                    decodeNote(identifier.lowercase())?.let { EventPointer(it, null) }
+                identifier.startsWith("nevent1", ignoreCase = true) ->
+                    decodeNevent(identifier.lowercase())
+                else -> null
+            }
+        }.distinctBy { it.id }
+
+    /**
+     * NIP-18 tags for [pasted] notes: `["q", id, "", author]` per note, and a
+     * `p` for its author so they are told. [authorOf] is the author of a note
+     * the app has loaded, which beats the nevent's own claim. No relay hint,
+     * as for every quote this app posts. A note [existing] already quotes, or
+     * an author it already tags, is not added twice.
+     */
+    fun pastedQuoteTags(pasted: List<EventPointer>, existing: List<List<String>>, authorOf: (String) -> String?): List<List<String>> {
+        val quoted = existing.filter { it.size >= 2 && it[0] == "q" }.mapTo(HashSet()) { it[1] }
+        val tagged = existing.filter { it.size >= 2 && it[0] == "p" }.mapTo(HashSet()) { it[1] }
+        val out = mutableListOf<List<String>>()
+        for (pointer in pasted) {
+            if (!quoted.add(pointer.id)) continue
+            val author = authorOf(pointer.id) ?: pointer.author ?: ""
+            out += listOf("q", pointer.id, "", author)
+            if (author.isNotEmpty() && tagged.add(author)) out += listOf("p", author)
+        }
+        return out
+    }
+
     private fun isHexEventId(value: String): Boolean =
         value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 }
