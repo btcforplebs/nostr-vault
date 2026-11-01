@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import kotlinx.coroutines.flow.filterNotNull
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -145,6 +146,18 @@ fun VaultTabScreen(
         if (!opensNewActivity) return@LaunchedEffect
         VaultMode.opening(RelayForegroundService.newActivityModes.value, showing)?.let(viewModel::selectMode)
         VaultSection.openedNewActivity()
+    }
+    // The Vault tab's hold menu (iOS #1505): the page showing gets the
+    // tick, the lists' dots ride along, and a pick parked before this tab
+    // was built (a first visit) is applied now.
+    LaunchedEffect(showing) { com.nostrvault.ui.navigation.VaultTabPicker.shownMode = showing }
+    val pickerDots by viewModel.newModes.collectAsState()
+    LaunchedEffect(pickerDots) { com.nostrvault.ui.navigation.VaultTabPicker.listDots = pickerDots }
+    LaunchedEffect(Unit) {
+        com.nostrvault.ui.navigation.VaultTabPicker.request.filterNotNull().collect { picked ->
+            com.nostrvault.ui.navigation.VaultTabPicker.request.value = null
+            if (picked == VaultMode.ACTIVITY) VaultSection.showActivity() else viewModel.selectMode(picked)
+        }
     }
     val modeInSight = showing.takeIf { lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && !opensNewActivity }
     LaunchedEffect(modeInSight, relayNews) {
@@ -293,7 +306,7 @@ private fun savedPart(showsMedia: Boolean, showsActivity: Boolean): String = whe
     else -> RELAY_PART
 }
 
-private val VaultMode.icon: ImageVector
+internal val VaultMode.icon: ImageVector
     get() = when (this) {
         VaultMode.ACTIVITY -> NostrVaultIcons.Activity
         VaultMode.NOTES -> NostrVaultIcons.Document

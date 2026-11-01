@@ -148,6 +148,19 @@ fun NostrVaultNavHost(
     val unreadDMsState = dmUnreadCount.collectAsState()
     val unreadDMs by unreadDMsState
     val relayActivity by hasNewRelayActivity.collectAsState()
+    val vaultZapsOnly = config.zapsOnlyMode
+    // A page picked from the Vault tab's hold menu: the tab applies it (its
+    // ViewModel owns the lists), now or as soon as it is built.
+    fun openVaultMode(mode: com.nostrvault.data.model.VaultMode) {
+        VaultTabPicker.request.value = mode
+        if (currentRoute != Screen.Dashboard.route) {
+            navController.navigate(Screen.Dashboard.route) {
+                popUpTo(Screen.Feed.route) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
     // Zaps Only hides Likes: a like then lights no Vault list.
     LaunchedEffect(config.zapsOnlyMode) { RelayForegroundService.setZapsOnlyMode(config.zapsOnlyMode) }
 
@@ -337,6 +350,7 @@ fun NostrVaultNavHost(
                     onCondensedAction = onCondensedAction,
                     onExpand = { ScrollChrome.expand(scope) },
                     nowPlaying = { com.nostrvault.ui.screens.music.CollapsedNowPlayingButton(musicActions) },
+                    onPickVaultMode = { mode -> openVaultMode(mode) },
                     onPickFeedMode = { mode ->
                         // The feed applies it (its ViewModel owns the mode),
                         // now or as soon as it is back on screen.
@@ -379,6 +393,10 @@ fun NostrVaultNavHost(
         // replaceable event that may already be gone.
         com.nostrvault.ui.components.LiveStreamHost()
 
+        // Hold-the-Vault-tab pages: over everything, the bar included.
+        if (showBottomBar) {
+            VaultTabPickerOverlay(zapsOnly = vaultZapsOnly, onPick = { mode -> openVaultMode(mode) })
+        }
         // Hold-the-Feed-tab list: over everything, the bar included.
         if (showBottomBar) {
             FeedTabPickerOverlay(
