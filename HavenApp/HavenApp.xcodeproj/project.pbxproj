@@ -729,7 +729,6 @@
 		7AA9F15E3F8CAB48E6333BD4 /* DashboardView+StatusHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD7883731DDC979352C81DE /* DashboardView+StatusHeader.swift */; };
 		7ACA852F8DC2BCC6E62FBEBD /* ImportTourArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE064EFEE0F4D583DE7484A2 /* ImportTourArt.swift */; };
 		7AE5DD105681A89C13BE7E22 /* InlinePlayerLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EEA633D3639AB7EE2C3BFC /* InlinePlayerLayer.swift */; };
-		7AF0F26E5C585A86BCB51346 /* FeedView+ColumnHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0617791A7CAAFE0585F5C81A /* FeedView+ColumnHeader.swift */; };
 		7B24BEBBA8EEF514D33339F8 /* FeedRowStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81786D5A671BACE12E1E7631 /* FeedRowStore.swift */; };
 		7B5A630B3095349160E11349 /* ComposerPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE332EA96EE77E669D9A4182 /* ComposerPlacement.swift */; };
 		7B63B96C1A2672ED35DAE97E /* LogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70CE0E2EC47B06E218FF6548 /* LogsView.swift */; };
@@ -891,7 +890,6 @@
 		9423FE9E1C22C9AFBF262E97 /* NostrService+Lookups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B54B15E7B5A09E5B1AF7AF2 /* NostrService+Lookups.swift */; };
 		942E657FF03ED3D5B9E35889 /* FeedView+MediaGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CC6DD4AF1204451CD290C02 /* FeedView+MediaGrid.swift */; };
 		9465FFF264F339A39DD4687F /* EmojiListService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056500E0943FECEBFE6EBC1C /* EmojiListService.swift */; };
-		94875EF168D7ADCCAF13EADF /* iPadSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3284E010C4D9375FDAA477C2 /* iPadSidebarView.swift */; };
 		94B611BC87589E1E37579081 /* WalletLightningTab+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F6A51F203F8AE84E266FB5 /* WalletLightningTab+Actions.swift */; };
 		952B3B5AF968D120A42C007D /* CustomEmojiText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0842F86AEFC979CFBDF29054 /* CustomEmojiText.swift */; };
 		955A376EBAE96D11F97B1C43 /* UploadServersLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5DE617DD05A43CC7A57DCE /* UploadServersLink.swift */; };
@@ -1188,7 +1186,6 @@
 		C4974C4D3F2EFFD7AC27473F /* FeedPrefetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 542A95E69E3D84F5C583100C /* FeedPrefetcher.swift */; };
 		C4BFAF59D1E60FA8587887EB /* TrustWebView+Globe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99BB884D57C3B72272208E6D /* TrustWebView+Globe.swift */; };
 		C4FD1DA70112DA842CCAB6D1 /* BlossomService+ServerUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF3573CB587310AF650A307 /* BlossomService+ServerUpload.swift */; };
-		C50128433554750A5EA5BDD6 /* FeedView+ColumnHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0617791A7CAAFE0585F5C81A /* FeedView+ColumnHeader.swift */; };
 		C5040D31F0EF39592A437F47 /* HomeVaultSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ADB1854DDD7D68150AD6CA7 /* HomeVaultSection.swift */; };
 		C51C53A0E944C1C825E56108 /* CStringArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16D3572447C348FFE5B9A499 /* CStringArguments.swift */; };
 		C5352175A47EC61C4030CC20 /* NVTileFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A671FC7A2A4BFABC2FF9F8DD /* NVTileFetcher.swift */; };
@@ -1647,7 +1644,6 @@
 		056C6D389655475872FFE265 /* GifGridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GifGridLayout.swift; sourceTree = "<group>"; };
 		0571B58CF85751A2BFC66266 /* DeletedNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletedNotes.swift; sourceTree = "<group>"; };
 		05E22622B26A3F1A5C9D0A2A /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
-		0617791A7CAAFE0585F5C81A /* FeedView+ColumnHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+ColumnHeader.swift"; sourceTree = "<group>"; };
 		06A0BB929DA965323CDD105A /* LinkPreviewCacheKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewCacheKey.swift; sourceTree = "<group>"; };
 		075378186B28AF0EF05CE1AB /* NotificationReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationReadiness.swift; sourceTree = "<group>"; };
 		0802E590CDCCA7978BB8D2C6 /* AvatarThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarThumbnail.swift; sourceTree = "<group>"; };
@@ -1776,7 +1772,6 @@
 		322961A17859BE8B8A7F46A3 /* VideoPlayerCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerCache.swift; sourceTree = "<group>"; };
 		325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusView.swift; sourceTree = "<group>"; };
 		327390102914F7A1B1AED7A0 /* HavenConfig+RelayRoles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+RelayRoles.swift"; sourceTree = "<group>"; };
-		3284E010C4D9375FDAA477C2 /* iPadSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iPadSidebarView.swift; sourceTree = "<group>"; };
 		32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedMediaPost.swift; sourceTree = "<group>"; };
 		32F57B930134EBFB88685E90 /* FeedView+ModeFeeds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedView+ModeFeeds.swift"; sourceTree = "<group>"; };
 		331ACF045B8F97CBE8B9F819 /* SilentPaymentsKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SilentPaymentsKit; path = SilentPaymentsKit; sourceTree = SOURCE_ROOT; };
@@ -3125,7 +3120,6 @@
 				27BB588F35E19129A12047AE /* BottomTabBar.swift */,
 				0E2F2C826126F954B17978AE /* DockHoldMenu.swift */,
 				AA19CF4BA8AA51AF4C023B04 /* FeedHoldPicker.swift */,
-				3284E010C4D9375FDAA477C2 /* iPadSidebarView.swift */,
 				8467D80FB6D0127F0F02C82C /* iPhoneTabView.swift */,
 				0A715D3FE88115AC004FCA65 /* NoteSplitPane.swift */,
 				D6EBFF34B8DB3F06E41013B6 /* VaultTabHoldItem.swift */,
@@ -3426,7 +3420,6 @@
 				542A95E69E3D84F5C583100C /* FeedPrefetcher.swift */,
 				81786D5A671BACE12E1E7631 /* FeedRowStore.swift */,
 				B28025DEECA1DBE5C1594358 /* FeedView.swift */,
-				0617791A7CAAFE0585F5C81A /* FeedView+ColumnHeader.swift */,
 				E3C196064FDD02127CFA047C /* FeedView+EmptyStates.swift */,
 				B7FEDF9367CC166604398159 /* FeedView+FeedList.swift */,
 				BF877C91ACA408A0F738AA31 /* FeedView+FeedStack.swift */,
@@ -4190,7 +4183,6 @@
 				2CB176ED82313ACA85A8AE44 /* FeedThreadCard.swift in Sources */,
 				60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */,
 				0C9DE6ADE24831CB3EB91BE9 /* FeedVideoShape.swift in Sources */,
-				C50128433554750A5EA5BDD6 /* FeedView+ColumnHeader.swift in Sources */,
 				4AB3638041686375872C0D3B /* FeedView+EmptyStates.swift in Sources */,
 				9F9CDDF321235EC17C00A9A3 /* FeedView+FeedList.swift in Sources */,
 				8ABCB3D026E97EDF6A561971 /* FeedView+FeedStack.swift in Sources */,
@@ -4757,7 +4749,6 @@
 				27FA2D5AA1F2368CB224F74F /* ZapValidationService.swift in Sources */,
 				3678B78F62195F531E1C209A /* ZappersListView.swift in Sources */,
 				F6CD2A12D44A1062CEA4475F /* ZoomSwipeWatch.swift in Sources */,
-				94875EF168D7ADCCAF13EADF /* iPadSidebarView.swift in Sources */,
 				8BB650F61397DD12A8DE6AB2 /* iPhoneTabView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -4991,7 +4982,6 @@
 				F7E4D75941ED6FAE9AF5480E /* FeedThreadCard.swift in Sources */,
 				E9B017046B79DE70C07E4574 /* FeedThreadGrouping.swift in Sources */,
 				A32BE09A005360A1730BB3D1 /* FeedVideoShape.swift in Sources */,
-				7AF0F26E5C585A86BCB51346 /* FeedView+ColumnHeader.swift in Sources */,
 				5959493ACAC5D0FC9D4EFE76 /* FeedView+EmptyStates.swift in Sources */,
 				4B38836D971B641B46294A2F /* FeedView+FeedList.swift in Sources */,
 				E85C94D63ACB03DF1952F022 /* FeedView+FeedStack.swift in Sources */,

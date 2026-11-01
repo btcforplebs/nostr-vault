@@ -34,17 +34,10 @@ struct ContentView: View {
                     relayManager.startRelay(config: configService.config)
                 }
             } else {
-                if horizontalSizeClass == .regular {
-                    // iPad: the sidebar in both orientations. Portrait used to
-                    // fall back to the phone's floating tab bar, stretched
-                    // across the whole width; the sidebar now stays pinned
-                    // there too (iPadSidebarView keeps every column visible).
-                    // One branch per size class, so rotating or raising the
-                    // keyboard never swaps the layout and drops a sheet.
-                    iPadSidebarView(selectedTab: $selectedTab)
-                } else {
-                    iPhoneTabView(selectedTab: $selectedTab)
-                }
+                // iPhone and iPad alike: the bottom dock and the phone's
+                // headers. the tab view itself only adds a note beside the
+                // list when an iPad is in landscape.
+                iPhoneTabView(selectedTab: $selectedTab)
             }
         }
         // Every scroll view in the app, not just the Feed's: under a top bar
@@ -75,10 +68,6 @@ struct ContentView: View {
             if running, let action = AppDelegate.pendingAction {
                 AppDelegate.dispatchAction(action)
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenSettings)) { _ in
-            // Only the iPad sidebar has a Settings tab; the phone opens its sheet.
-            if horizontalSizeClass == .regular { selectedTab = 5 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
             selectedTab = 4 // Vault tab, relay half
@@ -175,7 +164,7 @@ class AppState: ObservableObject {
     private init() {}
 }
 
-/// ⌘R and ⌘F from an iPad's hardware keyboard, in both iPad layouts. ⌘R
+/// ⌘R, ⌘F, ⌘1-5 and ⌘N from an iPad's hardware keyboard. ⌘R
 /// refreshes whatever the showing tab lists (each tab's view answers for
 /// itself, keyed by its index); ⌘F goes to Search with the field focused.
 /// The Mac binds ⌘R per screen in its toolbars; iOS has no toolbar button
@@ -203,6 +192,25 @@ private struct IPadCommandKeys: ViewModifier {
                         NotificationCenter.default.post(name: .havenFocusSearch, object: nil)
                     }
                     .keyboardShortcut("f", modifiers: .command)
+                    // The dock's order, left to right. Titled, so holding ⌘
+                    // lists them by name.
+                    Button("Feed") { selectedTab = 0 }
+                        .keyboardShortcut("1", modifiers: .command)
+                    Button("Search") { selectedTab = 1 }
+                        .keyboardShortcut("2", modifiers: .command)
+                    Button("Profile") { selectedTab = 2 }
+                        .keyboardShortcut("3", modifiers: .command)
+                    Button("WoT") { selectedTab = 3 }
+                        .keyboardShortcut("4", modifiers: .command)
+                    Button("Vault") { selectedTab = 4 }
+                        .keyboardShortcut("5", modifiers: .command)
+                    // What the dock's Post button does. A read-only sign-in
+                    // can't sign a post, so it does nothing for one.
+                    Button("New Post") {
+                        guard ConfigService.shared.activeAccountCanSign else { return }
+                        NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
                 }
                 .frame(width: 0, height: 0)
                 .opacity(0)
