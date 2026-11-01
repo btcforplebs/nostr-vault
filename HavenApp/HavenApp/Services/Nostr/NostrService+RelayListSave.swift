@@ -3,7 +3,8 @@ import Foundation
 /// The only places the owner's relay list (kind 10002) and DM inbox (kind
 /// 10050) are published: Save in Settings > Relays, a saved Mac relay
 /// address change, and a new account's starter list (Logen 1C). Launch and setup never publish them (Logen
-/// 2026-10-31). Mirrors Android `NostrServiceListPublishing.kt`.
+/// 2026-10-31), and adopting the owner's own list never does.
+/// Mirrors Android `NostrServiceListPublishing.kt`.
 extension NostrService {
 
     /// The owner's published relay list and DM inbox, for Settings > Relays.
@@ -75,6 +76,53 @@ extension NostrService {
         if !parsed.inbox.isEmpty { relayLists[pubkey] = parsed.inbox }
         if !parsed.write.isEmpty { outboxRelays[pubkey] = parsed.write }
         saveProfilesThrottled()
+        adoptOwnerRelayList(parsed, pubkey: pubkey, createdAt: createdAt)
+    }
+
+    /// The owner's own relay list becomes this device's read and write
+    /// relays when it is newer than the last change here (Logen 2026-11-01):
+    /// at launch, at setup and whenever a newer one arrives. The starter
+    /// relays are only for an account with no list. Never publishes.
+    func adoptOwnerRelayList(_ parsed: (inbox: [String], write: [String]), pubkey: String, createdAt: Int64) {
+        let configService = ConfigService.shared
+        guard let owner = Bech32.decode(configService.config.ownerNpub)?.hexString,
+              owner.lowercased() == pubkey.lowercased() else { return }
+        let before = configService.config
+        let changed = configService.config.adoptRelayList(read: parsed.inbox, write: parsed.write, publishedAt: createdAt)
+        guard configService.config != before else { return }
+        configService.save()
+        // The write list is the relay's broadcast list, read at start.
+        if changed { RelayProcessManager.shared.applySavedConfig(configService.config) }
+        #if DEBUG
+        if changed { print("NostrService: Adopted own relay list (\(configService.config.feedRelays.count) read, \(configService.config.blastrRelays.count) write)") }
+        #endif
+    }
+
+    /// The owner's relay list going out from this app (a Save in Settings >
+    /// Relays, a new account's starter list) is already what this device
+    /// uses. Its date becomes the last change, so the copy coming back from
+    /// the relays isn't adopted over the lists: Save keeps App default rows
+    /// that the published list leaves out.
+    func stampOwnRelayListPost(_ event: NostrEvent) {
+        guard event.kind == 10002 else { return }
+        let configService = ConfigService.shared
+        guard let owner = Bech32.decode(configService.config.ownerNpub)?.hexString,
+              owner.lowercased() == event.pubkey.lowercased(),
+              event.created_at > (configService.config.relayListUpdatedAt ?? 0) else { return }
+        configService.config.relayListUpdatedAt = event.created_at
+        configService.save()
+    }
+
+    /// Looks up the owner's newest relay list (kind 10002) and adopts it as
+    /// above. For launch and setup, where nothing may have fetched it yet.
+    @MainActor
+    func adoptPublishedRelayList() async {
+        let config = ConfigService.shared.config
+        guard let owner = Bech32.decode(config.ownerNpub)?.hexString else { return }
+        let lookup = await lookupNewestReplaceable(kind: 10002, for: owner,
+                                                   alsoAsk: Array(config.readRelays.prefix(3)) + RelayDraft.indexers)
+        guard let event = lookup.event else { return }
+        applyRelayList(ProfileRepository.parseRelayListTags(event.tags), pubkey: event.pubkey, createdAt: event.created_at)
     }
 
     /// Publishes exactly `relays` as the owner's kind 10050 and stamps it as

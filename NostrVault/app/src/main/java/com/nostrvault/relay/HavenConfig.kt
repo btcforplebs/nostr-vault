@@ -126,6 +126,13 @@ data class HavenConfig(
      * published its own. null = never set, which any published list beats.
      */
     val dmRelaysUpdatedAt: Long? = null,
+    /**
+     * When the read and write lists ([feedRelays], [blastrRelays]) last
+     * changed, in Unix seconds: a Save in Settings > Relays, or the
+     * created_at of the owner's published kind 10002 this device adopted.
+     * null = never set. See [OwnRelayList].
+     */
+    val relayListUpdatedAt: Long? = null,
     /** Never connect: published as the blocked relay list (NIP-51 kind 10006). See [RelayBlocklist]. */
     val blockedRelays: List<String> = emptyList(),
 

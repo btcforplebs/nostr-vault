@@ -415,6 +415,22 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     }
 
 
+    /**
+     * Looks up the owner's newest relay list (kind 10002) and adopts it as
+     * the read and write relays (see [adoptOwnerRelayList]). For launch and
+     * setup, where nothing may have fetched it yet. Never publishes.
+     */
+    internal fun NostrService.adoptPublishedRelayListImpl() {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val owner = ownerHexPubkey
+                if (owner.isBlank()) return@runCatching
+                val lookup = lookupNewestReplaceable(10002, owner, relayListLookupRelays())
+                lookup.event?.let { parseRelayListEvent(owner, it.tags, it.createdAt) }
+            }.onFailure { Log.w(TAG, "Relay list sync failed: ${it.message}") }
+        }
+    }
+
     /** Runs [syncOwnerDMInboxList] off the main thread: adopts a newer published 10050, never publishes. */
     internal fun NostrService.adoptPublishedDMRelayListImpl() {
         scope.launch(Dispatchers.IO) {

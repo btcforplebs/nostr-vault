@@ -231,6 +231,13 @@ struct HavenConfig: Codable, Equatable {
     /// list beats.
     var dmRelaysUpdatedAt: Int64? = nil
 
+    /// When the read and write lists (`feedRelays`, `blastrRelays`) last
+    /// changed, in Unix seconds: a Save in Settings > Relays, or the
+    /// created_at of the owner's published kind 10002 this device adopted.
+    /// nil = still the app's starter relays, which any published list
+    /// replaces (Logen 2026-11-01). See `adoptRelayList`.
+    var relayListUpdatedAt: Int64? = nil
+
     /// Relays the app never connects to (Never connect), published as the
     /// owner's blocked relay list (NIP-51 kind 10006). Enforced in
     /// `WebSocketClient` through `RelayBlocklist`.
@@ -315,7 +322,7 @@ struct HavenConfig: Codable, Equatable {
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case meshDevices, meshPhotoDestination
         case blastrRelaysFile, blastrRelays
-        case feedRelays, dmRelays, dmRelaysUpdatedAt, blockedRelays, droppedDeadRelays
+        case feedRelays, dmRelays, dmRelaysUpdatedAt, relayListUpdatedAt, blockedRelays, droppedDeadRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
@@ -470,6 +477,13 @@ struct HavenConfig: Codable, Equatable {
         feedRelays = try container.decodeIfPresent([String].self, forKey: .feedRelays) ?? defaults.feedRelays
         dmRelays = try container.decodeIfPresent([String].self, forKey: .dmRelays) ?? defaults.dmRelays
         dmRelaysUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .dmRelaysUpdatedAt)
+        // A config from before the stamp: lists still made only of relays
+        // the app has shipped count as never edited, so the owner's own
+        // published list replaces them. Any other relay means they were
+        // edited here, and they are kept until a newer list is published.
+        relayListUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .relayListUpdatedAt)
+            ?? (Self.relayListsLookUnedited(read: feedRelays, write: blastrRelays)
+                ? nil : Int64(Date().timeIntervalSince1970))
         blockedRelays = try container.decodeIfPresent([String].self, forKey: .blockedRelays) ?? []
         droppedDeadRelays = try container.decodeIfPresent(Bool.self, forKey: .droppedDeadRelays) ?? false
 

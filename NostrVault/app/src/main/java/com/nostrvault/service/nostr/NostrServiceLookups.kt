@@ -30,7 +30,39 @@ internal const val GONE_DRAIN_MS = 250L
             if (writeRelays.isNotEmpty()) {
                 _outboxRelays.value = _outboxRelays.value + (pubkey to writeRelays)
             }
+            if (pubkey.isNotBlank() && pubkey.equals(ownerHexPubkey, ignoreCase = true)) {
+                adoptOwnerRelayList(readRelays, writeRelays, createdAt)
+            }
         }
+    }
+
+    /**
+     * The owner's relay list going out from this app (a Save in Settings >
+     * Relays, a new account's starter list) is already what this device
+     * uses. Its date becomes the last change, so the copy coming back from
+     * the relays isn't adopted over the lists: Save keeps App default rows
+     * that the published list leaves out. Same as iOS.
+     */
+    internal fun NostrService.stampOwnRelayListPost(event: com.nostrvault.service.NostrEvent) {
+        if (event.kind != 10002 || ownerHexPubkey.isBlank() || !event.pubkey.equals(ownerHexPubkey, ignoreCase = true)) return
+        if (event.createdAt <= (configStore.config.value.relayListUpdatedAt ?: 0L)) return
+        configStore.update {
+            if (event.createdAt > (it.relayListUpdatedAt ?: 0L)) it.copy(relayListUpdatedAt = event.createdAt) else it
+        }
+    }
+
+    /**
+     * The owner's own relay list becomes this device's read and write relays
+     * when it is newer than the last change here ([com.nostrvault.relay.OwnRelayList], Logen
+     * 2026-11-01). Never publishes. A changed write list restarts the relay
+     * through [com.nostrvault.data.local.ConfigStore]: it is the broadcast list.
+     */
+    internal fun NostrService.adoptOwnerRelayList(read: List<String>, write: List<String>, createdAt: Long) {
+        val now = System.currentTimeMillis() / 1000
+        val adopt = { cfg: com.nostrvault.relay.HavenConfig -> com.nostrvault.relay.OwnRelayList.adopting(cfg, read, write, createdAt, now) }
+        // Every save writes the file; most lists that arrive change nothing.
+        val current = configStore.config.value
+        if (adopt(current) !== current) configStore.update(adopt)
     }
 
     internal fun NostrService.parseDmRelayListEvent(pubkey: String, tags: List<List<String>>) {

@@ -511,6 +511,9 @@ struct SetupWizardView: View {
         // device's. Setup doesn't publish one: the owner picks DM relays and
         // saves them in Settings > Relays (Logen 2026-10-31).
         Task { await NostrService.shared.adoptPublishedDMRelayList() }
+        // An existing account's relay list (kind 10002) becomes this
+        // device's read and write relays; the starters are only for none.
+        Task { await NostrService.shared.adoptPublishedRelayList() }
         // An existing account's media servers (kind 10063) become upload servers.
         Task { await NostrService.shared.syncOwnerServerList() }
 

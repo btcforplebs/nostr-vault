@@ -85,6 +85,9 @@ class AppDelegate: NSObject, ObservableObject {
                 // device. Never publishes: only Save in Settings > Relays does.
                 try? await Task.sleep(for: .seconds(5))
                 await NostrService.shared.adoptPublishedDMRelayList()
+                // The owner's own relay list (kind 10002) becomes the read
+                // and write relays, unless relays were edited here since.
+                await NostrService.shared.adoptPublishedRelayList()
                 // Media servers set in another app (kind 10063) become
                 // upload servers here too.
                 Task { await NostrService.shared.syncOwnerServerList() }

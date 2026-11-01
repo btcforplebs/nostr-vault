@@ -161,6 +161,9 @@ class MainActivity : FragmentActivity() {
                     // Takes a DM inbox list (kind 10050) saved on another
                     // device. Never publishes: only Save in Settings > Relays does.
                     runCatching { nostrService.adoptPublishedDMRelayList() }
+                    // The owner's own relay list (kind 10002) becomes the read
+                    // and write relays, unless relays were edited here since.
+                    runCatching { nostrService.adoptPublishedRelayList() }
 
                     // Media servers set in another app (kind 10063) become
                     // upload servers here too.

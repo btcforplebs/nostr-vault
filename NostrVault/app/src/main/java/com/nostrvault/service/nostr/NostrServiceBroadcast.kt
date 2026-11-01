@@ -82,6 +82,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
      */
     internal fun NostrService.postEventImpl(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
         val eventJson = serializeEvent(event)
+        stampOwnRelayListPost(event)
 
         // 0. The owner's home vault on the mesh, which passes it on to the
         //    regular relays too. Queued while it is out of reach.
