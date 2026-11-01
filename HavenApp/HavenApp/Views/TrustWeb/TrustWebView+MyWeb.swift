@@ -133,6 +133,7 @@ struct MyWebDashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 headline
+                WotZombiesCard()
                 DashboardSection(title: "Who you can see") {
                     ForEach(Array(layers.enumerated()), id: \.element) { index, item in
                         if index > 0 { DashboardDivider() }
