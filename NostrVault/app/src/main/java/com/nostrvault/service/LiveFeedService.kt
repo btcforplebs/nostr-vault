@@ -52,6 +52,30 @@ class LiveFeedService @Inject constructor(
          */
         private const val COLLECT_WINDOW_MS = 20_000L
 
+        /** Most follows one REQ asks about. 1,054 in one REQ is 141 KB, which nos.lol drops. */
+        const val AUTHORS_PER_REQ = 500
+
+        /**
+         * The REQs for one load, as (subscription id, message) pairs.
+         *
+         * Following asks by author and by `p` (a service publishing for the
+         * host, iOS parity), every follow in chunks of [AUTHORS_PER_REQ], one
+         * REQ per chunk. Taking only the first 500 skipped everyone after
+         * them: Logen follows 1,054 and The Lot Radio is #1041 (2026-11-01).
+         * Global (`following` null or empty) asks for any stream.
+         */
+        fun liveRequests(subId: String, following: Collection<String>?): List<Pair<String, String>> {
+            if (following.isNullOrEmpty()) {
+                return listOf(subId to """["REQ","$subId",{"kinds":[${LiveStream.KIND}],"limit":$LIMIT}]""")
+            }
+            return following.chunked(AUTHORS_PER_REQ).mapIndexed { i, chunk ->
+                val id = "$subId-$i"
+                val list = chunk.joinToString(",") { "\"$it\"" }
+                id to """["REQ","$id",{"kinds":[${LiveStream.KIND}],"authors":[$list],"limit":$LIMIT},""" +
+                    """{"kinds":[${LiveStream.KIND}],"#p":[$list],"limit":$LIMIT}]"""
+            }
+        }
+
         /** iOS LiveChat.globalGate. */
         fun globalGate(trust: Set<String>?, hasNoWebOfTrustYet: Boolean): GlobalGate = when {
             trust == null -> GlobalGate.Everyone
@@ -184,14 +208,13 @@ class LiveFeedService @Inject constructor(
         }
         val hidesAdult = _globalGate.value == GlobalGate.NewAccount
         val subId = "live-${System.currentTimeMillis().toString(36)}"
-        // Following asks by author and by `p`, for streams a service publishes
-        // on a follow's behalf (iOS parity); Global asks for any stream.
-        val open = """{"kinds":[${LiveStream.KIND}],"limit":$LIMIT}"""
-        val filters = if (_scope.value == ReelsScope.FOLLOWING && !admitted.isNullOrEmpty()) {
-            val list = admitted.take(500).joinToString(",") { "\"$it\"" }
-            """{"kinds":[${LiveStream.KIND}],"authors":[$list],"limit":$LIMIT},""" +
-                """{"kinds":[${LiveStream.KIND}],"#p":[$list],"limit":$LIMIT}"""
-        } else open
+        // Following asks about every follow, 500 per REQ (liveRequests);
+        // Global asks for any stream. Results merge by address below.
+        val requests = liveRequests(
+            subId,
+            if (_scope.value == ReelsScope.FOLLOWING) admitted else null,
+        )
+        val subIds = requests.map { it.first }.toSet()
         // Newest announcement per address wins: 30311 is replaceable, so the
         // same stream arrives repeatedly with updated status and viewer counts,
         // and keeping the first copy would pin it to whatever it said first.
@@ -212,7 +235,7 @@ class LiveFeedService @Inject constructor(
                 clients.add(client)
                 launch {
                     client.messages.collect { raw ->
-                        val stream = parseStream(raw, subId, hidesAdult) ?: return@collect
+                        val stream = parseStream(raw, subIds, hidesAdult) ?: return@collect
                         if (stream.hostPubkey in blocked) return@collect
                         if (admitted != null && stream.hosts.none { it in admitted }) return@collect
                         val snapshot = newestLock.withLock {
@@ -231,7 +254,7 @@ class LiveFeedService @Inject constructor(
                     client.connectionState.collect { state ->
                         if (state == WebSocketClient.ConnectionState.CONNECTED) {
                             reached.set(true)
-                            client.send("""["REQ","$subId",$filters]""")
+                            requests.forEach { (_, req) -> client.send(req) }
                         }
                     }
                 }
@@ -269,11 +292,11 @@ class LiveFeedService @Inject constructor(
     }
 
     /** @return the stream in this relay message, or null if it is not one. */
-    private fun parseStream(raw: String, expectedSubId: String, hidesAdult: Boolean): LiveStream? = try {
+    private fun parseStream(raw: String, expectedSubIds: Set<String>, hidesAdult: Boolean): LiveStream? = try {
         val array = json.parseToJsonElement(raw) as? JsonArray
         if (array == null || array.size < 3 ||
             array[0].jsonPrimitive.content != "EVENT" ||
-            array[1].jsonPrimitive.content != expectedSubId
+            array[1].jsonPrimitive.content !in expectedSubIds
         ) {
             null
         } else {
