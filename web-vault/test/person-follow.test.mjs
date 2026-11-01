@@ -29,7 +29,11 @@ function fakeVault(seed = []) {
 }
 const signer = { method: "nip07", signEvent: async t => finalizeEvent(t, me) }
 const okPublish = (urls) => urls.map(() => Promise.resolve(""))
-const run = (over) => setFollow({ vault: fakeVault(), signer, pubkey: mePk, readRelays: [], writeRelays: ["wss://w.example"], ask: relaysAnswer([]), publish: okPublish, ...over })
+// The user's own relays are the read and write relays a test names, as when they come from the account's 10002.
+const run = (over) => {
+  const o = { readRelays: [], writeRelays: ["wss://w.example"], ...over }
+  return setFollow({ vault: fakeVault(), signer, pubkey: mePk, ask: relaysAnswer([]), publish: okPublish, ownRelays: [...new Set([...o.readRelays, ...o.writeRelays])], ...o })
+}
 // Every relay asked sends these events and its EOSE.
 function relaysAnswer(events) { return async () => ({ events, answered: true }) }
 
@@ -145,7 +149,33 @@ test("guard: most of your relays answering is enough, half or fewer is not", asy
   assert.equal(guard(3, 4), "")
   assert.match(guard(2, 4), /Only 2 of your 4/)
   assert.match(guard(1, 2), /Only 1 of your 2/)
-  assert.match(guard(0, 0), /None of your relays/)
+  assert.match(guard(0, 0), /no relay list yet/, "no own relays (no 10002): its own reason")
+  assert.match(guard(0, 3), /None of your relays/)
+})
+
+test("no 10002 yet: the defaults the account reads and writes with are not its own relays, so a follow is refused", async () => {
+  // Every relay asked (the defaults, purplepag.es) answers with no list, as for a real account whose 10002 just
+  // didn't load: before, the defaults counted as the user's own and a first list of one follow was signed over it.
+  let signed = false, asked = []
+  await assert.rejects(setFollow({ vault: fakeVault(), pubkey: mePk, target: pk(), follow: true, publish: okPublish,
+    readRelays: ["wss://default-a.example"], writeRelays: ["wss://default-b.example"], ownRelays: [],
+    ask: async url => { asked.push(url); return { events: [], answered: true } },
+    signer: { signEvent: async t => { signed = true; return finalizeEvent(t, me) } } }), /no relay list yet/)
+  assert.equal(signed, false)
+  assert.ok(!asked.includes("wss://default-a.example") && !asked.includes("wss://default-b.example"), "the defaults aren't asked as own relays")
+  // Leaving ownRelays out is the same: refused, never decided by readRelays/writeRelays.
+  await assert.rejects(setFollow({ vault: fakeVault(), signer, pubkey: mePk, target: pk(), follow: true, publish: okPublish,
+    readRelays: ["wss://a.example"], writeRelays: ["wss://b.example"], ask: relaysAnswer([]) }), /no relay list yet/)
+})
+
+test("every app follow tap passes the account's own relays (account.relays.listed)", async () => {
+  const { readdirSync, readFileSync, statSync } = await import("node:fs")
+  const { join } = await import("node:path")
+  const src = new URL("../src/", import.meta.url).pathname
+  const walk = d => readdirSync(d).flatMap(n => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : /\.jsx?$/.test(n) ? [p] : [] })
+  const calls = walk(src).flatMap(p => [...readFileSync(p, "utf8").replace(/\s+/g, " ").matchAll(/await setFollow\(\{[^}]*\}\)/g)].map(m => [p, m[0]]))
+  assert.ok(calls.length >= 6, `found the follow taps (${calls.length})`)
+  for (const [p, c] of calls) assert.match(c, /ownRelays: (ctx\.)?account\.relays\.listed/, p)
 })
 
 test("guard: with 2 of 3 answering, the old wipe cases still refuse", async () => {

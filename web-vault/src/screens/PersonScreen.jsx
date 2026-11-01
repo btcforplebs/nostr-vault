@@ -93,7 +93,7 @@ export function PersonScreen({ ctx, pubkey }) {
     setBusy(true); setErr("")
     try {
       await setFollow({ vault, signer: ctx.signer, pubkey: session.pubkey, target: pubkey, follow,
-        readRelays: account.relays.read, writeRelays: account.relays.write, known: account.contacts, appCount: account.follows.length })
+        readRelays: account.relays.read, writeRelays: account.relays.write, ownRelays: account.relays.listed, known: account.contacts, appCount: account.follows.length })
       await ctx.reloadAccount()
       setToast(follow ? `Following ${name}` : `Unfollowed ${name}`)
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false); setWant(null) }

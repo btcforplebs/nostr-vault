@@ -12,6 +12,9 @@ const now = () => Math.floor(Date.now() / 1000)
 /** How far ahead of this clock a kind 3 may be dated and still count. A list dated later is ignored, and a new list
  *  is never dated later than this, so one bad clock can't pin the follow list in the future for every other app. */
 export const MAX_SKEW = 15 * 60
+/** Why an edit can't be checked when the user's own relays aren't known: no 10002 yet, or every relay in it is one
+ *  this app drops (a dead host). Both leave `listed` empty (pool.js relayLists); the message is true for both (Tron #1464). */
+export const NO_OWN_RELAYS = "Your own relays aren't known: you have no relay list yet, or every relay in it is unreachable, so your newest follow list can't be checked. Nothing was changed. Fix your relays in Settings › Relays first."
 /** How old this browser's own copy may be and still be built on when none of the user's relays had a list. */
 export const MAX_LOCAL_AGE = 7 * 86400
 const ASK_MS = 6000
@@ -112,6 +115,7 @@ export function editedTags(base, target, follow) {
  *    every follow since and bring back anyone unfollowed on another client.
  */
 export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0, asked = 0, answered = 0, netFound = false, ahead = false, at = now() }) {
+  if (!asked) return NO_OWN_RELAYS
   if (!netFound && !(asked > 0 && answered * 2 > asked)) {
     if (!answered) return "None of your relays answered, so your newest follow list isn't known and nothing was changed. Try again when they're reachable."
     return `Only ${answered} of your ${asked} relays answered and none had your follow list, so your newest one isn't known and nothing was changed. Try again when most of them are reachable.`
@@ -135,13 +139,15 @@ export function wipeGuard({ base, tags, target, follow, seen = [], appCount = 0,
 
 /**
  * Follow or unfollow `target`: find the newest list, edit it, guard it, sign it, send it to the write relays, then
- * store it in Haven's outbox. Throws (and publishes nothing) when the guard refuses.
+ * store it in Haven's outbox. Throws (and publishes nothing) when the guard refuses. `ownRelays`: the relays the
+ * user's 10002 names (account.relays.listed), the only ones that decide whether the list is known; none (no 10002
+ * yet) and the follow is refused, never decided by the defaults that `readRelays`/`writeRelays` fall back to.
  * -> { event, follows, taken: the first network relay's URL, settled: Promise<[{url, ok, message, local}]> }
  */
-export async function setFollow({ vault, signer, pubkey, target, follow, readRelays, writeRelays, known, appCount = 0, ask, publish = (urls, ev) => pool.publish(urls, ev) }) {
+export async function setFollow({ vault, signer, pubkey, target, follow, readRelays, writeRelays, ownRelays = [], known, appCount = 0, ask, publish = (urls, ev) => pool.publish(urls, ev) }) {
   if (!HEX.test(target ?? "")) throw new Error("That isn't a profile that can be followed.")
   if (target === pubkey) throw new Error("You can't follow or unfollow yourself.")
-  const { base, seen, asked, answered, netFound, ahead } = await findLatestList({ vault, pubkey, relays: uniq([...readRelays, ...writeRelays]), known, ask })
+  const { base, seen, asked, answered, netFound, ahead } = await findLatestList({ vault, pubkey, relays: ownRelays, known, ask })
   const tags = editedTags(base, target, follow)
   const refused = wipeGuard({ base, tags, target, follow, seen, appCount, asked, answered, netFound, ahead })
   if (refused) throw new Error(refused)

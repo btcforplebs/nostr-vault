@@ -95,7 +95,7 @@ function ListDetail({ ctx, list, current, store, onBack, onRestored }) {
   const refollow = async pk => {
     setBusy(pk); setMsg("")
     try {
-      await setFollow({ vault: ctx.vault, signer: ctx.signer, pubkey: ctx.session.pubkey, target: pk, follow: true, readRelays: ctx.account.relays.read, writeRelays: ctx.account.relays.write, known: current, appCount: followsOf(current).length })
+      await setFollow({ vault: ctx.vault, signer: ctx.signer, pubkey: ctx.session.pubkey, target: pk, follow: true, readRelays: ctx.account.relays.read, writeRelays: ctx.account.relays.write, ownRelays: ctx.account.relays.listed, known: current, appCount: followsOf(current).length })
       setRefollowed(s => new Set([...s, pk]))
     } catch (e) { setMsg(String(e?.message ?? e)) } finally { setBusy("") }
   }

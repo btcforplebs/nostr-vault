@@ -3,7 +3,7 @@
 // one back. Restore publishes the old list as your follow list now, so it is only ever done after the user confirms.
 import { pool, publishRelays, uniq, PROFILE_RELAYS } from "./pool.js"
 import { checkSigned } from "./sync.js"
-import { followsOf, findLatestList } from "./follows.js"
+import { followsOf, findLatestList, NO_OWN_RELAYS } from "./follows.js"
 import { verifyEvent } from "nostr-tools/pure"
 
 export const MAX_SNAPSHOTS = 50
@@ -81,8 +81,11 @@ export function diffLists(current, old) {
  */
 export async function restoreBase({ ctx, ask }) {
   const me = ctx.session.pubkey
-  const relays = uniq([...ctx.account.relays.read, ...ctx.account.relays.write])
+  // Only the relays the user's 10002 names decide (pool.js relayLists `listed`), as setFollow: with no 10002, read and
+  // write are the defaults, and a Restore replaces the whole kind 3 (Tron #1464). None: asked is 0 and it refuses.
+  const relays = ctx.account.relays.listed ?? []
   const { base, asked, answered, netFound } = await findLatestList({ vault: ctx.vault, pubkey: me, relays, ask })
+  if (!asked) throw new Error(NO_OWN_RELAYS)
   if (!netFound && !(asked > 0 && answered * 2 > asked))
     throw new Error("Not enough of your relays answered to know your newest follow list, so nothing was changed. Try again when they're reachable.")
   if (!base) throw new Error("Your follow list wasn't found on your relays, so nothing was changed. Try again when they answer.")

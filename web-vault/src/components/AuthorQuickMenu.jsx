@@ -16,7 +16,7 @@ const nameOf = (p, pk) => p?.display_name || p?.name || pk.slice(0, 8)
 export async function toggleFollow(ctx, pk, follow) {
   const { vault, signer, session, account } = ctx
   await setFollow({ vault, signer, pubkey: session.pubkey, target: pk, follow,
-    readRelays: account.relays.read, writeRelays: account.relays.write, known: account.contacts, appCount: account.follows.length })
+    readRelays: account.relays.read, writeRelays: account.relays.write, ownRelays: account.relays.listed, known: account.contacts, appCount: account.follows.length })
   await ctx.reloadAccount?.()
 }
 

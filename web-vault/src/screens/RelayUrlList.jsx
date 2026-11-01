@@ -3,7 +3,7 @@
 // (NIP-17); 10006 is the relays your apps should never connect to (NIP-51). Draws early and locks editing until every
 // relay has been asked, as RelaysPage.
 import { useEffect, useState } from "preact/hooks"
-import { latestList, publishList, ListNotSaved, relayUrl, relayUrlError, urlEntries, urlTags, addUrl, removeUrl, sameRows } from "../net/list-edit.js"
+import { latestList, publishList, ListNotSaved, NO_RELAY_LIST, relayUrl, relayUrlError, urlEntries, urlTags, addUrl, removeUrl, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 
 export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false, removeLabel = "Remove" }) {
@@ -47,7 +47,8 @@ export function RelayUrlList({ ctx, kind, title, note, empty, needsOne = false, 
       <p class="settings-note muted small">{note}</p>
       {!loaded ? <SkeletonList count={4} rowClass="settings-row static" avatar={0} lines={1} label="Loading your list…" /> : <>
         {loaded.pending && <p class="settings-note muted small" role="status">Checking your relays for a newer list…</p>}
-        {!loaded.checked && !loaded.pending && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list.</p>}
+        {!loaded.checked && !loaded.pending && loaded.noRelayList && <p class="settings-note small error">{NO_RELAY_LIST}</p>}
+        {!loaded.checked && !loaded.pending && !loaded.noRelayList && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list.</p>}
         {!urls.length && <p class="settings-note muted small">{empty}</p>}
         {urls.map(u => (
           <div key={u} class="settings-row static relay-edit-row">

@@ -4,7 +4,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
-import { pool } from "../src/net/pool.js"
+import { pool, relayLists } from "../src/net/pool.js"
 import { ownList, keepSnapshot, scanRelays, diffLists, restoreBase, restoreList, MAX_SNAPSHOTS, backupDbName } from "../src/net/follow-backup.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
@@ -60,11 +60,26 @@ function ctxWith(outbox = [], keep = { ok: true }) {
   return {
     stored,
     session: { pubkey: ME },
-    account: { relays: { read: ["wss://r.example"], write: ["wss://w.example"] } },
+    account: { relays: { read: ["wss://r.example"], write: ["wss://w.example"], listed: ["wss://r.example", "wss://w.example"] } },
     signer: { signEvent: async t => finalizeEvent(t, SK) },
     vault: { outbox: { query: async () => outbox, event: async ev => { stored.push(ev); return keep } } },
   }
 }
+
+test("restore with no relay list (10002): the defaults don't decide, nothing is signed or sent (Tron #1464)", async t => {
+  // relayLists(undefined): read and write fall back to the defaults, `listed` is empty.
+  const ctx = ctxWith()
+  ctx.account.relays = relayLists(undefined)
+  assert.deepEqual(ctx.account.relays.listed, [])
+  const stale = list([1], 40) // an old list sitting on a default relay; every default answers
+  const signed = []
+  ctx.signer = { signEvent: async tpl => { signed.push(tpl); return finalizeEvent(tpl, SK) } }
+  t.mock.method(pool, "publish", () => assert.fail("published"))
+  const ask = async () => ({ events: [stale], answered: true })
+  await assert.rejects(restoreBase({ ctx, ask }), /no relay list yet, or every relay in it is unreachable/)
+  await assert.rejects(restoreList({ ctx, old: list([1, 2, 3], 5), shown: stale, store: memStore(), ask }), /no relay list yet/)
+  assert.deepEqual(signed, [])
+})
 
 test("restore: current list kept first, the old one's tags signed after it with the current content, sent to your write relays", async t => {
   const cur = finalizeEvent({ kind: 3, created_at: Math.floor(Date.now() / 1000) + 100, content: '{"wss://new.example":{"read":true,"write":true}}', tags: [["p", P(1)]] }, SK) // a clock ahead

@@ -45,9 +45,13 @@ export async function latestList(ctx, kind, { ask = askRelay, online = globalThi
   const me = ctx.session.pubkey
   const filter = { kinds: [kind], authors: [me] }
   const ok = e => e?.kind === kind && e.pubkey === me && e.created_at < at + MAX_SKEW && verifiedCopy(e)
-  const own = uniq([...ctx.account.relays.read, ...ctx.account.relays.write])
+  // The user's own relays: those their 10002 names (pool.js relayLists `listed`). With no 10002 there are none, and a
+  // list is unknown (`noRelayList`) rather than decided by the defaults. The 10002 itself is looked for where it lives
+  // when the account has none yet: the account's relays as they stand (the defaults) and the index relays.
+  const own = kind === 10002 ? uniq([...ctx.account.relays.read, ...ctx.account.relays.write]) : uniq(ctx.account.relays.listed ?? [])
+  const noRelayList = !own.length
   const local = newest((await ctx.vault.outbox.query(filter).catch(() => [])).filter(ok))
-  if (!online) return { event: local, checked: false, asked: own.length, answered: 0 }
+  if (!online) return { event: local, checked: false, asked: own.length, answered: 0, noRelayList }
   if (local) on?.({ event: local })
   let best = local, answered = 0, netFound = false
   await Promise.all(listRelays(ctx).map(relay => ask(relay, filter).catch(() => ({ events: [], answered: false })).then(r => {
@@ -57,8 +61,11 @@ export async function latestList(ctx, kind, { ask = askRelay, online = globalThi
     if (ev && (!best || ev.created_at > best.created_at)) { best = ev; on?.({ event: ev }) }
   })))
   if (best && best !== local) await ctx.vault.outbox.event(best).catch(() => {})
-  return { event: best, checked: listKnown({ asked: own.length, answered, netFound, found: !!best }), asked: own.length, answered }
+  return { event: best, checked: listKnown({ asked: own.length, answered, netFound, found: !!best }), asked: own.length, answered, noRelayList }
 }
+
+/** What a list page says when the account has no relay list (kind 10002) yet, so its own relays aren't known. */
+export const NO_RELAY_LIST = "Your own relays aren't known: you have no relay list yet, or every relay in it is unreachable, so your newest copy of this list can't be checked. Fix your relays in Settings › Relays and save them first."
 
 /** Thrown by publishList instead of signing: the list couldn't be read just now, or it changed since the page read it.
  *  `latest` is the newest copy found (to start the edit again from), `checked` whether it can be trusted. */
@@ -76,6 +83,7 @@ export class ListNotSaved extends Error {
  */
 export async function publishList(ctx, kind, tags, { previous, also = [], latest } = {}) {
   const fresh = latest ? await latest(ctx, kind) : await latestList(ctx, kind)
+  if (!fresh.checked && fresh.noRelayList) throw new ListNotSaved(`Not saved. ${NO_RELAY_LIST} Nothing was changed.`, fresh.event, false)
   if (!fresh.checked) throw new ListNotSaved("Not saved: your relays didn't answer, so your newest list couldn't be read. Nothing was changed. Try again when you're online.", fresh.event, false)
   if ((fresh.event?.id ?? null) !== (previous?.id ?? null))
     throw new ListNotSaved("Not saved: this list changed in another app since the page opened. It's reloaded below; make your change again.", fresh.event, true)
