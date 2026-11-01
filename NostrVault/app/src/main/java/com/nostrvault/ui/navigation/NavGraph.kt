@@ -71,9 +71,12 @@ private val BOTTOM_BAR_ROUTES = TOP_LEVEL_ROUTES + setOf(
 
 internal fun showsBottomBar(route: String?): Boolean = route in BOTTOM_BAR_ROUTES
 
-/** The mini player sits over every screen except compose, where it covered
- *  the text box and its toolbar. iOS compose is a sheet above the player. */
-internal fun showsMiniPlayer(route: String?): Boolean = route != Screen.ComposeNote.route
+/** The mini player shows only where the bottom bar does: the tabs, by the
+ *  floating buttons, and the screens pushed inside a tab. As iOS, where it
+ *  rides in the tab bar's own inset, so every sheet (compose, settings,
+ *  messages, a hashtag, the wallet, the media viewer) covers it. Playback
+ *  goes on while it is hidden. */
+internal fun showsMiniPlayer(route: String?): Boolean = showsBottomBar(route)
 
 /** Tabs whose pushed screens count as inside them, as an iOS tab's own
  *  NavigationStack: over a note opened from the Feed or the Vault that tab
@@ -401,7 +404,7 @@ fun NostrVaultNavHost(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
-                    bottom = if (showBottomBar) FloatingButtonRow.rowBottom else 16.dp,
+                    bottom = FloatingButtonRow.rowBottom,
                     // Stops short of the screen's floating button, which
                     // sits level with it (FloatingButtonRow); the bar's own
                     // 12dp side inset already counts toward the gap.
