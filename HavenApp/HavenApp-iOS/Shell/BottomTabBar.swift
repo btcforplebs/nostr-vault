@@ -15,9 +15,6 @@ struct BottomTabBar: View {
     @ObservedObject var nostrService: NostrService
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService
-    // Rebuilds the account menu once each account's picture is cached.
-    @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
-    @ObservedObject private var unreadStore = AccountUnreadStore.shared
 
     /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
     private var chrome: ChromeCollapse { .shared }
@@ -276,73 +273,21 @@ struct BottomTabBar: View {
 
     // MARK: - Account Switch Menu
 
-    /// The avatar in the bar: a tap runs `primary`, a hold opens the account
-    /// list.
-    ///
-    /// This is a `Menu` with a primary action rather than a Button with a
-    /// `.contextMenu`. A context menu lifts a snapshot of the button, blurs the
-    /// screen, and animates that snapshot back down on dismissal — the same
-    /// moment the switch rebuilds every account-scoped view, and the expanded
-    /// tab also re-created itself (and the menu hosted on it) through
-    /// `.id(activeHex)`. A menu opens in place from the bar with no snapshot
-    /// to animate, and AvatarView already reloads on a pubkey change, so the
-    /// `.id` is gone. With one account there is nothing to switch to, so the
-    /// hold does nothing rather than open a menu that says so.
+    /// The avatar in the bar: a tap runs `primary`; a short hold or a slight
+    /// slide opens the accounts in the dock hold menu (`AccountTabHoldItem`),
+    /// the same look and timing as Feed and Vault. With one account there is
+    /// nothing to switch to, so it is a plain button.
     @ViewBuilder
     private func accountSwitchButton<Content: View>(
         primary: @escaping () -> Void,
-        @ViewBuilder label: () -> Content
+        @ViewBuilder label: @escaping () -> Content
     ) -> some View {
-        let accounts = configService.allAccountNpubs
-        if accounts.count > 1 {
-            Menu {
-                Section("Switch Account") {
-                    ForEach(accounts, id: \.self) { npub in
-                        accountMenuRow(npub: npub)
-                    }
-                }
-            } label: {
-                label()
-            } primaryAction: {
-                primary()
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            // Buzz as the hold opens the menu, as the context menu this
-            // replaced did. A Menu has no open callback, and its content is
-            // built once and cached, so an onAppear in it fires on the first
-            // open only. A tap never completes this gesture, so it stays silent.
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            })
-            // Keep the list in the settings order. The default ordering flips
-            // it for a menu opening upward from the bottom bar, so the owner
-            // would jump between top and bottom depending on where it opened.
-            .menuOrder(.fixed)
-            .task(id: AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles)) {
-                accountAvatars.prefetch(AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles))
-            }
+        if configService.allAccountNpubs.count > 1 {
+            AccountTabHoldItem(configService: configService, nostrService: nostrService,
+                               primary: primary, label: label)
         } else {
             Button(action: primary, label: label)
                 .buttonStyle(.plain)
-        }
-    }
-
-    private func accountMenuRow(npub: String) -> some View {
-        let isOwner = npub == configService.config.ownerNpub
-        let currentNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isCurrent = currentNpub.isEmpty ? isOwner : npub == currentNpub
-        let hex = Bech32.decode(npub)?.hexString ?? ""
-        let profile = nostrService.profiles[hex]
-
-        return AccountMenuItem(
-            npub: npub,
-            name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
-            pictureURL: profile?.pictureURL,
-            isActive: isCurrent,
-            unread: unreadStore.count(npub: npub)
-        ) {
-            configService.switchActiveAccount(to: npub)
         }
     }
 }

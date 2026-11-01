@@ -1043,6 +1043,7 @@
 		AC9CA321936FEDA14BAE1810 /* VaultFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A58EA5A96FF1042528234F /* VaultFollowers.swift */; };
 		ACC26F1D0C0082D8CE56EA5F /* WhatsInsideSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A74F76189F907327A5125A /* WhatsInsideSheet.swift */; };
 		ACDC529EBD39E03CF54E889A /* SearchFilterMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7EDB2EA15D2E68ACF4B64F0 /* SearchFilterMenu.swift */; };
+		ACF015B03A548365BDBCA65E /* AccountTabHoldItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177631ABDA7A587B84D0EF59 /* AccountTabHoldItem.swift */; };
 		AD093FA032369C6ECBD22018 /* IdentityInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BCCF618B0F0045B3B8C3EB /* IdentityInput.swift */; };
 		AD09CAB3FDA4AF35E77DEE62 /* CondensedNoteLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */; };
 		AD0E49E31659A84461BDFAF5 /* GlobalFeedEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE7C8BF88EE91C6E05CD3DF /* GlobalFeedEmptyState.swift */; };
@@ -1710,6 +1711,7 @@
 		1682A24F97C40C3570CB32C1 /* DMTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMTrust.swift; sourceTree = "<group>"; };
 		16D3572447C348FFE5B9A499 /* CStringArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CStringArguments.swift; sourceTree = "<group>"; };
 		177153C4A2D4AFBC483689BE /* MediaPostRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPostRetry.swift; sourceTree = "<group>"; };
+		177631ABDA7A587B84D0EF59 /* AccountTabHoldItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountTabHoldItem.swift; sourceTree = "<group>"; };
 		17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleEngagement.swift; sourceTree = "<group>"; };
 		17D5FD74D905BFF2FB07AFF4 /* VaultNoteScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultNoteScope.swift; sourceTree = "<group>"; };
 		1810634848EE1957C7E49DAF /* ConfigService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigService.swift; sourceTree = "<group>"; };
@@ -3119,6 +3121,7 @@
 		C25FBE609573C94AFC6BEE64 /* Shell */ = {
 			isa = PBXGroup;
 			children = (
+				177631ABDA7A587B84D0EF59 /* AccountTabHoldItem.swift */,
 				27BB588F35E19129A12047AE /* BottomTabBar.swift */,
 				0E2F2C826126F954B17978AE /* DockHoldMenu.swift */,
 				AA19CF4BA8AA51AF4C023B04 /* FeedHoldPicker.swift */,
@@ -3982,6 +3985,7 @@
 				FCF9E2A3BB6921EB9A467368 /* AccountDetailView.swift in Sources */,
 				3283FAB8FDC6A1A9D3B6254B /* AccountSwitchFlash.swift in Sources */,
 				672A76A54B117639CC833335 /* AccountSwitcherView.swift in Sources */,
+				ACF015B03A548365BDBCA65E /* AccountTabHoldItem.swift in Sources */,
 				27B0DEC7F90981AF0B72CBD4 /* AccountUnread.swift in Sources */,
 				A6507DB0C00EA44728AC6F5E /* AccountUnreadStore+ListRules.swift in Sources */,
 				95FCCF321AC349E725A323AC /* AccountUnreadStore.swift in Sources */,
