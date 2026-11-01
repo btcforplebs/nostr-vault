@@ -161,6 +161,9 @@ struct ComposeView: View {
         var sha256: String?
         var pixelSize: CGSize?
         var byteCount: Int?
+        /// The account whose key signed its upload (`UploadSigner`); nil when
+        /// nothing was signed for it (picked from this device's relay).
+        var signer: String?
 
         /// GIF or WebP bytes, which may hold more than one frame and so are
         /// previewed with `AnimatedThumbnail` rather than a still decode.

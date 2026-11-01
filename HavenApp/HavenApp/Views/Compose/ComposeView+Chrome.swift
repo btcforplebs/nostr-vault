@@ -280,7 +280,7 @@ extension ComposeView {
                         }
                         
                         Button {
-                            note.remove(attachment.id)
+                            withdraw(attachment.id)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .symbolRenderingMode(.palette)
@@ -309,7 +309,7 @@ extension ComposeView {
                             }
                         }
                         Button(role: .destructive) {
-                            note.remove(attachment.id)
+                            withdraw(attachment.id)
                         } label: {
                             Label("Remove", systemImage: "trash")
                         }

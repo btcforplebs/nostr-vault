@@ -71,7 +71,7 @@ extension ComposeView {
             // 1. Media. Each attachment began uploading when it was picked;
             // wait only for the ones still going (ComposeView+Uploads).
             if attachments.contains(where: { $0.upload != .hosted }) { isUploading = true }
-            let uploadFailure = await finishUploadsForPost()
+            let uploadFailure = await finishUploadsForPost(lockedHex: lockedHex)
             isUploading = false
             if let uploadFailure {
                 error = uploadFailure

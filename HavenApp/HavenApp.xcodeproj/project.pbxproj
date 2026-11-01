@@ -425,6 +425,7 @@
 		488D494114E341C186B085CF /* DMService+LocalInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7F829220B15EED46D2CA7D /* DMService+LocalInjection.swift */; };
 		489C0CB7897C5D6A6C6EBFD2 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
 		48BEF392D82E25D1E15AA36C /* FeedService+ModeCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2AB34DA20A23140E417E72 /* FeedService+ModeCache.swift */; };
+		495BF3BD841311840500DF6C /* UploadSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */; };
 		495E47F834C8D6D6AE86C9F8 /* RelayCheckStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D633CB1F0E50D722BF08E61 /* RelayCheckStep.swift */; };
 		496ABED3BE646E82CB214CDB /* HavenConfig+Signing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8222E11107724B191437998C /* HavenConfig+Signing.swift */; };
 		4980734C45973D0525500813 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */; };
@@ -1562,6 +1563,7 @@
 		FB11668DBEB4020E1CEDBFEA /* NIP88Poll.swift in Sources */ = {isa = PBXBuildFile; fileRef = EABB53459772E6F0C0ACEACE /* NIP88Poll.swift */; };
 		FB131FEF7A8680C64E51C7E9 /* RelayCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E18F538AEEE5F1324B1A390 /* RelayCheck.swift */; };
 		FB38626DAD50654DB402C66D /* ServerListAdoption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556F8A537ED16749390E20E4 /* ServerListAdoption.swift */; };
+		FB5A7CBE73F89D446B156553 /* UploadSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */; };
 		FB89228E126B00DD97677142 /* ThreadedReplyNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683CAD74DC1CCF06AAE882CF /* ThreadedReplyNode.swift */; };
 		FB8C1C02D62249690AB8F049 /* VideoPlayerCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322961A17859BE8B8A7F46A3 /* VideoPlayerCache.swift */; };
 		FBCF14F6C8AABAE90DDC2EA9 /* DMService+ExternalFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */; };
@@ -1729,6 +1731,7 @@
 		1EA2FCD67EDBE04915305C51 /* MediaGalleryTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryTypes.swift; sourceTree = "<group>"; };
 		1F3A25C07796E884E71CB032 /* NVZapsTodayCounter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVZapsTodayCounter.swift; sourceTree = "<group>"; };
 		1F45B3B97F11CA01BFD2C8C0 /* FeedService+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedService+Search.swift"; sourceTree = "<group>"; };
+		1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSigner.swift; sourceTree = "<group>"; };
 		1FDD0CE72E864D3D545A708A /* VaultView+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VaultView+Layout.swift"; sourceTree = "<group>"; };
 		206D33B8D9B41298F867EA55 /* DraftPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftPickerView.swift; sourceTree = "<group>"; };
 		207340FB8D3B36C2D991C22A /* QuickBarRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickBarRow.swift; sourceTree = "<group>"; };
@@ -2749,6 +2752,7 @@
 				E7A623FB39DA0A3C42E9249A /* ImportedVideoFile.swift */,
 				99C0558BBF96A014CC6EEFFD /* LongFormPreviewSection.swift */,
 				5F5DE617DD05A43CC7A57DCE /* UploadServersLink.swift */,
+				1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */,
 			);
 			path = Compose;
 			sourceTree = "<group>";
@@ -4679,6 +4683,7 @@
 				3C6E786965708E27B9C1EEE0 /* UploadAuthCache.swift in Sources */,
 				C8314546237A2FC0EC680732 /* UploadProgressDelegate.swift in Sources */,
 				01EF894E3129F7A74639B269 /* UploadServersLink.swift in Sources */,
+				495BF3BD841311840500DF6C /* UploadSigner.swift in Sources */,
 				E0DB1B155E0792C5547BFBFF /* UseNostrKeyStep.swift in Sources */,
 				743513B1249298195CDB646C /* VaultAccountChips.swift in Sources */,
 				A0667200BDE9D010B6BD8E91 /* VaultAccountScope.swift in Sources */,
@@ -5469,6 +5474,7 @@
 				09CB11E9A2910514821C1006 /* UploadAuthCache.swift in Sources */,
 				25AC009A9676E31F793F17CE /* UploadProgressDelegate.swift in Sources */,
 				955A376EBAE96D11F97B1C43 /* UploadServersLink.swift in Sources */,
+				FB5A7CBE73F89D446B156553 /* UploadSigner.swift in Sources */,
 				4FE172118ED099EE11B16D2D /* UseNostrKeyStep.swift in Sources */,
 				0747868ACF7C85B5C374FE46 /* VaultAccountChips.swift in Sources */,
 				1382803766ADF1D8508775B2 /* VaultAccountScope.swift in Sources */,

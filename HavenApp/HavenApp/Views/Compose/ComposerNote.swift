@@ -87,6 +87,17 @@ final class ComposerNote: ObservableObject {
         place(link, for: id)
     }
 
+    /// Takes a link back out of the text and anchors the attachment where it
+    /// was, so the link that replaces it goes in at the same place.
+    func unplace(_ id: UUID) {
+        guard let link = attachments.first(where: { $0.id == id })?.url?.absoluteString,
+              let range = text.range(of: link) else { return }
+        // Set before the text changes: the edit moves it with the others.
+        anchors[id] = text.utf16.distance(from: text.startIndex, to: range.lowerBound)
+        appEdited = true
+        text = ComposerPlacement.remove(link, from: text)
+    }
+
     /// Takes an attachment out: stops its upload and removes its link.
     func remove(_ id: UUID) {
         uploads.removeValue(forKey: id)?.cancel()
