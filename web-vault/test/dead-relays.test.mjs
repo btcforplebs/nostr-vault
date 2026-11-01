@@ -14,8 +14,9 @@ test("the default read set carries no dead host", () => {
 
 test("a NIP-65 list drops dead hosts from read and write, and falls back when nothing live is left", () => {
   const ev = { tags: [["r", "wss://nos.lol/"], ["r", "wss://relay.primal.net"], ["r", "wss://NOSTR.MOM", "read"], ["r", "wss://offchain.pub", "write"]] }
-  assert.deepEqual(relayLists(ev), { read: ["wss://relay.primal.net"], write: ["wss://relay.primal.net"] })
-  assert.deepEqual(relayLists({ tags: [["r", "wss://nos.lol"]] }), { read: DEFAULT_RELAYS, write: DEFAULT_RELAYS })
+  assert.deepEqual(relayLists(ev), { read: ["wss://relay.primal.net"], write: ["wss://relay.primal.net"], listed: ["wss://relay.primal.net"] })
+  assert.deepEqual(relayLists({ tags: [["r", "wss://nos.lol"]] }), { read: DEFAULT_RELAYS, write: DEFAULT_RELAYS, listed: [] }, "every listed relay is dead: none of the user's own")
+  assert.deepEqual(relayLists(undefined).listed, [], "no 10002: the defaults are used, but they aren't the user's own")
 })
 
 test("a query naming only dead relays answers at once without opening them", async () => {

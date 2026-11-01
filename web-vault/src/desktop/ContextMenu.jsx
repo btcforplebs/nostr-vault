@@ -122,7 +122,7 @@ async function follow(ctx, pk, on, say) {
   say(on ? "Following…" : "Unfollowing…")
   try {
     await setFollow({ vault, signer, pubkey: session.pubkey, target: pk, follow: on,
-      readRelays: account.relays.read, writeRelays: account.relays.write, known: account.contacts, appCount: account.follows.length })
+      readRelays: account.relays.read, writeRelays: account.relays.write, ownRelays: account.relays.listed, known: account.contacts, appCount: account.follows.length })
     await ctx.reloadAccount()
     say(on ? `Following ${nameOf(pk)}` : `Unfollowed ${nameOf(pk)}`)
   } catch (e) { say(String(e?.message ?? e)) }

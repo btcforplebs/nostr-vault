@@ -67,7 +67,7 @@ function Card({ ctx, pubkey, left, top, above }) {
     setBusy(true); setErr("")
     try {
       await setFollow({ vault, signer, pubkey: session.pubkey, target: pubkey, follow: !iFollow,
-        readRelays: account.relays.read, writeRelays: account.relays.write, known: account.contacts, appCount: account.follows.length })
+        readRelays: account.relays.read, writeRelays: account.relays.write, ownRelays: account.relays.listed, known: account.contacts, appCount: account.follows.length })
       await ctx.reloadAccount()
     } catch (e) { setErr(String(e?.message ?? e)) } finally { setBusy(false) }
   }

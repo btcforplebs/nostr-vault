@@ -152,7 +152,10 @@ export function relayLists(ev) {
     if (t[2] !== "write") read.push(url)
     if (t[2] !== "read") write.push(url)
   }
-  return { read: read.length ? read : DEFAULT_RELAYS, write: write.length ? write : DEFAULT_RELAYS }
+  // `listed`: only the relays the 10002 names, never the defaults. With no 10002 it is empty: the user's own relays
+  // aren't known, so the defaults (used to read and write meanwhile) must not stand in for them when deciding whether
+  // a list is known (list-edit.js latestList, follows.js setFollow).
+  return { read: read.length ? read : DEFAULT_RELAYS, write: write.length ? write : DEFAULT_RELAYS, listed: uniq([...read, ...write]) }
 }
 
 export const uniq = a => [...new Set(a)]

@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks"
 import { READ_ONLY } from "../signer/readonly.js"
 import { serverUrl, DEFAULT_MEDIA_SERVERS } from "../net/upload.js"
 import { testServer, SERVER_STATES } from "../net/blossom-gallery.js"
-import { latestList, publishList, ListNotSaved, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
+import { latestList, publishList, ListNotSaved, NO_RELAY_LIST, serverEntries, serverTags, addServer, removeServer, serverProblem, sameRows } from "../net/list-edit.js"
 import { SkeletonList } from "../components/Loading.jsx"
 import { MeshPhotosSwitch } from "../components/MeshPhotosSwitch.jsx"
 import { SuggestedServers } from "../components/SuggestedServers.jsx"
@@ -61,7 +61,8 @@ export function MediaServersPage({ ctx }) {
   return (
     <>
       <p class="settings-note muted small">Photos you attach to a note are uploaded here, the first server first. Other apps read this list to find your files.</p>
-      {!loaded.checked && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
+      {!loaded.checked && loaded.noRelayList && <p class="settings-note small error">{NO_RELAY_LIST}</p>}
+      {!loaded.checked && !loaded.noRelayList && <p class="settings-note small error">Your relays couldn't be checked, so this may not be your newest list. Go online before you change it.</p>}
       {!loaded.event && loaded.checked && <p class="settings-note muted small">You haven't published a list, so the defaults below are used. Saving publishes them with your changes.</p>}
       {urls.map((url, i) => (
         <div key={url} class="settings-row static relay-edit-row">

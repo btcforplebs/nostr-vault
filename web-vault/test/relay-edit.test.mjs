@@ -6,7 +6,7 @@ import assert from "node:assert/strict"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { pool } from "../src/net/pool.js"
 import { askRelay } from "../src/net/follows.js"
-import { latestList, publishList, listKnown, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem } from "../src/net/list-edit.js"
+import { latestList, publishList, NO_RELAY_LIST, listKnown, ListNotSaved, relayUrl, relayUrlError, relayEntries, addRelay, setJob, removeRelay, relayTags, relayProblem } from "../src/net/list-edit.js"
 
 const SK = generateSecretKey(), ME = getPublicKey(SK)
 const OTHER_SK = generateSecretKey()
@@ -17,7 +17,7 @@ function fakeCtx({ outbox = [] } = {}) {
   return {
     stored,
     session: { pubkey: ME },
-    account: { relays: { read: ["wss://r.example"], write: ["wss://w.example"] } },
+    account: { relays: { read: ["wss://r.example"], write: ["wss://w.example"], listed: ["wss://r.example", "wss://w.example"] } },
     signer: { signEvent: async t => finalizeEvent(t, SK) },
     vault: { outbox: { query: async () => outbox, event: async ev => { stored.push(ev); return { ok: true } } } },
   }
@@ -117,13 +117,41 @@ test("Haven's copy stands when it's newer or the relays have none; offline it is
 /** A Save-time read that finds the same copy the page had. */
 const same = event => async () => ({ event, checked: true })
 
+test("no 10002 yet: a list is unknown, not decided by the defaults, and Save refuses with the reason", async t => {
+  const realList = finalizeEvent({ kind: 10063, content: "", created_at: 100, tags: [["server", "https://mine.example"]] }, SK)
+  // The account's relays are the defaults (relayLists(undefined)): they answer "none", the real list is elsewhere.
+  const ctx = { ...fakeCtx(), account: { relays: { read: ["wss://default.example"], write: ["wss://default.example"], listed: [] } } }
+  const r = await latestList(ctx, 10063, { online: true, ask: async () => says([]) })
+  assert.deepEqual([r.event, r.checked, r.asked, r.noRelayList], [undefined, false, 0, true])
+  // A copy found on a default relay doesn't make it known either.
+  const found = await latestList(ctx, 10063, { online: true, ask: async () => says([realList]) })
+  assert.deepEqual([found.event?.id, found.checked, found.noRelayList], [realList.id, false, true])
+  // An account context without `listed` at all is the same: unknown.
+  const bare = { ...fakeCtx(), account: { relays: { read: ["wss://default.example"], write: ["wss://default.example"] } } }
+  assert.equal((await latestList(bare, 10050, { online: true, ask: async () => says([]) })).checked, false)
+  // The 10002 itself is still looked for on the relays the account has (where it is found when there is none yet).
+  const relays = await latestList(ctx, 10002, { online: true, ask: async () => says([]) })
+  assert.deepEqual([relays.checked, relays.noRelayList], [true, false])
+  // Save refuses with the reason, before signing.
+  t.mock.method(pool, "publish", () => assert.fail("published"))
+  const e = await publishList(ctx, 10063, [["server", "https://x.example"]], { latest: async () => r }).catch(x => x)
+  assert.ok(e instanceof ListNotSaved && e.checked === false && /no relay list yet/.test(e.message), String(e))
+  assert.match(NO_RELAY_LIST, /Settings › Relays/)
+})
+
+test("the list pages say why when there's no relay list", async () => {
+  const { readFileSync } = await import("node:fs")
+  for (const f of ["MediaServersPage.jsx", "RelayUrlList.jsx"])
+    assert.match(readFileSync(new URL(`../src/screens/${f}`, import.meta.url), "utf8"), /loaded\.noRelayList && <p [^>]*>\{NO_RELAY_LIST\}/, f)
+})
+
 test("only the account's own relays count: a copy from one of them, or most answering; every one to say there is none", async () => {
   const mine = list(SK, 100, [["r", "wss://mine.example"]])
   const ctx = fakeCtx() // own relays: r.example and w.example
   const by = map => async relay => (map[relay] ?? down)()
   const none = async () => says([])
   // Every relay failed and there's no copy: unknown, not "you have none".
-  assert.deepEqual(await latestList(ctx, 10002, { online: true, ask: down }), { event: undefined, checked: false, asked: 2, answered: 0 })
+  assert.deepEqual(await latestList(ctx, 10002, { online: true, ask: down }), { event: undefined, checked: false, asked: 2, answered: 0, noRelayList: false })
   // The defaults and purplepag.es all say "none" but the user's relays are down: unknown (Tron #1456 2).
   const publicOnly = await latestList(ctx, 10002, { online: true, ask: async relay => relay.endsWith(".example") ? down() : none() })
   assert.deepEqual([publicOnly.event, publicOnly.checked, publicOnly.answered], [undefined, false, 0])
