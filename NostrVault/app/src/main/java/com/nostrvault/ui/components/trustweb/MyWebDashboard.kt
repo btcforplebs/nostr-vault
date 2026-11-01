@@ -41,7 +41,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -167,8 +170,10 @@ internal fun MyWebSheet(
     onLayer: (TrustMap.Layer) -> Unit,
     onRebuild: () -> Unit,
     onDismiss: () -> Unit,
+    zombies: MyWebZombies,
 ) {
     LaunchedEffect(Unit) { filters.readFollowsBack() }
+    var zombiesOpen by remember { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -191,6 +196,7 @@ internal fun MyWebSheet(
                     TextButton(onClick = onDismiss) { Text("Done", color = LocalNostrVaultColors.current.primary) }
                 }
                 Headline(numbers.counts[TrustMap.Layer.EVERYONE] ?: 0)
+                WotZombiesCard(zombies.me, zombies.follows) { zombiesOpen = true }
                 DashSection(title = "Who you can see") {
                     TrustMap.layers(numbers.hasVouches).forEachIndexed { index, item ->
                         if (index > 0) DashDivider()
@@ -224,7 +230,25 @@ internal fun MyWebSheet(
             }
         }
     }
+    if (zombiesOpen) {
+        WotZombiesList(
+            zombies = WotZombiesStore.report(zombies.follows)?.zombies.orEmpty(),
+            profiles = zombies.profiles,
+            name = zombies.name,
+            onSeen = zombies.onSeen,
+            onDismiss = { zombiesOpen = false },
+        )
+    }
 }
+
+/** What My Web's zombie card and list read (iOS reads them from shared services). */
+internal class MyWebZombies(
+    val me: String,
+    val follows: Set<String>,
+    val profiles: Map<String, com.nostrvault.data.model.FeedProfile>,
+    val name: (String) -> String,
+    val onSeen: (List<String>) -> Unit,
+)
 
 /** The one big number: everyone on your globe. */
 @Composable
