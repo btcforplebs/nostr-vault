@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -313,7 +315,18 @@ class RelayForegroundService : Service() {
 
     internal enum class LifecycleState { IDLE, BOOTING, RUNNING, STOPPING }
 
-    @Volatile internal var lifecycleState = LifecycleState.IDLE
+    @Volatile private var state = LifecycleState.IDLE
+
+    /** Every change re-decides the wake lock ([RelayWakeLockPolicy]). */
+    internal var lifecycleState: LifecycleState
+        get() = state
+        set(value) {
+            state = value
+            syncWakeLock()
+        }
+
+    /** The mesh is up and offers this relay to peers; see [RelayWakeLockPolicy]. */
+    @Volatile internal var servingMesh = false
     @Volatile internal var isShuttingDown = false
     internal var retryCount = 0
     /** When the health watchdog restarted the relay ([WatchdogRestartPolicy]). */
@@ -363,6 +376,15 @@ class RelayForegroundService : Service() {
             accountUnread.onLogLine(line)
         }
         logStore.startPolling(serviceScope)
+        val mesh = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).fipsMeshManager()
+        serviceScope.launch {
+            combine(mesh.status, mesh.shareRelay) { status, share -> status.running && share }
+                .distinctUntilChanged()
+                .collect {
+                    servingMesh = it
+                    syncWakeLock()
+                }
+        }
         serviceScope.launch {
             restartRequests.collect {
                 try {
@@ -448,7 +470,7 @@ class RelayForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        acquireWakeLock()
+        syncWakeLock()
 
         // If relay is already running (e.g. service restarted by the system or
         // user re-opened the app), skip the full boot cycle and just ensure

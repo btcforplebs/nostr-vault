@@ -126,9 +126,19 @@ class WebSocketClient(
             return Regex("^(192\\.168|10\\.\\d{1,3})\\.\\d{1,3}\\.\\d{1,3}$").matches(host)
         }
 
+        /**
+         * Never deflate what we send. OkHttp 4.12's permessage-deflate writer
+         * can throw on its own thread (okio DeflaterSink.flush, AIOOBE size=0
+         * byteCount=8192, and "closed"), which nothing catches: the app died
+         * six times on 10-31. Relays still compress to us; nostr messages we
+         * send are small, so the cost is a few bytes.
+         */
+        internal const val NEVER_COMPRESS = Long.MAX_VALUE
+
         /** Shared OkHttpClient for all normal (non-localhost) connections. */
         val sharedClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
+                .minWebSocketMessageToCompress(NEVER_COMPRESS)
                 .pingInterval(0, TimeUnit.SECONDS) // see WATCHDOG_IDLE_MS
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS)
@@ -138,6 +148,7 @@ class WebSocketClient(
         /** Shared OkHttpClient for this device's relay and LAN relays; trust follows [LocalTls]. */
         val sharedLocalhostClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
+                .minWebSocketMessageToCompress(NEVER_COMPRESS)
                 .pingInterval(0, TimeUnit.SECONDS) // see WATCHDOG_IDLE_MS
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.SECONDS)
