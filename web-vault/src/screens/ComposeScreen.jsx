@@ -25,6 +25,8 @@ import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
+import { ComposeAttachments } from "./compose/ComposeAttachments.jsx"
+import { isMedia, isVideo } from "./compose/media-kind.js"
 
 // Vite only: the node tests load this file without a CSS loader, and there import.meta.env is undefined.
 if (import.meta.env) import("../styles/compose.css")
@@ -76,9 +78,7 @@ export const draftOf = (text, mentions, photos) => ({
   photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height, alt }) => ({ url, sha256, mime, size, width, height, ...(alt?.trim() ? { alt } : {}) })),
 })
 
-/** What the picker, a drop or a paste may attach: photos and videos (ComposeView+Attachments), nothing else. */
-export const isMedia = f => /^(image|video)\//.test(f?.type ?? "")
-export const isVideo = m => /^video\//.test(m?.mime ?? m?.type ?? m?.file?.type ?? "")
+export { isMedia, isVideo } from "./compose/media-kind.js"
 const emptyDraft = d => !d.text.trim() && !d.photos.length
 
 /** Content and tags for a post: tokens -> nostr:npub, photo links appended (as the iPhone does), then the reply or
@@ -340,33 +340,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
           onKeyUp={e => { if (e.key.startsWith("Arrow") && !mention) track(e.currentTarget) }} onClick={e => track(e.currentTarget)}
           onPaste={e => { const files = [...(e.clipboardData?.files ?? [])]; if (files.some(isMedia)) { e.preventDefault(); addFiles(files) } }} />
         {mention && <MentionPicker ctx={ctx} query={mention.query} onPick={pick} onClose={closePicker} input={box} />}
-        {photos.length > 0 && (
-          <ul class="compose-photos" aria-label="Attachments">
-            {photos.map((p, i) => {
-              const kind = isVideo(p) ? "Video" : "Photo", described = !!p.alt?.trim()
-              return (
-              <li key={p.id} class={`compose-photo ${p.status}`}>
-                {kind === "Video"
-                  ? <video src={p.preview} muted playsinline preload="metadata" aria-label={described ? p.alt : `${kind} ${i + 1}`} />
-                  : <img src={p.preview} alt={described ? p.alt : `${kind} ${i + 1}`} />}
-                {kind === "Video" && <span class="compose-photo-kind" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></svg>
-                </span>}
-                {p.status !== "done" && p.status !== "failed" && <span class="compose-photo-state" role="status">Uploading…</span>}
-                {p.status === "failed" && <span class="compose-photo-state" title={p.error}>Didn't upload</span>}
-                {p.status === "failed" && p.file && <button type="button" class="compose-photo-retry" onClick={() => upload(p.id, p.file)}>Retry</button>}
-                {/* Filled once described, hollow while not, so an undescribed one shows at a glance (ComposeView+Chrome altChip). */}
-                {p.status !== "failed" && <button type="button" class={described ? "compose-alt described" : "compose-alt"}
-                  aria-label={described ? `Edit description of ${kind.toLowerCase()} ${i + 1}` : `Add description to ${kind.toLowerCase()} ${i + 1}`}
-                  title={described ? p.alt : "Describe this for screen readers"} onClick={() => setAltFor(p.id)}>ALT</button>}
-                <button type="button" class="compose-photo-remove" aria-label={`Remove ${kind.toLowerCase()} ${i + 1}`} onClick={() => removePhoto(p.id)}>
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-                </button>
-              </li>
-              )
-            })}
-          </ul>
-        )}
+        <ComposeAttachments photos={photos} onAlt={setAltFor} onRetry={id => { const p = photos.find(x => x.id === id); if (p?.file) upload(id, p.file) }} onRemove={removePhoto} />
         {altFor != null && photos.some(p => p.id === altFor) && (
           <AltDialog value={photos.find(p => p.id === altFor).alt ?? ""} video={isVideo(photos.find(p => p.id === altFor))}
             onSave={alt => { update(altFor, { alt }); setAltFor(null) }} onClose={() => setAltFor(null)} />
