@@ -69,13 +69,9 @@ extension FeedView {
             if let note = new.note(changedFrom: old) { toolbarNote.show(note) }
         }
         #if os(iOS)
-        // iPad two-pane: the controls live in the feed column's own header
-        // (FeedView+ColumnHeader), not in the bar across both panes.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if noteDetailSelection != nil { feedColumnHeader }
-        }
+        // The phone's bar on iPad too. In the landscape two-pane layout the
+        // list column has its own stack, so this bar sits over the feed only.
         .toolbar {
-            if noteDetailSelection == nil {
             ToolbarItem(placement: .navigationBarLeading) {
                 ChromeMorphCapsule(alignment: .leading, isEnabled: isCompactWidth) {
                     feedLeadingToolbar
@@ -116,7 +112,6 @@ extension FeedView {
                 .tutorialAnchor(TutorialContent.feedToolbar)
             }
             .hidingSharedToolbarBackground()
-            }
         }
         #endif
         .onAppear {

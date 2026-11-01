@@ -32,11 +32,15 @@ struct iPhoneTabView: View {
         buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight)
     }
 
-    /// iPad in portrait keeps this tab layout (the sidebar would collapse and
-    /// leave no visible navigation), but every iPad is wide enough for the list
-    /// and the note side by side, so notes open beside the list there instead
-    /// of covering it. iPhone and compact multitasking widths are unchanged.
-    private var usesNoteSplit: Bool { horizontalSizeClass == .regular }
+    /// The window is wider than tall. Measured on the whole window, so the
+    /// keyboard coming up doesn't change it.
+    @State private var isLandscape = false
+
+    /// iPad in landscape: an opened note shows beside the list, in a
+    /// `NoteSplitPane`. Everywhere else, portrait iPad included, the tabs are
+    /// the phone's and a note pushes over the list. `horizontalSizeClass` is
+    /// read before `body` sets every screen to compact, so it is the real one.
+    private var usesNoteSplit: Bool { horizontalSizeClass == .regular && isLandscape }
 
     /// The tab's list in a `NoteSplitPane` when `usesNoteSplit`, otherwise as is.
     @ViewBuilder
@@ -55,11 +59,11 @@ struct iPhoneTabView: View {
         TabView(selection: $selectedTab) {
             Group {
                 // In the split, Feed and Relay do not build their own stack
-                // (NoteSplitPane owns the detail column), so the pane needs one
-                // for their toolbars.
+                // (NoteSplitPane owns the detail column), so the list column
+                // gets one for their toolbars.
                 if usesNoteSplit {
-                    NavigationStack {
-                        noteSplit("Pick a note from the feed to read it here.") { FeedView() }
+                    noteSplit("Pick a note from the feed to read it here.") {
+                        NavigationStack { FeedView() }
                     }
                 } else {
                     FeedView()
@@ -68,15 +72,15 @@ struct iPhoneTabView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(0)
 
-            NavigationStack(path: $searchPath) {
-                noteSplit("Pick a note from the results to read it here.") {
+            noteSplit("Pick a note from the results to read it here.") {
+                NavigationStack(path: $searchPath) {
                     SearchView()
                         .navigationTitle("")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.hidden, for: .navigationBar)
-                }
-                .navigationDestination(for: FeedNote.self) { note in
-                    NoteDetailView(note: note)
+                        .navigationDestination(for: FeedNote.self) { note in
+                            NoteDetailView(note: note)
+                        }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .havenFocusSearch)) { _ in
@@ -86,15 +90,15 @@ struct iPhoneTabView: View {
             .toolbar(.hidden, for: .tabBar)
             .tag(1)
 
-            NavigationStack(path: $profilePath) {
-                noteSplit("Pick a note from your profile to read it here.") {
+            noteSplit("Pick a note from your profile to read it here.") {
+                NavigationStack(path: $profilePath) {
                     MyProfileView(pubkey: activeHex)
                         .navigationTitle("Profile")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.hidden, for: .navigationBar)
-                }
-                .navigationDestination(for: FeedNote.self) { note in
-                    NoteDetailView(note: note)
+                        .navigationDestination(for: FeedNote.self) { note in
+                            NoteDetailView(note: note)
+                        }
                 }
             }
             .id(activeHex)
@@ -113,8 +117,8 @@ struct iPhoneTabView: View {
 
             VaultTabView {
                 if usesNoteSplit {
-                    NavigationStack {
-                        noteSplit("Pick a note from the relay to read it here.") { VaultView() }
+                    noteSplit("Pick a note from the relay to read it here.") {
+                        NavigationStack { VaultView() }
                     }
                 } else {
                     VaultView()
@@ -198,7 +202,18 @@ struct iPhoneTabView: View {
         .onChange(of: selectedTab, initial: true) { _, tab in
             VaultSection.shared.isOnScreen = tab == 4
         }
-        // The return pill sits on the tab bar; on the iPad sidebar it doesn't.
         .onDisappear { buttonRow.update(chromeHeight: 0) }
+        .background {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { isLandscape = geo.size.width > geo.size.height }
+                    .onChange(of: geo.size) { _, size in isLandscape = size.width > size.height }
+            }
+            .ignoresSafeArea()
+        }
+        // The iPad is laid out like the iPhone: same headers, same buttons,
+        // no system toolbar row. Screens branch on the width class for that,
+        // so every one below sees compact.
+        .environment(\.horizontalSizeClass, .compact)
     }
 }
