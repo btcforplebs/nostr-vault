@@ -43,4 +43,24 @@ class NoteReferenceHintsTest {
     fun nothingReferencesIt() {
         assertNull(NoteReferenceHints.find(parent, sequenceOf(note("u", emptyList()))))
     }
+
+    // findEach must answer exactly what find answers, id by id (Moto check 11-01).
+    @Test
+    fun findEachMatchesFindForEveryId() {
+        val q = "q".repeat(64)
+        val other = "o".repeat(64)
+        val missing = "m".repeat(64)
+        val notes = listOf(
+            note("1", listOf(listOf("e", other, "https://not-a-relay"), listOf("p", author))),
+            note("2", listOf(listOf("e", parent, "", "root"), listOf("e", parent, "wss://second", "reply", author))),
+            note("3", listOf(listOf("q", q, "wss://quote.relay", author))),
+            note("4", listOf(listOf("e", parent, "wss://later", "reply"), listOf("e", q, "wss://later-q"))),
+            note("5", listOf(listOf("e", other, "wss://five"), listOf("p", "c".repeat(64)))),
+        )
+        val ids = setOf(parent, q, other, missing)
+        val all = NoteReferenceHints.findEach(ids, notes.asSequence())
+        for (id in ids) assertEquals(id, NoteReferenceHints.find(id, notes.asSequence()), all[id])
+        assertNull(all[missing])
+        assertEquals(emptyMap<String, Pair<String?, String?>>(), NoteReferenceHints.findEach(emptySet(), notes.asSequence()))
+    }
 }

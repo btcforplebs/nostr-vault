@@ -672,9 +672,22 @@ class FeedService @Inject constructor(
     }
 
     /** The active account's blocked people, as hex pubkeys. */
-    fun blockedHexForActiveAccount(): Set<String> =
-        configStore.config.value.blockedForActiveAccount()
-            .mapNotNull { nostrService.npubToHex(it) }.toSet()
+    fun blockedHexForActiveAccount(): Set<String> {
+        val npubs = configStore.config.value.blockedForActiveAccount()
+        blockedHexMemo?.let { (key, hex) -> if (key == npubs) return hex }
+        val hex = npubs.mapNotNull { nostrService.npubToHex(it) }.toSet()
+        // Kept only when every npub decoded: before the native library loads,
+        // npubToHex gives null, and that partial set must not stick.
+        if (hex.size == npubs.toSet().size) blockedHexMemo = npubs to hex
+        return hex
+    }
+
+    /**
+     * The last block list and its hex keys. Every fetched note asks for this,
+     * and decoding each blocked npub every time was a fifth of the bech32 work
+     * in the first seconds after launch (Moto check 11-01).
+     */
+    @Volatile private var blockedHexMemo: Pair<List<String>, Set<String>>? = null
 
     fun visiblePendingCount(pending: List<FeedNote>): Int = visiblePendingCountImpl(pending)
 

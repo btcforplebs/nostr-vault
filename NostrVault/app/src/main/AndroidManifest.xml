@@ -75,6 +75,11 @@
         tools:targetApi="35">
 
         <!-- Single-activity Compose host -->
+        <!-- Lets simpleperf / perfetto sample this release build over adb
+             (shell only: no debugger, no data access). Startup jank on the
+             Moto could not be attributed without it (NV_MOTO_CHECK_11_01). -->
+        <profileable android:shell="true" tools:targetApi="29" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
