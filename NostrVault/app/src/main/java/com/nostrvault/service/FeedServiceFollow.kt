@@ -92,14 +92,16 @@ import com.nostrvault.ui.notification.FollowKind
                     // Already so on the newest copy (done in another app): nothing to sign.
                     if (pubkeys == basePubkeys) return@withLock base
                     val tags = ContactManager.contactListTags(pubkeys, base.tags)
-                    // Signed later than the base and anything signed or loaded since, even when that is dated a
-                    // little ahead (MAX_SKEW): signed older, relays keep that copy and this edit is lost.
+                    // Signed later than the base, even when it is dated a little ahead (MAX_SKEW): signed older, relays
+                    // keep that copy and this edit is lost. From the base, which saveBase keeps within MAX_SKEW, never
+                    // from lastContactListCreatedAt: that counter is service-wide, only grows, and a load can set it to
+                    // a copy dated a day ahead, which would date every later follow a day ahead (Tron, #1469).
                     val event = runCatching { nostrService.signEventAsync(
                         kind = 3,
                         content = base.content,
                         tags = tags,
                         lockedTo = lock,
-                        notBefore = lastContactListCreatedAt.get() + 1,
+                        notBefore = base.createdAt + 1,
                     ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }
                         .getOrElse { e ->
                             // The list is the previous account's: nothing to roll back here.

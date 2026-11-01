@@ -154,6 +154,18 @@ class FeedServiceFollowListTest {
     }
 
     @Test
+    fun `a contact list loaded a day ahead does not date later follows ahead`() {
+        val now = System.currentTimeMillis() / 1000
+        // Another app with a bad clock: the service saw a kind 3 dated a day ahead.
+        feed.lastContactListCreatedAt.set(now + 86_400)
+        onRelays = relayCopy(now - 60, listOf(listOf("p", bob)))
+        feed.publishContactList(listOf(bob, alice), ContactManager.FollowEdit(add = listOf(alice)), rollback = listOf(bob))
+        coVerify(timeout = 5_000) { nostr.postEvent(any(), any()) }
+        val at = signed.single().createdAt
+        assertTrue("signed at $at, now $now", at < now + ListMerge.MAX_SKEW)
+    }
+
+    @Test
     fun `two publishes in one second get different created_at`() {
         feed.publishContactList(listOf(alice), ContactManager.FollowEdit(add = listOf(alice)))
         feed.publishContactList(listOf(alice, bob), ContactManager.FollowEdit(add = listOf(bob)))
