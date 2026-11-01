@@ -519,6 +519,7 @@
 		57BF98E0375DB253352AD39F /* ConfigFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */; };
 		57EBB30401CBC87C13A7A9B5 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		57FED2A701DF696811DE4001 /* FollowingFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4464865603517B64343AFC9 /* FollowingFeedState.swift */; };
+		581018DEDAD645E329211DF9 /* DMReadAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */; };
 		581195B0C389081A7ECDB31B /* FipsMeshDeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B164C72D0777F09A5D027B5 /* FipsMeshDeviceView.swift */; };
 		583AA09A62B650E722BCE759 /* FeedService+FeedSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */; };
 		5847D6E37160D84ADF6839D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716EDC59763B44048B40E416 /* SettingsView.swift */; };
@@ -1304,6 +1305,7 @@
 		D82E6B7E8F48027A2A29D7BA /* RecipeFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */; };
 		D836F792618248C8A0771D7D /* NIP46Service+OwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4179E0679998B43B177F2D87 /* NIP46Service+OwnerSession.swift */; };
 		D8539D3F01467070FA9F195D /* SearchView+Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6A21B92242B4E25D313103 /* SearchView+Recommendations.swift */; };
+		D88848DFFE3875AE38EEF8AA /* DMReadAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */; };
 		D8ECF7A788BE7549276AF043 /* FeedService+FeedSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D193D037DA97BC9EE07026C /* FeedService+FeedSubscription.swift */; };
 		D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB6A6872532B023E705FC6C /* RelayListEditor.swift */; };
 		D977A7ED44CBAEA08DAA2E9F /* InterestList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 381DC5D952C2744229EB2046 /* InterestList.swift */; };
@@ -2271,6 +2273,7 @@
 		CF4EE3A08A385329682E48B6 /* SoundOnlyStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundOnlyStream.swift; sourceTree = "<group>"; };
 		CF57E75767BD80C1504D555C /* VaultExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultExporter.swift; sourceTree = "<group>"; };
 		CF8E202D004E4592BA82BC0F /* ConfigFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigFileStore.swift; sourceTree = "<group>"; };
+		CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMReadAuth.swift; sourceTree = "<group>"; };
 		CFD316B1F53D755B6C3CBED9 /* FeedNoteRow+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FeedNoteRow+Layout.swift"; sourceTree = "<group>"; };
 		D069FB5194A04D262C4C449C /* TrustWebView+MyWeb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrustWebView+MyWeb.swift"; sourceTree = "<group>"; };
 		D073E928415EAF56E0DB8924 /* ZapFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapFlightView.swift; sourceTree = "<group>"; };
@@ -3164,6 +3167,7 @@
 				27616D34DDA23BBA036583B8 /* DeletedNotesStore.swift */,
 				6F46900B31B7943F8CBF7892 /* DeletedPost.swift */,
 				155D5690C7C6EF350165A21F /* DMAttachment.swift */,
+				CF8F05DC86428629E19AEEA3 /* DMReadAuth.swift */,
 				1682A24F97C40C3570CB32C1 /* DMTrust.swift */,
 				75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */,
 				9B51A8C730F9E0715F991CD2 /* EmojiListParse.swift */,
@@ -4050,6 +4054,7 @@
 				4F3CAF2E7950AE6814FDD0B8 /* DMConversation.swift in Sources */,
 				67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */,
 				EEADBCA880B3902FEAF6C231 /* DMMessage.swift in Sources */,
+				581018DEDAD645E329211DF9 /* DMReadAuth.swift in Sources */,
 				F3C9E614C2F1210872FA3B7B /* DMService+Conversations.swift in Sources */,
 				FBCF14F6C8AABAE90DDC2EA9 /* DMService+ExternalFetch.swift in Sources */,
 				4D4F65FFA3B6C568ACC21D09 /* DMService+GiftWrap.swift in Sources */,
@@ -4845,6 +4850,7 @@
 				CB0EBB49C9E66A3BBBB9F5F1 /* DMConversation.swift in Sources */,
 				52B1CF6FDF93928ECC60D213 /* DMInboxView.swift in Sources */,
 				F5357A352DC309F2E4BB19CA /* DMMessage.swift in Sources */,
+				D88848DFFE3875AE38EEF8AA /* DMReadAuth.swift in Sources */,
 				B584E2B874D869370E468154 /* DMService+Conversations.swift in Sources */,
 				5384D881E60795935AD9044E /* DMService+ExternalFetch.swift in Sources */,
 				F287853E144CD0FA91C4CAAB /* DMService+GiftWrap.swift in Sources */,

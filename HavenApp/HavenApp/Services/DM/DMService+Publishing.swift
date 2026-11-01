@@ -173,24 +173,12 @@ extension DMService {
                     } else if note.hasPrefix("auth-required"), !authSent, let challenge {
                         authSent = true
                         Task { @MainActor in
-                            // signEventAsync signs as the active account; if
-                            // that changed since the send, don't prove the
-                            // wrong identity.
-                            guard NostrService.shared.activeHexPubkey == sender else {
-                                finish(false, "account switched before AUTH")
+                            guard let (authId, msg) = await self.signRelayAuth(url: url, challenge: challenge, as: sender) else {
+                                finish(false, "could not sign AUTH (or account switched)")
                                 return
                             }
-                            let tags = [["relay", url], ["challenge", challenge]]
-                            guard let auth = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags) else {
-                                finish(false, "could not sign AUTH")
-                                return
-                            }
-                            let msg = ["AUTH", self.eventToDict(auth)] as [Any]
-                            if let data = try? JSONSerialization.data(withJSONObject: msg),
-                               let str = String(data: data, encoding: .utf8) {
-                                authEventId = auth.id
-                                client.send(text: str)
-                            }
+                            authEventId = authId
+                            client.send(text: msg)
                         }
                     } else {
                         finish(false, note)
@@ -216,6 +204,23 @@ extension DMService {
             finish(false, "timed out")
         }
         client.connect(url: urlObj)
+    }
+
+    /// A NIP-42 AUTH message for `url`, signed as `account`: nil when the
+    /// signer won't sign, or when the active account is no longer `account`
+    /// (signEventAsync signs as the active account, and proving the wrong
+    /// identity would tie two accounts together for the relay). Used by
+    /// both the authenticated write and the external DM read.
+    @MainActor
+    func signRelayAuth(url: String, challenge: String, as account: String) async -> (id: String, message: String)? {
+        guard !account.isEmpty, NostrService.shared.activeHexPubkey == account else { return nil }
+        let tags = [["relay", url], ["challenge", challenge]]
+        guard let auth = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags),
+              NostrService.shared.activeHexPubkey == account else { return nil }
+        let msg = ["AUTH", eventToDict(auth)] as [Any]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let str = String(data: data, encoding: .utf8) else { return nil }
+        return (auth.id, str)
     }
 
     /// Sends `event` to `url` without the caller waiting. The socket stays

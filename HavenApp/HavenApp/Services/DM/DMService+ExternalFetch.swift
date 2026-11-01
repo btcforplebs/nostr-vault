@@ -15,42 +15,22 @@ extension DMService {
 
         let generation = self.switchGeneration
 
-        var relays = ConfigService.shared.config.readRelays
-
-        // Include own DM inbox relays: your sent copies from other devices
-        // land there, as do messages to you.
-        for relay in ownDMInboxRelays() where !relays.contains(relay) {
-            relays.append(relay)
-        }
-        if let ownDMRelays = NostrService.shared.dmRelayLists[ownPubkey] {
-            for relay in ownDMRelays where !relays.contains(relay) && !NostrService.isLoopbackRelay(relay) {
-                relays.append(relay)
-            }
-        }
-        // And your general (kind 10002) read relays: builds before the DM
-        // inbox list sent your own copies there when that list happened to be
+        // Your DM inbox relays first: that is where DMs to you (and your
+        // sent copies from other devices) are published. The feed's read
+        // relays used to come first, and a long feed list pushed the DM
+        // relays past the cap.
+        let ownDMRelays = (NostrService.shared.dmRelayLists[ownPubkey] ?? [])
+            .filter { !NostrService.isLoopbackRelay($0) }
+        // Your general (kind 10002) read relays: builds before the DM inbox
+        // list sent your own copies there when that list happened to be
         // found first, so this is where those messages are.
-        if let ownReadRelays = NostrService.shared.relayLists[ownPubkey] {
-            for relay in ownReadRelays where !relays.contains(relay) && !NostrService.isLoopbackRelay(relay) {
-                relays.append(relay)
-            }
-        }
-
-        // Include counterpart DM relays — messages to us are published there
-        let maxRelays = 15
-        for conversation in conversations {
-            guard relays.count < maxRelays else { break }
-            if let counterpartRelays = NostrService.shared.dmRelayLists[conversation.id] {
-                for relay in counterpartRelays where !relays.contains(relay) {
-                    relays.append(relay)
-                    if relays.count >= maxRelays { break }
-                }
-            }
-        }
-
-        // The cap covers every list above, not only the counterparts': a long
-        // Read or 10002 list used to open them all, each asking for 2 days of wraps.
-        relays = Array(relays.prefix(maxRelays))
+        let ownReadRelays = (NostrService.shared.relayLists[ownPubkey] ?? [])
+            .filter { !NostrService.isLoopbackRelay($0) }
+        // Counterpart DM relays: messages to us are published there.
+        let counterpartRelays = conversations.flatMap { NostrService.shared.dmRelayLists[$0.id] ?? [] }
+        let ownGroups = [ownDMInboxRelays(), ownDMRelays, ConfigService.shared.config.readRelays, ownReadRelays]
+        let ownRelayKeys = Set(ownGroups.joined().map(DMReadAuth.relayKey))
+        let relays = DMReadAuth.fetchRelays(ownGroups + [counterpartRelays], cap: 15)
 
         #if DEBUG
         print("🌐 Fetching DMs from \(relays.count) external relays...")
@@ -62,15 +42,17 @@ extension DMService {
             let client = WebSocketClient()
             client.isTemporary = true
             externalClients.append(client)
+            let auth = readAuthLink(url: urlStr, account: ownPubkey,
+                                    own: DMReadAuth.mayAuth(urlStr, own: ownRelayKeys))
 
             client.messageSubject
                 .receive(on: processingQueue)
-                .sink { [weak self] message in
-                    guard let self = self else { return }
+                .sink { [weak self, weak client] message in
+                    guard let self = self, let client else { return }
                     // Discard if account switched since this fetch started
                     DispatchQueue.main.async {
                         guard self.switchGeneration == generation else { return }
-                        self.processExternalMessage(message, forAccount: ownPubkey)
+                        self.routeExternalFrame(message, auth: auth, client: client, forAccount: ownPubkey)
                     }
                 }
                 .store(in: &cancellables)
@@ -84,6 +66,7 @@ extension DMService {
                         return
                     }
                     if state == .connected {
+                        auth.connected = true
                         // Use 1-hour overlap for clock drift safety
                         let since = max(0, self.lastExternalFetchTimestamp - 3600)
 
@@ -99,11 +82,7 @@ extension DMService {
                             let wrapFloor = Int64(Date().timeIntervalSince1970) - (2 * 24 * 3600 + 60)
                             nip17Filter["since"] = min(since, wrapFloor)
                         }
-                        let req1 = ["REQ", "ext-nip17-\(UUID().uuidString.prefix(6))", nip17Filter] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req1),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                        self.sendReadREQ(prefix: "ext-nip17-", filter: nip17Filter, client: client, auth: auth)
 
                         // NIP-04 legacy DMs (received)
                         var nip04FilterReceived: [String: Any] = [
@@ -112,11 +91,7 @@ extension DMService {
                             "limit": 500
                         ]
                         if since > 0 { nip04FilterReceived["since"] = since }
-                        let req2 = ["REQ", "ext-nip04-in-\(UUID().uuidString.prefix(6))", nip04FilterReceived] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req2),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                        self.sendReadREQ(prefix: "ext-nip04-in-", filter: nip04FilterReceived, client: client, auth: auth)
 
                         // NIP-04 legacy DMs (sent)
                         var nip04FilterSent: [String: Any] = [
@@ -125,22 +100,25 @@ extension DMService {
                             "limit": 500
                         ]
                         if since > 0 { nip04FilterSent["since"] = since }
-                        let req3 = ["REQ", "ext-nip04-out-\(UUID().uuidString.prefix(6))", nip04FilterSent] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req3),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                        self.sendReadREQ(prefix: "ext-nip04-out-", filter: nip04FilterSent, client: client, auth: auth)
 
-                        // Disconnect after timeout and update fetch timestamp
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-                            client.disconnect()
-                            self?.externalClients.removeAll { $0 === client }
-                            // Update timestamp and tear down injection clients when the last external client disconnects
-                            if self?.externalClients.isEmpty == true {
-                                self?.lastExternalFetchTimestamp = Int64(Date().timeIntervalSince1970)
-                                self?.disconnectInjectionClients()
+                        // Disconnect after timeout and update fetch timestamp.
+                        // A relay that asked for AUTH gets 10 s more, once: a
+                        // remote signer signs over its own relay, and the
+                        // re-sent REQ still has to be answered.
+                        func retire(after delay: TimeInterval) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                                if auth.mayExtend() { retire(after: 10); return }
+                                client.disconnect()
+                                self?.externalClients.removeAll { $0 === client }
+                                // Update timestamp and tear down injection clients when the last external client disconnects
+                                if self?.externalClients.isEmpty == true {
+                                    self?.lastExternalFetchTimestamp = Int64(Date().timeIntervalSince1970)
+                                    self?.disconnectInjectionClients()
+                                }
                             }
                         }
+                        retire(after: 8)
                     }
                 }
                 .store(in: &cancellables)
@@ -151,6 +129,8 @@ extension DMService {
             // never advanced — every later fetch reused a days-old window.
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
                 guard let self, self.externalClients.contains(where: { $0 === client }) else { return }
+                // Connected late and reading (or AUTHing): its own timer above ends it.
+                guard !auth.connected else { return }
                 client.disconnect()
                 self.externalClients.removeAll { $0 === client }
                 if self.externalClients.isEmpty {
@@ -164,7 +144,10 @@ extension DMService {
     }
     private func backfillSentCopiesIfNeeded() {
         let ownPubkey = loadedAccountPubkey
-        let key = "dm.sentCopyBackfill.v1.\(ownPubkey)"
+        // v2: v1 ran before the read answered AUTH, so wraps kept only on
+        // relays that hand them out after AUTH (damus, nostr.wine) were never
+        // fetched. One more all-time catch-up picks them up.
+        let key = "dm.sentCopyBackfill.v2.\(ownPubkey)"
         guard !ownPubkey.isEmpty, !backfillRunning, !UserDefaults.standard.bool(forKey: key) else { return }
         backfillRunning = true
         let generation = switchGeneration
@@ -212,7 +195,8 @@ extension DMService {
             client.isTemporary = true
             var subs = Set<AnyCancellable>()
             var finished = false
-            let subId = "bf-\(UUID().uuidString.prefix(6))"
+            // Every relay here is your own (10002 + DM inbox).
+            let auth = readAuthLink(url: url.absoluteString, account: ownPubkey, own: true)
             func finish() {
                 guard !finished else { return }
                 finished = true
@@ -224,30 +208,108 @@ extension DMService {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] message in
                     guard let self, !finished, self.switchGeneration == generation else { return }
-                    if message.hasPrefix("[\"EOSE\"") || message.hasPrefix("[\"CLOSED\"") {
+                    guard let (type, _) = self.routeExternalFrame(message, auth: auth, client: client, forAccount: ownPubkey) else { return }
+                    // A CLOSED being answered with AUTH isn't the end: the
+                    // REQ goes again once the relay lets us in. Nor is one
+                    // that came before the relay's challenge: the 12 s timer
+                    // ends that wait, so the v2 pass isn't spent without AUTH.
+                    if type == "EOSE" || (type == "CLOSED" && !auth.state.isAuthenticating
+                                          && !auth.state.isAwaitingChallenge && !auth.resentRecently) {
                         // Let queued EVENTs drain through the sink first.
                         DispatchQueue.main.async { finish() }
-                        return
                     }
-                    self.processExternalMessage(message, forAccount: ownPubkey)
                 }
                 .store(in: &subs)
             client.$connectionState
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
-                        let req = ["REQ", subId, ["kinds": [1059], "#p": [ownPubkey], "limit": 1000]] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                        auth.connected = true
+                        self.sendReadREQ(prefix: "bf-", filter: ["kinds": [1059], "#p": [ownPubkey], "limit": 1000], client: client, auth: auth)
                     } else if case .error = state {
                         finish()
                     }
                 }
                 .store(in: &subs)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { finish() }
+            // 12 s, and 10 s more once when the relay asked for AUTH.
+            func timeout(after delay: TimeInterval) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    if auth.mayExtend() { timeout(after: 10) } else { finish() }
+                }
+            }
+            timeout(after: 12)
             client.connect(url: url)
+        }
+    }
+
+    /// Relays whose DM-read AUTH failed this app session ("account|url"):
+    /// refused, closed again after AUTH, or the signer didn't sign. They are
+    /// read without AUTH from then on, so a remote signer is asked at most
+    /// once per relay per connection and never again after a failure.
+    static var readAuthGivenUp = Set<String>()
+
+    func readAuthLink(url: String, account: String, own: Bool) -> DMReadAuthLink {
+        DMReadAuthLink(url: url, account: account,
+                       mayAuth: own && !Self.readAuthGivenUp.contains("\(account)|\(url)"))
+    }
+
+    /// Sends a REQ and remembers it, so it can be sent again after AUTH.
+    func sendReadREQ(prefix: String, filter: [String: Any], client: WebSocketClient, auth: DMReadAuthLink) {
+        let subId = "\(prefix)\(UUID().uuidString.prefix(6))"
+        let req = ["REQ", subId, filter] as [Any]
+        guard let data = try? JSONSerialization.data(withJSONObject: req),
+              let str = String(data: data, encoding: .utf8) else { return }
+        auth.state.sent(subId: subId, req: str)
+        client.send(text: str)
+    }
+
+    /// EVENTs go to the DM path; AUTH, CLOSED and OK to the read's NIP-42
+    /// answer. Returns the frame's type (nil when it isn't one).
+    @discardableResult
+    func routeExternalFrame(_ message: String, auth: DMReadAuthLink, client: WebSocketClient, forAccount account: String) -> (String, [Any])? {
+        if message.hasPrefix("[\"EVENT\"") {
+            processExternalMessage(message, forAccount: account)
+            return ("EVENT", [])
+        }
+        guard let (type, json) = RelayFrame.parse(message) else { return nil }
+        if type == "EVENT" {
+            processExternalMessage(message, forAccount: account)
+            return (type, json)
+        }
+        guard account == loadedAccountPubkey else { return (type, json) }
+        apply(auth.state.receive(type: type, json: json), auth: auth, client: client)
+        return (type, json)
+    }
+
+    private func apply(_ step: DMReadAuth.Step, auth: DMReadAuthLink, client: WebSocketClient) {
+        switch step {
+        case .none:
+            break
+        case .sign(let challenge):
+            let generation = switchGeneration
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let signed = self.switchGeneration == generation
+                    ? await self.signRelayAuth(url: auth.url, challenge: challenge, as: auth.account)
+                    : nil
+                guard let signed else {
+                    self.apply(auth.state.signFailed(), auth: auth, client: client)
+                    return
+                }
+                auth.state.authSent(id: signed.id)
+                client.send(text: signed.message)
+            }
+        case .resend(let reqs):
+            #if DEBUG
+            print("🔐 DM read AUTH accepted by \(auth.url): asking again (\(reqs.count))")
+            #endif
+            auth.resentAt = Date()
+            for req in reqs { client.send(text: req) }
+        case .giveUp(let why):
+            #if DEBUG
+            print("🔐 DM read AUTH given up for \(auth.url): \(why)")
+            #endif
+            Self.readAuthGivenUp.insert("\(auth.account)|\(auth.url)")
         }
     }
 
@@ -288,5 +350,32 @@ extension DMService {
             print("❌ Failed to process external message: \(error)")
             #endif
         }
+    }
+}
+
+/// One DM-reading connection's NIP-42 state, shared by its sink and timers.
+@MainActor
+final class DMReadAuthLink {
+    let url: String
+    let account: String
+    var state: DMReadAuth
+    var connected = false
+    var resentAt: Date?
+    private var extended = false
+
+    init(url: String, account: String, mayAuth: Bool) {
+        self.url = url
+        self.account = account
+        self.state = DMReadAuth(mayAuth: mayAuth)
+    }
+
+    var resentRecently: Bool { resentAt.map { Date().timeIntervalSince($0) < 8 } ?? false }
+
+    /// True once, when an AUTH is under way or its re-sent REQ was just
+    /// sent: the caller keeps the connection open a little longer.
+    func mayExtend() -> Bool {
+        guard !extended, state.isAuthenticating || resentRecently else { return false }
+        extended = true
+        return true
     }
 }
