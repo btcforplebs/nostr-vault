@@ -1,6 +1,5 @@
 package com.nostrvault.relay
 
-import android.system.Os
 import android.util.Log
 import com.nostrvault.data.model.QuoteRef
 
@@ -25,21 +24,8 @@ object HavenBridge {
 
     init {
         try {
-            // Set GODEBUG before loading libhaven.so so the Go runtime reads it
-            // during initialization (dlopen time). asyncpreemptoff=1 disables
-            // SIGURG-based goroutine preemption which conflicts with the JVM's
-            // signal handling on Android and causes heap corruption
-            // ("s.allocCount != s.nelems", "bad pointer in Go heap").
-            // cgocheck=0 disables the CGO pointer validity checks that can
-            // misfire when Go heap objects contain mmap'd region boundaries.
-            Os.setenv("GODEBUG", "asyncpreemptoff=1,cgocheck=0,madvdontneed=1", true)
-            // Go's soft memory limit, sized to this phone: a quarter of its RAM,
-            // 256 MiB to 3 GiB. A fixed 192 MiB was a limit a populated vault's
-            // live heap reaches, and then the collector runs back to back and the
-            // phone runs hot (iPhone #1007). The relay sets the same value again
-            // at start (GO_MEM_LIMIT_MB, RelayConfiguration).
-            Os.setenv("GOMEMLIMIT", "${RelayConfiguration.phoneGoMemLimitMB(RelayConfiguration.totalMemoryBytes())}MiB", true)
-            Os.setenv("GOGC", "50", true)
+            // The Go runtime reads these when the library loads.
+            GoRuntimeEnv.ensure()
             System.loadLibrary("haven")
             System.loadLibrary("nostrvault-jni")
             isLoaded = true
