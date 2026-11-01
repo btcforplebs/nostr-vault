@@ -102,17 +102,6 @@ struct BottomTabBar: View {
         relayManager.hasNewRelayActivity || dmService.totalUnreadCount > 0
     }
 
-    /// The avatar's purple dot: an account you are not on has news (the
-    /// counts on the switcher rows). Clears when those rows are all zero.
-    private var otherAccountHasNews: Bool {
-        unreadStore.othersHaveUnread(npubs: configService.allAccountNpubs, activeHex: activeHex)
-    }
-
-    /// VoiceOver for the avatar's dots.
-    private var avatarNewsValue: String {
-        [vaultHasNews ? "New activity" : nil, otherAccountHasNews ? "Another account has news" : nil]
-            .compactMap { $0 }.joined(separator: ", ")
-    }
 
     // MARK: - Collapsed Content
 
@@ -157,12 +146,8 @@ struct BottomTabBar: View {
                         NewsDot(isShown: vaultHasNews, size: 11)
                             .offset(x: 3, y: -3)
                     }
-                    .overlay(alignment: .bottomTrailing) {
-                        NewsDot(isShown: otherAccountHasNews, size: 9, color: NewsDot.otherAccount)
-                            .offset(x: 3, y: 3)
-                    }
             }
-            .accessibilityValue(avatarNewsValue)
+            .accessibilityValue(vaultHasNews ? "New activity" : "")
 
             // Contextual FAB icon — triggers compose or relay dashboard.
             // A read-only sign-in can't sign a post: no compose button.
@@ -259,10 +244,6 @@ struct BottomTabBar: View {
                             .stroke(selected ? Color.havenPurple : .white.opacity(0.5), lineWidth: selected ? 2 : 1)
                     )
                     .zapFlightOrigin()
-                    .overlay(alignment: .bottomTrailing) {
-                        NewsDot(isShown: otherAccountHasNews, size: 8, color: NewsDot.otherAccount)
-                            .offset(x: 3, y: 3)
-                    }
                     .frame(height: 24)
                 Text("Profile")
                     .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
@@ -271,7 +252,6 @@ struct BottomTabBar: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
-        .accessibilityValue(otherAccountHasNews ? "Another account has news" : "")
     }
 
     // MARK: - Account Switch Menu

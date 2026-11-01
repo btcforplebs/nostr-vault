@@ -123,8 +123,6 @@ fun BottomNavBar(
     foldProgress: () -> Float = { 0f },
     hasUnreadDMs: Boolean = false,
     hasNewRelayActivity: Boolean = false,
-    /** An account you are not on has news (the switcher's counts): a purple dot on the avatar. */
-    otherAccountHasNews: Boolean = false,
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit = {},
     onAccountSwitcher: () -> Unit,
@@ -173,7 +171,6 @@ fun BottomNavBar(
                     activeDisplayName = activeDisplayName,
                     hasUnreadDMs = hasUnreadDMs,
                     hasNewRelayActivity = hasNewRelayActivity,
-                    otherAccountHasNews = otherAccountHasNews,
                     onNavigate = onNavigate,
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
@@ -185,7 +182,6 @@ fun BottomNavBar(
                     activeAvatarUrl = activeAvatarUrl,
                     activeDisplayName = activeDisplayName,
                     showBadge = hasUnreadDMs || hasNewRelayActivity,
-                    otherAccountHasNews = otherAccountHasNews,
                     primaryColor = colors.primary,
                     actionIcon = condensedActionIcon,
                     actionLabel = condensedActionLabel,
@@ -264,7 +260,6 @@ private fun ExpandedNavRow(
     activeDisplayName: String?,
     hasUnreadDMs: Boolean,
     hasNewRelayActivity: Boolean,
-    otherAccountHasNews: Boolean,
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit,
     onAccountSwitcher: () -> Unit,
@@ -299,7 +294,6 @@ private fun ExpandedNavRow(
                     activeDisplayName = activeDisplayName,
                     // Messages live in the Vault tab now; its dot carries them.
                     showBadge = false,
-                    otherAccountHasNews = otherAccountHasNews,
                     onClick = {
                         if (selected) {
                             onReselect(Screen.Profile)
@@ -350,7 +344,6 @@ private fun CondensedNavCluster(
     activeAvatarUrl: String?,
     activeDisplayName: String?,
     showBadge: Boolean,
-    otherAccountHasNews: Boolean,
     primaryColor: Color,
     actionIcon: ImageVector,
     actionLabel: String,
@@ -385,7 +378,7 @@ private fun CondensedNavCluster(
                         },
                     )
                     .semantics {
-                        avatarNewsDescription(showBadge, otherAccountHasNews)?.let { stateDescription = it }
+                        if (showBadge) stateDescription = "New activity"
                     }
                     .zapFlightOrigin()
                     .size(36.dp)
@@ -406,12 +399,6 @@ private fun CondensedNavCluster(
                 isShown = showBadge,
                 size = 11.dp,
                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp),
-            )
-            NewsDot(
-                isShown = otherAccountHasNews,
-                size = 9.dp,
-                color = primaryColor,
-                modifier = Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp),
             )
         }
 
@@ -534,7 +521,6 @@ private fun ProfileTab(
     activeAvatarUrl: String?,
     activeDisplayName: String?,
     showBadge: Boolean = false,
-    otherAccountHasNews: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -546,7 +532,6 @@ private fun ProfileTab(
             .clip(CircleShape)
             .semantics {
                 role = Role.Tab
-                if (otherAccountHasNews) stateDescription = "Another account has news"
             }
             .combinedClickable(
                 onClick = onClick,
@@ -590,12 +575,6 @@ private fun ProfileTab(
                         .background(ErrorRed, CircleShape),
                 )
             }
-            NewsDot(
-                isShown = otherAccountHasNews,
-                size = 8.dp,
-                color = selectedColor,
-                modifier = Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp),
-            )
         }
         Text(
             text = "Profile",
@@ -614,10 +593,3 @@ private fun ProfileTab(
 private fun Modifier.combinedClickableCompat(
     onClick: () -> Unit,
 ): Modifier = this.combinedClickable(onClick = onClick)
-
-/** The folded avatar's spoken state, one phrase per dot it shows; null with none. */
-internal fun avatarNewsDescription(vaultHasNews: Boolean, otherAccountHasNews: Boolean): String? =
-    listOfNotNull(
-        "New activity".takeIf { vaultHasNews },
-        "Another account has news".takeIf { otherAccountHasNews },
-    ).joinToString(", ").ifEmpty { null }

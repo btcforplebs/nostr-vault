@@ -14,11 +14,6 @@ struct iPadSidebarView: View {
     @StateObject private var nostrService = NostrService.shared
     @StateObject private var feedService = FeedService.shared
     @StateObject private var dmService = DMService.shared
-    @ObservedObject private var unreadStore = AccountUnreadStore.shared
-    /// The avatar's purple dot: an account you are not on has news.
-    private var otherAccountHasNews: Bool {
-        unreadStore.othersHaveUnread(npubs: configService.allAccountNpubs, activeHex: activeHex)
-    }
     /// The Vault row's dot: something came in, a new message included.
     private var vaultHasNews: Bool {
         relayManager.hasNewRelayActivity || dmService.totalUnreadCount > 0
@@ -131,10 +126,6 @@ struct iPadSidebarView: View {
                                         lineWidth: isOwner ? 1.5 : 2
                                     )
                             )
-                            .overlay(alignment: .bottomTrailing) {
-                                NewsDot(isShown: otherAccountHasNews, size: 9, color: NewsDot.otherAccount)
-                                    .offset(x: 2, y: 2)
-                            }
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(nostrService.profiles[activeHex]?.bestName ?? (isOwner ? "Owner" : "User"))
@@ -155,7 +146,6 @@ struct iPadSidebarView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityValue(otherAccountHasNews ? "Another account has news" : "")
 
                     // The phone's floating Post button, which this layout has
                     // no bar for. Same path as ⌘N. None for a read-only sign-in.
