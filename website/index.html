@@ -29,7 +29,7 @@
 
     <link rel="icon" type="image/png" href="assets/haven_icon.png">
     <link rel="apple-touch-icon" href="assets/haven_icon.png">
-    <link rel="stylesheet" href="style.css?v=20261025">
+    <link rel="stylesheet" href="style.css?v=20261101">
     <link rel="stylesheet" href="menu.css?v=20261025">
 
     <script type="application/ld+json">
@@ -44,11 +44,11 @@
           "description": "A Nostr client built around your web of trust, for iPhone, iPad, Mac, Android and the web. Every feed shows the people your circle can vouch for, each feed has its own guard, and your vault keeps your notes on your own device. NIP-49 encrypted keys and NIP-46 remote signing.",
           "applicationCategory": "SocialNetworkingApplication",
           "operatingSystem": "iOS, iPadOS, macOS, Android, Web",
-          "softwareVersion": "2.7.2",
+          "softwareVersion": "3.1.0",
           "isAccessibleForFree": true,
           "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
           "license": "https://github.com/btcforplebs/nostr-vault/blob/master/LICENSE",
-          "downloadUrl": "https://github.com/btcforplebs/nostr-vault/releases",
+          "downloadUrl": "https://github.com/btcforplebs/nostr-vault/releases/latest",
           "installUrl": "https://testflight.apple.com/join/kN3zE1H1",
           "screenshot": [
             "https://nostrvault.app/assets/screens/iphone-feed.webp",
@@ -95,7 +95,7 @@
             {
               "@type": "Question",
               "name": "Which platforms does Nostr Vault run on?",
-              "acceptedAnswer": { "@type": "Answer", "text": "iPhone and iPad via TestFlight, macOS from the GitHub releases page, and Android as a direct APK download. It also runs in any browser at nostrvault.app/vault." }
+              "acceptedAnswer": { "@type": "Answer", "text": "iPhone and iPad (iOS 17 or later) through TestFlight, Mac (macOS 14 or later) as a notarized download from GitHub, and Android (8 or later) from Zapstore or as an APK from GitHub. It also runs in any browser at nostrvault.app/vault." }
             },
             {
               "@type": "Question",
@@ -131,12 +131,11 @@
             <a href="#platforms">Download</a>
             <a href="#relay">Relay</a>
             <a href="/docs/">Docs</a>
-            <a href="blog-what-is-nostr-vault.html">Blog</a>
         </div>
         <div class="actions">
             <a href="/docs/" class="pill pill-docs">Docs</a>
             <a href="/vault/" class="pill pill-web">Open web app</a>
-            <a href="https://testflight.apple.com/join/kN3zE1H1" class="pill pill-testflight">TestFlight</a>
+            <a href="#platforms" class="pill pill-testflight">Get the app</a>
             <a href="https://github.com/btcforplebs/nostr-vault" class="pill pill-light">GitHub</a>
         </div>
     </nav>
@@ -144,15 +143,20 @@
     <header class="hero" id="about">
         <div class="hero-copy">
             <p class="eyebrow fade-in-up">iPhone &middot; iPad &middot; Mac &middot; Android &middot; Web</p>
-            <h1 class="fade-in-up" tabindex="-1">Your web of trust.<br>Your feeds.</h1>
-            <p class="lede fade-in-up delay-100">Nostr Vault is a Nostr client built around the people you trust. Every feed
-                shows accounts your circle can vouch for, and you decide exactly what reaches each one. Your notes and
-                follows live on your own device first. Open source, so you never have to trust it.</p>
-            <div class="hero-buttons fade-in-up delay-200">
-                <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
-                <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
-                <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
-        </div>
+            <h1 class="fade-in-up" tabindex="-1">Your posts.<br>On your own device.</h1>
+            <p class="lede fade-in-up delay-100">Nostr Vault is a Nostr app that keeps your notes, follows and messages on
+                your own phone or computer first, then sends them to the relays you pick. The people you trust decide who
+                shows up in your feeds, and you decide what reaches each one.</p>
+            <div class="hero-buttons fade-in-up delay-200" data-downloads>
+                <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight" data-device="ios">iPhone &amp; iPad</a>
+                <a href="https://zapstore.dev/apps/com.nostrvault.app" class="btn btn-android" data-device="android">Android</a>
+                <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-primary" data-device="mac">Download for Mac</a>
+            </div>
+            <ul class="hero-trust fade-in-up delay-200">
+                <li><strong>Open source.</strong> Every line is on GitHub.</li>
+                <li><strong>Your key stays yours.</strong> Encrypted on the device, or kept in your own signer.</li>
+                <li><strong>Your relays.</strong> You pick them. We only suggest a few.</li>
+            </ul>
         <p class="hero-note fade-in-up delay-300">Or skip the download and <a href="/vault/">use it in your browser</a>. New here? <a href="/docs/">Read the docs</a>.</p>
         </div>
 
@@ -251,33 +255,31 @@
     </section>
 
     <section class="platforms" id="platforms">
-        <div class="platform-grid">
-            <a class="platform fade-in-up" href="https://testflight.apple.com/join/kN3zE1H1">
-                <span class="platform-name">iPhone</span>
-                <span class="platform-sub">TestFlight beta &middot; iOS 18+</span>
-                <span class="platform-cta">Join the beta &rarr;</span>
+        <p class="eyebrow center fade-in-up">Download &middot; version 3.1.0</p>
+        <h2 class="center fade-in-up">Get Nostr Vault</h2>
+        <div class="platform-grid" data-downloads>
+            <a class="platform fade-in-up" href="https://testflight.apple.com/join/kN3zE1H1" data-device="ios">
+                <span class="platform-name">iPhone &amp; iPad</span>
+                <span class="platform-sub">iOS and iPadOS 17 or later &middot; real split-view layout on iPad</span>
+                <span class="platform-cta">Install via TestFlight &rarr;</span>
             </a>
-            <a class="platform fade-in-up delay-100" href="https://testflight.apple.com/join/kN3zE1H1">
-                <span class="platform-name">iPad</span>
-                <span class="platform-sub">Same TestFlight build, real split-view layout</span>
-                <span class="platform-cta">Join the beta &rarr;</span>
-            </a>
-            <a class="platform fade-in-up delay-200" href="https://github.com/btcforplebs/nostr-vault/releases">
-                <span class="platform-name">Mac</span>
-                <span class="platform-sub">Unsigned build from GitHub &middot; 24/7 relay with a domain</span>
-                <span class="platform-cta">Releases &rarr;</span>
-            </a>
-            <a class="platform fade-in-up delay-300" href="https://github.com/btcforplebs/nostr-vault/releases/latest">
+            <a class="platform fade-in-up delay-100" href="https://zapstore.dev/apps/com.nostrvault.app" data-device="android">
                 <span class="platform-name">Android</span>
-                <span class="platform-sub">APK on GitHub &middot; Android 8+</span>
-                <span class="platform-cta">Get the APK &rarr;</span>
+                <span class="platform-sub">Android 8 or later &middot; updates through Zapstore</span>
+                <span class="platform-cta">Get it on Zapstore &rarr;</span>
             </a>
-            <a class="platform web fade-in-up delay-300" href="/vault/">
+            <a class="platform fade-in-up delay-200" href="https://github.com/btcforplebs/nostr-vault/releases/latest" data-device="mac">
+                <span class="platform-name">Mac</span>
+                <span class="platform-sub">macOS 14 or later &middot; signed and notarized by Apple &middot; can run 24/7 as your relay</span>
+                <span class="platform-cta">Download for Mac &rarr;</span>
+            </a>
+            <a class="platform web fade-in-up delay-300" href="/vault/" data-device="web">
                 <span class="platform-name">Web</span>
                 <span class="platform-sub">Any browser, nothing to install &middot; relay runs in the page</span>
                 <span class="platform-cta">Open it now &rarr;</span>
             </a>
         </div>
+        <p class="platform-note fade-in-up">Prefer the file? The Android APK is also on <a href="https://github.com/btcforplebs/nostr-vault/releases/latest">GitHub releases</a>.</p>
     </section>
 
     <section class="web" id="web">
@@ -457,26 +459,14 @@
         </div>
     </section>
 
-    <section class="blog-teaser">
-        <p class="eyebrow center fade-in-up">From the blog</p>
-        <a href="blog-what-is-nostr-vault.html" class="teaser fade-in-up delay-100">
-            <p class="teaser-kicker">Deep dive &nbsp;&middot;&nbsp; May 2026</p>
-            <h3>What Is Nostr Vault? The Personal Relay You Actually Control.</h3>
-            <p class="teaser-body">A plain-language walkthrough of everything Nostr Vault does: why running your own
-                relay matters, how the four relay types work together, media hosting and Web of Trust spam
-                protection.</p>
-            <span class="teaser-cta">Read the full post &rarr;</span>
-        </a>
-    </section>
-
     <section class="cta-section">
         <h2 class="fade-in-up">Your web of trust. Your feeds.<br>On every screen you own.</h2>
         <p class="fade-in-up delay-100">Native on iPhone, iPad, Mac and Android, and in any browser. Encrypted by default.
             Verifiable from source.</p>
-        <div class="hero-buttons fade-in-up delay-200">
-            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
-            <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-android">Android APK</a>
-            <a href="https://github.com/btcforplebs/nostr-vault/releases" class="btn btn-primary">Download for Mac</a>
+        <div class="hero-buttons fade-in-up delay-200" data-downloads>
+            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight" data-device="ios">iPhone &amp; iPad</a>
+            <a href="https://zapstore.dev/apps/com.nostrvault.app" class="btn btn-android" data-device="android">Android</a>
+            <a href="https://github.com/btcforplebs/nostr-vault/releases/latest" class="btn btn-primary" data-device="mac">Download for Mac</a>
             <a href="/vault/" class="btn btn-outline">Open on the web</a>
             <a href="/docs/" class="btn btn-outline">Read the docs</a>
             <a href="https://github.com/btcforplebs/nostr-vault" class="btn btn-outline">View on GitHub</a>
@@ -499,7 +489,8 @@
 
     <script src="script.js?v=20261025"></script>
     <script src="shell.js?v=20261025b"></script>
-    <script src="menu.js?v=20261025"></script>
+    <script src="downloads.js?v=20261101"></script>
+    <script src="menu.js?v=20261101"></script>
 </body>
 
 </html>

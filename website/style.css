@@ -245,6 +245,22 @@ nav {
 
 .hero-note a { color: var(--accent); }
 
+/* Three short trust points under the hero's download buttons. */
+.hero-trust {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 26px;
+    margin: 26px auto 0;
+    max-width: 760px;
+    padding: 0;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+}
+
+.hero-trust strong { color: var(--text-primary); font-weight: 600; }
+
 .btn {
     padding: 14px 30px;
     border-radius: 30px;
@@ -618,6 +634,9 @@ nav {
 .platform-cta { color: var(--accent); font-weight: 600; font-size: 0.92rem; margin-top: 8px; }
 
 .platform.web { border-color: rgba(255, 140, 0, 0.35); }
+.platforms h2 { margin-bottom: 36px; }
+.platform-note { margin-top: 18px; text-align: center; font-size: 0.88rem; color: var(--text-secondary); }
+.platform-note a { color: var(--accent); }
 
 /* Web app */
 .web {
@@ -818,43 +837,6 @@ nav {
     border-top: 1px solid var(--glass-border);
 }
 
-/* Blog teaser */
-.blog-teaser {
-    padding: 80px 20px;
-    max-width: 900px;
-    margin: 0 auto;
-}
-
-.teaser {
-    display: block;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius);
-    padding: 40px;
-    transition: transform 0.3s ease, border-color 0.3s ease;
-}
-
-.teaser:hover { transform: translateY(-4px); border-color: rgba(255, 255, 255, 0.2); }
-
-.teaser-kicker {
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 12px;
-}
-
-.teaser h3 {
-    font-size: 1.8rem;
-    font-weight: 800;
-    margin-bottom: 14px;
-    letter-spacing: -0.3px;
-}
-
-.teaser-body { color: var(--text-secondary); font-size: 1.05rem; line-height: 1.7; margin-bottom: 20px; }
-.teaser-cta { color: var(--accent); font-weight: 600; font-size: 0.95rem; }
-
 /* CTA */
 .cta-section {
     padding: 150px 20px;
@@ -1007,21 +989,23 @@ html.shell .hero-open {
     html.shell .hero-copy { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
     html.shell .hero h1 { font-size: 4.4rem; }
     html.shell .hero .hero-buttons { justify-content: flex-start; }
+    html.shell .hero-trust { justify-content: flex-start; margin-left: 0; }
     html.shell .hero-phones { grid-column: 2; grid-row: 1; margin: 0; width: auto; }
     html.shell .hero-open { grid-column: 2; grid-row: 2; margin-top: 22px; }
 }
 
-/* Narrow windows: the headline, then the live phone in the first screen, then the rest of the copy. */
+/* Narrow windows: the words first (headline, what it is, the downloads and the trust points), then the live phone. */
 @media (max-width: 960px) {
     html.shell .hero { padding-top: 92px; }
     html.shell .hero-copy { display: contents; }
     html.shell .hero .eyebrow { order: 1; margin-bottom: 8px; }
-    html.shell .hero h1 { order: 2; font-size: 2.5rem; letter-spacing: -1px; margin-bottom: 0; }
-    html.shell .hero-phones { order: 3; margin-top: 22px; }
-    html.shell .hero-open { order: 4; margin-top: 20px; }
-    html.shell .hero .lede { order: 5; margin-top: 36px; }
-    html.shell .hero .hero-buttons { order: 6; }
-    html.shell .hero .hero-note { order: 7; }
+    html.shell .hero h1 { order: 2; font-size: 2.5rem; letter-spacing: -1px; margin-bottom: 14px; }
+    html.shell .hero .lede { order: 3; margin-bottom: 24px; }
+    html.shell .hero .hero-buttons { order: 4; }
+    html.shell .hero-trust { order: 5; }
+    html.shell .hero .hero-note { order: 6; }
+    html.shell .hero-phones { order: 7; margin-top: 36px; }
+    html.shell .hero-open { order: 8; margin-top: 20px; }
     html.shell .actions .pill-web { display: inline-block; }
     html.shell .actions .pill-light { display: none; }
     html.shell .hero-phones .phone-slot {
@@ -1030,7 +1014,7 @@ html.shell .hero-open {
     }
 }
 
-/* Legacy nav button used by blog + privacy pages */
+/* Legacy nav button used by the privacy page */
 .actions .btn-download {
     background: #ffffff;
     color: #000000;

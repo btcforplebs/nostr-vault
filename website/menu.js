@@ -1,5 +1,5 @@
 // The site menu on phones and narrow windows (960px and under, where the header's links don't fit). One list for
-// every page, so the home page, the docs, the blog and the privacy page all reach the same places as the desktop
+// every page, so the home page, the docs and the privacy page all reach the same places as the desktop
 // header and footer. Docs comes first. Without JavaScript the header's own Docs pill and the footer still work.
 (function () {
     'use strict';
@@ -19,12 +19,11 @@
             ['/#web', 'Web'],
             ['/#platforms', 'Download'],
             ['/#relay', 'Relay'],
-            ['/blog-what-is-nostr-vault.html', 'Blog'],
         ] },
         { title: 'Get the app', links: [
             ['https://testflight.apple.com/join/kN3zE1H1', 'iPhone and iPad (TestFlight)'],
-            ['https://github.com/btcforplebs/nostr-vault/releases/latest', 'Android APK'],
-            ['https://github.com/btcforplebs/nostr-vault/releases', 'Mac'],
+            ['https://zapstore.dev/apps/com.nostrvault.app', 'Android (Zapstore)'],
+            ['https://github.com/btcforplebs/nostr-vault/releases/latest', 'Mac'],
         ] },
         { title: 'More', links: [
             ['https://github.com/btcforplebs/nostr-vault', 'GitHub'],
