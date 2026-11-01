@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +47,21 @@ class LiveChatService @Inject constructor(
         const val CHAT_KIND = 1311
         const val ZAP_RECEIPT_KIND = 9735
         private const val BACKLOG = 100
+
+        /**
+         * Relay lines are shown in batches, at most one every this many ms.
+         * Opening a chat brings up to a hundred old lines from each relay, one
+         * at a time; publishing each one moved the list a hundred times.
+         */
+        private const val PUBLISH_DELAY_MS = 150L
+
+        /**
+         * Whether the chat should glide to the bottom for this change. Only one
+         * new line glides; the first lines and any batch of history jump there,
+         * so opening a stream starts at the bottom instead of scrolling through.
+         */
+        fun animatesScroll(oldCount: Int, newCount: Int): Boolean =
+            oldCount > 0 && newCount == oldCount + 1
 
         /**
          * Fallback chat relays, for a stream that names none of its own.
@@ -121,6 +137,7 @@ class LiveChatService @Inject constructor(
         val subId = "chat-${System.currentTimeMillis().toString(36)}"
         val seen = mutableMapOf<String, ChatEntry>()
         val seenLock = Mutex()
+        var publishPending = false
 
         // This join's own clients: leave() can run while the loop below is
         // still opening them, so the job closes whatever it opened when it ends.
@@ -134,14 +151,21 @@ class LiveChatService @Inject constructor(
                 launch {
                     client.messages.collect { raw ->
                         val entry = parseChatEntry(raw, subId, json) { HavenBridge.verifyEvent(it) } ?: return@collect
-                        val snapshot = seenLock.withLock {
-                            if (seen.containsKey(entry.id)) null
+                        val startBatch = seenLock.withLock {
+                            if (seen.containsKey(entry.id)) false
                             else {
                                 seen[entry.id] = entry
+                                // Join the batch already waiting, or start one.
+                                !publishPending.also { publishPending = true }
+                            }
+                        }
+                        if (startBatch) launch {
+                            delay(PUBLISH_DELAY_MS)
+                            _messages.value = seenLock.withLock {
+                                publishPending = false
                                 seen.values.sortedBy { it.createdAt }
                             }
                         }
-                        snapshot?.let { _messages.value = it }
                     }
                 }
                 launch {

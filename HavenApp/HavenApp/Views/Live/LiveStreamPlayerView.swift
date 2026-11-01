@@ -263,8 +263,14 @@ struct LiveStreamPlayerView: View {
             // Drag the chat down, or tap it, to put the keyboard away.
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
-            .onChange(of: chat.messages.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.2)) {
+            // Opens at the bottom; history jumps there, a new message glides.
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: chat.messages.count) { old, new in
+                if LiveChatService.animatesScroll(from: old, to: new) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(Self.chatBottomAnchor, anchor: .bottom)
+                    }
+                } else {
                     proxy.scrollTo(Self.chatBottomAnchor, anchor: .bottom)
                 }
             }

@@ -25,6 +25,11 @@ final class LiveChatService: ObservableObject {
     /// Signatures are checked here, not on main: a busy stream answers with
     /// a hundred events from each of five relays.
     private static let verifyQueue = DispatchQueue(label: "com.haven.live-chat-verify", qos: .userInitiated)
+    /// Relay rows are shown in batches, at most one every `publishDelay`.
+    /// Opening a chat brings up to a hundred old rows from each relay, one at
+    /// a time; publishing each one moved the list a hundred times.
+    private var pendingPublish: DispatchWorkItem?
+    private static let publishDelay: TimeInterval = 0.15
 
     deinit {
         clients.forEach { $0.disconnect() }
@@ -78,6 +83,8 @@ final class LiveChatService: ObservableObject {
     }
 
     func disconnect() {
+        pendingPublish?.cancel()
+        pendingPublish = nil
         cancellables.removeAll()
         clients.forEach { $0.disconnect() }
         clients.removeAll()
@@ -209,10 +216,30 @@ final class LiveChatService: ObservableObject {
         }
         guard collected[row.id] == nil else { return }
         collected[row.id] = row
-        publish()
+        schedulePublish()
+    }
+
+    /// Joins the batch that is already waiting, or starts one.
+    private func schedulePublish() {
+        guard pendingPublish == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingPublish = nil
+            self?.publish()
+        }
+        pendingPublish = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.publishDelay, execute: work)
+    }
+
+    /// Whether the chat should glide to the bottom for this change. Only one
+    /// new row glides; the first rows and any batch of history jump there, so
+    /// opening a stream starts at the bottom instead of scrolling through.
+    nonisolated static func animatesScroll(from oldCount: Int, to newCount: Int) -> Bool {
+        oldCount > 0 && newCount == oldCount + 1
     }
 
     private func publish() {
+        pendingPublish?.cancel()
+        pendingPublish = nil
         var sorted = collected.values.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
             return $0.id < $1.id

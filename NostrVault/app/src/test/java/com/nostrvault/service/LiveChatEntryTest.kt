@@ -60,4 +60,16 @@ class LiveChatEntryTest {
     @Test fun anotherSubscriptionIsIgnored() {
         assertNull(parseChatEntry(chat(), "other", json) { true })
     }
+
+    @Test
+    fun `history jumps to the bottom, one new line glides`() {
+        // Opening: the first batch, and later batches of history, jump.
+        assertEquals(false, LiveChatService.animatesScroll(0, 1))
+        assertEquals(false, LiveChatService.animatesScroll(0, 120))
+        assertEquals(false, LiveChatService.animatesScroll(40, 75))
+        // Live: one new message glides.
+        assertEquals(true, LiveChatService.animatesScroll(75, 76))
+        // A mute that drops lines does not glide either.
+        assertEquals(false, LiveChatService.animatesScroll(76, 70))
+    }
 }

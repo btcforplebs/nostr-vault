@@ -51,9 +51,18 @@ internal fun LiveChat(
     val colors = LocalNostrVaultColors.current
     val listState = rememberLazyListState()
 
-    // Follow the conversation, the way every chat does.
+    // Follow the conversation, the way every chat does: history jumps to the
+    // bottom, a new message glides.
+    var shownCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        val oldCount = shownCount
+        shownCount = messages.size
+        if (messages.isEmpty()) return@LaunchedEffect
+        if (LiveChatService.animatesScroll(oldCount, messages.size)) {
+            listState.animateScrollToItem(messages.lastIndex)
+        } else {
+            listState.scrollToItem(messages.lastIndex)
+        }
     }
 
     if (messages.isEmpty()) {
