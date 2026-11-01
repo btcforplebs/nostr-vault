@@ -65,13 +65,18 @@ func (evt Event) CheckSignature() (bool, error) {
 
 	msg := sha256.Sum256(evt.Serialize())
 
-	var xonly C.secp256k1_xonly_pubkey
-	if C.secp256k1_xonly_pubkey_parse(globalSecp256k1Context, &xonly, (*C.uchar)(unsafe.Pointer(&pk[0]))) != 1 {
-		return false, fmt.Errorf("failed to parse xonly pubkey")
-	}
-
-	res := C.secp256k1_schnorrsig_verify(globalSecp256k1Context, (*C.uchar)(unsafe.Pointer(&sig[0])), (*C.uchar)(unsafe.Pointer(&msg[0])), 32, &xonly)
-	return res == 1, nil
+	// haven: msg covers the pubkey, so (msg, sig) names exactly what is
+	// verified below; see sigcache.go.
+	var parseErr error
+	ok := checkSignatureCached(msg, sig[:], func() bool {
+		var xonly C.secp256k1_xonly_pubkey
+		if C.secp256k1_xonly_pubkey_parse(globalSecp256k1Context, &xonly, (*C.uchar)(unsafe.Pointer(&pk[0]))) != 1 {
+			parseErr = fmt.Errorf("failed to parse xonly pubkey")
+			return false
+		}
+		return C.secp256k1_schnorrsig_verify(globalSecp256k1Context, (*C.uchar)(unsafe.Pointer(&sig[0])), (*C.uchar)(unsafe.Pointer(&msg[0])), 32, &xonly) == 1
+	})
+	return ok, parseErr
 }
 
 func (evt *Event) Sign(secretKey string, signOpts ...schnorr.SignOption) error {
