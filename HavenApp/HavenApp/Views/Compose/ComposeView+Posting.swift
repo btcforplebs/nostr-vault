@@ -233,6 +233,18 @@ extension ComposeView {
                 }
             }
 
+            // NIP-18 `q` (and `p` for its author) for each note pasted into the
+            // text, bare or with `nostr:`. The Quote button's note is tagged above.
+            let quotingText = finalContent
+            let pastedQuoteTags = await MainActor.run {
+                QuoteReference.noteQuoteTags(in: quotingText, relayHint: configService.config.publicRelayHint) {
+                    FeedService.shared.findNote(id: $0)?.pubkey
+                }
+            }
+            for tag in pastedQuoteTags where !tags.contains(where: { $0.count >= 2 && $0[0] == tag[0] && $0[1] == tag[1] }) {
+                tags.append(tag)
+            }
+
             // NIP-18 `q` for each live stream the text embeds ("Share as a note").
             for qTag in LiveStreamShare.quoteTags(in: finalContent, relayHint: configService.config.publicRelayHint)
             where !tags.contains(where: { $0.count >= 2 && $0[0] == "q" && $0[1] == qTag[1] }) {

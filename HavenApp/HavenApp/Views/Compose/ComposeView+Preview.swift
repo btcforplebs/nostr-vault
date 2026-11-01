@@ -32,6 +32,15 @@ extension ComposeView {
             tags.append(["q", quoted.id, configService.config.publicRelayHint, quoted.pubkey])
         }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        // A pasted note1/nevent: its author's relays are where the preview
+        // looks for it (the feed's own lookup), and the post tags it.
+        for pointer in QuoteReference.eventPointers(in: text) { FeedService.shared.rememberHints(pointer) }
+        let pasted = QuoteReference.noteQuoteTags(in: text, relayHint: configService.config.publicRelayHint) {
+            FeedService.shared.findNote(id: $0)?.pubkey
+        }
+        for tag in pasted where !tags.contains(where: { $0.count >= 2 && $0[0] == tag[0] && $0[1] == tag[1] }) {
+            tags.append(tag)
+        }
         tags.append(contentsOf: LiveStreamShare.quoteTags(in: text, relayHint: configService.config.publicRelayHint))
         tags.append(contentsOf: customEmojiTags(for: text))
         tags.append(contentsOf: NoteTagging.hashtagTags(in: text))

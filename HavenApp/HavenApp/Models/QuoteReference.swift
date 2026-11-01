@@ -253,6 +253,43 @@ enum QuoteReference {
         return result
     }
 
+    // MARK: - Quoting by paste
+
+    /// The NIP-18 tags for every note `content` quotes by `note1…`/`nevent1…`,
+    /// with or without `nostr:`: a `q` per note, then a `p` per author so the
+    /// quoted person is told. Pasting a note into the composer used to post
+    /// with neither, so only the Quote button notified anyone.
+    ///
+    /// The author comes from the nevent, else from `authorOf` (the note as the
+    /// app already holds it). A `note1` whose note never loaded gets a `q`
+    /// without an author and no `p`.
+    static func noteQuoteTags(
+        in content: String,
+        relayHint: String = "",
+        authorOf: (String) -> String? = { _ in nil }
+    ) -> [[String]] {
+        var quotes: [[String]] = []
+        var authors: [String] = []
+        for identifier in identifiers(in: content) {
+            let bech = identifier.lowercased()
+            guard Bech32.hasValidChecksum(bech), let decoded = Bech32.decode(bech) else { continue }
+            let pointer: EventPointer?
+            switch decoded.hrp {
+            case "note": pointer = decoded.data.count == 32 ? EventPointer(id: hex(decoded.data)) : nil
+            case "nevent": pointer = eventPointer(fromNeventTLV: decoded.data)
+            default: pointer = nil
+            }
+            guard let pointer, !quotes.contains(where: { $0[1] == pointer.id }) else { continue }
+            if let author = pointer.author ?? authorOf(pointer.id) {
+                quotes.append(["q", pointer.id, relayHint, author])
+                if !authors.contains(author) { authors.append(author) }
+            } else {
+                quotes.append(["q", pointer.id, relayHint])
+            }
+        }
+        return quotes + authors.map { ["p", $0] }
+    }
+
     // MARK: - Opening a reference
 
     /// What a NIP-19 reference opens: a note by id, an addressable event by

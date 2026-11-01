@@ -10,6 +10,14 @@ struct ComposeNotePreview: View {
     let uploadingCount: Int
 
     @EnvironmentObject var nostrService: NostrService
+    /// The feed's own lookups, so a quoted note is found the way the feed
+    /// finds one: already held, else fetched (vault first, then relays and
+    /// the author's outbox). Without them the row's lookups did nothing and
+    /// every pasted note ended at "Quoted note unavailable".
+    @State private var actions = FeedActions.make(feedService: .shared, nostrService: .shared)
+    /// Which of the note's quotes have arrived. The row does not watch the
+    /// feed, so it is redrawn when this changes.
+    @State private var arrivedQuotes = ""
 
     var body: some View {
         ScrollView {
@@ -26,6 +34,8 @@ struct ComposeNotePreview: View {
                         rowData: FeedNoteRowData.resolve(for: note, feedService: FeedService.shared, nostrService: nostrService),
                         showParent: false
                     )
+                    .environment(\.feedActions, actions)
+                    .id(arrivedQuotes)
                     .allowsHitTesting(false)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Preview of your note")
@@ -53,5 +63,11 @@ struct ComposeNotePreview: View {
         .background(Color.platformSecondaryGroupedBackground)
         // Inside the composer's sheet: a link must not push behind it.
         .environment(\.pushNoteID, nil)
+        .onReceive(FeedService.shared.$parentNotesCache) { cache in
+            let ids = note?.quotedEventIds ?? []
+            let arrived = ids.filter { cache[$0] != nil || FeedService.shared.findNote(id: $0) != nil }
+            let key = arrived.joined(separator: ",")
+            if key != arrivedQuotes { arrivedQuotes = key }
+        }
     }
 }
