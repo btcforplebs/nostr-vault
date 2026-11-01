@@ -46,8 +46,8 @@ extension DMService {
 
             client.messageSubject
                 .receive(on: processingQueue)
-                .sink { [weak self] message in
-                    guard let self = self else { return }
+                .sink { [weak self, weak client] message in
+                    guard let self = self, let client else { return }
                     // Discard if account switched since this fetch started
                     DispatchQueue.main.async {
                         guard self.switchGeneration == generation else { return }
