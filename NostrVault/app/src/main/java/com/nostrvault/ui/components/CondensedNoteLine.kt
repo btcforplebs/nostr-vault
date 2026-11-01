@@ -8,7 +8,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -449,41 +452,64 @@ private fun EngagementChip(
 }
 
 /**
- * The square photo at the right of a condensed line, with a +N badge when the
- * note carries more than one. A quoted note on a condensed line uses the same
- * square, so a quote's photo gets no bigger treatment than the note's own.
+ * The photo at the right of a condensed line, whole and at its own shape inside
+ * a `size` square (no crop: Logen 11-01), with a +N badge when the note carries
+ * more than one. A quoted note on a condensed line uses the same thumbnail, so
+ * a quote's photo gets no bigger treatment than the note's own. iOS:
+ * CondensedMediaThumbnail.
  */
 @Composable
 internal fun CondensedMediaThumbnail(mediaURLs: List<String>, size: Dp = 56.dp) {
     val context = LocalContext.current
-    Box {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(mediaURLs.first())
-                .size(if (size > 56.dp) 160 else 112)
-                .crossfade(false)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(size)
-                .clip(RoundedCornerShape(6.dp))
-                .background(TertiaryGroupedBg),
-        )
-        if (mediaURLs.size > 1) {
-            Text(
-                text = "+${mediaURLs.size - 1}",
-                color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
+    val url = mediaURLs.first()
+    // The photo's width / height once it loads; a square until then.
+    var ratio by remember(url) { mutableStateOf<Float?>(null) }
+    val shape = RoundedCornerShape(6.dp)
+    // The square keeps the text column the same width on every line; the
+    // picture sits in its top right corner.
+    Box(Modifier.size(size), contentAlignment = Alignment.TopEnd) {
+        Box(Modifier.thumbnailShape(size, ratio)) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(url)
+                    .size(if (size > 56.dp) 160 else 112)
+                    .crossfade(false)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                onSuccess = { state ->
+                    val d = state.result.drawable
+                    if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
+                        ratio = d.intrinsicWidth.toFloat() / d.intrinsicHeight
+                    }
+                },
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(50))
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                    .fillMaxSize()
+                    .clip(shape)
+                    .background(if (ratio == null) TertiaryGroupedBg else Color.Transparent),
             )
+            if (mediaURLs.size > 1) {
+                Text(
+                    text = "+${mediaURLs.size - 1}",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(50))
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                )
+            }
         }
     }
+}
+
+/** The fitted box for a photo of [ratio] (width / height) in a [side] square. */
+private fun Modifier.thumbnailShape(side: Dp, ratio: Float?): Modifier = when {
+    ratio == null -> this.size(side)
+    ratio >= 1f -> this.size(width = side, height = side / ratio)
+    else -> this.size(width = side * ratio, height = side)
 }
 
 /** iOS FeedNoteRow.shortKey: "npub…" and the key's last six characters. */

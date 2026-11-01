@@ -656,9 +656,10 @@ private struct VaultDoorway: Shape {
     }
 }
 
-/// The square photo at the right of a condensed line, with a +N badge when the
+/// The photo at the right of a condensed line, whole and at its own shape
+/// inside a `size` square (no crop: Logen 11-01), with a +N badge when the
 /// note carries more than one. A quoted note on a condensed line uses the same
-/// square, so a quote's photo gets no bigger treatment than the note's own.
+/// thumbnail, so a quote's photo gets no bigger treatment than the note's own.
 struct CondensedMediaThumbnail: View {
     let url: URL
     let count: Int
@@ -667,24 +668,23 @@ struct CondensedMediaThumbnail: View {
     let tags: [[String]]
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            FeedMediaView(url: url, isThumbnail: true, animatesThumbnail: true)
-                .meshMediaNote(author: author, tags: tags)
-                .frame(width: size, height: size)
-                .aspectRatio(1, contentMode: .fill)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-            if count > 1 {
-                Text("+\(count - 1)")
-                    .font(.appSystem(size: 10, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.black.opacity(0.7))
-                    .clipShape(Capsule())
-                    .padding(4)
+        FeedMediaView(url: url, isThumbnail: true, animatesThumbnail: true, thumbnailFits: true)
+            .meshMediaNote(author: author, tags: tags)
+            .overlay(alignment: .bottomTrailing) {
+                if count > 1 {
+                    Text("+\(count - 1)")
+                        .font(.appSystem(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.7))
+                        .clipShape(Capsule())
+                        .padding(4)
+                }
             }
-        }
-        .accessibilityHidden(true)
+            // The square keeps the text column the same width on every line;
+            // the picture sits in its top right corner.
+            .frame(width: size, height: size, alignment: .topTrailing)
+            .accessibilityHidden(true)
     }
 }
