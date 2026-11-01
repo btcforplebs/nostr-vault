@@ -34,17 +34,30 @@ struct ComposeView: View {
     @ObservedObject private var accountAvatars = AccountMenuAvatars.shared
     @EnvironmentObject var relayManager: RelayProcessManager
 
-    @State var content: String = ""
+    /// The text, the photos and their uploads (ComposerNote).
+    @StateObject var note = ComposerNote()
+    var content: String {
+        get { note.text }
+        nonmutating set { note.text = newValue }
+    }
+    var attachments: [Attachment] {
+        get { note.attachments }
+        nonmutating set { note.attachments = newValue }
+    }
     @State var selectedItems: [PhotosPickerItem] = []
-    @State var attachments: [Attachment] = []
     /// Media is being dragged over the editor.
     @State private var isDropTargeted = false
+    /// Post was tapped and is waiting for uploads still going.
     @State var isUploading = false
     @State var isPosting = false
     @State var error: String?
-    @FocusState private var isTextEditorFocused: Bool
-    
-    @StateObject var uploadInfoProvider = MediaUploadsIndicatorInfoProvider()
+    @State var isEditorFocused = false
+    /// Phone: the Preview side of the Write | Preview toggle is showing.
+    @State var showingPreview = false
+    /// The composer's width, which decides whether the preview fits beside the editor.
+    @State var composerWidth: CGFloat = 0
+    /// What the preview draws, rebuilt a moment after each edit.
+    @State var previewNote: FeedNote?
 
     // Blossom media picker state
     @State var showBlossomPicker = false
@@ -90,6 +103,16 @@ struct ComposeView: View {
     @State var draftReplyTo: FeedNote? = nil
     @State var draftQuoteTo: FeedNote? = nil
 
+    /// The editor's text size: 16 points scaled like `Font.appSystem(size: 16)`.
+    static var editorFontSize: CGFloat {
+        #if os(macOS)
+        let mac = true
+        #else
+        let mac = false
+        #endif
+        return AppTypeScale.floored(16 * CGFloat(ConfigService.shared.config.textSizeScale), mac: mac)
+    }
+
     var blossomService: BlossomService {
         BlossomService(configService: configService, nostrService: nostrService)
     }
@@ -132,6 +155,13 @@ struct ComposeView: View {
         /// read only for `imeta` dimensions and size. Never uploaded or deleted.
         var relayBlobFile: URL? = nil
 
+        /// Where its upload has got to; it starts when the attachment is picked.
+        var upload: ComposerUploadState = .waiting
+        /// Filled in by the upload, for the note's `imeta` tag.
+        var sha256: String?
+        var pixelSize: CGSize?
+        var byteCount: Int?
+
         /// GIF or WebP bytes, which may hold more than one frame and so are
         /// previewed with `AnimatedThumbnail` rather than a still decode.
         var isAnimatable: Bool { type.conforms(to: .gif) || type.conforms(to: .webP) }
@@ -147,7 +177,7 @@ struct ComposeView: View {
         Group {
             #if os(macOS)
             composeContent
-                .frame(minWidth: 500, idealWidth: 500, minHeight: 400, idealHeight: 450)
+                .frame(minWidth: 820, idealWidth: 900, minHeight: 400, idealHeight: 480)
             #else
             // NavigationStack, not NavigationView: on iPad (regular width) a
             // single-root NavigationView renders as a collapsed split view,
@@ -165,83 +195,27 @@ struct ComposeView: View {
             header
             #endif
 
-            ScrollView {
-                VStack(spacing: 16) {
-                    if let parent = effectiveReplyTo {
-                        replyHeader(parent: parent)
-                    }
-
-                    HStack(alignment: .top, spacing: 12) {
-                        AvatarView(
-                            url: nostrService.profiles[configService.activeAccountHexPubkey]?.pictureURL,
-                            pubkey: configService.activeAccountHexPubkey,
-                            size: 36
-                        )
-                        .contextMenu {
-                            if configService.allAccountNpubs.count > 1 {
-                                ForEach(configService.allAccountNpubs, id: \.self) { npub in
-                                    let isOwner = npub == configService.config.ownerNpub
-                                    let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let hex = Bech32.decode(npub)?.hexString ?? ""
-                                    let profile = nostrService.profiles[hex]
-                                    AccountMenuItem(
-                                        npub: npub,
-                                        name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
-                                        pictureURL: profile?.pictureURL,
-                                        isActive: activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
-                                    ) {
-                                        postAsPicked = npub
-                                        configService.switchActiveAccount(to: npub)
-                                    }
-                                }
-                            } else {
-                                Text("No other accounts")
-                            }
-                        }
-                        .task(id: AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles)) {
-                            accountAvatars.prefetch(AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles))
-                        }
-
-                        ZStack(alignment: .topLeading) {
-                            if content.isEmpty {
-                                Text("What's happening?")
-                                    .foregroundColor(.secondary.opacity(0.6))
-                                    .padding(.top, 10)
-                                    .padding(.leading, 4)
-                            }
-
-                            TextEditor(text: $content)
-                                .focused($isTextEditorFocused)
-                                .font(.appSystem(size: 16))
-                                .frame(minHeight: 200)
-                                .scrollContentBackground(.hidden)
-                                .accessibilityLabel("Post content")
-                                #if os(iOS)
-                                .background(CaretFollower(trigger: "\(content.count)|\(mentionResults.isEmpty)|\(attachments.count)"))
-                                #endif
-                                .onChange(of: content) { oldValue, newValue in
-                                    updateMentionQuery(old: oldValue, new: newValue)
-                                    updateEmojiQuery(old: oldValue, new: newValue)
-                                    scheduleAutoSave(newValue)
-                                }
-                        }
-                    }
-
-                    if let quoted = effectiveQuoteTo {
-                        QuotedNoteView(note: quoted)
-                            .environmentObject(nostrService)
-                    }
+            if showsPreviewBeside {
+                HStack(spacing: 0) {
+                    editorScroll
+                        .frame(maxWidth: .infinity)
+                    Divider()
+                    previewPane
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(20)
+            } else if showingPreview {
+                previewPane
+            } else {
+                editorScroll
             }
 
             // @mention popup — inline above footer so it stays visible above the keyboard
-            if let _ = mentionQuery, !mentionResults.isEmpty {
+            if !showingPreview || showsPreviewBeside, mentionQuery != nil, !mentionResults.isEmpty {
                 mentionPopup
             }
 
             // :emoji suggestions, docked the same way
-            if emojiQuery != nil, !emojiSuggestions.isEmpty {
+            if !showingPreview || showsPreviewBeside, emojiQuery != nil, !emojiSuggestions.isEmpty {
                 emojiPopup
             }
 
@@ -256,6 +230,7 @@ struct ComposeView: View {
             footer
         }
             .background(Color.platformSecondaryGroupedBackground)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { composerWidth = $0 }
             // Photos and videos dragged in from Photos, Files or Safari join the
             // note's attachments, the same as ones picked from the footer.
             .onDrop(of: DroppedMedia.acceptedTypes, isTargeted: $isDropTargeted) { providers in
@@ -287,6 +262,9 @@ struct ComposeView: View {
                                 .draftCountBadge(draftService.draftsForActiveAccount.count, ringColor: .platformSecondaryGroupedBackground)
                         }
                     }
+                }
+                if !showsPreviewBeside {
+                    ToolbarItem(placement: .principal) { writePreviewToggle }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Post") { postNote() }
@@ -339,7 +317,7 @@ struct ComposeView: View {
                 }
                 Task { await draftService.fetchDrafts() }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    isTextEditorFocused = true
+                    isEditorFocused = true
                 }
             }
             .onDisappear {
@@ -373,6 +351,83 @@ struct ComposeView: View {
                     }
                 )
             }
+    }
 
+    private var editorScroll: some View {
+            ScrollView {
+                VStack(spacing: 16) {
+                    if let parent = effectiveReplyTo {
+                        replyHeader(parent: parent)
+                    }
+
+                    HStack(alignment: .top, spacing: 12) {
+                        AvatarView(
+                            url: nostrService.profiles[configService.activeAccountHexPubkey]?.pictureURL,
+                            pubkey: configService.activeAccountHexPubkey,
+                            size: 36
+                        )
+                        .contextMenu {
+                            if configService.allAccountNpubs.count > 1 {
+                                ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                                    let isOwner = npub == configService.config.ownerNpub
+                                    let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let hex = Bech32.decode(npub)?.hexString ?? ""
+                                    let profile = nostrService.profiles[hex]
+                                    AccountMenuItem(
+                                        npub: npub,
+                                        name: profile?.bestName ?? (isOwner ? "Owner" : AccountSwitcherIdentity.shortNpub(npub)),
+                                        pictureURL: profile?.pictureURL,
+                                        isActive: activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
+                                    ) {
+                                        postAsPicked = npub
+                                        configService.switchActiveAccount(to: npub)
+                                    }
+                                }
+                            } else {
+                                Text("No other accounts")
+                            }
+                        }
+                        .task(id: AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles)) {
+                            accountAvatars.prefetch(AccountMenuAvatars.pictureURLs(npubs: configService.allAccountNpubs, profiles: nostrService.profiles))
+                        }
+
+                        ZStack(alignment: .topLeading) {
+                            if content.isEmpty {
+                                Text("What's happening?")
+                                    .foregroundColor(.secondary.opacity(0.6))
+                                    .padding(.top, 10)
+                                    .padding(.leading, 4)
+                            }
+
+                            ComposeTextView(
+                                text: $note.text,
+                                selection: $note.selection,
+                                isFocused: $isEditorFocused,
+                                fontSize: ComposeView.editorFontSize,
+                                minHeight: 200
+                            )
+                                #if os(iOS)
+                                .background(CaretFollower(trigger: "\(content.count)|\(mentionResults.isEmpty)|\(attachments.count)"))
+                                #endif
+                                .onChange(of: content) { oldValue, newValue in
+                                    if note.appEdited {
+                                        // A link written in is not typing.
+                                        note.appEdited = false
+                                    } else {
+                                        updateMentionQuery(old: oldValue, new: newValue)
+                                        updateEmojiQuery(old: oldValue, new: newValue)
+                                    }
+                                    scheduleAutoSave(newValue)
+                                }
+                        }
+                    }
+
+                    if let quoted = effectiveQuoteTo {
+                        QuotedNoteView(note: quoted)
+                            .environmentObject(nostrService)
+                    }
+                }
+                .padding(20)
+            }
     }
 }
