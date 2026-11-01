@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"os"
 	"log/slog"
 	"sync"
 	"time"
@@ -22,6 +24,10 @@ import (
 // NEG-OPEN handshake marks the relay unsupported for negCapRetryTTL, a
 // successful sync marks it supported for the process lifetime. Transient
 // errors (connect failures, mid-session timeouts) are never cached.
+//
+// The "unsupported" answers are also saved to negCapsFile, so a relaunch
+// does not pay the handshake again for every relay that lacks NIP-77 (the
+// relays are tried one after another, so each one delayed the inbox catch-up).
 
 type negCap struct {
 	supported bool
@@ -32,10 +38,63 @@ var negCaps sync.Map // normalized relay URL → negCap
 
 const negCapRetryTTL = 24 * time.Hour
 
+// negCapsFile holds the unsupported answers, in the relay data root beside
+// blast_queue.json. A var so tests can point it elsewhere.
+var negCapsFile = "negentropy_caps.json"
+
+var (
+	negCapsLoadOnce sync.Once
+	negCapsSaveMu   sync.Mutex
+)
+
+// loadNegCaps reads the saved unsupported answers that are still inside the
+// retry TTL. A missing or unreadable file just means every relay is probed.
+func loadNegCaps() {
+	data, err := os.ReadFile(negCapsFile)
+	if err != nil {
+		return
+	}
+	var saved map[string]int64 // URL → unix seconds when found unsupported
+	if json.Unmarshal(data, &saved) != nil {
+		return
+	}
+	for url, at := range saved {
+		checked := time.Unix(at, 0)
+		if time.Since(checked) < negCapRetryTTL {
+			negCaps.LoadOrStore(url, negCap{supported: false, checkedAt: checked})
+		}
+	}
+}
+
+// saveNegCaps writes the current unsupported answers, atomically.
+func saveNegCaps() {
+	negCapsSaveMu.Lock()
+	defer negCapsSaveMu.Unlock()
+	saved := map[string]int64{}
+	negCaps.Range(func(k, v any) bool {
+		if c := v.(negCap); !c.supported && time.Since(c.checkedAt) < negCapRetryTTL {
+			saved[k.(string)] = c.checkedAt.Unix()
+		}
+		return true
+	})
+	data, err := json.Marshal(saved)
+	if err != nil {
+		return
+	}
+	tmp := negCapsFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, negCapsFile); err != nil {
+		_ = os.Remove(tmp)
+	}
+}
+
 // relaySupportsNegentropy reports whether a NIP-77 sync attempt against url
 // is worthwhile. Unknown relays return true — the attempt itself is the
 // probe. A NIP-11 document advertising NIP 77 short-circuits to a cached yes.
 func relaySupportsNegentropy(ctx context.Context, url string) bool {
+	negCapsLoadOnce.Do(loadNegCaps)
 	key := nostr.NormalizeURL(url)
 	if v, ok := negCaps.Load(key); ok {
 		c := v.(negCap)
@@ -68,11 +127,16 @@ func relaySupportsNegentropy(ctx context.Context, url string) bool {
 }
 
 func markNegentropySupported(url string) {
-	negCaps.Store(nostr.NormalizeURL(url), negCap{supported: true, checkedAt: time.Now()})
+	key := nostr.NormalizeURL(url)
+	prev, had := negCaps.Swap(key, negCap{supported: true, checkedAt: time.Now()})
+	if had && !prev.(negCap).supported {
+		saveNegCaps() // drop the saved "unsupported"
+	}
 }
 
 func markNegentropyUnsupported(url string) {
 	negCaps.Store(nostr.NormalizeURL(url), negCap{supported: false, checkedAt: time.Now()})
+	saveNegCaps()
 }
 
 // ─── Per-relay upload memo ──────────────────────────────────────────────────

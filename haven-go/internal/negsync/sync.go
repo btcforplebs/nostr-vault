@@ -5,9 +5,9 @@
 //   - the websocket connection is closed on return (the vendored version only
 //     sends NEG-CLOSE and leaks the connection — fatal when called hourly per
 //     relay on mobile);
-//   - a relay that never answers the NEG-OPEN (it sends only a NOTICE, which
-//     go-nostr swallows) is reported as ErrUnsupported so callers can cache
-//     the capability and fall back to plain REQ catch-up;
+//   - a relay that never answers the NEG-OPEN, or answers it with a NOTICE
+//     saying negentropy is off, is reported as ErrUnsupported so callers can
+//     cache the capability and fall back to plain REQ catch-up;
 //   - transfer statistics are returned for logging and notification batching;
 //   - Reconcile runs on a dedicated goroutine, never on the relay's websocket
 //     read loop, and every worker is unblocked on return — the vendored
@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,10 +63,29 @@ type Stats struct {
 }
 
 // openTimeout is how long to wait for the relay's first NEG-MSG/NEG-ERR after
-// NEG-OPEN. Supporting relays (khatru, strfry) answer in one round-trip;
-// non-supporting ones reply only with a NOTICE that go-nostr swallows, so
-// silence is the "unsupported" signal.
+// NEG-OPEN. Supporting relays (khatru, strfry) answer in one round-trip.
+// Non-supporting ones either stay silent (the timeout is the signal) or send
+// a NOTICE like "ERROR: negentropy disabled" (primal, damus), which
+// IsUnsupportedNotice recognises so the handshake ends at once instead of
+// waiting the full window.
 const openTimeout = 15 * time.Second
+
+// IsUnsupportedNotice reports whether a NOTICE received during the NEG-OPEN
+// handshake says the relay does not do NIP-77. Only the handshake listens:
+// the connection is private to this sync and NEG-OPEN is the only thing sent
+// on it, so a "negentropy" or "unknown command" notice can only be about it.
+func IsUnsupportedNotice(notice string) bool {
+	n := strings.ToLower(notice)
+	for _, sign := range []string{
+		"negentropy", "neg-open", "nip-77", "nip77",
+		"unknown cmd", "unknown command", "unknown message", "unsupported message",
+	} {
+		if strings.Contains(n, sign) {
+			return true
+		}
+	}
+	return false
+}
 
 const batchSize = 50
 
@@ -157,6 +177,8 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 	result := make(chan error, 8)
 	firstRespOnce := sync.Once{}
 	firstResp := make(chan struct{})
+	refusedOnce := sync.Once{}
+	refusedByNotice := make(chan struct{})
 
 	// report never blocks past cancellation: after Sync returns nobody reads
 	// result, and a blocked send from the websocket read loop would pin the
@@ -178,7 +200,11 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 	reconcileDone := make(chan struct{})
 
 	var r *nostr.Relay
-	r, err := nostr.RelayConnect(ctx, url, nostr.WithCustomHandler(func(data string) {
+	r, err := nostr.RelayConnect(ctx, url, nostr.WithNoticeHandler(func(notice string) {
+		if IsUnsupportedNotice(notice) {
+			refusedOnce.Do(func() { close(refusedByNotice) })
+		}
+	}), nostr.WithCustomHandler(func(data string) {
 		envelope := nip77.ParseNegMessage(data)
 		if envelope == nil {
 			return
@@ -363,6 +389,8 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 		stats.Uploaded = int(uploaded.Load())
 		return stats, err
 	case <-firstResp:
+	case <-refusedByNotice:
+		return stats, ErrUnsupported
 	case <-time.After(openTimeout):
 		return stats, ErrUnsupported
 	}
