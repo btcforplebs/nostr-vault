@@ -124,4 +124,11 @@ enum CondensedText {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
     }
+
+    /// The text on one line: every run of spaces and line breaks becomes one
+    /// space. For the parent quote over a reply in the thread view, which
+    /// shows a single line and would otherwise stop at the first break.
+    static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
+    }
 }

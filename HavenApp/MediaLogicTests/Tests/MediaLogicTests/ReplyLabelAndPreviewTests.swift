@@ -66,4 +66,12 @@ final class ReplyLabelAndPreviewTests: XCTestCase {
         XCTAssertEqual(CondensedText.squeezeBlankLines("one line"), "one line")
         XCTAssertEqual(CondensedText.squeezeBlankLines("\n \n"), "")
     }
+
+    /// The parent quote over a reply is one line: breaks and runs of spaces
+    /// become single spaces, so it never stops at the first line break.
+    func testOneLine() {
+        XCTAssertEqual(CondensedText.oneLine("First line\n\nsecond  line\r\n\tthird "), "First line second line third")
+        XCTAssertEqual(CondensedText.oneLine("  \n "), "")
+        XCTAssertEqual(CondensedText.oneLine("gm"), "gm")
+    }
 }
