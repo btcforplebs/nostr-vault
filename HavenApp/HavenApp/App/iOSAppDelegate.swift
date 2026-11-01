@@ -13,7 +13,6 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
 
         // Configure audio session to allow mixing with other apps (e.g., Music)
         // This prevents muted videos from interrupting background music playback
-        configureAudioSession()
 
         // Auto-start relay on launch
         Task { @MainActor in
@@ -102,20 +101,5 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
         backgroundTask = .invalid
     }
 
-    private func configureAudioSession() {
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            // Set category to .ambient with .mixWithOthers so muted videos don't interrupt music
-            // Don't activate the session yet - let AVPlayer activate it only when needed
-            try audioSession.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-            #if DEBUG
-            print("iOS: Audio session category configured for ambient playback (won't interrupt background music)")
-            #endif
-        } catch {
-            #if DEBUG
-            print("iOS: Failed to configure audio session: \(error)")
-            #endif
-        }
-    }
 }
 #endif

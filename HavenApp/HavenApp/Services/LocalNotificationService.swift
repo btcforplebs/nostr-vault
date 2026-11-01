@@ -1,4 +1,4 @@
-import AVFoundation
+import AudioToolbox
 import Combine
 #if os(macOS)
 import AppKit
@@ -32,7 +32,8 @@ final class LocalNotificationService {
     var appInForeground: Bool = false
     #endif
 
-    private var soundPlayer: AVAudioPlayer?
+    /// System sound ids by sound name, made once each.
+    private var soundIds: [String: SystemSoundID] = [:]
     private var seen = Set<String>()
     private let maxSeen = 500
     private let seenLock = NSLock()
@@ -553,14 +554,18 @@ final class LocalNotificationService {
 
     private func playSound() {
         let sound = NotificationSound(rawValue: ConfigService.shared.config.notificationSoundName) ?? .defaultSound
-        guard let url = Bundle.main.url(forResource: sound.rawValue, withExtension: "mp3") else { return }
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            soundPlayer = player // retain until playback finishes
-            player.play()
-        } catch {
-            // Best-effort — a missing/unplayable sound shouldn't block the banner itself.
+        // A system sound mixes with whatever else is playing. AVAudioPlayer
+        // ran in the app's audio session, which until launch set it to
+        // .ambient was the default .soloAmbient, so every chime paused the
+        // user's music (Tal, 2026-11-01).
+        if soundIds[sound.rawValue] == nil {
+            guard let url = Bundle.main.url(forResource: sound.rawValue, withExtension: "mp3") else { return }
+            var id: SystemSoundID = 0
+            // Best-effort: a missing or unplayable sound shouldn't block the banner itself.
+            guard AudioServicesCreateSystemSoundID(url as CFURL, &id) == kAudioServicesNoError else { return }
+            soundIds[sound.rawValue] = id
         }
+        if let id = soundIds[sound.rawValue] { AudioServicesPlaySystemSound(id) }
     }
 
     private func iconAndColor(for type: String) -> (String, Color) {

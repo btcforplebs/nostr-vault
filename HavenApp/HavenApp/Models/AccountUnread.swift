@@ -26,7 +26,7 @@ struct AccountUnread: Equatable {
 
     /// The account and event a marker body (the text after `🔔NOTIFY|`) is
     /// for, or nil when it does not count.
-    static func parse(_ body: String) -> (recipient: String, id: String)? {
+    static func parse(_ body: String) -> (recipient: String, id: String, type: String, author: String)? {
         // The preview is last and may hold "|" or "=": cut it off first.
         let head = body.range(of: "|preview=").map { String(body[..<$0.lowerBound]) } ?? body
         var fields: [String: String] = [:]
@@ -38,13 +38,41 @@ struct AccountUnread: Equatable {
               let recipient = fields["recipient"]?.lowercased(), isHex64(recipient),
               let id = fields["id"], !id.isEmpty
         else { return nil }
-        return (recipient, id)
+        return (recipient, id, type, fields["author"]?.lowercased() ?? "")
+    }
+
+    /// What the Vault list drops before it draws a line, so the count only
+    /// counts what that list can show (sweep 11-01 #11): a like in Zaps Only
+    /// mode, anything from a blocked person, and a mention, reply or quote
+    /// from outside your Web of Trust (VaultActivity.build's `isBlocked` /
+    /// `isOutside`, and VaultDataProcessing's Zaps Only filter).
+    struct ListRules {
+        var zapsOnly = false
+        /// (recipient hex, author hex) → blocked by that account.
+        var isBlocked: (String, String) -> Bool = { _, _ in false }
+        /// (recipient hex, author hex) → outside that account's web.
+        var isOutside: (String, String) -> Bool = { _, _ in false }
+
+        static let showsAll = ListRules()
+
+        func shows(type: String, author: String, recipient: String) -> Bool {
+            if zapsOnly && type == "reaction" { return false }
+            guard !author.isEmpty else { return true }
+            if isBlocked(recipient, author) { return false }
+            if Self.webGatedTypes.contains(type) && isOutside(recipient, author) { return false }
+            return true
+        }
+
+        /// The lines VaultActivity.build checks `isOutside` for. Likes,
+        /// reposts, zaps and follows on your own notes are not gated.
+        static let webGatedTypes: Set<String> = ["reply", "quote", "mention"]
     }
 
     /// Counts the marker. Returns whether anything changed.
     @discardableResult
-    mutating func record(_ body: String) -> Bool {
-        guard let (recipient, id) = Self.parse(body) else { return false }
+    mutating func record(_ body: String, rules: ListRules = .showsAll) -> Bool {
+        guard let (recipient, id, type, author) = Self.parse(body),
+              rules.shows(type: type, author: author, recipient: recipient) else { return false }
         var list = ids[recipient] ?? []
         guard !list.contains(id) else { return false }
         list.append(id)

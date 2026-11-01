@@ -48,12 +48,9 @@ extension FeedNoteRow {
     /// embeds already draws in its card. Unchanged for any other note.
     var liveCleanBody: LiveNoteCleanup.Body {
         let source = bodySource
-        let body = LiveNoteCleanup.Body(content: source.content, mediaURLs: source.mediaURLs, linkURLs: source.linkURLs)
-        let liveIds = LiveNoteCleanup.liveQuoteIds(in: source.content)
-        guard !liveIds.isEmpty else { return body }
-        let streams = liveIds.compactMap { actions.findNote($0) }
-        let urls = streams.reduce(into: Set<String>()) { $0.formUnion(LiveNoteCleanup.streamURLs(tags: $1.tags)) }
-        return LiveNoteCleanup.clean(body, streamURLs: urls)
+        return LiveNoteCleanup.cleaned(content: source.content, mediaURLs: source.mediaURLs,
+                                       linkURLs: source.linkURLs, find: actions.findNote)
+            ?? LiveNoteCleanup.Body(content: source.content, mediaURLs: source.mediaURLs, linkURLs: source.linkURLs)
     }
 
     @ViewBuilder

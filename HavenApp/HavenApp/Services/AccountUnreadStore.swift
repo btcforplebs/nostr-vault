@@ -17,10 +17,10 @@ final class AccountUnreadStore: ObservableObject {
         state = AccountUnread(ids: defaults.dictionary(forKey: Self.key) as? [String: [String]] ?? [:])
     }
 
-    func record(markers: [String]) {
+    func record(markers: [String], rules: AccountUnread.ListRules = .showsAll) {
         var next = state
         var changed = false
-        for body in markers where next.record(body) { changed = true }
+        for body in markers where next.record(body, rules: rules) { changed = true }
         if changed { save(next) }
     }
 

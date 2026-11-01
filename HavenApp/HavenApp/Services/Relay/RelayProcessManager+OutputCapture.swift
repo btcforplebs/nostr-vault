@@ -276,7 +276,7 @@ extension RelayProcessManager {
         }
         // Each account's count in the account switcher.
         if !batch.notifyMarkers.isEmpty {
-            AccountUnreadStore.shared.record(markers: batch.notifyMarkers)
+            AccountUnreadStore.shared.record(markers: batch.notifyMarkers, rules: .vaultList())
         }
     }
 

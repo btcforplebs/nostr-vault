@@ -149,6 +149,9 @@ struct FeedThreadCard: View {
         let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
         let original = isBareRepost ? rowDataFor?(note).resolvedOriginal : nil
         let shown = original ?? note
+        let override = contentOverride(for: note, original: original)
+        let live = LiveNoteCleanup.cleaned(content: override ?? shown.content,
+                                           mediaURLs: shown.mediaURLs, find: actions.findNote)
         return CondensedNoteLine(
             note: note,
             profile: profileFor(shown.pubkey),
@@ -158,9 +161,9 @@ struct FeedThreadCard: View {
             style: .plain,
             isFocused: note.id == focusedNoteId,
             replyCount: replyCount,
-            contentOverride: contentOverride(for: note, original: original),
+            contentOverride: live?.content ?? override,
             postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
-            mediaURLs: shown.mediaURLs,
+            mediaURLs: live?.mediaURLs ?? shown.mediaURLs,
             quotes: CondensedQuote.resolve(
                 for: shown,
                 find: actions.findNote,

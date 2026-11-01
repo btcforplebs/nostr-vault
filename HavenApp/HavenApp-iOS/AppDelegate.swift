@@ -92,6 +92,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Before anything can fetch: URLSession.shared refuses .fips hosts on iOS.
         FipsHostBlocker.install()
         secureKeysAtRest(application)
+        // Muted feed videos and sounds mix with the user's music instead of
+        // stopping it. This lived in HavenApp/App/iOSAppDelegate.swift, which
+        // no target compiles, so the session stayed .soloAmbient.
+        AudioSessionManager.shared.enableMixingWithOthers()
 
         // Register the background processing task so the system can wake us
         // when conditions are right (charging + Wi-Fi).
