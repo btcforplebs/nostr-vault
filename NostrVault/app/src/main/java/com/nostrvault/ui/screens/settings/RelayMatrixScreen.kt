@@ -223,6 +223,10 @@ class RelayMatrixViewModel @Inject constructor(
         configStore.update { cfg ->
             RelayMatrix.applying(state.draft, cfg).let {
                 if (plan.dmRelays != null) it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) else it
+            }.let {
+                // Edited here: kept until a newer relay list is published elsewhere.
+                val edited = state.draft.read != state.start.read || state.draft.write != state.start.write
+                if (edited) it.copy(relayListUpdatedAt = System.currentTimeMillis() / 1000) else it
             }
         }
         _notPublished.value = emptyList()

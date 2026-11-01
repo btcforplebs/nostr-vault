@@ -38,6 +38,9 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
             // Never publishes: only Save in Settings > Relays does.
             try? await Task.sleep(for: .seconds(5))
             await NostrService.shared.adoptPublishedDMRelayList()
+            // The owner's own relay list (kind 10002) becomes the read and
+            // write relays, unless relays were edited here since.
+            await NostrService.shared.adoptPublishedRelayList()
 
             // Start profile picture prefetch service (runs once per day on Wi-Fi)
             try? await Task.sleep(for: .seconds(5))

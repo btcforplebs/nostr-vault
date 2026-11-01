@@ -78,6 +78,9 @@ import java.net.URL
             // device's. Setup doesn't publish one: the owner picks DM relays
             // and saves them in Settings > Relays (Logen 2026-10-31).
             runCatching { nostrService.adoptPublishedDMRelayList() }
+            // An existing account's relay list (kind 10002) becomes this
+            // device's read and write relays; the starters are only for none.
+            runCatching { nostrService.adoptPublishedRelayList() }
             // An existing account's media servers (kind 10063) become upload servers.
             runCatching { nostrService.syncServerList() }
 

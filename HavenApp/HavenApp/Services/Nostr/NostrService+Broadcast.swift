@@ -16,6 +16,7 @@ extension NostrService {
         #endif
         // Note: the relay-activity red dot is driven solely by inbound events from
         // others (see RelayProcessManager), so self-authored posts never trigger it.
+        stampOwnRelayListPost(event)
 
         // Update local state immediately for instant feedback
         DispatchQueue.main.async { [weak self] in

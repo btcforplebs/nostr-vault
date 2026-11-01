@@ -370,6 +370,20 @@ enum RelayBlocklist {
         return keys.contains(k) || (parsed.flatMap(authority).map(authorities.contains) ?? false)
     }
 
+    /// `isBlocked` against `blocked` instead of the loaded list: the same
+    /// rule (the exact relay, or every path on a blocked host and port).
+    static func isBlocked(_ url: String, in blocked: [String]) -> Bool {
+        let k = RelayMatrix.key(url)
+        let host = URL(string: k).flatMap(authority)
+        return blocked.contains { entry in
+            let b = RelayMatrix.key(entry)
+            guard !b.isEmpty, RelayMatrix.isPublicRelay(b) else { return false }
+            if b == k { return true }
+            guard let parsed = URL(string: b), parsed.path.isEmpty, let a = authority(parsed) else { return false }
+            return a == host
+        }
+    }
+
     private static func authority(_ url: URL) -> String? {
         guard let host = url.host?.lowercased() else { return nil }
         return url.port.map { "\(host):\($0)" } ?? host

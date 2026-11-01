@@ -384,6 +384,9 @@ class NostrService @Inject constructor(
 
     fun adoptPublishedDMRelayList() { adoptPublishedDMRelayListImpl() }
 
+    /** Takes the owner's own relay list (kind 10002) as the read and write relays; never publishes. */
+    fun adoptPublishedRelayList() { adoptPublishedRelayListImpl() }
+
     /** On a saved Haven relay address change: swaps the inbox on the published 10050 only. */
     fun publishOwnerDMInboxMove(oldInbox: String, newInbox: String) { publishOwnerDMInboxMoveImpl(oldInbox, newInbox) }
 

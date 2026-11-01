@@ -120,6 +120,10 @@ struct RelayMatrixView: View {
         let new = state.draft
         configService.config.feedRelays = new.read
         configService.config.blastrRelays = new.write
+        // Edited here: kept until a newer relay list is published elsewhere.
+        if new.read != state.start.read || new.write != state.start.write {
+            configService.config.relayListUpdatedAt = Int64(Date().timeIntervalSince1970)
+        }
         configService.config.dmRelays = new.dms
         configService.config.importSeedRelays = new.importing
         if new.search != SearchRelaySettings.relays {

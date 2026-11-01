@@ -13,10 +13,7 @@ extension HavenConfig {
     static let deadRelayHosts: Set<String> = ["nos.lol", "nostr.mom", "offchain.pub"]
 
     static func isDeadRelay(_ url: String) -> Bool {
-        var host = normalizedRelayURL(url).lowercased()
-        if let scheme = host.range(of: "://") { host = String(host[scheme.upperBound...]) }
-        host = String(host.prefix { $0 != "/" && $0 != ":" })
-        return deadRelayHosts.contains(host)
+        deadRelayHosts.contains(relayHost(url))
     }
 
     /// Drops `deadRelayHosts` from the saved relay lists, once, so a relay the
@@ -30,6 +27,66 @@ extension HavenConfig {
         feedRelays = Self.droppingDeadRelays(feedRelays, orElse: defaults.feedRelays)
         dmRelays = Self.droppingDeadRelays(dmRelays, orElse: defaults.dmRelays)
         droppedDeadRelays = true
+    }
+
+    // MARK: - The owner's own relay list (kind 10002)
+
+    /// Every relay the app has shipped as a read or write default, current
+    /// or former, by host. Lists made only of these were never edited.
+    static let shippedRelayHosts: Set<String> = [
+        "relay.primal.net", "relay.damus.io", "relay.snort.social", "relay.btcforplebs.com",
+        "nostr-pub.wellorder.net", "nos.lol", "nostr.mom", "offchain.pub", "relay.nos.social",
+        "nostr.wine", "nostr.land", "relay.nostr.build",
+    ]
+
+    static func relayHost(_ url: String) -> String {
+        var host = normalizedRelayURL(url).lowercased()
+        if let scheme = host.range(of: "://") { host = String(host[scheme.upperBound...]) }
+        return String(host.prefix { $0 != "/" && $0 != ":" })
+    }
+
+    /// True when the read and write lists hold only relays the app shipped
+    /// (entries no one else can reach, such as the Mac or this device, don't
+    /// count): the owner never set relays of their own here.
+    static func relayListsLookUnedited(read: [String], write: [String]) -> Bool {
+        (read + write).filter(RelayDraft.listable).allSatisfy { shippedRelayHosts.contains(relayHost($0)) }
+    }
+
+    /// Whether a published kind 10002 dated `publishedAt` replaces this
+    /// device's read and write lists: it is newer than the last change here,
+    /// and any list replaces the starter relays (`relayListUpdatedAt` nil).
+    static func adoptsRelayList(localUpdatedAt: Int64?, publishedAt: Int64) -> Bool {
+        publishedAt > (localUpdatedAt ?? 0)
+    }
+
+    /// Makes the owner's published relay list (kind 10002, parsed into its
+    /// read and write relays) this device's, when `adoptsRelayList` says so.
+    /// Relays no one else can reach, known-dead ones and blocked ones (by
+    /// the Never connect rule, every path on a blocked host) are left out:
+    /// the write list goes to the relay, which has no blocklist of its own.
+    /// A side that ends up empty keeps what it had. A copy dated
+    /// `ListMerge.maxSkew` or more ahead of `now` is ignored: it would stay
+    /// the newest on the relays and undo every later edit here. Never
+    /// publishes anything. Returns whether a list changed.
+    @discardableResult
+    mutating func adoptRelayList(read: [String], write: [String], publishedAt: Int64,
+                                 now: Int64 = Int64(Date().timeIntervalSince1970)) -> Bool {
+        guard publishedAt < now + ListMerge.maxSkew,
+              Self.adoptsRelayList(localUpdatedAt: relayListUpdatedAt, publishedAt: publishedAt) else { return false }
+        let blocked = blockedRelays
+        func usable(_ list: [String]) -> [String] {
+            var seen = Set<String>()
+            return list.map(Self.normalizedRelayURL).filter {
+                RelayDraft.listable($0) && !Self.isDeadRelay($0)
+                    && !RelayBlocklist.isBlocked($0, in: blocked) && seen.insert($0.lowercased()).inserted
+            }
+        }
+        let newRead = usable(read), newWrite = usable(write)
+        relayListUpdatedAt = publishedAt
+        var changed = false
+        if !newRead.isEmpty, newRead != feedRelays { feedRelays = newRead; changed = true }
+        if !newWrite.isEmpty, newWrite != blastrRelays { blastrRelays = newWrite; changed = true }
+        return changed
     }
 
     /// `relays` without the dead ones, or `fallback` if nothing else is left.
