@@ -16,12 +16,13 @@
             "Do you have a Vault backup?", "Yes, restore my backup", "No, import from my relays", "From Network", "From Backup", "Import Notes", "Skip — I'll start fresh",
             "Mirror Your Media", "Sync Media", "Skip Media", "Lightning (NWC)", "Skip — set up later",
             "You're All Set", "Launch Nostr Vault", "Skip, nobody told me", "Enter Your Public Key", "Ready to Browse",
-            "Open Full App", "Quit Nostr Vault", "Settings (⌘,)", "Startup", "Launch at Login", "Start Vault Automatically"]
+            "Open Full App", "Quit Nostr Vault", "Settings (⌘,)", "Startup", "Launch at Login", "Start Vault Automatically", "Start Vault"]
   }
 }
 -->
-<p>On a Mac, Nostr Vault lives in the menu bar and runs your own Nostr relay while it's open. Leave it running and
-    your Mac becomes the always-on home for your notes and media.</p>
+<p>On a Mac, Nostr Vault lives in the menu bar and runs your own Nostr relay. With <span class="ui">Start Vault Automatically</span> on, the relay starts when the
+    app opens; otherwise click <span class="ui">Start Vault</span> in the panel. Leave it running and your Mac becomes
+    the always-on home for your notes and media.</p>
 
 <h2>Install</h2>
 <p>Nostr Vault needs <strong>macOS 14</strong> (Sonoma) or later. Download it from
@@ -107,7 +108,8 @@
     <li>Click the Nostr Vault icon in the menu bar. The panel shows your relay's status, your notes and your media.</li>
     <li><span class="ui">Open Full App</span> opens the full window, with the feed.</li>
     <li>The gear at the bottom (<span class="ui">Settings (⌘,)</span>) opens Settings.</li>
-    <li>Your relay runs while Nostr Vault is open. The power button next to it (<span class="ui">Quit Nostr Vault</span>) stops it.</li>
+    <li>Your relay starts when Nostr Vault opens if <span class="ui">Start Vault Automatically</span> is on;
+        otherwise click <span class="ui">Start Vault</span> in the panel. The power button next to it (<span class="ui">Quit Nostr Vault</span>) stops it.</li>
 </ul>
 <p>To keep it running, open <span class="path">Settings &rarr; Startup</span> and turn on
     <span class="ui">Launch at Login</span> and <span class="ui">Start Vault Automatically</span>.</p>
