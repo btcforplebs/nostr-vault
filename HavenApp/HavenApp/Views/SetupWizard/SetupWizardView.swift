@@ -306,7 +306,7 @@ struct SetupWizardView: View {
                 }
             )
         case 17:
-            StarterRelayListStep(starter: starterRelays) { relays in
+            StarterRelayListStep(recommended: starterRelays, picked: starterRelayList ?? []) { relays in
                 // Published in publishNewAccount, once the key is stored.
                 starterRelayList = relays.isEmpty ? nil : relays
                 direction = .forward
@@ -544,9 +544,9 @@ struct SetupWizardView: View {
         dismiss()
     }
 
-    /// The servers step 17 shows: this device's Write relays others can
-    /// reach, so Change (Relays) updates it. By default the five starter
-    /// relays, the same as the read relays (Logen 2026-10-31).
+    /// The servers step 17 recommends: this device's Write relays others
+    /// can reach. By default the five starter relays, the same as the read
+    /// relays (Logen 2026-10-31). Only suggestions: the person picks.
     private var starterRelays: [String] {
         RelayConfiguration.newAccountRelayListTags(
             broadcastRelays: RelayConfiguration.directBroadcastRelays(
@@ -557,7 +557,7 @@ struct SetupWizardView: View {
     }
 
     /// Publishes what a brand-new account needs to exist for other people:
-    /// the relay list shown in step 17 (none when it was empty) and a profile. Its follow list starts with its first
+    /// the relay list picked in step 17 (none when skipped) and a profile. Its follow list starts with its first
     /// follow, in the Fill your feed guide. Runs once, after
     /// `saveAndComplete` has stored the key, because each event has to be
     /// signed by it. Only for the New to Nostr path, whose key was generated
@@ -582,7 +582,7 @@ struct SetupWizardView: View {
         Task { @MainActor in
             let nostr = NostrService.shared
 
-            // The list step 17 showed; empty there, nothing is published.
+            // The list picked in step 17; none picked (Skip), nothing is published.
             let relayTags = RelayConfiguration.newAccountRelayListTags(broadcastRelays: starterRelayList ?? [])
             if !relayTags.isEmpty,
                let relayList = await nostr.signEventAsync(kind: 10002, content: "", tags: relayTags, signAsNpub: ownerNpub),
