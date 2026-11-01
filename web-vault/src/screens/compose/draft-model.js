@@ -8,7 +8,6 @@ export const EMPTY_DRAFT = Object.freeze({ text: "", mentions: {}, photos: [] })
 
 /** The placeholder for photo `id` while it uploads. */
 export const photoToken = id => `[photo ${id}]`
-const TOKEN = /\[photo \d+\]/g
 
 /**
  * `token` (or a link) put in `text` at `caret` on a line of its own. -> { text, caret: just after it }
@@ -36,7 +35,8 @@ export function addPhotos(draft, added, caret, end) {
 /** Photo `id` changed (`patch`); once it has its link, its placeholder becomes the link. -> the next draft. */
 export function updatePhoto(draft, id, patch) {
   const photos = draft.photos.map(p => (p.id === id ? { ...p, ...patch } : p))
-  const text = patch.url ? draft.text.replace(photoToken(id), patch.url) : draft.text
+  // A function, not a replacement string: a server's URL with $' or $& in it must go in as it is (Tron, #1510).
+  const text = patch.url ? draft.text.replace(photoToken(id), () => patch.url) : draft.text
   return { ...draft, text, photos }
 }
 
@@ -58,17 +58,32 @@ export function removePhoto(draft, id) {
 export const isPlaced = (text, p) => text.includes(photoToken(p.id)) || (!!p.url && text.includes(p.url))
 
 /**
- * The note's text with its photos: placed ones' placeholders become their links, placeholders of photos that aren't
- * done (failed, removed, or from a draft whose upload never finished) go, and the links of photos never placed go at
- * the end, one per line, as before. `photos`: the done ones.
+ * The note's text with its photos: placed ones' placeholders become their links, the placeholders of `drop` (ids of
+ * this draft's photos that aren't done: uploading or failed) go, and the links of photos never placed go at the end,
+ * one per line, as before. `photos`: the done ones. Only this draft's own placeholders are touched: a "[photo 3]" the
+ * user typed stays (Tron, #1510).
  */
-export function placeBody(text, photos) {
-  let body = text
-  for (const p of photos) if (p.url) body = body.replace(photoToken(p.id), p.url)
-  body = body.replace(TOKEN, "").replace(/\n{3,}/g, "\n\n").trim()
+export function placeBody(text, photos, drop = []) {
+  let body = withoutTokens(text, drop)
+  for (const p of photos) if (p.url) body = body.replace(photoToken(p.id), () => p.url)
+  body = body.trim()
   const unplaced = photos.filter(p => p.url && !body.includes(p.url)).map(p => p.url)
   return [body, ...unplaced].filter(Boolean).join("\n")
 }
 
-/** A draft read back: placeholders of uploads that never finished have nothing behind them, so they go. */
-export const withoutStaleTokens = text => text.replace(TOKEN, "").replace(/\n{3,}/g, "\n\n")
+/** `text` without the placeholders of photos `ids` (each with the line break it brought), e.g. a draft saved while
+ *  they upload: read back later, they'd have nothing behind them. */
+export function withoutTokens(text, ids) {
+  let t = text
+  for (const id of ids) {
+    const mark = photoToken(id), i = t.indexOf(mark)
+    if (i < 0) continue
+    const nl = t[i + mark.length] === "\n" ? 1 : 0
+    t = t.slice(0, i) + t.slice(i + mark.length + nl)
+  }
+  return t.replace(/\n{3,}/g, "\n\n")
+}
+
+/** Whether Post has something to send: text, a photo that's up, or one still going up (Post then waits for it). A
+ *  failed photo alone is nothing, so it can never send an empty note (Tron, #1510). */
+export const hasSomethingToPost = (text, photos) => !!text.trim() || photos.some(p => p.status !== "failed")

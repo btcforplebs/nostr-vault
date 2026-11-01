@@ -27,7 +27,7 @@ import { ComposeKinds, composeType } from "./compose/ComposeKinds.jsx"
 import { ArticleCompose } from "./compose/ArticleCompose.jsx"
 import { PollCompose } from "./compose/PollCompose.jsx"
 import { SEND_ACTIONS, countdownText, sendAction, sendDelaySeconds, startCountdown } from "../net/send-delay.js"
-import { EMPTY_DRAFT, addPhotos, photoToken, placeBody, removePhoto as dropPhoto, updatePhoto, withoutStaleTokens } from "./compose/draft-model.js"
+import { EMPTY_DRAFT, addPhotos, hasSomethingToPost, photoToken, placeBody, removePhoto as dropPhoto, updatePhoto, withoutTokens } from "./compose/draft-model.js"
 import { ComposeAttachments } from "./compose/ComposeAttachments.jsx"
 import { ComposePreview } from "./compose/ComposePreview.jsx"
 import { isMedia, isVideo } from "./compose/media-kind.js"
@@ -78,7 +78,8 @@ export { draftKey, idbDrafts } from "./compose/drafts.js"
 
 /** What a draft keeps: the text as shown (with @Name tokens), whose each token is, and the media already uploaded. */
 export const draftOf = (text, mentions, photos) => ({
-  text, mentions: Object.fromEntries(Object.entries(mentions).filter(([t]) => text.includes(t))),
+  // Placeholders of photos still going up aren't kept: read back, they'd have nothing behind them.
+  text: withoutTokens(text, photos.filter(p => !p.url).map(p => p.id)), mentions: Object.fromEntries(Object.entries(mentions).filter(([t]) => text.includes(t))),
   photos: photos.filter(p => p.url).map(({ url, sha256, mime, size, width, height, alt }) => ({ url, sha256, mime, size, width, height, ...(alt?.trim() ? { alt } : {}) })),
 })
 
@@ -88,8 +89,8 @@ const emptyDraft = d => !d.text.trim() && !d.photos.length
 /** Content and tags for a post: tokens -> nostr:npub, photo links where they were placed and the rest appended (as
  *  the iPhone does; draft-model.js placeBody), then the reply or quote's tags, a p tag per mention still in the text,
  *  one imeta per photo. `photos`: the uploaded ones. */
-export function buildPost({ text, mentions, photos, target, parent }) {
-  const body = toNostr(placeBody(text, photos), mentions)
+export function buildPost({ text, mentions, photos, target, parent, drop = [] }) {
+  const body = toNostr(placeBody(text, photos, drop), mentions)
   const base = !parent ? { content: body, tags: [] } : target.mode === "reply" ? { content: body, tags: replyTags(parent) } : quoteOf(parent, body)
   const tags = [...base.tags]
   for (const pk of mentionedPubkeys(text, mentions)) if (!tags.some(t => t[0] === "p" && t[1] === pk)) tags.push(["p", pk])
@@ -209,7 +210,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     setLoaded(null); clearDraft(); setMention(null); setWaitPost(false)
     drafts.current.get(key).catch(() => null).then(d => {
       if (!live) return
-      if (d) setDraft({ text: withoutStaleTokens(d.text ?? ""), mentions: d.mentions ?? {}, photos: (d.photos ?? []).map(p => ({ ...p, id: ++nextPhoto, status: "done", preview: p.url })) })
+      if (d) setDraft({ text: d.text ?? "", mentions: d.mentions ?? {}, photos: (d.photos ?? []).map(p => ({ ...p, id: ++nextPhoto, status: "done", preview: p.url })) })
       setLoaded(key)
     })
     return () => { live = false }
@@ -312,11 +313,14 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const uploading = goingUp > 0
   const ready = photos.filter(p => p.status === "done")
   // Post waits only on uploads still going: tapped meanwhile, it posts by itself once they're up.
-  const canPost = !busy && !pending && !waitPost && (text.trim() || photos.length) && (!target || parent)
+  const canPost = !busy && !pending && !waitPost && hasSomethingToPost(text, photos) && (!target || parent)
+  const notReady = photos.filter(p => p.status !== "done").map(p => p.id)
   const failed = photos.filter(p => p.status === "failed").length
   useEffect(() => {
     if (!waitPost || uploading) return
     setWaitPost(false)
+    // ✕ on the only photo while Post waited backs out of the post: with nothing left, nothing is sent (Tron, #1510).
+    if (!hasSomethingToPost(text, photos)) return
     if (failed) setErr(failed === 1 ? "A photo didn't upload. Retry it or remove it, then post." : `${failed} photos didn't upload. Retry or remove them, then post.`)
     else post()
   }, [waitPost, uploading])
@@ -326,7 +330,9 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
     setErr(""); setResult(null); setUndone(false)
     if (uploading) return setWaitPost(true)
     let built
-    try { built = buildPost({ text, mentions, photos: ready, target, parent }) } catch (e) { return setErr(String(e?.message ?? e)) }
+    try { built = buildPost({ text, mentions, photos: ready, target, parent, drop: notReady }) } catch (e) { return setErr(String(e?.message ?? e)) }
+    // Never an empty kind 1, whatever led here (Tron, #1510).
+    if (!built.content.trim()) return setErr("There's nothing to post yet.")
     const action = sendAction(target), seconds = sendDelaySeconds()
     if (seconds > 0) setPending({ action, total: seconds, remaining: seconds })
     countdown.current = startCountdown({
@@ -371,7 +377,7 @@ function NoteCompose({ ctx, fixed = null, inline = false }) {
   const keyboard = useKeyboardFrame(!inline)
   const postButton = cls => <button class={cls} disabled={!canPost} onClick={post} aria-busy={busy || waitPost || undefined}>{postLabel}</button>
   const preview = !inline && <ComposePreview pubkey={ctx.session.pubkey} uploading={goingUp} deps={[text, mentions, ready.length, ready.map(p => p.alt).join("\u0000"), parent?.id]}
-    build={() => buildPost({ text, mentions, photos: ready, target, parent })} />
+    build={() => buildPost({ text, mentions, photos: ready, target, parent, drop: notReady })} />
   return (
     <main class={`screen ${inline ? "compose-inline" : `compose-sheet${keyboard ? " keyboard" : ""} view-${view}`}`}
       style={keyboard ? { "--kb-top": `${keyboard.top}px`, "--kb-height": `${keyboard.height}px` } : undefined}>

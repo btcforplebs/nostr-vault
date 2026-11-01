@@ -10,7 +10,7 @@ import { transformSync } from "rolldown/utils"
 import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure"
 import { uploadPhoto } from "../src/net/upload.js"
 import { xhrPut } from "../src/net/upload-progress.js"
-import { EMPTY_DRAFT, addPhotos, insertAtCaret, isPlaced, photoToken, placeBody, removePhoto, updatePhoto, withoutStaleTokens } from "../src/screens/compose/draft-model.js"
+import { EMPTY_DRAFT, addPhotos, hasSomethingToPost, insertAtCaret, isPlaced, photoToken, placeBody, removePhoto, updatePhoto, withoutTokens } from "../src/screens/compose/draft-model.js"
 
 registerHooks({
   load(url, context, next) {
@@ -21,7 +21,7 @@ registerHooks({
     return { format: "module", source: code, shortCircuit: true }
   },
 })
-const { buildPost } = await import("../src/screens/ComposeScreen.jsx")
+const { buildPost, draftOf } = await import("../src/screens/ComposeScreen.jsx")
 const { previewEvent } = await import("../src/screens/compose/ComposePreview.jsx")
 
 const me = generateSecretKey()
@@ -65,12 +65,41 @@ test("removing a photo takes its placeholder or its placed link out of the text"
   assert.deepEqual(d.photos, [])
 })
 
-test("the post body: placed links stay where they are, unplaced ones go at the end, stray placeholders go", () => {
+test("the post body: placed links stay where they are, unplaced ones go at the end, dropped placeholders go", () => {
   const photos = [{ id: 1, url: "https://m/1.png" }, { id: 2, url: "https://m/2.png" }, { id: 3, url: "https://m/3.png" }]
-  const text = "one\nhttps://m/1.png\ntwo\n[photo 2]\nthree [photo 99]"
-  assert.equal(placeBody(text, photos), "one\nhttps://m/1.png\ntwo\nhttps://m/2.png\nthree\nhttps://m/3.png")
+  const text = "one\nhttps://m/1.png\ntwo\n[photo 2]\nthree\n[photo 4]\n"
+  assert.equal(placeBody(text, photos, [4]), "one\nhttps://m/1.png\ntwo\nhttps://m/2.png\nthree\nhttps://m/3.png")
   assert.equal(placeBody("", photos.slice(0, 1)), "https://m/1.png", "a photo alone, as before")
-  assert.equal(withoutStaleTokens("a\n[photo 4]\nb"), "a\n\nb")
+})
+
+test("a [photo N] the user typed is left alone (Tron, #1510)", () => {
+  assert.equal(placeBody("see [photo 3] below", [{ id: 1, url: "https://m/1.png" }], [2]), "see [photo 3] below\nhttps://m/1.png")
+  assert.equal(withoutTokens("a\n[photo 4]\nb [photo 9]", [4]), "a\nb [photo 9]")
+})
+
+test("a server URL with $ patterns goes in as it is, not expanded (Tron, #1510)", () => {
+  for (const url of ["https://media.example/abc$'.jpg", "https://media.example/a$&b$`c.jpg", "https://m/$1.png"]) {
+    const d = updatePhoto(addPhotos(draftWith("secret line one\nmore"), [{ id: 7 }], 15), 7, { status: "done", url })
+    assert.equal(d.text, `secret line one\n${url}\nmore`)
+    assert.equal(placeBody("x\n[photo 7]\ny", [{ id: 7, url }]), `x\n${url}\ny`)
+  }
+})
+
+test("Post never has an empty note to send: a failed photo alone is nothing (Tron, #1510)", () => {
+  assert.equal(hasSomethingToPost("", [{ id: 1, status: "failed" }]), false)
+  assert.equal(hasSomethingToPost("", []), false)
+  assert.equal(hasSomethingToPost("  ", [{ id: 1, status: "uploading" }]), true, "Post waits for it")
+  assert.equal(hasSomethingToPost("", [{ id: 1, status: "done", url: "https://m/1.png" }]), true)
+  assert.equal(hasSomethingToPost("hi", [{ id: 1, status: "failed" }]), true)
+  // ✕ on the only photo while Post waited: nothing left, so nothing is sent.
+  const after = removePhoto(addPhotos(EMPTY_DRAFT, [{ id: 5, status: "uploading" }], 0), 5)
+  assert.equal(hasSomethingToPost(after.text, after.photos), false)
+  assert.equal(buildPost({ text: "", mentions: {}, photos: [], target: null, parent: null }).content, "")
+})
+
+test("a draft saved while photos upload keeps no placeholders for them", () => {
+  const d = draftOf("look\n[photo 1]\nand\n[photo 2]\n", {}, [{ id: 1, status: "uploading" }, { id: 2, status: "done", url: "https://m/2.png" }])
+  assert.equal(d.text, "look\nand\n[photo 2]\n")
 })
 
 test("buildPost: a placed photo isn't posted twice, and still gets its imeta", () => {
