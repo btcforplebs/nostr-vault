@@ -203,8 +203,11 @@ class SetupWizardViewModel @Inject constructor(
     /** The pubkey New to Nostr generated this run. Only this key may be
      *  marked fresh or have a profile published for it at the end. */
     internal var generatedPkHex: String? = null
-    /** Save in the starter step's Change ran for this key ([StarterRelays.Saved]). */
-    internal var starterRelaysSaved: StarterRelays.Saved? = null
+    /** The starter step's list as edited; null shows the recommended servers. */
+    internal val _starterRelayDraft = MutableStateFlow<List<String>?>(null)
+    val starterRelayDraft = _starterRelayDraft.asStateFlow()
+    /** The list Continue or Use recommended confirmed ([StarterRelays.Confirmed]). */
+    internal var starterRelaysConfirmed: StarterRelays.Confirmed? = null
 
     /** Keys this run of setup stored that weren't on the device before, so a
      *  key left behind by Back and another choice can be removed again. */
@@ -367,7 +370,8 @@ class SetupWizardViewModel @Inject constructor(
         _generatedSkHex.value = null
         _generatedNpub.value = null
         generatedPkHex = null
-        starterRelaysSaved = null
+        starterRelaysConfirmed = null
+        _starterRelayDraft.value = null
         _passphrase.value = ""
         _confirmPassphrase.value = ""
         _useNostrInput.value = ""

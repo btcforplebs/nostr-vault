@@ -40,33 +40,46 @@ class StarterRelaysTest {
     }
 
     private val key = "a".repeat(64)
-    private val saved = HavenConfig.newInstall().copy(
-        feedRelays = listOf("wss://relay.primal.net"),
-        blastrRelays = listOf("wss://relay.primal.net", "wss://write.only.example"),
-    )
+    private val recommended = StarterRelays.from(HavenConfig.newInstall().activeFeedRelays)
 
     @Test
-    fun `no Change in setup publishes the starter list`() {
-        assertEquals(StarterRelays.tags(saved.activeFeedRelays), StarterRelays.finishTags(saved, null, key))
+    fun `nothing confirmed publishes nothing`() {
+        assertNull(StarterRelays.finishTags(null, key))
     }
 
     @Test
-    fun `a list Change already published is not replaced when setup finishes`() {
-        assertNull(StarterRelays.finishTags(saved, StarterRelays.Saved(key, published = true), key))
+    fun `the confirmed list is what goes out`() {
+        val picks = StarterRelays.add(StarterRelays.remove(recommended, "wss://relay.damus.io"), "nos.lol")!!
+        val tags = StarterRelays.finishTags(StarterRelays.Confirmed(key, picks), key)!!
+        assertTrue(tags.any { it[1] == "wss://nos.lol" })
+        assertTrue(tags.none { it[1] == "wss://relay.damus.io" })
+        assertEquals(picks.size, tags.size)
     }
 
     @Test
-    fun `a saved list that could not publish goes out with its write-only picks`() {
-        val tags = StarterRelays.finishTags(saved, StarterRelays.Saved(key, published = false), key)!!
-        assertEquals(saved.publicRelayListTags, tags)
-        assertTrue(tags.any { it[1] == "wss://write.only.example" })
+    fun `a list confirmed for another key does not count`() {
+        assertNull(StarterRelays.finishTags(StarterRelays.Confirmed("b".repeat(64), recommended), key))
     }
 
     @Test
-    fun `a Save for another key does not count`() {
-        assertEquals(
-            StarterRelays.tags(saved.activeFeedRelays),
-            StarterRelays.finishTags(saved, StarterRelays.Saved("b".repeat(64), published = true), key),
-        )
+    fun `an address without a scheme becomes wss, ws and home servers are refused`() {
+        assertEquals("wss://nos.lol", StarterRelays.normalize("  nos.lol/ "))
+        assertEquals("wss://relay.example.com", StarterRelays.normalize("wss://relay.example.com"))
+        assertNull(StarterRelays.normalize("ws://relay.example.com"))
+        assertNull(StarterRelays.normalize("127.0.0.1:4869"))
+        assertNull(StarterRelays.normalize("not a relay"))
+        assertNull(StarterRelays.normalize(""))
+    }
+
+    @Test
+    fun `adding a server already on the list keeps it once`() {
+        val list = listOf("wss://relay.primal.net")
+        assertEquals(list, StarterRelays.add(list, "wss://Relay.Primal.net/"))
+        assertNull(StarterRelays.add(list, "ws://x.example"))
+    }
+
+    @Test
+    fun `remove matches the same server written differently`() {
+        assertEquals(emptyList<String>(), StarterRelays.remove(listOf("wss://relay.primal.net"), "wss://Relay.Primal.net/"))
     }
 }
