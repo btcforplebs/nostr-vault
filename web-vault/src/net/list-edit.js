@@ -65,7 +65,7 @@ export async function latestList(ctx, kind, { ask = askRelay, online = globalThi
 }
 
 /** What a list page says when the account has no relay list (kind 10002) yet, so its own relays aren't known. */
-export const NO_RELAY_LIST = "You have no relay list yet, so your own relays aren't known and your newest copy of this list can't be checked. Add your relays in Settings › Relays and save them first."
+export const NO_RELAY_LIST = "Your own relays aren't known: you have no relay list yet, or every relay in it is unreachable, so your newest copy of this list can't be checked. Fix your relays in Settings › Relays and save them first."
 
 /** Thrown by publishList instead of signing: the list couldn't be read just now, or it changed since the page read it.
  *  `latest` is the newest copy found (to start the edit again from), `checked` whether it can be trusted. */
