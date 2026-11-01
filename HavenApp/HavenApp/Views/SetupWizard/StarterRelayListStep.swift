@@ -96,7 +96,11 @@ struct StarterRelayListStep: View {
     }
 
     private var confirmTitle: String {
-        choice.chosen.count == 1 ? "Use this server" : "Use these \(choice.chosen.count) servers"
+        switch choice.chosen.count {
+        case 0: return "Pick at least one server"
+        case 1: return "Use this server"
+        default: return "Use these \(choice.chosen.count) servers"
+        }
     }
 
     private func sectionLabel(_ text: String) -> some View {
