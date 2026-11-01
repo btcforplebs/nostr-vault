@@ -14,7 +14,7 @@ import { fetchProfiles } from "../net/profiles.js"
 import { DEFAULT_RELAYS, PROFILE_RELAYS, uniq } from "../net/pool.js"
 import { markRead, onRead, unreadCounts } from "../net/dm-read.js"
 import { forgetDeclinedAuth, getAuthProblems, onAuthProblems } from "../net/dm-read-auth.js"
-import { conversations, cachedDmRelays, extraRelays, loadedRecently, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
+import { conversations, extraRelays, ownDmRelays, needResync, RELAY_CACHE_MS, loadedRecently, forgetUnopened, getMessages, lastPreview, loadMessages, onMessages, openMore, claimResync, onResyncNeeded, watchMessages } from "../net/dms.js"
 import { SkeletonList } from "../components/Loading.jsx"
 import { hiddenFromUnread, useDmTrust } from "../components/useDmTrust.js"
 import { splitConversations } from "../net/dm-trust.js"
@@ -26,8 +26,21 @@ if (import.meta.env) import("../styles/compose.css")
 export async function inboxRelays(ctx) {
   const { read, write } = ctx.account.relays
   const lookup = uniq([...read, ...write, ...DEFAULT_RELAYS])
-  const mine = await cachedDmRelays(ctx.session.pubkey, lookup, { fallback: [] }).catch(() => [])
+  const mine = await ownInbox(ctx.session.pubkey, lookup).catch(() => [])
   return uniq([...mine, ...read, ...DEFAULT_RELAYS, ...extraRelays()])
+}
+
+// The own inbox lookup, kept like cachedDmRelays (RELAY_CACHE_MS): the first look settles early (ownDmRelays), later
+// ones get the full answer. An inbox relay only a slow relay knew about makes the screens look again (needResync).
+const ownLookups = new Map() // pubkey -> { at, full, early }
+function ownInbox(pubkey, lookup) {
+  const hit = ownLookups.get(pubkey)
+  if (hit && Date.now() - hit.at < RELAY_CACHE_MS) return hit.done ? hit.full : hit.early
+  const { early, full } = ownDmRelays(pubkey, lookup, { onLater: needResync })
+  const entry = { at: Date.now(), early, full, done: false }
+  full.then(() => { entry.done = true }, () => { if (ownLookups.get(pubkey) === entry) ownLookups.delete(pubkey) })
+  ownLookups.set(pubkey, entry)
+  return early
 }
 
 let lastDrop = null
