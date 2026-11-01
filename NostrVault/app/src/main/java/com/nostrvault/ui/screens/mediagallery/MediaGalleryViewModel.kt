@@ -51,11 +51,7 @@ class MediaGalleryViewModel @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    // The app's shared pool ([ImageHttp]), not a new one per screen.
-    private val httpClient = com.nostrvault.service.ImageHttp.root.newBuilder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = buildHttpClient()
 
     init {
         loadBlossomMedia()
@@ -407,5 +403,14 @@ class MediaGalleryViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "MediaGalleryVM"
+
+        /** The gallery's client. A seam so a test can check what it refuses. */
+        // The app's shared pool ([ImageHttp]), not a new one per screen.
+        internal fun buildHttpClient(): OkHttpClient = com.nostrvault.service.ImageHttp.root.newBuilder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            // A .fips host is a mesh name: never sent to DNS.
+            .addInterceptor(com.nostrvault.fips.FipsHostGuard)
+            .build()
     }
 }

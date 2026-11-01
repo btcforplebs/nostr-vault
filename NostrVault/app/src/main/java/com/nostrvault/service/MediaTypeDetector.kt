@@ -25,11 +25,20 @@ class MediaTypeDetector @Inject constructor() {
     private val inFlightDetections = ConcurrentHashMap<String, Deferred<String?>>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Same hosts as the images: share their connections ([ImageHttp]).
-    private val httpClient = ImageHttp.root.newBuilder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .build()
+    private val httpClient = buildHttpClient()
+
+    companion object {
+        private val BLOSSOM_HASH_REGEX = Regex("[a-f0-9]{64}(\\.[a-z0-9]+)?", RegexOption.IGNORE_CASE)
+
+        /** The HEAD-probe client. A seam so a test can check what it refuses. */
+        // Same hosts as the images: share their connections ([ImageHttp]).
+        internal fun buildHttpClient(): OkHttpClient = ImageHttp.root.newBuilder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            // A .fips host is a mesh name: never sent to DNS.
+            .addInterceptor(com.nostrvault.fips.FipsHostGuard)
+            .build()
+    }
 
     /** Returns cached content type if available, null otherwise. */
     fun getCachedContentType(url: String): String? = contentTypeCache[url]
@@ -82,7 +91,4 @@ class MediaTypeDetector @Inject constructor() {
     fun isGIF(contentType: String): Boolean =
         contentType.lowercase().contains("image/gif")
 
-    companion object {
-        private val BLOSSOM_HASH_REGEX = Regex("[a-f0-9]{64}(\\.[a-z0-9]+)?", RegexOption.IGNORE_CASE)
-    }
 }
