@@ -77,9 +77,13 @@
 .condensed-text { margin: 0; font-size: 14px; line-height: 1.35; color: var(--text); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .condensed.reply .condensed-text { font-size: 13px; color: rgb(255 255 255 / .8); }
 .condensed.reply .condensed-head .author-name { color: rgb(255 255 255 / .92); }
-.condensed-thumb { position: relative; flex: none; width: 56px; height: 56px; border-radius: 6px; overflow: hidden; background: var(--s2); display: grid; place-items: center; }
-.condensed-thumb.big { width: 80px; height: 80px; }
-.condensed-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The square keeps the text column one width; a photo sits whole, at its own shape, in its top right corner. */
+.condensed-thumb { --thumb: 56px; position: relative; flex: none; width: var(--thumb); height: var(--thumb); display: grid; place-items: start end; }
+.condensed-thumb.big { --thumb: 80px; }
+.condensed-thumb:has(.condensed-play) { border-radius: 6px; overflow: hidden; background: var(--s2); place-items: center; }
+.condensed-pic { position: relative; display: block; max-width: var(--thumb); max-height: var(--thumb); border-radius: 6px; overflow: hidden; }
+.condensed-pic:has(.media-mesh) { width: var(--thumb); height: var(--thumb); background: var(--s2); }
+.condensed-thumb img { display: block; width: auto; height: auto; max-width: var(--thumb); max-height: var(--thumb); object-fit: contain; background: var(--s2); }
 .condensed-play { color: var(--text-2); font-size: 18px; }
 .condensed-more { position: absolute; right: 4px; bottom: 4px; padding: 2px 6px; border-radius: 999px; background: rgb(0 0 0 / .7); color: #fff; font-size: 10px; font-weight: 700; }
 .condensed-rail { position: absolute; left: calc(var(--indent, 0px) - 4px); top: 0; bottom: 0; width: 1.5px; background: rgb(230 115 38 / .35); }

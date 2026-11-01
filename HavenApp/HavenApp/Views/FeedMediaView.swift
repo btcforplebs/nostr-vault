@@ -65,6 +65,10 @@ struct FeedMediaView: View {
     /// Fills the frame it is given edge to edge, cropping if it must (a
     /// carousel page), instead of fitting with empty space around it.
     var fillsFrame: Bool = false
+    /// A thumbnail that shows the whole picture at its own shape, fitted in
+    /// the box its caller gives it, instead of a cropped square (condensed
+    /// and threaded feed lines, Logen 11-01).
+    var thumbnailFits: Bool = false
 
     @ObservedObject private var configService = ConfigService.shared
     @Environment(\.mediaZoomNamespace) private var zoomNamespace
@@ -107,10 +111,11 @@ struct FeedMediaView: View {
             url: url,
             isThumbnail: isThumbnail,
             animatesThumbnail: animatesThumbnail,
+            fits: fitsThumbnail,
             landscapeMaxHeight: maxHeight,
             portraitMaxHeight: portraitMaxHeight
         )
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: fitsThumbnail ? nil : .infinity)
         .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
@@ -128,20 +133,20 @@ struct FeedMediaView: View {
                     avoidFullDownload: isThumbnail,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoShapeRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(thumbnailRatio, contentMode: isThumbnail && !fitsThumbnail ? .fill : .fit)
             } else {
                 InlineFeedVideoPlayer(
                     url: url,
                     onTap: openViewer,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoShapeRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(thumbnailRatio, contentMode: isThumbnail && !fitsThumbnail ? .fill : .fit)
             }
         }
         // A portrait narrows to stay under the cap whole instead of being cut.
-        .frame(maxWidth: isThumbnail ? .infinity : FeedVideoShape.maxWidth(ratio: videoShapeRatio, heightCap: videoHeightCap))
-        .frame(maxWidth: .infinity)
-        .frame(maxHeight: isThumbnail ? .infinity : videoHeightCap)
+        .frame(maxWidth: fitsThumbnail ? nil : isThumbnail ? .infinity : FeedVideoShape.maxWidth(ratio: videoShapeRatio, heightCap: videoHeightCap))
+        .frame(maxWidth: fitsThumbnail ? nil : .infinity)
+        .frame(maxHeight: fitsThumbnail ? nil : isThumbnail ? .infinity : videoHeightCap)
         .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
@@ -151,6 +156,16 @@ struct FeedMediaView: View {
     /// `imeta` `dim` only until then, since some clients publish a portrait
     /// phone video's stored (landscape) size there.
     private var videoShapeRatio: CGFloat? { videoAspectRatio ?? hintAspectRatio }
+
+    /// Fitting the whole picture only means anything for a thumbnail.
+    private var fitsThumbnail: Bool { isThumbnail && thumbnailFits }
+
+    /// A cropped thumbnail is square; a fitted one takes the video's shape
+    /// (square until that is known).
+    private var thumbnailRatio: CGFloat? {
+        guard isThumbnail else { return videoShapeRatio }
+        return thumbnailFits ? (videoShapeRatio ?? 1) : 1
+    }
 
     /// Height cap for inline video: portraits get the taller cap (see
     /// `FeedVideoShape`); the landscape cap until the shape is known.
@@ -163,10 +178,11 @@ struct FeedMediaView: View {
             url: url,
             isThumbnail: isThumbnail,
             fillsFrame: fillsFrame,
+            fits: fitsThumbnail,
             landscapeMaxHeight: maxHeight,
             portraitMaxHeight: portraitMaxHeight
         )
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: fitsThumbnail ? nil : .infinity)
         .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(openViewer)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
@@ -242,6 +258,8 @@ private struct FeedPhotoView: View {
     let url: URL
     let isThumbnail: Bool
     var fillsFrame: Bool = false
+    /// A thumbnail at the photo's own shape, whole, instead of a cropped square.
+    var fits: Bool = false
     var landscapeMaxHeight: CGFloat = 400
     var portraitMaxHeight: CGFloat = 600
 
@@ -252,11 +270,12 @@ private struct FeedPhotoView: View {
     @State private var phase: MeshMediaPhase = .loading
     @Environment(\.meshMediaNote) private var meshNote
 
-    init(url: URL, isThumbnail: Bool, fillsFrame: Bool = false,
+    init(url: URL, isThumbnail: Bool, fillsFrame: Bool = false, fits: Bool = false,
          landscapeMaxHeight: CGFloat = 400, portraitMaxHeight: CGFloat = 600) {
         self.url = url
         self.isThumbnail = isThumbnail
         self.fillsFrame = fillsFrame
+        self.fits = fits
         self.landscapeMaxHeight = landscapeMaxHeight
         self.portraitMaxHeight = portraitMaxHeight
         // A photo already decoded (prefetched, or seen before) is drawn on the
@@ -272,7 +291,7 @@ private struct FeedPhotoView: View {
     var body: some View {
         ZStack {
             // Grey only behind a thumbnail, or while a photo is loading.
-            if isThumbnail || image == nil {
+            if (isThumbnail && !fits) || image == nil {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.platformTertiaryGroupedBackground)
             }
@@ -280,7 +299,7 @@ private struct FeedPhotoView: View {
             if let image = image {
                 Image(platformImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: isThumbnail || fillsFrame ? .fill : .fit)
+                    .aspectRatio(contentMode: (isThumbnail && !fits) || fillsFrame ? .fill : .fit)
                     .transition(.opacity.animation(Motion.media))
             } else if loadFailed {
                 MediaFailedPlaceholder(url: url, compact: isThumbnail)
@@ -290,8 +309,10 @@ private struct FeedPhotoView: View {
                 MeshMediaStatusView(phase: phase)
             }
         }
-        .aspectRatio(isThumbnail || fillsFrame ? nil : displayAspectRatio, contentMode: .fit)
-        .frame(maxHeight: fillsFrame ? .infinity : heightCap)
+        .aspectRatio(fits ? (displayAspectRatio ?? 1) : isThumbnail || fillsFrame ? nil : displayAspectRatio, contentMode: .fit)
+        // A fitted thumbnail keeps the photo's height; .infinity would
+        // stretch the box to the whole square again.
+        .frame(maxHeight: fillsFrame ? .infinity : fits ? nil : heightCap)
         .clipped()
         .onAppear {
             MediaCacheService.shared.setDownloadPriority(.normal, for: url)
@@ -397,6 +418,8 @@ private struct FeedGIFView: View {
     let url: URL
     let isThumbnail: Bool
     var animatesThumbnail: Bool = false
+    /// A thumbnail at the GIF's own shape, whole, instead of a cropped square.
+    var fits: Bool = false
     var landscapeMaxHeight: CGFloat = 400
     var portraitMaxHeight: CGFloat = 600
 
@@ -411,7 +434,7 @@ private struct FeedGIFView: View {
 
             AnimatedImage(
                 url: url,
-                contentMode: isThumbnail ? .fill : .fit,
+                contentMode: isThumbnail && !fits ? .fill : .fit,
                 shouldAnimate: !isThumbnail || animatesThumbnail,
                 targetSize: isThumbnail && animatesThumbnail ? CGSize(width: 80, height: 80) : nil,
                 onLoad: { size in
@@ -435,8 +458,9 @@ private struct FeedGIFView: View {
         }
         // A thumbnail fills the square its caller gives it. A nil ratio would
         // fit the image's own shape and letterbox a wide GIF inside the square.
-        .aspectRatio(isThumbnail ? 1 : displayAspectRatio, contentMode: isThumbnail ? .fill : .fit)
-        .frame(maxHeight: heightCap)
+        .aspectRatio(isThumbnail ? (fits ? (displayAspectRatio ?? 1) : 1) : displayAspectRatio,
+                     contentMode: isThumbnail && !fits ? .fill : .fit)
+        .frame(maxHeight: fits ? nil : heightCap)
     }
 
     private var displayAspectRatio: CGFloat? {

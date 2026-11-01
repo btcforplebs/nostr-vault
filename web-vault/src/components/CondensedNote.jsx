@@ -155,12 +155,19 @@ function label(note, depth) {
 }
 
 // A photo whose server lost it, or a .fips one, comes from the author's mesh vault (MediaImage), as in the note.
+// The whole photo at its own shape in the top right of the square, not a cropped square (Logen 11-01; iOS
+// CondensedMediaThumbnail); the +N badge sits on the photo.
 export function Thumb({ url, note, more, big }) {
   const video = mediaType(url) === "video"
   return (
     <span class={`condensed-thumb${big ? " big" : ""}`} aria-hidden="true">
-      {video ? <span class="condensed-play">▶</span> : <MediaImage item={imageItem(url, note.tags)} author={note.pubkey} loading="lazy" onError={e => e.currentTarget.classList.add("failed")} />}
-      {more > 0 && <span class="condensed-more">+{more}</span>}
+      {video ? <span class="condensed-play">▶</span> : (
+        <span class="condensed-pic">
+          <MediaImage item={imageItem(url, note.tags)} author={note.pubkey} loading="lazy" onError={e => e.currentTarget.classList.add("failed")} />
+          {more > 0 && <span class="condensed-more">+{more}</span>}
+        </span>
+      )}
+      {video && more > 0 && <span class="condensed-more">+{more}</span>}
     </span>
   )
 }
