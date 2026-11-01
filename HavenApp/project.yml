@@ -112,7 +112,7 @@ targets:
         "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         CURRENT_PROJECT_VERSION: "52"
-        MARKETING_VERSION: "3.0.1"
+        MARKETING_VERSION: "3.1.0"
 
     preBuildScripts:
       - name: Build Go Library (macOS)
@@ -206,7 +206,7 @@ targets:
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
         TARGETED_DEVICE_FAMILY: "1,2"
         CURRENT_PROJECT_VERSION: "52"
-        MARKETING_VERSION: "3.0.1"
+        MARKETING_VERSION: "3.1.0"
 
     preBuildScripts:
       - name: Build Go Library (iOS)
@@ -264,7 +264,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: NostrVaultWidgets/NostrVaultWidgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         CURRENT_PROJECT_VERSION: "52"
-        MARKETING_VERSION: "3.0.1"
+        MARKETING_VERSION: "3.1.0"
         SKIP_INSTALL: YES
 
   # ── Share Extension (iOS / iPadOS) ────────────────────────
@@ -292,7 +292,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: NostrVaultShare/NostrVaultShare.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         CURRENT_PROJECT_VERSION: "52"
-        MARKETING_VERSION: "3.0.1"
+        MARKETING_VERSION: "3.1.0"
         SKIP_INSTALL: YES
 
 schemes:
