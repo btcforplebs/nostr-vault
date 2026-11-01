@@ -76,7 +76,7 @@ struct EmojiPickerView: View {
         #if os(macOS)
         .frame(width: 380, height: 460)
         #endif
-        .onAppear { if reacting { EmojiListService.shared.refresh() } }
+        .onAppear { if reacting { EmojiListService.shared.refresh(maxAge: EmojiListService.pickerMaxAge) } }
     }
 
     private var searchField: some View {

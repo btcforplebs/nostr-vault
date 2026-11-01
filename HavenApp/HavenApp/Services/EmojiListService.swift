@@ -17,7 +17,13 @@ final class EmojiListService: ObservableObject {
 
     private var refreshing: Task<Void, Never>?
     private var lastRefresh = Date.distantPast
-    private static let refreshEvery: TimeInterval = 60
+    /// How old the library may get before `refresh()` asks again. Every
+    /// screen's `FeedActions.make` calls it, and a SwiftUI view re-creates
+    /// its actions on each redraw, so at once a minute an idle app opened
+    /// ten relay sockets a minute for this alone (sweep 2026-11-01). The
+    /// picker opening asks with `pickerMaxAge`.
+    static let refreshEvery: TimeInterval = 30 * 60
+    static let pickerMaxAge: TimeInterval = 60
     /// Sets fetched per refresh; each is a lookup across the relays.
     private static let maxSets = 20
 
@@ -33,13 +39,14 @@ final class EmojiListService: ObservableObject {
         }
     }
 
-    /// Asks the relays again, at most once a minute. Shows nothing of another account's.
-    func refresh() {
+    /// Asks the relays again when the library is older than `maxAge`. Shows
+    /// nothing of another account's.
+    func refresh(maxAge: TimeInterval = refreshEvery) {
         guard let nostrService else { return }
         let owner = nostrService.activeHexPubkey
         guard !owner.isEmpty else { return }
         if !library.owner.isEmpty, library.owner != owner { library = EmojiLibrary(owner: owner) }
-        guard refreshing == nil, Date().timeIntervalSince(lastRefresh) >= Self.refreshEvery else { return }
+        guard refreshing == nil, Date().timeIntervalSince(lastRefresh) >= maxAge else { return }
         lastRefresh = Date()
         refreshing = Task { [weak self] in
             let loaded = await Self.load(owner: owner, nostrService: nostrService)

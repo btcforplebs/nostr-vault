@@ -195,6 +195,11 @@ extension FeedService {
         let key = "page-\(url.absoluteString)"
         let c = WebSocketClient()
         c.isTemporary = true
+        // The previous page's client is done: loadMore waits for its EOSEs or
+        // the page timeout. Overwritten without a disconnect, its socket stayed
+        // open, kept alive by its sinks: one more socket per relay for every
+        // page scrolled (Mac sweep 2026-11-01 #7).
+        feedClients[key]?.disconnect()
         feedClients[key] = c
 
         let isLocalRelay = url.host == "127.0.0.1" || url.host == "localhost"

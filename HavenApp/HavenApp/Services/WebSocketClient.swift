@@ -394,10 +394,15 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
                     break
                 }
                 // Continue receiving — hop back onto stateQueue to read `webSocketTask` safely.
-                self.stateQueue.async { [weak self] in self?.receiveMessagesLocked() }
+                self.stateQueue.async { [weak self] in
+                    guard let self, self.webSocketTask === task else { return }
+                    self.receiveMessagesLocked()
+                }
             case .failure(let error):
                 self.stateQueue.async { [weak self] in
-                    guard let self = self, !self.isClosing else { return }
+                    // A replaced socket's receive fails when it is cancelled;
+                    // that is not news about the socket in use.
+                    guard let self = self, !self.isClosing, self.webSocketTask === task else { return }
                     // The socket is dead: its keepalive would only keep
                     // re-marking it as failed every 25 s. Whoever owns the
                     // client reconnects with a new socket and a new timer.
@@ -455,7 +460,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         stateQueue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.webSocketTask === webSocketTask else { return }
             #if DEBUG
             if !self.isTemporary {
                 print("WebSocketClient: Connected to \(self.url?.absoluteString ?? "unknown")")
@@ -469,7 +474,13 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         stateQueue.async { [weak self] in
-            guard let self = self else { return }
+            // Only the socket in use. `connect` replaces the socket and the
+            // old one's close (1001, our own `goingAway`) arrives after the
+            // new one is up: reported, it flipped the new socket to
+            // `.disconnected` then `.error` and stopped its keepalive, and
+            // owners that count `.error` as a relay failure reconnected
+            // (sweep 2026-11-01; WebSocketClientStaleCloseTests).
+            guard let self = self, self.webSocketTask === webSocketTask else { return }
             self.stopPingTimerLocked()
             guard !self.isClosing else { return }
             #if DEBUG
@@ -485,7 +496,8 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         stateQueue.async { [weak self] in
-            guard let self = self else { return }
+            // As for didClose: a replaced socket ends with "cancelled".
+            guard let self = self, self.webSocketTask === task else { return }
             self.stopPingTimerLocked()
             guard let error = error else { return }
             #if DEBUG
