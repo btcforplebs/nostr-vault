@@ -658,6 +658,7 @@ internal fun TrustWebContent(
                     onLayer = { jump(0); layer = it; myWebOpen = false },
                     onRebuild = ::refresh,
                     onDismiss = { myWebOpen = false },
+                    zombies = MyWebZombies(me, myFollows - me, profiles, ::name) { nostrService.fetchMissingProfiles(it) },
                 )
             }
         }

@@ -102,6 +102,7 @@ extern char* GetFollowersC(const char* owner);
 extern int RefreshWotC(void);
 extern char* WotRefreshProgressC(void);
 extern char* WotNewcomersC(int from);
+extern char* WotZombiesC(const char* owner, int force);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
 extern char* GetLogLinesC(void);
@@ -547,6 +548,17 @@ Java_com_nostrvault_relay_HavenBridge_getWotRefreshProgress(JNIEnv *env, jobject
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getWotNewcomers(JNIEnv *env, jobject thiz, jint from) {
     return goStringToJstring(env, WotNewcomersC((int)from));
+}
+
+// ---- Zombies in your web (read-only: signs nothing) ----
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_wotZombiesNative(JNIEnv *env, jobject thiz, jstring owner, jboolean force) {
+    const char *cOwner = GET_CSTR(env, owner);
+    if (cOwner == NULL) return NULL;
+    char *result = WotZombiesC((char*)cOwner, force ? 1 : 0);
+    REL_CSTR(env, owner, cOwner);
+    return goStringToJstring(env, result);
 }
 
 // ---- Follower ledger ----

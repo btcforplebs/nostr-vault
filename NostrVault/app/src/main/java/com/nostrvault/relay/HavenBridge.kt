@@ -355,6 +355,24 @@ object HavenBridge {
         }
     }
 
+    private external fun wotZombiesNative(ownerHex: String, force: Boolean): String?
+
+    /**
+     * The vault's zombie check for [ownerHex] as JSON (Go `wot.ZombieState`):
+     * the last report and whether a check is running. Starts one when there is
+     * none, it is a day old, or [force]; poll again for the result. `{"error":
+     * ...}` while the relay is stopped. Read-only: nothing is signed. Null when
+     * the native library is absent or predates WotZombiesC.
+     */
+    fun wotZombies(ownerHex: String, force: Boolean): String? =
+        if (!isLoaded || ownerHex.isEmpty()) null
+        else try {
+            wotZombiesNative(ownerHex, force)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "wotZombies unavailable: ${e.message}")
+            null
+        }
+
     // -----------------------------------------------------------------------
     // Follower ledger
     // -----------------------------------------------------------------------
