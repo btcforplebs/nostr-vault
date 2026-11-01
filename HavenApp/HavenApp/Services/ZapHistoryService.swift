@@ -155,15 +155,13 @@ enum ZapHistoryService {
             var subscriptions: [AnyCancellable] = []
             let subId = "zaphist-\(UUID().uuidString.prefix(8))"
             let parseQueue = DispatchQueue(label: "zaphist.parse", qos: .userInitiated)
-            // Ids already proven, so the same event from the next relay is
-            // not checked again; only the first valid copy is kept anyway.
-            // Touched on parseQueue only.
-            var validIds = Set<String>()
+            // Ids main has already kept: a later copy is not checked again,
+            // as main would ignore it anyway. Only a stored id is skipped; a
+            // copy main dropped (relay done, past its cap) must not hide the
+            // next relay's copy (Tron, #1485).
+            let stored = StoredEventIds()
             let verifyOnce: (String, [String: Any]) -> Bool = { id, event in
-                if validIds.contains(id) { return false }
-                guard NostrEventVerifier.isValid(event) else { return false }
-                validIds.insert(id)
-                return true
+                !stored.contains(id) && NostrEventVerifier.isValid(event)
             }
 
             func finish() {
@@ -208,6 +206,7 @@ enum ZapHistoryService {
                             }
                             if events[id] == nil, isValid {
                                 events[id] = event
+                                stored.insert(id)
                             }
                         case .end(let answered):
                             if answered { onAnswered?() }
@@ -271,4 +270,12 @@ private enum RelayReply {
             return nil
         }
     }
+}
+
+/// Event ids a query has stored, read from its parse queue and written on main.
+private final class StoredEventIds: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids = Set<String>()
+    func contains(_ id: String) -> Bool { lock.lock(); defer { lock.unlock() }; return ids.contains(id) }
+    func insert(_ id: String) { lock.lock(); ids.insert(id); lock.unlock() }
 }
