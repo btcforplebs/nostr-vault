@@ -8,13 +8,23 @@ import kotlinx.coroutines.launch
 // kept in step with edits, and the link put there once its upload lands.
 // The rules themselves are in ComposeNoteDraft.
 
+/**
+ * [text] with every relink of this Post applied. Post falls back to the text it
+ * saved before waiting when the editor is blank, and that copy still holds the
+ * other account's links (Tron, #1517: a note that was only the placed link).
+ */
+internal fun ComposeNoteViewModel.textAfterRelinks(text: String): String =
+    relinks.fold(text) { acc, (old, new) -> ComposeNoteDraft.relink(acc, old, new) }.trim()
+
 /** Every edit, typed or inserted, moves the photo spots along; a landed upload places its link. */
 internal fun ComposeNoteViewModel.followEditsWithPlacements() {
     viewModelScope.launch { _content.collect { rebaseAnchors() } }
     // A photo uploaded again at Post under the posting account came back with
     // another link: the old account's link must not go out in the text.
+    // Kept too for the text Post saved before it waited (see [textAfterRelinks]).
     uploads.onRelink = { old, new ->
-        _content.value = if (new != null) _content.value.replace(old, new) else ComposeNoteDraft.removeLink(_content.value, old)
+        _content.value = ComposeNoteDraft.relink(_content.value, old, new)
+        relinks += old to new
     }
     uploads.onDone = { attachment, done ->
         viewModelScope.launch(Dispatchers.Main) { placeLink(attachment.id, done.media.url) }
