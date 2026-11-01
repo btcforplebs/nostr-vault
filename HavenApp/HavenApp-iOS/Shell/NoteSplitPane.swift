@@ -6,21 +6,23 @@ import UIKit
 /// Column widths for [NoteSplitPane]. A separate type because static stored
 /// properties are not allowed in a generic one.
 private enum NoteSplitMetrics {
-    /// Leaves a readable note column on the narrowest iPad in landscape
-    /// (1133pt) once the sidebar has claimed its ~320pt.
+    /// Leaves a readable note column on the narrowest iPad in landscape.
     static let defaultList: Double = 380
     /// Floors, not preferences: below these a column stops being usable. The
     /// list floor is about one full note row; the detail floor is roughly the
     /// width at which a note's text stops wrapping into a readable measure.
     static let minList: Double = 280
     static let minDetail: Double = 360
-    /// Narrower than this (portrait with the sidebar showing), the pane shows
-    /// one column: the list, with a note opening over it.
+    /// Narrower than this (a narrow Split View or Stage Manager window), the
+    /// pane shows one column: the list, with a note opening over it.
     static let minSplit: Double = minList + minDetail + 14
 }
 
-/// iPad two-pane note layout: the scrolling list on the left, the selected note
-/// held open on the right.
+/// iPad two-pane note layout, landscape only: the scrolling list on the left,
+/// the selected note held open on the right, each in its own navigation stack
+/// (`iPhoneTabView` puts the list's stack inside `content`). A list stack
+/// around the whole pane would take the note's toolbar into its own bar,
+/// across the top of both columns.
 ///
 /// This is what separates an iPad layout from a stretched phone one. Without it
 /// the list occupies the entire detail pane and tapping a note pushes the note
@@ -37,8 +39,7 @@ struct NoteSplitPane<Content: View>: View {
     @StateObject private var selection = NoteDetailSelection()
 
     /// Width of the list column, dragged by the reader and remembered across
-    /// launches. The default leaves a readable note column on the narrowest
-    /// iPad in landscape (1133pt) once the sidebar has claimed its ~320pt.
+    /// launches.
     @AppStorage("ipad.noteSplit.listWidth") private var listWidth: Double = NoteSplitMetrics.defaultList
 
     /// Width when the current drag began, so the column tracks the finger
@@ -58,14 +59,14 @@ struct NoteSplitPane<Content: View>: View {
     var body: some View {
         GeometryReader { geo in
             // The ceiling depends on the pane's real width, which changes with
-            // rotation, Split View and the sidebar collapsing. Clamping on read
+            // Split View and Stage Manager. Clamping on read
             // means a width saved on a wide layout can't strand the detail
             // column off-screen on a narrow one — and it is restored, not
             // overwritten, when there is room again.
             let maxListWidth = max(NoteSplitMetrics.minList, geo.size.width - NoteSplitMetrics.minDetail)
             let width = min(max(listWidth, NoteSplitMetrics.minList), maxListWidth)
 
-            // Too narrow for two columns (portrait with the sidebar showing):
+            // Too narrow for two columns (a narrow window):
             // the list fills the pane and a selected note covers it, with
             // Back to return, the way the phone pushes one. The list keeps
             // its place in the hierarchy either way, so crossing the width
