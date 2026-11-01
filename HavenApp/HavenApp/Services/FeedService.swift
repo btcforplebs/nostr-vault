@@ -179,6 +179,8 @@ class FeedService: ObservableObject {
     /// cached WOT graph (`wot_cache.json`). Used to filter the GLOBAL feed and
     /// Media tab so only notes/media from WOT members are shown.
     @Published var wotPubkeys: Set<String> = []
+    /// The last `feedTrustedPubkeys`, rebuilt only when the graph or follows change.
+    let trustedWebMemo = TrustedWebMemo()
     /// For everyone in the graph past your follows, how many of your follows
     /// follow them (the WOT tab's Close layer). nil until the relay's cache
     /// carries them.

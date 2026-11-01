@@ -154,6 +154,17 @@ enum ZapHistoryService {
             var clients: [WebSocketClient] = []
             var subscriptions: [AnyCancellable] = []
             let subId = "zaphist-\(UUID().uuidString.prefix(8))"
+            let parseQueue = DispatchQueue(label: "zaphist.parse", qos: .userInitiated)
+            // Ids already proven, so the same event from the next relay is
+            // not checked again; only the first valid copy is kept anyway.
+            // Touched on parseQueue only.
+            var validIds = Set<String>()
+            let verifyOnce: (String, [String: Any]) -> Bool = { id, event in
+                if validIds.contains(id) { return false }
+                guard NostrEventVerifier.isValid(event) else { return false }
+                validIds.insert(id)
+                return true
+            }
 
             func finish() {
                 guard !done else { return }
@@ -176,17 +187,17 @@ enum ZapHistoryService {
                 var received = 0
 
                 client.messageSubject
+                    // Parsing and the signature check run here, not on the
+                    // main thread: opening the globe asks for up to 2,000
+                    // events, a trust path for ~240 follow lists, and each
+                    // one stalled the UI (Mac sweep 11-01 #8).
+                    .receive(on: parseQueue)
+                    .compactMap { RelayReply($0, subId: subId, verify: verifyOnce) }
                     .receive(on: DispatchQueue.main)
-                    .sink { message in
-                        guard !done, !relayDone,
-                              let data = message.data(using: .utf8),
-                              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                              array.count >= 2,
-                              let type = array[0] as? String,
-                              (array[1] as? String) == subId else { return }
-                        if type == "EVENT", array.count >= 3,
-                           let event = array[2] as? [String: Any],
-                           let id = event["id"] as? String {
+                    .sink { reply in
+                        guard !done, !relayDone else { return }
+                        switch reply {
+                        case .event(let id, let event, let isValid):
                             received += 1
                             if received > perRelayCap {
                                 // Past what it was asked for: stop listening.
@@ -195,11 +206,11 @@ enum ZapHistoryService {
                                 relayFinished()
                                 return
                             }
-                            if events[id] == nil, NostrEventVerifier.isValid(event) {
+                            if events[id] == nil, isValid {
                                 events[id] = event
                             }
-                        } else if type == "EOSE" || type == "CLOSED" {
-                            if type == "EOSE" { onAnswered?() }
+                        case .end(let answered):
+                            if answered { onAnswered?() }
                             relayDone = true
                             relayFinished()
                         }
@@ -232,6 +243,32 @@ enum ZapHistoryService {
             }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+        }
+    }
+}
+
+/// One relay message for a `ZapHistoryService.query` subscription, parsed
+/// (and an event's signature checked) off the main thread.
+private enum RelayReply {
+    case event(id: String, event: [String: Any], isValid: Bool)
+    /// EOSE (`answered`) or CLOSED.
+    case end(answered: Bool)
+
+    /// `verify` answers whether the event is a valid copy worth keeping.
+    init?(_ message: String, subId: String, verify: (String, [String: Any]) -> Bool) {
+        guard let data = message.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              array.count >= 2,
+              let type = array[0] as? String,
+              (array[1] as? String) == subId else { return nil }
+        if type == "EVENT", array.count >= 3,
+           let event = array[2] as? [String: Any],
+           let id = event["id"] as? String {
+            self = .event(id: id, event: event, isValid: verify(id, event))
+        } else if type == "EOSE" || type == "CLOSED" {
+            self = .end(answered: type == "EOSE")
+        } else {
+            return nil
         }
     }
 }

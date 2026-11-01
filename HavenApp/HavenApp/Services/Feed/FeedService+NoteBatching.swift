@@ -354,13 +354,20 @@ extension FeedService {
 
     private func scheduleNoteFlush() {
         guard noteFlushTimer == nil else { return }
-        // Global feed uses ultra-fast flushing for real-time streaming feel
-        let interval: TimeInterval = isGlobalLikeMode ? 0.05 : 0.8
+        // Global still streams, at four flushes a second. At 0.05 s each
+        // flush re-filtered and redrew the whole feed on the main thread 20
+        // times a second (Mac sweep 11-01 #3).
+        let interval: TimeInterval = isGlobalLikeMode ? 0.25 : 0.8
         noteFlushTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.flushNoteBuffer()
             }
         }
+    }
+
+    /// The feed's order: newest first, ties by id.
+    nonisolated static func newestFirst(_ a: FeedNote, _ b: FeedNote) -> Bool {
+        a.createdAt != b.createdAt ? a.createdAt > b.createdAt : a.id > b.id
     }
 
     func flushNoteBuffer() {
@@ -389,12 +396,7 @@ extension FeedService {
         // Build the array locally to avoid multiple @Published mutations
         // (each triggers objectWillChange and a SwiftUI body re-evaluation).
         if notes.isEmpty || isLoadingFeed {
-            var updated = notes
-            updated.append(contentsOf: batch)
-            updated.sort {
-                if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
-                return $0.id > $1.id
-            }
+            var updated = OrderedMerge.inserting(batch, into: notes, by: Self.newestFirst)
             if updated.count > Self.maxNotes {
                 updated.removeLast(updated.count - Self.maxNotes)
             }
@@ -422,12 +424,7 @@ extension FeedService {
 
         if !toAdd.isEmpty {
             // Build locally, assign once to minimize objectWillChange notifications
-            var updated = notes
-            updated.append(contentsOf: toAdd)
-            updated.sort {
-                if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
-                return $0.id > $1.id
-            }
+            var updated = OrderedMerge.inserting(toAdd, into: notes, by: Self.newestFirst)
             if updated.count > Self.maxNotes {
                 updated.removeLast(updated.count - Self.maxNotes)
             }
