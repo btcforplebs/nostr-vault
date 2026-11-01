@@ -68,9 +68,14 @@ class AppDelegate: NSObject, ObservableObject {
                 // The Mac's mesh engine, if its switch is on: My Devices reach
                 // the relay port through it, and the relay starts just after.
                 MacFipsMeshService.shared.sync()
-                guard ConfigService.shared.config.autoStartRelay else { return }
-                guard RelayProcessManager.shared.state == .idle else { return }
-                RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
+                // Only the relay start depends on the switch. The steps below
+                // it used to sit behind these guards too, so with auto-start
+                // off (or the relay already running) the signer never
+                // connected and the lists were never adopted that session.
+                if ConfigService.shared.config.autoStartRelay,
+                   RelayProcessManager.shared.state == .idle {
+                    RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
+                }
 
                 if ConfigService.shared.config.activeSigningMode() == "nip46" {
                     NIP46Service.shared.connectFromConfig()

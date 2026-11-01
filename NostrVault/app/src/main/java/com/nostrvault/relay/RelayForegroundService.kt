@@ -59,7 +59,9 @@ class RelayForegroundService : Service() {
 
         internal const val MAX_RETRY_ATTEMPTS = 3
         internal val RETRY_DELAYS_MS = longArrayOf(2_000, 5_000, 10_000)
-        internal const val HEALTH_CHECK_INTERVAL_MS = 500L
+        // A refused localhost connect fails at once, so polling often costs
+        // nothing and the feed hears "ready" soon after the relay listens.
+        internal const val HEALTH_CHECK_INTERVAL_MS = 100L
         internal const val HEALTH_CHECK_TIMEOUT_MS = 15_000L
         internal const val SHUTDOWN_TIMEOUT_MS = 5_000L
         private const val CRASH_RESTART_WINDOW_MS = 30_000L

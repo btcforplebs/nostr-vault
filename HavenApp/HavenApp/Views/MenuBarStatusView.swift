@@ -549,4 +549,26 @@ enum MacWindow {
     }
 }
 
+/// The menu bar icon.
+///
+/// It is the one view that exists from launch: the panel and the window only
+/// mount when someone opens them. So this is where `openWindow` is captured for
+/// AppKit callers. Before, the only capture was the panel's `onAppear`, and a
+/// notification clicked after a cold or login launch, with the panel never
+/// opened, had nothing to open the window with: the route was parked until the
+/// window happened to be opened, sometimes hours later.
+struct MenuBarIconLabel: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image("MenuBarIcon")
+            .accessibilityLabel("Nostr Vault")
+            .onAppear {
+                if MacWindow.openWindowAction == nil {
+                    MacWindow.openWindowAction = openWindow
+                }
+            }
+    }
+}
+
 #endif
