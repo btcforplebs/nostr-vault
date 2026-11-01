@@ -16,9 +16,7 @@ import kotlinx.coroutines.sync.withLock
  * when Post is tapped.
  *
  * They run one at a time in the order picked, as the old loop in publish
- * did, and share its rule: once one upload finds every outside server down,
- * the rest are saved on this device only rather than each waiting out the
- * same retry ([skipOutside]). [send] is that loop's body for one attachment
+ * did. Its "servers down, save the rest here" rule stays per Post ([await]). [send] is that loop's body for one attachment
  * ([ComposeNoteViewModel.uploadOne]); the host list, location stripping and
  * on-device fallback live there, unchanged.
  *
@@ -37,9 +35,6 @@ internal class ComposeNoteUploads(
     private val jobs = mutableMapOf<String, Job>()
     /** One upload at a time; a Mutex hands the lock out in arrival order. */
     private val turn = Mutex()
-    /** The outside servers the last upload found down; non-empty means skip them. */
-    @Volatile private var unreachable: List<String> = emptyList()
-
     /** Called once a link is known, so the screen can place it. */
     var onDone: ((Attachment, ComposeNoteUpload.Done) -> Unit)? = null
 
@@ -52,14 +47,14 @@ internal class ComposeNoteUploads(
         }
     }
 
-    private suspend fun run(attachment: Attachment) {
+    /** A pick never skips the outside servers: the "servers down" rule is per Post, as it was. */
+    private suspend fun run(attachment: Attachment, skipOutside: Boolean = false) {
         val result = turn.withLock {
             set(attachment.id, ComposeNoteUpload.Sending(0f))
-            send(attachment, unreachable.isNotEmpty()) { progress ->
+            send(attachment, skipOutside) { progress ->
                 if (_states.value[attachment.id] is ComposeNoteUpload.Sending) set(attachment.id, ComposeNoteUpload.Sending(progress))
             }
         }
-        if (result is ComposeNoteUpload.Done && result.unreachable.isNotEmpty()) unreachable = result.unreachable
         if (attachment.id !in _states.value) return // removed meanwhile
         set(attachment.id, result)
         if (result is ComposeNoteUpload.Done) onDone?.invoke(attachment, result)
@@ -80,11 +75,15 @@ internal class ComposeNoteUploads(
 
     /**
      * Waits for every one of [attachments] and returns the post's media in
-     * their order, as the old publish loop did. A failed upload is tried once
-     * more now, as it would have been when Post was tapped.
+     * their order, as the old publish loop did. What has no outside link yet
+     * (a failed upload, or one saved on this device only while the servers
+     * were down) is tried again now, as Post always did; and as before, once
+     * one of this Post's tries finds every outside server down, the rest are
+     * saved here only rather than each waiting out the same retry.
      */
     suspend fun await(attachments: List<Attachment>): ComposeNoteViewModel.AttachmentUploadResult {
         val media = mutableListOf<QueuedMediaPost.Media>()
+        var unreachable = emptyList<String>()
         for (attachment in attachments) {
             if (attachment.hostedUrl != null) {
                 media += hostedMedia(attachment)
@@ -92,14 +91,16 @@ internal class ComposeNoteUploads(
             }
             synchronized(jobs) { jobs[attachment.id] }?.join()
             var state = _states.value[attachment.id]
-            if (state !is ComposeNoteUpload.Done) {
-                // Failed, or never started (added before this class existed in the session).
+            if (state !is ComposeNoteUpload.Done || state.media.url == null) {
                 set(attachment.id, ComposeNoteUpload.Waiting)
-                run(attachment)
+                run(attachment, skipOutside = unreachable.isNotEmpty())
                 state = _states.value[attachment.id]
             }
             when (state) {
-                is ComposeNoteUpload.Done -> media += state.media.copy(alt = attachment.altText)
+                is ComposeNoteUpload.Done -> {
+                    if (state.unreachable.isNotEmpty()) unreachable = state.unreachable
+                    media += state.media.copy(alt = attachment.altText)
+                }
                 is ComposeNoteUpload.Failed -> return ComposeNoteViewModel.AttachmentUploadResult.Failed(state.message)
                 else -> return ComposeNoteViewModel.AttachmentUploadResult.Failed(
                     com.nostrvault.data.model.MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE,

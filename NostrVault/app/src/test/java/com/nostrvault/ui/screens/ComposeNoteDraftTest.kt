@@ -12,7 +12,8 @@ class ComposeNoteDraftTest {
     private fun photo(id: String, hosted: String? = null) =
         Attachment(id = id, uri = mockk<Uri>(relaxed = true), mimeType = "image/jpeg", hostedUrl = hosted)
 
-    private fun done(url: String?) = ComposeNoteUpload.Done(QueuedMediaPost.Media(sha256 = "x", mimeType = "image/jpeg", url = url))
+    private fun done(url: String?, preExisting: Boolean = false) =
+        ComposeNoteUpload.Done(QueuedMediaPost.Media(sha256 = "x", mimeType = "image/jpeg", url = url), preExisting = preExisting)
 
     @Test fun cursorInsideTheTextPlacesThePhoto() {
         assertEquals(5, ComposeNoteDraft.anchorFor("hello world", 5))
@@ -120,5 +121,35 @@ class ComposeNoteDraftTest {
         )
         assertNull(draft.linkToRemove("1"))
         assertNull(draft.linkToRemove("2"))
+    }
+
+    @Test fun removedFreshUploadIsDeleted() {
+        val draft = ComposeNoteDraft(attachments = listOf(photo("1")), uploads = mapOf("1" to done("https://x/1.jpg")))
+        assertEquals("https://x/1.jpg", draft.uploadToDelete("1")?.url)
+    }
+
+    /** Already in the vault before this pick (an earlier post may show it): never deleted. */
+    @Test fun aBlobThatWasAlreadyThereIsNeverDeleted() {
+        val draft = ComposeNoteDraft(attachments = listOf(photo("1")), uploads = mapOf("1" to done("https://x/1.jpg", preExisting = true)))
+        assertNull(draft.uploadToDelete("1"))
+        assertEquals(emptyList<String>(), draft.unusedUploads("").map { it.url })
+    }
+
+    @Test fun aSharedBlobIsKeptForTheOtherCopy() {
+        val draft = ComposeNoteDraft(
+            attachments = listOf(photo("1"), photo("2")),
+            uploads = mapOf("1" to done("https://x/1.jpg"), "2" to done("https://x/1.jpg")),
+        )
+        assertNull(draft.uploadToDelete("2"))
+    }
+
+    /** Closing unsent: uploads whose link a kept draft holds stay; the rest come off the servers. */
+    @Test fun closingDeletesOnlyWhatTheKeptTextDoesNotUse() {
+        val draft = ComposeNoteDraft(
+            attachments = listOf(photo("1"), photo("2"), photo("3")),
+            uploads = mapOf("1" to done("https://x/1.jpg"), "2" to done("https://x/2.jpg"), "3" to done(null)),
+        )
+        assertEquals(listOf("https://x/2.jpg"), draft.unusedUploads("hi\nhttps://x/1.jpg").map { it.url })
+        assertEquals(listOf("https://x/1.jpg", "https://x/2.jpg"), draft.unusedUploads("").map { it.url })
     }
 }

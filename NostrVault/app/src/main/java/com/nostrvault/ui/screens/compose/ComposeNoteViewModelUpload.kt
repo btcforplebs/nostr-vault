@@ -85,6 +85,11 @@ import java.io.File
             // Compute SHA-256
             val sha256 = blossomService.computeSHA256(file)
 
+            // Whether this photo was already in the owner's vault (an earlier
+            // post): only a blob we know is new may be deleted if the photo is
+            // dropped. Anything but a clear 404 counts as already there.
+            val preExisting = alreadyInVault(sha256)
+
             // Measured from the file on disk, before it is deleted below.
             val pixelSize = pixelSize(file, attachment.isVideo)
             val byteCount = file.length()
@@ -122,6 +127,7 @@ import java.io.File
                     byteCount = byteCount,
                 ),
                 unreachable,
+                preExisting = preExisting,
             )
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -131,6 +137,33 @@ import java.io.File
         } finally {
             // Removing the photo mid-upload cancels this; the copy goes either way.
             tempFile?.delete()
+        }
+    }
+
+    /** True unless the owner's own vault clearly answers that it does not have [sha256]. */
+    private fun ComposeNoteViewModel.alreadyInVault(sha256: String): Boolean {
+        val base = blossomService.localBlossomURL() ?: return true
+        return try {
+            val request = okhttp3.Request.Builder().url("${base.trimEnd('/')}/$sha256").head().build()
+            blossomService.localClient.newCall(request).execute().use { it.code != 404 }
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    /**
+     * Best-effort delete of blobs this composer uploaded that nothing will
+     * use (a photo removed, or the composer closed unsent), so a photo picked
+     * and dropped does not stay public on the outside servers. The owner's
+     * vault keeps its copy. Runs on [scope], which outlives the screen.
+     */
+    internal fun ComposeNoteViewModel.deleteUnused(media: List<QueuedMediaPost.Media>, scope: kotlinx.coroutines.CoroutineScope) {
+        media.forEach { item ->
+            val sha = item.sha256 ?: return@forEach
+            scope.launch {
+                runCatching { blossomService.deleteFromServers(sha, item.url, includeHomeVault = false) }
+                    .onFailure { Log.w("ComposeNote", "Could not delete a dropped upload", it) }
+            }
         }
     }
 

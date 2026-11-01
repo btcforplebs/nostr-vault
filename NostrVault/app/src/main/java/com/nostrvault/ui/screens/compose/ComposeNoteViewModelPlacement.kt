@@ -18,6 +18,11 @@ internal fun ComposeNoteViewModel.followEditsWithPlacements() {
 
     /** Adds [added] and starts their uploads; with the cursor inside the text they are placed there. */
     internal fun ComposeNoteViewModel.attach(added: List<Attachment>, caret: Int? = null) {
+        // Post is waiting on the uploads it took: a photo added now would upload but never post.
+        if (isPublishing.value) {
+            added.forEach { com.nostrvault.data.gif.GifCache.deleteIfOwned(it.uri, context.cacheDir) }
+            return
+        }
         rebaseAnchors()
         ComposeNoteDraft.anchorFor(_content.value, caret)?.let { at ->
             _anchors.value = _anchors.value + added.associate { it.id to at }
@@ -40,8 +45,10 @@ internal fun ComposeNoteViewModel.followEditsWithPlacements() {
     internal fun ComposeNoteViewModel.placeLink(id: String, url: String?) {
         rebaseAnchors()
         val at = _anchors.value[id] ?: return
+        // Saved on this device only: its link comes at Post, and goes in here then.
+        if (url == null) return
         _anchors.value = _anchors.value - id
-        if (url == null || _attachments.value.none { it.id == id }) return
+        if (_attachments.value.none { it.id == id }) return
         val (text, _, _) = ComposeNoteDraft.insertLink(_content.value, at, url)
         _content.value = text
         rebaseAnchors()

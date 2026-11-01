@@ -135,6 +135,10 @@ class ComposeNoteViewModel @Inject constructor(
      * closes, like the send itself. Cancelled when the composer closes unsent.
      */
     private val uploadScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    /** Deletes of dropped uploads; never cancelled, so they finish after the screen closes. */
+    private val cleanupScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    /** "Discard": the text is not kept, so none of its links are either. */
+    private var textDiscarded = false
     internal val uploads = ComposeNoteUploads(
         scope = uploadScope,
         send = { attachment, skipOutside, onProgress -> uploadOne(attachment, skipOutside, onProgress) },
@@ -413,10 +417,13 @@ class ComposeNoteViewModel @Inject constructor(
         // Post is waiting on this photo's upload: what was tapped is what posts.
         if (_isPublishing.value) return
         val removed = _attachments.value.firstOrNull { it.id == id }
-        // Its link, if it was already placed in the text, goes with it.
-        ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).linkToRemove(id)?.let { url ->
+        // Its link, if it was already placed in the text, goes with it, and
+        // its fresh upload is deleted from the outside servers.
+        val now = ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value)
+        now.linkToRemove(id)?.let { url ->
             _content.value = ComposeNoteDraft.removeLink(_content.value, url)
         }
+        now.uploadToDelete(id)?.let { deleteUnused(listOf(it), cleanupScope) }
         uploads.cancel(id)
         rebaseAnchors()
         _anchors.value = _anchors.value - id
@@ -435,6 +442,9 @@ class ComposeNoteViewModel @Inject constructor(
         syncDraftToRelay()
         // A send still running reads these; it deletes them when it ends.
         if (!_isPublishing.value) {
+            // Closed unsent: what was uploaded and is not in a kept draft comes off the servers.
+            val kept = if (textDiscarded) "" else _content.value
+            deleteUnused(ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).unusedUploads(kept), cleanupScope)
             uploads.cancelAll()
             uploadScope.cancel()
             deleteGifCopies(_attachments.value)
@@ -559,6 +569,7 @@ class ComposeNoteViewModel @Inject constructor(
     fun discardDraft() {
         autoSaveJob?.cancel()
         draftSessionClosed = true
+        textDiscarded = true
         draftService.deleteDraft(draftId)
     }
 

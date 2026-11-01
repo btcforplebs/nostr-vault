@@ -498,7 +498,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = !attachmentLimitReached
+                    enabled = !attachmentLimitReached && !isPublishing
                 ) {
                     Icon(
                         imageVector = Icons.Default.Image,
@@ -519,7 +519,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = !attachmentLimitReached
+                    enabled = !attachmentLimitReached && !isPublishing
                 ) {
                     Icon(
                         imageVector = Icons.Default.Videocam,
@@ -535,7 +535,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = !attachmentLimitReached
+                    enabled = !attachmentLimitReached && !isPublishing
                 ) {
                     Icon(
                         imageVector = ImageVector.vectorResource(R.drawable.ic_magic_paste),
@@ -551,7 +551,7 @@ fun ComposeNoteScreen(
                 if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
                     IconButton(
                         onClick = { showGifPicker = true },
-                        enabled = !fetchingGif && !attachmentLimitReached,
+                        enabled = !fetchingGif && !attachmentLimitReached && !isPublishing,
                         modifier = Modifier
                             .size(40.dp)
                             .background(colors.primary.copy(alpha = 0.1f), CircleShape),
@@ -593,6 +593,7 @@ fun ComposeNoteScreen(
                 // Blossom media picker button
                 IconButton(
                     onClick = { viewModel.setShowBlossomPicker(true) },
+                    enabled = !isPublishing,
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape)

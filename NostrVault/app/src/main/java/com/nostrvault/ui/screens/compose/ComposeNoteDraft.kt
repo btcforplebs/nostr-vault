@@ -21,6 +21,12 @@ sealed interface ComposeNoteUpload {
     data class Done(
         val media: QueuedMediaPost.Media,
         val unreachable: List<String> = emptyList(),
+        /**
+         * The owner's vault already held this blob before this pick (an
+         * earlier post, a saved photo), or could not say. Such a blob is never
+         * deleted when the photo is removed: another note may show it.
+         */
+        val preExisting: Boolean = true,
     ) : ComposeNoteUpload
 
     /** Could not even be saved here; Post tries it once more. */
@@ -65,6 +71,26 @@ data class ComposeNoteDraft(
         val removed = attachments.firstOrNull { it.id == id }?.takeIf { it.hostedUrl == null } ?: return null
         val url = hostedUrl(removed) ?: return null
         return url.takeIf { attachments.none { it.id != id && hostedUrl(it) == url } }
+    }
+
+    /**
+     * Blobs this composer put on the outside servers that nothing will use:
+     * finished uploads, not already in the vault before they were picked,
+     * whose link is not in [keptText] (a saved draft keeps its links). What
+     * closing without posting deletes, best effort, so a photo picked and
+     * dropped does not stay public.
+     */
+    fun unusedUploads(keptText: String): List<QueuedMediaPost.Media> =
+        attachments.mapNotNull { (uploads[it.id] as? ComposeNoteUpload.Done)?.takeIf { d -> !d.preExisting }?.media }
+            .filter { it.url != null && !keptText.contains(it.url) }
+            .distinctBy { it.url }
+
+    /** The blob to delete when [id] is removed: its own fresh upload, unless another photo still uses it. */
+    fun uploadToDelete(id: String): QueuedMediaPost.Media? {
+        val done = uploads[id] as? ComposeNoteUpload.Done ?: return null
+        val url = done.media.url ?: return null
+        if (done.preExisting) return null
+        return done.media.takeIf { attachments.none { it.id != id && hostedUrl(it) == url } }
     }
 
     /**

@@ -46,20 +46,45 @@ class ComposeNoteUploadsTest {
         assertTrue(uploads.states.value["2"] is ComposeNoteUpload.Done)
     }
 
-    /** As the old loop: once every outside server was down, the rest are saved here only. */
-    @Test fun afterServersAreDownTheRestSkipThem() = runTest {
-        val skipped = mutableMapOf<String, Boolean>()
+    /** A pick never skips the outside servers: one offline pick must not make later picks device-only. */
+    @Test fun picksNeverSkipTheOutsideServers() = runTest {
+        val skipped = mutableListOf<Boolean>()
         val uploads = ComposeNoteUploads(this, { a, skip, _ ->
-            skipped[a.id] = skip
-            if (a.id == "1") ComposeNoteUpload.Done(media("1", url = null), unreachable = listOf("https://down"))
-            else ComposeNoteUpload.Done(media(a.id, url = null))
+            skipped += skip
+            ComposeNoteUpload.Done(media(a.id, url = null), unreachable = listOf("https://down"))
         }, hosted)
         uploads.start(photo("1"))
         uploads.start(photo("2"))
         advanceUntilIdle()
-        assertEquals(mapOf("1" to false, "2" to true), skipped)
-        val result = uploads.await(listOf(photo("1"), photo("2"))) as ComposeNoteViewModel.AttachmentUploadResult.Done
-        assertEquals(listOf("https://down"), result.unreachableServers)
+        assertEquals(listOf(false, false), skipped)
+    }
+
+    /**
+     * At Post, what is only on this device is tried again, and as the old
+     * loop did, once one try finds every server down the rest of that Post
+     * skips them. The next Post starts fresh.
+     */
+    @Test fun postRetriesDeviceOnlyUploadsWithTheServersDownRulePerPost() = runTest {
+        val calls = mutableListOf<Pair<String, Boolean>>()
+        var online = false
+        val uploads = ComposeNoteUploads(this, { a, skip, _ ->
+            calls += a.id to skip
+            if (online && !skip) ComposeNoteUpload.Done(media(a.id))
+            else ComposeNoteUpload.Done(media(a.id, url = null), unreachable = listOf("https://down"))
+        }, hosted)
+        val photos = listOf(photo("1"), photo("2"))
+        photos.forEach { uploads.start(it) }
+        advanceUntilIdle()
+        calls.clear()
+        val first = uploads.await(photos) as ComposeNoteViewModel.AttachmentUploadResult.Done
+        assertEquals(listOf("1" to false, "2" to true), calls)
+        assertEquals(listOf("https://down"), first.unreachableServers)
+        calls.clear()
+        online = true
+        val second = uploads.await(photos) as ComposeNoteViewModel.AttachmentUploadResult.Done
+        assertEquals(listOf("1" to false, "2" to false), calls)
+        assertEquals(listOf("https://x/1.jpg", "https://x/2.jpg"), second.media.map { it.url })
+        assertTrue(second.unreachableServers.isEmpty())
     }
 
     @Test fun removingAPhotoCancelsItsUpload() = runTest {
