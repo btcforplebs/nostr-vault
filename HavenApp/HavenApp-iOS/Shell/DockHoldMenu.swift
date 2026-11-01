@@ -10,11 +10,17 @@ struct DockHoldEntry: Identifiable, Equatable {
     let symbol: String
     var isCurrent = false
     var hasNews = false
+    /// A second, smaller line under the title (the account switcher's npub).
+    var subtitle: String?
+    /// Set for an account row: its picture replaces the symbol.
+    var avatarHex: String?
+    var avatarURL: URL?
 }
 
-/// Press and hold a dock tab, slide onto a row, let go: that row is picked.
-/// Let go anywhere else (the tab itself included) and the menu closes with
-/// nothing picked. A plain tap is still the tab's own tap.
+/// Press a dock tab and hold it briefly, or slide a little from it, and the
+/// menu opens; slide onto a row and let go: that row is picked. Let go
+/// anywhere else and the menu closes with nothing picked. A plain tap is
+/// still the tab's own tap.
 ///
 /// The finger never leaves the tab's own drag gesture, so the menu does not
 /// take touches while dragging: the tab hit-tests the finger against the
@@ -25,12 +31,15 @@ struct DockHoldEntry: Identifiable, Equatable {
 final class DockHoldMenu: ObservableObject {
     static let shared = DockHoldMenu()
 
-    /// Hold before the menu opens. The account switcher's system menu takes
-    /// about 0.5 s; this is meant to feel quicker than that but still longer
-    /// than a tap (most taps lift within ~0.1 s).
-    static let holdDelay: Double = 0.18
-    /// Movement before the hold lands that turns it back into a plain touch.
-    static let slop: CGFloat = 10
+    /// The menu opens on whichever comes first: this hold, in seconds...
+    static let holdDelay: Double = 0.12
+    /// ...or this slide from where the finger went down, in points (dp on
+    /// Android), while still pressed.
+    static let slideOpen: CGFloat = 6
+    /// A hold this short that never left the tab and never reached a row lets
+    /// go as a plain tap, so a slow tap still taps even though the menu
+    /// opened under it. Seconds from touch-down.
+    static let tapGrace: Double = 0.3
     /// Extra width either side of a row that still counts as on it.
     static let rowSideSlop: CGFloat = 28
 
@@ -88,6 +97,8 @@ struct DockHoldButton<Label: View>: View {
     @State private var pressing = false
     @State private var moved = false
     @State private var openedHere = false
+    @State private var downAt = Date()
+    @State private var visitedRow = false
     @State private var holdTask: Task<Void, Never>?
     @State private var openHaptic: UIImpactFeedbackGenerator?
     @State private var tickHaptic: UISelectionFeedbackGenerator?
@@ -111,6 +122,8 @@ struct DockHoldButton<Label: View>: View {
             pressing = true
             moved = false
             openedHere = false
+            visitedRow = false
+            downAt = Date()
             // Warm the Taptic Engine now, so the open buzz lands on the frame
             // the menu appears instead of a beat later.
             let open = UIImpactFeedbackGenerator(style: .light)
@@ -122,27 +135,33 @@ struct DockHoldButton<Label: View>: View {
             holdTask?.cancel()
             holdTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: UInt64(DockHoldMenu.holdDelay * 1_000_000_000))
-                guard !Task.isCancelled, pressing, !moved else { return }
-                openedHere = true
-                openHaptic?.impactOccurred()
-                tickHaptic?.prepare()
-                menu.open(from: frame, entries: entries(), onPick: onPick)
+                guard !Task.isCancelled, pressing, !openedHere else { return }
+                openMenu()
             }
         }
-        if hypot(value.translation.width, value.translation.height) > DockHoldMenu.slop { moved = true }
-        guard openedHere, menu.isOpen else {
-            // Slid off before the hold landed: a tap that changed its mind.
-            if moved { holdTask?.cancel() }
-            return
+        if hypot(value.translation.width, value.translation.height) > DockHoldMenu.slideOpen { moved = true }
+        // A slight slide opens it at once, without waiting for the hold.
+        if moved, !openedHere {
+            holdTask?.cancel()
+            openMenu()
         }
+        guard openedHere, menu.isOpen else { return }
         let id = menu.entry(at: value.location)
         if id != menu.hovered {
             menu.hovered = id
             if id != nil {
+                visitedRow = true
                 tickHaptic?.selectionChanged()
                 tickHaptic?.prepare()
             }
         }
+    }
+
+    private func openMenu() {
+        openedHere = true
+        openHaptic?.impactOccurred()
+        tickHaptic?.prepare()
+        menu.open(from: frame, entries: entries(), onPick: onPick)
     }
 
     private func ended(_ value: DragGesture.Value) {
@@ -161,6 +180,10 @@ struct DockHoldButton<Label: View>: View {
                 menu.pick(id)
             } else {
                 menu.close()
+                if !moved, !visitedRow, frame.contains(value.location),
+                   Date().timeIntervalSince(downAt) < DockHoldMenu.tapGrace {
+                    onTap()
+                }
             }
             return
         }
@@ -222,15 +245,23 @@ struct DockHoldMenuOverlay: View {
             menu.pick(entry.id)
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: entry.symbol)
-                    .font(.appSystem(size: 16, weight: .semibold))
+                icon(entry)
                     .frame(width: 24)
                     .overlay(alignment: .topTrailing) {
                         NewsDot(isShown: entry.hasNews, size: 8)
                             .offset(x: 2, y: -2)
                     }
-                Text(entry.title)
-                    .font(.appSystem(size: 16, weight: entry.isCurrent ? .bold : .medium))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.title)
+                        .font(.appSystem(size: 16, weight: entry.isCurrent ? .bold : .medium))
+                        .lineLimit(1)
+                    if let subtitle = entry.subtitle {
+                        Text(subtitle)
+                            .font(.appSystem(size: 12))
+                            .opacity(0.7)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 16)
                 if entry.isCurrent {
                     Image(systemName: "checkmark")
@@ -239,7 +270,7 @@ struct DockHoldMenuOverlay: View {
             }
             .foregroundStyle(hovered ? Color.white : (entry.isCurrent ? Color.havenPurple : Color.primary))
             .padding(.horizontal, 14)
-            .frame(width: 210, height: 42)
+            .frame(width: 210, height: entry.subtitle == nil ? 42 : 50)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(hovered ? Color.havenPurple : Color.clear)
@@ -251,5 +282,14 @@ struct DockHoldMenuOverlay: View {
         .buttonStyle(.plain)
         .accessibilityValue(entry.hasNews ? "New activity" : "")
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { menu.rowFrames[entry.id] = $0 }
+    }
+
+    @ViewBuilder private func icon(_ entry: DockHoldEntry) -> some View {
+        if let hex = entry.avatarHex {
+            AvatarView(url: entry.avatarURL, pubkey: hex, size: 24)
+        } else {
+            Image(systemName: entry.symbol)
+                .font(.appSystem(size: 16, weight: .semibold))
+        }
     }
 }
