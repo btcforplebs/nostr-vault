@@ -16,7 +16,7 @@ struct HashtagFeedView: View {
     @State private var followSaving = false
     @State private var showingFollowFailed = false
     @State private var showingProfile: IdentifiableString?
-    @State private var showingNote: FeedNote?
+    @State private var path = NavigationPath()
     @State private var showingMediaUrl: IdentifiableURL?
     @Namespace private var mediaZoom
 
@@ -28,7 +28,7 @@ struct HashtagFeedView: View {
     private var everyone: Bool { configService.config.globalShowsEveryone }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     header
@@ -82,7 +82,13 @@ struct HashtagFeedView: View {
                     .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
                 }
             }
+            // A row pushes its thread, swiped back from like the feed's.
+            .navigationDestination(for: FeedNote.self) { NoteDetailView(note: $0) }
+            .navigationDestination(for: NotificationNoteRoute.self) { route in
+                NoteDetailViewWrapper(noteId: route.id, pushed: true)
+            }
         }
+        .environment(\.pushNoteID, PushNoteAction(stack: "hashtag-\(tag)") { path.pushNote(id: $0) })
         .hashtagLinks()
         .task {
             interests.refreshIfNeeded()
@@ -115,14 +121,6 @@ struct HashtagFeedView: View {
             ProfileView(pubkey: profile.id, onDismiss: { showingProfile = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
-        }
-        .sheet(item: $showingNote) { note in
-            NavigationStack {
-                NoteDetailView(note: note)
-                    .navigationDestination(for: FeedNote.self) { NoteDetailView(note: $0) }
-            }
-            .environmentObject(nostrService)
-            .environmentObject(configService)
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
     }
@@ -225,7 +223,7 @@ struct HashtagFeedView: View {
             showParent: false
         )
         .contentShape(Rectangle())
-        .onTapGesture { showingNote = note }
+        .onTapGesture { path.pushNote(note) }
         .padding(.horizontal, 16)
         .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
     }

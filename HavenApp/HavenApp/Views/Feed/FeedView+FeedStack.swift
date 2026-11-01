@@ -61,6 +61,7 @@ extension FeedView {
                         NoteDetailViewWrapper(noteId: route.id, pushed: true)
                     }
             }
+            .environment(\.pushNoteID, PushNoteAction(stack: "feed") { navigationPath.pushNote(id: $0) })
             // Over the stack, not in the feed: the navigation bar would
             // take its taps.
             .overlay(alignment: .top) { foldedNewPostsPill }

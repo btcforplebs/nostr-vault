@@ -121,13 +121,18 @@ struct VaultView: View {
     @Environment(\.noteDetailSelection) var noteDetailSelection
     @Environment(\.inVaultTab) var vaultTabHostsMedia
 
-    /// Opens a note in the split pane's detail column when there is one, and
-    /// falls back to the full-screen sheet everywhere else.
+    /// Opens a note in the split pane's detail column when there is one. On
+    /// iPhone it pushes the thread view, as a feed tap does; the Mac keeps
+    /// its sheet.
     func openNote(_ id: String) {
         if let noteDetailSelection {
             noteDetailSelection.select(id: id)
         } else {
+            #if os(iOS)
+            navigationPath.pushNote(id: id)
+            #else
             showingNoteId = id
+            #endif
         }
     }
     @State var showingProfilePubkey: String?
@@ -261,7 +266,11 @@ struct VaultView: View {
                     .navigationDestination(for: FeedNote.self) { note in
                         NoteDetailView(note: note)
                     }
+                    .navigationDestination(for: NotificationNoteRoute.self) { route in
+                        NoteDetailViewWrapper(noteId: route.id, pushed: true)
+                    }
             }
+            .environment(\.pushNoteID, PushNoteAction(stack: "vault") { navigationPath.pushNote(id: $0) })
         }
     }
     #endif
