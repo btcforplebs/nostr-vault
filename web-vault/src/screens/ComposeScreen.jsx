@@ -1,5 +1,5 @@
 // Post a note: signed by the user's signer, stored in the in-page Haven first, then sent to the relays
-// publishRelays picks (write list + the iPhone app's broadcast set). "#/compose?reply=<id>" and "?quote=<id>"
+// publishRelays picks (the user's own write list). "#/compose?reply=<id>" and "?quote=<id>"
 // (a note card's Reply and Quote) post a reply with NIP-10 tags, or a quote with a q tag and the nevent.
 // As on the iPhone: photos and videos (picked, dropped or pasted) go up to the account's media servers as they're added
 // and into the note as links with imeta tags, each with its own ALT description; "@" suggests people and tags them;

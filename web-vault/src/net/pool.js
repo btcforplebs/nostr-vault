@@ -164,8 +164,9 @@ export function relayLists(ev) {
 
 export const uniq = a => [...new Set(a)]
 
-// Where the iPhone app sends a new note: its Write list, or this list when that is empty
-// (HavenConfig.fallbackWriteRelays / RelayConfiguration.directBroadcastRelays).
+// The iPhone app's old broadcast set (HavenConfig.fallbackWriteRelays / RelayConfiguration.directBroadcastRelays).
+// Since Logen's rule of 2026-11-01 ("don't force relays on users") no write goes here on top of the user's own
+// relays (publishRelays); it is still read from (guest view, block-list lookups, mesh media).
 export const BROADCAST_RELAYS = ["wss://relay.btcforplebs.com", "wss://relay.damus.io", "wss://relay.snort.social"]
 const loopbackHost = h => { h = h.replace(/^\[|\]$/g, "").toLowerCase(); return h === "localhost" || h === "::1" || /^127\./.test(h) }
 /** A relay on the machine the browser runs on (the Mac's own vault relay, ws://localhost:3355). */
@@ -179,13 +180,17 @@ export const isLoopback = url => loopbackHost(hostOf(url))
 export const blockedPlain = (url, pageProtocol) => pageProtocol === "https:" && /^ws:\/\//i.test(String(url).trim()) && !isLoopback(url)
 
 /**
- * The relays a new note goes to: the write list plus the iPhone app's broadcast set, so a short or half-dead
- * write list still reaches the wider network. Dead hosts are dropped as the iPhone app drops them. A loopback
- * relay is only reachable from a page open on that same machine, so it is kept only there and marked local.
+ * The relays a new note (and every other write the user signs: reactions, reposts, lists, profile) goes to: the
+ * user's own write relays (their kind 10002), nothing forced on top (Logen 2026-11-01: don't force relays on users).
+ * With no usable write relay at all (no 10002 yet, or only junk in it) it is the recommended set a new account
+ * starts on (DEFAULT_RELAYS). Dead hosts are dropped as the iPhone app drops them. A loopback relay is only reachable
+ * from a page open on that same machine, so it is kept only there and marked local. Features with relays of their
+ * own (purplepag.es for profiles and lists, WoT, live chat, NIP-46, a poll's relays) add them where they publish.
  * -> { network: [url], local: [url] }
  */
 export function publishRelays(writeRelays, pageHost = globalThis.location?.hostname ?? "") {
-  const urls = uniq([...writeRelays, ...BROADCAST_RELAYS].map(u => u.trim().replace(/\/+$/, "")).filter(u => /^wss?:\/\//.test(u)))
-  const live = urls.filter(u => !isDead(u))
+  const clean = list => uniq(list.map(u => String(u).trim().replace(/\/+$/, "")).filter(u => /^wss?:\/\//.test(u)).filter(u => !isDead(u)))
+  const own = clean(writeRelays)
+  const live = own.length ? own : clean(DEFAULT_RELAYS)
   return { network: live.filter(u => !isLoopback(u)), local: loopbackHost(pageHost) ? live.filter(isLoopback) : [] }
 }
