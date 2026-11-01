@@ -9,9 +9,9 @@
   "lede": "The release notes for iPhone, Mac and Android, newest first. Where a change is on only some of the apps, it says which.",
   "description": "Nostr Vault release notes for iPhone, Mac and Android: 3.1.0, 3.0.0 with the mesh, and the earlier 2.7.2 builds.",
   "labels": {
-    "ios": ["Mesh", "Home vault · full history", "Check home vault sync", "Open in Fanfares", "Already unlocked?", "Save", "Delete from media servers", "Delete everywhere", "Share as a note", "No signing key"],
+    "ios": ["Preview", "Edit", "Use recommended", "Mesh", "Home vault · full history", "Check home vault sync", "Open in Fanfares", "Already unlocked?", "Save", "Delete from media servers", "Delete everywhere", "Share as a note", "No signing key"],
     "mac": ["Mesh", "Home vault · full history", "Open in Fanfares", "Already unlocked?"],
-    "android": ["Mesh", "Home vault · full history", "Pause after", "Delete from media servers", "Delete everywhere", "Share as a note"],
+    "android": ["Preview", "Edit", "Use recommended", "Mesh", "Home vault · full history", "Pause after", "Delete from media servers", "Delete everywhere", "Share as a note"],
     "web": ["Delete from media servers", "Share as a note"]
   }
 }
@@ -21,9 +21,24 @@
 <p class="eyebrow">iPhone, Mac and Android</p>
 <h2>3.1.0</h2>
 <ul>
-    <li><strong>Relays publish only when you Save.</strong> Changes in <span class="path">Settings &rarr; Relays</span>
-        are a draft until you tap <strong>Save</strong>. New accounts start on five relays, and setup shows the
-        servers your posts will go through before anything is published.</li>
+    <li><strong>A new composer.</strong> A photo or video starts uploading the moment you pick it, with a progress
+        ring, and its link goes where your cursor was. Tap <strong>Preview</strong> beside Post to see the note as it
+        will look, then <strong>Edit</strong> to keep typing. On a Mac the preview sits beside the text. On the web, photos also go in at the cursor and Post
+        waits for uploads still going.</li>
+    <li><strong>Quotes.</strong> Paste a note1 or nevent link and Preview shows the quoted note. The post tags its
+        author, so they are told you quoted them. (iPhone and Mac.)</li>
+    <li><strong>Hold or slide the dock.</strong> Hold the Feed, Vault or account button for a moment, or slide your
+        finger off it a little, and its menu opens. Slide to a row and let go to pick it. A plain tap works as
+        before. (iPhone and Android.)</li>
+    <li><strong>One row per account.</strong> The account menu opens in the middle of the dock and shows each
+        account's picture and short npub, with a red dot on any account that has something new.</li>
+    <li><strong>Your relays, your choice.</strong> If your account already has a relay list, the app now reads and
+        posts with it, instead of with our starter relays. A new account picks its own: setup suggests some,
+        <strong>Use recommended</strong> takes them, and you can remove any or add your own. Nothing is published
+        until you confirm. Changes in <span class="path">Settings &rarr; Relays</span> are a draft until you tap
+        <strong>Save</strong>.</li>
+    <li><strong>Web:</strong> posts go only to your own Write relays. The web app no longer adds
+        relay.btcforplebs.com, relay.damus.io and relay.snort.social to every post.</li>
     <li><strong>Delete a photo properly.</strong> In Media, hold a photo: <strong>Delete from media servers</strong> takes
         it off your outside media servers and keeps your own copies, and <strong>Delete everywhere</strong> takes it
         off your devices too. See <a class="inline" href="/docs/media/#delete">Deleting a photo</a>.</li>
@@ -37,6 +52,12 @@
 </ul>
 <h3>Fixes</h3>
 <ul>
+    <li><strong>Notifications from each account's relays.</strong> Replies and mentions are now fetched from the
+        relays each account lists, so a reply sent only there still reaches your Vault list.</li>
+    <li><strong>Message alerts.</strong> No more "New message" alerts for messages you sent yourself from another
+        device or account. An alert comes only once the message is unlocked, and only from someone else.</li>
+    <li><strong>Android:</strong> the live and music player shows only on the main tabs, not over Settings, messages,
+        the wallet or full-screen photos. Playback goes on while it's hidden. The iPhone already worked this way.</li>
     <li><strong>Android:</strong> a read-only account now says <strong>No signing key</strong> instead of Local
         Key.</li>
     <li><strong>Android:</strong> your posts now go to all five of your servers.</li>
