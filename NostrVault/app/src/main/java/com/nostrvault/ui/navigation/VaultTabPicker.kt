@@ -21,8 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
  */
 @Stable
 object VaultTabPicker {
-    /** The menu, lined up with the Vault tab's right edge. */
-    val menu = DockHoldMenu<VaultMode>(alignEnd = true)
+    /** The menu, on the Vault tab's side of the screen. */
+    val menu = DockHoldMenu<VaultMode>()
 
     val isOpen: Boolean get() = menu.isOpen
 

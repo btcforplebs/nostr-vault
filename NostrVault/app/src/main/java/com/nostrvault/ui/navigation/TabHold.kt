@@ -9,8 +9,8 @@ import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.VaultMode
 
 /**
- * A dock tab with a hold menu: the Feed tab (feeds) or the Vault tab (its
- * pages). The bar's NavTab draws either the same way; this says which
+ * A dock button with a hold menu: the Feed tab (feeds), the Vault tab (its
+ * pages) or the account picture (accounts). The bar's NavTab draws either the same way; this says which
  * [DockHoldMenu] it drives and what a pick does.
  */
 internal sealed class TabHold {
@@ -39,6 +39,16 @@ internal sealed class TabHold {
                 CustomAccessibilityAction(mode.displayName) { (current() as? Vault)?.onPick?.invoke(mode); true }
             }
     }
+
+    /** The account picture: hold or slide to pick an account (only with more than one). */
+    class Accounts(val onPick: (String) -> Unit) : TabHold() {
+        override val isOpen get() = AccountTabPicker.menu.isOpen
+        override val isPressed get() = AccountTabPicker.menu.isPressed
+        override val shownName: String? get() = null
+        override fun actions(current: () -> TabHold?) = AccountTabPicker.menu.listed.map { npub ->
+            CustomAccessibilityAction("Switch to ${npub.take(12)}…") { (current() as? Accounts)?.onPick?.invoke(npub); true }
+        }
+    }
 }
 
 /** The hold-drag-release gesture on [hold]'s menu; a pick goes to the tab's latest hold ([current]). */
@@ -54,5 +64,8 @@ internal fun Modifier.tabHoldGesture(
     }
     is TabHold.Vault -> dockHold(VaultTabPicker.menu, coordinates, view, onTap) { mode ->
         (current() as? TabHold.Vault)?.onPick?.invoke(mode)
+    }
+    is TabHold.Accounts -> dockHold(AccountTabPicker.menu, coordinates, view, onTap) { npub ->
+        (current() as? TabHold.Accounts)?.onPick?.invoke(npub)
     }
 }

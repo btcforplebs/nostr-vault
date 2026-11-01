@@ -128,6 +128,8 @@ fun BottomNavBar(
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit = {},
     onAccountSwitcher: () -> Unit,
+    /** Hold the account picture (or slide) and pick an account. Null with one account. */
+    onPickAccount: ((String) -> Unit)? = null,
     condensedActionIcon: ImageVector = NostrVaultIcons.Compose,
     /** Spoken name of the folded bar's action (iOS collapsedFABLabel). */
     condensedActionLabel: String = "Compose new post",
@@ -178,6 +180,7 @@ fun BottomNavBar(
                     onNavigate = onNavigate,
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
+                    onPickAccount = onPickAccount,
                     onPickFeedMode = onPickFeedMode,
                     onPickVaultMode = onPickVaultMode,
                 ) }
@@ -194,6 +197,7 @@ fun BottomNavBar(
                     onAction = onCondensedAction,
                     onExpand = onExpand,
                     onAccountSwitcher = onAccountSwitcher,
+                    onPickAccount = onPickAccount,
                     nowPlaying = nowPlaying,
                 ) }
             },
@@ -268,6 +272,7 @@ private fun ExpandedNavRow(
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit,
     onAccountSwitcher: () -> Unit,
+    onPickAccount: ((String) -> Unit)? = null,
     onPickFeedMode: ((FeedMode) -> Unit)? = null,
     onPickVaultMode: ((VaultMode) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -308,6 +313,7 @@ private fun ExpandedNavRow(
                         }
                     },
                     onLongClick = onAccountSwitcher,
+                    onPickAccount = onPickAccount,
                     modifier = Modifier.weight(1f),
                 )
             } else {
@@ -361,6 +367,7 @@ private fun CondensedNavCluster(
     onAction: (() -> Unit)?,
     onExpand: () -> Unit,
     onAccountSwitcher: () -> Unit,
+    onPickAccount: ((String) -> Unit)? = null,
     nowPlaying: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -380,7 +387,8 @@ private fun CondensedNavCluster(
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .combinedClickable(
+                    .accountHold(
+                        onPickAccount = onPickAccount,
                         onClick = onExpand,
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -456,7 +464,7 @@ private fun NavTab(
             pressed -> DockHold.PRESSED_SCALE
             else -> 1.0f
         },
-        animationSpec = Motion.control(),
+        animationSpec = DockHold.swiftSpring(0.2f, 0.7f),
         label = "tabScale",
     )
     val view = LocalView.current
@@ -531,6 +539,7 @@ private fun ProfileTab(
     showBadge: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPickAccount: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -541,7 +550,8 @@ private fun ProfileTab(
             .semantics {
                 role = Role.Tab
             }
-            .combinedClickable(
+            .accountHold(
+                onPickAccount = onPickAccount,
                 onClick = onClick,
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -601,3 +611,40 @@ private fun ProfileTab(
 private fun Modifier.combinedClickableCompat(
     onClick: () -> Unit,
 ): Modifier = this.combinedClickable(onClick = onClick)
+
+/**
+ * The account picture's gesture: with more than one account ([onPickAccount]
+ * set) a hold or a slight slide opens the account menu (the dock engine);
+ * otherwise a tap and a long press, as before.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.accountHold(
+    onPickAccount: ((String) -> Unit)?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+): Modifier {
+    if (onPickAccount == null) return combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    val view = LocalView.current
+    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val currentOnClick by rememberUpdatedState(onClick)
+    val hold = TabHold.Accounts(onPickAccount)
+    val currentHold by rememberUpdatedState<TabHold?>(hold)
+    val scale by animateFloatAsState(
+        targetValue = when {
+            AccountTabPicker.menu.isOpen -> DockHold.OPEN_SCALE
+            AccountTabPicker.menu.isPressed -> DockHold.PRESSED_SCALE
+            else -> 1f
+        },
+        animationSpec = DockHold.swiftSpring(0.2f, 0.7f),
+        label = "accountScale",
+    )
+    return this
+        .scale(scale)
+        .onGloballyPositioned { coords[0] = it }
+        .tabHoldGesture(hold, coordinates = { coords[0] }, view = view, onTap = { currentOnClick() }, current = { currentHold })
+        .semantics {
+            onClick(label = null) { currentOnClick(); true }
+            customActions = hold.actions { currentHold }
+        }
+}

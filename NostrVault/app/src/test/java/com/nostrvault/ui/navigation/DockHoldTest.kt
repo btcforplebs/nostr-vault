@@ -12,25 +12,27 @@ import org.junit.Test
 class DockHoldTest {
 
     @Test fun `numbers match iOS`() {
-        assertEquals(180L, DockHold.HOLD_MS)
-        assertEquals(10f, DockHold.CANCEL_DISTANCE.value)
+        assertEquals(120L, DockHold.HOLD_MS)
+        assertEquals(6f, DockHold.OPEN_SLIDE.value)
+        assertEquals(300L, DockHold.TAP_GRACE_MS)
         assertEquals(28f, DockHold.ROW_SLACK_X.value)
         assertEquals(1f, DockHold.ROW_SLACK_Y.value)
         assertEquals(0.94f, DockHold.PRESSED_SCALE)
         assertEquals(1.08f, DockHold.OPEN_SCALE)
     }
 
-    @Test fun `let go unmoved before the hold is a tap`() {
-        assertEquals(DockHold.Early.TAP, DockHold.early(released = true, movedPx = 3f, cancelPx = 30f))
+    @Test fun `let go before the hold and the slide is a tap`() {
+        assertEquals(DockHold.Early.TAP, DockHold.early(released = true, movedPx = 3f, openPx = 18f))
     }
 
-    @Test fun `sliding past the cancel distance before the hold is neither`() {
-        assertEquals(DockHold.Early.CANCEL, DockHold.early(released = false, movedPx = 31f, cancelPx = 30f))
-        assertEquals(DockHold.Early.CANCEL, DockHold.early(released = true, movedPx = 31f, cancelPx = 30f))
+    @Test fun `a slight slide opens the menu at once`() {
+        assertEquals(DockHold.Early.OPEN, DockHold.early(released = false, movedPx = 18f, openPx = 18f))
+        // Slid and let go in the same frame: still opened, and the release then cancels.
+        assertEquals(DockHold.Early.OPEN, DockHold.early(released = true, movedPx = 20f, openPx = 18f))
     }
 
-    @Test fun `still down and still is still waiting`() {
-        assertNull(DockHold.early(released = false, movedPx = 30f, cancelPx = 30f))
+    @Test fun `still down and barely moved is still waiting`() {
+        assertNull(DockHold.early(released = false, movedPx = 17.9f, openPx = 18f))
     }
 
     @Test fun `haptics - light open, tick per row, confirm on pick`() {
@@ -54,11 +56,42 @@ class DockHoldTest {
     }
 
     @Test fun `a row no longer listed is not picked`() {
-        val menu = DockHoldMenu<VaultMode>(alignEnd = true)
+        val menu = DockHoldMenu<VaultMode>()
         menu.rowBounds.putAll(rows)
         menu.listed = listOf(VaultMode.NOTES)
         assertNull(menu.itemAt(Offset(700f, 950f), 56f, 2f))
         assertEquals(VaultMode.NOTES, menu.itemAt(Offset(700f, 890f), 56f, 2f))
+    }
+
+    @Test fun `a slow tap the hold opened the menu under is still a tap`() {
+        assertEquals(true, DockHold.graceTap(heldMs = 200, slid = false, visitedRow = false, onButton = true))
+    }
+
+    @Test fun `past the grace, or after a slide, a row, or off the button, it cancels`() {
+        assertEquals(false, DockHold.graceTap(heldMs = 300, slid = false, visitedRow = false, onButton = true))
+        assertEquals(false, DockHold.graceTap(heldMs = 200, slid = true, visitedRow = false, onButton = true))
+        assertEquals(false, DockHold.graceTap(heldMs = 200, slid = false, visitedRow = true, onButton = true))
+        assertEquals(false, DockHold.graceTap(heldMs = 200, slid = false, visitedRow = false, onButton = false))
+    }
+
+    @Test fun `account rows carry a short npub`() {
+        assertEquals("npub1jak…c35y", shortAccountNpub("npub1jak2ysvfyffj8gnas474kdwfclkclz3hehm9mw4dryhf8ett6z6qc8c35y"))
+        assertEquals("npub1short", shortAccountNpub("npub1short"))
+    }
+
+    @Test fun `the highlight follows rows that move under a still finger`() {
+        val menu = DockHoldMenu<VaultMode>()
+        menu.listed = listOf(VaultMode.ACTIVITY, VaultMode.NOTES)
+        menu.open(Rect.Zero)
+        // Mid open-animation: Notes sits under the finger.
+        menu.rowPlaced(VaultMode.NOTES, Rect(500f, 900f, 920f, 984f))
+        menu.track(Offset(700f, 950f), 56f, 2f)
+        assertEquals(VaultMode.NOTES, menu.hovered)
+        // Settled: Vault is under it now, and a release there picks Vault.
+        menu.rowPlaced(VaultMode.NOTES, Rect(500f, 812f, 920f, 896f))
+        menu.rowPlaced(VaultMode.ACTIVITY, Rect(500f, 900f, 920f, 984f))
+        assertEquals(VaultMode.ACTIVITY, menu.hovered)
+        assertEquals(menu.hovered, menu.itemAt(Offset(700f, 950f), 56f, 2f))
     }
 
     @Test fun `vault dots - lists and relay together, Likes gone in Zaps Only`() {

@@ -149,6 +149,27 @@ fun NostrVaultNavHost(
     val unreadDMs by unreadDMsState
     val relayActivity by hasNewRelayActivity.collectAsState()
     val vaultZapsOnly = config.zapsOnlyMode
+    val switchAccounts = buildAccountInfos(config, profiles, includeWhitelisted = true, unread = unread)
+    // From the account sheet or the account picture's hold menu.
+    fun selectAccount(npub: String) {
+        // The Profile tab follows the switch on its own. A pushed profile is
+        // pinned to a pubkey nav arg, so if it is our OWN, re-navigate it to
+        // the newly active account. Leave it untouched when viewing someone
+        // else's profile.
+        val previousHex = activeHex
+        val viewingOwnProfile = currentRoute == Screen.Profile.route &&
+            backStackEntry?.arguments?.getString("pubkey") == previousHex
+        val newHex = switchAccounts.firstOrNull { it.npub == npub }?.hexPubkey
+        scope.launch {
+            configStore.switchActiveAccount(npub)
+            if (viewingOwnProfile && newHex != null) {
+                navController.navigate(Screen.Profile.createRoute(newHex)) {
+                    popUpTo(Screen.Profile.route) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
     // A page picked from the Vault tab's hold menu: the tab applies it (its
     // ViewModel owns the lists), now or as soon as it is built.
     fun openVaultMode(mode: com.nostrvault.data.model.VaultMode) {
@@ -351,6 +372,8 @@ fun NostrVaultNavHost(
                     onExpand = { ScrollChrome.expand(scope) },
                     nowPlaying = { com.nostrvault.ui.screens.music.CollapsedNowPlayingButton(musicActions) },
                     onPickVaultMode = { mode -> openVaultMode(mode) },
+                    // As iOS: with one account the picture's hold does nothing.
+                    onPickAccount = if (switchAccounts.size > 1) { npub -> selectAccount(npub) } else null,
                     onPickFeedMode = { mode ->
                         // The feed applies it (its ViewModel owns the mode),
                         // now or as soon as it is back on screen.
@@ -393,6 +416,10 @@ fun NostrVaultNavHost(
         // replaceable event that may already be gone.
         com.nostrvault.ui.components.LiveStreamHost()
 
+        // Hold-the-account-picture list: over everything, the bar included.
+        if (showBottomBar && switchAccounts.size > 1) {
+            AccountTabPickerOverlay(accounts = switchAccounts, onPick = { npub -> selectAccount(npub) })
+        }
         // Hold-the-Vault-tab pages: over everything, the bar included.
         if (showBottomBar) {
             VaultTabPickerOverlay(zapsOnly = vaultZapsOnly, onPick = { mode -> openVaultMode(mode) })
@@ -419,29 +446,9 @@ fun NostrVaultNavHost(
 
     // Account switcher bottom sheet
     if (showAccountSwitcher) {
-        val accounts = buildAccountInfos(config, profiles, includeWhitelisted = true, unread = unread)
-
         AccountSwitcherSheet(
-            accounts = accounts,
-            onSelectAccount = { npub ->
-                // The Profile tab follows the switch on its own. A pushed profile is
-                // pinned to a pubkey nav arg, so if it is our OWN, re-navigate it to
-                // the newly active account. Leave it untouched when viewing someone
-                // else's profile.
-                val previousHex = activeHex
-                val viewingOwnProfile = currentRoute == Screen.Profile.route &&
-                    backStackEntry?.arguments?.getString("pubkey") == previousHex
-                val newHex = accounts.firstOrNull { it.npub == npub }?.hexPubkey
-                scope.launch {
-                    configStore.switchActiveAccount(npub)
-                    if (viewingOwnProfile && newHex != null) {
-                        navController.navigate(Screen.Profile.createRoute(newHex)) {
-                            popUpTo(Screen.Profile.route) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
-                }
-            },
+            accounts = switchAccounts,
+            onSelectAccount = { npub -> selectAccount(npub) },
             onDismiss = { showAccountSwitcher = false },
         )
     }
