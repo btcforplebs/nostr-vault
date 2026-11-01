@@ -68,6 +68,10 @@ class NotificationSettingsViewModel @Inject constructor(
         configStore.update { it.copy(enableFeedNotifications = on) }
     }
 
+    fun setOwnAccountTags(on: Boolean) {
+        configStore.update { it.copy(notifyOwnAccountTags = on) }
+    }
+
     /**
      * Picks the sound and moves notifications to its channel straight away
      * (a channel's sound can't change), then plays it, as iOS previews it.
@@ -172,6 +176,20 @@ fun NotificationSettingsScreen(
                         enabled,
                         help = SettingsHelp.NOTIFY_FEED_NOTES,
                         onToggle = viewModel::setFeedNotifications,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // One of your accounts tagging another (iOS notifyOwnAccountTags).
+            if (enabled && accounts.size > 1) {
+                Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+                    NotificationToggle(
+                        "Notify me when my own accounts tag each other",
+                        "Off: when one of your accounts tags another, nothing lands in the Vault and no alert plays.",
+                        config.notifyOwnAccountTags,
+                        enabled,
+                        onToggle = viewModel::setOwnAccountTags,
                     )
                 }
                 Spacer(Modifier.height(16.dp))

@@ -39,6 +39,7 @@ class AccountUnreadStore @Inject constructor(
         // The badge counts nothing the Vault list hides. Judged before the
         // lock: the trust graph lookup has no business inside it.
         val marker = AccountUnread.parseMarker(body) ?: return
+        if (isOwnAccountTag(marker.recipient, marker.author)) return
         if (!listShows(marker)) return
         update { it.record(body) }
     }
@@ -63,6 +64,22 @@ class AccountUnreadStore @Inject constructor(
             isOutside = { VaultContentFilter.isOutside(it, marker.recipient, whitelist, trusted) },
         )
     }
+
+    /**
+     * One of your accounts tagging another while that switch is off
+     * (AccountUnread.hidesOwnAccountTag): nothing counts, lights or alerts.
+     */
+    fun isOwnAccountTag(recipient: String, author: String): Boolean {
+        val config = configStore.config.value
+        if (config.notifyOwnAccountTags) return false
+        val accounts = config.allAccountNpubs().mapNotNull(::hexOf).toSet()
+        return AccountUnread.hidesOwnAccountTag(author, recipient, accounts, notify = false)
+    }
+
+    /** The kinds in a poll's markers that only came as own-account tags (the Vault tab dot skips them). */
+    fun ownAccountOnlyKinds(markers: List<String>): Set<Int> =
+        if (markers.isEmpty() || configStore.config.value.notifyOwnAccountTags) emptySet()
+        else AccountUnread.ownAccountOnlyKinds(markers, ::isOwnAccountTag)
 
     fun markSeen(hex: String) = update { it.markSeen(hex) }
 

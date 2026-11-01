@@ -295,6 +295,12 @@ data class HavenConfig(
     val enablePushNotifications: Boolean = false,
     /** "New Notes in Your Feed": one summary per absence of 2h+ (iOS enableFeedNotifications). */
     val enableFeedNotifications: Boolean = false,
+    /**
+     * Off: a note, like, zap or repost from one of your accounts on this
+     * device that tags another of them makes no Vault line, no count, no dot
+     * and no alert (iOS notifyOwnAccountTags).
+     */
+    val notifyOwnAccountTags: Boolean = false,
     /** The picked notification sound's name (iOS notificationSoundName); see NotificationSound. */
     val notificationSoundName: String = "Chime",
     val pushNotifyMentions: Boolean = true,

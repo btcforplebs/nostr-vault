@@ -248,6 +248,16 @@ class VaultActivityViewModel @Inject constructor(
                 if (_accountChip.value != null) loadOtherAccounts()
             }
         }
+        // Your accounts tagging each other came into the list or left it.
+        viewModelScope.launch {
+            configStore.config.map { it.notifyOwnAccountTags }.distinctUntilChanged().drop(1).collect {
+                scheduleRebuild()
+                if (_accountChip.value != null) {
+                    _otherLines.value = emptyMap()
+                    loadOtherAccounts()
+                }
+            }
+        }
         viewModelScope.launch {
             configStore.accountSwitches.collect {
                 generation++
@@ -392,13 +402,14 @@ class VaultActivityViewModel @Inject constructor(
         val blocked = config.blockedForActiveAccount().mapNotNull { nostrService.npubToHex(it) }.toSet()
         val whitelist = config.whitelistedNpubs?.mapNotNull { nostrService.npubToHex(it) }?.toSet().orEmpty()
         val trusted = feedService.relayTabTrustedPubkeys()
+        val quietOwn = ownAccountTagRule(config)
         val snapshot = eventsMutex.withLock { events.values.toList() }
         val lines = VaultActivity.build(
             events = snapshot,
             owner = owner,
             noteKinds = VaultMode.RELAY_TAB_NOTE_KINDS,
             follows = follows,
-            isBlocked = { it in blocked },
+            isBlocked = { it in blocked || quietOwn(it, owner) },
             isOutside = { VaultContentFilter.isOutside(it, owner, whitelist, trusted) },
         )
         if (gen != generation) return@withContext
@@ -470,6 +481,7 @@ class VaultActivityViewModel @Inject constructor(
         }
         viewModelScope.launch {
             configStore.switchActiveAccount(npub)
+            com.nostrvault.ui.components.AccountSwitchFlash.show(account)
             open()
         }
     }
@@ -527,15 +539,27 @@ class VaultActivityViewModel @Inject constructor(
             val trusted = feedService.relayTabTrustedPubkeys()
             val news = runCatching { FollowerSnapshot.parse(HavenBridge.getFollowers(hex)) }.getOrNull()
                 ?.current.orEmpty().filter { it.isNews }.map { VaultActivity.Follow(it.pubkey, it.followedAt) }
+            val quietOwn = ownAccountTagRule(config)
             VaultActivity.build(
                 events = events,
                 owner = hex,
                 noteKinds = VaultMode.RELAY_TAB_NOTE_KINDS,
                 follows = news,
-                isBlocked = { it in blocked },
+                isBlocked = { it in blocked || quietOwn(it, hex) },
                 isOutside = { VaultContentFilter.isOutside(it, hex, whitelist, trusted) },
             )
         }
+    }
+
+    /**
+     * (author, the account a line is for) → hidden as one of your accounts
+     * tagging another, while "Notify me when my own accounts tag each other"
+     * is off (AccountUnread.hidesOwnAccountTag).
+     */
+    private fun ownAccountTagRule(config: com.nostrvault.relay.HavenConfig): (String, String) -> Boolean {
+        if (config.notifyOwnAccountTags) return { _, _ -> false }
+        val accounts = config.allAccountNpubs().mapNotNull { nostrService.npubToHex(it)?.lowercase() }.toSet()
+        return { author, owner -> AccountUnread.hidesOwnAccountTag(author, owner, accounts, notify = false) }
     }
 
     /** Followers seen here, as on the Followers list. */
@@ -638,7 +662,8 @@ internal fun VaultActivityScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        // The account pictures sit close under the top bar.
+                        .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = if (chips.isNotEmpty()) 2.dp else 8.dp),
                 ) {
                     VaultModePill(
                         mode = VaultMode.ACTIVITY,
@@ -812,32 +837,30 @@ private fun VaultActivityRow(
                 if (isUnread) stateDescription = "New"
             },
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(34.dp).background(tint.copy(alpha = 0.15f), CircleShape),
-        ) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(17.dp))
+        Box {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(34.dp).background(tint.copy(alpha = 0.15f), CircleShape),
+            ) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(17.dp))
+            }
+            if (account != null) {
+                // Whose notification this is: that account's picture on the
+                // line's icon. The name is read out, not printed on every line.
+                AvatarImage(
+                    url = profiles[account]?.pictureURL,
+                    pubkey = account,
+                    size = 18.dp,
+                    displayName = profiles[account]?.bestName,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 5.dp, y = 5.dp)
+                        .border(2.dp, SecondaryGroupedBg, CircleShape),
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            if (account != null) {
-                // "For <account>": whose notification this is.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AvatarImage(
-                        url = profiles[account]?.pictureURL,
-                        pubkey = account,
-                        size = 16.dp,
-                        displayName = profiles[account]?.bestName,
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text(
-                        "For ${name(account)}",
-                        color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f)) {
                     line.actors.take(AVATAR_LIMIT).forEachIndexed { index, pubkey ->
