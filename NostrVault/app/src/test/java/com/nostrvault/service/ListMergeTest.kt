@@ -217,6 +217,10 @@ class ListMergeTest {
         assertEquals(false, skipped.confirmedNone)
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(skipped, null, mine, now))
         assertEquals(ListMerge.EditBase.Unknown(), ListMerge.editBase(skipped, ahead, mine, now))
+        // The hashtag list (10015) asks unknownWhy alone: every own relay saying "none" while one copy was skipped
+        // for being dated ahead is still not "you have none".
+        assertEquals(ListMerge.NOT_ANSWERED, ListMerge.unknownWhy(mine, mine, emptySet(), found = false, ahead = true))
+        assertEquals(null, ListMerge.unknownWhy(mine, mine, emptySet(), found = false, ahead = false))
     }
 
     @Test
