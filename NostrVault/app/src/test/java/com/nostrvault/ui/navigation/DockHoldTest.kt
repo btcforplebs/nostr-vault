@@ -62,6 +62,21 @@ class DockHoldTest {
         assertEquals(VaultMode.NOTES, menu.itemAt(Offset(700f, 890f), 56f, 2f))
     }
 
+    @Test fun `the highlight follows rows that move under a still finger`() {
+        val menu = DockHoldMenu<VaultMode>()
+        menu.listed = listOf(VaultMode.ACTIVITY, VaultMode.NOTES)
+        menu.open(Rect.Zero)
+        // Mid open-animation: Notes sits under the finger.
+        menu.rowPlaced(VaultMode.NOTES, Rect(500f, 900f, 920f, 984f))
+        menu.track(Offset(700f, 950f), 56f, 2f)
+        assertEquals(VaultMode.NOTES, menu.hovered)
+        // Settled: Vault is under it now, and a release there picks Vault.
+        menu.rowPlaced(VaultMode.NOTES, Rect(500f, 812f, 920f, 896f))
+        menu.rowPlaced(VaultMode.ACTIVITY, Rect(500f, 900f, 920f, 984f))
+        assertEquals(VaultMode.ACTIVITY, menu.hovered)
+        assertEquals(menu.hovered, menu.itemAt(Offset(700f, 950f), 56f, 2f))
+    }
+
     @Test fun `vault dots - lists and relay together, Likes gone in Zaps Only`() {
         VaultTabPicker.listDots = setOf(VaultMode.NOTES)
         assertEquals(setOf(VaultMode.NOTES, VaultMode.LIKES), VaultTabPicker.news(setOf(VaultMode.LIKES), zapsOnly = false))

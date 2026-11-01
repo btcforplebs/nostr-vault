@@ -103,20 +103,50 @@ class DockHoldMenu<T> {
     /** The rows the menu lists now; a row gone since it was laid out keeps stale bounds. */
     internal var listed: List<T> = emptyList()
 
+    /** Where the finger is (root coordinates) while the menu is open, and the row slack in px. */
+    private var finger: Offset? = null
+    private var slack = Offset.Zero
+
     fun itemAt(point: Offset, slackXPx: Float, slackYPx: Float): T? {
         val shown = listed.toSet()
         return dockRowAt(rowBounds.filterKeys { it in shown }, point, slackXPx, slackYPx)
     }
 
+    /**
+     * The finger moved. Returns true when it is on a new row (a tick). The
+     * highlight is always the row a release there would pick.
+     */
+    fun track(point: Offset, slackXPx: Float, slackYPx: Float): Boolean {
+        finger = point
+        slack = Offset(slackXPx, slackYPx)
+        val row = itemAt(point, slackXPx, slackYPx)
+        if (row == hovered) return false
+        hovered = row
+        return row != null
+    }
+
+    /**
+     * A row was laid out (the open animation moves them under a still
+     * finger): the highlight follows, so it never shows one row while a
+     * release would pick another.
+     */
+    internal fun rowPlaced(item: T, bounds: Rect) {
+        rowBounds[item] = bounds
+        val at = finger ?: return
+        if (isOpen) hovered = itemAt(at, slack.x, slack.y)
+    }
+
     fun open(from: Rect) {
         anchor = from
         hovered = null
+        finger = null
         isOpen = true
     }
 
     fun close() {
         isOpen = false
         hovered = null
+        finger = null
     }
 }
 
@@ -223,17 +253,14 @@ internal fun <T> Modifier.dockHold(
         DockHold.perform(view, DockHold.Haptic.OPEN)
         menu.open(coordinates()?.boundsInRoot() ?: Rect.Zero)
         var last = toRoot(at)
+        menu.track(last, slackX, slackY)
         while (true) {
             val ev = awaitPointerEvent()
             val change = ev.changes.firstOrNull { it.id == down.id } ?: break
             change.consume()
             last = toRoot(change.position)
             if (!change.pressed) break
-            val row = menu.itemAt(last, slackX, slackY)
-            if (row != menu.hovered) {
-                menu.hovered = row
-                if (row != null) DockHold.perform(view, DockHold.Haptic.ROW)
-            }
+            if (menu.track(last, slackX, slackY)) DockHold.perform(view, DockHold.Haptic.ROW)
         }
         val picked = menu.itemAt(last, slackX, slackY)
         menu.close()
@@ -328,7 +355,7 @@ fun <T> DockHoldMenuOverlay(
                         DockHoldMenuRow(
                             spec = row(item),
                             hovered = menu.hovered == item,
-                            onPlaced = { menu.rowBounds[item] = it },
+                            onPlaced = { menu.rowPlaced(item, it) },
                             onClick = {
                                 menu.close()
                                 onPick(item)
