@@ -699,7 +699,7 @@ class FeedViewModel @Inject constructor(
     /** One tap on the bolt: the default amount from Wallet settings, no sheet. */
     fun quickZap(noteId: String) = zapNote(noteId, configStore.config.value.defaultZapAmount)
 
-    fun zapNote(noteId: String, amount: Int = 21) {
+    fun zapNote(noteId: String, amount: Int = 21, comment: String = "") {
         viewModelScope.launch {
             val note = feedService.findNote(noteId)
             if (note == null) {
@@ -710,7 +710,7 @@ class FeedViewModel @Inject constructor(
             // reposted event. ZapSendService bumps local stats on success.
             // The zap pill reports it (docs/pills.md).
             notificationManager.zapping(zapRecipientName(nostrService.profiles.value, note.effectiveAuthor), amount) {
-                zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount)
+                zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount, message = comment)
             }.onSuccess { ZapFlight.launch(note.effectiveEventId) }
         }
     }

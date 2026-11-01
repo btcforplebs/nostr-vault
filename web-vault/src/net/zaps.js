@@ -11,7 +11,10 @@ import { payInvoice, walletState } from "./wallet.js"
 const HEX64 = /^[0-9a-f]{64}$/
 /** The iPhone's limits (ZapService.zapNote). */
 export const MAX_ZAP_SATS = 10_000_000
-export const ZAP_MESSAGE = "Zap from Nostr Vault"
+/** A zap carries only what the user wrote: no app text (Logen, 11-01). Longest comment the picker takes. */
+export const ZAP_COMMENT_MAX = 280
+/** What the zap request carries for `typed`: trimmed, capped, or "" (ZapComment on iPhone and Android). */
+export const zapComment = typed => Array.from(String(typed ?? "").trim()).slice(0, ZAP_COMMENT_MAX).join("")
 /** The iPhone's quick amounts (CustomZapSheet). */
 export const PRESET_SATS = [21, 100, 500, 1_000, 5_000, 10_000, 50_000]
 
@@ -133,8 +136,8 @@ export const receiptRelays = account =>
   uniq([...account.relays.read, ...account.relays.write, ...DEFAULT_RELAYS].map(u => u.trim().replace(/\/+$/, ""))).filter(isPublicRelay).slice(0, 10)
 
 /** The kind 9734 zap request, tagged as the iPhone tags it. A profile zap has no `e` tag. */
-export const zapRequestTemplate = ({ recipient, noteId, address, amountMsat, relays, lnurl, content = ZAP_MESSAGE }) => ({
-  kind: 9734, created_at: Math.floor(Date.now() / 1000), content,
+export const zapRequestTemplate = ({ recipient, noteId, address, amountMsat, relays, lnurl, content = "" }) => ({
+  kind: 9734, created_at: Math.floor(Date.now() / 1000), content: zapComment(content),
   tags: [["p", recipient], ["relays", ...relays], ["amount", String(amountMsat)], ...(noteId ? [["e", noteId]] : []), ...(address ? [["a", address]] : []), ["lnurl", lnurl]],
 })
 
@@ -152,7 +155,7 @@ export async function zap(ctx, { recipient, note, sats, address, comment }, { fe
   if (amountMsat < lnurl.minMsat || amountMsat > lnurl.maxMsat)
     throw new Error(`Their zap service takes ${Math.ceil(lnurl.minMsat / 1000)} to ${Math.floor(lnurl.maxMsat / 1000)} sats.`)
   // `address`: a live stream's (NIP-53), so its chat shows the zap and names the payer; `comment`, said with it.
-  const template = zapRequestTemplate({ recipient, noteId: note?.id, address, amountMsat, relays: receiptRelays(ctx.account), lnurl: lnurl.lnurl, ...(comment?.trim() ? { content: comment.trim() } : {}) })
+  const template = zapRequestTemplate({ recipient, noteId: note?.id, address, amountMsat, relays: receiptRelays(ctx.account), lnurl: lnurl.lnurl, content: zapComment(comment) })
   const request = checkSigned(await ctx.signer.signEvent(template), template, ctx.session.pubkey)
   const cb = new URL(lnurl.callback)
   cb.searchParams.set("amount", String(amountMsat))

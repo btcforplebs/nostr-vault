@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import { actionContext, addressOf } from "../net/actions.js"
 import { formatSats } from "../net/notifications.js"
 import { ensureWallet, onWallet, walletState } from "../net/wallet.js"
-import { MAX_ZAP_SATS, PRESET_SATS, onZapTotals, wantTotals, zap, zapTotal } from "../net/zaps.js"
+import { MAX_ZAP_SATS, PRESET_SATS, ZAP_COMMENT_MAX, onZapTotals, wantTotals, zap, zapComment, zapTotal } from "../net/zaps.js"
 import { ZappersList } from "./ZappersList.jsx"
 import { useProfile } from "./useProfile.js"
 import { showToast } from "./Toast.jsx"
@@ -27,13 +27,13 @@ let zapsShown = 0
 
 /** zap(), with its pill from "Zapping" to "Zapped" or "Zap failed". Each zap keeps its own pill, as two zaps in a row
  *  each get theirs on the iPhone. Throws what zap() threw. `pay` is for tests. */
-export async function zapWithFeedback(ctx, { recipient, note, sats, name }, pay = zap) {
+export async function zapWithFeedback(ctx, { recipient, note, sats, name, comment = "" }, pay = zap) {
   const key = `zap:${++zapsShown}`, who = name || recipient.slice(0, 8)
   showToast({ key, ...zapFeedback("sending", who, sats) })
   try {
     // An article (any addressable note) is zapped by its address too, so clients counting by address see it.
     const address = note ? addressOf(note) ?? undefined : undefined
-    await pay(ctx, { recipient, note, sats, ...(address ? { address } : {}) })
+    await pay(ctx, { recipient, note, sats, ...(comment ? { comment } : {}), ...(address ? { address } : {}) })
     showToast({ key, ...zapFeedback("sent", who, sats) })
   } catch (e) {
     showToast({ key, ...zapFeedback("failed", who, sats) })
@@ -94,11 +94,11 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
     )
   }
 
-  const send = async amount => {
+  const send = async (amount, comment = "") => {
     setPicking(false)
     setState("busy")
     try {
-      await zapWithFeedback(ctx, { recipient, note, sats: amount, name: profile?.name })
+      await zapWithFeedback(ctx, { recipient, note, sats: amount, name: profile?.name, comment })
       setState("sent")
     } catch (e) {
       setState({ error: String(e?.message ?? e) })
@@ -136,9 +136,11 @@ export function ZapButton({ note, pubkey, pickFirst = false }) {
   )
 }
 
-/** The iPhone's custom zap amounts (CustomZapSheet): the presets, or any amount typed in. */
+/** The iPhone's custom zap amounts (CustomZapSheet): the presets, or any amount typed in, and an optional comment
+ *  (empty unless the user writes one; a one-tap zap sends none). */
 function AmountPicker({ initial, onZap, onClose }) {
   const [amount, setAmount] = useState(String(initial))
+  const [comment, setComment] = useState("")
   const n = Math.floor(Number(amount))
   const ok = Number.isFinite(n) && n >= 1 && n <= MAX_ZAP_SATS
   const box = useRef(null)
@@ -152,10 +154,13 @@ function AmountPicker({ initial, onZap, onClose }) {
       </div>
       <label class="zap-custom"><span>Sats</span>
         <input type="number" inputmode="numeric" min="1" max={MAX_ZAP_SATS} value={amount} onInput={e => setAmount(e.currentTarget.value)}
-          onKeyDown={e => { if (e.key === "Enter" && ok) onZap(n) }} /></label>
+          onKeyDown={e => { if (e.key === "Enter" && ok) onZap(n, zapComment(comment)) }} /></label>
+      <input type="text" class="zap-comment" placeholder="Add a comment (optional)" aria-label="Zap comment, optional"
+        maxLength={ZAP_COMMENT_MAX} value={comment} onInput={e => setComment(e.currentTarget.value)}
+        onKeyDown={e => { if (e.key === "Enter" && ok) onZap(n, zapComment(comment)) }} />
       <div class="zap-picker-row">
         <button type="button" onClick={onClose}>Cancel</button>
-        <button type="button" class="primary" disabled={!ok} onClick={() => onZap(n)}>{ok ? `Zap ${n.toLocaleString()} sats` : "Zap"}</button>
+        <button type="button" class="primary" disabled={!ok} onClick={() => onZap(n, zapComment(comment))}>{ok ? `Zap ${n.toLocaleString()} sats` : "Zap"}</button>
       </div>
     </div>
   )

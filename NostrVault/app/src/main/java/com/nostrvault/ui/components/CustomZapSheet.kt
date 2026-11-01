@@ -13,6 +13,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.*
+import com.nostrvault.util.ZapComment
 
 /**
  * Custom zap amount selection bottom sheet.
@@ -25,12 +26,14 @@ fun CustomZapSheet(
     /** Starts selected: the default zap amount from Wallet settings, in sats. */
     defaultAmount: Int,
     onDismiss: () -> Unit,
-    onZap: (Int) -> Unit,
+    /** The amount, and the comment the user typed ("" when they wrote none). */
+    onZap: (Int, String) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     var selectedAmount by remember { mutableIntStateOf(defaultAmount.coerceAtLeast(1)) }
     var customAmount by remember { mutableStateOf("") }
     var useCustom by remember { mutableStateOf(false) }
+    var comment by remember { mutableStateOf("") }
 
     val presetAmounts = listOf(21, 100, 500, 1_000, 5_000, 10_000, 50_000)
 
@@ -143,6 +146,25 @@ fun CustomZapSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Spacer(Modifier.height(10.dp))
+
+            // Optional words sent with the zap. Empty by default: nothing is sent unless typed.
+            OutlinedTextField(
+                value = comment,
+                onValueChange = { comment = it.take(ZapComment.MAX_LENGTH) },
+                placeholder = { Text("Add a comment (optional)", color = PlaceholderText) },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = colors.primary,
+                    unfocusedBorderColor = SeparatorColor,
+                    cursorColor = colors.primary,
+                    focusedTextColor = PrimaryText,
+                    unfocusedTextColor = PrimaryText,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             Spacer(Modifier.height(20.dp))
 
             // Zap button
@@ -151,7 +173,7 @@ fun CustomZapSheet(
                 onClick = {
                     if (effectiveAmount > 0) {
                         ZapFlight.sheetConfirmed()
-                        onZap(effectiveAmount)
+                        onZap(effectiveAmount, ZapComment.content(comment))
                         onDismiss()
                     }
                 },

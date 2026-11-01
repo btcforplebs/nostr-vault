@@ -849,7 +849,7 @@ class ProfileViewModel @Inject constructor(
     fun npubOf(hex: String): String? = nostrService.hexToNpub(hex)
 
     /** Zap this profile: [amount] sats, the default unless chosen in the custom sheet. */
-    fun zap(amount: Int = defaultZapSats) {
+    fun zap(amount: Int = defaultZapSats, comment: String = "") {
         val pk = _pubkey.value
         if (pk.isEmpty()) return
         viewModelScope.launch {
@@ -858,7 +858,7 @@ class ProfileViewModel @Inject constructor(
             // pubkey as an event id.
             // The zap pill reports the result (docs/pills.md).
             notificationManager.zapping(com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, pk), amount) {
-                zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount)
+                zapSendService.zapNote(noteId = "", notePubkey = pk, amountSats = amount, message = comment)
             }.onSuccess { _zapBursts.tryEmit(Unit) }
         }
     }

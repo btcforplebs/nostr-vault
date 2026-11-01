@@ -112,11 +112,11 @@ struct PersonProfileView: View, Equatable {
         }
         #endif
         .sheet(item: $zapSheetContext) { context in
-            CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
-                zap(amount: amount)
+            CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
+                zap(amount: amount, comment: comment)
             }
             #if os(iOS)
-            .presentationDetents([.height(380), .medium])
+            .presentationDetents([.height(440), .medium])
             .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
@@ -254,11 +254,11 @@ struct PersonProfileView: View, Equatable {
     /// A zap to the person, not to a note: no `e` tag. Passing the pubkey as
     /// the note id tagged every profile zap as a zap of an event that does not
     /// exist. A failed zap is reported by the zap toast (`ZapService`).
-    private func zap(amount: Int? = nil) {
+    private func zap(amount: Int? = nil, comment: String = "") {
         guard let lud16 = lightningAddress else { return }
         Task {
             do {
-                try await ZapService.shared.zapNote(noteId: "", notePubkey: pubkey, lud16: lud16, amountSats: amount)
+                try await ZapService.shared.zapNote(noteId: "", notePubkey: pubkey, lud16: lud16, amountSats: amount, message: comment)
                 await MainActor.run { zapBurst = true }
             } catch {
                 #if DEBUG

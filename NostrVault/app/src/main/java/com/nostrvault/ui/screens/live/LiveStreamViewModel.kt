@@ -140,14 +140,14 @@ class LiveStreamViewModel @Inject constructor(
      * Zap the stream's host. The stream address goes on the zap request so the
      * receipt lands in this room's chat rather than only in the host's notes.
      */
-    fun zap(stream: LiveStream, sats: Int) {
+    fun zap(stream: LiveStream, sats: Int, comment: String = "") {
         viewModelScope.launch {
             _status.value = "Zapping $sats sats…"
             val result = zapSendService.zapNote(
                 noteId = "",
                 notePubkey = stream.hostPubkey,
                 amountSats = sats,
-                message = "Zap from Nostr Vault",
+                message = comment,
                 addressTag = stream.address,
             )
             _status.value = result.fold(

@@ -181,8 +181,8 @@ fun ArticleReaderScreen(
             sheetState = zapSheetState,
             defaultAmount = viewModel.defaultZapSats,
             onDismiss = { showZapSheet = false },
-            onZap = { amount ->
-                viewModel.zap(target, amount)
+            onZap = { amount, comment ->
+                viewModel.zap(target, amount, comment)
                 showZapSheet = false
             },
         )

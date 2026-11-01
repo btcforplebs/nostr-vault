@@ -537,7 +537,7 @@ fun DashboardScreen(
             sheetState = zapSheetState,
             defaultAmount = viewModel.configStore.config.value.defaultZapAmount,
             onDismiss = { zapNoteId = null },
-            onZap = { _ -> zapNoteId = null },
+            onZap = { _, _ -> zapNoteId = null },
         )
     }
 }

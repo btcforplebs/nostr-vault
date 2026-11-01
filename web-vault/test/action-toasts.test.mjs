@@ -115,6 +115,17 @@ test("a zap's pill goes Zapping, then Zapped in the same place, then away after 
   assert.equal(currentToasts().length, 0)
 })
 
+test("zapWithFeedback passes the picker's comment on, and none when there is none", async () => {
+  clear()
+  const sent = []
+  const pay = async (_ctx, args) => { sent.push(args) }
+  const recipient = getPublicKey(author)
+  await zapWithFeedback(ctxFor(), { recipient, sats: 21, comment: "thanks" }, pay)
+  await zapWithFeedback(ctxFor(), { recipient, sats: 21 }, pay)
+  assert.equal(sent[0].comment, "thanks")
+  assert.equal("comment" in sent[1], false)
+})
+
 test("a failed zap says Zap failed in red, and the caller still gets the error; no name falls back to the pubkey", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] })
   clear()

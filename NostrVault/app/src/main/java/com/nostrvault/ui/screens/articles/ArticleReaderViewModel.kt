@@ -109,14 +109,14 @@ class ArticleReaderViewModel @Inject constructor(
         )
     }
 
-    fun zap(note: FeedNote, amountSats: Int) {
+    fun zap(note: FeedNote, amountSats: Int, comment: String = "") {
         viewModelScope.launch {
             val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags)
             // The zap pill reports the result (docs/pills.md).
             notificationManager.zapping(
                 com.nostrvault.ui.screens.feed.zapRecipientName(nostrService.profiles.value, note.pubkey),
                 amountSats,
-            ) { zapSendService.zapNote(note.id, note.pubkey, amountSats, addressTag = coordinate) }
+            ) { zapSendService.zapNote(note.id, note.pubkey, amountSats, message = comment, addressTag = coordinate) }
                 .onSuccess {
                     _zapped.value = true
                     _zappedSats.update { it + amountSats }

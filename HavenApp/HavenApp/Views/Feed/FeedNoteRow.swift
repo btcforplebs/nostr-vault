@@ -235,10 +235,10 @@ extension FeedNoteRow {
     func sheetContent(_ sheet: RowSheet) -> some View {
         switch sheet {
         case .zap(let context):
-            CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
+            CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
                 if let lud16 = actions.getLightningAddress(zapRecipient) {
                     Task {
-                        let sent = await actions.zapNote(note, lud16, amount)
+                        let sent = await actions.zapNote(note, lud16, amount, comment)
                         if sent { Motion.firePulse($zapPulse) }
                     }
                     // Same strike as a tap, once the amount sheet has slid
@@ -252,7 +252,7 @@ extension FeedNoteRow {
                 }
             }
             #if os(iOS)
-            .presentationDetents([.height(380), .medium])
+            .presentationDetents([.height(440), .medium])
             .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)

@@ -11,7 +11,7 @@ import { transformSync } from "rolldown/utils" // Vite 8's own transformer
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure"
 import {
   lightningOf, payEndpoint, decodeLnurl, isAllowedEndpoint, invoiceMsat, resolvePay, receiptRelays, zap, countReceipts, trustedReceipts, TRUST_PARALLEL,
-  zapTotal, wantTotals, lightningAddressOf, ZAP_MESSAGE,
+  zapTotal, wantTotals, lightningAddressOf, zapComment, ZAP_COMMENT_MAX,
 } from "../src/net/zaps.js"
 
 const me = generateSecretKey(), bob = generateSecretKey(), service = generateSecretKey(), forger = generateSecretKey()
@@ -99,12 +99,26 @@ test("a note zap: the request is tagged as the iPhone tags it, and the invoice i
   assert.ok(verifyEvent(req))
   assert.equal(req.kind, 9734)
   assert.equal(req.pubkey, pk(me))
-  assert.equal(req.content, ZAP_MESSAGE)
+  assert.equal(req.content, "", "a zap carries no app text unless the user wrote a comment")
   assert.deepEqual(req.tags, [["p", n.pubkey], ["relays", "wss://relay.example.com", "wss://relay.primal.net", "wss://relay.damus.io", "wss://relay.snort.social", "wss://relay.btcforplebs.com", "wss://nostr-pub.wellorder.net"],
     ["amount", "21000"], ["e", n.id], ["lnurl", "Bob@Zaps.example"]])
   assert.deepEqual(w.paid, [{ conn: wallet.conn, pr: "lnbc210n1qqqqfake" }])
   assert.ok(!s.asked.some(u => u.includes(wallet.conn.secret)), "the wallet's secret is in no URL")
   assert.deepEqual(zapTotal(n.id), { sats: 21, mine: true })
+})
+
+test("a typed comment is the zap request's content, trimmed; blank sends none", async () => {
+  for (const [typed, want] of [["  great set!\n", "great set!"], ["   ", ""], [undefined, ""]]) {
+    const s = fakeService(), w = payer(), n = note()
+    await zap(ctxFor(), { recipient: n.pubkey, note: n, sats: 21, comment: typed }, { fetchImpl: s.fetchImpl, pay: w.pay, wallet, lnOf: bobLn })
+    assert.equal(JSON.parse(new URL(s.asked[1]).searchParams.get("nostr")).content, want)
+  }
+})
+
+test("zapComment caps at ZAP_COMMENT_MAX and never invents text", () => {
+  assert.equal(zapComment(""), "")
+  assert.equal(zapComment(null), "")
+  assert.equal(zapComment("a".repeat(ZAP_COMMENT_MAX + 9)).length, ZAP_COMMENT_MAX)
 })
 
 test("a profile zap has no e tag", async () => {

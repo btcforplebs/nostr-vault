@@ -98,8 +98,8 @@ internal fun FeedScreenSheets(
             sheetState = zapSheetState,
             defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
             onDismiss = { zapNoteId = null },
-            onZap = { amount ->
-                zapNoteId?.let { viewModel.zapNote(it, amount) }
+            onZap = { amount, comment ->
+                zapNoteId?.let { viewModel.zapNote(it, amount, comment) }
                 zapNoteId = null
             },
         )

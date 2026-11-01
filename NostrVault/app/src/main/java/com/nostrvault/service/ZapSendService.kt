@@ -59,7 +59,7 @@ class ZapSendService @Inject constructor(
         noteId: String,
         notePubkey: String,
         amountSats: Int,
-        message: String = "Zap from Nostr Vault",
+        message: String = "",
         addressTag: String? = null,
         extraReceiptRelays: List<String> = emptyList(),
     ): Result<Unit> {
@@ -130,7 +130,7 @@ class ZapSendService @Inject constructor(
                 if (lnurlTag.isNotEmpty()) add(listOf("lnurl", lnurlTag))
             }
             val signed = try {
-                nostrService.signEventAsync(kind = 9734, content = message, tags = tags)
+                nostrService.signEventAsync(kind = 9734, content = com.nostrvault.util.ZapComment.content(message), tags = tags)
             } catch (e: Exception) {
                 Log.w(TAG, "Zap request signing failed: ${e.message}")
                 null

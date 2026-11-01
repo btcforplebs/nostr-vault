@@ -46,6 +46,7 @@ button.danger { color: var(--danger); }
 .zap-presets button.on { border-color: var(--accent); color: var(--accent-light); }
 .zap-custom { display: flex; align-items: center; gap: 8px; color: var(--text-2); font: var(--t-foot); }
 .zap-custom input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; font: 14px var(--mono); }
+.zap-comment { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; font: var(--t-foot); }
 .zap-picker-row { display: flex; gap: 8px; justify-content: flex-end; }
 .zap-picker-row button { min-height: 38px; padding: 0 14px; }
 /* On a profile the pill is near the top of the screen: the picker opens downward. */
