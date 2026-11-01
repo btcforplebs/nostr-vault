@@ -43,11 +43,10 @@ tags: [nostr, bitcoin, relay, blossom, lightning]
 release_notes: ./RELEASE_NOTES.md
 images:
   - screenshots/01_feed.png
-  - screenshots/02_thread.png
-  - screenshots/03_vault_dashboard.png
-  - screenshots/04_compose_preview.png
-  - screenshots/05_web_of_trust.png
-  - screenshots/06_settings.png
+  - screenshots/02_vault_dashboard.png
+  - screenshots/03_compose_preview.png
+  - screenshots/04_web_of_trust.png
+  - screenshots/05_settings.png
 
 release_source:
   asset_url: https://github.com/btcforplebs/nostr-vault/releases/download/v2.7.2-b20/NostrVault-b20-v2.7.2.apk
