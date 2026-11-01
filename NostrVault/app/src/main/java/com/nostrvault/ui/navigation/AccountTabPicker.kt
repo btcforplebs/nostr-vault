@@ -8,7 +8,8 @@ import com.nostrvault.ui.components.AccountInfo
 /**
  * Hold the account picture in the bar (or slide a little), move onto an
  * account, let go: the app switches to it. Same engine and look as the Feed
- * and Vault menus ([DockHoldMenu]). Only with more than one account; with one
+ * and Vault menus ([DockHoldMenu]), but centered on screen, growing up from
+ * the middle button. Only with more than one account; with one
  * there is nothing to switch to. iOS: BottomTabBar's account switch menu.
  */
 @Stable
@@ -42,6 +43,7 @@ fun AccountTabPickerOverlay(
         closeLabel = "Close account list",
         onPick = onPick,
         modifier = modifier,
+        centered = true,
     )
 }
 

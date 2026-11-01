@@ -308,7 +308,7 @@ data class DockHoldRow(
 
 /**
  * The menu itself, drawn over the whole window above the bar, growing up
- * from its tab's side of the screen with the first entry right above the
+ * from its tab's side of the screen ([centered]: from the middle) with the first entry right above the
  * finger. A tap on the dim behind it closes it.
  */
 @Composable
@@ -320,6 +320,9 @@ fun <T> DockHoldMenuOverlay(
     closeLabel: String,
     onPick: (T) -> Unit,
     modifier: Modifier = Modifier,
+    /** Centered on screen, growing up from the middle (the account picker,
+     *  Logen 2026-11-01; iOS DockHoldButton centered). */
+    centered: Boolean = false,
 ) {
     val open = menu.isOpen
     val density = LocalDensity.current
@@ -350,7 +353,17 @@ fun <T> DockHoldMenuOverlay(
         } else {
             maxOf(marginPx, anchor.left - rootOrigin.x)
         }
-        val origin = TransformOrigin(if (trailing) 1f else 0f, 1f)
+        val origin = TransformOrigin(if (centered) 0.5f else if (trailing) 1f else 0f, 1f)
+        val align = when {
+            centered -> Alignment.BottomCenter
+            trailing -> Alignment.BottomEnd
+            else -> Alignment.BottomStart
+        }
+        val xPx = when {
+            centered -> 0
+            trailing -> -sidePx.roundToInt()
+            else -> sidePx.roundToInt()
+        }
         Box(
             Modifier
                 .fillMaxSize()
@@ -362,8 +375,8 @@ fun <T> DockHoldMenuOverlay(
                     scaleIn(DockHold.swiftSpring(0.22f, 0.84f), initialScale = 0.6f, transformOrigin = origin),
                 exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.6f, transformOrigin = origin),
                 modifier = Modifier
-                    .align(if (trailing) Alignment.BottomEnd else Alignment.BottomStart)
-                    .offset { IntOffset(if (trailing) -sidePx.roundToInt() else sidePx.roundToInt(), -bottomPx.roundToInt()) },
+                    .align(align)
+                    .offset { IntOffset(xPx, -bottomPx.roundToInt()) },
             ) {
                 // iOS: applyGlassRect(cornerRadius: 22) + shadow(.black 0.35, radius 18, y 6).
                 Column(

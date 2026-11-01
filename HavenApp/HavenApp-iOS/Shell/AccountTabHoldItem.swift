@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The avatar in the dock: tap runs `primary`; press and hold briefly, or
 /// slide a little, and the accounts open in the dock's own hold menu
-/// (`DockHoldMenu`), the same rows and timing as Feed and Vault. Slide onto
+/// (`DockHoldMenu`), the same rows and timing as Feed and Vault, but
+/// centered on screen, growing up from the middle button. Slide onto
 /// an account and let go to switch to it.
 ///
 /// The menu is drawn by `DockHoldMenuOverlay` over the whole screen, not
@@ -19,7 +20,7 @@ struct AccountTabHoldItem<Label: View>: View {
     @ObservedObject private var unreadStore = AccountUnreadStore.shared
 
     var body: some View {
-        DockHoldButton(onTap: primary, entries: entries, onPick: pick, label: label)
+        DockHoldButton(onTap: primary, entries: entries, onPick: pick, centered: true, label: label)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Profile")
             .accessibilityAddTraits(.isButton)
