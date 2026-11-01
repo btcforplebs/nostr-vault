@@ -71,7 +71,7 @@ fun NostrContentText(
     // memoize them — otherwise they re-run on every recomposition (e.g. each
     // time the global profile map updates while scrolling), which is the main
     // feed-scroll jank source.
-    val segments = remember(content, mediaURLs, linkURLs) { parseContentSegments(content, mediaURLs + linkURLs) }
+    val segments = remember(content, mediaURLs, linkURLs) { cachedContentSegments(content, mediaURLs + linkURLs) }
 
     // Resolve mention display-names + build the styled string. This is cheap
     // (map lookups + string appends, no regex), so it can re-run when profiles
@@ -272,6 +272,12 @@ private val URL_REGEX = Regex(
 private val HASHTAG_REGEX = Regex(
     """(?<![\p{L}\p{N}_/#&\]\[])#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)""",
 )
+
+private val segmentCache = TextParseCache<Pair<String, Set<String>>, List<ContentSegment>>(TextParseCache.NOTES)
+
+/** [parseContentSegments], once per text and stripped set ([TextParseCache]). */
+internal fun cachedContentSegments(content: String, strippedURLs: Set<String>): List<ContentSegment> =
+    segmentCache.getOrPut(content to strippedURLs) { parseContentSegments(content, strippedURLs) }
 
 /** [strippedURLs] are dropped from the text: media, and links drawn as cards. */
 internal fun parseContentSegments(
