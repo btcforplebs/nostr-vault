@@ -24,6 +24,7 @@ import javax.inject.Singleton
 class LiveChatMediaUpload @Inject constructor(
     @ApplicationContext private val context: Context,
     private val blossomService: BlossomService,
+    private val nostrService: com.nostrvault.service.NostrService,
 ) {
     sealed class Outcome {
         data class Hosted(val url: String) : Outcome()
@@ -43,7 +44,9 @@ class LiveChatMediaUpload @Inject constructor(
             input.use { i -> temp.outputStream().use { i.copyTo(it) } }
             if (!MediaPrivacy.removeLocation(temp, mime)) return@withContext Outcome.Failed(MediaPrivacy.FAILURE_MESSAGE)
             val sha256 = blossomService.computeSHA256(temp)
-            when (val outcome = blossomService.uploadForPost(temp, sha256, mime)) {
+            // Signed by the account the chat message goes out as, not the owner (Logen 2026-11-01).
+            val signAs = nostrService.lockPostingAccount()
+            when (val outcome = blossomService.uploadForPost(temp, sha256, mime, signAs = signAs)) {
                 is BlossomService.PostUploadOutcome.Hosted -> Outcome.Hosted(outcome.url)
                 is BlossomService.PostUploadOutcome.SavedOnDevice ->
                     Outcome.Failed("Saved on this phone, but none of your media servers answered, so it wasn't sent.")

@@ -16,13 +16,18 @@ import com.nostrvault.service.BlossomService.UploadSource
         skipOutsideServers: Boolean,
         /** False for DM attachments: the vault's mesh door serves any blob to anyone with its hash. */
         toHomeVault: Boolean = true,
+        /** The account a note's media is signed as; null signs as the owner (see signAuthHeader). */
+        signAs: com.nostrvault.data.model.PostingAccount.Lock? = null,
     ): UploadAttempt = withContext(Dispatchers.IO) {
         // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
         // every mirror. The event is server-agnostic (no "u" tag), so one
         // signature is valid everywhere. This is required for external signers:
         // Amber serializes signing through a single activity and fails on the
         // concurrent requests that per-destination signing would produce.
-        val authHeader = createAuthHeader("upload", sha256)
+        val authHeader = createAuthHeader("upload", sha256, signAs = signAs)
+        // The home vault's public copy is published under the owner's server:
+        // never the fallback for a note another account posts.
+        val ownerVaultOk = signAs == null || signAs.hex.equals(nostrService.ownerHexPubkey, ignoreCase = true)
         if (authHeader.isEmpty()) {
             Log.e(TAG, "Upload aborted: could not create Blossom auth event (signer unavailable)")
             return@withContext UploadAttempt(PostUploadOutcome.NotSavedOnDevice, null)
@@ -51,7 +56,8 @@ import com.nostrvault.service.BlossomService.UploadSource
         // Mirrors still get a copy, but one pass and no wait. A LAN or
         // Tailscale address only opens for the owner, so it takes the normal
         // path below, like the built-in relay.
-        if (savedLocalUrl != null && !com.nostrvault.relay.isPrivateNetworkURL(savedLocalUrl)) {
+        // The owner's server, so not for a note another account posts: that goes through the mirrors.
+        if (savedLocalUrl != null && !com.nostrvault.relay.isPrivateNetworkURL(savedLocalUrl) && ownerVaultOk) {
             if (mirrors.isNotEmpty() && !skipOutsideServers) {
                 scope.launch { mirrorUploadPass(source, mirrors, sha256, contentType, authHeader) }
             }
@@ -66,7 +72,7 @@ import com.nostrvault.service.BlossomService.UploadSource
         // Only skip when the blob is safe here; if the local save failed, an
         // outside server is the only place it can go, so try them anyway.
         if (skipOutsideServers && localOk) {
-            if (toHomeVault) hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
+            if (toHomeVault && ownerVaultOk) hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
             Log.i(TAG, "Saved ${sha256.take(8)} on this device only — an earlier attachment found every outside server down")
             return@withContext UploadAttempt(PostUploadOutcome.SavedOnDevice(mirrors), savedLocalUrl)
         }
@@ -86,7 +92,7 @@ import com.nostrvault.service.BlossomService.UploadSource
         if (external == null) {
             Log.e(TAG, "All Blossom mirror uploads failed for ${sha256.take(8)} (saved on this device: $localOk)")
             // The public copy is pushed from this phone's relay, so only when it is here.
-            if (localOk && toHomeVault) {
+            if (localOk && toHomeVault && ownerVaultOk) {
                 hostedViaHomeVault(sha256, contentType, mirrors)?.let { return@withContext UploadAttempt(it, savedLocalUrl) }
             }
             return@withContext UploadAttempt(notHosted(mirrors), savedLocalUrl)

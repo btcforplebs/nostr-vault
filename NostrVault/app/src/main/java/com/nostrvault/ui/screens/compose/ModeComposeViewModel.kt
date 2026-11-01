@@ -294,7 +294,8 @@ class ModeComposeViewModel @Inject constructor(
         }
     }
 
-    private suspend fun upload(file: File, mime: String, label: String): Pair<String, String> {
+    /** Uploads [file] signed by [signAs], the account the post goes out as (Logen 2026-11-01). */
+    private suspend fun upload(file: File, mime: String, label: String, signAs: PostingAccount.Lock): Pair<String, String> {
         // Every file here is a temp copy, so the location can come out in place.
         if (!MediaPrivacy.removeLocation(file, mime)) throw IllegalStateException(MediaPrivacy.FAILURE_MESSAGE)
         val sha = blossomService.computeSHA256(file)
@@ -303,6 +304,7 @@ class ModeComposeViewModel @Inject constructor(
             sha256 = sha,
             contentType = mime,
             onProgress = { p -> _status.value = "Uploading $label… ${(p * 100).toInt()}%" },
+            signAs = signAs,
         )
         val url = when (outcome) {
             is BlossomService.PostUploadOutcome.Hosted -> outcome.url
@@ -324,13 +326,13 @@ class ModeComposeViewModel @Inject constructor(
             _busy.value = true
             _error.value = null
             try {
-                val (videoUrl, videoSha) = withContext(Dispatchers.IO) { upload(clip.file, clip.mimeType, "video") }
+                val (videoUrl, videoSha) = withContext(Dispatchers.IO) { upload(clip.file, clip.mimeType, "video", lock) }
                 val posterFile = withContext(Dispatchers.IO) {
                     File.createTempFile("divine_poster_", ".jpg", context.cacheDir).also { f ->
                         f.outputStream().use { clip.poster.compress(Bitmap.CompressFormat.JPEG, 80, it) }
                     }
                 }
-                val (posterUrl, _) = withContext(Dispatchers.IO) { upload(posterFile, "image/jpeg", "cover") }
+                val (posterUrl, _) = withContext(Dispatchers.IO) { upload(posterFile, "image/jpeg", "cover", lock) }
                 posterFile.delete()
                 _status.value = "Posting…"
                 val tags = DivinePost.tags(
@@ -382,7 +384,7 @@ class ModeComposeViewModel @Inject constructor(
                             }
                         }
                     }
-                    imageUrl = withContext(Dispatchers.IO) { upload(file, mime, "cover") }.first
+                    imageUrl = withContext(Dispatchers.IO) { upload(file, mime, "cover", lock) }.first
                     file.delete()
                 }
                 _status.value = "Publishing…"
@@ -458,7 +460,7 @@ class ModeComposeViewModel @Inject constructor(
                 photos.forEachIndexed { index, uri ->
                     val label = if (photos.size == 1) "photo" else "photo ${index + 1} of ${photos.size}"
                     val file = withContext(Dispatchers.IO) { listingJpeg(uri) }
-                    urls += withContext(Dispatchers.IO) { upload(file, "image/jpeg", label) }.first
+                    urls += withContext(Dispatchers.IO) { upload(file, "image/jpeg", label, lock) }.first
                     file.delete()
                 }
                 _status.value = "Publishing…"

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.QueuedMediaPost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -25,7 +26,14 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class ComposeNoteUploads(
     private val scope: CoroutineScope,
-    private val send: suspend (attachment: Attachment, skipOutside: Boolean, onProgress: (Float) -> Unit) -> ComposeNoteUpload,
+    private val send: suspend (
+        attachment: Attachment,
+        skipOutside: Boolean,
+        signAs: PostingAccount.Lock,
+        onProgress: (Float) -> Unit,
+    ) -> ComposeNoteUpload,
+    /** The account active right now: a pick's upload is signed by it. */
+    private val activeAccount: () -> PostingAccount.Lock,
     /** Media picked from the relay: already hosted, published as-is. */
     private val hostedMedia: (Attachment) -> QueuedMediaPost.Media,
 ) {
@@ -37,6 +45,14 @@ internal class ComposeNoteUploads(
     private val turn = Mutex()
     /** Called once a link is known, so the screen can place it. */
     var onDone: ((Attachment, ComposeNoteUpload.Done) -> Unit)? = null
+    /**
+     * Post uploaded a photo again as the posting account: the other
+     * account's link [old] must leave the text, whatever came back. [new] is
+     * the posting account's link to put in its place, or null when it has
+     * none yet (saved on this device only, or failed): the queue then puts
+     * this account's link at the end (Tron, PR #1517).
+     */
+    var onRelink: ((old: String, new: String?) -> Unit)? = null
 
     /** Starts [attachment]'s upload; one already hosted is done at once. */
     fun start(attachment: Attachment) {
@@ -48,10 +64,11 @@ internal class ComposeNoteUploads(
     }
 
     /** A pick never skips the outside servers: the "servers down" rule is per Post, as it was. */
-    private suspend fun run(attachment: Attachment, skipOutside: Boolean = false) {
+    private suspend fun run(attachment: Attachment, skipOutside: Boolean = false, signAs: PostingAccount.Lock? = null) {
         val result = turn.withLock {
             set(attachment.id, ComposeNoteUpload.Sending(0f))
-            send(attachment, skipOutside) { progress ->
+            // Signed by the account active when it starts, unless Post names one.
+            send(attachment, skipOutside, signAs ?: activeAccount()) { progress ->
                 if (_states.value[attachment.id] is ComposeNoteUpload.Sending) set(attachment.id, ComposeNoteUpload.Sending(progress))
             }
         }
@@ -81,7 +98,7 @@ internal class ComposeNoteUploads(
      * one of this Post's tries finds every outside server down, the rest are
      * saved here only rather than each waiting out the same retry.
      */
-    suspend fun await(attachments: List<Attachment>): ComposeNoteViewModel.AttachmentUploadResult {
+    suspend fun await(attachments: List<Attachment>, postAs: PostingAccount.Lock): ComposeNoteViewModel.AttachmentUploadResult {
         val media = mutableListOf<QueuedMediaPost.Media>()
         var unreachable = emptyList<String>()
         for (attachment in attachments) {
@@ -91,10 +108,15 @@ internal class ComposeNoteUploads(
             }
             synchronized(jobs) { jobs[attachment.id] }?.join()
             var state = _states.value[attachment.id]
-            if (state !is ComposeNoteUpload.Done || state.media.url == null) {
+            // Picked as one account, posted as another: upload it again as the
+            // posting account, so its note carries no link the other put up.
+            val oldUrl = (state as? ComposeNoteUpload.Done)?.takeIf { it.needsReupload(postAs.hex) }?.media?.url
+            if (state !is ComposeNoteUpload.Done || state.media.url == null || oldUrl != null) {
                 set(attachment.id, ComposeNoteUpload.Waiting)
-                run(attachment, skipOutside = unreachable.isNotEmpty())
+                run(attachment, skipOutside = unreachable.isNotEmpty(), signAs = postAs)
                 state = _states.value[attachment.id]
+                val newUrl = (state as? ComposeNoteUpload.Done)?.media?.url
+                if (oldUrl != null && newUrl != oldUrl) onRelink?.invoke(oldUrl, newUrl)
             }
             when (state) {
                 is ComposeNoteUpload.Done -> {

@@ -273,8 +273,10 @@ class BlossomService @Inject constructor(
         contentType: String,
         skipOutsideServers: Boolean = false,
         onProgress: ((Float) -> Unit)? = null,
+        /** The account the note posts as; it signs the upload (null: the owner). */
+        signAs: com.nostrvault.data.model.PostingAccount.Lock? = null,
     ): PostUploadOutcome =
-        upload(UploadSource.FileSource(fileURL), sha256, contentType, skipOutsideServers).outcome
+        upload(UploadSource.FileSource(fileURL), sha256, contentType, skipOutsideServers, signAs = signAs).outcome
             .also { homeVault.drainSoon() }
 
     /** What one upload did, plus the local URL when the local save succeeded. */
@@ -640,9 +642,16 @@ class BlossomService @Inject constructor(
      * to count as success, so a file left on two of three servers read as deleted.
      * Delete everywhere also reaches the owner's mesh devices: [deleteOverMesh].
      */
-    suspend fun deleteFromServers(sha256: String, photoUrl: String?, includeHomeVault: Boolean): MirrorDeleteResult = withContext(Dispatchers.IO) {
+    suspend fun deleteFromServers(
+        sha256: String,
+        photoUrl: String?,
+        includeHomeVault: Boolean,
+        /** The account that uploaded it signs the delete (null: the owner). */
+        signAs: com.nostrvault.data.model.PostingAccount.Lock? = null,
+    ): MirrorDeleteResult = withContext(Dispatchers.IO) {
         val config = configStore.config.value
-        val published = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
+        // The signing account's own published servers (kind 10063), not the owner's.
+        val published = nostrService.serverLists.value[signAs?.hex ?: nostrService.ownerHexPubkey].orEmpty()
         val mirrors = config.blossomDeleteTargets(published, photoUrl, includeHomeVault)
         val mesh = com.nostrvault.fips.MeshDeleteTargets.of(config, includeHomeVault)
         if (mirrors.isEmpty() && mesh.isEmpty()) return@withContext MirrorDeleteResult()
@@ -662,7 +671,7 @@ class BlossomService @Inject constructor(
                     val deleteUrl = "${mirror.trimEnd('/')}/$sha256"
                     // A URL whose host can't be named in the token is not sent one: it could be replayed.
                     if (deleteUrl.toHttpUrlOrNull() == null) return@async mirror to false
-                    val authHeader = createDeleteAuthHeader(sha256, deleteUrl)
+                    val authHeader = createDeleteAuthHeader(sha256, deleteUrl, signAs)
                     val request = Request.Builder()
                         .url(deleteUrl)
                         .delete()

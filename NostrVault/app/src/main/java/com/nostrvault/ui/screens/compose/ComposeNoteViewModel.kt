@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.isReadOnlyAccount
 import com.nostrvault.service.readsForeignUri
 import android.content.ClipboardManager
 import android.content.Context
@@ -147,7 +148,8 @@ class ComposeNoteViewModel @Inject constructor(
     @Volatile internal var postTapped = false
     internal val uploads = ComposeNoteUploads(
         scope = uploadScope,
-        send = { attachment, skipOutside, onProgress -> uploadSend(attachment, skipOutside, onProgress) },
+        send = { attachment, skipOutside, signAs, onProgress -> uploadSend(attachment, skipOutside, signAs, onProgress) },
+        activeAccount = { nostrService.lockPostingAccount() },
         hostedMedia = { hostedMedia(it) },
     )
     /** Where each placed photo's link goes in, valid for [anchorText]. */
@@ -429,7 +431,8 @@ class ComposeNoteViewModel @Inject constructor(
         now.linkToRemove(id)?.let { url ->
             _content.value = ComposeNoteDraft.removeLink(_content.value, url)
         }
-        now.uploadToDelete(id)?.let { deleteUnused(listOf(it), cleanupScope) }
+        val active = nostrService.lockPostingAccount()
+        now.uploadToDelete(id, active.hex)?.let { deleteUnused(listOf(it), cleanupScope, active) }
         uploads.cancel(id)
         rebaseAnchors()
         _anchors.value = _anchors.value - id
@@ -448,7 +451,8 @@ class ComposeNoteViewModel @Inject constructor(
         syncDraftToRelay()
         // Closed without ever tapping Post: what was uploaded and is not in a
         // kept draft comes off the servers. After Post, never.
-        closeCleanup()?.let { deleteUnused(it, cleanupScope) }
+        val active = nostrService.lockPostingAccount()
+        closeCleanup(active.hex)?.let { deleteUnused(it, cleanupScope, active) }
         // A send still running reads these; it deletes them when it ends.
         if (!_isPublishing.value) {
             uploads.cancelAll()
@@ -459,15 +463,15 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     /** What closing now deletes from the outside servers; null once Post was tapped. */
-    internal fun closeCleanup(): List<QueuedMediaPost.Media>? {
+    internal fun closeCleanup(activeHex: String): List<QueuedMediaPost.Media>? {
         if (postTapped || _isPublishing.value) return null
         val kept = if (textDiscarded) "" else _content.value
-        return ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).unusedUploads(kept)
+        return ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).unusedUploads(kept, activeHex)
     }
 
     /** One photo's upload; a seam so tests can stand in for the network. */
-    internal var uploadSend: suspend (Attachment, Boolean, (Float) -> Unit) -> ComposeNoteUpload =
-        { attachment, skipOutside, onProgress -> uploadOne(attachment, skipOutside, onProgress) }
+    internal var uploadSend: suspend (Attachment, Boolean, PostingAccount.Lock, (Float) -> Unit) -> ComposeNoteUpload =
+        { attachment, skipOutside, signAs, onProgress -> uploadOne(attachment, skipOutside, signAs, onProgress) }
 
     fun setShowBlossomPicker(show: Boolean) {
         _showBlossomPicker.value = show
@@ -652,6 +656,11 @@ class ComposeNoteViewModel @Inject constructor(
         // This draft may still be sending from an earlier visit to the
         // composer (left mid-upload, then reopened from Drafts): a second
         // send would post the same note twice.
+        // A read-only account (no key here) can sign neither the note nor its media.
+        if (nostrService.isReadOnlyAccount()) {
+            _error.value = READ_ONLY_ACCOUNT
+            return
+        }
         if (pendingPostManager.isSending(draftId)) {
             _error.value = ALREADY_SENDING
             notificationManager.showError(ALREADY_SENDING)
@@ -696,7 +705,9 @@ class ComposeNoteViewModel @Inject constructor(
                 if (_attachments.value.isNotEmpty()) {
                     _isUploading.value = true
                     _uploadMessage.value = draft.value.unfinished.takeIf { it > 0 }?.let { waitingMessage(it) }
-                    uploadResult = uploads.await(_attachments.value)
+                    // Signed as the account this note posts as: anything another
+                    // account uploaded goes up again as this one.
+                    uploadResult = uploads.await(_attachments.value, lock)
                     _isUploading.value = false
                     _uploadMessage.value = null
                 }
@@ -911,6 +922,8 @@ class ComposeNoteViewModel @Inject constructor(
     companion object {
         internal fun waitingMessage(unfinished: Int): String =
             if (unfinished == 1) "Waiting for 1 upload to finish…" else "Waiting for $unfinished uploads to finish…"
+        internal const val READ_ONLY_ACCOUNT =
+            "This account can only read: there is no key for it here, so it can't post or upload. Switch to an account that can post."
         internal const val ALREADY_SENDING = "This note is still sending. It will show up in a moment."
     }
 
