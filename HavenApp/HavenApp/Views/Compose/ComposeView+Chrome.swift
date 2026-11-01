@@ -63,8 +63,8 @@ extension ComposeView {
             // was ~0, and the text landed pinned against the GIF button
             // instead of reading cleanly. Swapping the whole row for a
             // dedicated status row keeps it from crowding at all.
-            if isUploading, let msg = uploadInfoProvider.uploadMessage {
-                footerStatus(text: msg)
+            if isUploading {
+                footerStatus(text: uploadsStatusText)
             } else if isPosting {
                 footerStatus(text: "Posting note...")
             } else {
@@ -153,6 +153,14 @@ extension ComposeView {
         .padding()
         .background(Color.platformControlBackground)
         .onChange(of: selectedItems) { _, _ in loadSelectedItems() }
+    }
+
+    /// Post is waiting on uploads still going.
+    private var uploadsStatusText: String {
+        let open = note.unfinishedUploads
+        let pct = Int(note.unfinishedProgress * 100)
+        if open == 0 { return "Finishing uploads..." }
+        return open == 1 ? "Finishing 1 upload - \(pct)%..." : "Finishing \(open) uploads - \(pct)%..."
     }
 
     private func footerStatus(text: String) -> some View {
@@ -272,10 +280,7 @@ extension ComposeView {
                         }
                         
                         Button {
-                            if let fileURL = attachment.fileURL {
-                                try? FileManager.default.removeItem(at: fileURL)
-                            }
-                            attachments.removeAll { $0.id == attachment.id }
+                            withdraw(attachment.id)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .symbolRenderingMode(.palette)
@@ -287,8 +292,27 @@ extension ComposeView {
                     // Overlaid rather than stacked: a Button sized to the whole
                     // thumbnail would sit on top of the remove button and
                     // swallow its taps.
+                    .overlay {
+                        AttachmentUploadBadge(state: attachment.upload) {
+                            startUpload(for: attachment.id)
+                        }
+                    }
                     .overlay(alignment: .bottomLeading) {
                         altChip(for: attachment)
+                    }
+                    .contextMenu {
+                        if attachment.upload == .hosted {
+                            Button {
+                                note.moveToCaret(attachment.id)
+                            } label: {
+                                Label("Move to cursor", systemImage: "text.insert")
+                            }
+                        }
+                        Button(role: .destructive) {
+                            withdraw(attachment.id)
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
                     }
                     .accessibilityElement(children: .contain)
                 }

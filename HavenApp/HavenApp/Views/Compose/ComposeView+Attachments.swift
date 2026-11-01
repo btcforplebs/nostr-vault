@@ -224,7 +224,13 @@ extension ComposeView {
             return false
         }
         attachments.append(attachment)
-        prepareUploadAuth(for: attachment)
+        // Its link goes in where the caret is now, once the upload lands.
+        note.anchors[attachment.id] = min(note.selection.location + note.selection.length, content.utf16.count)
+        // Behind another upload: sign its authorisation while it waits. The
+        // first one signs its own straight away; preparing it too would ask
+        // a remote signer twice.
+        if note.unfinishedUploads > 1 { prepareUploadAuth(for: attachment) }
+        startUpload(for: attachment.id)
         return true
     }
 
@@ -283,7 +289,9 @@ extension ComposeView {
         ))
     }
 
+    /// The composer closed: stop uploads still going and drop the temp copies.
     func cleanupAttachmentTempFiles() {
+        for task in note.uploads.values { task.cancel() }
         for attachment in attachments {
             if let fileURL = attachment.fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
@@ -323,8 +331,10 @@ extension ComposeView {
         // nostr.build GIFs are already hosted: post the link unless the user
         // asked to keep a copy on their own Blossom servers.
         if item.source == .nostrBuild && !ConfigService.shared.config.saveGifsToBlossom {
-            let link = item.attachURL.absoluteString
-            content += (content.isEmpty || content.hasSuffix("\n") || content.hasSuffix(" ")) ? link : "\n" + link
+            // In at the caret, like a photo's link.
+            let caret = min(note.selection.location + note.selection.length, content.utf16.count)
+            note.appEdited = true
+            content = ComposerPlacement.insert(item.attachURL.absoluteString, at: caret, in: content).text
             return
         }
         guard !isAttachmentLimitReached, !isFetchingGif else { return }

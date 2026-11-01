@@ -15,12 +15,15 @@ extension ComposeView {
         if hasSavableContent {
             showingDiscardConfirm = true
         } else {
+            // Closed with nothing kept as a draft: take back what went up.
+            withdrawHostedUploads()
             performDismiss()
         }
     }
 
     func discardDraftAndDismiss() {
         autoSaveTask?.cancel()
+        withdrawHostedUploads()
         if let id = draftId {
             Task { await DraftService.shared.deleteDraft(id: id) }
         }
