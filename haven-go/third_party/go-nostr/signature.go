@@ -36,9 +36,9 @@ func (evt Event) CheckSignature() (bool, error) {
 		return false, fmt.Errorf("failed to parse signature: %w", err)
 	}
 
-	// check signature
+	// check signature (haven: once per exact (hash, sig); see sigcache.go)
 	hash := sha256.Sum256(evt.Serialize())
-	return sig.Verify(hash[:], pubkey), nil
+	return checkSignatureCached(hash, s, func() bool { return sig.Verify(hash[:], pubkey) }), nil
 }
 
 // Sign signs an event with a given privateKey.
