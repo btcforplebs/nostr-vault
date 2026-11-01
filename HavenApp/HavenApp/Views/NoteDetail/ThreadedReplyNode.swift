@@ -106,6 +106,8 @@ struct ThreadedReplyNode: View {
         )
 
         VStack(alignment: .leading, spacing: 0) {
+            parentQuote
+
             FeedNoteRow(
                 note: reply,
                 profile: replyProfile,
@@ -144,6 +146,41 @@ struct ThreadedReplyNode: View {
                 focusedNoteId = reply.id
                 proxy.scrollTo(reply.id, anchor: .center)
             }
+        }
+    }
+
+    /// The note this reply answers, from the thread, else the feed's cache.
+    private var parentNote: FeedNote? {
+        guard let id = reply.parentEventId else { return nil }
+        return allNotes.first { $0.id == id } ?? FeedService.shared.findNote(id: id)
+    }
+
+    /// One line over the reply: who it answers and what they said, so a reply
+    /// read on its own (deep in a thread, or past the indent cap) still shows
+    /// what it is about. A parent not loaded yet is asked for.
+    @ViewBuilder
+    private var parentQuote: some View {
+        if let parent = parentNote {
+            let name = nostrService.profiles[parent.pubkey]?.bestName ?? String(parent.pubkey.prefix(8))
+            let text = CondensedText.oneLine(NostrContentFormatter.resolveMentionsPlainText(
+                NostrContentFormatter.stripURLs(parent.mediaURLs + parent.linkURLs, from: parent.content)))
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.appSystem(size: 9, weight: .semibold))
+                    .foregroundColor(Color.havenPurple.opacity(0.6))
+                (Text(name).fontWeight(.semibold) + Text(text.isEmpty ? "" : ": " + text))
+                    .font(.appSystem(size: 12, weight: .regular))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("Replying to \(name): \(text)"))
+        } else if let id = reply.parentEventId {
+            Color.clear.frame(height: 0)
+                .onAppear { FeedService.shared.fetchMissingNote(id: id) }
         }
     }
 
