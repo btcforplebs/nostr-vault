@@ -12,6 +12,20 @@ extension ComposeView {
     private static let accountChangedMessage = "The account changed while this note was posting, so it was not sent. Your note is saved as a draft."
 
     func postNote() {
+        // The account changed since this reply was opened (a notification
+        // tap, the switcher): switch back rather than sign with the wrong key,
+        // and let Post be tapped again once that account is active.
+        if let npub = PostingAccount.switchTarget(postAs: postAsPicked,
+                                                  active: configService.config.activeAccountNpub,
+                                                  owner: configService.config.ownerNpub) {
+            configService.switchActiveAccount(to: npub)
+            let hex = Bech32.decode(npub)?.hexString ?? ""
+            let name = nostrService.profiles[hex]?.bestName ?? AccountSwitcherIdentity.shortNpub(npub)
+            let message = "This reply is for \(name). Switched back to \(name); tap Post again."
+            ErrorNotificationManager.shared.show(message)
+            error = message
+            return
+        }
         isPosting = true
         autoSaveTask?.cancel()
         autoSaveTask = nil

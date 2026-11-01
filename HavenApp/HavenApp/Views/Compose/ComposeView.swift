@@ -107,6 +107,11 @@ struct ComposeView: View {
     var initialContent: String = ""
     // Optional: draft ID when restoring a saved draft
     var restoredDraftId: String? = nil
+    /// The account this note is for (npub), when it isn't simply whichever is
+    /// active: a reply from a note opened as another account. nil = active.
+    var postAs: String? = nil
+    /// `postAs`, or the account picked from the avatar menu since.
+    @State var postAsPicked: String? = nil
     
     struct Attachment: Identifiable {
         let id = UUID()
@@ -185,6 +190,7 @@ struct ComposeView: View {
                                         pictureURL: profile?.pictureURL,
                                         isActive: activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
                                     ) {
+                                        postAsPicked = npub
                                         configService.switchActiveAccount(to: npub)
                                     }
                                 }
@@ -309,6 +315,15 @@ struct ComposeView: View {
                 Button("Keep Editing", role: .cancel) { }
             }
             .onAppear {
+                // A reply for another account's note: be that account before
+                // anything is typed, so the avatar, the signer and a remote
+                // signer's connection are all that account's.
+                if postAsPicked == nil { postAsPicked = postAs }
+                if let npub = PostingAccount.switchTarget(postAs: postAsPicked,
+                                                          active: configService.config.activeAccountNpub,
+                                                          owner: configService.config.ownerNpub) {
+                    configService.switchActiveAccount(to: npub)
+                }
                 // Start waking sleeping mirror hosts (e.g. the Mac relay) now,
                 // so they're reachable by the time the user hits Post.
                 Task { await blossomService.prewarmMirrors() }

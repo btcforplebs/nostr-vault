@@ -10,7 +10,13 @@ struct NoteDetailView: View {
     /// thread gets it, not each caller.
     init(note: FeedNote) {
         self.note = FeedService.shared.threadTarget(for: note)
+        let config = ConfigService.shared.config
+        _openedAs = State(initialValue: PostingAccount.resolve(active: config.activeAccountNpub, owner: config.ownerNpub))
     }
+    /// The account active when this note was opened. Opening another
+    /// account's Vault line switches to it first, so replies from here are
+    /// that account's even if the active account changes while reading.
+    @State private var openedAs: String
     @StateObject var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -386,7 +392,8 @@ struct NoteDetailView: View {
             }
         }
         .sheet(item: $composeContext) { ctx in
-            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
+            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo,
+                        postAs: openedAs)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
