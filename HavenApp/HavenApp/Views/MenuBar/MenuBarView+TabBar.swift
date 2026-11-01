@@ -303,11 +303,6 @@ extension MenuBarView {
                                             .offset(x: 1, y: 1)
                                     }
                                 }
-                                // Bottom-right holds the non-owner badge.
-                                .overlay(alignment: .topTrailing) {
-                                    NewsDot(isShown: otherAccountHasNews, size: 7, color: NewsDot.otherAccount)
-                                        .offset(x: 2, y: -2)
-                                }
                             }
                             .buttonStyle(.plain)
                             .help(hasMultipleAccounts ? "Switch Account" : "My Profile")
