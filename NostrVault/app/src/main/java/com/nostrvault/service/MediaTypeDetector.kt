@@ -25,7 +25,8 @@ class MediaTypeDetector @Inject constructor() {
     private val inFlightDetections = ConcurrentHashMap<String, Deferred<String?>>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val httpClient = OkHttpClient.Builder()
+    // Same hosts as the images: share their connections ([ImageHttp]).
+    private val httpClient = ImageHttp.root.newBuilder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .build()

@@ -43,6 +43,9 @@ private fun avatarImageLoader(context: Context): ImageLoader {
             ImageLoader.Builder(context.applicationContext)
                 .memoryCache(appLoader.memoryCache)
                 .diskCache(appLoader.diskCache)
+                // The app's image client, not a default one: same connections,
+                // and the blossom cache and FIPS mesh in front of the network.
+                .okHttpClient { com.nostrvault.service.ImageHttp.images }
                 .crossfade(false)
                 .respectCacheHeaders(false)
                 .build() // no GifDecoder/VideoFrameDecoder → static first frame

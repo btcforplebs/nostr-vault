@@ -43,6 +43,11 @@ class WebSocketClient(
     private val autoReconnect: Boolean = true,
     /** Frames held for a slow collector before new ones are dropped. */
     messageBuffer: Int = 256,
+    /**
+     * Other features may borrow this socket while it is open ([lend]): the
+     * feed's, which already holds one to each read relay.
+     */
+    private val lendable: Boolean = false,
     private val watchdogIdleMs: Long = WATCHDOG_IDLE_MS,
     private val watchdogReplyMs: Long = WATCHDOG_REPLY_MS,
 ) : RelayConnection {
@@ -52,6 +57,16 @@ class WebSocketClient(
         /** Every live client, so a blocklist change reaches sockets already open. */
         private val live: MutableSet<WebSocketClient> =
             java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(java.util.WeakHashMap()))
+
+        /** Open lendable sockets, keyed by [LookupSocketPool.relayKey]. */
+        private val lenders = java.util.concurrent.ConcurrentHashMap<String, WebSocketClient>()
+
+        /**
+         * An open socket to [url] another feature may ride (the feed's), or
+         * null. The borrower sends its own REQs on it and never disconnects it.
+         */
+        fun lend(url: String): WebSocketClient? =
+            lenders[LookupSocketPool.relayKey(url)]?.takeIf { it.connectionState.value == ConnectionState.CONNECTED }
 
         /**
          * Call after the Never connect list changes: drops sockets to relays
@@ -153,6 +168,10 @@ class WebSocketClient(
     private var shouldReconnect = true
     @Volatile private var refusedByBlocklist = false
     @Volatile private var lastInboundMs = 0L
+
+    /** Counts opened sockets, so a borrower can tell its socket was replaced. */
+    private val _generation = MutableStateFlow(0)
+    override val generation: StateFlow<Int> = _generation.asStateFlow()
     private var watchdogJob: Job? = null
     private var probes = 0
 
@@ -196,6 +215,7 @@ class WebSocketClient(
         refusedByBlocklist = false
         reconnectJob?.cancel()
         watchdogJob?.cancel()
+        unlend()
         synchronized(socketLock) {
             val open = webSocket
             webSocket = null
@@ -217,7 +237,12 @@ class WebSocketClient(
     private fun release(ws: WebSocket): Boolean = synchronized(socketLock) {
         if (webSocket !== ws) return false
         webSocket = null
+        unlend()
         true
+    }
+
+    private fun unlend() {
+        if (lendable) lenders.remove(LookupSocketPool.relayKey(url), this)
     }
 
     private fun doConnect() {
@@ -273,8 +298,10 @@ class WebSocketClient(
                     return
                 }
                 if (BuildConfig.DEBUG) Log.d(TAG, "Connected to $url")
+                _generation.value++
                 _connectionState.value = ConnectionState.CONNECTED
                 openedAtMs = System.currentTimeMillis()
+                if (lendable) lenders[LookupSocketPool.relayKey(url)] = this@WebSocketClient
                 startWatchdog(webSocket)
             }
 
@@ -411,4 +438,22 @@ interface RelayConnection {
     fun connect()
     fun send(message: String): Boolean
     fun disconnect()
+    /** Another owner's socket ([LentConnection]): connect and disconnect are theirs. */
+    val lent: Boolean get() = false
+    /** Bumps on every new socket; null when the connection never changes under the pool. */
+    val generation: StateFlow<Int>? get() = null
+}
+
+/**
+ * [owner]'s open socket, ridden by [LookupSocketPool]: REQs and CLOSEs go out
+ * on it, but it is never dialled or closed from here.
+ */
+class LentConnection(private val owner: RelayConnection) : RelayConnection {
+    override val messages: SharedFlow<String> get() = owner.messages
+    override val connectionState: StateFlow<WebSocketClient.ConnectionState> get() = owner.connectionState
+    override fun connect() {}
+    override fun send(message: String): Boolean = owner.send(message)
+    override fun disconnect() {}
+    override val lent: Boolean get() = true
+    override val generation: StateFlow<Int>? get() = owner.generation
 }

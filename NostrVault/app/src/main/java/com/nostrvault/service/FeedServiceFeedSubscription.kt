@@ -169,6 +169,9 @@ import com.nostrvault.service.FeedService.Companion.STAGGER_RELAY_MS
             url = relayUrl,
             scope = scope,
             trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
+            // Lookups, live rings, posts, threads and profiles ride it
+            // (LookupSocketPool) instead of dialling the relay again.
+            lendable = true,
         )
         // Replacing an existing client for this URL: tear down its collectors first.
         teardownFeedClient(relayUrl)

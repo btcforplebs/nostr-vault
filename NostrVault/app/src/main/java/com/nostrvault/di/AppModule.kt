@@ -111,18 +111,6 @@ object AppModule {
             .respectCacheHeaders(false) // Nostr profile pics rarely have proper cache headers
             .build()
 
-    /** Coil's HTTP client. A seam so a test can check what it refuses. */
-    internal fun imageHttpClient(): okhttp3.OkHttpClient =
-        okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            // A photo whose URL fails may wait up to 90 s for its owner's vault over the mesh (FipsMeshInterceptor).
-            .callTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-            // Blossom media through Morganite when it runs on this phone.
-            .addInterceptor(com.nostrvault.service.LocalBlossomCache.interceptor)
-            // A friend's vault on the FIPS mesh serves its blobs directly.
-            .addInterceptor(com.nostrvault.fips.FipsMeshInterceptor())
-            // A .fips read the mesh did not take never goes to DNS.
-            .addInterceptor(com.nostrvault.fips.FipsHostGuard)
-            .build()
+    /** Coil's HTTP client, the app's shared one ([ImageHttp]). A seam so a test can check what it refuses. */
+    internal fun imageHttpClient(): okhttp3.OkHttpClient = com.nostrvault.service.ImageHttp.images
 }
