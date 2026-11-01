@@ -42,6 +42,13 @@ struct DMReadAuth {
         }
     }
 
+    /// A REQ was closed for auth and no challenge has come yet. Some relays
+    /// send CLOSED before their AUTH challenge: the read isn't over, the
+    /// challenge is still on its way (the caller's timer ends the wait).
+    var isAwaitingChallenge: Bool {
+        mayAuth && phase == .idle && !waiting.isEmpty && challenge == nil
+    }
+
     /// Remember a REQ so it can be sent again after the AUTH.
     mutating func sent(subId: String, req: String) { reqs[subId] = req }
 
@@ -112,10 +119,22 @@ struct DMReadAuth {
         var seen = Set<String>()
         var out: [String] = []
         for relay in groups.joined() where out.count < cap {
-            let key = relay.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")).lowercased()
+            let key = relayKey(relay)
             guard !key.isEmpty, seen.insert(key).inserted else { continue }
             out.append(relay)
         }
         return out
+    }
+
+    /// One spelling per relay URL, for comparing lists.
+    static func relayKey(_ relay: String) -> String {
+        relay.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")).lowercased()
+    }
+
+    /// Only your own relays get an AUTH: a counterpart's 10050 relay (which
+    /// can be a Request's or a blocked sender's) could hold a remote signer
+    /// to a prompt on every foreground, or pass on another relay's challenge.
+    static func mayAuth(_ relay: String, own: Set<String>) -> Bool {
+        own.contains(relayKey(relay))
     }
 }

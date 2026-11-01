@@ -25,8 +25,29 @@ final class DMReadAuthTests: XCTestCase {
     /// The CLOSED can beat the challenge: sign once the challenge lands.
     func testClosedBeforeChallengeWaitsForIt() {
         var auth = reading()
+        XCTAssertFalse(auth.isAwaitingChallenge)
         XCTAssertEqual(auth.receive(type: "CLOSED", json: ["CLOSED", "ext-nip17-a", "auth-required: x"]), .none)
+        // The backfill must not finish here: its one v2 pass would go without AUTH.
+        XCTAssertTrue(auth.isAwaitingChallenge)
+        XCTAssertFalse(auth.isAuthenticating)
         XCTAssertEqual(auth.receive(type: "AUTH", json: ["AUTH", "c2"]), .sign(challenge: "c2"))
+        XCTAssertFalse(auth.isAwaitingChallenge)
+    }
+
+    /// A relay we won't AUTH to is never waited on.
+    func testSkippedRelayIsNotAwaitingChallenge() {
+        var auth = DMReadAuth(mayAuth: false)
+        auth.sent(subId: "ext-nip17-a", req: req)
+        _ = auth.receive(type: "CLOSED", json: ["CLOSED", "ext-nip17-a", "auth-required: x"])
+        XCTAssertFalse(auth.isAwaitingChallenge)
+    }
+
+    /// Only your own relays get an AUTH; a counterpart's 10050 relay doesn't.
+    func testOnlyOwnRelaysMayAuth() {
+        let own = Set(["wss://inbox.nostr.wine/", "wss://relay.damus.io"].map(DMReadAuth.relayKey))
+        XCTAssertTrue(DMReadAuth.mayAuth("wss://inbox.nostr.wine", own: own))
+        XCTAssertTrue(DMReadAuth.mayAuth("WSS://relay.damus.io/", own: own))
+        XCTAssertFalse(DMReadAuth.mayAuth("wss://stranger.example", own: own))
     }
 
     /// A relay handing out a fresh challenge with every refusal must not get

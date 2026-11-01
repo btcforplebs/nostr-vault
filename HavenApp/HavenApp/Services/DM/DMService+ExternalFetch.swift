@@ -28,9 +28,9 @@ extension DMService {
             .filter { !NostrService.isLoopbackRelay($0) }
         // Counterpart DM relays: messages to us are published there.
         let counterpartRelays = conversations.flatMap { NostrService.shared.dmRelayLists[$0.id] ?? [] }
-        let relays = DMReadAuth.fetchRelays(
-            [ownDMInboxRelays(), ownDMRelays, ConfigService.shared.config.readRelays, ownReadRelays, counterpartRelays],
-            cap: 15)
+        let ownGroups = [ownDMInboxRelays(), ownDMRelays, ConfigService.shared.config.readRelays, ownReadRelays]
+        let ownRelayKeys = Set(ownGroups.joined().map(DMReadAuth.relayKey))
+        let relays = DMReadAuth.fetchRelays(ownGroups + [counterpartRelays], cap: 15)
 
         #if DEBUG
         print("🌐 Fetching DMs from \(relays.count) external relays...")
@@ -42,7 +42,8 @@ extension DMService {
             let client = WebSocketClient()
             client.isTemporary = true
             externalClients.append(client)
-            let auth = readAuthLink(url: urlStr, account: ownPubkey)
+            let auth = readAuthLink(url: urlStr, account: ownPubkey,
+                                    own: DMReadAuth.mayAuth(urlStr, own: ownRelayKeys))
 
             client.messageSubject
                 .receive(on: processingQueue)
@@ -194,7 +195,8 @@ extension DMService {
             client.isTemporary = true
             var subs = Set<AnyCancellable>()
             var finished = false
-            let auth = readAuthLink(url: url.absoluteString, account: ownPubkey)
+            // Every relay here is your own (10002 + DM inbox).
+            let auth = readAuthLink(url: url.absoluteString, account: ownPubkey, own: true)
             func finish() {
                 guard !finished else { return }
                 finished = true
@@ -208,8 +210,11 @@ extension DMService {
                     guard let self, !finished, self.switchGeneration == generation else { return }
                     guard let (type, _) = self.routeExternalFrame(message, auth: auth, client: client, forAccount: ownPubkey) else { return }
                     // A CLOSED being answered with AUTH isn't the end: the
-                    // REQ goes again once the relay lets us in.
-                    if type == "EOSE" || (type == "CLOSED" && !auth.state.isAuthenticating && !auth.resentRecently) {
+                    // REQ goes again once the relay lets us in. Nor is one
+                    // that came before the relay's challenge: the 12 s timer
+                    // ends that wait, so the v2 pass isn't spent without AUTH.
+                    if type == "EOSE" || (type == "CLOSED" && !auth.state.isAuthenticating
+                                          && !auth.state.isAwaitingChallenge && !auth.resentRecently) {
                         // Let queued EVENTs drain through the sink first.
                         DispatchQueue.main.async { finish() }
                     }
@@ -243,8 +248,9 @@ extension DMService {
     /// once per relay per connection and never again after a failure.
     static var readAuthGivenUp = Set<String>()
 
-    func readAuthLink(url: String, account: String) -> DMReadAuthLink {
-        DMReadAuthLink(url: url, account: account, mayAuth: !Self.readAuthGivenUp.contains("\(account)|\(url)"))
+    func readAuthLink(url: String, account: String, own: Bool) -> DMReadAuthLink {
+        DMReadAuthLink(url: url, account: account,
+                       mayAuth: own && !Self.readAuthGivenUp.contains("\(account)|\(url)"))
     }
 
     /// Sends a REQ and remembers it, so it can be sent again after AUTH.
