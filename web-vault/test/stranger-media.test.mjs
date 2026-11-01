@@ -65,3 +65,10 @@ test("Vault activity: a stranger's avatar and reply images wait; a follow's load
     assert.equal(find(tree, NoteText)[0].props.images, ok)
   }
 })
+
+test("NoteText: with images off, a video link stays a link, so a stranger's server sees nothing", () => {
+  const url = "https://tracker.example/v.mp4"
+  const off = NoteText({ content: url, depth: 1, images: false })
+  assert.equal(find(off, "video").length, 0, "no <video> when images are off")
+  assert.deepEqual(find(off, "a").map(a => a.props.href), [url])
+})
