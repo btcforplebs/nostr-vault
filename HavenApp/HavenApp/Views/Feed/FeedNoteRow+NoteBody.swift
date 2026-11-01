@@ -267,7 +267,7 @@ extension FeedNoteRow {
                     .onTapGesture {
                         if let lud16 = lud16 {
                             Task {
-                                let sent = await actions.zapNote(note, lud16, nil)
+                                let sent = await actions.zapNote(note, lud16, nil, "")
                                 if sent { Motion.firePulse($zapPulse) }
                             }
                             // Sats fly from your avatar to this button and

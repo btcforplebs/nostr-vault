@@ -14,13 +14,16 @@ struct ZapSheetContext: Identifiable {
 
 struct CustomZapSheet: View {
     let defaultAmount: Int
-    let onZap: (Int) -> Void
+    /// The amount, and the comment the user typed ("" when they wrote none).
+    let onZap: (Int, String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedAmount: Int = 0
     @State private var customAmountText: String = ""
     @State private var isCustomActive: Bool = false
+    @State private var comment: String = ""
     @FocusState private var isTextFieldFocused: Bool
+    @FocusState private var isCommentFocused: Bool
 
     private let presetAmounts: [(sats: Int, label: String)] = [
         (21, "21"), (100, "100"), (500, "500"), (1_000, "1K"),
@@ -51,6 +54,10 @@ struct CustomZapSheet: View {
             customAmountField
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
+
+            commentField
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
 
             zapButton
                 .padding(.horizontal, 20)
@@ -183,6 +190,38 @@ struct CustomZapSheet: View {
         )
     }
 
+    // MARK: - Comment Field
+
+    /// Optional words sent with the zap. Empty by default: nothing is sent
+    /// unless the user writes it.
+    private var commentField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "text.bubble")
+                .font(.appSystem(size: 14, weight: .medium))
+                .foregroundColor(comment.isEmpty ? .secondary : .orange)
+
+            TextField("Add a comment (optional)", text: $comment)
+                .font(.appSystem(size: 16))
+                .foregroundColor(.white)
+                .textFieldStyle(.plain)
+                .focused($isCommentFocused)
+                .submitLabel(.done)
+                .onChange(of: comment) { _, newValue in
+                    if newValue.count > ZapComment.maxLength {
+                        comment = String(newValue.prefix(ZapComment.maxLength))
+                    }
+                }
+                .accessibilityLabel("Zap comment, optional")
+        }
+        .padding(14)
+        .background(Color.platformTertiaryGroupedBackground)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.platformSeparator, lineWidth: 0.8)
+        )
+    }
+
     // MARK: - Zap Button
 
     private var zapButton: some View {
@@ -191,7 +230,7 @@ struct CustomZapSheet: View {
             #if os(iOS)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             #endif
-            onZap(effectiveAmount)
+            onZap(effectiveAmount, ZapComment.content(comment))
             dismiss()
         } label: {
             HStack(spacing: 8) {

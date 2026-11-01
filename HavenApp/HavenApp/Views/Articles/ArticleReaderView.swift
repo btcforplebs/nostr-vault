@@ -131,11 +131,11 @@ struct ArticleReaderView: View {
             ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
         }
         .sheet(item: $zapSheetContext) { _ in
-            CustomZapSheet(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000) { amount in
-                zap(amount: amount)
+            CustomZapSheet(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000) { amount, comment in
+                zap(amount: amount, comment: comment)
             }
             #if os(iOS)
-            .presentationDetents([.height(380), .medium])
+            .presentationDetents([.height(440), .medium])
             .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
@@ -321,14 +321,14 @@ struct ArticleReaderView: View {
         }
     }
 
-    private func zap(amount: Int) {
+    private func zap(amount: Int, comment: String = "") {
         guard let lud16 = lightningAddress else { return }
         let coord = NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
         let noteId = note.id
         Task {
             do {
                 try await ZapService.shared.zapNote(noteId: noteId, notePubkey: note.pubkey, lud16: lud16,
-                                                    amountSats: amount, addressTag: coord)
+                                                    amountSats: amount, message: comment, addressTag: coord)
                 await MainActor.run {
                     feedService.zappedEventIds[noteId] = amount
                     feedService.saveInteractionState()

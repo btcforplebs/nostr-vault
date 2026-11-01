@@ -549,9 +549,9 @@ fun LiveStreamScreen(
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 defaultAmount = viewModel.defaultZapAmount(),
                 onDismiss = { showZapSheet = false },
-                onZap = { sats ->
+                onZap = { sats, comment ->
                     showZapSheet = false
-                    viewModel.zap(stream, sats)
+                    viewModel.zap(stream, sats, comment)
                 },
             )
         }

@@ -710,9 +710,9 @@ fun ProfileScreen(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             defaultAmount = viewModel.defaultZapSats,
             onDismiss = { zapSheetOpen = false },
-            onZap = { amount ->
+            onZap = { amount, comment ->
                 zapSheetOpen = false
-                viewModel.zap(amount)
+                viewModel.zap(amount, comment)
             },
         )
     }

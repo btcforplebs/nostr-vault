@@ -63,7 +63,7 @@ class ZapService: ObservableObject {
     ///   a stream's zaps by its address, so a receipt with only `e` and `p` is
     ///   invisible on the stream it paid for.
     /// - Parameter extraReceiptRelays: see `receiptRelays(me:recipient:extra:)`.
-    func zapNote(noteId: String, notePubkey: String, lud16: String, amountSats: Int? = nil, message: String = "Zap from Nostr Vault", addressTag: String? = nil, extraReceiptRelays: [String] = []) async throws {
+    func zapNote(noteId: String, notePubkey: String, lud16: String, amountSats: Int? = nil, message: String = "", addressTag: String? = nil, extraReceiptRelays: [String] = []) async throws {
         let amountSats = amountSats ?? (ConfigService.shared.config.defaultZapAmount / 1000)
         guard amountSats > 0 else {
             throw ZapError.paymentFailed("Zap amount must be greater than 0")
@@ -119,7 +119,7 @@ class ZapService: ObservableObject {
             let lnurlTag = lud16.lowercased().hasPrefix("lnurl:") ? String(lud16.dropFirst(6)) : lud16
             tags.append(["lnurl", lnurlTag])
             
-            guard let signedZapReq = await NostrService.shared.signEventAsync(kind: 9734, content: message, tags: tags) else {
+            guard let signedZapReq = await NostrService.shared.signEventAsync(kind: 9734, content: ZapComment.content(message), tags: tags) else {
                 RelayProcessManager.shared.addLog("Zap: Failed to sign Zap Request", level: "ERROR")
                 throw ZapError.signFailed
             }

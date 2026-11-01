@@ -138,11 +138,11 @@ struct LiveStreamPlayerView: View {
             sheetContent(item)
         }
         .sheet(item: $zapSheet) { context in
-            CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
-                sendZap(amountSats: amount)
+            CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
+                sendZap(amountSats: amount, sheetComment: comment)
             }
             #if os(iOS)
-            .presentationDetents([.height(380), .medium])
+            .presentationDetents([.height(440), .medium])
             .smallSheetSizing()
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
@@ -380,13 +380,14 @@ struct LiveStreamPlayerView: View {
 
     /// A stream zap pays the host named in the event, and carries the stream's
     /// address so the receipt lands in this chat rather than nowhere.
-    private func sendZap(amountSats: Int) {
+    private func sendZap(amountSats: Int, sheetComment: String = "") {
         guard let lud16 = lightningAddress(for: stream.hostPubkey) else {
             noLightningAddress = true
             return
         }
-        let comment = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        draft = ""
+        // The sheet's comment box, else what's in the chat box. Nothing typed, nothing sent.
+        let comment = sheetComment.isEmpty ? ZapComment.content(draft) : sheetComment
+        if sheetComment.isEmpty { draft = "" }
         Task {
             do {
                 try await ZapService.shared.zapNote(
@@ -394,7 +395,7 @@ struct LiveStreamPlayerView: View {
                     notePubkey: stream.hostPubkey,
                     lud16: lud16,
                     amountSats: amountSats,
-                    message: comment.isEmpty ? "Zap from Nostr Vault" : comment,
+                    message: comment,
                     addressTag: stream.address
                 )
             } catch {

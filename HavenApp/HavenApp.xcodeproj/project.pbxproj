@@ -1492,6 +1492,7 @@
 		F51057FE4AB2D33E7768FFAC /* BlockedPeople.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B8BF0CFACC02D638AEDA16 /* BlockedPeople.swift */; };
 		F52FF1D6107C9A96C675090E /* RelayDraftSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C78CB6980894E9D6055973 /* RelayDraftSections.swift */; };
 		F5357A352DC309F2E4BB19CA /* DMMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34BABC97D5D35D3EA50A1D6 /* DMMessage.swift */; };
+		F54364280E4C6D188B35F73C /* ZapComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76AE561EEB95A58E4DD97077 /* ZapComment.swift */; };
 		F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
 		F5C34D13E951219A71472A03 /* VideoPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */; };
 		F5CC0BCC0CC2388F7CD8D8CD /* SettingsHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7507E56424A5CF8EA46857DA /* SettingsHelp.swift */; };
@@ -1568,6 +1569,7 @@
 		FF02D5FA245A4F59FC82F2BB /* BlossomService+UploadAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3982820EB3F4CF72F6B5449B /* BlossomService+UploadAuth.swift */; };
 		FF3796326AA660DE673215DB /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F43AE6D03159B7716D9F71 /* LogStore.swift */; };
 		FF4441376B46784E5BF598AD /* PopularRankControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD61246C5617D0FAF9A4D5F /* PopularRankControls.swift */; };
+		FFAF10F2042C64AE6A598D79 /* ZapComment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76AE561EEB95A58E4DD97077 /* ZapComment.swift */; };
 		FFEA19EB5659CCFDB4E69ED7 /* SuggestedMediaServersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0040BB6771C3E16494146D8E /* SuggestedMediaServersSection.swift */; };
 /* End PBXBuildFile section */
 
@@ -1959,6 +1961,7 @@
 		75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationService.swift; sourceTree = "<group>"; };
 		75FAB177AF921AAA9A805C44 /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
 		76A27BBEA5AA4EFCE0D51EE3 /* MediaUploadsIndicatorInfoProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaUploadsIndicatorInfoProvider.swift; sourceTree = "<group>"; };
+		76AE561EEB95A58E4DD97077 /* ZapComment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapComment.swift; sourceTree = "<group>"; };
 		76BAFE194F5C54218E6F3555 /* PushNotificationStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationStep.swift; sourceTree = "<group>"; };
 		771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteReferenceIDs.swift; sourceTree = "<group>"; };
 		775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMService.swift; sourceTree = "<group>"; };
@@ -3271,6 +3274,7 @@
 				0B5E98764373253F27F8526F /* VertexReputation.swift */,
 				C91987BAC69FE261893A95BA /* Wavlake.swift */,
 				5DF3E7F03589E36F93A1077E /* WotRebuildWatch.swift */,
+				76AE561EEB95A58E4DD97077 /* ZapComment.swift */,
 				83B7AE001906426D0D833C0D /* ZapHistory.swift */,
 			);
 			name = Models;
@@ -4672,6 +4676,7 @@
 				CF4C777AEA457AF1976BAA9D /* WotRebuildWatch.swift in Sources */,
 				2B532EA51C401B6E429E0766 /* WotRefresh.swift in Sources */,
 				876A3213A547A96B0D26E7A9 /* ZapBurstView.swift in Sources */,
+				F54364280E4C6D188B35F73C /* ZapComment.swift in Sources */,
 				9311DBEC8D73D7A39BCD6B9A /* ZapFlightView.swift in Sources */,
 				8226645A0193B8454E903651 /* ZapHistory.swift in Sources */,
 				52C253E70122E23F588C589C /* ZapHistoryService.swift in Sources */,
@@ -5448,6 +5453,7 @@
 				6372382606A3FF40A02649C3 /* WotRebuildWatch.swift in Sources */,
 				69B71EAE17A97D74A6FEAFE1 /* WotRefresh.swift in Sources */,
 				067B8021AC2BAF187223891B /* ZapBurstView.swift in Sources */,
+				FFAF10F2042C64AE6A598D79 /* ZapComment.swift in Sources */,
 				64353876FABFAB7F823B12FA /* ZapFlightView.swift in Sources */,
 				BADF96FFDAD0786D3A218C25 /* ZapHistory.swift in Sources */,
 				AB14121B77BC337AD50021FB /* ZapHistoryService.swift in Sources */,

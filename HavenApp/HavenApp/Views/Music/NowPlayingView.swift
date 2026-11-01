@@ -435,11 +435,11 @@ private struct ArtistZapPill: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { zap(address) }
             .sheet(item: $picker) { context in
-                CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
-                    zap(address, amount: amount)
+                CustomZapSheet(defaultAmount: context.defaultAmount) { amount, comment in
+                    zap(address, amount: amount, comment: comment)
                 }
                 #if os(iOS)
-                .presentationDetents([.height(380), .medium])
+                .presentationDetents([.height(440), .medium])
                 .smallSheetSizing()
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color.platformWindowBackground)
@@ -450,10 +450,10 @@ private struct ArtistZapPill: View {
     }
 
     /// A failed zap is reported by the zap toast (`ZapService`).
-    private func zap(_ address: String, amount: Int? = nil) {
+    private func zap(_ address: String, amount: Int? = nil, comment: String = "") {
         Task {
             do {
-                try await ZapService.shared.zapNote(noteId: "", notePubkey: pubkey, lud16: address, amountSats: amount)
+                try await ZapService.shared.zapNote(noteId: "", notePubkey: pubkey, lud16: address, amountSats: amount, message: comment)
                 await MainActor.run { burst = true }
             } catch {
                 #if DEBUG

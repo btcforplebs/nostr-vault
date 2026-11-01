@@ -81,7 +81,8 @@ struct FeedActions {
     // Zap
     /// Returns whether the payment actually went out, so a caller can gate
     /// tap-confirmation UI (the pulse) on a real send rather than the tap alone.
-    var zapNote: (FeedNote, String, Int?) async -> Bool = { _, _, _ in false }
+    /// Note, lightning address, amount (nil = default), comment ("" = none).
+    var zapNote: (FeedNote, String, Int?, String) async -> Bool = { _, _, _, _ in false }
     var getLightningAddress: (String) -> String? = { _ in nil }
 
     // Delete
@@ -263,7 +264,7 @@ struct FeedActions {
             repostNote: { note in
                 PendingPostManager.shared.startRepost(sourceNote: note, nostrService: nostrService)
             },
-            zapNote: { note, lud16, amount in
+            zapNote: { note, lud16, amount, comment in
                 // A repost is zapped as the note it carries: its id, its author.
                 let note = feedService.originalNote(for: note)
                 let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
@@ -272,7 +273,8 @@ struct FeedActions {
                         noteId: note.id,
                         notePubkey: note.pubkey,
                         lud16: lud16,
-                        amountSats: amount
+                        amountSats: amount,
+                        message: comment
                     )
                     await MainActor.run {
                         feedService.zappedEventIds[note.id] = amountSats

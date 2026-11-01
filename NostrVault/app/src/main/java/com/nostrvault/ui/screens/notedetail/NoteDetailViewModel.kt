@@ -422,14 +422,14 @@ class NoteDetailViewModel @Inject constructor(
      * The zap pill reports the result (docs/pills.md); engagement re-fetches
      * after a delay so the kind-9735 receipt has time to propagate (iOS parity).
      */
-    fun zapNote(note: FeedNote, amountSats: Int) {
+    fun zapNote(note: FeedNote, amountSats: Int, comment: String = "") {
         if (_isZapping.value) return
         viewModelScope.launch {
             _isZapping.value = true
             val result = notificationManager.zapping(
                 com.nostrvault.ui.screens.feed.zapRecipientName(profiles.value, note.effectiveAuthor),
                 amountSats,
-            ) { zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amountSats) }
+            ) { zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amountSats, message = comment) }
             _isZapping.value = false
             result.onSuccess {
                 ZapFlight.launch(note.effectiveEventId)

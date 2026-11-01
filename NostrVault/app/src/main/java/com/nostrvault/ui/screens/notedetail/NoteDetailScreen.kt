@@ -744,8 +744,8 @@ fun NoteDetailScreen(
             sheetState = zapSheetState,
             defaultAmount = viewModel.configStoreRef.config.value.defaultZapAmount,
             onDismiss = { zapTargetNote = null },
-            onZap = { amount ->
-                viewModel.zapNote(target, amount)
+            onZap = { amount, comment ->
+                viewModel.zapNote(target, amount, comment)
                 zapTargetNote = null
             },
         )
