@@ -35,9 +35,14 @@ enum UploadDeleteRule {
     ///   is deleted, even after a failed send: the photo may be in a queued or
     ///   pending note with its link at the end.
     /// - `activeHex`: the account a delete would be signed by.
+    /// - `anyUnfinished`: a photo still in the note is waiting or uploading.
+    ///   Its hash may not be known yet, and a copy of this photo checking the
+    ///   servers mid-delete would see it as already there and link to a blob
+    ///   about to go (Tron, PR #1514).
     static func deleteTargets(sha256: String, fresh: FreshUpload?, otherHashes: [String?],
-                              postTapped: Bool, activeHex: String) -> [String]? {
-        guard !postTapped, let fresh, !fresh.servers.isEmpty else { return nil }
+                              postTapped: Bool, activeHex: String,
+                              anyUnfinished: Bool = false) -> [String]? {
+        guard !postTapped, !anyUnfinished, let fresh, !fresh.servers.isEmpty else { return nil }
         guard !otherHashes.contains(sha256) else { return nil }
         // Another account asking would tie the two together at the server.
         guard let signer = fresh.signer, signer == activeHex else { return nil }

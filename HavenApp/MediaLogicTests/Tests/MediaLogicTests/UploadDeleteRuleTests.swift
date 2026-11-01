@@ -71,4 +71,11 @@ final class UploadDeleteRuleTests: XCTestCase {
         XCTAssertNil(UploadDeleteRule.deleteTargets(sha256: sha, fresh: .init(servers: [], signer: a),
                                                     otherHashes: [], postTapped: false, activeHex: a))
     }
+
+    func testNoDeleteWhileAnotherPhotoIsStillUploading() {
+        // A second copy still checking the servers would see the blob as there
+        // and link to it just before the delete lands.
+        XCTAssertNil(UploadDeleteRule.deleteTargets(sha256: sha, fresh: fresh(), otherHashes: [nil],
+                                                    postTapped: false, activeHex: a, anyUnfinished: true))
+    }
 }

@@ -233,7 +233,8 @@ extension ComposeView {
         guard let servers = UploadDeleteRule.deleteTargets(
             sha256: sha256, fresh: note.freshUploads[sha256],
             otherHashes: note.attachments.map(\.sha256),
-            postTapped: note.postTapped, activeHex: nostrService.activeHexPubkey) else { return }
+            postTapped: note.postTapped, activeHex: nostrService.activeHexPubkey,
+            anyUnfinished: note.attachments.contains { !$0.upload.isFinished }) else { return }
         note.freshUploads[sha256] = nil
         let service = blossomService
         Task.detached(priority: .utility) {
