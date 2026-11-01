@@ -159,6 +159,12 @@ class DMService @Inject constructor(
     /** The conversation whose thread is on screen, so its notifications can stay quiet. */
     @Volatile var visibleConversation: String? = null
 
+    /**
+     * Told the event id of each gift wrap the inbox unlocks and files, so an
+     * alert waiting for it can be decided (LocalNotificationService.dmOpened).
+     */
+    @Volatile var onGiftWrapOpened: ((String) -> Unit)? = null
+
     internal val injectedDmIds = ConcurrentHashMap.newKeySet<String>()
 
     /** One externally-fetched DM waiting to be written into the local relay. */

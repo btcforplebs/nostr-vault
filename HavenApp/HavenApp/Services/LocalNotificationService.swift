@@ -334,27 +334,43 @@ final class LocalNotificationService {
         return .init(members: members, count: (info[foldedFollowerCountKey] as? Int) ?? members.count)
     }
 
-    /// How long a DM marker waits for the inbox to decrypt its message.
+    /// How long a NIP-04 DM marker waits for the inbox to decrypt its
+    /// message (it names its sender, so it can alert without). A gift wrap
+    /// has no such limit: it waits until it is unlocked.
     private static let dmOpenTimeout: TimeInterval = 3
     /// The wait while a DM thread is open: a slow decrypt there must end with
     /// the message appearing in the thread, not a generic alert first.
     private static let dmOpenTimeoutInThread: TimeInterval = 15
 
+    /// Gift-wrap alerts waiting for the inbox to unlock their DM (see
+    /// `DMAlertGate`): the type and account each marker was for.
+    private var pendingDMAlerts = PendingDMAlerts<(type: String, npub: String)>()
+
     /// A gift wrap is signed by a throwaway key, so its marker cannot say who
-    /// wrote it — not even when it was you: every DM you send also wraps a copy
-    /// to yourself, and that copy lands in your own inbox. Copies this device
-    /// sent are known by id; for the rest the inbox decrypts the message a
-    /// moment later, so wait for that, then drop your own copies and show
-    /// the real sender and text. If it never opens (another account, an
-    /// offline signer) the generic line still goes out.
+    /// wrote it, not even when it was you: every DM you send also wraps a
+    /// copy to yourself, and that copy reaches your other devices. So a gift
+    /// wrap never alerts until the inbox has unlocked it with its usual
+    /// decrypt, however long that takes (a slow or remote signer, another
+    /// account's inbox that opens on switching): it waits in
+    /// `pendingDMAlerts` and `dmOpened` decides it then. Copies this device
+    /// sent are known by id. A NIP-04 DM names its author in the clear.
     private func announceDM(id: String, type: String, author: String, recipientHex: String, npub: String) {
-        // A NIP-04 DM names its author in the clear.
-        if !author.isEmpty, author.lowercased() == recipientHex.lowercased() { return }
+        let own = ConfigService.shared.allAccountHexes
+        if !author.isEmpty, author.lowercased() == recipientHex.lowercased() || own.contains(author.lowercased()) { return }
         if DMService.shared.isOwnSentWrap(id) { return }
         // A blocked person never notifies. NIP-04 names them up front; a gift
-        // wrap only once it is opened, below.
+        // wrap only once it is opened.
         let blocked = ConfigService.shared.blockedHexPubkeys(forAccount: npub)
         if BlockedPeople.isBlocked(author, in: blocked) { return }
+
+        if type == "giftwrap" {
+            if let opened = DMService.shared.message(withEventId: id) {
+                decideDM(id: id, type: type, opened: opened, npub: npub)
+            } else {
+                pendingDMAlerts.add(id, (type: type, npub: npub))
+            }
+            return
+        }
 
         Task { @MainActor in
             let inThread = appInForeground && DMService.shared.visibleConversation != nil
@@ -363,19 +379,37 @@ final class LocalNotificationService {
                 timeout: inThread ? Self.dmOpenTimeoutInThread : Self.dmOpenTimeout
             )
             if let opened {
-                if opened.message.isFromMe { return }
-                if BlockedPeople.isBlocked(opened.message.senderPubkey, in: blocked) { return }
-                // A stranger outside your Web of Trust waits under Requests, silently.
-                if !DMService.shared.isInboxConversation(opened.conversationId) { return }
-                // The conversation is already on screen.
-                if appInForeground, DMService.shared.visibleConversation == opened.conversationId { return }
+                decideDM(id: id, type: type, opened: opened, npub: npub)
+                return
             }
-            let sender = opened?.message.senderPubkey ?? author
+            // An unopened NIP-04 DM still names its sender.
+            if !(DMService.shared.isInboxConversation(author)) { return }
+            await Self.awaitAuthor(author)
+            let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
+            deliver(id: id, type: type, name: name, preview: "", npub: npub)
+        }
+    }
+
+    /// The inbox unlocked the DM in event `id` (DMService, after its usual
+    /// decrypt). Decides an alert that was waiting for it.
+    func dmOpened(_ id: String) {
+        guard let pending = pendingDMAlerts.take(id),
+              let opened = DMService.shared.message(withEventId: id) else { return }
+        decideDM(id: id, type: pending.type, opened: opened, npub: pending.npub)
+    }
+
+    private func decideDM(id: String, type: String, opened: (conversationId: String, message: DMMessage), npub: String) {
+        let sender = opened.message.senderPubkey
+        let onScreen = appInForeground && DMService.shared.visibleConversation == opened.conversationId
+        guard DMAlertGate.alerts(sender: sender, isFromMe: opened.message.isFromMe,
+                                 ownAccounts: ConfigService.shared.allAccountHexes,
+                                 blocked: ConfigService.shared.blockedHexPubkeys(forAccount: npub),
+                                 inInbox: DMService.shared.isInboxConversation(opened.conversationId),
+                                 onScreen: onScreen) else { return }
+        Task { @MainActor in
             await Self.awaitAuthor(sender)
-            let name = sender.isEmpty ? nil : NostrService.shared.profiles[sender]?.bestName
-            let text = opened.flatMap {
-                NotificationPolicy.dmPreview(NostrContentFormatter.resolveMentionsPlainText($0.message.content))
-            } ?? ""
+            let name = NostrService.shared.profiles[sender]?.bestName
+            let text = NotificationPolicy.dmPreview(NostrContentFormatter.resolveMentionsPlainText(opened.message.content)) ?? ""
             deliver(id: id, type: type, name: name, preview: text, npub: npub)
         }
     }

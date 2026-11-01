@@ -120,6 +120,7 @@ import com.nostrvault.service.DMService.Companion.TAG
                 withContext(Dispatchers.Main.immediate) {
                     addMessageToConversation(counterparty, message)
                 }
+                onGiftWrapOpened?.invoke(eventId)
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "Gift wrap unwrap failed: ${e.message}")

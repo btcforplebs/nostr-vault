@@ -411,3 +411,50 @@ extension NotificationPreferences {
         follows = try c.decodeIfPresent(Bool.self, forKey: .follows) ?? d.follows
     }
 }
+
+/// When a DM may alert (Logen 2026-11-01). A gift wrap (kind 1059) names no
+/// author until it is unlocked, and every DM you send also wraps a copy to
+/// yourself, which reaches your other devices. So a gift wrap never alerts
+/// before it is unlocked, however long that takes: it waits in
+/// `PendingDMAlerts` until the inbox opens it with its usual decrypt, and is
+/// then decided here. Android: DMAlertGate.kt.
+enum DMAlertGate {
+    /// Whether an unlocked DM alerts: not from any account on this device
+    /// (another device's self-copy, or one of your accounts writing another),
+    /// not from a blocked person, not a Request from outside your Web of
+    /// Trust, and not in the conversation already on screen.
+    static func alerts(sender: String, isFromMe: Bool, ownAccounts: Set<String>, blocked: Set<String>,
+                       inInbox: Bool, onScreen: Bool) -> Bool {
+        let s = sender.lowercased()
+        if isFromMe || s.isEmpty || ownAccounts.contains(where: { $0.lowercased() == s }) { return false }
+        if BlockedPeople.isBlocked(sender, in: blocked) { return false }
+        return inInbox && !onScreen
+    }
+}
+
+/// Gift-wrap alerts waiting for their DM to be unlocked, by wrap id. The
+/// oldest go first past `limit`: a wrap that never opens (another account
+/// that is never switched to, unreadable data) must not pile up.
+struct PendingDMAlerts<Info> {
+    let limit: Int
+    private(set) var order: [String] = []
+    private var info: [String: Info] = [:]
+
+    init(limit: Int = 256) { self.limit = limit }
+
+    var count: Int { order.count }
+
+    mutating func add(_ id: String, _ value: Info) {
+        guard info[id] == nil else { return }
+        info[id] = value
+        order.append(id)
+        while order.count > limit { info[order.removeFirst()] = nil }
+    }
+
+    /// The entry for `id`, removed, or nil when none waits.
+    mutating func take(_ id: String) -> Info? {
+        guard let value = info.removeValue(forKey: id) else { return nil }
+        order.removeAll { $0 == id }
+        return value
+    }
+}
