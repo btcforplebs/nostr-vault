@@ -441,6 +441,11 @@ struct VaultView: View {
         .onChange(of: nostrService.events.isEmpty) { _, empty in
             if empty { noOlderPages = [] }
         }
+        // Your accounts tagging each other came in or left the list.
+        .onChange(of: configService.config.notifyOwnAccountTags) { _, _ in
+            scheduleUpdateDisplayData()
+            if showsOtherAccounts { loadOtherAccountActivity() }
+        }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
             activityHasLoadedOnce = false

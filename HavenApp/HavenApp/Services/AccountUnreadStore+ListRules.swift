@@ -17,11 +17,17 @@ extension AccountUnread.ListRules {
             blocks[recipient] = set
             return set
         }
+        let accounts = config.allAccountHexes
+        let notifyOwn = config.config.notifyOwnAccountTags
         return Self(
             zapsOnly: config.config.zapsOnlyMode,
             isBlocked: { recipient, author in blocked(for: recipient).contains(author) },
             isOutside: { recipient, author in
                 ContentFilter.isOutside(author: author, owner: recipient, whitelist: whitelist, trusted: trusted)
+            },
+            isOwnAccountTag: { recipient, author in
+                NotificationPolicy.hidesOwnAccountTag(author: author, recipient: recipient,
+                                                      accounts: accounts, notify: notifyOwn)
             }
         )
     }

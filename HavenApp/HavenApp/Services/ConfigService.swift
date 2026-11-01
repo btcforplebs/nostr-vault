@@ -634,6 +634,11 @@ class ConfigService: ObservableObject {
         return result
     }
 
+    /// Every account on the device, by lowercase hex (`allAccountNpubs`).
+    var allAccountHexes: Set<String> {
+        Set(allAccountNpubs.compactMap { Bech32.decode($0)?.hexString.lowercased() })
+    }
+
     /// Switches the active browsing account. Pass nil or ownerNpub to reset to owner.
     /// Handles NIP-46 connection switching: disconnects the previous signer (if any)
     /// and connects to the new account's signer (if configured).

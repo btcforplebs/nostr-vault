@@ -22,6 +22,11 @@ extension VaultView {
         VaultAccountChips.resolve(accountChip, accounts: vaultAccountHexes, active: followersOwnerHex)
     }
 
+    /// The account pictures head the list on screen (Vault list, no search).
+    var showsAccountRowOnTop: Bool {
+        viewMode == .activity && !isSearchActive && !accountChips.isEmpty
+    }
+
     /// True when the list is anything but the active account's own.
     var showsOtherAccounts: Bool {
         !VaultAccountChips.isDefault(currentAccountChip, active: followersOwnerHex)
@@ -139,6 +144,8 @@ extension VaultView {
         let blocked = Dictionary(wanted.map { ($0, configService.blockedHexPubkeys(forAccount: npubs[$0] ?? "")) },
                                  uniquingKeysWith: { a, _ in a })
         let whitelist = configService.whitelistedHexPubkeys
+        let ownAccounts = configService.allAccountHexes
+        let notifyOwn = configService.config.notifyOwnAccountTags
         let trusted = FeedService.shared.relayTabTrustedPubkeys()
         let mutes = MuteListStore.shared.active
         let noteKinds = NostrService.relayTabNoteKinds
@@ -180,7 +187,10 @@ extension VaultView {
                             owner: hex,
                             noteKinds: Set(noteKinds),
                             follows: follows,
-                            isBlocked: { block.contains($0) },
+                            isBlocked: {
+                                block.contains($0) || NotificationPolicy.hidesOwnAccountTag(
+                                    author: $0, recipient: hex, accounts: ownAccounts, notify: notifyOwn)
+                            },
                             isOutside: { ContentFilter.isOutside(author: $0, owner: hex, whitelist: whitelist, trusted: trusted) }
                         )
                         return (hex, lines, full)
@@ -205,7 +215,7 @@ extension VaultView {
     /// other account with its new-notification count from the switcher.
     var accountChipRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ForEach(accountChips, id: \.self) { chip in
                     VaultAccountChipView(
                         chip: chip,
@@ -216,7 +226,8 @@ extension VaultView {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 2)
+            // Room for the ring and the red bubble's overhang.
+            .padding(.vertical, 6)
         }
     }
 
@@ -261,32 +272,41 @@ struct VaultAccountChipView: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if let hex {
-                    AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 20)
-                }
+            if let hex {
+                // The picture alone, larger: the name is in its label. The
+                // ring marks the picked one, a red bubble that it has news.
+                AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: Self.pictureSize)
+                    .padding(3)
+                    .overlay(Circle().stroke(isSelected ? Color.havenPurple : Color.clear, lineWidth: 2.5))
+                    .overlay(alignment: .topTrailing) {
+                        if let badge {
+                            Text(badge)
+                                .font(.appSystem(size: 11, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 20, minHeight: 20)
+                                .background(Capsule().fill(Color.red))
+                                .overlay(Capsule().stroke(Color.platformWindowBackground, lineWidth: 2))
+                                .offset(x: 6, y: -4)
+                        }
+                    }
+                    .contentShape(Circle())
+            } else {
                 Text(title)
-                    .font(.appSystem(size: 13, weight: .semibold))
+                    .font(.appSystem(size: 15, weight: .semibold))
                     .lineLimit(1)
-                if let badge {
-                    Text(badge)
-                        .font(.appSystem(size: 10, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundColor(isSelected ? Color.havenPurple : .white)
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 18, minHeight: 18)
-                        .background(Capsule().fill(isSelected ? Color.white : Color.havenPurple))
-                }
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: Self.pictureSize + 6)
+                    .background(Capsule().fill(isSelected ? Color.havenPurple : Color.havenPurple.opacity(0.10)))
+                    .contentShape(Capsule())
             }
-            .foregroundColor(isSelected ? .white : .primary)
-            .padding(.leading, hex == nil ? 14 : 5)
-            .padding(.trailing, 12)
-            .frame(minHeight: 32)
-            .background(Capsule().fill(isSelected ? Color.havenPurple : Color.havenPurple.opacity(0.10)))
-            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(badge.map { "\(title), \($0) new" } ?? title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
+
+    static let pictureSize: CGFloat = 40
 }

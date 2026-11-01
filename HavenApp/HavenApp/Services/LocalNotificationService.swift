@@ -102,6 +102,10 @@ final class LocalNotificationService {
                 ? ConfigService.shared.config.ownerNpub
                 : ConfigService.shared.config.activeAccountNpub
         )
+        // One of your accounts tagging another: quiet unless asked for.
+        if NotificationPolicy.hidesOwnAccountTag(author: author, recipient: recipientHex,
+                                                 accounts: ConfigService.shared.allAccountHexes,
+                                                 notify: ConfigService.shared.config.notifyOwnAccountTags) { return }
         let prefs = PushNotificationService.shared.preferencesForAccount(npub)
 
         let allowed: Bool = {

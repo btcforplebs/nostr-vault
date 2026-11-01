@@ -300,6 +300,7 @@
 		32174E530F51223398BEAAE9 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
 		3242652E93E3319F20522E09 /* VaultEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10FAB057E10D3468126BB35 /* VaultEngagement.swift */; };
 		326C354948213E62EBB67757 /* ScrollChromeModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E73FBAE7710CD17916B73EB /* ScrollChromeModifier.swift */; };
+		3283FAB8FDC6A1A9D3B6254B /* AccountSwitchFlash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237450654ADB147CD7C0C031 /* AccountSwitchFlash.swift */; };
 		32D2EEB37F6725FE61495429 /* FeedProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */; };
 		32DF0A4A4B9E0DFE32F94675 /* FeedService+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332F03725477EEBFD25F9939 /* FeedService+Lifecycle.swift */; };
 		32FD41A6A136EC3CC6833772 /* BlossomPresenceDisk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD3CB3C64B69F90BC5AC4F7 /* BlossomPresenceDisk.swift */; };
@@ -657,6 +658,7 @@
 		71DE4A482D94D5FC8A9C6B16 /* AuthorQuickMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */; };
 		71ED54075DC0C0DE0469B00E /* InterestListService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 427E36EC7A40E85FF4710BBD /* InterestListService.swift */; };
 		71F6E797CE55D8AB98FB386F /* HavenConfig+ActiveRelays.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC519F29A70073D2E13FFEC /* HavenConfig+ActiveRelays.swift */; };
+		727A175702DD6CC3114B1248 /* AccountSwitchFlash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 237450654ADB147CD7C0C031 /* AccountSwitchFlash.swift */; };
 		7298AFD7363210E23C0D37C6 /* ImportRunningPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DF387809C5344100031771 /* ImportRunningPill.swift */; };
 		72C7296B99E974D23EE05ECB /* ProfileMetadataMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E77ED4BBAC80594F90F2E40 /* ProfileMetadataMerge.swift */; };
 		72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
@@ -1717,6 +1719,7 @@
 		220CCFE2E1EB4539CE6C22C4 /* LiveChatAttachMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatAttachMenu.swift; sourceTree = "<group>"; };
 		22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProcessManager.swift; sourceTree = "<group>"; };
 		23082A59191D1E9993BAE72B /* NostrService+MuteList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+MuteList.swift"; sourceTree = "<group>"; };
+		237450654ADB147CD7C0C031 /* AccountSwitchFlash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSwitchFlash.swift; sourceTree = "<group>"; };
 		24C33761D243B306C9D6A5A1 /* HavenConfig+MacRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HavenConfig+MacRelay.swift"; sourceTree = "<group>"; };
 		251CF8F576FE6FC7D5A2306B /* AccountsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettingsView.swift; sourceTree = "<group>"; };
 		260B4B664CE91A3427693ED5 /* NoteDetailView+ThreadEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDetailView+ThreadEngagement.swift"; sourceTree = "<group>"; };
@@ -3296,6 +3299,7 @@
 		D3CA6E7B0A2665BC086A47C3 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				237450654ADB147CD7C0C031 /* AccountSwitchFlash.swift */,
 				4757A74E31DFBA866003FD73 /* ActionButton.swift */,
 				A0A692460CA32D00E9050B99 /* AnimatedThumbnail.swift */,
 				EB285610AE543E6960BEBD1C /* AuthorQuickMenu.swift */,
@@ -3938,6 +3942,7 @@
 			files = (
 				0A65ABE6A642C1496B8D1E8E /* AccountBunkerConfig.swift in Sources */,
 				FCF9E2A3BB6921EB9A467368 /* AccountDetailView.swift in Sources */,
+				3283FAB8FDC6A1A9D3B6254B /* AccountSwitchFlash.swift in Sources */,
 				672A76A54B117639CC833335 /* AccountSwitcherView.swift in Sources */,
 				27B0DEC7F90981AF0B72CBD4 /* AccountUnread.swift in Sources */,
 				A6507DB0C00EA44728AC6F5E /* AccountUnreadStore+ListRules.swift in Sources */,
@@ -4732,6 +4737,7 @@
 			files = (
 				422734AE557FE5F2D6B426DB /* AccountBunkerConfig.swift in Sources */,
 				EE5337DF2E952F3418103753 /* AccountDetailView.swift in Sources */,
+				727A175702DD6CC3114B1248 /* AccountSwitchFlash.swift in Sources */,
 				163562ECAAE6E82C011CFBCE /* AccountSwitcherView.swift in Sources */,
 				42644DAD405D01206AAE1359 /* AccountUnread.swift in Sources */,
 				E6C6CF8DA98F9D97624C54A0 /* AccountUnreadStore+ListRules.swift in Sources */,

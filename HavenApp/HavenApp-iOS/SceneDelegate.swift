@@ -60,6 +60,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             ReactionTapbackLayer()
             TutorialStage { BannerHitRegions.frames["tutorial"] = $0 }
             ReturnPillLayer { BannerHitRegions.frames["returnPill"] = $0 }
+            AccountSwitchFlashLayer()
         })
         // While the tapback bar waits for a tap, this window takes every
         // touch, so a tap anywhere else closes the bar instead of reaching

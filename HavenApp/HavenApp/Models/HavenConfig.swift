@@ -100,6 +100,9 @@ struct HavenConfig: Codable, Equatable {
     /// summary of everyone you follow, not of anything addressed to you, and it
     /// used to fire from every background wake with no way to turn it off.
     var enableFeedNotifications: Bool = false
+    /// Off: a note from one of your accounts that tags another of your
+    /// accounts on this device makes no Vault line and no alert.
+    var notifyOwnAccountTags: Bool = false
     var notificationPrefsPerAccount: [String: NotificationPreferences] = [:]
     var notificationSoundName: String = NotificationSound.defaultSound.rawValue
     
@@ -301,7 +304,7 @@ struct HavenConfig: Codable, Equatable {
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, vertexLookups, fanfaresAutoCheck, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
-        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
+        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications, notifyOwnAccountTags
         case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
@@ -397,6 +400,7 @@ struct HavenConfig: Codable, Equatable {
         enableRemotePushServer = try container.decodeIfPresent(Bool.self, forKey: .enableRemotePushServer) ?? defaults.enableRemotePushServer
 
         enableFeedNotifications = try container.decodeIfPresent(Bool.self, forKey: .enableFeedNotifications) ?? defaults.enableFeedNotifications
+        notifyOwnAccountTags = try container.decodeIfPresent(Bool.self, forKey: .notifyOwnAccountTags) ?? defaults.notifyOwnAccountTags
 
         // Migrate: if enablePushNotifications was never saved, carry forward enableRemotePushServer
         if let newValue = try container.decodeIfPresent(Bool.self, forKey: .enablePushNotifications) {

@@ -250,7 +250,12 @@ extension RelayProcessManager {
         // Red dot reflects only inbound activity from OTHERS (events tagging you /
         // DMs) — never your own posts, blasts, or private/outbox writes.
         let zapsOnly = ConfigService.shared.config.zapsOnlyMode
-        let landed = Set(batch.inboxActivityKinds.compactMap(VaultMode.listing(inboxKind:)))
+        // Nor one of your accounts tagging another, while that stays quiet.
+        let listRules: AccountUnread.ListRules? = batch.notifyMarkers.isEmpty ? nil : .vaultList()
+        let ownOnly = listRules.map {
+            AccountUnread.ownAccountOnlyKinds(markers: batch.notifyMarkers, isOwnAccountTag: $0.isOwnAccountTag)
+        } ?? []
+        let landed = Set(batch.inboxActivityKinds.subtracting(ownOnly).compactMap(VaultMode.listing(inboxKind:)))
             .filter { !(zapsOnly && $0 == .likes) } // no Likes list to open
         if !landed.isSubset(of: newActivityModes) {
             newActivityModes.formUnion(landed)
@@ -275,8 +280,8 @@ extension RelayProcessManager {
             LocalNotificationService.shared.handle(marker)
         }
         // Each account's count in the account switcher.
-        if !batch.notifyMarkers.isEmpty {
-            AccountUnreadStore.shared.record(markers: batch.notifyMarkers, rules: .vaultList())
+        if let listRules {
+            AccountUnreadStore.shared.record(markers: batch.notifyMarkers, rules: listRules)
         }
     }
 

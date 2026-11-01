@@ -215,6 +215,8 @@ extension VaultView {
         let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
         let blacklist = configService.activeAccountBlockedHexPubkeys
+        let ownAccounts = configService.allAccountHexes
+        let notifyOwn = configService.config.notifyOwnAccountTags
         let mutes = MuteListStore.shared.active
         let trusted = FeedService.shared.relayTabTrustedPubkeys()
 
@@ -250,7 +252,10 @@ extension VaultView {
                     owner: owner,
                     noteKinds: Set(NostrService.relayTabNoteKinds),
                     follows: follows,
-                    isBlocked: { blacklist.contains($0) },
+                    isBlocked: {
+                        blacklist.contains($0) || NotificationPolicy.hidesOwnAccountTag(
+                            author: $0, recipient: owner, accounts: ownAccounts, notify: notifyOwn)
+                    },
                     isOutside: { ContentFilter.isOutside(author: $0, owner: owner, whitelist: whitelist, trusted: trusted) }
                 )
                 // Filtered before the page cap, so a page of likes doesn't

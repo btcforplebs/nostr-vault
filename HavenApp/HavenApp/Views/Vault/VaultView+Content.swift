@@ -130,6 +130,11 @@ extension VaultView {
                 withAnimation(Motion.toggle) { viewMode = .notes }
             }
         }
+        // Your accounts tagging each other came in or left the list.
+        .onChange(of: configService.config.notifyOwnAccountTags) { _, _ in
+            scheduleUpdateDisplayData()
+            if showsOtherAccounts { loadOtherAccountActivity() }
+        }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
             likesHasLoadedOnce = false

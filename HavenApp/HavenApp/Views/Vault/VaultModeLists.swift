@@ -28,7 +28,9 @@ extension VaultView {
                 .animation(.none, value: viewMode)
                 .id("\(viewMode)-\(isSearchActive)")
             }
-            .padding(.vertical, 16)
+            // The account pictures sit close under the top bar.
+            .padding(.top, showsAccountRowOnTop ? 4 : 16)
+            .padding(.bottom, 16)
             .contentShape(Rectangle())
             // onAppear covers a tap that mounted this tab; onReceive, one that
             // arrived while it was already on screen.

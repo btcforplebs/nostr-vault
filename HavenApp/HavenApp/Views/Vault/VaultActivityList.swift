@@ -141,6 +141,7 @@ extension VaultView {
         if let npub = VaultAccountChips.switchTarget(lineAccount: account, active: followersOwnerHex,
                                                      npubByHex: vaultAccountNpubsByHex) {
             configService.switchActiveAccount(to: npub)
+            if let account { AccountSwitchFlash.shared.show(hex: account) }
         }
         if let id = line.openId {
             openNote(id)
@@ -196,8 +197,10 @@ struct VaultActivityRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             badge
+                .overlay(alignment: .bottomTrailing) {
+                    if let account { accountMark(account) }
+                }
             VStack(alignment: .leading, spacing: 8) {
-                if let account { accountTag(account) }
                 HStack(alignment: .center, spacing: 8) {
                     avatars
                     Spacer(minLength: 4)
@@ -246,15 +249,13 @@ struct VaultActivityRow: View {
 
     // MARK: Pieces
 
-    /// "For <account>": whose notification this is, with that account's picture.
-    private func accountTag(_ hex: String) -> some View {
-        HStack(spacing: 5) {
-            AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 16)
-            Text("For \(name(hex))")
-                .font(.appSystem(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-        }
+    /// Whose notification this is: that account's picture on the line's
+    /// icon. The name is read out, not printed on every line.
+    private func accountMark(_ hex: String) -> some View {
+        AvatarView(url: nostrService.profiles[hex]?.pictureURL, pubkey: hex, size: 18)
+            .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
+            .offset(x: 5, y: 5)
+            .accessibilityLabel("For \(name(hex))")
     }
 
     private var badge: some View {
