@@ -363,6 +363,15 @@ class LocalNotificationService @Inject constructor(
             ?: config.activeOrOwnerNpub()
         val prefs = config.pushPrefsFor(npub)
 
+        // One of your accounts tagging another: quiet unless asked for.
+        if (!config.notifyOwnAccountTags) {
+            val accounts = config.allAccountNpubs().mapNotNull { nostrService.get().npubToHex(it) }.toSet()
+            if (com.nostrvault.data.model.AccountUnread.hidesOwnAccountTag(author, recipientHex, accounts, notify = false)) {
+                if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' from one of your own accounts")
+                return
+            }
+        }
+
         if (!mayShow(type, config.enablePushNotifications, prefs, appInForeground)) {
             if (BuildConfig.DEBUG) Log.i(TAG, "skip: '$type' switched off (phone notifications or its own switch)")
             return

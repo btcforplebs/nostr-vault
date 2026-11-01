@@ -377,6 +377,7 @@ class RelayForegroundService : Service() {
             localNotifier.onLogLine(line)
             accountUnread.onLogLine(line)
         }
+        logStore.quietKinds = accountUnread::ownAccountOnlyKinds
         logStore.startPolling(serviceScope)
         val mesh = EntryPointAccessors.fromApplication(applicationContext, LogStoreEntryPoint::class.java).fipsMeshManager()
         serviceScope.launch {

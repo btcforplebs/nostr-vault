@@ -264,6 +264,8 @@ class MainActivity : FragmentActivity() {
                             }
                             // What came in while the app was away: one pill at the bottom, toward the Vault.
                             com.nostrvault.ui.notification.ReturnPill(Modifier.align(Alignment.BottomEnd))
+                            // "Switched to <name>" when a Vault line opened as another account.
+                            com.nostrvault.ui.components.AccountSwitchFlashLayer(nostrService.profiles)
                             // Tutorial cards, over every screen; only the card takes touches.
                             com.nostrvault.tutorials.TutorialStage(account = { nostrService.activeHexPubkey })
                         }

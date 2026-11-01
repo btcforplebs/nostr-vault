@@ -52,6 +52,12 @@ class LogStore @Inject constructor() {
      */
     @Volatile
     var notifySink: ((String) -> Unit)? = null
+    /**
+     * The inbox kinds a poll's NOTIFY markers carried only as one of your
+     * accounts tagging another, while that stays quiet: their import lines
+     * light no Vault tab dot (AccountUnreadStore.ownAccountOnlyKinds).
+     */
+    var quietKinds: ((List<String>) -> Set<Int>)? = null
 
     fun addEntry(entry: RelayLogParser.LogEntry) {
         val current = _logs.value.toMutableList()
@@ -86,19 +92,30 @@ class LogStore @Inject constructor() {
             while (isActive) {
                 try {
                     val lines = withContext(Dispatchers.IO) { readLogLines() }
-                    if (lines.isNotEmpty()) applyLines(lines)
+                    // Drain the dedicated, non-lossy notification queue first:
+                    // its markers name each event's author, which the import
+                    // lines below do not.
+                    val sink = notifySink
+                    val markers = ArrayList<String>()
+                    if (sink != null && HavenBridge.isLoaded) {
+                        while (isActive) {
+                            val notifyLine = withContext(Dispatchers.IO) { HavenBridge.getNotifyLog() }
+                            if (notifyLine.isNullOrBlank()) break
+                            markers += notifyLine
+                        }
+                    }
+                    if (lines.isNotEmpty()) {
+                        val quiet = runCatching { quietKinds?.invoke(markers) }.getOrNull().orEmpty()
+                        applyLines(lines, quiet)
+                    }
                     if (HavenBridge.isLoaded) {
                         withContext(Dispatchers.IO) { readConnections() }
                             ?.let { RelayForegroundService.updateConnections(it) }
                     }
 
-                    // Drain the dedicated, non-lossy notification queue and forward
-                    // every marker to the local notifier.
-                    val sink = notifySink
-                    if (sink != null && HavenBridge.isLoaded) {
-                        while (isActive) {
-                            val notifyLine = withContext(Dispatchers.IO) { HavenBridge.getNotifyLog() }
-                            if (notifyLine.isNullOrBlank()) break
+                    // Forward every marker to the local notifier.
+                    if (sink != null) {
+                        for (notifyLine in markers) {
                             try {
                                 sink.invoke(notifyLine)
                             } catch (e: Exception) {
@@ -117,7 +134,7 @@ class LogStore @Inject constructor() {
     }
 
     /** Parse a batch of log lines, store them and apply the state they carry. */
-    internal fun applyLines(lines: List<String>) {
+    internal fun applyLines(lines: List<String>, quietKinds: Set<Int> = emptySet()) {
         val batch = RelayLogParser.BatchedStateUpdate()
         val entries = ArrayList<RelayLogParser.LogEntry>(lines.size)
         for (line in lines) {
@@ -126,7 +143,9 @@ class LogStore @Inject constructor() {
             // handler; your own posts/blasts never produce them. The kind
             // on the line says which Vault list the dot is for.
             if (line.contains("in your inbox") || line.contains("in your chat relay")) {
-                RelayForegroundService.markInboxActivity(RelayLogParser.inboxActivityKind(line))
+                val kind = RelayLogParser.inboxActivityKind(line)
+                // One of your accounts tagging another, kept quiet: no dot.
+                if (kind == null || kind !in quietKinds) RelayForegroundService.markInboxActivity(kind)
             }
             entries.add(RelayLogParser.LogEntry.parse(line))
             RelayLogParser.collectStateChanges(line, batch)

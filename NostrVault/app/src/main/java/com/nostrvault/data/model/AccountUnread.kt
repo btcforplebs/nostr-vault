@@ -97,6 +97,51 @@ data class AccountUnread(val ids: Map<String, List<String>> = emptyMap()) {
             return Marker(type, fields["author"].orEmpty().lowercase(), recipient, id)
         }
 
+        /**
+         * One of your accounts tagging another (A tags B) while "Notify me
+         * when my own accounts tag each other" is off: no Vault line, no
+         * count, no dot and no alert. An account tagging itself is not this;
+         * the relay already keeps that quiet. [accounts] holds every account
+         * on the device, by hex. iOS: NotificationPolicy.hidesOwnAccountTag.
+         */
+        fun hidesOwnAccountTag(author: String, recipient: String, accounts: Set<String>, notify: Boolean): Boolean {
+            if (notify) return false
+            val a = author.lowercase()
+            val r = recipient.lowercase()
+            if (a.isEmpty() || r.isEmpty() || a == r) return false
+            val mine = accounts.mapTo(HashSet()) { it.lowercase() }
+            return a in mine && r in mine
+        }
+
+        /**
+         * The inbox kinds in a batch of NOTIFY markers that came in only as one
+         * of your accounts tagging another ([isOwnAccountTag] of recipient,
+         * author), so the Vault tab's dot can leave them out the way the list
+         * does. A kind that also came from anyone else stays. iOS:
+         * AccountUnread.ownAccountOnlyKinds.
+         */
+        fun ownAccountOnlyKinds(markers: List<String>, isOwnAccountTag: (String, String) -> Boolean): Set<Int> {
+            val own = HashSet<Int>()
+            val other = HashSet<Int>()
+            for (raw in markers) {
+                val m = raw.indexOf(MARKER_PREFIX)
+                val body = if (m >= 0) raw.substring(m + MARKER_PREFIX.length) else raw
+                val p = body.indexOf("|preview=")
+                val head = if (p >= 0) body.substring(0, p) else body
+                val fields = head.split('|').mapNotNull { part ->
+                    val eq = part.indexOf('=')
+                    if (eq < 0) null else part.substring(0, eq) to part.substring(eq + 1)
+                }.toMap()
+                val kind = fields["kind"]?.toIntOrNull() ?: continue
+                val recipient = fields["recipient"].orEmpty().lowercase()
+                val author = fields["author"].orEmpty().lowercase()
+                if (isOwnAccountTag(recipient, author)) own += kind else other += kind
+            }
+            return own - other
+        }
+
+        private const val MARKER_PREFIX = "NOTIFY|"
+
         /** The badge text: null at zero, "99+" past 99. */
         fun badge(count: Int): String? = when {
             count <= 0 -> null
