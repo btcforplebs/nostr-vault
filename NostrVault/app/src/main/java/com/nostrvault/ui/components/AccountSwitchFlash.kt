@@ -105,7 +105,7 @@ fun AccountSwitchBubble(hex: String, profile: FeedProfile?) {
             .padding(horizontal = 28.dp, vertical = 22.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
     ) {
-        AvatarImage(url = profile?.pictureURL, pubkey = hex, size = 72.dp, displayName = name)
+        AvatarImage(url = profile?.pictureURL, pubkey = hex, size = 72.dp, displayName = profile?.bestName)
         Text(
             "Switched to $name",
             color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
