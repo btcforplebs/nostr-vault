@@ -984,6 +984,7 @@
 		A436B1BB31644F27B9A151CC /* FeedVisibleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB8668F5703C081765EC7C1 /* FeedVisibleRows.swift */; };
 		A48F920B274A38D5BD818EBB /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34D407BB5082F01DD1EA2C1D /* SilentPaymentsKit */; };
 		A497F168AB85DD029F0035BF /* MeshMediaRouter+Live.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0338A6FA5F31523F34060CC /* MeshMediaRouter+Live.swift */; };
+		A4B9D7D9C2964C6BC57A9CB5 /* SetupRelayChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */; };
 		A4BAA99F88D98EE2DD56E3E3 /* LiveStreamFullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D84FADCC2EC4A2CB21D6008 /* LiveStreamFullScreen.swift */; };
 		A4CC418BB19F41A7C051EF00 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
 		A4D9D290AA9FB799DF25A2B9 /* DashboardView+ImportSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A07682D0C53235ABE03E3EF /* DashboardView+ImportSections.swift */; };
@@ -1327,6 +1328,7 @@
 		D9E7BA0DDD562CAC60818FE6 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41A8E188B7B23F83A3EA49AA /* DashboardView.swift */; };
 		D9E8EC6D2923CC7E627C8F2B /* FeedActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85E435417789F6ABE84846C /* FeedActions.swift */; };
 		D9EE6842BF37449F3BF3AA0E /* NostrService+ServerListAdoption.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */; };
+		DA0527CA8795AC3C49DAC7CF /* SetupRelayChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */; };
 		DA168364485DBA9AC9FD8385 /* ListingDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */; };
 		DA405ED1B5A70690B85F8E01 /* NostrWebLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1A64222EFDE647C6491CFB /* NostrWebLink.swift */; };
 		DA455878A98B3172DC89DA14 /* TrustGlobeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE61C621EC79CB4E00F63F9 /* TrustGlobeCanvas.swift */; };
@@ -2347,6 +2349,7 @@
 		DFF12652463CF2FA67F55AFF /* FipsMeshAddDeviceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FipsMeshAddDeviceSheet.swift; sourceTree = "<group>"; };
 		E0039FDA639F750CD6823F0C /* ReturnSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReturnSummary.swift; sourceTree = "<group>"; };
 		E02263EA7B83AAC9AB47B12A /* PullDownToCloseRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullDownToCloseRule.swift; sourceTree = "<group>"; };
+		E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupRelayChoice.swift; sourceTree = "<group>"; };
 		E13000616CA698B02FE82B9A /* QuotedNoteSkeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteSkeleton.swift; sourceTree = "<group>"; };
 		E1A58EA5A96FF1042528234F /* VaultFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFollowers.swift; sourceTree = "<group>"; };
 		E20CD71E4D4331E21582E6E2 /* NostrService+ServerListAdoption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NostrService+ServerListAdoption.swift"; sourceTree = "<group>"; };
@@ -3303,6 +3306,7 @@
 				556F8A537ED16749390E20E4 /* ServerListAdoption.swift */,
 				7507E56424A5CF8EA46857DA /* SettingsHelp.swift */,
 				0CB3928B13EED1E152C1D081 /* SetupReferral.swift */,
+				E0C0296140A1B912CA95CB33 /* SetupRelayChoice.swift */,
 				B66050958913C4DFE7CAABBA /* SignerWaitGate.swift */,
 				9C76774A7C1421B8D5ECFCE5 /* SnoObject.swift */,
 				A04E0F5ADF9DEBE1B0772D48 /* SnoScene.swift */,
@@ -4619,6 +4623,7 @@
 				F5CC0BCC0CC2388F7CD8D8CD /* SettingsHelp.swift in Sources */,
 				E7453F3324FA74A7FEB56F45 /* SettingsView.swift in Sources */,
 				0DDBA0634E1D7658E773326D /* SetupReferral.swift in Sources */,
+				DA0527CA8795AC3C49DAC7CF /* SetupRelayChoice.swift in Sources */,
 				973C4F0062DF084625E96527 /* SetupWizardView.swift in Sources */,
 				C8D5EDDC1399F497C8DD1700 /* ShareProfileSheet.swift in Sources */,
 				72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */,
@@ -5409,6 +5414,7 @@
 				F1969630DB545EB78256124E /* SettingsHelp.swift in Sources */,
 				5847D6E37160D84ADF6839D3 /* SettingsView.swift in Sources */,
 				0557B421D566C5250C0E8FF8 /* SetupReferral.swift in Sources */,
+				A4B9D7D9C2964C6BC57A9CB5 /* SetupRelayChoice.swift in Sources */,
 				E92A45E9141FE09A2704B7AA /* SetupWizardView.swift in Sources */,
 				7634F3216D29FD727A0DC681 /* ShareProfileSheet.swift in Sources */,
 				EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */,
