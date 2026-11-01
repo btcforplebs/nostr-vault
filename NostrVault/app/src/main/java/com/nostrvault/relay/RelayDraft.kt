@@ -64,7 +64,9 @@ object RelayDraft {
      * one relay was rate-limiting. [found] is kept for the iOS twin's shape.
      */
     @Suppress("UNUSED_PARAMETER")
-    fun settled(found: Boolean, answeredBy: Collection<String>): Boolean {
+    fun settled(found: Boolean, answeredBy: Collection<String>, ahead: Boolean = false): Boolean {
+        // A copy skipped for being dated ahead (MAX_SKEW) is not "no list": a Save at now would lose to it.
+        if (ahead) return false
         val answered = answeredBy.map(RelayMatrix::key).toSet()
         return INDEXERS.all { RelayMatrix.key(it) in answered }
     }

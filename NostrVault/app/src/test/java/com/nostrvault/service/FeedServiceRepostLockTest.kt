@@ -74,16 +74,16 @@ class FeedServiceRepostLockTest {
 
     @Test
     fun `the repost is signed locked to the account it was handed off under`() {
-        coEvery { nostr.signEventAsync(6, any(), any(), any(), any(), any(), any()) } returns repost(alice)
+        coEvery { nostr.signEventAsync(6, any(), any(), any(), any(), any(), any(), any()) } returns repost(alice)
         feed.repostNote("n1")
-        coVerify(timeout = 5_000) { nostr.signEventAsync(6, any(), any(), any(), any(), lockA, any()) }
+        coVerify(timeout = 5_000) { nostr.signEventAsync(6, any(), any(), any(), any(), lockA, any(), any()) }
         verify(timeout = 5_000) { nostr.requireStillPostingAs(lockA, alice) }
         verify(timeout = 5_000) { nostr.postEvent(any(), any()) }
     }
 
     @Test
     fun `a switch while it signs publishes nothing and takes the repost back`() {
-        coEvery { nostr.signEventAsync(6, any(), any(), any(), any(), any(), any()) } throws PostingAccount.AccountChangedException()
+        coEvery { nostr.signEventAsync(6, any(), any(), any(), any(), any(), any(), any()) } throws PostingAccount.AccountChangedException()
         feed.repostNote("n1")
         val deadline = System.currentTimeMillis() + 5_000
         while ("n1" in feed.repostedEventIds.value && System.currentTimeMillis() < deadline) Thread.sleep(10)

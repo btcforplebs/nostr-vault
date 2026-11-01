@@ -61,11 +61,4 @@ class FollowListTagsTest {
         assertEquals(listOf(listOf("p", alice), listOf("p", bob)), ContactManager.contactListTags(listOf(alice, bob), emptyList()))
     }
 
-    @Test fun signDelayWaitsForTheNextSecond() {
-        assertEquals(0L, ContactManager.followListSignDelayMs(nowMs = 101_000, lastCreatedAt = 100))
-        assertEquals(700L, ContactManager.followListSignDelayMs(nowMs = 100_300, lastCreatedAt = 100))
-        assertEquals(1000L, ContactManager.followListSignDelayMs(nowMs = 100_000, lastCreatedAt = 100))
-        // A clock far behind the last list is not waited out.
-        assertEquals(0L, ContactManager.followListSignDelayMs(nowMs = 50_000, lastCreatedAt = 100))
-    }
 }

@@ -42,7 +42,7 @@ class ProfileEditSaveErrorTest {
         every { nostr.outboxRelays } returns MutableStateFlow(emptyMap())
         every { nostr.relayLists } returns MutableStateFlow(emptyMap())
         every { nostr.lockPostingAccount() } returns lock
-        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             NostrEvent("id", "hex-a", 0, 0, emptyList(), "{}", "sig")
         every { nostr.postEvent(any(), any()) } answers { outcomes += secondArg<(BroadcastTally.Outcome) -> Unit>() }
     }

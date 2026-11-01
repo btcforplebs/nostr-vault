@@ -26,6 +26,7 @@ object EventPublisher {
         kind: Int,
         content: String,
         tags: List<List<String>>,
+        notBefore: Long = 0,
     ): String {
         // NIP-17/NIP-59: the seal (kind 13) and gift wrap (kind 1059) SHOULD randomize
         // created_at up to two days into the past, so the real send time isn't leaked
@@ -33,7 +34,9 @@ object EventPublisher {
         val createdAt = if (kind == 13 || kind == 1059) {
             System.currentTimeMillis() / 1000 - (0..172_800L).random()
         } else {
-            System.currentTimeMillis() / 1000
+            // [notBefore]: a list edit is signed later than the copy it was built on, even when that copy is dated a
+            // little ahead (another device's fast clock), or relays keep the copy and the edit is lost (MAX_SKEW).
+            maxOf(System.currentTimeMillis() / 1000, notBefore)
         }
         val event = buildJsonObject {
             put("pubkey", pubkey)

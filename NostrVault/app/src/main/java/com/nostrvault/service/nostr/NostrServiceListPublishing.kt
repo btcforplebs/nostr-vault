@@ -96,8 +96,8 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             read = read.filter(com.nostrvault.relay.RelayDraft::listable),
             write = write.filter(com.nostrvault.relay.RelayDraft::listable),
             dms = dms.filterNot(::isLoopbackRelay),
-            relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.answeredBy),
-            dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.answeredBy),
+            relayListKnown = rl != null && com.nostrvault.relay.RelayDraft.settled(rl.event != null, rl.answeredBy, rl.ahead),
+            dmListKnown = dl != null && com.nostrvault.relay.RelayDraft.settled(dl.event != null, dl.answeredBy, dl.ahead),
             kept = kept,
             relayListAt = rl?.event?.createdAt ?: relayListCreatedAt[owner],
             dmListAt = dl?.event?.createdAt,
@@ -127,7 +127,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         if (owner.isBlank()) return onDone(false)
         scope.launch(Dispatchers.IO) {
             val lookup = runCatching { lookupNewestReplaceable(10002, owner, relayListLookupRelays()) }.getOrNull()
-            if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy)) {
+            if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy, lookup.ahead)) {
                 Log.w(TAG, "kind 10002: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
                 return@launch onDone(false)
             }
@@ -137,9 +137,29 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             }
             val next = com.nostrvault.relay.RelayDraft.rebaseRelayList(before, tags, lookup.event?.tags.orEmpty())
             if (lookup.event != null && next == lookup.event.tags) return@launch onDone(true)
-            signAndPost(kind = 10002, content = lookup.event?.content.orEmpty(), tags = next, forceOwner = true)
+            signAndPost(kind = 10002, content = lookup.event?.content.orEmpty(), tags = next, forceOwner = true, notBefore = ListMerge.notBefore(lookup.event))
             onDone(true)
         }
+    }
+
+    /**
+     * The account's own relays: the write relays its kind 10002 names, never the app's defaults or its read (inbox)
+     * relays, which don't hold its own lists (NIP-65) and would push the majority count over half. Same set as iOS and
+     * web. From the
+     * list this device already read, else looked up now. Empty when the account has no relay list, or none of it is
+     * reachable from here; a user list is then unknown ([ListMerge.unknownWhy]).
+     */
+    internal suspend fun NostrService.ownListRelaysImpl(account: String): List<String> {
+        if (account.isBlank()) return emptyList()
+        val write = outboxRelays.value[account]
+        val urls = if (write != null) write else {
+            val lookup = runCatching { lookupNewestReplaceable(10002, account, relayListLookupRelays()) }.getOrNull()
+            lookup?.event?.takeIf { ListMerge.notAhead(it.createdAt) }?.let { ev ->
+                parseRelayListEvent(account, ev.tags, ev.createdAt)
+                profileRepository.parseRelayListTags(ev.tags).second
+            }.orEmpty()
+        }
+        return ownRelaysOf(urls)
     }
 
     /** Where Save looks up the owner's relay lists: the same relays the screen read them from. */
@@ -186,7 +206,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         if (owner.isBlank()) return onDone(false)
         scope.launch(Dispatchers.IO) {
             val lookup = runCatching { lookupNewestReplaceable(10050, owner, relayListLookupRelays()) }.getOrNull()
-            if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy)) {
+            if (lookup == null || !com.nostrvault.relay.RelayDraft.settled(lookup.event != null, lookup.answeredBy, lookup.ahead)) {
                 Log.w(TAG, "kind 10050: newest copy not settled at Save (${lookup?.answered}/${lookup?.asked}); not published")
                 return@launch onDone(false)
             }
@@ -197,12 +217,12 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             val newest = lookup.event?.tags.orEmpty().filter { !(it.size >= 2 && it[0] == "relay" && isLoopbackRelay(it[1])) }
             val tags = com.nostrvault.relay.RelayDraft.rebaseDMList(before, dmRelays.filter { !isLoopbackRelay(it) }, newest)
             if (lookup.event != null && tags == lookup.event.tags) return@launch onDone(true)
-            signDMRelayList(tags)
+            signDMRelayList(tags, ListMerge.notBefore(lookup.event))
             onDone(true)
         }
     }
 
-    private fun NostrService.signDMRelayList(tags: List<List<String>>) {
+    private fun NostrService.signDMRelayList(tags: List<List<String>>, notBefore: Long) {
         // A kind 10050 is a PUBLIC announcement of where others should deliver
         // DMs to us. The embedded Haven relay lives on 127.0.0.1 and is never
         // reachable by anyone else, so loopback URLs must be stripped — otherwise
@@ -213,7 +233,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
         // which no other client reads — they saw an empty list and had nowhere
         // to deliver our DMs.
-        signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
+        signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true, notBefore = notBefore)
     }
 
     /**
@@ -245,16 +265,19 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // The relays the mute list is read from at sign-in, so a block builds
         // on the list another app last wrote, not an older copy, and the
         // write relays editBase needs to hear from.
-        val ask = (cfg.writeRelays + relayLists.value[author].orEmpty() + cfg.readRelays + NostrService.PROFILE_RELAYS).distinct()
+        val own = ownListRelays(author)
+        val ask = (own + cfg.writeRelays + relayLists.value[author].orEmpty() + cfg.readRelays + NostrService.PROFILE_RELAYS).distinct()
         val lookup = runCatching { lookupNewestReplaceable(10000, author, ask) }
             .getOrElse { NostrService.ReplaceableLookup(null, 0, 0) }
         // Private blocks stay in the encrypted content, never in the "p" tags.
         val private = cfg.privateBlockedNpubsPerAccount[accountNpub.ifEmpty { cfg.ownerNpub }].orEmpty().toSet()
-        val (baseTags, baseContent) = when (val base = ListMerge.editBase(lookup, heldMuteList(author), cfg.writeRelays.filterNot(::isLoopbackRelay))) {
+        val editBase = ListMerge.editBase(lookup, heldMuteList(author), own)
+        val (baseTags, baseContent) = when (val base = editBase) {
             is ListMerge.EditBase.Found -> base.event.tags to base.event.content
             ListMerge.EditBase.None -> localBlocks.filter { it !in private }.mapNotNull { npubToHex(it) }.map { listOf("p", it) } to ""
-            ListMerge.EditBase.Unknown -> {
-                Log.w(TAG, "kind 10000: list not fetched (${lookup.answered}/${lookup.asked} relays answered); not published")
+            is ListMerge.EditBase.Unknown -> {
+                Log.w(TAG, "kind 10000: list not known (${lookup.answered}/${lookup.asked} relays answered, ${own.size} own); not published")
+                if (base.why == ListMerge.NO_RELAY_LIST) return "$action saved on this device only. ${ListMerge.NO_RELAY_LIST}"
                 return "$action saved on this device only: your relays didn't send your mute list, " +
                     "and publishing without it would erase blocks set in other apps. Try again later."
             }
@@ -275,7 +298,10 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         }
         val tags = ListMerge.edit("p", baseTags, add.mapNotNull { npubToHex(it) }, removeHex)
         val event = try {
-            signEventAsync(kind = 10000, content = content, tags = tags, forceOwner = forceOwner)
+            signEventAsync(
+                kind = 10000, content = content, tags = tags, forceOwner = forceOwner,
+                notBefore = ListMerge.notBefore((editBase as? ListMerge.EditBase.Found)?.event),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -301,26 +327,33 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         forceOwner: Boolean,
         extraRelays: () -> List<String> = { emptyList() },
         onPosted: () -> Unit = {},
+        onRefused: (String) -> Unit = {},
         build: (NostrEvent?) -> Pair<List<List<String>>, String>?,
     ) {
         if (author.isBlank()) return
         scope.launch(Dispatchers.IO) {
+            val own = ownListRelays(author)
             val lookup = runCatching {
-                lookupNewestReplaceable(kind, author, configStore.config.value.readRelays.take(3))
+                lookupNewestReplaceable(kind, author, (own + configStore.config.value.readRelays.take(3)).distinct())
             }.getOrElse { NostrService.ReplaceableLookup(null, 0, 0) }
-            // One relay saying "none" is not "you have none" (Logen 2026-10-31):
-            // with no copy found, every relay asked must have answered.
-            if (lookup.event == null && !lookup.confirmedNone) {
-                Log.w(TAG, "kind $kind: ${lookup.answered}/${lookup.asked} relays answered, none had it; not published")
-                return@launch
+            // Only the account's own relays say whether the list is known (Logen 2026-11-01), and one relay saying
+            // "none" is not "you have none" (Logen 2026-10-31): with no copy found, every relay asked must have answered.
+            val base = when (val b = ListMerge.editBase(lookup, null, own)) {
+                is ListMerge.EditBase.Found -> b.event
+                ListMerge.EditBase.None -> null
+                is ListMerge.EditBase.Unknown -> {
+                    Log.w(TAG, "kind $kind: ${b.why} (${lookup.answered}/${lookup.asked} answered, ${own.size} own); not published")
+                    onRefused(b.why)
+                    return@launch
+                }
             }
-            val (tags, content) = build(lookup.event) ?: run {
+            val (tags, content) = build(base) ?: run {
                 Log.w(TAG, "kind $kind: nothing that may be published; not published")
                 return@launch
             }
             val extra = extraRelays()
             val event = try {
-                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner, notBefore = ListMerge.notBefore(base))
             } catch (e: Exception) {
                 Log.e(TAG, "kind $kind not signed: ${e.message}")
                 null
@@ -344,12 +377,13 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         extraRelays: () -> List<String> = { emptyList() },
         publishedFirst: Boolean = false,
         onPosted: () -> Unit = {},
+        onRefused: (String) -> Unit = {},
         adjust: (List<List<String>>) -> List<List<String>>? = { it },
     ) {
         val owner = ownerHexPubkey
         val bases = configStore.config.value.appSupportDir?.let { ListMerge.Bases(java.io.File(it, ListMerge.BASES_FILE)) }
         val baseKey = "$kind:$owner"
-        publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays, onPosted = onPosted) { published ->
+        publishMergedList(kind, owner, forceOwner = true, extraRelays = extraRelays, onPosted = onPosted, onRefused = onRefused) { published ->
             val base = bases?.get(baseKey)?.map(ListMerge::key)?.toSet()
             val keep = { value: String -> base == null || ListMerge.key(value) !in base }
             val tags = if (publishedFirst) {
@@ -388,14 +422,14 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
             val ask = (config.dmInboxRelays + config.writeRelays + com.nostrvault.relay.RelayDraft.INDEXERS)
                 .filterNot(::isLoopbackRelay).distinctBy(com.nostrvault.relay.RelayMatrix::key)
             val lookup = runCatching { lookupNewestReplaceable(10050, owner, ask) }.getOrNull()
-            val event = lookup?.event?.takeIf { com.nostrvault.relay.RelayDraft.settled(true, lookup.answeredBy) } ?: run {
+            val event = lookup?.event?.takeIf { com.nostrvault.relay.RelayDraft.settled(true, lookup.answeredBy, lookup.ahead) } ?: run {
                 Log.w(TAG, "DM inbox move: no settled published list; not published")
                 return@launch
             }
             val tags = ListMerge.edit("relay", event.tags, listOfNotNull(newInbox.ifBlank { null }), listOfNotNull(oldInbox.ifBlank { null }))
             if (tags == event.tags) return@launch
             configStore.update { it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) }
-            signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
+            signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true, notBefore = ListMerge.notBefore(event))
         }
     }
 
@@ -409,7 +443,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         publishOwnerEntryList(10006, "relay", relays)
     }
 
-    internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList()) {
+    internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList(), onRefused: (String) -> Unit = {}) {
         val config = configStore.config.value
         val mirrors = config.activeBlossomMirrors
         val home = config.homeVaultNpub
@@ -431,7 +465,7 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         // only this device has goes after it.
         // Cleared only once the list went out, so a Save that published nothing drops them next time.
         val cleared = { configStore.update { it.copy(serverListDropMesh = it.serverListDropMesh - drop.toSet()) } }
-        publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true, onPosted = cleared) { tags ->
+        publishOwnerEntryList(10063, "server", mirrors, extraRelays, publishedFirst = true, onPosted = cleared, onRefused = onRefused) { tags ->
             val servers = tags.filter { it.size >= 2 && it[0] == "server" }.map { it[1] }
             val merged = com.nostrvault.fips.HomeVaultRules.mergeServerList(
                 servers, servers, home, drop, macs, myDevices = config.fipsPeers,
@@ -481,6 +515,11 @@ internal object ServerListRelays {
  * lists are replaceable, so publishing only what this device holds deletes
  * everything another client added.
  */
+/** [urls] as own relays: network relays only (no loopback), each once. Pure for the tests. */
+internal fun ownRelaysOf(urls: List<String>): List<String> = urls.map { it.trim() }
+    .filter { (it.startsWith("wss://") || it.startsWith("ws://")) && !NostrService.isLoopbackRelay(it) }
+    .distinctBy(com.nostrvault.relay.RelayMatrix::key)
+
 internal object ListMerge {
     const val BASES_FILE = "list_publish_bases.json"
 
@@ -629,28 +668,55 @@ internal object ListMerge {
         data class Found(val event: NostrEvent) : EditBase
         /** Every relay answered and none has a list. */
         data object None : EditBase
-        /** Not known: publishing could replace a list this device never saw. */
-        data object Unknown : EditBase
+        /** Not known: publishing could replace a list this device never saw. [why] is what to tell the person. */
+        data class Unknown(val why: String = NOT_ANSWERED) : EditBase
     }
 
     /**
-     * The newest of the list the relays returned and the one this device
-     * already [held]. Unknown when no relay answered, when no list turned up
-     * and some relay didn't answer, or when none of the account's [own]
-     * relays was heard from: neither sent the list nor every one answered.
-     * A copy on another relay alone can be older than the one on [own].
+     * A copy dated this far ahead of now (seconds) is skipped, as on the web (follows.js MAX_SKEW): signed at now,
+     * the edit would be older than it, relays would keep it, and the change would be lost.
      */
-    fun editBase(lookup: NostrService.ReplaceableLookup, held: NostrEvent?, own: Collection<String> = emptyList()): EditBase {
-        if (lookup.answered == 0) return EditBase.Unknown
+    const val MAX_SKEW = 900L
+
+    /** Said when the account has no relay list (kind 10002), so it has no relays of its own to ask. */
+    const val NO_RELAY_LIST = "You have no relay list yet, so your newest list can't be checked. " +
+        "Nothing was changed. Add your relays in Settings > Relays first."
+    const val NOT_ANSWERED = "Your relays didn't answer, so your newest list isn't known. Nothing was changed. Try again in a moment."
+
+    /**
+     * Whether a user list (every kind but 10002 itself) is known, counting only the account's [own] relays: the ones
+     * its kind 10002 names, never the app's defaults (Logen 2026-11-01, as web listKnown and iOS editBase). With no
+     * own relays nothing is known. A found copy counts when an own relay sent it ([from]) or most own relays answered;
+     * "none" needs every own relay to answer, and no copy skipped for being dated ahead ([ahead]).
+     * Null: known. Otherwise what to tell the person.
+     */
+    fun unknownWhy(own: Collection<String>, answeredBy: Collection<String>, from: Collection<String>, found: Boolean, ahead: Boolean = false): String? {
         val mine = own.map(::relayKey).toSet()
-        val ownHeard = mine.isEmpty() || lookup.answeredBy.map(::relayKey).containsAll(mine) ||
-            lookup.from.any { relayKey(it) in mine }
-        if (!ownHeard) return EditBase.Unknown
-        val newest = listOfNotNull(lookup.event, held).maxByOrNull { it.createdAt }
+        if (mine.isEmpty()) return NO_RELAY_LIST
+        val answered = answeredBy.map(::relayKey).toSet().count { it in mine }
+        val known = if (found) from.any { relayKey(it) in mine } || answered * 2 > mine.size
+        else !ahead && answered >= mine.size
+        return if (known) null else NOT_ANSWERED
+    }
+
+    /** The earliest created_at an edit built on [base] may carry: one second after it, so it replaces it (iOS notBefore). */
+    fun notBefore(base: NostrEvent?): Long = base?.createdAt?.plus(1) ?: 0
+
+    /** Whether [createdAt] is not too far ahead of [now] to edit on ([MAX_SKEW]). */
+    fun notAhead(createdAt: Long, now: Long = System.currentTimeMillis() / 1000): Boolean = createdAt < now + MAX_SKEW
+
+    /**
+     * The newest of the list the relays returned and the one this device already [held], for the account's [own]
+     * relays ([unknownWhy]). A copy dated [MAX_SKEW] or more ahead is never the base. "None" also needs every relay
+     * asked to have answered ([NostrService.ReplaceableLookup.confirmedNone]).
+     */
+    fun editBase(lookup: NostrService.ReplaceableLookup, held: NostrEvent?, own: Collection<String>, now: Long = System.currentTimeMillis() / 1000): EditBase {
+        val newest = listOfNotNull(lookup.event, held).filter { notAhead(it.createdAt, now) }.maxByOrNull { it.createdAt }
+        unknownWhy(own, lookup.answeredBy, lookup.from, newest != null, lookup.ahead)?.let { return EditBase.Unknown(it) }
         return when {
             newest != null -> EditBase.Found(newest)
             lookup.confirmedNone -> EditBase.None
-            else -> EditBase.Unknown
+            else -> EditBase.Unknown()
         }
     }
 

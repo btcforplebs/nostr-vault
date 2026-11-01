@@ -44,7 +44,7 @@ class DraftRelaySyncTest {
     }
 
     private fun draftSigns(times: Int) = coVerify(exactly = times, timeout = 1_000) {
-        nostr.signEventAsync(DraftEvents.KIND, any(), any(), any(), any(), any(), any())
+        nostr.signEventAsync(DraftEvents.KIND, any(), any(), any(), any(), any(), any(), any())
     }
 
     @Test fun typingDoesNotSign() {
@@ -66,7 +66,7 @@ class DraftRelaySyncTest {
     /** Backgrounded, then left before the first sign came back: still one sign. */
     @Test fun aSecondAskWhileTheFirstIsOutDoesNotSignAgain() = runBlocking {
         val gate = CompletableDeferred<Unit>()
-        coEvery { nostr.signEventAsync(DraftEvents.KIND, any(), any(), any(), any(), any(), any()) } coAnswers {
+        coEvery { nostr.signEventAsync(DraftEvents.KIND, any(), any(), any(), any(), any(), any(), any()) } coAnswers {
             gate.await(); null
         }
         val drafts = service()

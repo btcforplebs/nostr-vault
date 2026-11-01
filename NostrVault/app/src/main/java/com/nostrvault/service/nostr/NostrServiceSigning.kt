@@ -25,10 +25,11 @@ import com.nostrvault.data.model.PostingAccount
         content: String,
         tags: List<List<String>> = emptyList(),
         forceOwner: Boolean = false,
+        notBefore: Long = 0,
     ) {
         scope.launch(Dispatchers.IO) {
             val event = try {
-                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner, notBefore = notBefore)
             } catch (e: Exception) {
                 Log.e(TAG, "signAndPost: kind $kind not signed: ${e.message}")
                 null
@@ -43,6 +44,7 @@ import com.nostrvault.data.model.PostingAccount
         tags: List<List<String>>,
         forceOwner: Boolean,
         silentOnly: Boolean = false,
+        notBefore: Long = 0,
     ): NostrEvent? = withContext(Dispatchers.IO) {
         val signingMode = configStore.config.value.activeSigningMode()
         if (BuildConfig.DEBUG) Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
@@ -56,6 +58,7 @@ import com.nostrvault.data.model.PostingAccount
                 val eventJson = EventPublisher.buildUnsignedEvent(
                     kind = kind, content = content,
                     tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
+                    notBefore = notBefore,
                 )
                 // After a restart with another account active only that
                 // account's bunker has a session; the first owner sign opens
@@ -73,13 +76,14 @@ import com.nostrvault.data.model.PostingAccount
                 val eventJson = EventPublisher.buildUnsignedEvent(
                     kind = kind, content = content,
                     tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
+                    notBefore = notBefore,
                 )
                 val signed = amberSignerService.signEvent(eventJson, asOwner = true, silentOnly = silentOnly)
                     ?: throw IllegalStateException("Amber signer failed")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "Amber (owner)")
             }
             is SignerRoute.Local -> if (route.asOwner && signingMode != "local") {
-                return@withContext signLocally(kind, content, tags, forceOwner = true)
+                return@withContext signLocally(kind, content, tags, forceOwner = true, notBefore = notBefore)
             }
             SignerRoute.ActiveBunker -> Unit
         }
@@ -92,6 +96,7 @@ import com.nostrvault.data.model.PostingAccount
                     content = content,
                     tags = finalTags,
                     pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
+                    notBefore = notBefore,
                 )
                 ensureBunkerConnected()
                 val signed = gatedIfBackground(kind) {
@@ -107,6 +112,7 @@ import com.nostrvault.data.model.PostingAccount
                     content = content,
                     tags = finalTags,
                     pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
+                    notBefore = notBefore,
                 )
                 val signed = amberSignerService.signEvent(eventJson, silentOnly = silentOnly)
                     ?: throw IllegalStateException("Amber signer failed")
@@ -114,7 +120,7 @@ import com.nostrvault.data.model.PostingAccount
             }
             else -> {
                 // Local signing
-                signLocally(kind, content, tags, forceOwner)
+                signLocally(kind, content, tags, forceOwner, notBefore)
             }
         }
     }
@@ -142,7 +148,7 @@ import com.nostrvault.data.model.PostingAccount
     }
 
     /** Signs with the local key of the owner ([forceOwner]) or the active account. */
-    internal fun NostrService.signLocally(kind: Int, content: String, tags: List<List<String>>, forceOwner: Boolean): NostrEvent {
+    internal fun NostrService.signLocally(kind: Int, content: String, tags: List<List<String>>, forceOwner: Boolean, notBefore: Long = 0): NostrEvent {
         if (!com.nostrvault.relay.HavenBridge.isLoaded) {
             throw IllegalStateException("Native library not loaded")
         }
@@ -151,7 +157,7 @@ import com.nostrvault.data.model.PostingAccount
         val finalTags = EventPublisher.appendClientTag(tags, kind)
         val pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey
         val eventJson = EventPublisher.buildUnsignedEvent(
-            kind = kind, content = content, tags = finalTags, pubkey = pubkey,
+            kind = kind, content = content, tags = finalTags, pubkey = pubkey, notBefore = notBefore,
         )
 
         // Apply NIP-13 proof of work if enabled for this event kind
@@ -288,11 +294,12 @@ internal fun isReadOnlySigning(signingMode: String, hasLocalKey: Boolean): Boole
         forceOwner: Boolean = false,
         lockedTo: PostingAccount.Lock? = null,
         silentOnly: Boolean = false,
+        notBefore: Long = 0,
     ): NostrEvent? {
         // With [lockedTo], refuse to sign unless that account is still the
         // active one, and refuse the result unless it carries its key.
         if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
-        val event = signEventRouted(kind, content, tags, forceOwner, silentOnly)
+        val event = signEventRouted(kind, content, tags, forceOwner, silentOnly, notBefore)
         if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
         return event
     }

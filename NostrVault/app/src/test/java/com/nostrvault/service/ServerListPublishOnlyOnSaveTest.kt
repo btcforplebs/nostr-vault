@@ -37,8 +37,8 @@ class ServerListPublishOnlyOnSaveTest {
         }
         assertEquals(
             listOf(
-                "fun publishServerList(dropMesh: Collection<String> = emptyList()) { publishServerListImpl(dropMesh) }",
-                "internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList()) {",
+                "fun publishServerList(dropMesh: Collection<String> = emptyList(), onRefused: (String) -> Unit = {}) { publishServerListImpl(dropMesh, onRefused) }",
+                "internal fun NostrService.publishServerListImpl(dropMesh: Collection<String> = emptyList(), onRefused: (String) -> Unit = {}) {",
             ),
             declared,
         )

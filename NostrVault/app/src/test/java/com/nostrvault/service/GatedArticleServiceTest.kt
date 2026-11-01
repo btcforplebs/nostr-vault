@@ -73,7 +73,7 @@ class GatedArticleServiceTest {
     }
 
     private fun noSigningOrPaying() {
-        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { zaps.zapNote(any(), any(), any(), any(), any(), any()) }
     }
 
