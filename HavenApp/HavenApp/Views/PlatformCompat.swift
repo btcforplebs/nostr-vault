@@ -318,11 +318,13 @@ struct ClearFullScreenBackground: UIViewRepresentable {
 #endif
 
 extension View {
+    // Glass on iOS 26 / macOS 26, a thin material before that. These used to
+    // return the view unchanged on the Mac, so a floating control there sat
+    // bare with no glass and no material.
     @ViewBuilder
     func applyGlassCapsule() -> some View {
-        #if os(iOS)
         let isOLED = ConfigService.shared.config.useOLED
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             self.background(
                 Color.clear
                     .overlay(
@@ -344,16 +346,12 @@ extension View {
                 )
                 .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
         }
-        #else
-        self
-        #endif
     }
     
     @ViewBuilder
     func applyGlassCircle() -> some View {
-        #if os(iOS)
         let isOLED = ConfigService.shared.config.useOLED
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             self.background(
                 Color.clear
                     .overlay(
@@ -378,16 +376,12 @@ extension View {
                 )
                 .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
         }
-        #else
-        self
-        #endif
     }
 
     @ViewBuilder
     func applyGlassRect(cornerRadius: CGFloat = 16) -> some View {
-        #if os(iOS)
         let isOLED = ConfigService.shared.config.useOLED
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             self.background(
                 Color.clear
                     .overlay(
@@ -412,9 +406,6 @@ extension View {
                 )
                 .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
         }
-        #else
-        self
-        #endif
     }
 
     /// Consistent bottom padding so scroll content clears the floating tab bar on iOS.

@@ -15,6 +15,34 @@ struct FollowingBackupSettingsView: View {
     @State private var queryStatus = ""
     @State private var relayClients: [WebSocketClient] = []
     @State private var queryCancellables = Set<AnyCancellable>()
+    #if os(macOS)
+    @State private var macDetail: MacBackupDetail?
+
+    private enum MacBackupDetail: Identifiable {
+        case kind3(Kind3Event)
+        case snapshot(FollowingSnapshot)
+
+        var id: String {
+            switch self {
+            case .kind3(let event): return "k3-\(event.id)"
+            case .snapshot(let snapshot): return "snap-\(snapshot.id)"
+            }
+        }
+    }
+
+    /// A row that opens a sheet, drawn like a NavigationLink row: full-width
+    /// hit area and a trailing chevron.
+    private func macDetailLabel<Row: View>(_ row: Row) -> some View {
+        HStack {
+            row
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.appCaption)
+                .foregroundColor(.secondary)
+        }
+        .contentShape(Rectangle())
+    }
+    #endif
 
     private var hasMultipleAccounts: Bool {
         configService.allAccountNpubs.count > 1
@@ -98,9 +126,14 @@ struct FollowingBackupSettingsView: View {
 
                 if !kind3Events.isEmpty {
                     ForEach(kind3Events) { event in
+                        #if os(iOS)
                         NavigationLink(destination: Kind3EventDetailView(event: event, isActiveAccount: isViewingActiveAccount)) {
                             kind3Row(event)
                         }
+                        #else
+                        Button { macDetail = .kind3(event) } label: { macDetailLabel(kind3Row(event)) }
+                            .buttonStyle(.plain)
+                        #endif
                     }
                 }
 
@@ -118,19 +151,22 @@ struct FollowingBackupSettingsView: View {
             if !backupService.snapshots.isEmpty {
                 Section {
                     ForEach(backupService.snapshots.reversed()) { snapshot in
+                        #if os(iOS)
                         NavigationLink(destination: SnapshotDetailView(snapshot: snapshot, isActiveAccount: isViewingActiveAccount)) {
                             snapshotRow(snapshot)
                         }
-                        #if os(macOS)
-                        // `.onDelete` below is swipe-only, and macOS rows don't swipe:
-                        // right-click is the platform's delete affordance here.
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                backupService.deleteSnapshot(id: snapshot.id, forAccountKey: selectedSnapshotKey)
-                            } label: {
-                                Label("Delete Snapshot", systemImage: "trash")
+                        #else
+                        Button { macDetail = .snapshot(snapshot) } label: { macDetailLabel(snapshotRow(snapshot)) }
+                            .buttonStyle(.plain)
+                            // `.onDelete` below is swipe-only, and macOS rows don't swipe:
+                            // right-click is the platform's delete affordance here.
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    backupService.deleteSnapshot(id: snapshot.id, forAccountKey: selectedSnapshotKey)
+                                } label: {
+                                    Label("Delete Snapshot", systemImage: "trash")
+                                }
                             }
-                        }
                         #endif
                     }
                     .onDelete { offsets in
@@ -146,6 +182,29 @@ struct FollowingBackupSettingsView: View {
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #else
+        // The Mac's Settings pane has no navigation stack, so a NavigationLink
+        // row there did nothing when clicked. The detail opens as a sheet,
+        // attached to the Form (not a row: a sheet on a Section's rows closes
+        // itself when there are two or more).
+        .sheet(item: $macDetail) { detail in
+            NavigationStack {
+                Group {
+                    switch detail {
+                    case .kind3(let event):
+                        Kind3EventDetailView(event: event, isActiveAccount: isViewingActiveAccount)
+                    case .snapshot(let snapshot):
+                        SnapshotDetailView(snapshot: snapshot, isActiveAccount: isViewingActiveAccount)
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { macDetail = nil }
+                    }
+                }
+            }
+            .frame(minWidth: 520, minHeight: 560)
+        }
         #endif
         .onAppear {
             if selectedNpub.isEmpty {
