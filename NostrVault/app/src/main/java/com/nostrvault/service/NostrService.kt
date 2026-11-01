@@ -387,6 +387,7 @@ class NostrService @Inject constructor(
     fun publishOwnerDMInboxMove(oldInbox: String, newInbox: String) { publishOwnerDMInboxMoveImpl(oldInbox, newInbox) }
 
     suspend fun lookupOwnerRelayLists(): com.nostrvault.relay.RelayDraft.Published = lookupOwnerRelayListsImpl()
+    fun cachedOwnerRelayLists(): com.nostrvault.relay.RelayDraft.Published = cachedOwnerRelayListsImpl()
 
     fun publishOwnerRelayListTags(tags: List<List<String>>, before: List<List<String>>, openedAt: Long?, onDone: (Boolean) -> Unit = {}) {
         publishOwnerRelayListTagsImpl(tags, before, openedAt, onDone)

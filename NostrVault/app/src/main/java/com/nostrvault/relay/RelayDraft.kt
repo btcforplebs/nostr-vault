@@ -113,6 +113,13 @@ object RelayDraft {
         return State(start = draft, draft = draft, layout = layout, removed = emptyMap(), published = published)
     }
 
+    /**
+     * [edits] made on the screen's opening lists, made again on [looked], the
+     * lists the lookup found. Each is by key, so one whose relay the lookup
+     * dropped changes nothing.
+     */
+    fun replay(looked: State, edits: List<(State) -> State>): State = edits.fold(looked) { acc, edit -> edit(acc) }
+
     fun rows(state: State): List<Row> = state.layout.map { entry ->
         val removed = state.removed[entry.key]
         Row(entry, removed ?: jobs(state.draft, entry.key), removed != null)
