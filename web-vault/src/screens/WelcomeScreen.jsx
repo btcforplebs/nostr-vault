@@ -3,13 +3,15 @@
 // Create an account (screens/CreateAccount.jsx, the iPhone's New to Nostr), I already use Nostr (sign-in), and, as the
 // Mac's "Just look around", a small link that opens a search to look at anyone without an account (their profile
 // opens in the guest view, src/guest/GuestApp.jsx). "What is Nostr Vault?" (the iPhone's "What's inside?") shrinks the
-// app into a phone on the marketing page (src/shell.js).
+// app into a phone on the marketing page (src/shell.js). On a phone, Get the app leads to the native app for it
+// (components/get-app.js): TestFlight on iPhone and iPad, Zapstore on Android.
 import { useEffect, useRef, useState } from "preact/hooks"
 import { namesAKey, resolvePubkey } from "../signer/readonly.js"
 import { searchPeople } from "../net/search.js"
 import { putProfile } from "../net/profiles.js"
 import { PersonRow } from "./SearchScreen.jsx"
 import { learn } from "../shell.js"
+import { appDownload } from "../components/get-app.js"
 import "../styles/welcome.css"
 
 const SEARCH = "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"
@@ -22,6 +24,7 @@ const CHIPS = [
 
 export function WelcomeScreen({ onSignIn, onCreate }) {
   const [looking, setLooking] = useState(false)
+  const app = appDownload()
   return (
     <main class="welcome">
       <div class="welcome-hero">
@@ -36,6 +39,12 @@ export function WelcomeScreen({ onSignIn, onCreate }) {
         <button type="button" class="welcome-learn" onClick={() => learn()}>What is Nostr Vault?</button>
       </div>
       <div class="welcome-actions">
+        {app && (
+          <div class="welcome-app">
+            <a class="welcome-door welcome-get" href={app.url} target="_blank" rel="noopener">{app.label}</a>
+            <p class="welcome-app-line">{app.line}</p>
+          </div>
+        )}
         <button class="welcome-door primary" onClick={onCreate}>Create an account</button>
         <button class="welcome-door" onClick={onSignIn}>I already use Nostr</button>
         {looking ? <Browse /> : <button type="button" class="welcome-look" onClick={() => setLooking(true)}>Just look around</button>}
