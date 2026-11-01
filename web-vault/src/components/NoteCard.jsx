@@ -121,7 +121,8 @@ function FetchedRepost({ q, memoryOnly, kinds = NOTE_ONLY }) {
   return <><NoteBody event={ev} memoryOnly={memoryOnly} /><NoteActions note={ev} /></>
 }
 
-function NoteBody({ event, memoryOnly, showParent = false }) {
+/** A note's head and body as the feed draws it, without the card's actions (also the composer's live preview). */
+export function NoteBody({ event, memoryOnly, showParent = false }) {
   const replyTo = replyToPubkey(event) ?? commentParentAuthor(event)
   const parent = showParent && event.kind === 1 ? replyRefs(event).parent : null
   const hint = parent && (event.tags ?? []).find(t => t[0] === "e" && t[1] === parent)?.[2]

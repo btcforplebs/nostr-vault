@@ -103,3 +103,34 @@ body:has(.compose-sheet) .tabbar { display: none; }
 /* The desktop dialog's × sat on top of Post: a sheet with its own bar already has Cancel (and Esc), so the × goes. */
 .desk-compose:has(.compose-bar) > .desk-x { display: none; }
 .compose-done { display: block; width: calc(100% - 2 * var(--gutter)); margin: 12px var(--gutter) 0; }
+
+/* Live preview (compose/ComposePreview.jsx): the note as the feed draws it. Wide screens: editor and preview side by
+   side, and the desktop dialog widens for it. Phones: a Write / Preview switch, so the preview never squeezes the
+   editor the keyboard already halves. The inline reply under a thread has neither. */
+.compose-view-switch { display: flex; gap: 4px; margin: 0 var(--gutter) 8px; padding: 3px; border-radius: 999px; background: var(--s2); width: max-content; }
+.compose-view-switch button { min-height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--text-2); font: 600 14px/1 var(--font); }
+.compose-view-switch button.on { background: var(--s1); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .3); }
+.compose-sheet.view-write .compose-preview { display: none; }
+.compose-sheet.view-preview .compose-area { display: none; }
+.compose-preview { margin: 0 var(--gutter) 12px; min-width: 0; }
+.compose-preview-label { margin: 4px 0 8px; }
+.compose-preview-empty { margin: 16px 0; }
+.compose-preview-card { cursor: default; }
+/* A note not yet posted has nothing to share, translate or report. */
+.compose-preview :is(.note-more, .translate) { display: none; }
+@media (min-width: 900px) {
+  .compose-view-switch { display: none; }
+  .compose-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .compose-sheet.view-write .compose-preview { display: block; }
+  .compose-sheet.view-preview .compose-area { display: grid; }
+  .compose-sheet .compose-split .compose-area .compose { min-height: 280px; }
+  .compose-preview { position: sticky; top: 64px; padding-left: 16px; border-left: 1px solid var(--hair); margin-left: 0; }
+  .desk-compose:has(.compose-split) { width: min(1100px, calc(100vw - 48px)); }
+}
+
+/* Upload progress on a tile: a ring over the photo while it goes up. */
+.compose-photo-ring { position: absolute; inset: 0 0 22px; display: grid; place-items: center; pointer-events: none; }
+.compose-ring.spinning { animation: compose-spin 1s linear infinite; }
+.compose-ring circle:last-child { transition: stroke-dashoffset .2s linear; }
+@keyframes compose-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .compose-ring.spinning { animation: none; } }
