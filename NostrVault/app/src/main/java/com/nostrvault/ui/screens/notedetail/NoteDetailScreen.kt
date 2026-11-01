@@ -58,6 +58,7 @@ fun NoteDetailScreen(
     val otherResponses by viewModel.otherResponses.collectAsState()
     val isLoadingNote by viewModel.isLoadingNote.collectAsState()
     val isLoadingParents by viewModel.isLoadingParents.collectAsState()
+    val parentNotFound by viewModel.parentNotFound.collectAsState()
     val isLoadingReplies by viewModel.isLoadingReplies.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val engagementDetails by viewModel.engagementDetails.collectAsState()
@@ -228,10 +229,11 @@ fun NoteDetailScreen(
     // The hero's place in the list: after the loading row while the notes
     // above it load, then after the parent cards, or after the one card of
     // condensed lines.
+    val missingRow = if (parentNotFound && !isLoadingParents) 1 else 0
     val heroIndex = when {
         isLoadingParents -> if (note?.parentEventId != null) 1 else 0
-        condensedReplies -> if (shownParents.isEmpty()) 0 else 1
-        else -> shownParents.size
+        condensedReplies -> missingRow + if (shownParents.isEmpty()) 0 else 1
+        else -> missingRow + shownParents.size
     }
     val currentHeroIndex by rememberUpdatedState(heroIndex)
     val viewportHeight by remember { derivedStateOf { listState.layoutInfo.viewportSize.height } }
@@ -459,6 +461,7 @@ fun NoteDetailScreen(
                         }
                     }
                 } else if (condensedReplies) {
+                    if (missingRow == 1) item(key = "parent_not_found") { ParentNotFoundRow() }
                     // The conversation above, one line per note, oldest at the top.
                     if (shownParents.isNotEmpty()) {
                         item(key = "parents_condensed") {
@@ -479,6 +482,7 @@ fun NoteDetailScreen(
                         }
                     }
                 } else {
+                    if (missingRow == 1) item(key = "parent_not_found") { ParentNotFoundRow() }
                     items(shownParents, key = { "parent_${it.id}" }) { parent ->
                         val quotedNotesMap = remember(parent.id, parent.quotedEventIds, quotedNotesCache) {
                             parent.quotedEventIds.mapNotNull { qid ->

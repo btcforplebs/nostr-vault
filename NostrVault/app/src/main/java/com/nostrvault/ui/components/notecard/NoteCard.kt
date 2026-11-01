@@ -408,7 +408,7 @@ fun NoteCard(
                             note.replyToPubkey?.let { target ->
                                 Spacer(Modifier.width(3.dp))
                                 Text(
-                                    text = "reply to ${replyToProfile?.bestName ?: shortKey(target)}",
+                                    text = "reply to ${(replyToProfile ?: profiles[target])?.bestName ?: shortKey(target)}",
                                     color = SecondaryText.copy(alpha = 0.7f),
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,

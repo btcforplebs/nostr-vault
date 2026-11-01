@@ -87,6 +87,8 @@ private val HighlightGradient = Brush.verticalGradient(
 fun Modifier.glassPillBackground(
     isOled: Boolean = false,
     accentColor: Color = Color.Transparent,
+    /** Fully solid: the bottom tab bar, where 8% of a post's text still read through. */
+    opaque: Boolean = false,
 ): Modifier = this
     .shadow(
         elevation = 8.dp,
@@ -94,7 +96,7 @@ fun Modifier.glassPillBackground(
         ambientColor = Color.Black.copy(alpha = 0.12f),
         spotColor = Color.Black.copy(alpha = 0.12f),
     )
-    .background(SecondaryGroupedBg.copy(alpha = glassBgAlpha(isOled)), PillShape)
+    .background(SecondaryGroupedBg.copy(alpha = if (opaque) 1f else glassBgAlpha(isOled)), PillShape)
     .background(accentColor.copy(alpha = 0.06f), PillShape)
     .background(HighlightGradient, PillShape)
     .border(

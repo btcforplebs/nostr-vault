@@ -221,6 +221,10 @@ class FeedViewModel @Inject constructor(
     /// Discovery's empty state needs both of these to say *why* it is empty:
     /// still building, nobody followed, or relays that returned nothing.
     val isLoadingExtendedNetwork: StateFlow<Boolean> = feedService.isLoadingExtendedNetwork
+    /** Discover's tally found people: an empty Discover then isn't the relays' fault. */
+    val extendedNetworkFound: StateFlow<Boolean> = feedService.extendedNetworkPubkeys
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.extendedNetworkPubkeys.value.isNotEmpty())
     val followedPubkeys: StateFlow<List<String>> = feedService.followedPubkeys
 
     // ── Pending notes (new posts indicator) ────────────────────

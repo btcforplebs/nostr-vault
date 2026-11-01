@@ -114,6 +114,9 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
                 // Discovery keeps only authors in the trust graph, same as Global.
                 loadWotPubkeys()
                 if (needsExtendedNetworkRefresh()) {
+                    // Loading from this frame on, not from when the launch
+                    // runs: the empty state must not flash its fault first.
+                    _isLoadingExtendedNetwork.value = true
                     scope.launch {
                         loadExtendedNetwork()
                         subscribeToAllRelays()

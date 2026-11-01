@@ -164,11 +164,21 @@ fun FillYourFeedOverlay(
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(enabled = false) {})
         }
 
+        // The ready card sits up top like the hint: centred, it covered half
+        // of the empty feed's Refresh Feed button, which then read as its own.
+        // It starts below the New Posts pill and the follow toast, which
+        // otherwise land on its bolt.
+        val topCard = phase == FillYourFeedPhase.HINT || phase == FillYourFeedPhase.READY
+        val top = when (phase) {
+            FillYourFeedPhase.HINT -> 72.dp
+            FillYourFeedPhase.READY -> 144.dp
+            else -> 12.dp
+        }
         Box(
             Modifier
-                .align(if (phase == FillYourFeedPhase.HINT) Alignment.TopCenter else Alignment.Center)
+                .align(if (topCard) Alignment.TopCenter else Alignment.Center)
                 .padding(horizontal = 16.dp)
-                .padding(top = if (phase == FillYourFeedPhase.HINT) 72.dp else 12.dp, bottom = bottomInset + 64.dp)
+                .padding(top = top, bottom = bottomInset + 64.dp)
                 .widthIn(max = 420.dp),
         ) {
             when (phase) {
