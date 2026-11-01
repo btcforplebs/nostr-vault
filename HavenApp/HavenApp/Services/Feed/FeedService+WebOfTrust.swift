@@ -9,25 +9,51 @@ extension FeedService {
     func loadWotPubkeys() {
         let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
         wotCacheStamp = (cacheURL.path, Self.modificationDate(of: cacheURL))
+        applyWotCache(FeedFilterEngine.readWotCache(from: cacheURL, ownerHex: ConfigService.shared.activeAccountHexPubkey),
+                      path: cacheURL.path)
+    }
+
+    /// `loadWotPubkeysIfChanged()` with the file read and parsed off the main
+    /// thread. Opening the WoT tab read it on the main thread and hung it for
+    /// about 1.2 s (Tom's perf sweep 11-01 #2).
+    func loadWotPubkeysInBackgroundIfChanged() async {
+        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        let modified = Self.modificationDate(of: cacheURL)
+        if let stamp = wotCacheStamp, stamp.path == cacheURL.path, stamp.modified == modified { return }
+        await loadWotPubkeysInBackground()
+    }
+
+    /// `loadWotPubkeys()` with the file read and parsed off the main thread.
+    func loadWotPubkeysInBackground() async {
+        let cacheURL = ConfigService.shared.relayDataDir.appendingPathComponent("wot_cache.json")
+        let owner = ConfigService.shared.activeAccountHexPubkey
+        let modified = Self.modificationDate(of: cacheURL)
+        let read = await Task.detached(priority: .userInitiated) {
+            FeedFilterEngine.readWotCache(from: cacheURL, ownerHex: owner)
+        }.value
+        // An account switch while it was read: that account's load runs on its own.
+        guard owner == ConfigService.shared.activeAccountHexPubkey else { return }
+        wotCacheStamp = (cacheURL.path, modified)
+        applyWotCache(read, path: cacheURL.path)
+    }
+
+    private func applyWotCache(_ read: FeedFilterEngine.WotCache?, path: String) {
         // nil = could not read the cache; keep whatever graph we already have.
         // Empty = read fine, but the graph names nobody but the owner (a new
         // account with no follows). That is no trust data, and the Global feed
         // treats an empty set as "show everything" rather than filtering the
         // whole world out — so it must be applied, not skipped, or a previous
         // account's graph would linger after a switch.
-        guard let loaded = FeedFilterEngine.loadWotPubkeys(
-            from: cacheURL,
-            ownerHex: ConfigService.shared.activeAccountHexPubkey
-        ) else {
+        guard let read else {
             #if DEBUG
-            print("FeedService: Could not read WOT cache from \(cacheURL.path)")
+            print("FeedService: Could not read WOT cache from \(path)")
             #endif
             return
         }
         // Vouches first: $wotPubkeys fires in willSet, and its subscribers
         // read the vouches straight away.
-        wotVouches = (try? Data(contentsOf: cacheURL)).flatMap(TrustMap.vouches(fromCache:))
-        wotPubkeys = loaded
+        wotVouches = read.vouches
+        wotPubkeys = read.pubkeys
         wotCacheRead = true
         #if DEBUG
         print("FeedService: Loaded \(wotPubkeys.count) usable WOT pubkeys from cache")

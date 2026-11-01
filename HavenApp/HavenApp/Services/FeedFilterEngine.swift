@@ -237,14 +237,26 @@ enum FeedFilterEngine {
     /// no usable graph, which the caller should apply (it clears a previous
     /// account's graph on a switch).
     static func loadWotPubkeys(from cacheURL: URL, ownerHex: String) -> Set<String>? {
+        readWotCache(from: cacheURL, ownerHex: ownerHex)?.pubkeys
+    }
+
+    /// What `wot_cache.json` holds: the usable graph (as `loadWotPubkeys`)
+    /// and the vouch counts, from one read and one parse. It was read and
+    /// parsed twice, once for each. Safe off the main thread.
+    struct WotCache {
+        let pubkeys: Set<String>
+        let vouches: [String: Int]?
+    }
+
+    static func readWotCache(from cacheURL: URL, ownerHex: String) -> WotCache? {
         guard let data = try? Data(contentsOf: cacheURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let pubkeys = json["pubkeys"] as? [String: Bool] else {
             return nil
         }
         let loaded = Set(pubkeys.keys)
-        guard hasUsableWot(loaded, ownerHex: ownerHex) else { return [] }
-        return loaded
+        return WotCache(pubkeys: hasUsableWot(loaded, ownerHex: ownerHex) ? loaded : [],
+                        vouches: TrustMap.vouches(fromJSON: json))
     }
 
     /// True when the graph names somebody other than the owner. An empty

@@ -670,6 +670,7 @@
 		73EAFB57B852A6E9E57ECFD1 /* SearchView+Results.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0256D9CC9FF9955E7D6AE9 /* SearchView+Results.swift */; };
 		741FA84BBE033DB172644990 /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032FB98745404C41FF8B8FFF /* AvatarView.swift */; };
 		7425E1DDA8D4ECC44A11E858 /* FeedService+Follow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C28CF4FEF54D4C0FE1E90 /* FeedService+Follow.swift */; };
+		7432AD49C671C31398BC4447 /* NpubHexMemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70DA1840D967384E7974EF8A /* NpubHexMemo.swift */; };
 		743513B1249298195CDB646C /* VaultAccountChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08B8C6912FB25B264EDAE511 /* VaultAccountChips.swift */; };
 		745D35F7F491A26BF9A6BCD4 /* LightningInvoiceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDD724C1F182CA65D85B87C /* LightningInvoiceCard.swift */; };
 		745D56B026AFA5D5F6234D59 /* BlossomSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8FEFBCD65FD1B5DD5E43FD3 /* BlossomSettingsView.swift */; };
@@ -1245,6 +1246,7 @@
 		D24112B1D463BCFD13AE0579 /* ProfileFeedLoader+Loading.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE90DEB009D5712F5E377FEE /* ProfileFeedLoader+Loading.swift */; };
 		D25C2A65954161799317E919 /* VaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD60255398375B7A8772D93 /* VaultView.swift */; };
 		D26D1F18CFDB421D03397F2F /* LiveArcsShowSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA807189013CB54E8F5DE56 /* LiveArcsShowSection.swift */; };
+		D28E904C97C128FB12EF6448 /* NpubHexMemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70DA1840D967384E7974EF8A /* NpubHexMemo.swift */; };
 		D2EC7D25006F4EF3BAE01BDB /* FeedDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B67F3F4FE41AEE7F267AC59 /* FeedDashboardView.swift */; };
 		D322EC10F9C9DD150D2DC31F /* emoji.tsv in Resources */ = {isa = PBXBuildFile; fileRef = AC81643CEE8DEC2FD0B25C34 /* emoji.tsv */; };
 		D345A3970B0C13CF6C96F080 /* PriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A89942B12FE776468EDB8C /* PriceService.swift */; };
@@ -1932,6 +1934,7 @@
 		70A6C2A292B935922711F19B /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
 		70AE6A634DDA4FCAD0EE552D /* LongFormComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongFormComposeView.swift; sourceTree = "<group>"; };
 		70CE0E2EC47B06E218FF6548 /* LogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsView.swift; sourceTree = "<group>"; };
+		70DA1840D967384E7974EF8A /* NpubHexMemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NpubHexMemo.swift; sourceTree = "<group>"; };
 		70F880615FDC71BDC17B8A74 /* PersonProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonProfileView.swift; sourceTree = "<group>"; };
 		7167339BB13F4557E0E0BB77 /* NIP04Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP04Service.swift; sourceTree = "<group>"; };
 		716EDC59763B44048B40E416 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -3191,6 +3194,7 @@
 				6D4E22D61B152894312A2DB6 /* NotificationPolicy.swift */,
 				075378186B28AF0EF05CE1AB /* NotificationReadiness.swift */,
 				7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */,
+				70DA1840D967384E7974EF8A /* NpubHexMemo.swift */,
 				FF9413A39E4C5825C455EB73 /* NWCBackup.swift */,
 				27B80920656E134E7FCE4717 /* OwnerSessionWarmup.swift */,
 				264737BC8AA75A18D2E77AF1 /* PagerNeighbors.swift */,
@@ -4387,6 +4391,7 @@
 				8785BC42ECD7F1C9EE30D80D /* NotificationReadiness.swift in Sources */,
 				AF4CFE93CEB05199B7DA4A9D /* NotificationSound.swift in Sources */,
 				6198FAA51E82AACDD675FEDE /* NowPlayingView.swift in Sources */,
+				7432AD49C671C31398BC4447 /* NpubHexMemo.swift in Sources */,
 				221975CB91DE5FEE1ACC2CF1 /* NpubValidation.swift in Sources */,
 				2BC448FBF2F8B14E77FFFE92 /* OpenInWebButton.swift in Sources */,
 				C0CFE203CCC8B542BFD2541C /* OtherResponseCard.swift in Sources */,
@@ -5158,6 +5163,7 @@
 				A5A54D711BB1C50D5C9C180D /* NotificationReadiness.swift in Sources */,
 				96535432E1ED9D8B290B1CF5 /* NotificationSound.swift in Sources */,
 				B2473820C7E6731993675705 /* NowPlayingView.swift in Sources */,
+				D28E904C97C128FB12EF6448 /* NpubHexMemo.swift in Sources */,
 				4BE74F42C56394DDD4DC8B80 /* NpubValidation.swift in Sources */,
 				D060107D62CCECE6BE12F68D /* OpenInWebButton.swift in Sources */,
 				F6F032EECDD7BDAE6BA492FB /* OtherResponseCard.swift in Sources */,

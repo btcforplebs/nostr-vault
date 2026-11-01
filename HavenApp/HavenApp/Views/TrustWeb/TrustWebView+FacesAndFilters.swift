@@ -248,11 +248,26 @@ extension TrustWebView {
     }
 
     func recomputeHaze() {
-        let graph = FeedService.shared.relayTabTrustedPubkeys().union(arrivals)
+        Task { @MainActor in
+            // The cache is read and parsed off the main thread: read here, it
+            // hung the main thread for about 1.2 s on opening the tab (Tom 11-01 #2).
+            let feed = FeedService.shared
+            if feed.wotPubkeys.isEmpty { await feed.loadWotPubkeysInBackgroundIfChanged() }
+            hazeFromLoadedWeb()
+        }
+    }
+
+    /// `recomputeHaze` once the web is loaded. The web (the graph plus your
+    /// follows, `FeedService.feedTrustedPubkeys`) is put together off the main
+    /// thread too: tens of thousands of keys.
+    private func hazeFromLoadedWeb() {
+        let saved = FeedService.shared.wotPubkeys, followed = FeedService.shared.followedPubkeys
+        let arrivals = arrivals
         let counts = FeedService.shared.wotVouches
         let inner = myFollows.union([me, author])
         let follows = myFollows, me = me, wot = isWOTTab
         Task.detached(priority: .userInitiated) {
+            let graph = TrustMap.web(saved: saved, follows: Set(followed)).union(arrivals)
             let layout = TrustMap.hazeLayout(graph: graph, inner: inner, vouches: counts, me: me, follows: follows,
                                              wot: wot, faceScale: TrustGlobeCanvas.faceScale)
             let shell = layout.shell, close = layout.close, layerFaces = layout.layerFaces

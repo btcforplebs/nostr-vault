@@ -3,13 +3,22 @@ import Combine
 import SwiftUI
 
 extension FeedService {
-    /// Called on processingQueue — parses JSON off the main thread, accumulates in background buffers.
-    /// A periodic flush delivers batched results to the main thread.
-    nonisolated func handleFeedMsgBackground(_ msg: String, totalRelays: Int) {
-        // The WOT globe's live arrivals share this connection: they're its own.
-        if GlobeArcs.isGlobeMessage(msg) { return }
+    /// Called on processingQueue for every message on a feed connection.
+    /// Parses it once, for the feed and for the copy kept on your relay
+    /// (`inject`, external relays only). It was parsed four times (Tom's perf
+    /// sweep 11-01 #4).
+    nonisolated func handleFeedRelayMessage(_ msg: String, totalRelays: Int, inject: Bool) {
         guard let frame = RelayFrame.parse(msg) else { return }
-        let (type, json) = frame
+        // The WOT globe's live arrivals share this connection: they're its own,
+        // and never go in your relay.
+        if GlobeArcs.isGlobeFrame(type: frame.type, json: frame.json) { return }
+        handleFeedFrame(type: frame.type, json: frame.json, totalRelays: totalRelays)
+        if inject { injectExternalFrame(type: frame.type, json: frame.json) }
+    }
+
+    /// Accumulates one parsed feed message in background buffers. A periodic
+    /// flush delivers batched results to the main thread.
+    private nonisolated func handleFeedFrame(type: String, json: [Any], totalRelays: Int) {
 
         if type == "EOSE" {
             // Only count EOSE from the primary feed subscription (prefix "feed-"),
@@ -64,7 +73,7 @@ extension FeedService {
         // 0.8 s note-flush timer.
         if type == "EVENT", json.count >= 2,
            let subId = json[1] as? String, subId.hasPrefix("tfetch-") {
-            guard let ev = verifiedParentEvent(msg) else { return }
+            guard let ev = verifiedParentEvent(json: json) else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.handleParentNoteFetch(ev)
             }

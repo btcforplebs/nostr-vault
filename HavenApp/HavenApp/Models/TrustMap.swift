@@ -393,8 +393,13 @@ enum TrustMap {
     /// past your follows, how many of your follows follow them. nil when the
     /// cache predates the field (it fills on the next rebuild).
     static func vouches(fromCache data: Data) -> [String: Int]? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let raw = json["vouches"] as? [String: Any] else { return nil }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return vouches(fromJSON: json)
+    }
+
+    /// `vouches(fromCache:)` on the cache already parsed.
+    static func vouches(fromJSON json: [String: Any]) -> [String: Int]? {
+        guard let raw = json["vouches"] as? [String: Any] else { return nil }
         var out: [String: Int] = [:]
         out.reserveCapacity(raw.count)
         for (key, value) in raw {

@@ -149,11 +149,17 @@ struct NoteDetailView: View {
     /// every note in memory, Global's firehose included, so replies go
     /// through the feed's block rule and spam check; everyone else shows.
     func threadReplies(in all: [FeedNote]) -> [FeedNote] {
-        let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let blocked = configService.activeAccountBlockedHexPubkeys
         let mutes = MuteListStore.shared.active
+        // Only a blocked repost needs a note's author by id: built on the
+        // first such lookup, not for all of memory on every redraw.
+        var byId: [String: String]?
+        func author(of id: String) -> String? {
+            if byId == nil { byId = Dictionary(all.map { ($0.id, $0.pubkey) }, uniquingKeysWith: { first, _ in first }) }
+            return byId?[id]
+        }
         return ThreadReplyVisibility.shown(under: replyTargetId, in: all, id: \.id, parentId: \.parentEventId) { n in
-            FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: { byId[$0]?.pubkey })
+            FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: author(of:))
                 || FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
                 || mutes.hides(n)
         }

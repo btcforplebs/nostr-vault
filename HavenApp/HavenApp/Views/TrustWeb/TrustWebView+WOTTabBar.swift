@@ -210,7 +210,7 @@ extension TrustWebView {
                 // Saved: the new map has everyone that lit up. Stopped: the
                 // old one stays, and the stars that came in fade back out.
                 arrivals = []
-                FeedService.shared.loadWotPubkeys()
+                await FeedService.shared.loadWotPubkeysInBackground()
                 recomputeHaze()
             }
             // Every few seconds, rebuilding or not: newcomers arrive in

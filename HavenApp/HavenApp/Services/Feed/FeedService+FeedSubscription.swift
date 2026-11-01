@@ -91,10 +91,7 @@ extension FeedService {
                     existing.messageSubject
                         .receive(on: processingQueue)
                         .sink { [weak self] msg in
-                            self?.handleFeedMsgBackground(msg, totalRelays: totalRelays)
-                            if !isLocalRelay {
-                                self?.handleExternalEventInjection(msg)
-                            }
+                            self?.handleFeedRelayMessage(msg, totalRelays: totalRelays, inject: !isLocalRelay)
                         }
                         .store(in: &cancellables)
                 }
@@ -139,11 +136,7 @@ extension FeedService {
         c.messageSubject
             .receive(on: processingQueue)
             .sink { [weak self] msg in
-                self?.handleFeedMsgBackground(msg, totalRelays: totalRelays)
-                // Inject events from external relays into the local relay for persistence
-                if !isLocalRelay {
-                    self?.handleExternalEventInjection(msg)
-                }
+                self?.handleFeedRelayMessage(msg, totalRelays: totalRelays, inject: !isLocalRelay)
             }
             .store(in: &cancellables)
 
@@ -209,10 +202,7 @@ extension FeedService {
         c.messageSubject
             .receive(on: processingQueue)
             .sink { [weak self] msg in
-                self?.handleFeedMsgBackground(msg, totalRelays: totalRelays)
-                if !isLocalRelay {
-                    self?.handleExternalEventInjection(msg)
-                }
+                self?.handleFeedRelayMessage(msg, totalRelays: totalRelays, inject: !isLocalRelay)
             }
             .store(in: &cancellables)
 
