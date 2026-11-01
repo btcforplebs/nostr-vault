@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -90,7 +91,7 @@ class ComposeNoteViewModel @Inject constructor(
      */
     @Volatile private var screenGone = false
 
-    private val _content = MutableStateFlow("")
+    internal val _content = MutableStateFlow("")
     val content = _content.asStateFlow()
 
     private val _isPublishing = MutableStateFlow(false)
@@ -127,6 +128,27 @@ class ComposeNoteViewModel @Inject constructor(
 
     internal val _uploadMessage = MutableStateFlow<String?>(null)
     val uploadMessage = _uploadMessage.asStateFlow()
+
+    /**
+     * Uploads start when a photo is picked (ComposeNoteUploads). Their scope is
+     * not viewModelScope: a post waiting on them keeps going after the screen
+     * closes, like the send itself. Cancelled when the composer closes unsent.
+     */
+    private val uploadScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    internal val uploads = ComposeNoteUploads(
+        scope = uploadScope,
+        send = { attachment, skipOutside, onProgress -> uploadOne(attachment, skipOutside, onProgress) },
+        hostedMedia = { hostedMedia(it) },
+    )
+    /** Where each placed photo's link goes in, valid for [anchorText]. */
+    internal val _anchors = MutableStateFlow<Map<String, Int>>(emptyMap())
+    internal var anchorText = ""
+
+    /** The note being written, in one piece: text, photos, uploads, placements. */
+    val draft: StateFlow<ComposeNoteDraft> =
+        combine(_content, _attachments, uploads.states, _anchors) { text, attachments, states, anchors ->
+            ComposeNoteDraft(text, attachments, states, anchors)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, ComposeNoteDraft())
 
     /** Where attached media is uploaded: the outside media servers. */
     val uploadServers: StateFlow<List<String>> = configStore.config.map { it.activeBlossomMirrors }
@@ -201,6 +223,7 @@ class ComposeNoteViewModel @Inject constructor(
 
     init {
         initialText?.takeIf { it.isNotBlank() }?.let { _content.value = it }
+        followEditsWithPlacements()
         // Start waking sleeping mirror hosts (e.g. the Mac relay) now, so
         // they're reachable by the time the user hits Post.
         blossomService.prewarmMirrors()
@@ -312,7 +335,7 @@ class ComposeNoteViewModel @Inject constructor(
      * no help either: it has to be at least 2 or it throws, so the cap is
      * enforced here, on the result.
      */
-    fun addAttachments(uris: List<Uri>) {
+    fun addAttachments(uris: List<Uri>, caret: Int? = null) {
         val room = MAX_ATTACHMENTS - _attachments.value.size
         if (room <= 0) {
             _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
@@ -326,7 +349,7 @@ class ComposeNoteViewModel @Inject constructor(
         if (uris.size > room) {
             _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
         }
-        _attachments.value = _attachments.value + newAttachments
+        attach(newAttachments, caret)
     }
 
     /** "Save to my Blossom" in the GIF picker (iOS saveGifsToBlossom). */
@@ -367,7 +390,7 @@ class ComposeNoteViewModel @Inject constructor(
                     GifCache.newFile(context.cacheDir, mime).apply { writeBytes(bytes) }
                 }
                 if (_attachments.value.size < MAX_ATTACHMENTS) {
-                    _attachments.value = _attachments.value + Attachment(uri = Uri.fromFile(file), mimeType = mime)
+                    attach(listOf(Attachment(uri = Uri.fromFile(file), mimeType = mime)))
                 } else {
                     file.delete()
                 }
@@ -387,7 +410,17 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     fun removeAttachment(id: String) {
-        _attachments.value.firstOrNull { it.id == id }?.let { GifCache.deleteIfOwned(it.uri, context.cacheDir) }
+        // Post is waiting on this photo's upload: what was tapped is what posts.
+        if (_isPublishing.value) return
+        val removed = _attachments.value.firstOrNull { it.id == id }
+        // Its link, if it was already placed in the text, goes with it.
+        ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).linkToRemove(id)?.let { url ->
+            _content.value = ComposeNoteDraft.removeLink(_content.value, url)
+        }
+        uploads.cancel(id)
+        rebaseAnchors()
+        _anchors.value = _anchors.value - id
+        removed?.let { GifCache.deleteIfOwned(it.uri, context.cacheDir) }
         _attachments.value = _attachments.value.filter { it.id != id }
     }
 
@@ -401,7 +434,11 @@ class ComposeNoteViewModel @Inject constructor(
         screenGone = true
         syncDraftToRelay()
         // A send still running reads these; it deletes them when it ends.
-        if (!_isPublishing.value) deleteGifCopies(_attachments.value)
+        if (!_isPublishing.value) {
+            uploads.cancelAll()
+            uploadScope.cancel()
+            deleteGifCopies(_attachments.value)
+        }
         super.onCleared()
     }
 
@@ -422,7 +459,7 @@ class ComposeNoteViewModel @Inject constructor(
             return
         }
         val mime = blobMimeType(item.mimeType, item.localFile?.name ?: item.displayUrl)
-        _attachments.value = _attachments.value + Attachment(
+        attach(listOf(Attachment(
             uri = item.localFile?.let { Uri.fromFile(it) } ?: Uri.parse(item.displayUrl),
             mimeType = mime ?: when {
                 item.isVideo -> "video/*"
@@ -434,7 +471,7 @@ class ComposeNoteViewModel @Inject constructor(
             sha256 = item.sha256,
             localFile = item.localFile,
             byteCount = item.size,
-        )
+        )))
     }
 
     fun handlePasteFromClipboard() {
@@ -493,11 +530,11 @@ class ComposeNoteViewModel @Inject constructor(
 
             val uri = Uri.fromFile(tempFile)
             withContext(Dispatchers.Main) {
-                _attachments.value = _attachments.value + Attachment(
+                attach(listOf(Attachment(
                     uri = uri,
                     mimeType = mimeType,
                     isVideo = isVideo
-                )
+                )))
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
@@ -530,7 +567,7 @@ class ComposeNoteViewModel @Inject constructor(
      * kind 31234) goes once, when the composer is left or the app goes to the
      * background, so the signer isn't asked on every pause.
      */
-    private fun scheduleDraftSave() {
+    internal fun scheduleDraftSave() {
         hasUnsavedEdit = true
         autoSaveJob?.cancel()
         autoSaveJob = viewModelScope.launch {
@@ -623,9 +660,22 @@ class ComposeNoteViewModel @Inject constructor(
             _isPublishing.value = true
             _error.value = null
             try {
-                // 1. Upload attachments first
+                // 1. Wait for the uploads still running (they started when each
+                // photo was picked), then read the text: a link placed while
+                // waiting is part of it.
+                var uploadResult: AttachmentUploadResult? = null
+                if (_attachments.value.isNotEmpty()) {
+                    _isUploading.value = true
+                    _uploadMessage.value = draft.value.unfinished.takeIf { it > 0 }?.let { waitingMessage(it) }
+                    uploadResult = uploads.await(_attachments.value)
+                    _isUploading.value = false
+                    _uploadMessage.value = null
+                }
+                // Placements land on the main thread; let any that just did run first.
+                kotlinx.coroutines.yield()
+                val postText = _content.value.trim().ifBlank { text }
                 // Convert `@name` display tokens back to canonical `nostr:npub…` references.
-                val baseContent = convertMentionsToNostr(text)
+                val baseContent = convertMentionsToNostr(postText)
                 var finalContent = baseContent
                 // NIP-92 descriptors, filled in as each upload lands. Published
                 // as `imeta` tags so a reader can reserve the right box before
@@ -636,12 +686,8 @@ class ComposeNoteViewModel @Inject constructor(
                 // MediaPostQueue instead of being cancelled.
                 var queuedMedia: List<QueuedMediaPost.Media> = emptyList()
                 var unreachableServers: List<String> = emptyList()
-                if (_attachments.value.isNotEmpty()) {
-                    _isUploading.value = true
-                    val result = uploadAttachments()
-                    _isUploading.value = false
-
-                    when (result) {
+                if (uploadResult != null) {
+                    when (val result = uploadResult) {
                         is AttachmentUploadResult.Failed -> {
                             reportSendError(result.message)
                             finishSend()
@@ -656,8 +702,9 @@ class ComposeNoteViewModel @Inject constructor(
                     if (queuedMedia.all { it.url != null }) {
                         mediaDescriptors = queuedMedia.map { it.descriptor() }
                         // Append media URLs to content
+                        // Placed links are in the text already; the rest go at the end.
                         mediaDescriptors.forEach { media ->
-                            finalContent += "\n${media.url}"
+                            if (!finalContent.contains(media.url)) finalContent += "\n${media.url}"
                         }
                     }
                 }
@@ -708,7 +755,8 @@ class ComposeNoteViewModel @Inject constructor(
                     tags.addAll(extractMentionPTags(baseContent + (quoteSuffix ?: ""), tags))
                     val queued = QueuedMediaPost(
                         accountNpub = lock.npub,
-                        body = baseContent,
+                        // The queue puts every link at the end itself, as before.
+                        body = ComposeNoteDraft.withoutLinks(baseContent, queuedMedia.mapNotNull { it.url }),
                         media = queuedMedia,
                         quoteSuffix = quoteSuffix,
                         baseTags = tags,
@@ -832,6 +880,8 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     companion object {
+        internal fun waitingMessage(unfinished: Int): String =
+            if (unfinished == 1) "Waiting for 1 upload to finish…" else "Waiting for $unfinished uploads to finish…"
         internal const val ALREADY_SENDING = "This note is still sending. It will show up in a moment."
     }
 
@@ -847,7 +897,10 @@ class ComposeNoteViewModel @Inject constructor(
     private fun finishSend() {
         _isUploading.value = false
         _isPublishing.value = false
-        if (screenGone) deleteGifCopies(_attachments.value)
+        if (screenGone) {
+            uploadScope.cancel()
+            deleteGifCopies(_attachments.value)
+        }
     }
 
     /** How the attachments of one post ended up. */

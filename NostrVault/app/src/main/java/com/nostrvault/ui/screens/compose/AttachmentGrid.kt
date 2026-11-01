@@ -27,6 +27,8 @@ import com.nostrvault.ui.theme.*
 @Composable
 internal fun AttachmentGrid(
     attachments: List<Attachment>,
+    /** Each attachment's upload, which starts when it is picked; a ring shows while it runs. */
+    uploads: Map<String, ComposeNoteUpload> = emptyMap(),
     onRemove: (String) -> Unit,
     onEditAlt: (Attachment) -> Unit,
     modifier: Modifier = Modifier
@@ -72,6 +74,8 @@ internal fun AttachmentGrid(
                     }
                 }
 
+                UploadRing(uploads[attachment.id], attachment.hostedUrl != null)
+
                 // Remove button
                 IconButton(
                     onClick = { onRemove(attachment.id) },
@@ -115,6 +119,39 @@ internal fun AttachmentGrid(
                         }
                 )
             }
+        }
+    }
+}
+
+/** The upload's progress over the thumbnail; a phone once it is saved here only, a warning if it failed. */
+@Composable
+private fun BoxScope.UploadRing(upload: ComposeNoteUpload?, alreadyHosted: Boolean) {
+    // Up on a server: nothing over the picture.
+    if (alreadyHosted || (upload is ComposeNoteUpload.Done && upload.media.url != null)) return
+    val label = when (upload) {
+        null, ComposeNoteUpload.Waiting -> "Waiting to upload"
+        is ComposeNoteUpload.Sending -> "Uploading, ${(upload.progress * 100).toInt()} percent"
+        is ComposeNoteUpload.Done -> "Saved on this device, posts when a server answers"
+        is ComposeNoteUpload.Failed -> "Upload failed, Post tries again"
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.35f))
+            .semantics { contentDescription = label },
+    ) {
+        when (upload) {
+            is ComposeNoteUpload.Sending -> CircularProgressIndicator(
+                progress = { upload.progress.coerceIn(0.02f, 1f) },
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.3f),
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(30.dp),
+            )
+            is ComposeNoteUpload.Failed -> Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
+            is ComposeNoteUpload.Done -> Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+            else -> CircularProgressIndicator(color = Color.White, trackColor = Color.White.copy(alpha = 0.3f), strokeWidth = 3.dp, modifier = Modifier.size(30.dp))
         }
     }
 }
