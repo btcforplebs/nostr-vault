@@ -24,6 +24,8 @@ final class MuteListStore {
     private var started = false
 
     private static let defaultsKey = "muteListEvents"
+    /// `privatePubkeys` runs on every tab bar redraw: the npub is decoded once.
+    private static let accountHexMemo = NpubHexMemo()
     /// A list dated this far ahead is not taken: it would outrank every real one.
     private static let maxSkew: Int64 = 600
     /// Asked besides the account's own relays: where lists usually are.
@@ -58,7 +60,7 @@ final class MuteListStore {
     /// Private blocks for one account, added to its public ones by
     /// `ConfigService.blockedHexPubkeys(forAccount:)`.
     func privatePubkeys(forAccount npub: String) -> Set<String> {
-        guard let hex = Bech32.decode(npub.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString else { return [] }
+        guard let hex = Self.accountHexMemo.hex(npub) else { return [] }
         return list(forHex: hex).privatePubkeys
     }
 

@@ -826,21 +826,18 @@ class ConfigService: ObservableObject {
 
     /// Returns a Set of hex pubkeys derived from the whitelisted npubs
     var whitelistedHexPubkeys: Set<String> {
-        var hexKeys = Set<String>()
-        for npub in config.whitelistedNpubs {
-            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
-            if clean.isEmpty { continue }
-            
-            // Decodes bech32 and returns (hrp, data) tuple.
-            // We need to convert data to hex string if possible.
-            // Assuming Bech32 helper has a .hexString property on the return tuple or similar.
-            // Based on NostrService usage: if let hex = Bech32.decode(npub)?.hexString
-            if let decoded = Bech32.decode(clean) {
-                hexKeys.insert(decoded.hexString)
-            }
-        }
-        return hexKeys
+        Self.whitelistedMemo.hexSet(config.whitelistedNpubs)
     }
+
+    /// The owner's hex pubkey, "" when `ownerNpub` doesn't decode. Read for
+    /// every note injected into your relay, so it is not decoded each time.
+    var ownerHexPubkeyCached: String {
+        Self.ownerMemo.hex(config.ownerNpub) ?? ""
+    }
+
+    private static let whitelistedMemo = NpubHexMemo()
+    private static let ownerMemo = NpubHexMemo()
+    private static let blockedMemo = NpubHexMemo()
 
     /// Returns a Set of hex pubkeys derived from the blacklisted npubs
     var blacklistedHexPubkeys: Set<String> {
@@ -865,15 +862,8 @@ class ConfigService: ObservableObject {
     /// The hex pubkeys one account has blocked.
     func blockedHexPubkeys(forAccount targetNpub: String) -> Set<String> {
         let blockedNpubs = config.blockedNpubsPerAccount[targetNpub] ?? (targetNpub == config.ownerNpub ? config.blacklistedNpubs : [])
-
-        var hexKeys = Set<String>()
-        for npub in blockedNpubs {
-            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
-            if clean.isEmpty { continue }
-            if let decoded = Bech32.decode(clean) {
-                hexKeys.insert(decoded.hexString)
-            }
-        }
+        // Read on every tab bar and thread redraw: decoded only when the list changes.
+        let hexKeys = Self.blockedMemo.hexSet(blockedNpubs)
         // Private blocks from the list's encrypted part. Never stored in
         // blockedNpubsPerAccount, which is published in the clear.
         return hexKeys.union(MuteListStore.shared.privatePubkeys(forAccount: targetNpub))

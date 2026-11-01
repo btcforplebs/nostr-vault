@@ -364,9 +364,13 @@ extension FeedService {
     /// is no longer being fetched). They are dropped, never passed on
     /// unverified, since a forged event can reuse a real id.
     nonisolated func verifiedParentEvent(_ msg: String) -> [String: Any]? {
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json.first as? String,
+        guard let json = RelayFrame.parse(msg)?.json else { return nil }
+        return verifiedParentEvent(json: json)
+    }
+
+    /// `verifiedParentEvent` on a message already parsed.
+    nonisolated func verifiedParentEvent(json: [Any]) -> [String: Any]? {
+        guard let type = json.first as? String,
               type == "EVENT", json.count >= 3,
               let ev = json[2] as? [String: Any],
               let id = ev["id"] as? String,

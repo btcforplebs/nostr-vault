@@ -62,38 +62,39 @@ extension FeedService {
     /// context — hops to MainActor internally. Filters to feed-relevant kinds
     /// (`FeedNote.timelineKinds`, 7, 9735) and deduplicates via the shared injectedEventIds set.
     nonisolated func injectExternalEvent(_ eventDict: [String: Any], eventId: String) {
-        guard let kind = eventDict["kind"] as? Int,
-              (FeedNote.timelineKinds + [7, 9735]).contains(kind) else { return }
-
+        guard let message = Self.injectionMessage(eventDict) else { return }
+        let pubkey = eventDict["pubkey"] as? String ?? ""
         DispatchQueue.main.async { [weak self] in
-            self?.injectIntoLocalRelay(eventDict, eventId: eventId)
+            self?.injectIntoLocalRelay(message, pubkey: pubkey, eventId: eventId)
         }
     }
 
-    /// Parses an external relay message and injects the event into the local relay.
-    /// Called on `processingQueue` — must be thread-safe.
-    nonisolated func handleExternalEventInjection(_ msg: String) {
-        // The WOT globe's live arrivals (Global included) never go in your relay.
-        if GlobeArcs.isGlobeMessage(msg) { return }
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              json.count >= 3,
-              let type = json[0] as? String, type == "EVENT",
+    /// Injects the event of an external relay message already parsed
+    /// (`handleFeedRelayMessage`) into the local relay. Called on
+    /// `processingQueue`; the message is built here, off the main thread.
+    nonisolated func injectExternalFrame(type: String, json: [Any]) {
+        guard type == "EVENT", json.count >= 3,
               let ev = json[2] as? [String: Any],
-              let eventId = ev["id"] as? String else { return }
-
-        // Only inject feed-relevant event kinds (notes, reactions, reposts, zaps)
-        guard let kind = ev["kind"] as? Int,
-              (FeedNote.timelineKinds + [7, 9735]).contains(kind) else { return }
-
+              let eventId = ev["id"] as? String,
+              let message = Self.injectionMessage(ev) else { return }
+        let pubkey = ev["pubkey"] as? String ?? ""
         DispatchQueue.main.async { [weak self] in
-            self?.injectIntoLocalRelay(ev, eventId: eventId)
+            self?.injectIntoLocalRelay(message, pubkey: pubkey, eventId: eventId)
         }
+    }
+
+    /// The `["EVENT", event]` your relay is sent, for feed-relevant kinds only
+    /// (notes, reactions, reposts, zaps).
+    nonisolated static func injectionMessage(_ ev: [String: Any]) -> String? {
+        guard let kind = ev["kind"] as? Int,
+              (FeedNote.timelineKinds + [7, 9735]).contains(kind),
+              let data = try? JSONSerialization.data(withJSONObject: ["EVENT", ev] as [Any]) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// Writes an event to the local relay. Routes owner/whitelisted events to outbox,
     /// external events to /inbox (which has no blast hook, preventing feedback loops).
-    private func injectIntoLocalRelay(_ eventDict: [String: Any], eventId: String) {
+    private func injectIntoLocalRelay(_ str: String, pubkey: String, eventId: String) {
         // Dedup: skip events already injected this session
         guard !injectedEventIds.contains(eventId) else { return }
         injectedEventIds.insert(eventId)
@@ -102,16 +103,9 @@ extension FeedService {
             injectedEventIds.insert(eventId)
         }
 
-        let config = ConfigService.shared.config
-        let ownerHex = Bech32.decode(config.ownerNpub)?.hexString ?? ""
-        let whitelisted = ConfigService.shared.whitelistedHexPubkeys
-
-        let pubkey = eventDict["pubkey"] as? String ?? ""
-        let isTrackedAuthor = pubkey == ownerHex || whitelisted.contains(pubkey)
-
-        let msg: [Any] = ["EVENT", eventDict]
-        guard let data = try? JSONSerialization.data(withJSONObject: msg),
-              let str = String(data: data, encoding: .utf8) else { return }
+        // Both cached in ConfigService: decoding them here ran for every note.
+        let isTrackedAuthor = pubkey == ConfigService.shared.ownerHexPubkeyCached
+            || ConfigService.shared.whitelistedHexPubkeys.contains(pubkey)
 
         // Route to the appropriate injection client
         if isTrackedAuthor {

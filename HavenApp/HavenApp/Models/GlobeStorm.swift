@@ -82,9 +82,15 @@ extension GlobeArcs {
     /// id, and a globe EVENT missed here goes into the feed and your relay
     /// (Tron, 10/15).
     static func isGlobeMessage(_ message: String) -> Bool {
-        guard let array = try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [Any],
-              array.count >= 2, let type = array[0] as? String, ["EVENT", "EOSE", "CLOSED"].contains(type),
-              let id = array[1] as? String else { return false }
+        guard let frame = RelayFrame.parse(message) else { return false }
+        return isGlobeFrame(type: frame.type, json: frame.json)
+    }
+
+    /// `isGlobeMessage` on a frame already parsed (RelayFrame.parse), so the
+    /// feed reads each message once, not once per check.
+    static func isGlobeFrame(type: String, json: [Any]) -> Bool {
+        guard json.count >= 2, ["EVENT", "EOSE", "CLOSED"].contains(type),
+              let id = json[1] as? String else { return false }
         return id.hasPrefix(subscriptionPrefix)
     }
 

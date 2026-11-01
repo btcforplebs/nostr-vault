@@ -38,7 +38,7 @@ extension TrustWebView {
             refreshCaption = "Rebuilding your web…"
             let saved = await rebuildWeb()
             let outcome = refreshCaption
-            FeedService.shared.loadWotPubkeys()
+            await FeedService.shared.loadWotPubkeysInBackground()
             recomputeHaze()
             refreshStep = 2
             refreshValue = 2
