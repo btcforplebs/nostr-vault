@@ -38,13 +38,19 @@ object GlobeStorm {
         FINGER(0L),
         /** A storm of arrivals: 60 fps. */
         STORM(16L),
-        /** Drift, settling and a few arcs: 30 fps. */
-        SLOW(33L);
+        /** Settling, fades and a few arcs: 30 fps. */
+        SLOW(33L),
+        /**
+         * Nothing but the WOT tab's endless drift, about 0.15° a frame: 20 fps,
+         * the camera's largest step ([com.nostrvault.data.model.GlobeCamera.MAX_STEP]).
+         */
+        DRIFT(50L);
 
         companion object {
-            fun pick(finger: Boolean, busy: Boolean): FrameRate = when {
+            fun pick(finger: Boolean, busy: Boolean, onlyDrift: Boolean = false): FrameRate = when {
                 finger -> FINGER
                 busy -> STORM
+                onlyDrift -> DRIFT
                 else -> SLOW
             }
         }

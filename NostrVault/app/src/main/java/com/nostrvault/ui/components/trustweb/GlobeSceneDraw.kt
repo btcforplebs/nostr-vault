@@ -110,22 +110,19 @@ import kotlin.math.max
         }
     }
 
-    /** One slot's stars, a fill per brightness step. */
+    /**
+     * One slot's stars, a batch of round points per brightness and size. Ovals
+     * added to a Path were rasterised again every frame: ~3.5k on the WOT
+     * tab's globe, 30 times a second (sweep 11-01).
+     */
     private fun GlobeScene.fillStars(scope: DrawScope, slot: Slot, color: Color) = with(scope) {
-        if (lite) {
-            drawIntoCanvas { canvas ->
-                for (bucket in pointOrder) {
-                    if (bucket.slot != slot || bucket.count == 0) continue
-                    pointPaint.color = color.copy(alpha = bucket.level.toFloat() / LEVELS).toArgb()
-                    pointPaint.strokeWidth = bucket.diameter
-                    canvas.nativeCanvas.drawPoints(bucket.xy, 0, bucket.count * 2, pointPaint)
-                }
+        drawIntoCanvas { canvas ->
+            for (bucket in pointOrder) {
+                if (bucket.slot != slot || bucket.count == 0) continue
+                pointPaint.color = color.copy(alpha = bucket.level.toFloat() / LEVELS).toArgb()
+                pointPaint.strokeWidth = bucket.diameter
+                canvas.nativeCanvas.drawPoints(bucket.xy, 0, bucket.count * 2, pointPaint)
             }
-            return@with
-        }
-        for (level in 1..LEVELS) {
-            val path = buckets[slot.ordinal][level]
-            if (!path.isEmpty) drawPath(path, color.copy(alpha = level.toFloat() / LEVELS))
         }
     }
 

@@ -225,4 +225,24 @@ class GlobeStormTest {
         assertEquals(16L, GlobeStorm.FrameRate.pick(finger = false, busy = true).frameMs)
         assertEquals(33L, GlobeStorm.FrameRate.pick(finger = false, busy = false).frameMs)
     }
+
+    /** The WOT tab's endless drift alone runs at 20 fps; anything else moving keeps its rate. */
+    @Test
+    fun driftAloneRunsAt20() {
+        assertEquals(50L, GlobeStorm.FrameRate.pick(finger = false, busy = false, onlyDrift = true).frameMs)
+        assertEquals(16L, GlobeStorm.FrameRate.pick(finger = false, busy = true, onlyDrift = true).frameMs)
+        assertEquals(0L, GlobeStorm.FrameRate.pick(finger = true, busy = false, onlyDrift = true).frameMs)
+        assertEquals(1000L / 20, (GlobeCamera.MAX_STEP * 1000).toLong())
+    }
+
+    @Test
+    fun aCameraLeftAloneIsOnlyDrifting() {
+        val camera = GlobeCamera()
+        assertTrue(camera.onlyDrifting)
+        camera.dragging = true
+        assertFalse(camera.onlyDrifting)
+        camera.dragging = false
+        camera.zoomTarget = camera.zoom + 0.5
+        assertFalse(camera.onlyDrifting)
+    }
 }
