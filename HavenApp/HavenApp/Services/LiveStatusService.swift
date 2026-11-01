@@ -85,7 +85,8 @@ final class LiveStatusService: ObservableObject {
         let lookup = UUID()
         var clients: [WebSocketClient] = []
         var subscriptions: [AnyCancellable] = []
-        for url in RelayRequestBudget.liveRingRelays.compactMap({ URL(string: $0) }) {
+        let relays = RelayRequestBudget.liveRingRelays(feedRelays: ConfigService.shared.config.activeFeedRelays)
+        for url in relays.compactMap({ URL(string: $0) }) {
             let client = WebSocketClient()
             client.isTemporary = true
             subscriptions.append(client.messageSubject
