@@ -272,23 +272,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 	// their targets in place; apply them once, before any sync round.
 	sweepDeleteRequests(ctx, outboxDB)
 
-	// Build deduplicated relay set: ImportSeedRelays + DmRelays
-	relaySet := make(map[string]struct{})
-	for _, r := range config.ImportSeedRelays {
-		relaySet[r] = struct{}{}
-	}
-	for _, r := range config.DmRelays {
-		relaySet[r] = struct{}{}
-	}
-	// The Mac relay's inbox is inbox-only, like a DM relay. (Its outbox is
-	// already a seed relay: loadConfig adds it from MAC_RELAY_URL.)
-	if _, macInbox := macRelayURLs(); macInbox != "" {
-		relaySet[macInbox] = struct{}{}
-	}
-	relays := make([]string, 0, len(relaySet))
-	for r := range relaySet {
-		relays = append(relays, r)
-	}
+	relays := withAccountInboxRelays(ctx, inboxRelays())
 
 	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
 
