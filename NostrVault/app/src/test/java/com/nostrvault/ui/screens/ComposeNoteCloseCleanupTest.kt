@@ -47,6 +47,7 @@ class ComposeNoteCloseCleanupTest {
     @get:Rule val tmp = TemporaryFolder()
 
     private val blossom = mockk<BlossomService>(relaxed = true)
+    private val queue = mockk<com.nostrvault.service.MediaPostQueue>(relaxed = true)
     private val pending = mockk<PendingPostManager>(relaxed = true)
     private val nostr = mockk<NostrService>(relaxed = true)
     private val me = com.nostrvault.data.model.PostingAccount.Lock("npub1me", "f".repeat(64))
@@ -96,7 +97,7 @@ class ComposeNoteCloseCleanupTest {
             draftService = drafts,
             blossomService = blossom,
             configStore = config,
-            mediaPostQueue = mockk(relaxed = true),
+            mediaPostQueue = queue,
             notificationManager = mockk(relaxed = true),
             blossomPickerMedia = mockk(relaxed = true),
             emojiPalette = mockk<com.nostrvault.data.local.EmojiPaletteStore>(relaxed = true).also {
@@ -174,5 +175,37 @@ class ComposeNoteCloseCleanupTest {
         val result = runBlocking { vm.uploadOne(Attachment(uri = mockk(relaxed = true), mimeType = "image/jpeg"), false, me) {} }
         assertEquals(ComposeNoteUpload.Failed(ComposeNoteViewModel.READ_ONLY_ACCOUNT), result)
         coVerify(exactly = 0) { blossom.uploadForPost(any(), any(), any(), any(), any(), any()) }
+    }
+
+    /**
+     * Tron's must-fix on #1517, end to end: a photo picked as the owner lands
+     * on the owner's server and its link is placed in the text; the user
+     * switches to B and posts while the servers are down. B's queued note
+     * must not carry the owner's link.
+     */
+    @Test fun aSwitchedAccountsQueuedNoteCarriesNoOtherAccountsLink() {
+        val owner = com.nostrvault.data.model.PostingAccount.Lock("npub1owner", "0".repeat(64))
+        var active = owner
+        every { nostr.lockPostingAccount() } answers { active }
+        val ownerUrl = "https://vault.owner.example/${"a".repeat(64)}"
+        val vm = viewModel().apply {
+            uploadSend = { _, _, signAs, _ ->
+                if (signAs == owner) ComposeNoteUpload.Done(fresh.copy(url = ownerUrl), preExisting = false, signer = signAs.hex)
+                else ComposeNoteUpload.Done(fresh.copy(url = null), unreachable = listOf("https://down"), preExisting = false, signer = signAs.hex)
+            }
+        }
+        // Cursor inside the text: the owner's link is placed there.
+        vm.onContentChanged("Look here", 4)
+        vm.addAttachments(listOf(mockk<Uri>(relaxed = true)), caret = 4)
+        runBlocking { vm.uploads.await(vm.attachments.value, owner) }
+        assertTrue("placed: ${vm.content.value}", vm.content.value.contains(ownerUrl))
+
+        active = me
+        val queued = io.mockk.slot<QueuedMediaPost>()
+        every { queue.enqueue(capture(queued)) } returns Unit
+        vm.publish { }
+        assertTrue("queued", queued.isCaptured)
+        assertTrue("B's note body still has the owner's link: ${queued.captured.body}", !queued.captured.body.contains(ownerUrl))
+        assertTrue(queued.captured.media.all { it.url == null })
     }
 }

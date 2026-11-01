@@ -45,8 +45,14 @@ internal class ComposeNoteUploads(
     private val turn = Mutex()
     /** Called once a link is known, so the screen can place it. */
     var onDone: ((Attachment, ComposeNoteUpload.Done) -> Unit)? = null
-    /** A re-upload at Post came back with another link: the text's old one is replaced. */
-    var onRelink: ((old: String, new: String) -> Unit)? = null
+    /**
+     * Post uploaded a photo again as the posting account: the other
+     * account's link [old] must leave the text, whatever came back. [new] is
+     * the posting account's link to put in its place, or null when it has
+     * none yet (saved on this device only, or failed): the queue then puts
+     * this account's link at the end (Tron, PR #1517).
+     */
+    var onRelink: ((old: String, new: String?) -> Unit)? = null
 
     /** Starts [attachment]'s upload; one already hosted is done at once. */
     fun start(attachment: Attachment) {
@@ -110,7 +116,7 @@ internal class ComposeNoteUploads(
                 run(attachment, skipOutside = unreachable.isNotEmpty(), signAs = postAs)
                 state = _states.value[attachment.id]
                 val newUrl = (state as? ComposeNoteUpload.Done)?.media?.url
-                if (oldUrl != null && newUrl != null && newUrl != oldUrl) onRelink?.invoke(oldUrl, newUrl)
+                if (oldUrl != null && newUrl != oldUrl) onRelink?.invoke(oldUrl, newUrl)
             }
             when (state) {
                 is ComposeNoteUpload.Done -> {

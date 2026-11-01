@@ -185,7 +185,7 @@ class ComposeNoteUploadsTest {
             signers += signAs.hex
             ComposeNoteUpload.Done(media(a.id, url = "https://x/${a.id}-${signAs.hex.take(1)}.jpg"), signer = signAs.hex)
         }, active, hosted)
-        val relinked = mutableListOf<Pair<String, String>>()
+        val relinked = mutableListOf<Pair<String, String?>>()
         uploads.onRelink = { old, new -> relinked += old to new }
         activeLock = other
         uploads.start(photo("1"))
@@ -207,5 +207,29 @@ class ComposeNoteUploadsTest {
         advanceUntilIdle()
         uploads.await(listOf(photo("1")), me)
         assertEquals(1, calls)
+    }
+
+    /**
+     * Tron's case (#1517): picked as the owner (link placed in the text),
+     * posted as B while the servers are down. B's re-upload has no link, and
+     * the owner's link must still leave the text, or B's queued note would
+     * carry it.
+     */
+    @Test fun anotherAccountsLinkLeavesEvenWhenTheReuploadHasNone() = runTest {
+        val uploads = ComposeNoteUploads(this, { a, _, signAs, _ ->
+            if (signAs == other) ComposeNoteUpload.Done(media(a.id, url = "https://vault.owner.example/${a.id}"), signer = signAs.hex)
+            else ComposeNoteUpload.Done(media(a.id, url = null), unreachable = listOf("https://down"), signer = signAs.hex)
+        }, active, hosted)
+        val relinked = mutableListOf<Pair<String, String?>>()
+        uploads.onRelink = { old, new -> relinked += old to new }
+        activeLock = other
+        uploads.start(photo("1"))
+        advanceUntilIdle()
+        val done = uploads.await(listOf(photo("1")), me) as ComposeNoteViewModel.AttachmentUploadResult.Done
+        assertEquals(listOf("https://vault.owner.example/1" to null), relinked)
+        assertEquals(listOf<String?>(null), done.media.map { it.url })
+        // What the VM then does to the text: the owner's link is gone from the body the queue gets.
+        val text = ComposeNoteDraft.removeLink("Look\nhttps://vault.owner.example/1\nhere", "https://vault.owner.example/1")
+        assertEquals("Look\nhere", ComposeNoteDraft.withoutLinks(text, done.media.mapNotNull { it.url }))
     }
 }

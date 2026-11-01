@@ -13,7 +13,9 @@ internal fun ComposeNoteViewModel.followEditsWithPlacements() {
     viewModelScope.launch { _content.collect { rebaseAnchors() } }
     // A photo uploaded again at Post under the posting account came back with
     // another link: the old account's link must not go out in the text.
-    uploads.onRelink = { old, new -> _content.value = _content.value.replace(old, new) }
+    uploads.onRelink = { old, new ->
+        _content.value = if (new != null) _content.value.replace(old, new) else ComposeNoteDraft.removeLink(_content.value, old)
+    }
     uploads.onDone = { attachment, done ->
         viewModelScope.launch(Dispatchers.Main) { placeLink(attachment.id, done.media.url) }
     }
