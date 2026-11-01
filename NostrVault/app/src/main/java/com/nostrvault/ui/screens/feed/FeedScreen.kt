@@ -109,6 +109,7 @@ fun FeedScreen(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
+    val extendedNetworkFound by viewModel.extendedNetworkFound.collectAsState()
     val isLoadingPopular by viewModel.isLoadingPopular.collectAsState()
     val isLoadingFeed by viewModel.isLoadingFeed.collectAsState()
     val isLoadingContacts by viewModel.isLoadingContacts.collectAsState()
@@ -565,11 +566,7 @@ fun FeedScreen(
                     feedMode,
                     onRefresh = viewModel::refresh,
                     subtitleOverride = if (feedMode == FeedMode.DISCOVERY && !isLoadingExtendedNetwork) {
-                        if (followedPubkeys.isEmpty()) {
-                            "Follow more people on Nostr to build your extended network"
-                        } else {
-                            "No follow lists came back from your relays \u2014 try refreshing"
-                        }
+                        DiscoveryEmptySubtitle.of(followedPubkeys.isNotEmpty(), trustGraphReady, extendedNetworkFound)
                     } else if (feedMode == FeedMode.GLOBAL && !globalShowsEveryone && !trustGraphReady) {
                         // Global fails closed without the trust graph; say so
                         // rather than "waiting for notes" over a full inbox.

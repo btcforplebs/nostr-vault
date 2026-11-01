@@ -575,6 +575,8 @@ class FeedService @Inject constructor(
     internal var lastExtendedNetworkLoadTime = 0L
     /** True when the last extended-network tally ended on a relay timeout. */
     internal var extendedNetworkWasPartial = false
+    /** The extended-network load in flight and the follows it tallies; callers share it. */
+    internal var extendedNetworkLoad: Pair<List<String>, Deferred<Unit>>? = null
 
     // Guards loadMore() against re-entry from scroll-triggered re-fires
     internal val isLoadingMore = AtomicBoolean(false)

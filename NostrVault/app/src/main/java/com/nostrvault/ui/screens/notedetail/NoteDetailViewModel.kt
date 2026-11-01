@@ -92,6 +92,12 @@ class NoteDetailViewModel @Inject constructor(
     private val _isLoadingParents = MutableStateFlow(false)
     val isLoadingParents: StateFlow<Boolean> = _isLoadingParents.asStateFlow()
 
+    /** True once the parent the chain lacks was asked of every relay and none had it. */
+    private val _parentNotFound = MutableStateFlow(false)
+    val parentNotFound: StateFlow<Boolean> = _parentNotFound.asStateFlow()
+
+    private val parentLookup = ThreadParentLookup(feedService, viewModelScope)
+
     private val _isLoadingReplies = MutableStateFlow(false)
     val isLoadingReplies: StateFlow<Boolean> = _isLoadingReplies.asStateFlow()
 
@@ -262,7 +268,8 @@ class NoteDetailViewModel @Inject constructor(
             mergeReplies(threadNotes)
             // Rebuild the chain now that fetched notes may fill gaps.
             _parentNotes.value = buildAncestorChain(foundNote, _allReplies.value)
-            _isLoadingParents.value = false
+            lookUpMissingParent(foundNote)
+            _isLoadingParents.value = parentLookup.isRunning
             _isLoadingReplies.value = false
             _isRefreshing.value = false
             fetchMissingThreadProfiles(foundNote)
@@ -276,7 +283,7 @@ class NoteDetailViewModel @Inject constructor(
         // Relays that never EOSE must not leave the loading rows up forever.
         viewModelScope.launch {
             kotlinx.coroutines.delay(LOADING_TIMEOUT_MS)
-            _isLoadingParents.value = false
+            if (!parentLookup.isRunning) _isLoadingParents.value = false
             _isLoadingReplies.value = false
             _isRefreshing.value = false
         }
@@ -304,6 +311,10 @@ class NoteDetailViewModel @Inject constructor(
             addAll(_parentNotes.value.map { it.pubkey })
             add(foundNote.pubkey)
             addAll(_allReplies.value.map { it.pubkey })
+            // "reply to <name>" lines: whoever each note answers, who may not
+            // have a note of their own in the thread.
+            foundNote.replyToPubkey?.let(::add)
+            addAll(_allReplies.value.mapNotNull { it.replyToPubkey })
         }.distinct()
         nostrService.fetchMissingProfiles(pubkeys)
     }
@@ -355,6 +366,27 @@ class NoteDetailViewModel @Inject constructor(
         if (_isRefreshing.value) return
         _isRefreshing.value = true
         startThreadLoad(current, showLoadingStates = false)
+    }
+
+    /**
+     * The chain stops short of a root: ask the relays the reply points to
+     * (and the parent author's) for the missing parent, then keep climbing.
+     * "Loading thread…" stays up while that runs; none having it shows the
+     * "not found" row instead of the reply passing for the start.
+     */
+    private fun lookUpMissingParent(foundNote: FeedNote) {
+        val missing = ThreadParentLookup.missingParentId(foundNote, _parentNotes.value) ?: return
+        parentLookup.ask(missing) { parent ->
+            if (_note.value?.id != foundNote.id) return@ask
+            if (parent != null) {
+                mergeReplies(listOf(parent))
+                _parentNotes.value = buildAncestorChain(foundNote, _allReplies.value)
+                lookUpMissingParent(foundNote)
+            } else if (ThreadParentLookup.missingParentId(foundNote, _parentNotes.value) == missing) {
+                _parentNotFound.value = true
+            }
+            if (!parentLookup.isRunning) _isLoadingParents.value = false
+        }
     }
 
     /**

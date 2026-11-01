@@ -151,19 +151,15 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
     }
 
     /**
-     * The relay hint and author a note in the feed gives for the id it
-     * references; for a quote, the author its nevent names ([quoted]).
+     * The relay hint and author a loaded note gives for the id it references
+     * ([NoteReferenceHints]); for a quote, the author its nevent names ([quoted]).
      */
     private fun FeedService.referenceHints(id: String, quoted: Map<String, String>): Pair<String?, String?> {
-        for (note in _notes.value) {
-            val tag = note.tags.firstOrNull { it.size >= 2 && (it[0] == "e" || it[0] == "q") && it[1] == id } ?: continue
-            val hint = tag.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
-            val author = tag.getOrNull(4)?.takeIf { it.length == 64 }
-                ?: tag.getOrNull(3)?.takeIf { tag[0] == "q" && it.length == 64 }
-                ?: if (note.parentEventId == id) note.tags.lastOrNull { it.size >= 2 && it[0] == "p" }?.get(1) else null
-            return hint to (author ?: quoted[id])
-        }
-        return null to quoted[id]
+        val notes = _notes.value.asSequence() +
+            _parentNotesCache.value.values.asSequence() +
+            _feedThreadReplies.value.values.asSequence()
+        val (hint, author) = NoteReferenceHints.find(id, notes) ?: return null to quoted[id]
+        return hint to (author ?: quoted[id])
     }
 
     /** Authors referenced by these ids whose write relays aren't known yet. */

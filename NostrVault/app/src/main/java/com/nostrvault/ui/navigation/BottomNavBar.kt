@@ -163,7 +163,7 @@ fun BottomNavBar(
         Layout(
             content = {
                 // No accent wash: the iOS capsule is plain glass.
-                Box(Modifier.glassPillBackground(isOled = isOled, accentColor = Color.Transparent))
+                Box(Modifier.glassPillBackground(isOled = isOled, accentColor = Color.Transparent, opaque = true))
                 FoldTaps(blockedWhenFolded = true, progress = { progress() }) { ExpandedNavRow(
                     currentRoute = currentRoute,
                     primaryColor = colors.primary,

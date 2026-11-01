@@ -32,9 +32,33 @@ import com.nostrvault.service.FeedService.Companion.EXTENDED_NETWORK_CHUNK
      * kind-3 sits on three relays does not vote three times.
      */
     internal suspend fun FeedService.loadExtendedNetwork() {
+        // One load at a time, run on the service's scope. The guide's
+        // "people your follows bring in" count asked from a card's
+        // LaunchedEffect, so tapping on to Discover cancelled it mid-way,
+        // and Discover's own load raced it: whichever ended first cleared
+        // the loading flag and Discover said no follow lists came back while
+        // the other was still asking. A caller now joins a load already
+        // tallying the same follows, or waits for a stale one and starts afresh.
+        _isLoadingExtendedNetwork.value = true
+        while (true) {
+            val follows = _followedPubkeys.value
+            val (load, current) = synchronized(this) {
+                val running = extendedNetworkLoad?.takeIf { it.second.isActive }
+                when {
+                    running == null -> scope.async { loadExtendedNetworkOnce(follows) }
+                        .also { extendedNetworkLoad = follows to it } to true
+                    running.first == follows -> running.second to true
+                    else -> running.second to false
+                }
+            }
+            load.await()
+            if (current) return
+        }
+    }
+
+    private suspend fun FeedService.loadExtendedNetworkOnce(follows: List<String>) {
         _isLoadingExtendedNetwork.value = true
         try {
-            val follows = _followedPubkeys.value
             if (follows.isEmpty()) {
                 withContext(Dispatchers.Main.immediate) { _isLoadingExtendedNetwork.value = false }
                 return
