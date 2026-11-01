@@ -101,6 +101,11 @@ export async function openLegacy(ev, crypto, me) {
  *  else `fallback`. Loopback addresses are dropped: someone else's 127.0.0.1 is this machine. `query` is for tests. */
 export async function dmRelaysFor(pubkey, lookupRelays, { fallback = DEFAULT_RELAYS, query = (r, f, o) => pool.querySync(r, f, o) } = {}) {
   const evs = await query(uniq(lookupRelays), { kinds: [10050, 10002], authors: [pubkey] }, { maxWait: 6000 })
+  return pickDmRelays(evs, pubkey, fallback)
+}
+
+/** dmRelaysFor's choice from the lists found: 10050 inbox, else 10002 read list, else `fallback`. */
+function pickDmRelays(evs, pubkey, fallback) {
   const newest = k => evs.filter(e => e.kind === k && e.pubkey === pubkey).sort((a, b) => b.created_at - a.created_at)[0]
   const inbox = (newest(10050)?.tags ?? []).filter(t => t[0] === "relay" && /^wss?:\/\//.test(t[1] ?? "")).map(t => t[1].replace(/\/+$/, ""))
   const usable = list => uniq(list.filter(u => !isLoopback(u)))
@@ -108,6 +113,33 @@ export async function dmRelaysFor(pubkey, lookupRelays, { fallback = DEFAULT_REL
   const general = newest(10002)
   if (general && usable(relayLists(general).read).length) return usable(relayLists(general).read)
   return uniq(fallback)
+}
+
+/**
+ * The user's own DM inbox relays, without waiting on the slowest lookup relay: dmRelaysFor waits for every relay (up
+ * to 6 s), so a new account with no 10050 or 10002 held empty Messages ~9 s (Ted's web check 2026-11-01). Each relay
+ * is asked on its own and the list is picked once the round settles (settle-early.js). The full lookup carries on:
+ * if a slower relay names inbox relays the early pick missed, `onLater(missed)` is called with them.
+ * -> { early: Promise<string[]>, full: Promise<string[]> }
+ */
+export function ownDmRelays(pubkey, lookupRelays, { onLater = () => {}, query = (r, f, o) => pool.querySync(r, f, o), grace } = {}) {
+  const urls = uniq(lookupRelays), found = []
+  let settle
+  const early = new Promise(r => { settle = r })
+  const watch = settleWatch(urls.length, () => settle(pickDmRelays(found, pubkey, [])), grace == null ? {} : { grace })
+  const full = Promise.all(urls.map(async url => {
+    let evs
+    try { evs = await query([url], { kinds: [10050, 10002], authors: [pubkey] }, { maxWait: 6000 }) } catch { return watch.failed() }
+    found.push(...evs)
+    watch.answered()
+  })).then(async () => {
+    const list = pickDmRelays(found, pubkey, [])
+    const had = new Set(await early)
+    const missed = list.filter(u => !had.has(u))
+    if (missed.length) onLater(missed)
+    return list
+  })
+  return { early, full }
 }
 
 /** Extra DM relays for this browser (e.g. a relay on this machine), from localStorage "nv-dm-relays", comma separated. */
@@ -421,6 +453,8 @@ const dropRelay = urls => pool.close(urls)
 const resyncListeners = new Set()
 /** `cb(urls)` when relays were dropped and the live subscription needs opening again. -> off() */
 export function onResyncNeeded(cb) { resyncListeners.add(cb); return () => resyncListeners.delete(cb) }
+/** Tell the screens to look again on `urls` (relays they weren't reading: a dropped socket, or an inbox found late). */
+export const needResync = urls => { for (const cb of resyncListeners) cb(urls) }
 
 // A send shows at once as a "pending:<n>" bubble (the iPhone's optimistic append, DMService sendNIP17DM), becomes the
 // real message once one of their relays took it, and stays as a failed bubble (`failed`: our sentence) when none did,
