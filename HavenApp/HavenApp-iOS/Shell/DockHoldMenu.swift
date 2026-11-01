@@ -270,7 +270,7 @@ struct DockHoldMenuOverlay: View {
             }
             .foregroundStyle(hovered ? Color.white : (entry.isCurrent ? Color.havenPurple : Color.primary))
             .padding(.horizontal, 14)
-            .frame(width: entry.subtitle == nil ? 210 : 240, height: entry.subtitle == nil ? 42 : 50)
+            .frame(width: 210, height: entry.subtitle == nil ? 42 : 50)
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(hovered ? Color.havenPurple : Color.clear)
