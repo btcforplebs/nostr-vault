@@ -175,6 +175,26 @@ enum ListMerge {
         return !ahead && knowsNone(asked: lookup.asked, answered: lookup.answered) && ownAnswered == mine.count ? .none : .unknown
     }
 
+    /// `editBase` for a key setup made on this device that has signed no
+    /// follow list yet (FreshAccountKeys): it can't have one anywhere, so a
+    /// silent relay or a missing kind 10002 doesn't make its list unknown.
+    /// It builds on the newest copy seen here, or on none. As Android's
+    /// ContactManager.saveBase with freshKey. A copy dated `maxSkew` or more
+    /// ahead means the key has a list somewhere, so then `base` stands.
+    static func freshKeyBase<Event>(_ base: EditBase<Event>, fresh: Bool, lookup: ReplaceableLookup<Event>, held: Event?,
+                                    now: Int64 = Int64(Date().timeIntervalSince1970),
+                                    createdAt: (Event) -> Int64) -> EditBase<Event> {
+        guard fresh else { return base }
+        switch base {
+        case .list, .none: return base
+        case .unknown, .noRelayList: break
+        }
+        let copies = [lookup.event, held].compactMap { $0 }
+        let usable = copies.filter { createdAt($0) < now + maxSkew }
+        guard !lookup.ahead, usable.count == copies.count else { return base }
+        return usable.max(by: { createdAt($0) < createdAt($1) }).map { .list($0) } ?? .none
+    }
+
     /// "You have no list" is known only when at least two relays answered and
     /// every relay asked did. One relay saying none is not that: it may just
     /// not hold the list (Logen 2026-10-31).

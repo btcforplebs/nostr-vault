@@ -89,6 +89,39 @@ final class ListMergeTests: XCTestCase {
         guard case .noRelayList = ListMerge.editBase(all, held: nil, own: [], createdAt: { $0 }) else { return XCTFail("no own relays must be noRelayList") }
     }
 
+    /// Sweep 11-01 #2: a new account's first follow was rolled back when one
+    /// relay was silent. A key setup made here can't have a list anywhere.
+    func testFreshKeyBaseBuildsOnWhatIsSeenWhenARelayIsSilent() {
+        let own = ["wss://a.example", "wss://b.example", "wss://c.example"]
+        let some = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 2, answeredBy: Set(own.prefix(2)))
+        let found = ListMerge.editBase(some, held: nil, own: own, createdAt: { $0 })
+        guard case .unknown = found else { return XCTFail("setup: expected unknown") }
+        guard case .none = ListMerge.freshKeyBase(found, fresh: true, lookup: some, held: nil, createdAt: { $0 }) else { return XCTFail("fresh key, silent relay should be none") }
+        // Not fresh: unchanged, still refused.
+        guard case .unknown = ListMerge.freshKeyBase(found, fresh: false, lookup: some, held: nil, createdAt: { $0 }) else { return XCTFail("non-fresh key must stay unknown") }
+        // Nobody answered, no relay list yet: a fresh key still builds on its held copy.
+        let nobody = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 0)
+        let noList = ListMerge.editBase(nobody, held: 200, own: [], createdAt: { $0 })
+        guard case .noRelayList = noList else { return XCTFail("setup: expected noRelayList") }
+        guard case .list(let held) = ListMerge.freshKeyBase(noList, fresh: true, lookup: nobody, held: 200, createdAt: { $0 }) else { return XCTFail("fresh key should build on the held copy") }
+        XCTAssertEqual(held, 200)
+        // The newest of the fetched and held copies.
+        let fetched = ReplaceableLookup<Int64>(event: 300, asked: 3, answered: 1, answeredBy: ["wss://x.example"], from: ["wss://x.example"])
+        guard case .list(let newest) = ListMerge.freshKeyBase(.unknown, fresh: true, lookup: fetched, held: 200, createdAt: { $0 }) else { return XCTFail("no list") }
+        XCTAssertEqual(newest, 300)
+    }
+
+    func testFreshKeyBaseKeepsUnknownWhenACopyIsAhead() {
+        let now: Int64 = 1_000_000
+        let ahead = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 1, ahead: true)
+        guard case .unknown = ListMerge.freshKeyBase(.unknown, fresh: true, lookup: ahead, held: nil, now: now, createdAt: { $0 }) else { return XCTFail("a list exists somewhere") }
+        let future = ReplaceableLookup<Int64>(event: now + ListMerge.maxSkew, asked: 3, answered: 1)
+        guard case .unknown = ListMerge.freshKeyBase(.unknown, fresh: true, lookup: future, held: nil, now: now, createdAt: { $0 }) else { return XCTFail("built over a far-ahead copy") }
+        // A list that is known stays as it is.
+        guard case .list(let list) = ListMerge.freshKeyBase(.list(5 as Int64), fresh: true, lookup: future, held: nil, now: now, createdAt: { $0 }) else { return XCTFail("list changed") }
+        XCTAssertEqual(list, 5)
+    }
+
     func testEditBaseIsUnknownOnACopyNoOwnRelayVouchesFor() {
         let own = ["wss://mine.example"]
         // Only purplepag.es answered; the user's relay timed out.
