@@ -18,13 +18,15 @@ struct HavenApp: App {
 
     var body: some Scene {
         #if os(macOS)
-        MenuBarExtra("Nostr Vault", image: "MenuBarIcon") {
+        MenuBarExtra {
             MenuBarContent(configService: configService, relayManager: relayManager)
                 .environmentObject(configService)
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
                 .preferredColorScheme(.dark)
+        } label: {
+            MenuBarIconLabel()
         }
         .menuBarExtraStyle(.window)
 
@@ -68,9 +70,11 @@ struct HavenApp: App {
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
                 .preferredColorScheme(.dark)
-                .frame(minWidth: 800, minHeight: 950)
+                // Small enough for a 13" MacBook Air (about 919 pt usable at
+                // the default 1470x956); the content scrolls below this.
+                .frame(minWidth: 800, minHeight: 640)
         }
-        .defaultSize(width: 1000, height: 1200)
+        .defaultSize(width: 1000, height: 860)
         #else
         WindowGroup {
             MenuBarContent(configService: configService, relayManager: relayManager)
@@ -157,18 +161,12 @@ struct MenuBarContent: View {
                     // "viewer-window" scene. iOS still renders MenuBarView, which
                     // is its real UI.
                     #if os(macOS)
+                    // Opening the panel starts nothing. The app delegate owns
+                    // the launch start and honours "Start Vault Automatically";
+                    // the panel used to start the relay on every open while it
+                    // was idle, so the switch did nothing and Stop lasted only
+                    // until the next click on the icon.
                     MenuBarStatusView(configService: configService, relayManager: relayManager)
-                        .onAppear {
-                            if configService.config.hasCompletedSetup && relayManager.state == .idle {
-                                #if DEBUG
-                                print("Auto-starting relay on launch...")
-                                #endif
-                                relayManager.startRelay(config: configService.config)
-                            }
-                            if configService.config.hasCompletedSetup && configService.config.activeSigningMode() == "nip46" {
-                                NIP46Service.shared.connectFromConfig()
-                            }
-                        }
                     #else
                     MenuBarView(configService: configService, relayManager: relayManager)
                         .onAppear {

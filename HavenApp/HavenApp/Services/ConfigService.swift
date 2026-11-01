@@ -100,9 +100,10 @@ class ConfigService: ObservableObject {
             if config.importSeedRelays.isEmpty {
                 config.importSeedRelays = HavenConfig.default.importSeedRelays
             }
-            if config.blastrRelays.isEmpty {
-                config.blastrRelays = HavenConfig.default.blastrRelays
-            }
+            // blastrRelays is left alone: an empty write list is a choice the
+            // owner can save (Relays shows "Your posts fall back to ..."), and
+            // filling it here put back every write relay they had removed.
+            // A config.json without the key still decodes to the defaults.
             if config.blossomMirrors.isEmpty {
                 config.blossomMirrors = HavenConfig.default.blossomMirrors
                 #if DEBUG
@@ -175,9 +176,10 @@ class ConfigService: ObservableObject {
                 if config.importSeedRelays.isEmpty {
                     config.importSeedRelays = HavenConfig.default.importSeedRelays
                 }
-                if config.blastrRelays.isEmpty {
-                    config.blastrRelays = HavenConfig.default.blastrRelays
-                }
+                // blastrRelays is left alone: an empty write list is a choice the
+                // owner can save (Relays shows "Your posts fall back to ..."), and
+                // filling it here put back every write relay they had removed.
+                // A config.json without the key still decodes to the defaults.
                 if config.blossomMirrors.isEmpty {
                     config.blossomMirrors = HavenConfig.default.blossomMirrors
                     #if DEBUG
@@ -224,7 +226,7 @@ class ConfigService: ObservableObject {
            !list.isEmpty {
             config.blastrRelays = list
         }
-        // Missing/empty file keeps HavenConfig defaults; this session's mesh relay address is never the owner's own.
+        // Missing/empty file keeps config.json's list (save() writes both, so an emptied list is empty in each); this session's mesh relay address is never the owner's own.
         config.blastrRelays = RelayConfiguration.droppingMeshAddresses(config.blastrRelays)
 
         // Load whitelisted npubs
