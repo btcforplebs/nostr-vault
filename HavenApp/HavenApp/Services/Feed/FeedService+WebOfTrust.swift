@@ -134,7 +134,7 @@ extension FeedService {
     /// follows someone you just followed stayed filtered out of Global until
     /// then. Empty while there is no graph, so Global still fails closed.
     var feedTrustedPubkeys: Set<String> {
-        TrustMap.web(saved: wotPubkeys, follows: Set(followedPubkeys))
+        trustedWebMemo.web(saved: wotPubkeys, follows: followedPubkeys)
     }
 
     /// REQ filters for a Global view under `trust`. Everyone: the filter as

@@ -71,10 +71,9 @@ struct FeedView: View {
     /// Debounce work item for rebuilding the row data cache to prevent
     /// expensive synchronous operations during active scrolling.
     @State var cacheRebuildWork: DispatchWorkItem?
-    /// Cache of pre-resolved row data keyed by note ID. Invalidated when
-    /// filteredNotes changes so we avoid re-running resolve() on every
-    /// SwiftUI re-render triggered by unrelated state changes.
-    @State var rowDataCache: [String: FeedNoteRowData] = [:]
+    /// Row data and thread grouping (`rowDataCache`, `feedThreads`), held by
+    /// reference so view copies don't each keep their own; see FeedRowStore.
+    @StateObject var rowStore = FeedRowStore()
 
     /// Compact mode state: tracks which note is currently expanded (nil = all collapsed)
     @State var expandedNoteId: String? = nil
@@ -83,10 +82,6 @@ struct FeedView: View {
     /// a card it scrolls off, which would refold a thread behind your back.
     @State var expandedThreadIds: Set<String> = []
 
-    /// Conversations built from `filteredNotes` for threaded mode. Rebuilt on
-    /// the same signals as the row-data cache and left empty in the other two
-    /// layouts so nothing is grouped that will never be drawn.
-    @State var feedThreads: [FeedThread<FeedNote>] = []
     /// Each shown thread's sort key when it was first shown. Threads keep
     /// that place while the feed is on screen, so a reply doesn't lift its
     /// card from under the reader; `resortThreads()` clears it.

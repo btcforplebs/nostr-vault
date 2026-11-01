@@ -18,6 +18,7 @@ extension FeedView {
         // The Hashtags feed groups its own two sections (HashtagsFeedSection).
         guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
+            rowStore.threadGeneration &+= 1
             if !feedThreads.isEmpty { feedThreads = [] }
             frozenThreadKeys = [:]
             return
@@ -34,35 +35,27 @@ extension FeedView {
                 feedService.loadFeedThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
             }
             let notes = fetchesReplies ? feedService.filteredNotes + feedService.feedThreadReplies : feedService.filteredNotes
-            let built = FeedThreadGrouping.build(notes: notes, keepFeedOrder: fetchesReplies) { id in
-                // Ancestors the timeline never showed still live in the feed
-                // service's caches; pulling them in keeps a conversation whole.
-                // A blocked author's post is never pulled in as context.
-                guard let note = feedService.findNote(id: id),
-                      !blocked.contains(note.pubkey) else { return nil }
-                return note
-            }.filter { thread in
-                // A conversation started by a blocked author goes entirely.
-                // Its root is withheld above, so without this the card would
-                // sit on "Loading the start of this thread…" forever.
-                guard thread.root == nil,
-                      let root = feedService.findNote(id: thread.rootId) else { return true }
-                return !blocked.contains(root.pubkey)
+            // What findNote reads for an event id, taken now (copy-on-write,
+            // so free) so the grouping can run off the main thread.
+            let parents = feedService.parentNotesCache
+            let index = feedService.noteIndex
+            rowStore.threadGeneration &+= 1
+            let generation = rowStore.threadGeneration
+            if immediate {
+                applyThreads(Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
+                                               parents: parents, index: index),
+                             fetchesReplies: fetchesReplies)
+                return
             }
-            // Order by activity, but frozen while the feed is on screen. A
-            // loading feed sorts freely: it is being refilled anyway.
-            if fetchesReplies || feedService.isLoadingFeed {
-                feedThreads = built
-                frozenThreadKeys = [:]
-            } else {
-                (feedThreads, frozenThreadKeys) = FeedThreadGrouping.applyFrozenOrder(built, frozenKeys: frozenThreadKeys)
-            }
-            // Ask for every missing root now, in one batch, rather than from
-            // each card's onAppear: a fast scroll reaches cards faster than a
-            // relay round trip, so each one sat on its loading header.
-            // fetchMissingNote dedupes, so a rebuild re-asks nothing in flight.
-            for thread in feedThreads where thread.root == nil {
-                feedService.fetchMissingNote(id: thread.rootId)
+            // Grouping the whole feed was the biggest main-thread cost while
+            // a feed streamed in (Tom's sweep 11-01 #5).
+            Task.detached(priority: .userInitiated) {
+                let built = Self.groupThreads(notes: notes, keepFeedOrder: fetchesReplies, blocked: blocked,
+                                              parents: parents, index: index)
+                await MainActor.run {
+                    guard generation == rowStore.threadGeneration else { return }
+                    applyThreads(built, fetchesReplies: fetchesReplies)
+                }
             }
         }
         threadRebuildWork = work
@@ -71,6 +64,45 @@ extension FeedView {
             work.perform()
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        }
+    }
+
+    /// The feed grouped into conversations. Pure, so it can run off the main
+    /// thread: `parents` and `index` stand in for `FeedService.findNote`.
+    nonisolated static func groupThreads(notes: [FeedNote], keepFeedOrder: Bool, blocked: Set<String>,
+                                         parents: [String: FeedNote],
+                                         index: [String: FeedNote]) -> [FeedThread<FeedNote>] {
+        let find: (String) -> FeedNote? = { parents[$0] ?? index[$0] }
+        return FeedThreadGrouping.build(notes: notes, keepFeedOrder: keepFeedOrder) { id in
+            // Ancestors the timeline never showed still live in the feed
+            // service's caches; pulling them in keeps a conversation whole.
+            // A blocked author's post is never pulled in as context.
+            guard let note = find(id), !blocked.contains(note.pubkey) else { return nil }
+            return note
+        }.filter { thread in
+            // A conversation started by a blocked author goes entirely.
+            // Its root is withheld above, so without this the card would
+            // sit on "Loading the start of this thread…" forever.
+            guard thread.root == nil, let root = find(thread.rootId) else { return true }
+            return !blocked.contains(root.pubkey)
+        }
+    }
+
+    /// Shows a grouping: ordered by activity, but frozen while the feed is
+    /// on screen. A loading feed sorts freely: it is being refilled anyway.
+    private func applyThreads(_ built: [FeedThread<FeedNote>], fetchesReplies: Bool) {
+        if fetchesReplies || feedService.isLoadingFeed {
+            feedThreads = built
+            frozenThreadKeys = [:]
+        } else {
+            (feedThreads, frozenThreadKeys) = FeedThreadGrouping.applyFrozenOrder(built, frozenKeys: frozenThreadKeys)
+        }
+        // Ask for every missing root now, in one batch, rather than from
+        // each card's onAppear: a fast scroll reaches cards faster than a
+        // relay round trip, so each one sat on its loading header.
+        // fetchMissingNote dedupes, so a rebuild re-asks nothing in flight.
+        for thread in feedThreads where thread.root == nil {
+            feedService.fetchMissingNote(id: thread.rootId)
         }
     }
 
@@ -288,7 +320,7 @@ extension FeedView {
         gapRegroupScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             gapRegroupScheduled = false
-            rebuildThreadsIfNeeded(immediate: true)
+            rebuildThreadsIfNeeded()
         }
     }
 
