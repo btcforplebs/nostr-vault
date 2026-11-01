@@ -36,11 +36,13 @@ struct iPhoneTabView: View {
     /// keyboard coming up doesn't change it.
     @State private var isLandscape = false
 
-    /// iPad in landscape: an opened note shows beside the list, in a
-    /// `NoteSplitPane`. Everywhere else, portrait iPad included, the tabs are
-    /// the phone's and a note pushes over the list. `horizontalSizeClass` is
-    /// read before `body` sets every screen to compact, so it is the real one.
-    private var usesNoteSplit: Bool { horizontalSizeClass == .regular && isLandscape }
+    /// iPad (regular width): every tab's list sits in a `NoteSplitPane`, in
+    /// both orientations. The pane shows an opened note beside the list in
+    /// landscape and over it in portrait. Always the same view tree, so
+    /// rotating keeps the tab, its scroll position and any sheet open in it
+    /// (the composer, with its text and photos). `horizontalSizeClass` is read
+    /// before `body` sets every screen to compact, so it is the real one.
+    private var usesNoteSplit: Bool { horizontalSizeClass == .regular }
 
     /// The tab's list in a `NoteSplitPane` when `usesNoteSplit`, otherwise as is.
     @ViewBuilder
@@ -49,7 +51,12 @@ struct iPhoneTabView: View {
         @ViewBuilder _ content: @escaping () -> Content
     ) -> some View {
         if usesNoteSplit {
-            NoteSplitPane(emptyTitle: "No Note Selected", emptyMessage: emptyMessage, content: content)
+            NoteSplitPane(
+                emptyTitle: "No Note Selected",
+                emptyMessage: emptyMessage,
+                allowsTwoColumns: isLandscape,
+                content: content
+            )
         } else {
             content()
         }
