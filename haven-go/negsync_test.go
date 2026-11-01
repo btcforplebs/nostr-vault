@@ -474,6 +474,39 @@ func TestBatchNotifierSummaryOnlyWhenAway(t *testing.T) {
 	}
 }
 
+// Past the limit a gift wrap stays out of "N more new items": it may be the
+// owner's own DM coming back from another device, and only the app can tell
+// once it unlocks it (Logen 2026-11-01). Within the limit its marker still
+// goes out, for the app to decide.
+func TestBatchNotifierLeavesGiftWrapsOutOfTheSummary(t *testing.T) {
+	owner := hexid('0')
+	setupSyncConfig(owner) // NotifyBatchLimit=2, NotifyMaxAgeHours=24
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	now := nostr.Now()
+	wrap := func(id byte) *nostr.Event {
+		return &nostr.Event{ID: hexid(id), PubKey: hexid('1'), Kind: nostr.KindGiftWrap, CreatedAt: now}
+	}
+	n := &batchNotifier{}
+	for _, id := range []byte{'a', 'b', 'c', 'd'} {
+		n.maybeNotify(wrap(id), owner)
+	}
+	if n.emitted != 2 || n.suppressed != 0 {
+		t.Fatalf("emitted=%d suppressed=%d, want 2/0", n.emitted, n.suppressed)
+	}
+	if got := strings.Count(buf.String(), "type=giftwrap"); got != 2 {
+		t.Fatalf("giftwrap markers=%d, want 2: %q", got, buf.String())
+	}
+	n.flush(true)
+	if strings.Contains(buf.String(), "type=summary") {
+		t.Fatalf("summary counted gift wraps: %q", buf.String())
+	}
+}
+
 // A kind the app has switched off must not reach the summary either. The client
 // can drop an individual marker for a reaction; it cannot subtract reactions
 // from "N more new items", so the count has to exclude them at the source.

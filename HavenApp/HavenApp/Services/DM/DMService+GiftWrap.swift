@@ -64,6 +64,8 @@ extension DMService {
             guard self.switchGeneration == generation else { return }
             // Before any early return below: a probe that opened releases the rest.
             signerAnswered(event.id)
+            // An alert waiting for this DM is decided once it is stored (or not).
+            defer { LocalNotificationService.shared.dmOpened(event.id) }
 
             let ownPubkey = self.loadedAccountPubkey
             let isFromMe = senderPubkey == ownPubkey

@@ -82,7 +82,11 @@ class LocalNotificationService @Inject constructor(
         private const val MARKER = "🔔NOTIFY|"
         private const val PREVIEW_MARKER = "|preview="
         private const val MAX_SEEN = 500
-        /** How long a DM marker waits for the inbox to decrypt its message. */
+        /**
+         * How long a NIP-04 DM marker waits for the inbox to decrypt its message
+         * (it names its sender, so it can alert without). A gift wrap has no such
+         * limit: it waits until it is unlocked.
+         */
         private const val DM_OPEN_TIMEOUT_MS = 3_000L
         private const val CARRIED_LOOKUP_TIMEOUT_MS = 1_500L
         // How long an alert waits for its author's name, picture and note (iOS NotificationReadiness).
@@ -672,19 +676,36 @@ class LocalNotificationService @Inject constructor(
         return FoldedFollowers(members, extras.getInt(FOLDED_FOLLOWER_COUNT_KEY, members.size))
     }
 
+    /** Gift-wrap alerts waiting for the inbox to unlock their DM: the marker's type and account. */
+    private val pendingDmAlerts = com.nostrvault.data.model.PendingDMAlerts<Pair<String, String>>()
+
     /**
      * A gift wrap is signed by a throwaway key, so its marker cannot say who
-     * wrote it — not even when it was you: every DM you send also wraps a copy
-     * to yourself, and that copy lands in your own inbox. Skip the copies this
-     * device sent, wait for the inbox to decrypt the rest, then show the real
-     * sender and text. If it never opens, the generic line still goes out.
+     * wrote it, not even when it was you: every DM you send also wraps a copy
+     * to yourself, and that copy reaches your other devices. So a gift wrap
+     * never alerts until the inbox has unlocked it with its usual decrypt,
+     * however long that takes (a slow signer, Amber, another account's inbox
+     * that opens on switching): it waits in [pendingDmAlerts] and [dmOpened]
+     * decides it then. Copies this device sent are known by id. A NIP-04 DM
+     * names its author in the clear. iOS: LocalNotificationService.announceDM.
      */
     private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String, blocked: Set<String>) {
-        // A NIP-04 DM names its author in the clear.
-        if (author.isNotEmpty() && author.equals(recipientHex, ignoreCase = true)) return
+        if (author.isNotEmpty() && (author.equals(recipientHex, ignoreCase = true) || ownAccountHexes().any { it.equals(author, ignoreCase = true) })) return
         val dms = dmService.get()
         if (dms.isOwnSentWrap(id)) {
             if (BuildConfig.DEBUG) Log.i(TAG, "skip: own sent DM ${id.take(8)}")
+            return
+        }
+        if (type == "giftwrap") {
+            dms.onGiftWrapOpened = ::dmOpened
+            val opened = dms.openedMessage(id)
+            if (opened != null) {
+                decideDm(id, type, opened, npub)
+            } else {
+                pendingDmAlerts.add(id, type to npub)
+                // Opened in between: decide it now rather than wait for nothing.
+                if (dms.openedMessage(id) != null) dmOpened(id)
+            }
             return
         }
         scope.launch {
@@ -694,29 +715,51 @@ class LocalNotificationService @Inject constructor(
                 if (inThread) DM_OPEN_TIMEOUT_IN_THREAD_MS else DM_OPEN_TIMEOUT_MS,
             )
             if (opened != null) {
-                if (opened.second.isFromMe) return@launch
-                if (BlockedPeople.isBlocked(opened.second.senderPubkey, blocked)) return@launch
-                // The conversation is already on screen.
-                if (appInForeground && dms.visibleConversation == opened.first) return@launch
-            }
-            // Outside your Web of Trust and never written to: a Request, silent.
-            // An unopened gift wrap names no one, so it keeps the generic line.
-            val counterparty = opened?.first ?: author.takeIf { type == "dm" && it.length == 64 }
-            if (counterparty != null && !dms.isInboxConversation(counterparty)) {
-                if (BuildConfig.DEBUG) Log.i(TAG, "skip: DM request from ${counterparty.take(8)}")
+                decideDm(id, type, opened, npub)
                 return@launch
             }
-            val sender = opened?.second?.senderPubkey ?: author
-            val profile = awaitAuthor(sender)
+            // An unopened NIP-04 DM still names its sender.
+            if (author.length != 64 || !dms.isInboxConversation(author)) return@launch
+            if (BlockedPeople.isBlocked(author, blocked)) return@launch
+            val profile = awaitAuthor(author)
+            val (title, body) = buildContent(type, profile?.bestName, "")
+            deliver(InAppBanner(id, title, body, type, author, npub, profile?.pictureURL))
+        }
+    }
+
+    /** The inbox unlocked the gift wrap [id] (DMService). Decides an alert that was waiting for it. */
+    fun dmOpened(id: String) {
+        val (type, npub) = pendingDmAlerts.take(id) ?: return
+        val opened = dmService.get().openedMessage(id) ?: return
+        decideDm(id, type, opened, npub)
+    }
+
+    private fun ownAccountHexes(): Set<String> =
+        configStore.config.value.allAccountNpubs().mapNotNull { nostrService.get().npubToHex(it) }.toSet()
+
+    private fun decideDm(id: String, type: String, opened: Pair<String, DMMessage>, npub: String) {
+        val dms = dmService.get()
+        val (counterparty, message) = opened
+        val blocked = configStore.config.value.blockedFor(npub).mapNotNull { nostrService.get().npubToHex(it) }.toSet()
+        val alerts = com.nostrvault.data.model.DMAlertGate.alerts(
+            sender = message.senderPubkey,
+            isFromMe = message.isFromMe,
+            ownAccounts = ownAccountHexes(),
+            blocked = blocked,
+            inInbox = dms.isInboxConversation(counterparty),
+            onScreen = appInForeground && dms.visibleConversation == counterparty,
+        )
+        if (!alerts) {
+            if (BuildConfig.DEBUG) Log.i(TAG, "skip: DM ${id.take(8)} is yours, blocked, a Request or on screen")
+            return
+        }
+        scope.launch {
+            val profile = awaitAuthor(message.senderPubkey)
             val profiles = nostrService.get().profiles.value
-            val text = opened?.second?.content
-                ?.let { dmPreview(NostrMentions.toPlainText(it, profiles)) }.orEmpty()
+            val text = dmPreview(NostrMentions.toPlainText(message.content, profiles))
             val (title, body) = buildContent(type, profile?.bestName, text)
-            // Once opened, route as a DM with its counterparty so a tap lands in
-            // the thread; an unopened gift wrap still opens the inbox.
-            val routeType = if (opened != null) "dm" else type
-            val routeAuthor = opened?.first ?: author
-            deliver(InAppBanner(id, title, body, routeType, routeAuthor, npub, profile?.pictureURL))
+            // Opened, so it routes as a DM with its counterparty: a tap lands in the thread.
+            deliver(InAppBanner(id, title, body, "dm", counterparty, npub, profile?.pictureURL))
         }
     }
 

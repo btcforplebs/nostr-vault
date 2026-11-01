@@ -192,6 +192,13 @@ func (n *batchNotifier) maybeNotify(ev *nostr.Event, recipient string) {
 		emitInboxNotify(ev, recipient)
 		return
 	}
+	// A gift wrap names no author until the app unlocks it, and every DM the
+	// owner sends from another device comes back as one: counting it would
+	// announce the owner's own messages as "new items". The app alerts on a
+	// gift wrap only once unlocked, so past the limit it stays silent here.
+	if ev.Kind == nostr.KindGiftWrap {
+		return
+	}
 	n.suppressed++
 }
 
