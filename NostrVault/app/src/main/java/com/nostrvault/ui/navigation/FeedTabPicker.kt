@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 @Stable
 object FeedTabPicker {
     /** The menu, lined up with the Feed tab's left edge. */
-    val menu = DockHoldMenu<FeedMode>(alignEnd = false)
+    val menu = DockHoldMenu<FeedMode>()
 
     val isOpen: Boolean get() = menu.isOpen
 

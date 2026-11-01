@@ -12,25 +12,26 @@ import org.junit.Test
 class DockHoldTest {
 
     @Test fun `numbers match iOS`() {
-        assertEquals(180L, DockHold.HOLD_MS)
-        assertEquals(10f, DockHold.CANCEL_DISTANCE.value)
+        assertEquals(100L, DockHold.HOLD_MS)
+        assertEquals(6f, DockHold.OPEN_SLIDE.value)
         assertEquals(28f, DockHold.ROW_SLACK_X.value)
         assertEquals(1f, DockHold.ROW_SLACK_Y.value)
         assertEquals(0.94f, DockHold.PRESSED_SCALE)
         assertEquals(1.08f, DockHold.OPEN_SCALE)
     }
 
-    @Test fun `let go unmoved before the hold is a tap`() {
-        assertEquals(DockHold.Early.TAP, DockHold.early(released = true, movedPx = 3f, cancelPx = 30f))
+    @Test fun `let go before the hold and the slide is a tap`() {
+        assertEquals(DockHold.Early.TAP, DockHold.early(released = true, movedPx = 3f, openPx = 18f))
     }
 
-    @Test fun `sliding past the cancel distance before the hold is neither`() {
-        assertEquals(DockHold.Early.CANCEL, DockHold.early(released = false, movedPx = 31f, cancelPx = 30f))
-        assertEquals(DockHold.Early.CANCEL, DockHold.early(released = true, movedPx = 31f, cancelPx = 30f))
+    @Test fun `a slight slide opens the menu at once`() {
+        assertEquals(DockHold.Early.OPEN, DockHold.early(released = false, movedPx = 18f, openPx = 18f))
+        // Slid and let go in the same frame: still opened, and the release then cancels.
+        assertEquals(DockHold.Early.OPEN, DockHold.early(released = true, movedPx = 20f, openPx = 18f))
     }
 
-    @Test fun `still down and still is still waiting`() {
-        assertNull(DockHold.early(released = false, movedPx = 30f, cancelPx = 30f))
+    @Test fun `still down and barely moved is still waiting`() {
+        assertNull(DockHold.early(released = false, movedPx = 17.9f, openPx = 18f))
     }
 
     @Test fun `haptics - light open, tick per row, confirm on pick`() {
@@ -54,7 +55,7 @@ class DockHoldTest {
     }
 
     @Test fun `a row no longer listed is not picked`() {
-        val menu = DockHoldMenu<VaultMode>(alignEnd = true)
+        val menu = DockHoldMenu<VaultMode>()
         menu.rowBounds.putAll(rows)
         menu.listed = listOf(VaultMode.NOTES)
         assertNull(menu.itemAt(Offset(700f, 950f), 56f, 2f))

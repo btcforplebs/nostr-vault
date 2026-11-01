@@ -55,33 +55,39 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.glassRectBackground
 import com.nostrvault.ui.theme.ErrorRed
+import com.nostrvault.ui.theme.LocalOledMode
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
-import com.nostrvault.ui.theme.SecondaryGroupedBg
 import kotlin.math.PI
 import kotlin.math.roundToInt
 
 /**
- * Hold a dock tab, slide onto a row, let go: that row is picked. Let go
- * anywhere else (in place on the tab, or off the menu) and it cancels. A
- * plain tap is still the tab. One engine for the Feed tab (feeds) and the
- * Vault tab (its pages). iOS: HavenApp-iOS/Shell/DockHoldMenu.swift (#1505).
+ * Press a dock button and either hold a moment or slide a little: the menu
+ * opens, the highlight follows the finger at once, and letting go on a row
+ * picks it. Let go anywhere else (in place on the button, or off the menu)
+ * and it cancels. A plain tap is still the button. One engine for the Feed
+ * tab (feeds), the Vault tab (its pages) and the account picture (accounts).
+ * iOS: HavenApp-iOS/Shell/DockHoldMenu.swift (#1505); the iPhone look is the
+ * reference.
  *
- * The finger never leaves the tab's own gesture, so the menu does not take
- * touches while dragging: the tab hit-tests the finger against the rows'
- * bounds itself, all in root coordinates.
- *
- * @param alignEnd the menu lines up with the tab's right edge (Vault) rather
- *   than its left (Feed).
+ * The finger never leaves the button's own gesture, so the menu does not take
+ * touches while dragging: the button hit-tests the finger against the rows'
+ * bounds itself, all in root coordinates. The menu lines up with the side of
+ * the screen its button is on.
  */
 @Stable
-class DockHoldMenu<T>(val alignEnd: Boolean) {
+class DockHoldMenu<T> {
     var isOpen by mutableStateOf(false)
         private set
     /** The finger is down on the tab (it shrinks while pressed). */
@@ -116,10 +122,10 @@ class DockHoldMenu<T>(val alignEnd: Boolean) {
 
 /** The numbers PR #1505 set on iOS, in Android units. */
 object DockHold {
-    /** Hold before the menu opens (the account switcher's system menu is ~0.5 s). */
-    const val HOLD_MS = 180L
-    /** Movement that cancels the hold before it opens. */
-    val CANCEL_DISTANCE = 10.dp
+    /** Hold before the menu opens: a tap lifts sooner; anything longer is a hold (Logen 11-01). */
+    const val HOLD_MS = 100L
+    /** A slide this far while pressed opens the menu at once, without waiting for the hold. */
+    val OPEN_SLIDE = 6.dp
     /** Row hit area: the row plus this either side, and 1 dp up and down. */
     val ROW_SLACK_X = 28.dp
     val ROW_SLACK_Y = 1.dp
@@ -145,12 +151,15 @@ object DockHold {
         view.performHapticFeedback(constant(h))
     }
 
-    /** What a touch that ended (or moved) before the hold landed was. */
-    enum class Early { TAP, CANCEL }
+    /** What a touch became before the hold landed. */
+    enum class Early { TAP, OPEN }
 
-    /** A touch that let go unmoved before the hold is a tap; one that slid off first is neither. */
-    fun early(released: Boolean, movedPx: Float, cancelPx: Float): Early? = when {
-        movedPx > cancelPx -> Early.CANCEL
+    /**
+     * A slide of [openPx] opens the menu straight away; letting go before
+     * that, and before the hold, is a tap. Null: still waiting.
+     */
+    fun early(released: Boolean, movedPx: Float, openPx: Float): Early? = when {
+        movedPx >= openPx -> Early.OPEN
         released -> Early.TAP
         else -> null
     }
@@ -175,7 +184,7 @@ internal fun <T> Modifier.dockHold(
     onTap: () -> Unit,
     onPick: (T) -> Unit,
 ): Modifier = pointerInput(menu) {
-    val cancelPx = DockHold.CANCEL_DISTANCE.toPx()
+    val openPx = DockHold.OPEN_SLIDE.toPx()
     val slackX = DockHold.ROW_SLACK_X.toPx()
     val slackY = DockHold.ROW_SLACK_Y.toPx()
     awaitEachGesture {
@@ -194,37 +203,26 @@ internal fun <T> Modifier.dockHold(
 
         menu.isPressed = true
         var early: DockHold.Early? = null
+        var at = down.position
         withTimeoutOrNull(DockHold.HOLD_MS) {
             while (early == null) {
                 val ev = awaitPointerEvent()
                 val change = ev.changes.firstOrNull { it.id == down.id }
                 val released = change == null || !change.pressed
-                val moved = change?.let { (it.position - down.position).getDistance() } ?: 0f
-                early = DockHold.early(released, moved, cancelPx)
+                change?.let { at = it.position }
+                early = DockHold.early(released, (at - down.position).getDistance(), openPx)
             }
         }
-
-        when (early) {
-            DockHold.Early.TAP -> {
-                menu.isPressed = false
-                onTap()
-                return@awaitEachGesture
-            }
-            DockHold.Early.CANCEL -> {
-                menu.isPressed = false
-                // Slid off before the hold landed: neither a tap nor a hold.
-                do {
-                    val ev = awaitPointerEvent()
-                } while (ev.changes.any { it.pressed })
-                return@awaitEachGesture
-            }
-            null -> Unit
-        }
-
         menu.isPressed = false
+        if (early == DockHold.Early.TAP) {
+            onTap()
+            return@awaitEachGesture
+        }
+
+        // Held, or slid: open, and track the finger from this frame on.
         DockHold.perform(view, DockHold.Haptic.OPEN)
         menu.open(coordinates()?.boundsInRoot() ?: Rect.Zero)
-        var last = toRoot(down.position)
+        var last = toRoot(at)
         while (true) {
             val ev = awaitPointerEvent()
             val change = ev.changes.firstOrNull { it.id == down.id } ?: break
@@ -246,8 +244,18 @@ internal fun <T> Modifier.dockHold(
     }
 }
 
-/** One menu row: its icon, name, whether it is what shows now, and a red dot. */
-data class DockHoldRow(val icon: ImageVector, val label: String, val current: Boolean, val hasNews: Boolean = false)
+/**
+ * One menu row: its icon (or an account's picture), name, whether it is what
+ * shows now, and a red dot on the icon when it has something new.
+ */
+data class DockHoldRow(
+    val icon: ImageVector?,
+    val label: String,
+    val current: Boolean,
+    val hasNews: Boolean = false,
+    /** An account row: its pubkey and picture, drawn in place of [icon]. */
+    val avatar: Pair<String, String?>? = null,
+)
 
 /**
  * The menu itself, drawn over the whole window above the bar, growing up
@@ -286,12 +294,14 @@ fun <T> DockHoldMenuOverlay(
         val heightPx = with(density) { maxHeight.toPx() }
         val marginPx = with(density) { 12.dp.toPx() }
         val bottomPx = maxOf(marginPx, heightPx - (anchor.top - rootOrigin.y) + with(density) { 10.dp.toPx() })
-        val sidePx = if (menu.alignEnd) {
+        // The side of the screen the button is on (iOS: anchor.midX > midX).
+        val trailing = anchor.center.x - rootOrigin.x > widthPx / 2
+        val sidePx = if (trailing) {
             maxOf(marginPx, widthPx - (anchor.right - rootOrigin.x))
         } else {
             maxOf(marginPx, anchor.left - rootOrigin.x)
         }
-        val origin = TransformOrigin(if (menu.alignEnd) 1f else 0f, 1f)
+        val origin = TransformOrigin(if (trailing) 1f else 0f, 1f)
         Box(
             Modifier
                 .fillMaxSize()
@@ -303,15 +313,15 @@ fun <T> DockHoldMenuOverlay(
                     scaleIn(DockHold.swiftSpring(0.22f, 0.84f), initialScale = 0.6f, transformOrigin = origin),
                 exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.6f, transformOrigin = origin),
                 modifier = Modifier
-                    .align(if (menu.alignEnd) Alignment.BottomEnd else Alignment.BottomStart)
-                    .offset { IntOffset(if (menu.alignEnd) -sidePx.roundToInt() else sidePx.roundToInt(), -bottomPx.roundToInt()) },
+                    .align(if (trailing) Alignment.BottomEnd else Alignment.BottomStart)
+                    .offset { IntOffset(if (trailing) -sidePx.roundToInt() else sidePx.roundToInt(), -bottomPx.roundToInt()) },
             ) {
+                // iOS: applyGlassRect(cornerRadius: 22) + shadow(.black 0.35, radius 18, y 6).
                 Column(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier
-                        .shadow(18.dp, RoundedCornerShape(22.dp))
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(SecondaryGroupedBg.copy(alpha = 0.97f))
+                        .shadow(18.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black.copy(alpha = 0.35f), spotColor = Color.Black.copy(alpha = 0.35f))
+                        .glassRectBackground(cornerRadius = 22.dp, isOled = LocalOledMode.current)
                         .padding(6.dp),
                 ) {
                     for (item in items.reversed()) {
@@ -359,23 +369,40 @@ private fun DockHoldMenuRow(
             .clip(RoundedCornerShape(14.dp))
             .background(if (hovered) accent else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 14.dp)
+            .semantics(mergeDescendants = true) { if (spec.hasNews) stateDescription = "New activity" },
     ) {
-        Icon(spec.icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        // The icon in a 24 dp frame, the red dot on its top-right corner (iOS).
+        Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            val avatar = spec.avatar
+            if (avatar != null) {
+                AvatarImage(url = avatar.second, pubkey = avatar.first, size = 24.dp, displayName = spec.label)
+            } else if (spec.icon != null) {
+                Icon(spec.icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
+            }
+            if (spec.hasNews) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp)
+                        .size(8.dp)
+                        .background(ErrorRed, CircleShape),
+                )
+            }
+        }
         Spacer(Modifier.width(10.dp))
         Text(
             text = spec.label,
             color = tint,
             fontSize = 16.sp,
             fontWeight = if (spec.current) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        if (spec.hasNews) {
-            Box(Modifier.size(8.dp).background(ErrorRed, CircleShape))
-            Spacer(Modifier.width(6.dp))
-        }
         if (spec.current) {
-            Icon(NostrVaultIcons.Check, contentDescription = "Showing now", tint = tint, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(16.dp))
+            Icon(NostrVaultIcons.Check, contentDescription = "Showing now", tint = tint, modifier = Modifier.size(13.dp))
         }
     }
 }
