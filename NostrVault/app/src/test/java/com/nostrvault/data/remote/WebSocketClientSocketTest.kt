@@ -170,6 +170,56 @@ class WebSocketClientSocketTest {
         raw.close()
     }
 
+    /**
+     * A relay that offers permessage-deflate still gets plain frames from us:
+     * OkHttp's deflate writer crashed the app on its own thread (10-31).
+     */
+    @Test
+    fun `what we send is never deflated, even when the relay offers it`() {
+        val raw = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        var firstByte = -1
+        val serverThread = thread(isDaemon = true) {
+            raw.accept().use { s ->
+                val input = s.getInputStream()
+                val head = StringBuilder()
+                while (!head.endsWith("\r\n\r\n")) {
+                    val b = input.read()
+                    if (b < 0) return@thread
+                    head.append(b.toChar())
+                }
+                val key = head.lines().first { it.startsWith("Sec-WebSocket-Key:", ignoreCase = true) }
+                    .substringAfter(':').trim()
+                val accept = Base64.getEncoder().encodeToString(
+                    MessageDigest.getInstance("SHA-1")
+                        .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()),
+                )
+                val out = s.getOutputStream()
+                out.write(
+                    ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                        "Sec-WebSocket-Extensions: permessage-deflate\r\n" +
+                        "Sec-WebSocket-Accept: $accept\r\n\r\n").toByteArray(),
+                )
+                out.flush()
+                firstByte = input.read()
+                Thread.sleep(300)
+            }
+        }
+        val c = client("ws://127.0.0.1:${raw.localPort}/")
+        c.connect()
+        waitFor("open") { c.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+        assertTrue(c.send("[\"EVENT\",{\"content\":\"${"a".repeat(8_192)}\"}]"))
+        serverThread.join(3_000)
+        raw.close()
+        assertEquals("text frame, FIN", 0x81, firstByte and 0x8F)
+        assertEquals("RSV1 set: the frame was deflated", 0, firstByte and 0x40)
+    }
+
+    @Test
+    fun `both shared clients never deflate`() {
+        assertEquals(Long.MAX_VALUE, WebSocketClient.sharedClient.minWebSocketMessageToCompress)
+        assertEquals(Long.MAX_VALUE, WebSocketClient.sharedLocalhostClient.minWebSocketMessageToCompress)
+    }
+
     @Test
     fun `OkHttp pings are off on both shared clients`() {
         assertEquals(0, WebSocketClient.sharedClient.pingIntervalMillis)
