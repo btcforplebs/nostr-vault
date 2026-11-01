@@ -363,6 +363,15 @@ struct VaultView: View {
         .onChange(of: vaultSection.opensNewActivity, initial: true) { _, opens in
             if opens { openNewActivity() }
         }
+        // The Vault tab's hold menu: what it ticks, and the page picked in it.
+        .onChange(of: vaultMode, initial: true) { _, mode in
+            if vaultTabHostsMedia { vaultSection.listMode = mode }
+        }
+        .onChange(of: vaultSection.pendingMode, initial: true) { _, mode in
+            guard vaultTabHostsMedia, let mode else { return }
+            vaultSection.pendingMode = nil
+            mode.select()
+        }
         .onChange(of: modeInSight, initial: true) { old, mode in
             if let mode { relayManager.markRelayViewed(mode) }
             if mode == .activity { activityVisit(arriving: true) } else if old == .activity { activityVisit(arriving: false) }
