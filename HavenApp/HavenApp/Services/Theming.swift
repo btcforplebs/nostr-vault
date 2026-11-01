@@ -145,19 +145,33 @@ extension Font {
     @MainActor
     static func appSystem(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
         let scale = ConfigService.shared.config.textSizeScale
-        return .system(size: size * CGFloat(scale), weight: weight, design: design)
+        return .system(size: AppTypeScale.floored(size * CGFloat(scale), mac: isMac), weight: weight, design: design)
     }
 
-    // Scaled semantic font styles (approximate HIG base sizes)
-    @MainActor static var appLargeTitle: Font { .appSystem(size: 34, weight: .regular) }
-    @MainActor static var appTitle: Font { .appSystem(size: 28, weight: .bold) }
-    @MainActor static var appTitle2: Font { .appSystem(size: 22, weight: .bold) }
-    @MainActor static var appTitle3: Font { .appSystem(size: 20, weight: .regular) }
-    @MainActor static var appHeadline: Font { .appSystem(size: 17, weight: .semibold) }
-    @MainActor static var appBody: Font { .appSystem(size: 17, weight: .regular) }
-    @MainActor static var appCallout: Font { .appSystem(size: 16, weight: .regular) }
-    @MainActor static var appSubheadline: Font { .appSystem(size: 15, weight: .regular) }
-    @MainActor static var appFootnote: Font { .appSystem(size: 13, weight: .regular) }
-    @MainActor static var appCaption: Font { .appSystem(size: 12, weight: .regular) }
-    @MainActor static var appCaption2: Font { .appSystem(size: 11, weight: .regular) }
+    private static var isMac: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    @MainActor
+    private static func app(_ style: AppTypeScale.Style, weight: Font.Weight) -> Font {
+        .appSystem(size: AppTypeScale.size(style, mac: isMac), weight: weight)
+    }
+
+    // Scaled semantic text styles: iOS sizes on iPhone/iPad, macOS sizes on
+    // the Mac (see AppTypeScale).
+    @MainActor static var appLargeTitle: Font { app(.largeTitle, weight: .regular) }
+    @MainActor static var appTitle: Font { app(.title, weight: .bold) }
+    @MainActor static var appTitle2: Font { app(.title2, weight: .bold) }
+    @MainActor static var appTitle3: Font { app(.title3, weight: .regular) }
+    @MainActor static var appHeadline: Font { app(.headline, weight: .semibold) }
+    @MainActor static var appBody: Font { app(.body, weight: .regular) }
+    @MainActor static var appCallout: Font { app(.callout, weight: .regular) }
+    @MainActor static var appSubheadline: Font { app(.subheadline, weight: .regular) }
+    @MainActor static var appFootnote: Font { app(.footnote, weight: .regular) }
+    @MainActor static var appCaption: Font { app(.caption, weight: .regular) }
+    @MainActor static var appCaption2: Font { app(.caption2, weight: .regular) }
 }

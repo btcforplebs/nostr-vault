@@ -75,6 +75,7 @@ struct HavenApp: App {
                 .frame(minWidth: 800, minHeight: 640)
         }
         .defaultSize(width: 1000, height: 860)
+        .commands { MacAppCommands() }
         #else
         WindowGroup {
             MenuBarContent(configService: configService, relayManager: relayManager)

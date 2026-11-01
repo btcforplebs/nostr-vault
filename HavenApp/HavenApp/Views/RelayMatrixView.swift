@@ -519,14 +519,23 @@ struct RelayMatrixView: View {
                     .font(.appBody)
                     .lineLimit(1)
             }
+            #if os(iOS)
             NavigationLink {
                 BlossomSettingsView()
                     .navigationTitle("Media Servers")
             } label: {
-                Text(mirrors.isEmpty ? "Add a media server" : "Edit media servers")
-                    .font(.appBody)
-                    .foregroundColor(.havenPurple)
+                mediaServersLinkLabel(empty: mirrors.isEmpty)
             }
+            #else
+            // The Mac's Settings is a sidebar with no navigation stack, so a
+            // NavigationLink here did nothing; switch it to Media Servers.
+            Button {
+                NotificationCenter.default.post(name: .havenOpenMediaServerSettings, object: nil)
+            } label: {
+                mediaServersLinkLabel(empty: mirrors.isEmpty)
+            }
+            .buttonStyle(.plain)
+            #endif
         } header: {
             Text("Media Servers")
         } footer: {
@@ -538,6 +547,12 @@ struct RelayMatrixView: View {
 
     /// Recomputed when the Recommended page opens or a list changes, not on
     /// every render: it walks every follow's relay list.
+    private func mediaServersLinkLabel(empty: Bool) -> some View {
+        Text(empty ? "Add a media server" : "Edit media servers")
+            .font(.appBody)
+            .foregroundColor(.havenPurple)
+    }
+
     private func refreshSuggestions() {
         let follows = FeedService.shared.followedPubkeys
         let outbox = NostrService.shared.outboxRelays

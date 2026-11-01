@@ -460,6 +460,39 @@ enum MacWindow {
         let npub: String?
     }
 
+    /// A main-window tab asked for from the Go menu. Parked like
+    /// `pendingCompose`: the window may not exist yet when the menu is used.
+    @MainActor static var pendingTab: MenuBarView.Tab?
+
+    @MainActor
+    static func consumePendingTab() -> MenuBarView.Tab? {
+        defer { pendingTab = nil }
+        return pendingTab
+    }
+
+    /// Opens the main window on `tab`. The flag covers a window that has yet
+    /// to mount, the notification one already on screen; whichever lands
+    /// first consumes the flag.
+    @MainActor
+    static func show(tab: MenuBarView.Tab) {
+        pendingTab = tab
+        openMainFromAppKit()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .havenSelectMainTab, object: nil)
+        }
+    }
+
+    /// Opens the main window with the composer, from anywhere: the same two
+    /// mechanisms as `show(tab:)`.
+    @MainActor
+    static func newNote() {
+        pendingCompose = true
+        openMainFromAppKit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            NotificationCenter.default.post(name: .composeFromTabBar, object: 1)
+        }
+    }
+
     @MainActor static var pendingRoute: NotificationRoute?
 
     /// Reads and clears the pending notification route.
@@ -568,6 +601,33 @@ struct MenuBarIconLabel: View {
                     MacWindow.openWindowAction = openWindow
                 }
             }
+    }
+}
+
+/// The app's menus. Before this there were none: ⌘1–6 and ⌘N were hidden
+/// zero-size buttons in the main window, shown in no menu and dead unless that
+/// window had focus. ⌘, is the Settings scene's own App-menu item.
+struct MacAppCommands: Commands {
+    private static let goItems: [(title: String, tab: MenuBarView.Tab, key: KeyEquivalent)] = [
+        ("Feed", .feed, "1"),
+        ("Search", .search, "2"),
+        ("My Profile", .profile, "3"),
+        ("Relay", .relay, "4"),
+        ("Notes", .notes, "5"),
+        ("Media", .media, "6"),
+    ]
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Note") { MacWindow.newNote() }
+                .keyboardShortcut("n", modifiers: .command)
+        }
+        CommandMenu("Go") {
+            ForEach(Self.goItems, id: \.title) { item in
+                Button(item.title) { MacWindow.show(tab: item.tab) }
+                    .keyboardShortcut(item.key, modifiers: .command)
+            }
+        }
     }
 }
 

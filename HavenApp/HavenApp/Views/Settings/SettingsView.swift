@@ -185,6 +185,9 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFipsMeshSettings)) { _ in
             selectedTab = .fipsMesh
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenMediaServerSettings)) { _ in
+            selectedTab = .blossom
+        }
         #endif
     }
 

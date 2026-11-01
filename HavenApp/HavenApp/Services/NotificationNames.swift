@@ -44,6 +44,10 @@ extension Notification.Name {
     static let havenOpenFeedRelaySettings = Notification.Name("com.haven.openFeedRelaySettings")
     /// Posted by the FIPS link on Media Servers (Mac): switches Settings to FIPS Mesh.
     static let havenOpenFipsMeshSettings = Notification.Name("com.haven.openFipsMeshSettings")
+    /// Posted by "Edit media servers" on Relays (Mac): switches Settings to Media Servers.
+    static let havenOpenMediaServerSettings = Notification.Name("com.haven.openMediaServerSettings")
+    /// Posted by the Mac Go menu after it parks a tab in `MacWindow.pendingTab`.
+    static let havenSelectMainTab = Notification.Name("com.haven.selectMainTab")
     /// Posted to open the Settings view from any context (e.g. profile toolbar, footer gear).
     static let havenOpenSettings = Notification.Name("com.haven.openSettings")
     /// Posted by FeedView when scroll direction changes — object is Bool (true = scrolling down = collapse tab bar).

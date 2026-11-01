@@ -11,7 +11,6 @@ struct MenuBarView: View {
     #endif
     @State var settingsPaneRequest: SettingsView.SettingsTab?
     #if os(macOS)
-    @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
     #else
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
@@ -78,6 +77,16 @@ struct MenuBarView: View {
                 }
             }
             .disabled(relayManager.isImporting) // Disable interaction when importing
+            #if os(macOS)
+            // Keyboard shortcuts live in the app menus (MacAppCommands), not in
+            // hidden buttons: those showed in no menu and only worked while
+            // this window had focus. The Go menu raises this window and lands
+            // here. (On this inner Group: the body's own modifier chain is at
+            // the type-checker's limit.)
+            .onReceive(NotificationCenter.default.publisher(for: .havenSelectMainTab)) { _ in
+                if let tab = MacWindow.consumePendingTab() { selectedTab = tab }
+            }
+            #endif
 
             importOverlay
 
@@ -187,6 +196,7 @@ struct MenuBarView: View {
             if MacWindow.consumePendingCompose(), configService.activeAccountCanSign {
                 showingCompose = true
             }
+            if let tab = MacWindow.consumePendingTab() { selectedTab = tab }
             // A notification tapped while this window did not exist left its
             // route here rather than posting it to nobody. Replayed as a post,
             // not as direct state, so a tap takes the same path either way —
@@ -221,40 +231,6 @@ struct MenuBarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenSettings)) { _ in
             selectedTab = .settings
-        }
-        // MARK: - Keyboard Shortcuts
-        .background {
-            Group {
-                Button("") { selectedTab = .feed }
-                    .keyboardShortcut("1", modifiers: .command)
-                Button("") { selectedTab = .search }
-                    .keyboardShortcut("2", modifiers: .command)
-                Button("") { selectedTab = .profile }
-                    .keyboardShortcut("3", modifiers: .command)
-                Button("") { selectedTab = .relay }
-                    .keyboardShortcut("4", modifiers: .command)
-                Button("") { selectedTab = .notes }
-                    .keyboardShortcut("5", modifiers: .command)
-                Button("") { selectedTab = .media }
-                    .keyboardShortcut("6", modifiers: .command)
-                // ⌘, opens the real Settings scene declared in HavenApp.swift.
-                // It used to select the .settings tab instead, which left that
-                // scene reachable from nothing in the entire app — `openSettings`
-                // was declared here and never called. The status panel now does
-                // the same thing, so the shortcut means one thing everywhere.
-                //
-                // The sidebar's embedded Settings tab is untouched and still
-                // works; whether a window that hosts settings inline should also
-                // have a separate Settings window is a design call, not mine.
-                Button("") { openSettings() }
-                    .keyboardShortcut(",", modifiers: .command)
-                Button("") {
-                    NotificationCenter.default.post(name: .composeFromTabBar, object: 1)
-                }
-                    .keyboardShortcut("n", modifiers: .command)
-            }
-            .frame(width: 0, height: 0)
-            .opacity(0)
         }
         #endif
         .onReceive(ConfigService.shared.$activeAccountHexPubkey) { newHex in
