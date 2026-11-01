@@ -81,8 +81,11 @@ internal fun EngagementBar(
     onLongPressZap: ((String) -> Unit)? = null,
     zapDimmed: Boolean = false,
     engagement: PostEngagement? = null,
-    /** Web of Trust for the author; null on your own notes and where it isn't offered. */
-    onTrustWeb: (() -> Unit)? = null,
+    /**
+     * Event Info: the note's relays and Broadcast (iOS FeedNoteRow's antenna
+     * button, last in the row). Null where it isn't offered.
+     */
+    onBroadcast: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     fun label(value: Long) = engagement?.let { postEngagementLabel(value, it.isAtLeast(value)) }
@@ -176,15 +179,16 @@ internal fun EngagementBar(
             )
         }
 
-        // Web of Trust: how you reach the author. Opens a map, publishes
-        // nothing, so it never shows as active.
-        if (onTrustWeb != null) {
+        // Event Info, as on iOS: the relays the note is on and Broadcast.
+        // Opens a sheet, publishes nothing by itself, so it never shows as
+        // active. Web of Trust stays on the author's menu and profile.
+        if (onBroadcast != null) {
             EngagementButton(
-                icon = NostrVaultIcons.TabWoT,
+                icon = NostrVaultIcons.Relay,
                 isActive = false,
                 activeColor = SecondaryText,
-                contentDescription = "Web of Trust",
-                onClick = onTrustWeb,
+                contentDescription = "Event Info",
+                onClick = onBroadcast,
             )
         }
 

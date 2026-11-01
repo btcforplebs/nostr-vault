@@ -157,9 +157,7 @@ fun NoteCard(
                 },
             )
         }
-        onBroadcast?.let { broadcast ->
-            add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = { broadcast(note.effectiveEventId) }))
-        }
+        // Broadcast is the action bar's last button, as on iOS, not a menu item.
         if (isOwnNote) {
             onDelete?.let {
                 add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = it))
@@ -564,6 +562,7 @@ fun NoteCard(
                 onLongPressZap = onLongPressZap,
                 zapDimmed = zapDimmed,
                 engagement = engagement,
+                onBroadcast = onBroadcast?.let { broadcast -> { broadcast(note.effectiveEventId) } },
             )
         }
         } // Box (focused tint overlay)
