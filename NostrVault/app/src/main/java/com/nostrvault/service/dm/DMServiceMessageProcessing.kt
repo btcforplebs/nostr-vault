@@ -1,8 +1,8 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.VerifiedEvents
 import android.util.Log
 import com.nostrvault.BuildConfig
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -146,7 +146,7 @@ import com.nostrvault.service.DMService.Companion.TAG
     ) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
-        if (!HavenBridge.verifyEvent(eventObj.toString())) return
+        if (!VerifiedEvents.verify(eventObj)) return
         if (fromExternal) injectExternalDmIntoLocalRelay(eventObj, eventId, 4)
         if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
 

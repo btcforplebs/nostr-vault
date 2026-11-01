@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.VerifiedEvents
 import android.util.Log
 import com.nostrvault.data.model.*
 import com.nostrvault.relay.HavenBridge
@@ -130,7 +131,7 @@ import com.nostrvault.service.FeedService.Companion.THREAD_REPLIES_SETTLE_MS
             val replies = events.mapNotNull { ev ->
                 threadReplyFrom(ev)?.takeIf {
                     it.id !in known && !isDeleted(it.id) && FeedThreadReplies.admits(it, roots, blocked, trusted) &&
-                        HavenBridge.verifyEvent(ev.toString())
+                        VerifiedEvents.verify(ev)
                 }
             }
             if (replies.isEmpty()) continue

@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.VerifiedEvents
 import com.nostrvault.data.model.*
 import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.data.remote.WebSocketClient
@@ -275,7 +276,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             // These come from relay hints and outboxes named in other people's
             // notes: any of them can send a note under the wanted id and any
             // author's name. Only a valid id hash and signature make it real.
-            if (!HavenBridge.verifyEvent(eventObj.toString())) return null
+            if (!VerifiedEvents.verify(eventObj)) return null
             val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return null
             val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
             val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
@@ -382,7 +383,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             if (coordinates.none { it.first == raw }) return
             // A relay can send anything: only an event signed by the author
             // the address names counts. A `nostr:naddr1…` link opens this.
-            if (!HavenBridge.verifyEvent(eventObj.toString())) return
+            if (!VerifiedEvents.verify(eventObj)) return
 
             val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
             withContext(Dispatchers.Main.immediate) {

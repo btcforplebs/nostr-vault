@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.relay.VerifiedEvents
 import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -9,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.remote.WebSocketClient
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.TopicFeedScreener
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
@@ -194,7 +194,7 @@ abstract class HashtagNotesViewModel(
     private val screener = TopicFeedScreener(
         scope = viewModelScope,
         query = ::lookupQuery,
-        isValid = HavenBridge::verifyEvent,
+        isValid = { VerifiedEvents.verify(it) },
         onShown = { notes ->
             _fromOthers.value = notes
             if (notes.isNotEmpty()) _isLoading.value = false
@@ -527,7 +527,7 @@ abstract class HashtagNotesViewModel(
                             when ((array[0] as? JsonPrimitive)?.contentOrNull) {
                                 "EVENT" -> {
                                     val event = array.getOrNull(2) as? JsonObject ?: return@collect
-                                    if (HavenBridge.verifyEvent(event.toString())) onEvent(event)
+                                    if (VerifiedEvents.verify(event)) onEvent(event)
                                 }
                                 "EOSE", "CLOSED" -> {
                                     val all = synchronized(answered) { answered.add(url); answered.size >= relays.size }
@@ -609,7 +609,7 @@ abstract class HashtagNotesViewModel(
             val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
             note.takeIf {
                 !FeedFilterEngine.involvesBlocked(it, blocked) { ref -> feedService.findNote(ref)?.pubkey } &&
-                    HavenBridge.verifyEvent(event.toString())
+                    VerifiedEvents.verify(event)
             }
         }
     } catch (e: Exception) {

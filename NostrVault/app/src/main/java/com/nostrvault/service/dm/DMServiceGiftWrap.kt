@@ -1,8 +1,8 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.VerifiedEvents
 import android.util.Log
 import com.nostrvault.BuildConfig
-import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
@@ -27,7 +27,7 @@ import com.nostrvault.service.DMService.Companion.TAG
         // real event's id cannot shadow the real one. A relay can serve any event
         // under any author; NIP-04 has no MAC, so a re-IV'd copy of a real DM
         // decrypts to altered text. Only the signature ties it to its author.
-        if (!HavenBridge.verifyEvent(eventObj.toString())) return
+        if (!VerifiedEvents.verify(eventObj)) return
         if (fromExternal) injectExternalDmIntoLocalRelay(eventObj, eventId, 1059)
         if (seenGiftWrapIds.contains(eventId)) { if (BuildConfig.DEBUG) Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
 

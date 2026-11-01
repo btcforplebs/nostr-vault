@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.relay.VerifiedEvents
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.ContactList
 import com.nostrvault.data.model.FollowListFilter
@@ -7,7 +8,6 @@ import com.nostrvault.data.model.TrustMap
 import com.nostrvault.data.model.TrustMapWider
 import com.nostrvault.data.model.TrustLinks
 import com.nostrvault.data.model.TrustPath
-import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.RelayConfiguration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -280,7 +280,7 @@ class TrustPathService @Inject constructor(
             listOf("""{"#p":["$me"],"kinds":[$kinds],"limit":$ENGAGEMENT_LIMIT}"""), inward)
         return withContext(Dispatchers.Default) {
             fun interactions(events: List<kotlinx.serialization.json.JsonObject>) = events
-                .filter { HavenBridge.verifyEvent(it.toString()) }
+                .filter { VerifiedEvents.verify(it) }
                 .mapNotNull { e ->
                     val pubkey = (e["pubkey"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
                         ?: return@mapNotNull null
@@ -317,7 +317,7 @@ class TrustPathService @Inject constructor(
             onAnswered = answered?.let { flag -> { flag.set(true) } },
         )
         return withContext(Dispatchers.Default) {
-            events.filter { HavenBridge.verifyEvent(it.toString()) }.mapNotNull(ContactList::from)
+            events.filter { VerifiedEvents.verify(it) }.mapNotNull(ContactList::from)
         }
     }
 
