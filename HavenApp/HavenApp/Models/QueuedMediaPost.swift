@@ -144,4 +144,16 @@ enum PostingAccount {
         return resolve(active: activeNow, owner: owner) == lockedNpub
             && eventPubkey.lowercased() == lockedHex.lowercased()
     }
+
+    /// The account to switch to before a note can be posted for `postAs`, or
+    /// nil when it already is the active one (or no account was asked for).
+    /// A reply from a note opened as another account (a Vault line) carries
+    /// that account; any switch since then (a notification tap, the switcher)
+    /// would otherwise sign the reply with whichever key is active now.
+    /// Switching to the owner returns the owner's npub, which
+    /// `switchActiveAccount` stores as "".
+    static func switchTarget(postAs: String?, active: String, owner: String) -> String? {
+        guard let wanted = postAs?.trimmingCharacters(in: .whitespacesAndNewlines), !wanted.isEmpty else { return nil }
+        return resolve(active: active, owner: owner) == wanted ? nil : wanted
+    }
 }

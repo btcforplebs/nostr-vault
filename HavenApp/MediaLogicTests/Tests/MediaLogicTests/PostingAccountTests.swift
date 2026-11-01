@@ -31,4 +31,21 @@ final class PostingAccountTests: XCTestCase {
     func testMissingLockedKeyIsRefused() {
         XCTAssertFalse(PostingAccount.signedAsLocked(lockedNpub: owner, lockedHex: "", activeNow: "", owner: owner, eventPubkey: ""))
     }
+
+    /// A reply carries the account its note was opened as; posting it needs
+    /// that account active, whatever was switched to in between.
+    func testSwitchTargetForAReplyFromAnotherAccount() {
+        // Opened as alt, owner active now (a notification tap): switch to alt.
+        XCTAssertEqual(PostingAccount.switchTarget(postAs: alt, active: "", owner: owner), alt)
+        XCTAssertEqual(PostingAccount.switchTarget(postAs: alt, active: owner, owner: owner), alt)
+        // Opened as owner, alt active now: back to the owner.
+        XCTAssertEqual(PostingAccount.switchTarget(postAs: owner, active: alt, owner: owner), owner)
+        // Already the right account, in either stored form of the owner.
+        XCTAssertNil(PostingAccount.switchTarget(postAs: alt, active: alt, owner: owner))
+        XCTAssertNil(PostingAccount.switchTarget(postAs: owner, active: "", owner: owner))
+        XCTAssertNil(PostingAccount.switchTarget(postAs: " \(alt) ", active: alt, owner: owner))
+        // No account asked for: post as whoever is active.
+        XCTAssertNil(PostingAccount.switchTarget(postAs: nil, active: alt, owner: owner))
+        XCTAssertNil(PostingAccount.switchTarget(postAs: "  ", active: alt, owner: owner))
+    }
 }
