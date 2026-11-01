@@ -178,16 +178,16 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
 
     /**
      * Called when the app is backgrounded.
-     * Persists a snapshot for instant resume and disconnects feed WebSockets
-     * to free network/memory while the relay keeps running via the foreground service.
+     * Persists a snapshot for instant resume now; the feed WebSockets close
+     * [FeedService.PAUSE_GRACE_MS] later ([FeedService.pauseGrace]), to free
+     * network/memory while the relay keeps running via the foreground service.
+     * A quicker return finds them open.
      */
     internal fun FeedService.pauseFeedImpl() {
-        if (BuildConfig.DEBUG) Log.d(TAG, "pauseFeed: persisting snapshot and disconnecting feed clients")
+        if (BuildConfig.DEBUG) Log.d(TAG, "pauseFeed: persisting snapshot; feed clients close after the grace")
         persistCurrentSnapshot()
         saveInteractionState()
-        teardownAllFeedClients()
-        _connectionStatus.value = "Paused"
-        _connectionColor.value = "gray"
+        pauseGrace.pause()
     }
 
     /**
@@ -198,6 +198,16 @@ import com.nostrvault.service.FeedService.Companion.OUTBOX_RELAY_LIST_SETTLE_MS
      */
     internal fun FeedService.resumeFeedImpl() {
         if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
+
+        // Back inside the grace: the sockets never closed and their REQs are
+        // still live, so there is nothing to redial. A socket that dropped
+        // meanwhile is redialling on its own; give it a fresh set of tries.
+        if (pauseGrace.resume() && feedClients.isNotEmpty()) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "resumeFeed: back inside the grace, sockets kept")
+            feedClients.values.forEach { it.resetReconnect() }
+            prewarmAvatarCache(_notes.value)
+            return
+        }
 
         // A launch that restores the saved feed never reaches startInitialLoad,
         // which is otherwise where Global and Discovery get their trust graph.

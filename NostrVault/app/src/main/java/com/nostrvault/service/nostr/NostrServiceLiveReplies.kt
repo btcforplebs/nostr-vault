@@ -2,8 +2,6 @@ package com.nostrvault.service
 
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NIP10Thread
-import com.nostrvault.data.remote.WebSocketClient
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -91,9 +89,10 @@ object LiveThreadReplies {
 
 /**
  * New replies to an open thread, as they reach the detail relays (local, inbox,
- * read and write relays: the set [queryDetailRelays] asks). One socket per relay,
- * the REQ re-sent on every reconnect; cancelling the collector CLOSEs it and
- * disconnects. Messages are parsed on [Dispatchers.Default].
+ * read and write relays: the set [queryDetailRelays] asks). Each relay's REQ
+ * rides the feed's open socket to it when there is one, else the lookup pool's
+ * ([LookupSocketPool.stream]), and is sent again when that socket drops;
+ * cancelling the collector CLOSEs it. Messages are parsed on [Dispatchers.Default].
  */
 fun NostrService.liveThreadReplies(
     rootId: String,
@@ -102,30 +101,13 @@ fun NostrService.liveThreadReplies(
     since: Long = System.currentTimeMillis() / 1000 - LiveThreadReplies.SINCE_SLACK_SECONDS,
 ): Flow<Pair<FeedNote, String>> = callbackFlow {
     val subId = "live-replies-${UUID.randomUUID().toString().take(8)}"
-    val request = LiveThreadReplies.request(subId, LiveThreadReplies.filters(rootId, focusedId, rootCoordinate, since))
-    val clients = detailRelayUrls().map { url ->
-        WebSocketClient(url = url, scope = this, trustLocalhost = url.contains("localhost") || url.contains("127.0.0.1"))
-    }
-    for (client in clients) {
-        // Both listen before the socket opens: the REQ goes out on CONNECTED, and messages has no replay.
-        launch(start = CoroutineStart.UNDISPATCHED) {
-            client.messages.collect { message ->
-                if (!message.contains(subId)) return@collect
+    val filters = LiveThreadReplies.filters(rootId, focusedId, rootCoordinate, since).map { it.toString() }
+    for (url in detailRelayUrls()) {
+        launch {
+            lookupPool.stream(url, subId, filters) { message ->
                 LiveThreadReplies.replyOf(message, subId)?.let { trySend(it) }
             }
         }
-        launch(start = CoroutineStart.UNDISPATCHED) {
-            client.connectionState.collect { state ->
-                if (state == WebSocketClient.ConnectionState.CONNECTED) client.send(request)
-            }
-        }
-        client.connect()
     }
-    awaitClose {
-        val close = buildJsonArray { add(JsonPrimitive("CLOSE")); add(JsonPrimitive(subId)) }.toString()
-        for (client in clients) {
-            runCatching { client.send(close) }
-            client.disconnect()
-        }
-    }
+    awaitClose {}
 }.flowOn(Dispatchers.Default)

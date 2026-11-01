@@ -71,6 +71,8 @@ class NostrService @Inject constructor(
         }
 
         internal const val TAG = "NostrService"
+        /** An older profile page's relay that hasn't answered by now is done (as [ProfileOlderPage.TIMEOUT_MS]). */
+        internal const val OLDER_PAGE_TIMEOUT_MS = 10_000L
         internal const val MAX_SEEN_IDS = 50_000
         internal const val TRIM_SEEN_IDS = 40_000
         internal const val MAX_EVENTS = 10_000
@@ -488,15 +490,18 @@ class NostrService @Inject constructor(
     /**
      * A persistent multi-relay subscription for one profile view. Mirrors iOS
      * ProfileView's profileClients: one combined REQ (notes + metadata + contacts
-     * + followers + tagged) kept open so [loadOlder]/[loadOlderTagged] can page on
-     * the same sockets. Callbacks may fire on any thread; assign them before
-     * calling [start].
+     * + followers + tagged) kept open, and [loadOlder]/[loadOlderTagged] page the
+     * same relays. Every REQ rides the feed's open socket to a relay when there
+     * is one, else the lookup pool's ([LookupSocketPool]), so opening, pausing
+     * and reopening a profile dials nothing the app already holds. Callbacks may
+     * fire on any thread; assign them before calling [start].
      */
     inner class ProfileStream(
         val pubkey: String,
         private val relayUrls: List<String>,
     ) {
-        private val clients = java.util.concurrent.CopyOnWriteArrayList<WebSocketClient>()
+        /** Relays asked so far, in order; [loadOlder] pages all of them. */
+        private val relays = java.util.concurrent.CopyOnWriteArrayList<String>()
         private val jobs = java.util.concurrent.CopyOnWriteArrayList<Job>()
         private val ourHexKeys: Set<String> =
             setOfNotNull(configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() })
@@ -510,7 +515,11 @@ class NostrService @Inject constructor(
         var onContacts: ((Int, Boolean) -> Unit)? = null
         /** A pubkey whose contact list includes [pubkey] (a follower). */
         var onFollower: ((String) -> Unit)? = null
-        /** EOSE (subId, relay URL). subId prefix is "profile-" (initial), "older-", or "older-tagged-". */
+        /**
+         * EOSE (subId, relay URL). subId prefix is "profile-" (initial), "older-", or
+         * "older-tagged-". An older page's relay that can't be reached or never
+         * answers reports one too, so the page always learns every relay is done.
+         */
         var onEose: ((String, String) -> Unit)? = null
 
         /** Relay keys this stream has asked, so [addRelays] opens only new ones. */
@@ -526,40 +535,21 @@ class NostrService @Inject constructor(
         fun addRelays(urls: List<String>) {
             for (relayUrl in urls) {
                 if (closed || !asked.add(LookupSocketPool.relayKey(relayUrl))) continue
-                val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalUrl(relayUrl))
-                clients.add(client)
-                tempClientsLock.withLock { temporaryClients.add(client) }
-
-                // Subscribe to messages BEFORE connecting (replay=0 SharedFlow).
-                val subscribed = CompletableDeferred<Unit>()
+                relays.add(relayUrl)
+                // Sent again on a new socket whenever the old one drops.
                 jobs.add(scope.launch {
-                    client.messages
-                        .onSubscription { subscribed.complete(Unit) }
-                        .collect { msg -> handleMessage(msg, relayUrl) }
-                })
-                // (Re)send the combined REQ on every CONNECTED transition.
-                jobs.add(scope.launch {
-                    client.connectionState.collect { state ->
-                        if (state == WebSocketClient.ConnectionState.CONNECTED) {
-                            client.send(buildInitialReq())
-                        }
-                    }
-                })
-                jobs.add(scope.launch {
-                    subscribed.await()
-                    client.connect()
+                    lookupPool.stream(relayUrl, initialSubId, initialFilters()) { msg -> handleMessage(msg, relayUrl) }
                 })
             }
         }
 
-        private fun buildInitialReq(): String {
-            val notes = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"limit":50}"""
-            val meta = """{"kinds":[0],"authors":["$pubkey"],"limit":1}"""
-            val contacts = """{"kinds":[3],"authors":["$pubkey"],"limit":1}"""
-            val followers = """{"kinds":[3],"#p":["$pubkey"],"limit":100}"""
-            val tagged = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"limit":50}"""
-            return "[\"REQ\",\"$initialSubId\",$notes,$meta,$contacts,$followers,$tagged]"
-        }
+        private fun initialFilters(): List<String> = listOf(
+            """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"limit":50}""",
+            """{"kinds":[0],"authors":["$pubkey"],"limit":1}""",
+            """{"kinds":[3],"authors":["$pubkey"],"limit":1}""",
+            """{"kinds":[3],"#p":["$pubkey"],"limit":100}""",
+            """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"limit":50}""",
+        )
 
         /** Pages [pubkey]'s notes older than [until]; see [OlderRequest]. */
         fun loadOlder(until: Long) = askOlder("older-", """"authors":["$pubkey"]""", until)
@@ -569,18 +559,24 @@ class NostrService @Inject constructor(
         private fun askOlder(prefix: String, who: String, until: Long): OlderRequest {
             val subId = prefix + UUID.randomUUID().toString().take(6)
             val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],$who,"until":$until,"limit":50}"""
-            return OlderRequest(subId, clients.count { it.send("[\"REQ\",\"$subId\",$filter]") })
+            val targets = if (closed) emptyList() else relays.toList()
+            for (relayUrl in targets) {
+                jobs.add(scope.launch {
+                    val outcome = lookupPool.query(relayUrl, subId, listOf(filter), OLDER_PAGE_TIMEOUT_MS) { msg ->
+                        handleMessage(msg, relayUrl)
+                    }
+                    // The relay's own EOSE went through handleMessage already.
+                    if (outcome != LookupSocketPool.Outcome.EOSE) onEose?.invoke(subId, relayUrl)
+                })
+            }
+            return OlderRequest(subId, targets.size)
         }
 
+        /** CLOSEs this profile's REQs; the sockets stay for the feed or the next lookup. */
         fun close() {
             closed = true
             jobs.forEach { it.cancel() }
             jobs.clear()
-            clients.forEach { c ->
-                c.disconnect()
-                tempClientsLock.withLock { temporaryClients.remove(c) }
-            }
-            clients.clear()
         }
 
         private fun handleMessage(msg: String, relayUrl: String) {

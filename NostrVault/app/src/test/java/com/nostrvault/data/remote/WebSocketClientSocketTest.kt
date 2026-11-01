@@ -220,4 +220,24 @@ class WebSocketClientSocketTest {
         waitFor("open") { c.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
         waitFor("dropped and redialled", timeoutMs = 4_000) { server.requestCount == 2 }
     }
+
+    @Test
+    fun `only an open lendable socket is lent, and not after it closes`() {
+        repeat(2) { server.enqueue(upgrade()) }
+        server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val url = wsUrl()
+        val plain = client(url)
+        plain.connect()
+        waitFor("plain open") { plain.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+        assertNull("not lendable", WebSocketClient.lend(url))
+        plain.disconnect()
+
+        val feed = WebSocketClient(url, scope, lendable = true).also { clients += it }
+        assertNull("not open yet", WebSocketClient.lend(url))
+        feed.connect()
+        waitFor("feed open") { feed.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+        assertTrue(WebSocketClient.lend(url.uppercase().replace("WS://", "ws://")) === feed)
+        feed.disconnect()
+        assertNull("closed", WebSocketClient.lend(url))
+    }
 }

@@ -132,6 +132,8 @@ class FeedService @Inject constructor(
         internal const val PARENT_CACHE_TRIM_TO = 400
         private const val NOTE_BATCH_DELAY_MS = 150L
         internal const val STAGGER_RELAY_MS = 200L
+        /** How long the feed keeps its sockets open in the background ([pauseGrace]). */
+        internal const val PAUSE_GRACE_MS = 60_000L
         internal const val SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L // 7 days (matches iOS)
         internal const val SNAPSHOT_MAX_NOTES = 200
         internal const val EXTENDED_NETWORK_CACHE_MS = 60 * 60 * 1000L // 1 hour
@@ -443,6 +445,16 @@ class FeedService @Inject constructor(
     internal val rawEventCache = ConcurrentHashMap<String, String>()
     internal val injectedEventIds = ConcurrentHashMap.newKeySet<String>()
     internal val feedClients = ConcurrentHashMap<String, WebSocketClient>()
+
+    /**
+     * Going to the background closes the feed's sockets only after this
+     * grace; back sooner, they are still open and nothing is redialled.
+     */
+    internal val pauseGrace = PauseGrace(scope, PAUSE_GRACE_MS) {
+        teardownAllFeedClients()
+        _connectionStatus.value = "Paused"
+        _connectionColor.value = "gray"
+    }
     // Collector Jobs per feed client (messages + connectionState). Tracked so they
     // can be cancelled on removal — client.messages is a SharedFlow that never
     // completes, so disconnect() alone leaves these coroutines (and the client)

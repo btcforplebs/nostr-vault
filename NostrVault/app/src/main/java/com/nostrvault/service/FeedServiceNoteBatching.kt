@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.data.model.*
+import com.nostrvault.data.remote.LookupSocketPool
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
@@ -32,6 +33,8 @@ import com.nostrvault.service.FeedService.Companion.MAX_SEEN_IDS
             // answers never reach the feed or your relay.
             val subId = (parsed.getOrNull(1) as? JsonPrimitive)?.contentOrNull
             if (subId != null && GlobeStorm.isGlobeSubscription(type, subId)) return
+            // Nor do the lookups that borrow them (LookupSocketPool.LENT_PREFIX).
+            if (subId != null && LookupSocketPool.isLentSubscription(type, subId)) return
 
             when (type) {
                 "EVENT" -> {

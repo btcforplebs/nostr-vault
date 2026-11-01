@@ -51,15 +51,6 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         return decided.await()
     }
 
-    /** `["OK", <eventId>, <accepted>, <message>]` for [eventId], else null. */
-    internal fun NostrService.okReply(message: String, eventId: String): Pair<Boolean, String>? = runCatching {
-        val parsed = Json.parseToJsonElement(message).jsonArray
-        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "OK") return@runCatching null
-        if (parsed[1].jsonPrimitive.contentOrNull != eventId) return@runCatching null
-        val accepted = parsed[2].jsonPrimitive.booleanOrNull ?: false
-        accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
-    }.getOrNull()
-
     /**
      * Sends [event] to [relayUrl] in the background, without the caller
      * waiting. The socket stays open until the relay answers: nos.lol,
@@ -100,9 +91,14 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
         scope.launch(Dispatchers.IO) {
             val localUrl = configStore.config.value.nostrURL
             if (localUrl != null) {
-                val client = clients[normalizeRelayUrl(localUrl)]
-                    ?: connectToRelay(localUrl, onMessage = {})
-                client?.send("[\"EVENT\",$eventJson]")
+                // The feed's open socket to it first: rebuilding the posting
+                // socket when it wasn't CONNECTED left one more open each time.
+                val sent = WebSocketClient.lend(localUrl)?.send("[\"EVENT\",$eventJson]") == true
+                if (!sent) {
+                    val client = clients[normalizeRelayUrl(localUrl)]
+                        ?: connectToRelay(localUrl, onMessage = {})
+                    client?.send("[\"EVENT\",$eventJson]")
+                }
             }
         }
 
@@ -179,23 +175,12 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     internal suspend fun NostrService.publishAwaitingOkImpl(event: NostrEvent, relayUrl: String, timeoutMs: Long = 15_000): Pair<Boolean, String> {
         if (!isValidRelayUrl(relayUrl)) return false to "bad relay address"
         val eventJson = serializeEvent(event)
+        // On the feed's open socket to the relay when it has one, else the
+        // lookup pool's, which stays open a little for the next send. Either
+        // way the socket outlives the OK (relays drop an event whose socket
+        // closes right after it; see fireAndForgetPublish).
         return withContext(Dispatchers.IO) {
-            val client = WebSocketClient(url = relayUrl, scope = scope)
-            try {
-                withTimeoutOrNull(timeoutMs) {
-                    coroutineScope {
-                        // Listen before connecting; the flow does not replay.
-                        val answer = async(start = CoroutineStart.UNDISPATCHED) {
-                            client.messages.mapNotNull { okReply(it, event.id) }.first()
-                        }
-                        client.connect()
-                        client.send("[\"EVENT\",$eventJson]")
-                        answer.await()
-                    }
-                } ?: (false to "it didn't answer")
-            } finally {
-                client.disconnect()
-            }
+            lookupPool.publish(relayUrl, event.id, eventJson, timeoutMs)
         }
     }
 

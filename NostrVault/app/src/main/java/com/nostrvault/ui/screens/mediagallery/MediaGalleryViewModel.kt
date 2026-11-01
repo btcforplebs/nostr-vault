@@ -51,7 +51,8 @@ class MediaGalleryViewModel @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val httpClient = OkHttpClient.Builder()
+    // The app's shared pool ([ImageHttp]), not a new one per screen.
+    private val httpClient = com.nostrvault.service.ImageHttp.root.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()

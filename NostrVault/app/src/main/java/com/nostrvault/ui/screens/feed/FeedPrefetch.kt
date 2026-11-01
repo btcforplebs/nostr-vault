@@ -138,11 +138,12 @@ internal fun prefetchItemsForThread(
 
 /**
  * The prefetch lane's HTTP client: its own [Dispatcher], so prefetches queue
- * among themselves and not ahead of the rows on screen, which use the app
- * loader's client. Same timeouts as that client.
+ * among themselves and not ahead of the rows on screen. Otherwise the app's
+ * image client ([ImageHttp.images]): same connections and the same local
+ * blossom cache as the rows it fetches for.
  */
 private val prefetchHttpClient: OkHttpClient by lazy {
-    OkHttpClient.Builder()
+    com.nostrvault.service.ImageHttp.images.newBuilder()
         .dispatcher(Dispatcher().apply {
             maxRequests = MAX_CONCURRENT
             maxRequestsPerHost = MAX_CONCURRENT

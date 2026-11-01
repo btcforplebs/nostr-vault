@@ -4,12 +4,11 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.LiveStatusBook
 import com.nostrvault.data.model.LiveStream
-import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.data.remote.LookupSocketPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +37,7 @@ import javax.inject.Singleton
 class LiveStatusService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val lookupPool: LookupSocketPool,
 ) {
     companion object {
         private const val TAG = "LiveStatusService"
@@ -45,7 +45,7 @@ class LiveStatusService @Inject constructor(
         private const val BATCH_DELAY_MS = 600L
         /** Relays cap filter sizes; larger batches are split. */
         private const val MAX_PER_FILTER = 150
-        /** A lookup is closed after this, answered or not. */
+        /** A lookup ends at the relay's EOSE, or is closed after this. */
         private const val LOOKUP_TIMEOUT_MS = 10_000L
     }
 
@@ -104,29 +104,21 @@ class LiveStatusService @Inject constructor(
         republish()
         if (due.isEmpty()) return
 
-        val filters = due.chunked(MAX_PER_FILTER).joinToString(",") { chunk ->
+        val filters = due.chunked(MAX_PER_FILTER).flatMap { chunk ->
             val list = chunk.joinToString(",") { "\"$it\"" }
-            """{"kinds":[${LiveStream.KIND}],"authors":[$list],"limit":50},""" +
-                """{"kinds":[${LiveStream.KIND}],"#p":[$list],"limit":50}"""
+            listOf(
+                """{"kinds":[${LiveStream.KIND}],"authors":[$list],"limit":50}""",
+                """{"kinds":[${LiveStream.KIND}],"#p":[$list],"limit":50}""",
+            )
         }
         val subId = "ring-${System.currentTimeMillis().toString(36)}"
-        val req = """["REQ","$subId",$filters]"""
 
-        scope.launch {
-            val clients = configStore.config.value.activeFeedRelays.map { url ->
-                WebSocketClient(url, this, autoReconnect = false).also { client ->
-                    launch { client.messages.collect { handle(it, subId) } }
-                    launch {
-                        client.connectionState.collect { state ->
-                            if (state == WebSocketClient.ConnectionState.CONNECTED) client.send(req)
-                        }
-                    }
-                    client.connect()
-                }
+        // On the feed's open socket to each relay when it has one, else the
+        // lookup pool's; either way no new socket per batch of avatars.
+        for (url in configStore.config.value.activeFeedRelays) {
+            scope.launch {
+                lookupPool.query(url, subId, filters, LOOKUP_TIMEOUT_MS) { handle(it, subId) }
             }
-            delay(LOOKUP_TIMEOUT_MS)
-            clients.forEach { it.disconnect() }
-            cancel() // the collectors with it
         }
     }
 

@@ -447,8 +447,9 @@ class MainActivity : FragmentActivity() {
         feedActivityNotifier.onBackground()
         MusicPlayer.setAppInForeground(false)
         // Entering PiP pauses but does not stop the activity, so this only runs on a
-        // real background transition: snapshot the feed and disconnect WebSockets.
-        // The Go relay keeps running via the foreground service.
+        // real background transition: snapshot the feed now; its WebSockets close
+        // after a short grace (FeedService.pauseGrace), so a quick return finds them
+        // open. The Go relay keeps running via the foreground service.
         if (configStore.config.value.hasCompletedSetup) {
             feedService.pauseFeed()
         }
