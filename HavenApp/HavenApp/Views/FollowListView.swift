@@ -540,7 +540,8 @@ final class FollowListFollowWatch: ObservableObject {
         // puts it back and the button follows.
         let failed: () -> Void = {
             banner.add(recipientName: name, kind: .failed(
-                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly)))
+                ContactManager.publishFailedMessage(follow: follow, readOnly: FeedService.activeAccountIsReadOnly,
+                                                   noRelayList: FeedService.activeAccountHasNoRelayList)))
         }
         let result = follow
             ? feed.followUser(pubkey, onPublishFailed: failed)

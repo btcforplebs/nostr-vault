@@ -86,7 +86,7 @@ final class ListMergeTests: XCTestCase {
         guard case .unknown = ListMerge.editBase(some, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("published with a relay unanswered") }
         let all = ReplaceableLookup<Int64>(event: nil, asked: 3, answered: 3, answeredBy: Set(own))
         guard case .none = ListMerge.editBase(all, held: nil, own: own, createdAt: { $0 }) else { return XCTFail("no list anywhere should be none") }
-        guard case .unknown = ListMerge.editBase(all, held: nil, own: [], createdAt: { $0 }) else { return XCTFail("no own relays must be unknown") }
+        guard case .noRelayList = ListMerge.editBase(all, held: nil, own: [], createdAt: { $0 }) else { return XCTFail("no own relays must be noRelayList") }
     }
 
     func testEditBaseIsUnknownOnACopyNoOwnRelayVouchesFor() {

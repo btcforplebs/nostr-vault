@@ -57,8 +57,11 @@ struct ReplaceableLookup<Event> {
     var answeredBy: Set<String> = []
     /// The relays that sent `event`.
     var from: Set<String> = []
+    /// A copy was sent but skipped for being dated `ListMerge.maxSkew` or more
+    /// ahead: a list exists, so `event == nil` doesn't mean there is none.
+    var ahead = false
 
-    var confirmedNone: Bool { event == nil && asked > 0 && answered >= asked }
+    var confirmedNone: Bool { event == nil && !ahead && asked > 0 && answered >= asked }
 }
 
 /// Edit Profile publishes a kind 0, which replaces the whole profile of the

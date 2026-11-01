@@ -229,10 +229,15 @@ enum ContactManager {
 
     /// What to tell the user when a follow or unfollow was put back. "Try
     /// again" only where trying again can work.
-    static func publishFailedMessage(follow: Bool, readOnly: Bool) -> String {
+    /// `noRelayList`: the account has no kind 10002 of its own yet, so its
+    /// newest follow list can't be checked (ListMerge.EditBase.noRelayList).
+    static func publishFailedMessage(follow: Bool, readOnly: Bool, noRelayList: Bool = false) -> String {
         if readOnly {
             return follow ? "This account is read-only. Add its key to follow."
                           : "This account is read-only. Add its key to unfollow."
+        }
+        if noRelayList {
+            return (follow ? "Couldn't follow. " : "Couldn't unfollow. ") + ListMerge.noRelayListMessage
         }
         return follow ? "Couldn't follow, try again" : "Couldn't unfollow, try again"
     }

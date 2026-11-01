@@ -16,11 +16,14 @@ enum EventPublisher {
         pubkey: String,
         kind: Int,
         content: String,
-        tags: [[String]]
+        tags: [[String]],
+        notBefore: Int64? = nil
     ) -> [String: Any] {
         return [
             "pubkey": pubkey,
-            "created_at": Int64(Date().timeIntervalSince1970),
+            // Now, or `notBefore` when that is later (a list edit dated after
+            // the copy it replaces; see ListMerge.signedAt).
+            "created_at": max(Int64(Date().timeIntervalSince1970), notBefore ?? 0),
             "kind": kind,
             "content": content,
             "tags": tags

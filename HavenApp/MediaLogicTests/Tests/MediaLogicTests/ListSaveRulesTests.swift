@@ -17,6 +17,7 @@ final class ListSaveRulesTests: XCTestCase {
         case .list(let e): return "list \(e)"
         case .none: return "none"
         case .unknown: return "unknown"
+        case .noRelayList: return "noRelayList"
         }
     }
 
@@ -24,7 +25,7 @@ final class ListSaveRulesTests: XCTestCase {
         XCTAssertEqual(base(lookup(nil, asked: 1, answered: 1)), "unknown", "one relay, one 'none'")
         XCTAssertEqual(base(lookup(nil, asked: 3, answered: 1)), "unknown")
         XCTAssertEqual(base(lookup(nil, asked: 3, answered: 2)), "unknown", "one relay still silent")
-        XCTAssertEqual(base(lookup(nil, asked: 0, answered: 0)), "unknown")
+        XCTAssertEqual(base(lookup(nil, asked: 0, answered: 0)), "noRelayList", "no own relays at all")
         XCTAssertEqual(base(lookup(nil, asked: 2, answered: 2)), "none")
         XCTAssertEqual(base(lookup(nil, asked: 4, answered: 4)), "none")
         XCTAssertFalse(ListMerge.knowsNone(asked: 1, answered: 1))
@@ -94,7 +95,7 @@ final class ListSaveRulesTests: XCTestCase {
                 let end = try XCTUnwrap(tail.range(of: "createdAt:")).lowerBound
                 let args = tail[..<end]
                 sites.append(url.lastPathComponent)
-                XCTAssertTrue(args.contains("own: Self.ownListRelays()") || args.contains("own: NostrService.ownListRelays()"),
+                XCTAssertTrue(args.contains("own: Self.ownListRelays(for: ") || args.contains("own: NostrService.ownListRelays(for: "),
                               "\(url.lastPathComponent): editBase without the own relays: \(args)")
                 rest = tail[end...]
             }
@@ -103,4 +104,79 @@ final class ListSaveRulesTests: XCTestCase {
                                         "NostrService+ListPublishing.swift", "NostrService+ListPublishing.swift"])
     }
 
+
+    // MARK: - No relay list of the account's own (Tron #1456/#1459 follow-up)
+
+    /// With no kind 10002 known, the app's default relays are not the
+    /// account's: their "none" must not let an edit start from nothing.
+    func testNoRelayListOfItsOwnIsNotKnown() {
+        let defaultsAllNone = ReplaceableLookup<Int64>(event: nil, asked: 5, answered: 5,
+                                                       answeredBy: Set((0..<5).map { "wss://default\($0).example" }))
+        guard case .noRelayList = ListMerge.editBase(defaultsAllNone, held: nil, own: [], createdAt: { $0 }) else {
+            return XCTFail("five default relays saying none is not 'you have none'")
+        }
+        let defaultsSentOne = ReplaceableLookup(event: 100 as Int64, asked: 5, answered: 5,
+                                                answeredBy: ["wss://default0.example"], from: ["wss://default0.example"])
+        guard case .noRelayList = ListMerge.editBase(defaultsSentOne, held: 200, own: [], createdAt: { $0 }) else {
+            return XCTFail("a copy from a default relay is not checked against the account's own")
+        }
+        XCTAssertTrue(ListMerge.noRelayListMessage.contains("Nothing was changed"))
+    }
+
+    /// The own relays come from the account's kind 10002 only: none known,
+    /// none at all (never the defaults), loopback and repeats dropped.
+    func testOwnRelaysAreOnlyTheOnesInTheAccountsRelayList() {
+        let loopback: (String) -> Bool = { $0.contains("127.0.0.1") || $0.contains("localhost") }
+        XCTAssertEqual(ListMerge.ownRelays(published: nil, isLoopback: loopback), [])
+        XCTAssertEqual(ListMerge.ownRelays(published: [], isLoopback: loopback), [])
+        XCTAssertEqual(ListMerge.ownRelays(published: ["wss://a.example", "ws://127.0.0.1:3355", "wss://A.example/", "wss://b.example"],
+                                           isLoopback: loopback), ["wss://a.example", "wss://b.example"])
+    }
+
+    func testFollowMessageSaysThereIsNoRelayList() {
+        XCTAssertTrue(ContactManager.publishFailedMessage(follow: true, readOnly: false, noRelayList: true).contains("no relay list"))
+        XCTAssertEqual(ContactManager.publishFailedMessage(follow: true, readOnly: false), "Couldn't follow, try again")
+        XCTAssertTrue(ContactManager.publishFailedMessage(follow: false, readOnly: true, noRelayList: true).contains("read-only"))
+    }
+
+    // MARK: - Copies dated far ahead (MAX_SKEW, as the web's follows.js)
+
+    func testACopyDatedTooFarAheadIsNotTheBase() {
+        let now: Int64 = 1_000_000
+        let own = ["wss://own0.example", "wss://own1.example"]
+        let ahead = now + ListMerge.maxSkew
+        // The relays' copy is 15 min ahead: skipped, and the held copy is the base.
+        let future = ReplaceableLookup(event: ahead, asked: 2, answered: 2, answeredBy: Set(own), from: ["wss://own0.example"])
+        guard case .list(let base) = ListMerge.editBase(future, held: now - 10, own: own, now: now, createdAt: { $0 }) else {
+            return XCTFail("most own relays answered; the held copy is usable")
+        }
+        XCTAssertEqual(base, now - 10)
+        // Just under the limit still counts.
+        let near = ReplaceableLookup(event: ahead - 1, asked: 2, answered: 2, answeredBy: Set(own), from: ["wss://own0.example"])
+        guard case .list(let nearBase) = ListMerge.editBase(near, held: nil, own: own, now: now, createdAt: { $0 }) else { return XCTFail("near copy") }
+        XCTAssertEqual(nearBase, ahead - 1)
+        // Only a far-ahead copy: a list exists, so never "none".
+        guard case .unknown = ListMerge.editBase(future, held: nil, own: own, now: now, createdAt: { $0 }) else {
+            return XCTFail("a skipped copy means a list exists")
+        }
+        // The lookup skipped one itself (ahead), every own relay answered: still not "none".
+        var skipped = ReplaceableLookup<Int64>(event: nil, asked: 2, answered: 2, answeredBy: Set(own))
+        skipped.ahead = true
+        guard case .unknown = ListMerge.editBase(skipped, held: nil, own: own, now: now, createdAt: { $0 }) else {
+            return XCTFail("the lookup saw a list dated ahead")
+        }
+        XCTAssertFalse(skipped.confirmedNone)
+        // A held copy far ahead is skipped too.
+        let quiet = ReplaceableLookup<Int64>(event: nil, asked: 2, answered: 2, answeredBy: Set(own))
+        guard case .unknown = ListMerge.editBase(quiet, held: ahead + 60, own: own, now: now, createdAt: { $0 }) else {
+            return XCTFail("a held copy dated ahead is not the base, nor 'none'")
+        }
+    }
+
+    func testAnEditIsDatedAfterItsBase() {
+        XCTAssertEqual(ListMerge.signedAt(now: 1000, base: 500), 1000)
+        XCTAssertEqual(ListMerge.signedAt(now: 1000, base: 1000), 1001)
+        XCTAssertEqual(ListMerge.signedAt(now: 1000, base: 1600), 1601, "a base ahead of this clock: one second after it")
+        XCTAssertEqual(ListMerge.signedAt(now: 1000, base: nil), 1000)
+    }
 }
