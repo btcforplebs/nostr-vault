@@ -94,4 +94,25 @@ final class AccountUnreadTests: XCTestCase {
         u.record(marker("reply", id: "1", to: bob))
         XCTAssertFalse(u.othersHaveUnread(accounts: [alice], active: alice))
     }
+
+    // Sweep 11-01 #11: the count only counts what the Vault list can show.
+    func testListRulesDropWhatTheVaultListDrops() {
+        let carol = String(repeating: "c", count: 64)
+        var u = AccountUnread()
+        let zapsOnly = AccountUnread.ListRules(zapsOnly: true)
+        XCTAssertFalse(u.record(marker("reaction", id: "1", to: alice), rules: zapsOnly))
+        XCTAssertTrue(u.record(marker("zap", id: "2", to: alice), rules: zapsOnly))
+
+        let blocked = AccountUnread.ListRules(isBlocked: { [alice] r, a in r == alice && a == carol })
+        XCTAssertFalse(u.record(marker("repost", id: "3", to: alice), rules: blocked))
+        XCTAssertTrue(u.record(marker("repost", id: "4", to: bob), rules: blocked))
+
+        let outside = AccountUnread.ListRules(isOutside: { _, _ in true })
+        XCTAssertFalse(u.record(marker("mention", id: "5", to: alice), rules: outside))
+        XCTAssertFalse(u.record(marker("reply", id: "6", to: alice), rules: outside))
+        XCTAssertFalse(u.record(marker("quote", id: "7", to: alice), rules: outside))
+        XCTAssertTrue(u.record(marker("reaction", id: "8", to: alice), rules: outside))
+        XCTAssertEqual(u.count(for: alice), 2)
+        XCTAssertEqual(u.count(for: bob), 1)
+    }
 }

@@ -78,13 +78,18 @@ extension NoteRow {
                     .environmentObject(nostrService)
             } else {
                 // Regular note content
-                let urls = event.mediaURLs
-                let links = LinkCards.shown(event.linkURLs)
+                // An old "Share as a note" live post: its playlist and cover
+                // leave the text and the cards (LiveNoteCleanup).
+                let live = LiveNoteCleanup.cleaned(content: cleanContent, mediaURLs: event.mediaURLs,
+                                                   linkURLs: event.linkURLs,
+                                                   find: { FeedService.shared.findNote(id: $0) })
+                let urls = live?.mediaURLs ?? event.mediaURLs
+                let links = LinkCards.shown(live?.linkURLs ?? event.linkURLs)
 
                 // Each link's card sits where the link was written. Collapsed,
                 // the text pieces share one 8-line budget, so the clamp still
                 // cuts at 8 lines however the text is split around cards.
-                let segments = NoteURLs.segments(cleanContent, cards: links)
+                let segments = NoteURLs.segments(live?.content ?? cleanContent, cards: links)
                 let collapsed = truncate && !isExpanded
                 let plan = NoteClamp.plan(segments, lines: measuredLines, budget: 8)
                 if !segments.isEmpty {

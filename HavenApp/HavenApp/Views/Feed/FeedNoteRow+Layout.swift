@@ -8,6 +8,11 @@ extension FeedNoteRow {
     @ViewBuilder
     var compactLayout: some View {
         let originalMedia = rowData.resolvedOriginal?.mediaURLs ?? []
+        let override = compactContentOverride
+        // An old "Share as a note" live post: its playlist and cover go, the
+        // live card says it (LiveNoteCleanup).
+        let live = LiveNoteCleanup.cleaned(content: override ?? note.content,
+                                           mediaURLs: note.mediaURLs + originalMedia, find: actions.findNote)
         CondensedNoteLine(
             note: note,
             profile: rowData.displayProfile,
@@ -15,9 +20,9 @@ extension FeedNoteRow {
             original: rowData.resolvedOriginal,
             depth: 0,
             style: .card,
-            contentOverride: compactContentOverride,
+            contentOverride: live?.content ?? override,
             postedAt: postedAt,
-            mediaURLs: note.mediaURLs + originalMedia,
+            mediaURLs: live?.mediaURLs ?? note.mediaURLs + originalMedia,
             engagement: CondensedEngagement(
                 reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
                 reposts: rowData.stats.reposts

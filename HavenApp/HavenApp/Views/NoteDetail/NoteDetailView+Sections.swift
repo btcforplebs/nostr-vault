@@ -282,6 +282,9 @@ extension NoteDetailView {
         let original = (note.kind == 6 && note.content.isEmpty) ? rowData.resolvedOriginal : nil
         let shown = original ?? note
         let replyCount = pool.reduce(0) { $0 + ($1.parentEventId == note.id ? 1 : 0) }
+        let override = original.map { $0.condensedTitle ?? $0.content }
+        let live = LiveNoteCleanup.cleaned(content: override ?? shown.content, mediaURLs: shown.mediaURLs,
+                                           find: { feedService.findNote(id: $0) })
         return CondensedNoteLine(
             note: note,
             profile: nostrService.profiles[shown.pubkey],
@@ -290,9 +293,9 @@ extension NoteDetailView {
             depth: depth,
             style: .plain,
             replyCount: replyCount,
-            contentOverride: original.map { $0.condensedTitle ?? $0.content },
+            contentOverride: live?.content ?? override,
             postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
-            mediaURLs: shown.mediaURLs,
+            mediaURLs: live?.mediaURLs ?? shown.mediaURLs,
             engagement: CondensedEngagement(
                 reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
                 reposts: rowData.stats.reposts
