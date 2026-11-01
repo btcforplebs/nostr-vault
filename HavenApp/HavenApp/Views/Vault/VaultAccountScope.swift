@@ -77,6 +77,47 @@ extension VaultView {
         otherAccountActivity = [:]
         otherAccountUnreadSince = [:]
         otherAccountLoading = false
+        otherAccountLimit = VaultAccountChips.otherAccountPage
+        otherAccountReadFull = false
+    }
+
+    /// The active account changed (a line for another account was opened,
+    /// or the switcher). The account left is marked seen now, so what came in
+    /// while its list was open doesn't bring its badge back. The new one's
+    /// dots start from the mark its chip used, or from a fresh visit when its
+    /// list is on screen. Android: VaultActivityViewModel's accountSwitches.
+    func activeAccountChanged(from old: String, to new: String) {
+        let left = old.lowercased(), now = Date().timeIntervalSince1970
+        let carried = otherAccountUnreadSince[new.lowercased()]
+        if !left.isEmpty, viewMode == .activity { AccountUnreadStore.shared.markVaultSeen(hex: left, at: now) }
+        resetAccountChip()
+        if let carried {
+            activityUnreadSince = carried
+        } else if viewMode == .activity {
+            activityVisit(arriving: true)
+        } else {
+            activityUnreadSince = .max
+        }
+    }
+
+    /// "Load more" with other accounts' lines on screen: show more of what
+    /// is read, then read further back, theirs and (with All) the active
+    /// account's.
+    func loadMoreAccountLines() {
+        if accountLines.count >= maxDisplayedItems {
+            maxDisplayedItems += 50
+            scheduleUpdateDisplayData()
+            return
+        }
+        if let next = VaultAccountChips.nextOtherAccountLimit(current: otherAccountLimit, readFull: otherAccountReadFull) {
+            otherAccountLimit = next
+            loadOtherAccountActivity()
+        }
+        let me = followersOwnerHex.lowercased()
+        if VaultAccountChips.accounts(for: currentAccountChip, accounts: vaultAccountHexes).contains(me),
+           !nostrService.isFetching {
+            loadMore()
+        }
     }
 
     /// Reads the picked chip's other accounts from the device's relay and
@@ -85,8 +126,10 @@ extension VaultView {
         let me = followersOwnerHex.lowercased()
         let wanted = VaultAccountChips.accounts(for: currentAccountChip, accounts: vaultAccountHexes).filter { $0 != me }
         otherAccountLoadTask?.cancel()
-        guard !wanted.isEmpty, relayManager.isRunning else {
-            otherAccountLoading = false
+        guard !wanted.isEmpty, relayManager.isRunning, !relayManager.isBooting else {
+            // Still starting: the spinner holds, and the relay-up handler
+            // (VaultView) reads again.
+            otherAccountLoading = !wanted.isEmpty && relayManager.isBooting
             return
         }
         let base = configService.config.nostrURL
@@ -100,22 +143,31 @@ extension VaultView {
         let mutes = MuteListStore.shared.active
         let noteKinds = NostrService.relayTabNoteKinds
         let service = nostrService
-        otherAccountLoading = otherAccountActivity.isEmpty
+        // A spinner while any picked account has nothing read yet, not only
+        // the first one picked.
+        otherAccountLoading = wanted.contains { otherAccountActivity[$0] == nil }
+        let limit = otherAccountLimit
+        // Cleared while the read is in flight, so "load more" can't raise
+        // the limit again before this one answers.
+        otherAccountReadFull = false
         otherAccountLoadTask = Task { @MainActor in
             var built: [String: [VaultActivity]] = [:]
-            await withTaskGroup(of: (String, [VaultActivity]).self) { group in
+            var readFull = false
+            await withTaskGroup(of: (String, [VaultActivity], Bool).self) { group in
                 for hex in wanted {
                     group.addTask {
                         async let mine = service.fetchEvents(
-                            filter: ["authors": [hex], "kinds": noteKinds, "limit": 300],
+                            filter: ["authors": [hex], "kinds": noteKinds, "limit": limit],
                             from: [base], includeLoopback: true)
                         async let tagged = service.fetchEvents(
-                            filter: ["#p": [hex], "kinds": noteKinds + [16], "limit": 300],
+                            filter: ["#p": [hex], "kinds": noteKinds + [16], "limit": limit],
                             from: [base + "/inbox"], includeLoopback: true)
                         async let reactions = service.fetchEvents(
-                            filter: ["#p": [hex], "kinds": [7, 9735], "limit": 300],
+                            filter: ["#p": [hex], "kinds": [7, 9735], "limit": limit],
                             from: [base + "/inbox"], includeLoopback: true)
-                        let events = await mine + tagged + reactions
+                        let reads = await [mine, tagged, reactions]
+                        let full = reads.contains { $0.count >= limit }
+                        let events = reads.flatMap { $0 }
                         let follows = FollowerSnapshot.load(owner: hex)?.current
                             .filter(\.isNews).map { (pubkey: $0.pubkey, at: $0.followedAt) } ?? []
                         let block = blocked[hex] ?? []
@@ -131,13 +183,17 @@ extension VaultView {
                             isBlocked: { block.contains($0) },
                             isOutside: { ContentFilter.isOutside(author: $0, owner: hex, whitelist: whitelist, trusted: trusted) }
                         )
-                        return (hex, lines)
+                        return (hex, lines, full)
                     }
                 }
-                for await (hex, lines) in group { built[hex] = lines }
+                for await (hex, lines, full) in group {
+                    built[hex] = lines
+                    if full { readFull = true }
+                }
             }
             guard !Task.isCancelled else { return }
             for (hex, lines) in built { otherAccountActivity[hex] = lines }
+            otherAccountReadFull = readFull
             otherAccountLoading = false
             service.fetchMissingProfiles(for: Array(Set(built.values.flatMap { $0.flatMap { $0.actors.prefix(5) } })))
         }

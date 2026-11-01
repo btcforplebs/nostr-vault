@@ -8,6 +8,10 @@ extension FeedService {
     /// `force` bypasses that throttle, for a user-initiated Retry tap.
     func fetchMissingNote(id: String, force: Bool = false) {
         guard findNote(id: id) == nil else { return }
+        // Not an id a relay can look up: asking would fail the whole batch.
+        if !id.hasPrefix(QuoteReference.coordinatePrefix), !QuoteReference.isEventId(id) {
+            unavailableNoteIds.insert(id); return
+        }
         // A deleted post is never asked for again: a relay that ignored the
         // request would hand it back as a thread root or quote.
         if isDeleted(id) { unavailableNoteIds.insert(id); return }

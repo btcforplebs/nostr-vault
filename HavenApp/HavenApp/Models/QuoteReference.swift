@@ -33,6 +33,14 @@ enum QuoteReference {
             .filter { seen.insert($0).inserted }
     }
 
+    /// Whether `id` can go in a REQ `ids` filter: 64 lowercase hex. One bad
+    /// id (a malformed e-tag, say) made the relay CLOSE the whole lookup with
+    /// "error parsing ids: uneven size input", for every id in it (sweep
+    /// 11-01 #8).
+    static func isEventId(_ id: String) -> Bool {
+        id.utf8.count == 64 && id.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
     /// The event id carried by an `nevent` TLV payload — type 0, 32 bytes.
     static func eventID(fromNeventTLV payload: Data) -> String? {
         for entry in tlvEntries(payload) where entry.type == 0 && entry.value.count == 32 {

@@ -103,6 +103,9 @@ final class ProfileFeedLoader: ObservableObject {
     /// The opening load came back empty once and was tried again. Cleared
     /// when the page goes away or is refreshed.
     var retriedEmptyLoad = false
+    /// A relay of the opening load timed out, failed to connect or refused
+    /// (CLOSED) instead of sending EOSE. Only then is an empty load retried.
+    var openingIncomplete = false
     /// Notes received but not yet on screen. They go in together a moment
     /// later, in one sort and one redraw, instead of one of each per event.
     let pending = PendingProfileNotes()
