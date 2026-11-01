@@ -259,7 +259,7 @@ async function listedRelays({ pubkey, relays, ask }) {
 
 /**
  * The newest kind 10000 from Haven's outbox and the network. The user's own relays are `relays` plus those its newest
- * kind 10002 names (listedRelays); purplepag.es and the broadcast relays a new list is also sent to are asked too but
+ * kind 10002 names (listedRelays); purplepag.es and the old broadcast relays (where lists were also sent before 11-01) are asked too but
  * don't count unless that 10002 names them. `answered`: how many of the user's own relays sent their EOSE; `netFound`: one of them had a list;
  * `relaysKnown`: whether the 10002 is known (listedRelays), so the user's own relays are all of them.
  * `ask` is for tests. -> { base, asked, answered, netFound, relaysKnown }
