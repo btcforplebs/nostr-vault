@@ -17,6 +17,10 @@ final class VaultSection: ObservableObject {
     /// Set when you tap into the Vault tab: it then opens the list its red
     /// dot is for, instead of whichever one you left it on.
     @Published var opensNewActivity = false
+    /// The relay half's list on screen (Media aside), for the tab's hold menu.
+    @Published var listMode: VaultMode = .activity
+    /// A page picked from the tab's hold menu, for the relay half to open.
+    @Published var pendingMode: VaultMode?
 }
 
 private struct InVaultTabKey: EnvironmentKey { static let defaultValue = false }

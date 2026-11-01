@@ -189,10 +189,8 @@ struct iPhoneTabView: View {
             }
         }
         .overlay {
-            FeedHoldPickerOverlay(feedService: feedService) { mode in
-                feedService.switchMode(mode)
-                selectedTab = 0
-            }
+            // The Feed and Vault tabs' hold menus.
+            DockHoldMenuOverlay()
         }
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }

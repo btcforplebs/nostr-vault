@@ -77,7 +77,20 @@ struct BottomTabBar: View {
             NotificationCenter.default.post(name: .wotTabReselected, object: nil)
         }
 
-        tabItem(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: vaultHasNews) {
+        VaultTabHoldItem(
+            selected: selectedTab == 4,
+            zapsOnly: configService.config.zapsOnlyMode,
+            relayManager: relayManager,
+            onTap: vaultTabTapped
+        ) {
+            tabItemLabel(index: 4, title: "Vault", icon: VaultDashboard.symbol, hasRedBadge: vaultHasNews)
+        }
+        // What the return pill's arrow points at.
+        .vaultAnchor(.bottom)
+    }
+
+    private func vaultTabTapped() {
+        if selectedTab == 4 {
             if VaultSection.shared.showsMedia {
                 if !mediaPath.isEmpty {
                     mediaPath = NavigationPath()
@@ -89,12 +102,14 @@ struct BottomTabBar: View {
             } else {
                 NotificationCenter.default.post(name: NSNotification.Name("RelayScrollToTop"), object: nil)
             }
-        } onSelect: {
+        } else {
             // The dot goes to where the news is, not to the list you left.
-            if relayManager.hasNewRelayActivity { VaultSection.shared.opensNewActivity = true }
+            // A page picked from the hold menu is set first and wins.
+            if relayManager.hasNewRelayActivity && VaultSection.shared.pendingMode == nil {
+                VaultSection.shared.opensNewActivity = true
+            }
+            selectedTab = 4
         }
-        // What the return pill's arrow points at.
-        .vaultAnchor(.bottom)
     }
 
     /// The Vault tab's dot: something came in, a new message included.
@@ -190,36 +205,41 @@ struct BottomTabBar: View {
                 selectedTab = index
             }
         } label: {
-            VStack(spacing: 4) {
-                Group {
-                    if let assetIcon {
-                        // 26pt draws the globe's 20pt circle at about 21.5pt, as tall
-                        // as the Vault symbol; a circle reads smaller than a box of
-                        // the same size. It scales with Text Size like the symbols.
-                        let side = 26 * CGFloat(configService.config.textSizeScale)
-                        Image(assetIcon)
-                            .resizable()
-                            .frame(width: side, height: side)
-                    } else {
-                        Image(systemName: icon)
-                            .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
-                    }
-                }
-                .foregroundStyle(selected ? Color.havenPurple : .white)
-                .frame(height: 24)
-                .overlay(alignment: .topTrailing) {
-                    NewsDot(isShown: hasRedBadge)
-                        .offset(x: 6, y: -4)
-                }
-                Text(title)
-                    .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.havenPurple : .white)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
+            tabItemLabel(index: index, title: title, icon: icon, assetIcon: assetIcon, hasRedBadge: hasRedBadge)
         }
         .buttonStyle(.plain)
         .accessibilityValue(hasRedBadge ? "New activity" : "")
+    }
+
+    private func tabItemLabel(index: Int, title: String, icon: String = "", assetIcon: String? = nil, hasRedBadge: Bool = false) -> some View {
+        let selected = selectedTab == index
+        return VStack(spacing: 4) {
+            Group {
+                if let assetIcon {
+                    // 26pt draws the globe's 20pt circle at about 21.5pt, as tall
+                    // as the Vault symbol; a circle reads smaller than a box of
+                    // the same size. It scales with Text Size like the symbols.
+                    let side = 26 * CGFloat(configService.config.textSizeScale)
+                    Image(assetIcon)
+                        .resizable()
+                        .frame(width: side, height: side)
+                } else {
+                    Image(systemName: icon)
+                        .font(.appSystem(size: 20, weight: selected ? .semibold : .regular))
+                }
+            }
+            .foregroundStyle(selected ? Color.havenPurple : .white)
+            .frame(height: 24)
+            .overlay(alignment: .topTrailing) {
+                NewsDot(isShown: hasRedBadge)
+                    .offset(x: 6, y: -4)
+            }
+            Text(title)
+                .font(.appSystem(size: 10, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.havenPurple : .white)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Expanded Profile Tab Item
