@@ -272,7 +272,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 	// their targets in place; apply them once, before any sync round.
 	sweepDeleteRequests(ctx, outboxDB)
 
-	relays := inboxRelays()
+	relays := withAccountInboxRelays(ctx, inboxRelays())
 
 	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
 
