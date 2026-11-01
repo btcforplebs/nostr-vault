@@ -196,17 +196,19 @@ object RelayConfiguration {
     }
 
     /**
-     * The Go relay's soft memory limit on a phone, from its RAM: a quarter,
-     * between 256 MiB and 3 GiB (iOS RelayConfiguration.phoneGoMemLimitMB,
-     * #1007). Go's flat 256 MiB phone default (haven-go config.go), and the
-     * 192 MiB this app pinned before, is a limit a populated vault's live heap
-     * reaches, and then the collector runs back to back: on Logen's iPhone
-     * 18 Pro (2026-10-21) 69% of all CPU samples were Go GC mark workers,
-     * ~420% CPU, thermal state Serious.
+     * The Go relay's soft memory limit on an Android phone, from its RAM: an
+     * eighth, between 384 MiB and 1 GiB. Not lower: Go's flat 256 MiB phone
+     * default (haven-go config.go), and the 192 MiB this app pinned before, is
+     * a limit a populated vault's live heap reaches, and then the collector
+     * runs back to back (Logen's iPhone 18 Pro, 2026-10-21: 69% of CPU samples
+     * in Go GC mark workers, iOS #1007). Not a quarter, as iOS: on the 3.6 GB
+     * Moto that let Go keep ~900 MiB, and the app died at 680-776 MB RSS six
+     * times on 10-31 (sweep 11-01). [HavenBridge.trimMemory] hands the rest
+     * back when the app leaves the screen.
      */
     fun phoneGoMemLimitMB(physicalMemory: Long): Int {
-        val quarter = (physicalMemory.coerceAtLeast(0L) / 4 / (1L shl 20)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        return quarter.coerceIn(256, 3072)
+        val eighth = (physicalMemory.coerceAtLeast(0L) / 8 / (1L shl 20)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return eighth.coerceIn(384, 1024)
     }
 
     /** This phone's RAM in bytes (MemTotal in /proc/meminfo), or 0 when it can't be read. */
