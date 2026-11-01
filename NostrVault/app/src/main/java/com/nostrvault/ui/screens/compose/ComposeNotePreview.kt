@@ -9,11 +9,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -59,26 +59,24 @@ internal fun ComposeNoteViewModel.previewNote(draft: ComposeNoteDraft): FeedNote
 
 private const val PREVIEW_ID = "compose-preview"
 
-/** Write / Preview: on a phone the keyboard owns the bottom half, so the preview swaps in for the editor. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The top bar button's word: "Preview" while writing, "Edit" to get back to typing (Logen 2026-11-01). */
+internal fun previewButtonLabel(previewing: Boolean): String = if (previewing) "Edit" else "Preview"
+
+/**
+ * One button beside Post (iOS: Tory's top bar): Preview shows the note as it
+ * will post, and it flips to Edit to go back to typing. On a phone the
+ * keyboard owns the bottom half, so the preview swaps in for the editor.
+ */
 @Composable
-internal fun ComposeNoteModeToggle(previewing: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    val accent = LocalNostrVaultColors.current.primary
-    SingleChoiceSegmentedButtonRow(modifier) {
-        listOf(false to "Write", true to "Preview").forEachIndexed { index, (value, label) ->
-            SegmentedButton(
-                selected = previewing == value,
-                onClick = { onChange(value) },
-                shape = SegmentedButtonDefaults.itemShape(index, 2),
-                colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = accent.copy(alpha = 0.18f),
-                    activeContentColor = accent,
-                    activeBorderColor = accent.copy(alpha = 0.5f),
-                    inactiveContentColor = SecondaryText,
-                ),
-                icon = {},
-            ) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-        }
+internal fun ComposeNotePreviewButton(previewing: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(
+        onClick = onToggle,
+        contentPadding = PaddingValues(horizontal = 10.dp),
+        modifier = modifier.semantics {
+            contentDescription = if (previewing) "Edit, back to typing" else "Preview, the note as it will post"
+        },
+    ) {
+        Text(previewButtonLabel(previewing), color = LocalNostrVaultColors.current.primary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

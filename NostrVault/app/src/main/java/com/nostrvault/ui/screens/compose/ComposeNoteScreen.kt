@@ -211,7 +211,10 @@ fun ComposeNoteScreen(
                             viewModel.isReply -> "Reply"
                             viewModel.isQuote -> "Quote"
                             else -> "New Note"
-                        }
+                        },
+                        // Preview and Post sit beside it: on a narrow phone the title gives way.
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
@@ -248,6 +251,15 @@ fun ComposeNoteScreen(
                             }
                         }
                     }
+                    ComposeNotePreviewButton(previewing = previewing, onToggle = {
+                        previewing = !previewing
+                        if (previewing) {
+                            keyboard?.hide()
+                            showEmojiPanel = false
+                        } else {
+                            runCatching { editorFocus.requestFocus() }
+                        }
+                    })
                     Button(
                         onClick = { viewModel.publish(onPublished) },
                         // Uploads run while you type; Post waits only on the unfinished ones.
@@ -309,19 +321,6 @@ fun ComposeNoteScreen(
                 )
             }
 
-            ComposeNoteModeToggle(
-                previewing = previewing,
-                onChange = { show ->
-                    previewing = show
-                    if (show) {
-                        keyboard?.hide()
-                        showEmojiPanel = false
-                    } else {
-                        runCatching { editorFocus.requestFocus() }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            )
             if (previewing) {
                 ComposeNotePreview(viewModel, Modifier.fillMaxWidth().weight(1f))
             } else
