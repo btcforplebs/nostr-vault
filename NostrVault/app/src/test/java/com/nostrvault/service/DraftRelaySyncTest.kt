@@ -17,6 +17,8 @@ import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Typing saves a draft on the device only; the relay copy (a signed kind
@@ -28,14 +30,29 @@ class DraftRelaySyncTest {
 
     private val nostr = mockk<NostrService>(relaxed = true)
 
+    /**
+     * The relay is up before the service starts, and the service's own
+     * relay-up pass (flush the queue, then fetch) has finished before a test
+     * saves anything. Raising the relay after the service was built raced
+     * that pass against the test's saves: a draft saved first was flushed,
+     * a sign the test never asked for.
+     */
     private fun service(): DraftService {
         val context = mockk<Context>(relaxed = true)
         every { context.filesDir } returns tmp.root
         val config = mockk<ConfigStore>(relaxed = true)
         every { config.activeAccountHexPubkey } returns MutableStateFlow("alice")
-        every { config.config } returns MutableStateFlow(HavenConfig())
-        val drafts = DraftService(context, config, nostr)
+        // Nothing reads the config while the service is built; the first
+        // read is the relay-up pass's fetch, which runs after its flush.
+        val passDone = CountDownLatch(1)
+        val configFlow = MutableStateFlow(HavenConfig())
+        every { config.config } answers {
+            passDone.countDown()
+            configFlow
+        }
         RelayForegroundService._readyForConnections.value = true
+        val drafts = DraftService(context, config, nostr)
+        check(passDone.await(5, TimeUnit.SECONDS)) { "relay-up pass never ran" }
         return drafts
     }
 
