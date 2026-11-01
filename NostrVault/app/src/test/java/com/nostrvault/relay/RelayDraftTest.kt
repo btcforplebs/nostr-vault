@@ -369,4 +369,17 @@ class RelayDraftTest {
         assertTrue(landed.published.relayListKnown)
         assertEquals(start(), RelayDraft.replay(start(), emptyList()))
     }
+
+    // Moto check 11-01 #3: the dashboard's Relays number is the Relays page's.
+    @Test fun `count includes published relays, the own relay, and not removed rows`() {
+        val s = start()
+        val rows = RelayDraft.rows(s).size
+        assertEquals(rows + 1, RelayDraft.count(s, ownRelay))
+        assertEquals(rows, RelayDraft.count(s, ""))
+        // nostr.land and inbox.nostr.wine are only on the published lists.
+        assertTrue(RelayDraft.rows(s).any { it.entry.key == key("wss://nostr.land") })
+        assertTrue(RelayDraft.rows(s).any { it.entry.key == key("wss://inbox.nostr.wine") })
+        val removed = RelayDraft.remove(s, key("wss://nostr.land"))
+        assertEquals(rows, RelayDraft.count(removed, ownRelay))
+    }
 }

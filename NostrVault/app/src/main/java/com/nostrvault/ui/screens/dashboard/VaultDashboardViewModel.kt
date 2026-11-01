@@ -13,6 +13,7 @@ import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.MacSync
 import com.nostrvault.relay.MacSyncStatus
 import com.nostrvault.relay.RelayForegroundService
+import com.nostrvault.relay.RelayDraft
 import com.nostrvault.relay.RelayMatrix
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.FollowingBackupService
@@ -84,6 +85,14 @@ class VaultDashboardViewModel @Inject constructor(
     private val _countFailed = MutableStateFlow(false)
     val countFailed: StateFlow<Boolean> = _countFailed.asStateFlow()
 
+    /**
+     * The public endpoints answered but /private and /chat did not: their
+     * login wasn't signed (Amber signs it silently, and refuses when it has
+     * no saved approval). The public counts show, with a tap to approve.
+     */
+    private val _privateMissing = MutableStateFlow(false)
+    val privateMissing: StateFlow<Boolean> = _privateMissing.asStateFlow()
+
     /** The owner has no key, so /private and /chat are left out of the counts. */
     val countsPublicOnly: StateFlow<Boolean> = configStore.config
         .map { statsService.ownerIsWatchOnly(it) }
@@ -138,7 +147,12 @@ class VaultDashboardViewModel @Inject constructor(
     }
 
     /** Re-reads everything; counts only while the relay is up (iOS refresh()). */
-    fun refresh() {
+    fun refresh() = refresh(allowSignerPrompt = false)
+
+    /** Counts again, letting the signer show its approval screen for the /private and /chat login. */
+    fun approvePrivateCounts() = refresh(allowSignerPrompt = true)
+
+    private fun refresh(allowSignerPrompt: Boolean) {
         statsService.refreshStats()
         refreshLocal(configStore.config.value)
         refreshFollowList()
@@ -151,8 +165,11 @@ class VaultDashboardViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val owner = nostrService.activeHexPubkey.ifEmpty { null }
-                // A partial answer would undercount; StatsService keeps what is shown.
-                _countFailed.value = !statsService.fetchCountsByKind(owner, VaultDashboardContents.yourKinds)
+                // StatsService decides what is shown: a failed count keeps the
+                // old numbers, a private-missing one shows the public sum.
+                val result = statsService.fetchCountsByKind(owner, VaultDashboardContents.yourKinds, allowSignerPrompt)
+                _countFailed.value = result == StatsService.CountResult.FAILED
+                _privateMissing.value = result == StatsService.CountResult.PRIVATE_MISSING
             } finally {
                 counting = false
                 _isCounting.value = false
@@ -296,11 +313,11 @@ class VaultDashboardViewModel @Inject constructor(
      * Counted the way Settings › Relays counts its "N relays" chip, so the
      * two never disagree: every relay in any column, plus your own.
      */
-    fun relayCount(cfg: HavenConfig): Int {
-        val ownRelay = cfg.macRelayWssURL
-        val rows = RelayMatrix.rows(RelayMatrix.lists(cfg), listOf(ownRelay, cfg.ownHavenDMInboxURL))
-        return rows.size + if (ownRelay.isEmpty()) 0 else 1
-    }
+    /** The Relays page's count: this device's lists joined with the published ones it has cached. */
+    fun relayCount(cfg: HavenConfig): Int = RelayDraft.count(
+        RelayDraft.start(RelayMatrix.lists(cfg), nostrService.cachedOwnerRelayLists(), RelayDraft.pinned(cfg)),
+        cfg.macRelayWssURL,
+    )
 
     fun setAutoStart(enabled: Boolean) = configStore.update { it.copy(autoStartRelay = enabled) }
 }

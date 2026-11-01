@@ -93,6 +93,21 @@ class StatsService @Inject constructor(
         /** Shown where the counts would be for a watch-only owner (iOS `RelayCountSession.publicOnlyNote`). */
         const val PUBLIC_ONLY_NOTE = "Public events only. Add your key to count private ones."
 
+        /**
+         * What [perEndpoint] adds up to, and the sum to show. [needsAuth] says,
+         * per endpoint, whether it answers only after the owner's login
+         * (/private, /chat). When only those are missing, the public
+         * endpoints' sum is still shown, marked [CountResult.PRIVATE_MISSING],
+         * so one unsigned login no longer blanks every number.
+         */
+        internal fun mergeAnswered(perEndpoint: List<Map<Int, Int>?>, needsAuth: List<Boolean>): Pair<CountResult, Map<Int, Int>?> {
+            mergeEndpointCounts(perEndpoint)?.let { return CountResult.COMPLETE to it }
+            val missingPublic = perEndpoint.indices.any { perEndpoint[it] == null && !needsAuth.getOrElse(it) { false } }
+            val answered = perEndpoint.filterNotNull()
+            if (missingPublic || answered.isEmpty()) return CountResult.FAILED to null
+            return CountResult.PRIVATE_MISSING to mergeEndpointCounts(answered)
+        }
+
         /** Each endpoint's counts summed per key; null when there were none, or one did not answer. */
         internal fun mergeEndpointCounts(perEndpoint: List<Map<Int, Int>?>): Map<Int, Int>? {
             if (perEndpoint.isEmpty() || perEndpoint.any { it == null }) return null
@@ -319,17 +334,25 @@ class StatsService @Inject constructor(
     /**
      * Fetch event counts by kind from every endpoint the vault stores events
      * on (outbox, `/inbox`, `/private`, `/chat`), plus one `{}` COUNT per
-     * endpoint for the real total. Port of iOS `fetchCountsByKind`: when any
-     * endpoint does not answer, nothing is published, so the numbers never
-     * drop to a partial sum. With [author] (hex), [yourKinds] are also
+     * endpoint for the real total. Port of iOS `fetchCountsByKind`: when a
+     * public endpoint does not answer, nothing is published. When only
+     * /private or /chat is missing (its login wasn't signed), the public sum
+     * is published as [CountResult.PRIVATE_MISSING], unless a complete count
+     * is already showing: that one is kept rather than dropped to a part.
+     * The login is signed silently unless [allowSignerPrompt] (a tap on
+     * "approve"), which lets the signer show its approval screen. With [author] (hex), [yourKinds] are also
      * counted for that account alone, into [yourKindCounts] tagged with
      * [author]; without one, [yourKindCounts] is left untouched. Readers
      * must check its author against the active account: a count that
      * finishes after an account switch still carries the old author.
      *
-     * @return whether every endpoint answered and the counts were published.
+     * @return how the count came out ([CountResult]).
      */
-    suspend fun fetchCountsByKind(author: String? = null, yourKinds: Collection<Int> = emptyList()): Boolean {
+    suspend fun fetchCountsByKind(
+        author: String? = null,
+        yourKinds: Collection<Int> = emptyList(),
+        allowSignerPrompt: Boolean = false,
+    ): CountResult {
         _isUpdatingCount.value = true
 
         return withContext(Dispatchers.IO) {
@@ -337,24 +360,41 @@ class StatsService @Inject constructor(
             val relayUrls = countEndpoints(config, ownerIsWatchOnly(config))
             val perEndpoint = coroutineScope {
                 relayUrls.map { url ->
-                    async { fetchKindCounts(url, COUNTED_KINDS, author?.let { it to yourKinds.toList() }) }
+                    async { fetchKindCounts(url, COUNTED_KINDS, author?.let { it to yourKinds.toList() }, allowSignerPrompt) }
                 }.awaitAll()
             }
-            val merged = mergeEndpointCounts(perEndpoint.map { it?.first })
-            val yours = mergeEndpointCounts(perEndpoint.map { it?.second })
-            if (merged == null) Log.w(TAG, "Not every endpoint answered the counts; keeping the last ones")
+            val needsAuth = relayUrls.map { authRelayTag(config, it) != null }
+            val (result, merged) = mergeAnswered(perEndpoint.map { it?.first }, needsAuth)
+            val yours = mergeAnswered(perEndpoint.map { it?.second }, needsAuth).second
+            if (result != CountResult.COMPLETE) Log.w(TAG, "Counts $result")
 
             withContext(Dispatchers.Main.immediate) {
-                if (merged != null && yours != null) {
-                    _kindCounts.value = merged.filterKeys { it != TOTAL_KEY }
-                    if (author != null) _yourKindCounts.value = YourCounts(author, yours)
+                val publish = merged != null && yours != null &&
+                    (result == CountResult.COMPLETE || !countsComplete)
+                if (publish) {
+                    _kindCounts.value = merged!!.filterKeys { it != TOTAL_KEY }
+                    if (author != null) _yourKindCounts.value = YourCounts(author, yours!!)
                     _loadedEventsCount.value = merged[TOTAL_KEY] ?: 0
+                    countsComplete = result == CountResult.COMPLETE
                 }
                 _isUpdatingCount.value = false
             }
-            merged != null && yours != null
+            result
         }
     }
+
+    /** How a count over every endpoint came out. */
+    enum class CountResult {
+        /** Every endpoint answered. */
+        COMPLETE,
+        /** Every public endpoint answered; /private or /chat did not (its login was not signed or not accepted). */
+        PRIVATE_MISSING,
+        /** A public endpoint did not answer, or nothing did. */
+        FAILED,
+    }
+
+    /** Whether the counts showing came from every endpoint (main thread). */
+    private var countsComplete = false
 
     /**
      * One COUNT per kind plus one `{}` total (under [TOTAL_KEY]) over a
@@ -367,11 +407,14 @@ class StatsService @Inject constructor(
         relayUrl: String,
         kinds: List<Int>,
         yours: Pair<String, List<Int>>?,
+        allowSignerPrompt: Boolean = false,
     ): Pair<Map<Int, Int>, Map<Int, Int>>? {
+        val signAuth: suspend (String, String) -> Pair<String, String>? =
+            { tag, challenge -> signOwnerAuth(tag, challenge, silentOnly = !allowSignerPrompt) }
         val relayTag = authRelayTag(configStore.config.value, relayUrl)
         if (relayTag == null) {
             val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = isLocalhost(relayUrl))
-            return countOver(client, scope, kinds, yours, authRelayTag = null, signAuth = ::signOwnerAuth)
+            return countOver(client, scope, kinds, yours, authRelayTag = null, signAuth = signAuth)
         }
         // /private and /chat: reuse the socket the owner already logged in on,
         // so each Vault tab visit doesn't sign two more AUTHs (and on a
@@ -388,7 +431,7 @@ class StatsService @Inject constructor(
             kinds = kinds,
             yours = yours,
             authRelayTag = relayTag,
-            signAuth = ::signOwnerAuth,
+            signAuth = signAuth,
             alreadyAuthed = open != null,
             keepOpen = true,
         )
@@ -404,15 +447,16 @@ class StatsService @Inject constructor(
      * or null when the owner can't sign (watch-only, signer not connected).
      * Same as DM's /chat AUTH (DMServiceListening.handleAuthChallenge).
      */
-    private suspend fun signOwnerAuth(relayTag: String, challenge: String): Pair<String, String>? {
+    private suspend fun signOwnerAuth(relayTag: String, challenge: String, silentOnly: Boolean = true): Pair<String, String>? {
         val event = try {
             nostrService.signEventAsync(
                 kind = 22242,
                 content = "",
                 tags = listOf(listOf("relay", relayTag), listOf("challenge", challenge)),
                 forceOwner = true,
-                // Runs on every resume: never open Amber's approval screen for it.
-                silentOnly = true,
+                // Runs on every resume: never open Amber's approval screen for
+                // it, unless the owner tapped "approve" ([fetchCountsByKind]).
+                silentOnly = silentOnly,
             )
         } catch (e: Exception) {
             Log.w(TAG, "Counts AUTH not signed: ${e.message}")

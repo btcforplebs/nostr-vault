@@ -53,13 +53,14 @@ import java.io.File
                 if (wotCachePath != null) {
                     val file = File(wotCachePath)
                     if (file.exists()) {
-                        val text = file.readText()
-                        val loaded = FeedFilterEngine.parseWotCache(text, nostrService.activeHexPubkey)
-                        val vouches = TrustMap.vouches(text)
-                        if (loaded == null) {
+                        // One streaming read for the graph and its vouches.
+                        val parsed = file.inputStream().use { WotCacheFile.read(it, nostrService.activeHexPubkey) }
+                        if (parsed == null) {
                             Log.w(TAG, "WoT cache unreadable: $wotCachePath")
                             return@launch
                         }
+                        val loaded = parsed.pubkeys
+                        val vouches = parsed.vouches
                         if (BuildConfig.DEBUG) Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
                             _wotCacheRead.value = true

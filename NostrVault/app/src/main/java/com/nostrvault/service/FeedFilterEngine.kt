@@ -5,10 +5,6 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.poll
 import com.nostrvault.data.model.RecipeTopics
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Port of FeedFilterEngine.swift -- pure feed filtering and sorting.
@@ -32,16 +28,8 @@ object FeedFilterEngine {
      * threw, so the trust graph stayed empty and Global (Web of Trust on, the
      * default) and Discovery showed nothing.
      */
-    fun parseWotCache(content: String, ownerHex: String): Set<String>? {
-        val root = runCatching { Json.parseToJsonElement(content) }.getOrNull() ?: return null
-        val pubkeys: Set<String> = when (root) {
-            is JsonObject -> (root["pubkeys"] as? JsonObject)?.keys ?: return null
-            // Tolerate a bare array too, in case an older relay ever wrote one.
-            is JsonArray -> root.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }.toSet()
-            else -> return null
-        }
-        return if (hasUsableWot(pubkeys, ownerHex)) pubkeys else emptySet()
-    }
+    fun parseWotCache(content: String, ownerHex: String): Set<String>? =
+        WotCacheFile.parse(content, ownerHex)?.pubkeys
 
     /** True when the graph names somebody other than the owner. */
     fun hasUsableWot(pubkeys: Set<String>, ownerHex: String): Boolean {

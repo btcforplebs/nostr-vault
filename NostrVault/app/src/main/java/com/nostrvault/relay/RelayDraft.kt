@@ -122,6 +122,17 @@ object RelayDraft {
      */
     fun replay(looked: State, edits: List<(State) -> State>): State = edits.fold(looked) { acc, edit -> edit(acc) }
 
+    /**
+     * How many relays [state] lists, as the Relays page counts them: every row
+     * not removed, plus the vault's own relay when it has one. The Vault
+     * Dashboard's Relays row uses this too, so the two never disagree.
+     */
+    fun count(state: State, ownRelay: String): Int =
+        rows(state).count { !it.removed } + if (ownRelay.isEmpty()) 0 else 1
+
+    /** The vault's own relay and DM inbox: rows of their own, left out of the lists. */
+    fun pinned(cfg: HavenConfig): List<String> = listOf(cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)
+
     fun rows(state: State): List<Row> = state.layout.map { entry ->
         val removed = state.removed[entry.key]
         Row(entry, removed ?: jobs(state.draft, entry.key), removed != null)
