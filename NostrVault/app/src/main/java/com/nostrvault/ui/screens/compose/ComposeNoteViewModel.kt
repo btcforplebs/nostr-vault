@@ -146,6 +146,8 @@ class ComposeNoteViewModel @Inject constructor(
      * end where the text does not show them (Tron, PR #1511).
      */
     @Volatile internal var postTapped = false
+    /** This Post's re-uploads, old link to new (null: none yet), for [textAfterRelinks]. */
+    internal val relinks = java.util.concurrent.CopyOnWriteArrayList<Pair<String, String?>>()
     internal val uploads = ComposeNoteUploads(
         scope = uploadScope,
         send = { attachment, skipOutside, signAs, onProgress -> uploadSend(attachment, skipOutside, signAs, onProgress) },
@@ -707,13 +709,14 @@ class ComposeNoteViewModel @Inject constructor(
                     _uploadMessage.value = draft.value.unfinished.takeIf { it > 0 }?.let { waitingMessage(it) }
                     // Signed as the account this note posts as: anything another
                     // account uploaded goes up again as this one.
+                    relinks.clear()
                     uploadResult = uploads.await(_attachments.value, lock)
                     _isUploading.value = false
                     _uploadMessage.value = null
                 }
                 // Placements land on the main thread; let any that just did run first.
                 kotlinx.coroutines.yield()
-                val postText = _content.value.trim().ifBlank { text }
+                val postText = _content.value.trim().ifBlank { textAfterRelinks(text) }
                 // Convert `@name` display tokens back to canonical `nostr:npub…` references.
                 val baseContent = convertMentionsToNostr(postText)
                 var finalContent = baseContent

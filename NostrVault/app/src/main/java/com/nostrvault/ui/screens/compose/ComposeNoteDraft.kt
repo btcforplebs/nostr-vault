@@ -174,6 +174,10 @@ data class ComposeNoteDraft(
             return text.substring(0, start) + text.substring(end)
         }
 
+        /** [text] with [old] swapped for [new], or its line taken out when the re-upload left no link. */
+        fun relink(text: String, old: String, new: String?): String =
+            if (new != null) text.replace(old, new) else removeLink(text, old)
+
         /** [body] with each of [urls] not already in it on a new line at the end (the old behaviour). */
         fun withLinksAtEnd(body: String, urls: List<String>): String =
             urls.filterNot { body.contains(it) }.fold(body) { acc, url -> if (acc.isEmpty()) url else "$acc\n$url" }

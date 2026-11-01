@@ -208,4 +208,36 @@ class ComposeNoteCloseCleanupTest {
         assertTrue("B's note body still has the owner's link: ${queued.captured.body}", !queued.captured.body.contains(ownerUrl))
         assertTrue(queued.captured.media.all { it.url == null })
     }
+
+    /**
+     * Tron's second case on #1517: the note is only the placed link. Taking it
+     * out leaves the editor blank, and Post's fallback (the text it saved
+     * before waiting) must not bring the owner's link back.
+     */
+    @Test fun aSwitchedAccountsLinkOnlyNoteCarriesNoOtherAccountsLink() {
+        val owner = com.nostrvault.data.model.PostingAccount.Lock("npub1owner", "0".repeat(64))
+        var active = owner
+        every { nostr.lockPostingAccount() } answers { active }
+        val ownerUrl = "https://vault.owner.example/${"a".repeat(64)}"
+        val vm = viewModel().apply {
+            uploadSend = { _, _, signAs, _ ->
+                if (signAs == owner) ComposeNoteUpload.Done(fresh.copy(url = ownerUrl), preExisting = false, signer = signAs.hex)
+                else ComposeNoteUpload.Done(fresh.copy(url = null), unreachable = listOf("https://down"), preExisting = false, signer = signAs.hex)
+            }
+        }
+        vm.onContentChanged("Hi there", 2)
+        vm.addAttachments(listOf(mockk<Uri>(relaxed = true)), caret = 2)
+        runBlocking { vm.uploads.await(vm.attachments.value, owner) }
+        assertTrue("placed: ${vm.content.value}", vm.content.value.contains(ownerUrl))
+        // Both words deleted: the text is the owner's link alone.
+        vm.onContentChanged(ownerUrl, ownerUrl.length)
+
+        active = me
+        val queued = io.mockk.slot<QueuedMediaPost>()
+        every { queue.enqueue(capture(queued)) } returns Unit
+        vm.publish { }
+        assertTrue("queued", queued.isCaptured)
+        assertTrue("B's note body still has the owner's link: ${queued.captured.body}", !queued.captured.body.contains(ownerUrl))
+        assertTrue(queued.captured.media.all { it.url == null })
+    }
 }
