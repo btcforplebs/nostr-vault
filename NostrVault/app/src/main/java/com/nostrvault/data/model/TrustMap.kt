@@ -384,17 +384,8 @@ object TrustMap {
      * past your follows, how many of your follows follow them. Null when the
      * cache predates the field (it fills on the next rebuild).
      */
-    fun vouches(cache: String): Map<String, Int>? {
-        val root = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(cache) }.getOrNull()
-            as? kotlinx.serialization.json.JsonObject ?: return null
-        val raw = root["vouches"] as? kotlinx.serialization.json.JsonObject ?: return null
-        val out = HashMap<String, Int>(raw.size)
-        for ((key, value) in raw) {
-            val n = (value as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() ?: continue
-            out[key] = n.toInt()
-        }
-        return out
-    }
+    fun vouches(cache: String): Map<String, Int>? =
+        com.nostrvault.service.WotCacheFile.parse(cache, "")?.vouches
 
     /** How brightly [layer] draws your follows, the Close part of the outer shell, and the rest of it. */
     data class Weights(val follows: Double, val close: Double, val further: Double)

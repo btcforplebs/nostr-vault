@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.dashboard
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +53,7 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
     val isCounting by viewModel.isCounting.collectAsState()
     val countFailed by viewModel.countFailed.collectAsState()
     val publicOnly by viewModel.countsPublicOnly.collectAsState()
+    val privateMissing by viewModel.privateMissing.collectAsState()
     val media by viewModel.media.collectAsState()
     val cache by viewModel.cache.collectAsState()
     val isClearingCache by viewModel.isClearingCache.collectAsState()
@@ -89,12 +91,12 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
                     row.kinds.forEach { BreakdownLine(it.title, count(it.count)) }
                 }
             }
-            if (isCounting || countFailed || publicOnly) {
+            if (isCounting || countFailed || publicOnly || privateMissing) {
                 DashDivider()
-                CountStatus(isCounting, countFailed, publicOnly, relayStatus)
+                CountStatus(isCounting, countFailed, publicOnly, privateMissing, relayStatus, viewModel::approvePrivateCounts)
             }
         } else {
-            CountStatus(isCounting, countFailed, publicOnly, relayStatus)
+            CountStatus(isCounting, countFailed, publicOnly, privateMissing, relayStatus, viewModel::approvePrivateCounts)
         }
 
         DashDivider()
@@ -162,14 +164,26 @@ internal fun VaultDashboardContentsSection(viewModel: VaultDashboardViewModel) {
 
 /**
  * Counting, the vault is off, the last count did not get every relay's
- * answer, or (watch-only) only the public endpoints were counted.
+ * answer, (watch-only) only the public endpoints were counted, or the
+ * /private and /chat login wasn't signed: then a tap asks the signer.
  */
 @Composable
-private fun CountStatus(isCounting: Boolean, countFailed: Boolean, publicOnly: Boolean, relayStatus: RelayForegroundService.RelayStatus) {
+private fun CountStatus(
+    isCounting: Boolean,
+    countFailed: Boolean,
+    publicOnly: Boolean,
+    privateMissing: Boolean,
+    relayStatus: RelayForegroundService.RelayStatus,
+    onApprove: () -> Unit,
+) {
+    val canApprove = privateMissing && !isCounting && !countFailed && !publicOnly &&
+        relayStatus == RelayForegroundService.RelayStatus.RUNNING
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth()
+            .then(if (canApprove) Modifier.clickable(onClick = onApprove) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         if (isCounting) {
             CircularProgressIndicator(color = LocalNostrVaultColors.current.primary, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
@@ -179,13 +193,18 @@ private fun CountStatus(isCounting: Boolean, countFailed: Boolean, publicOnly: B
                 isCounting -> "Counting…"
                 relayStatus != RelayForegroundService.RelayStatus.RUNNING -> "Start your vault to count what's in it."
                 publicOnly && !countFailed -> StatsService.PUBLIC_ONLY_NOTE
+                canApprove -> PRIVATE_MISSING_NOTE
                 else -> "Couldn't count. Tap refresh to try again."
             },
-            color = SecondaryText,
+            color = if (canApprove) LocalNostrVaultColors.current.primary else SecondaryText,
             fontSize = 13.sp,
         )
     }
 }
+
+/** Public counts are showing; /private and /chat wait on the signer's approval. */
+internal const val PRIVATE_MISSING_NOTE =
+    "Private messages and chat aren't counted: your signer didn't approve the login. Tap to approve."
 
 private fun count(n: Int): String = "%,d".format(Locale.getDefault(), n)
 

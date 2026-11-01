@@ -81,4 +81,33 @@ class StatsCountEndpointsTest {
         assertNull(StatsService.mergeEndpointCounts(listOf(mapOf(1 to 10), null)))
         assertNull(StatsService.mergeEndpointCounts(emptyList()))
     }
+
+    // Moto check 11-01 #2: an unsigned /private or /chat login no longer blanks the public counts.
+    private val pub = mapOf(StatsService.TOTAL_KEY to 10, 1 to 10)
+    private val inbox = mapOf(StatsService.TOTAL_KEY to 4, 1 to 4)
+    private val priv = mapOf(StatsService.TOTAL_KEY to 2, 4 to 2)
+    private val auth = listOf(false, false, true, true)
+
+    @Test fun `every endpoint answering is complete`() {
+        val (result, merged) = StatsService.mergeAnswered(listOf(pub, inbox, priv, priv), auth)
+        assertEquals(StatsService.CountResult.COMPLETE, result)
+        assertEquals(mapOf(StatsService.TOTAL_KEY to 18, 1 to 14, 4 to 4), merged)
+    }
+
+    @Test fun `only private and chat missing still shows the public sum`() {
+        val (result, merged) = StatsService.mergeAnswered(listOf(pub, inbox, null, null), auth)
+        assertEquals(StatsService.CountResult.PRIVATE_MISSING, result)
+        assertEquals(mapOf(StatsService.TOTAL_KEY to 14, 1 to 14), merged)
+        assertEquals(StatsService.CountResult.PRIVATE_MISSING,
+            StatsService.mergeAnswered(listOf(pub, inbox, priv, null), auth).first)
+    }
+
+    @Test fun `a missing public endpoint fails the whole count`() {
+        val (result, merged) = StatsService.mergeAnswered(listOf(pub, null, priv, priv), auth)
+        assertEquals(StatsService.CountResult.FAILED, result)
+        assertNull(merged)
+        assertEquals(StatsService.CountResult.FAILED,
+            StatsService.mergeAnswered(listOf(null, null, null, null), auth).first)
+        assertEquals(StatsService.CountResult.FAILED, StatsService.mergeAnswered(emptyList(), emptyList()).first)
+    }
 }

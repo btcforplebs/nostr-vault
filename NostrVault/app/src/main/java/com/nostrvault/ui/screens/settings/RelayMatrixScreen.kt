@@ -187,7 +187,7 @@ class RelayMatrixViewModel @Inject constructor(
 
     fun ownRelay(cfg: HavenConfig): String = cfg.macRelayWssURL
 
-    fun pinned(cfg: HavenConfig): List<String> = listOf(cfg.macRelayWssURL, cfg.ownHavenDMInboxURL)
+    fun pinned(cfg: HavenConfig): List<String> = RelayDraft.pinned(cfg)
 
     /** Changes the draft; nothing is written until [save]. */
     fun edit(change: (RelayDraft.State) -> RelayDraft.State) {
@@ -415,7 +415,7 @@ fun RelayMatrixScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
-                    Chip("${liveRows.size + if (ownRelay.isEmpty()) 0 else 1} relays", SecondaryText)
+                    Chip("${state?.let { RelayDraft.count(it, ownRelay) } ?: 0} relays", SecondaryText)
                     if (times.isNotEmpty()) Chip("avg ${times.sum() / times.size} ms", SecondaryText)
                     if (fixCount > 0) {
                         Box(Modifier.clickable { recommended = true }) { Chip("⚠ $fixCount to fix", SlowAmber) }
