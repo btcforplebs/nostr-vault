@@ -756,7 +756,7 @@ class LocalNotificationService @Inject constructor(
         scope.launch {
             val profile = awaitAuthor(message.senderPubkey)
             val profiles = nostrService.get().profiles.value
-            val text = dmPreview(NostrMentions.toPlainText(message.content, profiles))
+            val text = dmPreview(NostrMentions.toPlainText(message.content, profiles)).orEmpty()
             val (title, body) = buildContent(type, profile?.bestName, text)
             // Opened, so it routes as a DM with its counterparty: a tap lands in the thread.
             deliver(InAppBanner(id, title, body, "dm", counterparty, npub, profile?.pictureURL))
