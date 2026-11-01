@@ -36,7 +36,9 @@ export function ProfileScreen({ ctx }) {
     show(await readOwn(vault, me, NOTE_KINDS, OPENING))
     if (navigator.onLine) {
       // syncOwn brings no reposts: they come as deep as its notes, so the newest OPENING read below has no gap.
-      await Promise.all([syncOwn(vault, me, writeRelays), syncOwnPage(vault, me, writeRelays, { kinds: [6], limit: OPENING })]).catch(() => {})
+      // Each relay's notes draw as they land (syncOwn `on`): the list never waits on the slowest write relay.
+      const draw = async () => show(await readOwn(vault, me, NOTE_KINDS, OPENING))
+      await Promise.all([syncOwn(vault, me, writeRelays, { on: draw }), syncOwnPage(vault, me, writeRelays, { kinds: [6], limit: OPENING })]).catch(() => {})
     }
     const all = await readOwn(vault, me, NOTE_KINDS, OPENING)
     setArticles(await readOwn(vault, me, [30023], 50))

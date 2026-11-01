@@ -6,6 +6,7 @@ import { useProfile } from "./useProfile.js"
 import { fetchFollowers, keptFollowers } from "../net/followers.js"
 import { MediaLightbox } from "./MediaLightbox.jsx"
 import { imageItem } from "../net/note-media.js"
+import { NoteText } from "./NoteText.jsx"
 
 if (import.meta.env) import("../styles/profile.css")
 
@@ -44,7 +45,9 @@ export function ProfileHeader({ pubkey, follows, you = true, relation = "", chil
           {p?.nip05 && <div class="profile-nip05">{p.nip05.replace(/^_@/, "")}</div>}
         </div>
       </div>
-      {p?.about && <p class="about">{p.about}</p>}
+      {/* The bio reads like a note: nostr:npub as @name, links as links (NoteText). Quotes stay short references
+          (depth 1) and pictures wait for a tap, so a stranger's bio can't fill the header. */}
+      {p?.about && <div class="about"><NoteText content={p.about} depth={1} images={false} memoryOnly={!you} /></div>}
       <div class="chips">
         {p?.lud16 && <button class={`chip chip-ln${copied === "ln" ? " copied" : ""}`} type="button" title="Copy lightning address" onClick={() => copy("ln", p.lud16)}>
           {copied === "ln" ? <Icon d={CHECK} /> : <Icon d="M13 2L4 14h7l-1 8 9-12h-7z" fill />}{copied === "ln" ? "Copied" : p.lud16}</button>}

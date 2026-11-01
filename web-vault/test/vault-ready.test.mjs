@@ -54,12 +54,13 @@ const empty = { contacts: undefined, follows: [], relays: { read: [], write: [] 
 /** Relays that know the account, its notes, its follows' notes and profiles. `slow` ids never answer. */
 function relays(t, { slow = new Set() } = {}) {
   const asked = []
+  const mine = [ev(1, ME), ev(1, ME)] // the account's own notes: every relay holds the same two (syncOwn asks each)
   t.mock.method(pool, "ensureRelay", async () => ({}))
   t.mock.method(pool, "querySync", async (_urls, f) => {
     asked.push(f)
     const k = f.kinds.join()
     if (k === "0,3,10002,10006") return slow.has("account") ? new Promise(() => {}) : [ev(0, ME), ev(3, ME, FOLLOWS.map(p => ["p", p]))]
-    if (k === "1" || k === "30023") return slow.has("notes") ? new Promise(() => {}) : k === "1" ? [ev(1, ME), ev(1, ME)] : []
+    if (k === "1" || k === "30023") return slow.has("notes") ? new Promise(() => {}) : k === "1" ? mine : []
     if (k === "0") return slow.has("profiles") ? new Promise(() => {}) : f.authors.map(p => ev(0, p))
     return slow.has("feed") ? new Promise(() => {}) : f.authors.slice(0, 3).map(p => ev(1, p))
   })

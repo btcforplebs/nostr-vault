@@ -49,6 +49,7 @@ export class LivePool extends SimplePool {
   budget = relayBudget() // relay-budget.js: hosts that ban busy addresses get a minute's and a day's share
   heard = new WeakMap() // socket -> when it last sent us anything
   isHidden = () => globalThis.document?.visibilityState === "hidden"
+  pageProtocol = () => globalThis.location?.protocol ?? ""
   /** Relays a signer (a bunker link) named: neither the dead list nor Never Connect refuses these. */
   keepForSigner(urls) { for (const u of urls ?? []) try { this.signerRelays.add(normalizeURL(u)) } catch {} }
   /** The user's Never Connect list (kind 10006, never-connect.js): refused from now on, and closed if open. */
@@ -64,6 +65,7 @@ export class LivePool extends SimplePool {
     const key = normalizeURL(url)
     if (isDead(url) && !this.signerRelays.has(key)) throw new Error(`dead relay skipped: ${url}`)
     if (this.neverConnect(url) && !this.signerRelays.has(key)) throw new Error(`on your Never Connect list: ${url}`)
+    if (blockedPlain(url, this.pageProtocol())) throw new Error(`plain ws:// relay skipped on an https page: ${url}`)
     if (!this.signerRelays.has(key) && !this.budget.take(url)) throw new Error(`relay skipped, request budget used: ${url}`)
     const deadline = Date.now() + (this.strictCap ? SLOT_WAIT_MS : 0)
     // Nothing is awaited between the last check and super.ensureRelay, which adds the relay to this.relays
@@ -168,6 +170,13 @@ export const BROADCAST_RELAYS = ["wss://relay.btcforplebs.com", "wss://relay.dam
 const loopbackHost = h => { h = h.replace(/^\[|\]$/g, "").toLowerCase(); return h === "localhost" || h === "::1" || /^127\./.test(h) }
 /** A relay on the machine the browser runs on (the Mac's own vault relay, ws://localhost:3355). */
 export const isLoopback = url => loopbackHost(hostOf(url))
+/**
+ * A plain ws:// relay the page can't open: on an https page the browser blocks it (mixed content, and the site's CSP
+ * connect-src has no ws:), so every ask failed at once and was asked again, 4-29 console errors a screen from one
+ * ws:// entry in someone's kind 10002 (Ted's web sweep 2026-11-01). A loopback relay is left to its callers, which
+ * already keep it to a page open on that same machine (publishRelays, own-relays.js): the Mac's own vault lives there.
+ */
+export const blockedPlain = (url, pageProtocol) => pageProtocol === "https:" && /^ws:\/\//i.test(String(url).trim()) && !isLoopback(url)
 
 /**
  * The relays a new note goes to: the write list plus the iPhone app's broadcast set, so a short or half-dead

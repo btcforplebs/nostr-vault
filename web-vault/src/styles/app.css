@@ -74,6 +74,7 @@ button.small { min-height: 34px; padding: 0 14px; font: var(--t-foot); font-weig
 .you-badge { flex: none; padding: 3px 6px; border-radius: 4px; background: var(--accent-pale); color: var(--accent); font: 700 11px/1 var(--font); letter-spacing: .08em; }
 .profile-nip05 { color: var(--text-2); font: var(--t-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-header .about { margin: 12px var(--gutter) 0; font: var(--t-sub); white-space: pre-wrap; overflow-wrap: anywhere; }
+.profile-header .about .note-text { font: inherit; margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px var(--gutter) 0; }
 .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; background: var(--s1); border-color: var(--hair);
   color: var(--text); font: var(--t-foot); font-weight: 500; max-width: 100%; }

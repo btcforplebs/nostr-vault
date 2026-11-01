@@ -17,6 +17,7 @@ import { extensionCrypto } from "../signer/nip07.js"
 import { checkSigned } from "./sync.js"
 import { AUTH_WAIT, LIVE_RETRY, authedSubscribe, forgetDeclinedAuth, queryWithAuth } from "./dm-read-auth.js"
 import { chunkBytesFor, dmCache } from "./dm-cache.js"
+import { settleWatch } from "./settle-early.js"
 
 const HEX64 = /^[0-9a-f]{64}$/
 const now = () => Math.floor(Date.now() / 1000)
@@ -285,15 +286,26 @@ async function load({ vault, session, signer }, relays, { crypto, net = pool, wa
   let stored = 0
   if (globalThis.navigator?.onLine !== false && relays.length) {
     const urls = uniq(relays)
-    // One filter per query: pool.querySync wraps its filter in an array itself, so a list here would reach the relay
-    // as ["REQ", id, [f1, f2]], which every relay refuses.
-    const [wraps, legacyTo, legacyFrom] = await Promise.all([
-      query(urls, { kinds: [1059], "#p": [me], limit: 500 }, { maxWait: wait }),
-      query(urls, { kinds: [4], "#p": [me], limit: 200 }, { maxWait: wait }),
-      query(urls, { kinds: [4], authors: [me], limit: 200 }, { maxWait: wait }),
-    ])
-    for (const w of wraps) if (!opened.has(w.id) && (await store.event(w).catch(() => ({ ok: false }))).ok) stored++
-    await take([...wraps, ...legacyTo, ...legacyFrom], c, me, { limit: Math.max(0, budget) })
+    // Each relay on its own, so an empty inbox (a new account) shows once enough relays have answered, not after the
+    // slowest one's `wait` (settle-early.js); what a later relay sends is opened when it lands. One filter per query:
+    // pool.querySync wraps its filter in an array itself, so a list here would reach the relay as
+    // ["REQ", id, [f1, f2]], which every relay refuses.
+    let turn = Promise.resolve()
+    const open = evs => (turn = turn.then(async () => {
+      for (const w of evs) if (w.kind === 1059 && !opened.has(w.id) && (await store.event(w).catch(() => ({ ok: false }))).ok) stored++
+      budget -= (await take(evs, c, me, { limit: Math.max(0, budget) })).asked
+    }))
+    const watch = settleWatch(urls.length, () => { if (state.pubkey === me && !state.loaded) { state = { ...state, loaded: true }; changed() } })
+    await Promise.all(urls.map(async url => {
+      const got = await Promise.all([
+        query([url], { kinds: [1059], "#p": [me], limit: 500 }, { maxWait: wait }),
+        query([url], { kinds: [4], "#p": [me], limit: 200 }, { maxWait: wait }),
+        query([url], { kinds: [4], authors: [me], limit: 200 }, { maxWait: wait }),
+      ].map(p => Promise.resolve(p).catch(() => null)))
+      if (got.every(g => g === null)) return watch.failed()
+      await open(got.flatMap(g => g ?? []))
+      watch.answered()
+    }))
   }
   state = { ...state, loaded: true }; changed()
   lastLoaded = clock()

@@ -69,7 +69,7 @@ export function NoteText(props) {
         if (meshHost(s)) return <span key={i}>{s}</span>
         const type = mediaType(s)
         if (type === "image") return images ? <img key={i} class="note-media" src={s} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <TapImage key={i} src={s} />
-        if (type === "video" && !dm) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
+        if (type === "video" && !dm && images) return <video key={i} class="note-media" src={s} controls preload="metadata" playsinline referrerpolicy="no-referrer" />
         const label = s.replace(/^https?:\/\//, "")
         return <a key={i} href={s} target="_blank" rel="noopener noreferrer">{label.slice(0, 48)}{label.length > 48 ? "…" : ""}</a>
       })}
