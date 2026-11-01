@@ -14,12 +14,15 @@ extension View {
     /// (see DMInboxView) but with a count instead of a plain dot.
     func draftCountBadge(_ count: Int, ringColor: Color) -> some View {
         overlay(alignment: .topTrailing) {
-            Text("\(count)")
+            Text(count > 99 ? "99+" : "\(count)")
+                .lineLimit(1)
+                .fixedSize()
                 .font(.appSystem(size: 10, weight: .bold))
                 .foregroundColor(.white)
+                .padding(.horizontal, count > 9 ? 3 : 0)
                 .frame(minWidth: 15, minHeight: 15)
-                .background(Color.havenPurple, in: Circle())
-                .overlay(Circle().stroke(ringColor, lineWidth: 1.5))
+                .background(Color.havenPurple, in: Capsule())
+                .overlay(Capsule().stroke(ringColor, lineWidth: 1.5))
                 .offset(x: 10, y: -8)
         }
     }
@@ -267,7 +270,7 @@ struct ComposeView: View {
                     }
                 }
                 if !showsPreviewBeside {
-                    ToolbarItem(placement: .principal) { writePreviewToggle }
+                    ToolbarItem(placement: .primaryAction) { previewButton }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Post") { postNote() }
