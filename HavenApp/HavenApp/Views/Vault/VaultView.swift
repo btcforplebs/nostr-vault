@@ -70,6 +70,11 @@ struct VaultView: View {
     /// Per other account: its lines newer than this are new since its last visit.
     @State var otherAccountUnreadSince: [String: Int64] = [:]
     @State var otherAccountLoading = false
+    /// Each filter's limit for the other accounts' read; "load more" raises it.
+    @State var otherAccountLimit = VaultAccountChips.otherAccountPage
+    /// A filter of the last other-account read came back full: older lines
+    /// are there to read.
+    @State var otherAccountReadFull = false
     @State var otherAccountLoadTask: Task<Void, Never>?
     @State var displayLikedNotes: [NostrEvent] = []
     /// Maps note ID -> list of (reactor pubkey, reaction emoji) tuples
@@ -332,6 +337,8 @@ struct VaultView: View {
         .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning {
                 refreshAll()
+                // A chip picked while the relay was starting read nothing.
+                if showsOtherAccounts { loadOtherAccountActivity() }
                 initialLoad = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     establishNotificationBaseline()
@@ -341,6 +348,7 @@ struct VaultView: View {
         .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting {
                 refreshAll()
+                if showsOtherAccounts { loadOtherAccountActivity() }
                 initialLoad = true
             }
         }

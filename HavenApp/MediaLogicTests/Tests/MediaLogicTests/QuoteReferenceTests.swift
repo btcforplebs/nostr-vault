@@ -338,4 +338,17 @@ extension QuoteReferenceTests {
         XCTAssertNil(QuoteReference.eventPointer(fromNeventTLV: payload)?.author)
         XCTAssertNil(QuoteReference.eventPointer(fromNeventTLV: tlv(2, Data(repeating: 2, count: 32))))
     }
+
+    /// Sweep 11-01 #8: a malformed id in a tfetch REQ made the relay refuse
+    /// the whole batch ("uneven size input").
+    func testIsEventIdTakesOnly64LowercaseHex() {
+        let good = String(repeating: "ab", count: 32)
+        XCTAssertTrue(QuoteReference.isEventId(good))
+        XCTAssertFalse(QuoteReference.isEventId(String(good.dropLast())))   // odd length
+        XCTAssertFalse(QuoteReference.isEventId(good + "a"))
+        XCTAssertFalse(QuoteReference.isEventId(good.uppercased()))
+        XCTAssertFalse(QuoteReference.isEventId(""))
+        XCTAssertFalse(QuoteReference.isEventId(String(repeating: "g", count: 64)))
+        XCTAssertFalse(QuoteReference.isEventId("note1" + String(repeating: "q", count: 59)))
+    }
 }

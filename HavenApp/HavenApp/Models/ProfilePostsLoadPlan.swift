@@ -32,11 +32,14 @@ enum ProfilePostsLoadPlan {
         return noRelayListFallback.filter { !asked.contains(relayKey($0)) }
     }
 
-    /// The whole load is over with no posts by this person: try once more.
-    /// Relays drop first connections and rate-limit bursts often enough that
-    /// a single empty answer is not proof of an empty profile.
-    static func shouldRetry(postsFound: Int, alreadyRetried: Bool) -> Bool {
-        postsFound == 0 && !alreadyRetried
+    /// The whole load is over with no posts by this person: try once more,
+    /// but only when a relay did not finish. Relays drop first connections
+    /// and rate-limit bursts often enough that a refusal or a silence is not
+    /// proof of an empty profile. When every relay sent EOSE the answer is
+    /// complete, and a second load only held "Loading…" (up to about 36 s)
+    /// on a profile with no posts.
+    static func shouldRetry(postsFound: Int, alreadyRetried: Bool, everyRelayFinished: Bool) -> Bool {
+        postsFound == 0 && !alreadyRetried && !everyRelayFinished
     }
 
     /// One spelling per relay, so "wss://x/" and "wss://X" count once.

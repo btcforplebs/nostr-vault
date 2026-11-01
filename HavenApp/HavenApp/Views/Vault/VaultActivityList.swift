@@ -23,7 +23,7 @@ extension VaultView {
             activityBody(lines: lines, tagged: tagged, others: others, isEmpty: isEmpty, isLoading: isLoading)
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
-        .onChange(of: followersOwnerHex) { _, _ in resetAccountChip() }
+        .onChange(of: followersOwnerHex) { old, new in activeAccountChanged(from: old, to: new) }
         .onReceive(AccountUnreadStore.shared.$state.removeDuplicates().debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
             // A notification came in for some account: top the others up.
             if showsOtherAccounts { loadOtherAccountActivity() }
@@ -76,7 +76,7 @@ extension VaultView {
                         activityLink(item.line, account: item.account)
                             .padding(.horizontal, 16)
                             .onAppear {
-                                if item.id == tagged.last?.id { loadMoreActivity() }
+                                if item.id == tagged.last?.id { loadMoreAccountLines() }
                             }
                     }
                 }

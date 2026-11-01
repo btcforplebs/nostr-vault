@@ -71,6 +71,21 @@ enum VaultAccountChips {
         return Array(sorted.prefix(max(0, limit)))
     }
 
+    /// Each filter's `limit` for reading another account's lines from the
+    /// device's relay: the first read, and each "load more" after it.
+    static let otherAccountPage = 300
+    /// The relay's MaxLimit (Badger 1000). A bigger limit is not clamped: the
+    /// relay answers MaxLimit/4, so the list would shrink.
+    static let otherAccountMaxLimit = 1000
+
+    /// The limit for the next "load more" of other accounts' lines, or nil
+    /// when there is nothing older to read: no filter came back full, or the
+    /// limit is at the relay's cap.
+    static func nextOtherAccountLimit(current: Int, readFull: Bool) -> Int? {
+        guard readFull, current < otherAccountMaxLimit else { return nil }
+        return min(otherAccountMaxLimit, current + otherAccountPage)
+    }
+
     /// The npub to switch to before opening a line that is for another
     /// account, so a reply or like signs as that account (the same switch a
     /// tapped notification makes). Nil for the active account's own lines or

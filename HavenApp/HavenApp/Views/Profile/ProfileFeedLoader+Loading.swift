@@ -189,6 +189,7 @@ extension ProfileFeedLoader {
         // write relays it names have replied. One cap on the whole load left
         // write relays found at 5 s about 3 s, and new profiles came up empty.
         notesLoadToken += 1
+        openingIncomplete = false
         openingPending = Set(relayURLs.indices)
         openingFilters = filters
         for url in relayURLs { openProfileRelay(url) }
@@ -219,7 +220,7 @@ extension ProfileFeedLoader {
             .sink { [weak self, weak client] state in
                 // A relay that can't be reached has answered too: it
                 // will send nothing.
-                if state == .error { self?.openingRelayAnswered(relay) }
+                if state == .error { self?.openingRelayAnswered(relay, finished: false) }
                 if state == .connected {
                     let req: [Any] = ["REQ", "profile-\(UUID().uuidString.prefix(6))"] + filters
                     if let data = try? JSONSerialization.data(withJSONObject: req),
@@ -236,7 +237,7 @@ extension ProfileFeedLoader {
         let token = notesLoadToken
         DispatchQueue.main.asyncAfter(deadline: .now() + ProfilePostsLoadPlan.relayAnswerTimeout) { [weak self] in
             guard let self, token == self.notesLoadToken else { return }
-            self.openingRelayAnswered(relay)
+            self.openingRelayAnswered(relay, finished: false)
         }
     }
 
@@ -254,9 +255,10 @@ extension ProfileFeedLoader {
     /// "Loading…" holds until the lookup answers or gives up.
     private func lookUpOutboxIfMissing() {
         guard nostrService.outboxRelays[pubkey] == nil else { return }
-        // Their relay list is known and names no write relays: nothing to
+        // Their relay list is known and names no write relays, or this is
+        // the retry and the first lookup already found none: nothing to
         // look up, go straight to the big public relays.
-        if nostrService.relayLists[pubkey] != nil {
+        if nostrService.relayLists[pubkey] != nil || retriedEmptyLoad {
             addFallbackRelays()
             return
         }
@@ -273,7 +275,7 @@ extension ProfileFeedLoader {
                 // while the page is loading.
                 guard let self, token == self.notesLoadToken, self.isLoadingNotes else { return }
                 for str in outbox.prefix(3) { self.joinOpeningLoad(str) }
-                self.openingRelayAnswered(Self.outboxLookup)
+                self.openingRelayAnswered(Self.outboxLookup, finished: true)
             }
             .store(in: &profileCancellables)
 
@@ -283,7 +285,7 @@ extension ProfileFeedLoader {
             guard let self, token == self.notesLoadToken,
                   self.openingPending.contains(Self.outboxLookup) else { return }
             self.addFallbackRelays()
-            self.openingRelayAnswered(Self.outboxLookup)
+            self.openingRelayAnswered(Self.outboxLookup, finished: true)
         }
     }
 
@@ -302,16 +304,21 @@ extension ProfileFeedLoader {
         ProfilePostsLoadPlan.relayKey(url)
     }
 
-    private func openingRelayAnswered(_ relay: Int) {
+    /// `finished` is false for a timeout, a failed connection or a CLOSED:
+    /// the relay may have more than it sent.
+    private func openingRelayAnswered(_ relay: Int, finished: Bool) {
         guard openingPending.remove(relay) != nil else { return }
+        if !finished { openingIncomplete = true }
         if openingPending.isEmpty { finishOpeningLoad() }
     }
 
-    /// Every relay has answered or given up. No posts at all gets one more
-    /// try, with fresh connections, before the page says there are none.
+    /// Every relay has answered or given up. No posts at all, with a relay
+    /// that did not finish, gets one more try with fresh connections before
+    /// the page says there are none.
     private func finishOpeningLoad() {
         flushPendingNotes()
-        if ProfilePostsLoadPlan.shouldRetry(postsFound: profileNotes.count, alreadyRetried: retriedEmptyLoad) {
+        if ProfilePostsLoadPlan.shouldRetry(postsFound: profileNotes.count, alreadyRetried: retriedEmptyLoad,
+                                            everyRelayFinished: !openingIncomplete) {
             retriedEmptyLoad = true
             disconnectClients()
             isLoadingNotes = false   // fetchAuthorNotes starts only when idle
@@ -426,7 +433,7 @@ extension ProfileFeedLoader {
             if nostrService.profiles[pubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [pubkey])
             }
-        case .done(let subId):
+        case .done(let subId, let refused):
             // Page bookkeeping counts the lists, so they must be complete.
             flushPendingNotes()
             if subId.hasPrefix("followers-page-") {
@@ -447,7 +454,7 @@ extension ProfileFeedLoader {
             } else {
                 // The opening subscription is deliberately left open — it is also
                 // how new posts reach the profile while it is on screen.
-                openingRelayAnswered(relay)
+                openingRelayAnswered(relay, finished: !refused)
             }
         }
     }
@@ -461,7 +468,8 @@ enum ProfileRelayMessage {
     /// rate limit) reads identically to an exhausted history from here, and
     /// ignoring it left the page hanging on a relay that was never going to
     /// answer.
-    case done(subId: String)
+    /// `refused` is true for CLOSED.
+    case done(subId: String, refused: Bool)
 
     /// One decode straight from the text. Going through JSONSerialization,
     /// back to data and then JSONDecoder read every event three times.
@@ -481,8 +489,9 @@ enum ProfileRelayMessage {
             case "EVENT":
                 _ = try items.decode(String.self)
                 message = .event(try items.decode(NostrEvent.self))
-            case "EOSE", "CLOSED":
-                message = .done(subId: items.isAtEnd ? "" : (try? items.decode(String.self)) ?? "")
+            case let kind where kind == "EOSE" || kind == "CLOSED":
+                message = .done(subId: items.isAtEnd ? "" : (try? items.decode(String.self)) ?? "",
+                                refused: kind == "CLOSED")
             default:
                 message = nil
             }

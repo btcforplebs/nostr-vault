@@ -25,10 +25,16 @@ final class ProfilePostsLoadPlanTests: XCTestCase {
             ["wss://nos.lol", "wss://relay.snort.social"])
     }
 
-    func testEmptyLoadRetriesOnce() {
-        XCTAssertTrue(ProfilePostsLoadPlan.shouldRetry(postsFound: 0, alreadyRetried: false))
-        XCTAssertFalse(ProfilePostsLoadPlan.shouldRetry(postsFound: 0, alreadyRetried: true))
-        XCTAssertFalse(ProfilePostsLoadPlan.shouldRetry(postsFound: 1, alreadyRetried: false))
+    func testEmptyLoadWithASilentRelayRetriesOnce() {
+        XCTAssertTrue(ProfilePostsLoadPlan.shouldRetry(postsFound: 0, alreadyRetried: false, everyRelayFinished: false))
+        XCTAssertFalse(ProfilePostsLoadPlan.shouldRetry(postsFound: 0, alreadyRetried: true, everyRelayFinished: false))
+        XCTAssertFalse(ProfilePostsLoadPlan.shouldRetry(postsFound: 1, alreadyRetried: false, everyRelayFinished: false))
+    }
+
+    /// Sweep 11-01 #5: every relay sent EOSE with nothing, so the profile has
+    /// no posts. A second load only held "Loading…" for up to 36 s.
+    func testEmptyLoadEveryRelayFinishedDoesNotRetry() {
+        XCTAssertFalse(ProfilePostsLoadPlan.shouldRetry(postsFound: 0, alreadyRetried: false, everyRelayFinished: true))
     }
 
     /// The relay list lookup must outlast fetchRelayList's own 10 s window,

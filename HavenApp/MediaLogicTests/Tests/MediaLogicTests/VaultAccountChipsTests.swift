@@ -81,4 +81,14 @@ final class VaultAccountChipsTests: XCTestCase {
         // An account the device no longer holds: nothing to switch to.
         XCTAssertNil(VaultAccountChips.switchTarget(lineAccount: cat, active: me, npubByHex: npubs))
     }
+
+    /// Sweep 11-01 #3b: another account's list stopped at its first read.
+    /// Load more raises the limit while a filter came back full, up to the
+    /// relay's MaxLimit (above it the relay answers MaxLimit/4).
+    func testOtherAccountLoadMoreRaisesTheLimitToTheRelayCap() {
+        XCTAssertEqual(VaultAccountChips.nextOtherAccountLimit(current: 300, readFull: true), 600)
+        XCTAssertEqual(VaultAccountChips.nextOtherAccountLimit(current: 900, readFull: true), 1000)
+        XCTAssertNil(VaultAccountChips.nextOtherAccountLimit(current: 1000, readFull: true))
+        XCTAssertNil(VaultAccountChips.nextOtherAccountLimit(current: 300, readFull: false))
+    }
 }
