@@ -12,8 +12,9 @@ class ComposeNoteDraftTest {
     private fun photo(id: String, hosted: String? = null) =
         Attachment(id = id, uri = mockk<Uri>(relaxed = true), mimeType = "image/jpeg", hostedUrl = hosted)
 
-    private fun done(url: String?, preExisting: Boolean = false) =
-        ComposeNoteUpload.Done(QueuedMediaPost.Media(sha256 = "x", mimeType = "image/jpeg", url = url), preExisting = preExisting)
+    private val me = "a".repeat(64)
+    private fun done(url: String?, preExisting: Boolean = false, signer: String? = me) =
+        ComposeNoteUpload.Done(QueuedMediaPost.Media(sha256 = "x", mimeType = "image/jpeg", url = url), preExisting = preExisting, signer = signer)
 
     @Test fun cursorInsideTheTextPlacesThePhoto() {
         assertEquals(5, ComposeNoteDraft.anchorFor("hello world", 5))
@@ -125,14 +126,14 @@ class ComposeNoteDraftTest {
 
     @Test fun removedFreshUploadIsDeleted() {
         val draft = ComposeNoteDraft(attachments = listOf(photo("1")), uploads = mapOf("1" to done("https://x/1.jpg")))
-        assertEquals("https://x/1.jpg", draft.uploadToDelete("1")?.url)
+        assertEquals("https://x/1.jpg", draft.uploadToDelete("1", me)?.url)
     }
 
     /** Already in the vault before this pick (an earlier post may show it): never deleted. */
     @Test fun aBlobThatWasAlreadyThereIsNeverDeleted() {
         val draft = ComposeNoteDraft(attachments = listOf(photo("1")), uploads = mapOf("1" to done("https://x/1.jpg", preExisting = true)))
-        assertNull(draft.uploadToDelete("1"))
-        assertEquals(emptyList<String>(), draft.unusedUploads("").map { it.url })
+        assertNull(draft.uploadToDelete("1", me))
+        assertEquals(emptyList<String>(), draft.unusedUploads("", me).map { it.url })
     }
 
     @Test fun aSharedBlobIsKeptForTheOtherCopy() {
@@ -140,7 +141,7 @@ class ComposeNoteDraftTest {
             attachments = listOf(photo("1"), photo("2")),
             uploads = mapOf("1" to done("https://x/1.jpg"), "2" to done("https://x/1.jpg")),
         )
-        assertNull(draft.uploadToDelete("2"))
+        assertNull(draft.uploadToDelete("2", me))
     }
 
     /** Closing unsent: uploads whose link a kept draft holds stay; the rest come off the servers. */
@@ -149,7 +150,26 @@ class ComposeNoteDraftTest {
             attachments = listOf(photo("1"), photo("2"), photo("3")),
             uploads = mapOf("1" to done("https://x/1.jpg"), "2" to done("https://x/2.jpg"), "3" to done(null)),
         )
-        assertEquals(listOf("https://x/2.jpg"), draft.unusedUploads("hi\nhttps://x/1.jpg").map { it.url })
-        assertEquals(listOf("https://x/1.jpg", "https://x/2.jpg"), draft.unusedUploads("").map { it.url })
+        assertEquals(listOf("https://x/2.jpg"), draft.unusedUploads("hi\nhttps://x/1.jpg", me).map { it.url })
+        assertEquals(listOf("https://x/1.jpg", "https://x/2.jpg"), draft.unusedUploads("", me).map { it.url })
+    }
+
+    /** Only the account that uploaded a blob can sign its delete: none while another account is active. */
+    @Test fun nothingIsDeletedWhileAnotherAccountIsActive() {
+        val draft = ComposeNoteDraft(
+            text = "",
+            attachments = listOf(photo("1")),
+            uploads = mapOf("1" to done("https://x/1.jpg", signer = "b".repeat(64))),
+        )
+        assertNull(draft.uploadToDelete("1", me))
+        assertEquals(emptyList<String>(), draft.unusedUploads("", me).map { it.url })
+        assertEquals("https://x/1.jpg", draft.uploadToDelete("1", "b".repeat(64))?.url)
+    }
+
+    @Test fun needsReuploadOnlyForAnotherSigner() {
+        assertEquals(false, done("https://x/1.jpg").needsReupload(me))
+        assertEquals(true, done("https://x/1.jpg", signer = "b".repeat(64)).needsReupload(me))
+        assertEquals(true, done("https://x/1.jpg", signer = null).needsReupload(me))
+        assertEquals(false, done(null, signer = "b".repeat(64)).needsReupload(me))
     }
 }

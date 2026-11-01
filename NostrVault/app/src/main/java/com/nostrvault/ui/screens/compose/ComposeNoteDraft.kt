@@ -28,6 +28,13 @@ sealed interface ComposeNoteUpload {
          * removed: another note may show it.
          */
         val preExisting: Boolean = true,
+        /**
+         * Hex key of the account that signed the upload. Post uploads again
+         * under the account it posts as when this differs, so one account's
+         * note never carries a link another account put up (Logen 2026-11-01).
+         * Null when nothing was signed for it.
+         */
+        val signer: String? = null,
     ) : ComposeNoteUpload
 
     /** Could not even be saved here; Post tries it once more. */
@@ -35,6 +42,14 @@ sealed interface ComposeNoteUpload {
 
     val finished: Boolean get() = this is Done || this is Failed
 }
+
+/** True when [hex]'s account signed this upload. */
+internal fun ComposeNoteUpload.Done.signedBy(hex: String): Boolean =
+    signer != null && signer.equals(hex, ignoreCase = true)
+
+/** Post must upload this again as [lockedHex]: another account signed it. */
+internal fun ComposeNoteUpload.Done.needsReupload(lockedHex: String): Boolean =
+    media.url != null && !signedBy(lockedHex)
 
 /**
  * The note being written: its text, its photos, each photo's upload, and
@@ -81,16 +96,22 @@ data class ComposeNoteDraft(
      * closing without posting deletes, best effort, so a photo picked and
      * dropped does not stay public.
      */
-    fun unusedUploads(keptText: String): List<QueuedMediaPost.Media> =
-        attachments.mapNotNull { (uploads[it.id] as? ComposeNoteUpload.Done)?.takeIf { d -> !d.preExisting }?.media }
+    fun unusedUploads(keptText: String, activeHex: String): List<QueuedMediaPost.Media> =
+        attachments.mapNotNull {
+            (uploads[it.id] as? ComposeNoteUpload.Done)?.takeIf { d -> !d.preExisting && d.signedBy(activeHex) }?.media
+        }
             .filter { it.url != null && !keptText.contains(it.url) }
             .distinctBy { it.url }
 
-    /** The blob to delete when [id] is removed: its own fresh upload, unless another photo still uses it. */
-    fun uploadToDelete(id: String): QueuedMediaPost.Media? {
+    /**
+     * The blob to delete when [id] is removed: its own fresh upload, unless
+     * another photo still uses it. Only the account that uploaded it can sign
+     * the delete, so nothing is deleted while another account is active.
+     */
+    fun uploadToDelete(id: String, activeHex: String): QueuedMediaPost.Media? {
         val done = uploads[id] as? ComposeNoteUpload.Done ?: return null
         val url = done.media.url ?: return null
-        if (done.preExisting) return null
+        if (done.preExisting || !done.signedBy(activeHex)) return null
         return done.media.takeIf { attachments.none { it.id != id && hostedUrl(it) == url } }
     }
 

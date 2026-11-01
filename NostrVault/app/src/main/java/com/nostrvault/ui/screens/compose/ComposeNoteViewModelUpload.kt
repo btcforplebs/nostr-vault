@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.service.isReadOnlyAccount
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.util.Log
@@ -10,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.draw.clip
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPrivacy
@@ -46,9 +48,13 @@ import java.io.File
     internal suspend fun ComposeNoteViewModel.uploadOne(
         attachment: Attachment,
         skipOutside: Boolean,
+        /** The account that signs the upload: the active one at pick, the posting one at Post. */
+        signAs: PostingAccount.Lock,
         onProgress: (Float) -> Unit,
     ): ComposeNoteUpload = withContext(Dispatchers.IO) {
         val notSaved = ComposeNoteUpload.Failed(MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE)
+        // An account with no key here can sign nothing, uploads included.
+        if (nostrService.isReadOnlyAccount()) return@withContext ComposeNoteUpload.Failed(ComposeNoteViewModel.READ_ONLY_ACCOUNT)
         var tempFile: File? = null
         try {
             // Read file from URI
@@ -90,7 +96,7 @@ import java.io.File
             // Whether this photo was already out there (an earlier post from
             // this or another device): only a blob every server the delete
             // would reach clearly lacks may be deleted if the photo is dropped.
-            val preExisting = alreadyOutThere(sha256)
+            val preExisting = alreadyOutThere(sha256, signAs)
 
             // Measured from the file on disk, before it is deleted below.
             val pixelSize = pixelSize(file, attachment.isVideo)
@@ -102,6 +108,7 @@ import java.io.File
                 contentType = mimeType,
                 skipOutsideServers = skipOutside,
                 onProgress = onProgress,
+                signAs = signAs,
             )
 
             var unreachable = emptyList<String>()
@@ -130,6 +137,7 @@ import java.io.File
                 ),
                 unreachable,
                 preExisting = preExisting,
+                signer = signAs.hex,
             )
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -148,9 +156,10 @@ import java.io.File
      * [sha256]. A blob posted before, from any device, is then never deleted
      * when this photo is dropped. No answer, an error, or any 2xx counts as there.
      */
-    private suspend fun ComposeNoteViewModel.alreadyOutThere(sha256: String): Boolean = kotlinx.coroutines.coroutineScope {
+    private suspend fun ComposeNoteViewModel.alreadyOutThere(sha256: String, signAs: PostingAccount.Lock): Boolean = kotlinx.coroutines.coroutineScope {
         val base = blossomService.localBlossomURL() ?: return@coroutineScope true
-        val published = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
+        // The same list deleteFromServers(signAs) reaches: the uploading account's own servers.
+        val published = nostrService.serverLists.value[signAs.hex].orEmpty()
         val outside = configStore.config.value.blossomDeleteTargets(published, null, includeHomeVault = false)
         val checks = listOf(base to blossomService.localClient) + outside.map { it to blossomService.remoteClient }
         checks.map { (server, client) ->
@@ -171,13 +180,18 @@ import java.io.File
      * and dropped does not stay public on the outside servers. The owner's
      * vault keeps its copy. Runs on [scope], which outlives the screen.
      */
-    internal fun ComposeNoteViewModel.deleteUnused(media: List<QueuedMediaPost.Media>, scope: kotlinx.coroutines.CoroutineScope) {
+    internal fun ComposeNoteViewModel.deleteUnused(
+        media: List<QueuedMediaPost.Media>,
+        scope: kotlinx.coroutines.CoroutineScope,
+        /** The account that uploaded them (the active one): it signs the delete. */
+        signAs: PostingAccount.Lock,
+    ) {
         media.forEach { item ->
             val sha = item.sha256 ?: return@forEach
             scope.launch {
                 // No photo URL: only the servers alreadyOutThere asked, so the
                 // set deleted from is exactly the set checked before the upload.
-                runCatching { blossomService.deleteFromServers(sha, null, includeHomeVault = false) }
+                runCatching { blossomService.deleteFromServers(sha, null, includeHomeVault = false, signAs = signAs) }
                     .onFailure { Log.w("ComposeNote", "Could not delete a dropped upload", it) }
             }
         }

@@ -14,6 +14,7 @@ import com.nostrvault.service.DraftService
 import com.nostrvault.service.NostrEvent
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
+import com.nostrvault.service.isReadOnlyAccount
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -48,16 +49,20 @@ class ComposeNoteCloseCleanupTest {
     private val blossom = mockk<BlossomService>(relaxed = true)
     private val pending = mockk<PendingPostManager>(relaxed = true)
     private val nostr = mockk<NostrService>(relaxed = true)
+    private val me = com.nostrvault.data.model.PostingAccount.Lock("npub1me", "f".repeat(64))
     private val fresh = QueuedMediaPost.Media(sha256 = "a".repeat(64), mimeType = "image/jpeg", url = "https://m.example/${"a".repeat(64)}.jpg")
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        io.mockk.mockkStatic("com.nostrvault.service.NostrServiceSigningKt")
         every { nostr.profiles } returns MutableStateFlow(emptyMap())
         every { nostr.serverLists } returns MutableStateFlow(emptyMap())
         coEvery { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
             NostrEvent("e".repeat(64), "f".repeat(64), 1_793_000_000, firstArg<Int>(), thirdArg(), secondArg(), "s")
         }
         every { pending.isSending(any()) } returns false
+        every { nostr.lockPostingAccount() } returns me
+        every { nostr.isReadOnlyAccount() } returns false
         every { pending.launchSend(any(), any()) } answers {
             val block = secondArg<suspend CoroutineScope.() -> Unit>()
             runBlocking { block() }
@@ -66,7 +71,10 @@ class ComposeNoteCloseCleanupTest {
         coEvery { blossom.deleteFromServers(any(), any(), any()) } returns mockk(relaxed = true)
     }
 
-    @After fun tearDown() = Dispatchers.resetMain()
+    @After fun tearDown() {
+        Dispatchers.resetMain()
+        io.mockk.unmockkStatic("com.nostrvault.service.NostrServiceSigningKt")
+    }
 
     private fun viewModel(): ComposeNoteViewModel {
         val config = mockk<ConfigStore>(relaxed = true)
@@ -76,6 +84,8 @@ class ComposeNoteCloseCleanupTest {
         every { drafts.drafts } returns MutableStateFlow(emptyList<Draft>())
         val resolver = mockk<ContentResolver>(relaxed = true)
         every { resolver.getType(any()) } returns "image/jpeg"
+        // A file that ends: a mock stream never does, and an upload that got past a check would spin.
+        every { resolver.openInputStream(any()) } answers { java.io.ByteArrayInputStream(byteArrayOf(1, 2, 3)) }
         val context = mockk<Context>(relaxed = true)
         every { context.contentResolver } returns resolver
         every { context.cacheDir } returns tmp.root
@@ -99,7 +109,7 @@ class ComposeNoteCloseCleanupTest {
             savedStateHandle = SavedStateHandle(),
         ).apply {
             // A fresh upload (the vault and every server had answered 404).
-            uploadSend = { _, _, _ -> ComposeNoteUpload.Done(fresh, preExisting = false) }
+            uploadSend = { _, _, signAs, _ -> ComposeNoteUpload.Done(fresh, preExisting = false, signer = signAs.hex) }
         }
     }
 
@@ -107,7 +117,7 @@ class ComposeNoteCloseCleanupTest {
     private fun ComposeNoteViewModel.withPhotoAtTheEnd(): ComposeNoteViewModel {
         onContentChanged("Blue skies", "Blue skies".length)
         addAttachments(listOf(mockk<Uri>(relaxed = true)), caret = "Blue skies".length)
-        runBlocking { uploads.await(attachments.value) }
+        runBlocking { uploads.await(attachments.value, me) }
         return this
     }
 
@@ -118,9 +128,10 @@ class ComposeNoteCloseCleanupTest {
     /** Positive control: closed without posting, the dropped upload comes off the servers. */
     @Test fun closingUnsentDeletesTheFreshUpload() {
         val vm = viewModel().withPhotoAtTheEnd()
-        assertEquals(listOf(fresh.url), vm.closeCleanup()?.map { it.url })
+        assertEquals(listOf(fresh.url), vm.closeCleanup(me.hex)?.map { it.url })
         vm.close()
-        coVerify(exactly = 1, timeout = 2_000) { blossom.deleteFromServers(fresh.sha256!!, null, false) }
+        // Signed by the account that uploaded it.
+        coVerify(exactly = 1, timeout = 2_000) { blossom.deleteFromServers(fresh.sha256!!, null, false, me) }
     }
 
     /** The data loss Tron found: after a successful post, closing must delete nothing. */
@@ -142,5 +153,26 @@ class ComposeNoteCloseCleanupTest {
         vm.close()
         Thread.sleep(300)
         coVerify(exactly = 0) { blossom.deleteFromServers(any(), any(), any()) }
+    }
+
+    /** A read-only account can sign nothing: Post says so plainly and signs nothing. */
+    @Test fun aReadOnlyAccountIsToldItCannotPost() {
+        val vm = viewModel()
+        vm.onContentChanged("Blue skies", "Blue skies".length)
+        every { nostr.isReadOnlyAccount() } returns true
+        var published = false
+        vm.publish { published = true }
+        assertTrue(!published)
+        assertEquals(ComposeNoteViewModel.READ_ONLY_ACCOUNT, vm.error.value)
+        coVerify(exactly = 0) { nostr.signEventAsync(any(), any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    /** ... and its photo is not uploaded either. */
+    @Test fun aReadOnlyAccountUploadsNothing() {
+        val vm = viewModel()
+        every { nostr.isReadOnlyAccount() } returns true
+        val result = runBlocking { vm.uploadOne(Attachment(uri = mockk(relaxed = true), mimeType = "image/jpeg"), false, me) {} }
+        assertEquals(ComposeNoteUpload.Failed(ComposeNoteViewModel.READ_ONLY_ACCOUNT), result)
+        coVerify(exactly = 0) { blossom.uploadForPost(any(), any(), any(), any(), any(), any()) }
     }
 }

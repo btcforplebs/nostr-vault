@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.data.model.PostingAccount
 import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.*
@@ -22,7 +23,8 @@ import com.nostrvault.service.BlossomService.Companion.TAG
         operation: String,
         sha256: String? = null,
         uploadUrl: String? = null,
-    ): String = createAuthHeader(listOf(operation), sha256, uploadUrl)
+        signAs: PostingAccount.Lock? = null,
+    ): String = createAuthHeader(listOf(operation), sha256, uploadUrl, signAs)
 
     /**
      * Create a Blossom auth header that authorizes several operations at once by
@@ -36,6 +38,7 @@ import com.nostrvault.service.BlossomService.Companion.TAG
         operations: List<String>,
         sha256: String? = null,
         uploadUrl: String? = null,
+        signAs: PostingAccount.Lock? = null,
     ): String {
         val expiration = (System.currentTimeMillis() / 1000) + 3600 // 1 hour (matches iOS)
         val tags = mutableListOf<List<String>>()
@@ -45,21 +48,33 @@ import com.nostrvault.service.BlossomService.Companion.TAG
         sha256?.let { tags.add(listOf("x", it)) }
         tags.add(listOf("expiration", expiration.toString()))
         uploadUrl?.let { tags.add(listOf("u", it)) }
-        return signAuthHeader(operations.joinToString("+"), sha256, tags)
+        return signAuthHeader(operations.joinToString("+"), sha256, tags, signAs)
     }
 
     /**
      * A delete token for the one server at [deleteUrl]: see [BlossomDeleteAuth]. Signed per server,
      * so a mirror holding its token cannot replay it against the home vault.
      */
-    internal suspend fun BlossomService.createDeleteAuthHeader(sha256: String, deleteUrl: String): String =
-        signAuthHeader("delete", sha256, BlossomDeleteAuth.tags(sha256, deleteUrl))
+    internal suspend fun BlossomService.createDeleteAuthHeader(
+        sha256: String,
+        deleteUrl: String,
+        signAs: PostingAccount.Lock? = null,
+    ): String = signAuthHeader("delete", sha256, BlossomDeleteAuth.tags(sha256, deleteUrl), signAs)
 
-    /** Sign a kind 24242 event with [tags] and encode it as an auth header, or "" on failure. */
+    /**
+     * Sign a kind 24242 event with [tags] and encode it as an auth header, or "" on failure.
+     *
+     * Signed by the owner unless [signAs] is given: a note's media is signed
+     * by the account the note posts as (Logen 2026-11-01), through that
+     * account's own signer, and refused if another account became active
+     * (the lockedTo check in signEventAsync). An owner-signed upload under another
+     * account's note would tie the two accounts together at the server.
+     */
     internal suspend fun BlossomService.signAuthHeader(
         label: String,
         sha256: String?,
         tags: List<List<String>>,
+        signAs: PostingAccount.Lock? = null,
     ): String {
         // Use signEventAsync so external signers (Amber NIP-55, NIP-46) work.
         // The synchronous signEvent only handles a locally-stored key and returns
@@ -81,8 +96,13 @@ import com.nostrvault.service.BlossomService.Companion.TAG
                     kind = AUTH_KIND,
                     content = if (sha256 != null) "Blossom $label ${sha256.take(8)}" else "Blossom $label",
                     tags = tags,
-                    forceOwner = true,
+                    forceOwner = signAs == null,
+                    lockedTo = signAs,
                 )
+            } catch (e: PostingAccount.AccountChangedException) {
+                // Another account is active now: never sign this as it.
+                Log.w(TAG, "Blossom auth not signed ($label): the posting account changed")
+                return ""
             } catch (e: SignerRejectedException) {
                 // The user was asked and said no. Retrying would just re-prompt.
                 Log.w(TAG, "Blossom auth signing declined by the user ($label)")

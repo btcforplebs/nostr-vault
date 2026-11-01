@@ -202,11 +202,19 @@ class MediaPostQueue @Inject constructor(
         post = post.copy(attempts = post.attempts + 1, lastAttempt = System.currentTimeMillis())
         update(post)
 
+        // The post's account signs its media too, not the owner (Logen
+        // 2026-11-01), and only while it is the active one.
+        val mediaLock = nostrService.lockPostingAccount()
+        if (mediaLock.npub != post.accountNpub) {
+            log("waiting post ${id.take(8)}: account changed — holding it until that account is active")
+            return false
+        }
+
         for ((index, item) in post.media.withIndex()) {
             if (item.url != null) continue
             val sha256 = item.sha256 ?: continue
             BlossomRefusals.clear(sha256)
-            val url = blossomService.hostWaitingBlob(sha256, item.mimeType ?: "application/octet-stream")
+            val url = blossomService.hostWaitingBlob(sha256, item.mimeType ?: "application/octet-stream", signAs = mediaLock)
             if (url == null) {
                 val statuses = BlossomRefusals.take(sha256)
                 val mirrors = configStore.config.value.activeBlossomMirrors
