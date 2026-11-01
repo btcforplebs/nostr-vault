@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -60,6 +61,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.stateDescription
 import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
+import com.nostrvault.data.model.VaultMode
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.glassPillBackground
 import com.nostrvault.ui.components.zapFlightOrigin
@@ -137,6 +139,8 @@ fun BottomNavBar(
     nowPlaying: @Composable () -> Unit = {},
     /** Hold the Feed tab and slide to a feed (iOS #239). Null keeps it a plain tab. */
     onPickFeedMode: ((FeedMode) -> Unit)? = null,
+    /** Hold the Vault tab and slide to one of its pages (iOS #1505). Null keeps it a plain tab. */
+    onPickVaultMode: ((VaultMode) -> Unit)? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val isOled = LocalOledMode.current
@@ -175,6 +179,7 @@ fun BottomNavBar(
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
                     onPickFeedMode = onPickFeedMode,
+                    onPickVaultMode = onPickVaultMode,
                 ) }
                 FoldTaps(blockedWhenFolded = false, progress = { progress() }) { CondensedNavCluster(
                     isOwner = isOwner,
@@ -264,6 +269,7 @@ private fun ExpandedNavRow(
     onReselect: (Screen) -> Unit,
     onAccountSwitcher: () -> Unit,
     onPickFeedMode: ((FeedMode) -> Unit)? = null,
+    onPickVaultMode: ((VaultMode) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // The glass pill is drawn by BottomNavBar, behind both forms.
@@ -319,7 +325,11 @@ private fun ExpandedNavRow(
                     selectedColor = primaryColor,
                     showBadge = item.screen == Screen.Dashboard && (hasNewRelayActivity || hasUnreadDMs),
                     onClick = onTabClick,
-                    holdToPick = if (item.screen == Screen.Feed) onPickFeedMode else null,
+                    hold = when (item.screen) {
+                        Screen.Feed -> onPickFeedMode?.let { TabHold.Feed(it) }
+                        Screen.Dashboard -> onPickVaultMode?.let { TabHold.Vault(it) }
+                        else -> null
+                    },
                     // The return pill's arrow points here.
                     modifier = Modifier.weight(1f).then(
                         if (item.screen == Screen.Dashboard) Modifier.vaultAnchor() else Modifier,
@@ -432,39 +442,37 @@ private fun NavTab(
     selectedColor: Color,
     showBadge: Boolean = false,
     onClick: () -> Unit,
-    /** The Feed tab: hold to open the feed list, slide, let go to pick. */
-    holdToPick: ((FeedMode) -> Unit)? = null,
+    /** The Feed and Vault tabs: hold to open their menu, slide, let go to pick. */
+    hold: TabHold? = null,
     modifier: Modifier = Modifier,
 ) {
-    val pickerOpen = holdToPick != null && FeedTabPicker.isOpen
-    // iOS grows only the Feed tab, and only while its list is open; a
-    // selected tab is marked by colour and weight, not size.
+    val menuOpen = hold?.isOpen == true
+    val pressed = hold?.isPressed == true
+    // Only a tab with a menu changes size: smaller under the finger, larger
+    // while its menu is open; a selected tab is marked by colour and weight.
     val scale by animateFloatAsState(
-        targetValue = if (pickerOpen) 1.08f else 1.0f,
+        targetValue = when {
+            menuOpen -> DockHold.OPEN_SCALE
+            pressed -> DockHold.PRESSED_SCALE
+            else -> 1.0f
+        },
         animationSpec = Motion.control(),
         label = "tabScale",
     )
-    val haptic = LocalHapticFeedback.current
+    val view = LocalView.current
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val currentOnClick by rememberUpdatedState(onClick)
-    val currentPick by rememberUpdatedState(holdToPick)
-    val gesture = if (holdToPick != null) {
+    val currentHold by rememberUpdatedState(hold)
+    val gesture = if (hold != null) {
         Modifier
             .onGloballyPositioned { coords[0] = it }
-            .feedTabHold(
-                coordinates = { coords[0] },
-                haptic = haptic,
-                onTap = { currentOnClick() },
-                onPick = { mode -> currentPick?.invoke(mode) },
-            )
+            .tabHoldGesture(hold, coordinates = { coords[0] }, view = view, onTap = { currentOnClick() }, current = { currentHold })
             .semantics {
                 role = Role.Tab
                 onClick(label = null) { currentOnClick(); true }
-                stateDescription = FeedTabPicker.shownMode?.displayName ?: ""
-                // One action per feed, as iOS's accessibilityActions.
-                customActions = FeedMenuSettings.menuModes().map { mode ->
-                    CustomAccessibilityAction(mode.displayName) { currentPick?.invoke(mode); true }
-                }
+                stateDescription = listOfNotNull(hold.shownName, if (showBadge) "New activity" else null).joinToString(", ")
+                // One action per menu row, as iOS's accessibilityActions.
+                customActions = hold.actions { currentHold }
             }
     } else {
         Modifier
