@@ -116,12 +116,22 @@ fun ComposeNoteScreen(
 
     // Local editing state with cursor tracking (drives @mention detection). Kept in
     // sync when the ViewModel changes `content` externally (draft restore, media insert).
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(content)) }
+    // Cursor at the end to start, so a photo picked before touching the text is not placed (it goes at the end).
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(content, TextRange(content.length))) }
     LaunchedEffect(content) {
         if (content != textFieldValue.text) {
-            textFieldValue = TextFieldValue(content, TextRange(content.length))
+            // A photo's link landing mid-text keeps the cursor where it was
+            // (moved along if the link went in before it); a restored draft
+            // puts it at the end.
+            val old = textFieldValue
+            val caret = if (old.text.isEmpty()) content.length
+                else ComposeNoteDraft.shift(old.text, content, old.selection.start)
+            textFieldValue = TextFieldValue(content, TextRange(caret))
         }
     }
+    // Write / Preview. Preview swaps in for the editor, so the keyboard never squeezes either.
+    var previewing by remember { mutableStateOf(false) }
+    val draft by viewModel.draft.collectAsState()
 
     val pickerMaxItems = pickerMaxItems(attachments.size)
     val attachmentLimitReached = attachments.size >= MAX_ATTACHMENTS
@@ -179,7 +189,7 @@ fun ComposeNoteScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = pickerMaxItems)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            viewModel.addAttachments(uris)
+            viewModel.addAttachments(uris, textFieldValue.selection.start)
         }
     }
 
@@ -188,7 +198,7 @@ fun ComposeNoteScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = pickerMaxItems)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            viewModel.addAttachments(uris)
+            viewModel.addAttachments(uris, textFieldValue.selection.start)
         }
     }
 
@@ -240,12 +250,13 @@ fun ComposeNoteScreen(
                     }
                     Button(
                         onClick = { viewModel.publish(onPublished) },
-                        enabled = (content.isNotBlank() || attachments.isNotEmpty()) && !isPublishing && !isUploading && !fetchingGif,
+                        // Uploads run while you type; Post waits only on the unfinished ones.
+                        enabled = (content.isNotBlank() || attachments.isNotEmpty()) && !isPublishing && !fetchingGif,
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                         shape = RoundedCornerShape(20.dp),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                     ) {
-                        if (isPublishing || isUploading) {
+                        if (isPublishing) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 strokeWidth = 2.dp,
@@ -278,7 +289,7 @@ fun ComposeNoteScreen(
                 .padding(padding)
                 .consumeWindowInsets(padding)
                 .imePadding()
-                .mediaDropTarget(enabled = !isPublishing && !attachmentLimitReached) { viewModel.addAttachments(it) },
+                .mediaDropTarget(enabled = !isPublishing && !attachmentLimitReached) { viewModel.addAttachments(it, textFieldValue.selection.start) },
         ) {
         Column(
             modifier = Modifier
@@ -298,6 +309,22 @@ fun ComposeNoteScreen(
                 )
             }
 
+            ComposeNoteModeToggle(
+                previewing = previewing,
+                onChange = { show ->
+                    previewing = show
+                    if (show) {
+                        keyboard?.hide()
+                        showEmojiPanel = false
+                    } else {
+                        runCatching { editorFocus.requestFocus() }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            )
+            if (previewing) {
+                ComposeNotePreview(viewModel, Modifier.fillMaxWidth().weight(1f))
+            } else
             // Posting-as avatar beside the editor (iOS: 36pt, long-press
             // switches the posting account).
             Row(
@@ -336,6 +363,8 @@ fun ComposeNoteScreen(
                         // iOS shows the same prompt for a note, reply or quote.
                         placeholder = { Text("What's happening?", color = PlaceholderText) },
                         keyboardOptions = ProseKeyboardOptions,
+                        // Post was tapped and waits on uploads: the text is what posts.
+                        readOnly = isPublishing,
                         // Fills the space left and scrolls itself, which keeps the
                         // caret in view while typing.
                         colors = OutlinedTextFieldDefaults.colors(
@@ -402,6 +431,7 @@ fun ComposeNoteScreen(
             if (attachments.isNotEmpty()) {
                 AttachmentGrid(
                     attachments = attachments,
+                    uploads = draft.uploads,
                     onRemove = { viewModel.removeAttachment(it) },
                     onEditAlt = { altEditorTarget = it },
                     modifier = Modifier.padding(bottom = 4.dp)
@@ -468,7 +498,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = !attachmentLimitReached
+                    enabled = !attachmentLimitReached && !isPublishing
                 ) {
                     Icon(
                         imageVector = Icons.Default.Image,
@@ -489,7 +519,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = !attachmentLimitReached
+                    enabled = !attachmentLimitReached && !isPublishing
                 ) {
                     Icon(
                         imageVector = Icons.Default.Videocam,
@@ -505,7 +535,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = !attachmentLimitReached
+                    enabled = !attachmentLimitReached && !isPublishing
                 ) {
                     Icon(
                         imageVector = ImageVector.vectorResource(R.drawable.ic_magic_paste),
@@ -521,7 +551,7 @@ fun ComposeNoteScreen(
                 if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
                     IconButton(
                         onClick = { showGifPicker = true },
-                        enabled = !fetchingGif && !attachmentLimitReached,
+                        enabled = !fetchingGif && !attachmentLimitReached && !isPublishing,
                         modifier = Modifier
                             .size(40.dp)
                             .background(colors.primary.copy(alpha = 0.1f), CircleShape),
@@ -563,6 +593,7 @@ fun ComposeNoteScreen(
                 // Blossom media picker button
                 IconButton(
                     onClick = { viewModel.setShowBlossomPicker(true) },
+                    enabled = !isPublishing,
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape)

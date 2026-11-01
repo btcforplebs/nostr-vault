@@ -16,134 +16,171 @@ import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import com.nostrvault.ui.screens.ComposeNoteViewModel.AttachmentUploadResult
 
-    internal suspend fun ComposeNoteViewModel.uploadAttachments(): AttachmentUploadResult = withContext(Dispatchers.IO) {
-        val uploaded = mutableListOf<QueuedMediaPost.Media>()
-        // Set once an attachment found every outside server down; the rest of
-        // this post's attachments are then saved on this device only, instead
-        // of each waiting out the same 10 s retry.
-        var unreachableServers: List<String> = emptyList()
-        val notSaved = AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE)
+    /** Media picked from the relay: already hosted, so published with its URL as-is. */
+    internal fun ComposeNoteViewModel.hostedMedia(attachment: Attachment): QueuedMediaPost.Media {
+        val pixelSize = attachment.localFile?.takeIf { it.exists() }?.let { pixelSize(it, attachment.isVideo) }
+        return QueuedMediaPost.Media(
+            sha256 = attachment.sha256,
+            mimeType = attachment.mimeType.takeUnless { it.endsWith("/*") },
+            url = attachment.hostedUrl,
+            pixelWidth = pixelSize?.first,
+            pixelHeight = pixelSize?.second,
+            alt = attachment.altText,
+            byteCount = attachment.byteCount,
+        )
+    }
 
-        for ((index, attachment) in _attachments.value.withIndex()) {
-            // Picked from the relay: already hosted, publish its URL as-is.
-            if (attachment.hostedUrl != null) {
-                val pixelSize = attachment.localFile?.takeIf { it.exists() }?.let { pixelSize(it, attachment.isVideo) }
-                uploaded.add(
-                    QueuedMediaPost.Media(
-                        sha256 = attachment.sha256,
-                        mimeType = attachment.mimeType.takeUnless { it.endsWith("/*") },
-                        url = attachment.hostedUrl,
-                        pixelWidth = pixelSize?.first,
-                        pixelHeight = pixelSize?.second,
-                        alt = attachment.altText,
-                        byteCount = attachment.byteCount,
-                    )
-                )
-                continue
+    /**
+     * Uploads one attachment: what the old per-post loop did for each item,
+     * now run by [ComposeNoteUploads] the moment the photo is picked. Same
+     * preferred hosts, same location stripping, same on-device fallback.
+     * [skipOutside] is set once an earlier upload found every outside server
+     * down, so this one is saved here only rather than waiting out the retry.
+     */
+    internal suspend fun ComposeNoteViewModel.uploadOne(
+        attachment: Attachment,
+        skipOutside: Boolean,
+        onProgress: (Float) -> Unit,
+    ): ComposeNoteUpload = withContext(Dispatchers.IO) {
+        val notSaved = ComposeNoteUpload.Failed(MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE)
+        var tempFile: File? = null
+        try {
+            // Read file from URI
+            val inputStream = context.contentResolver.openInputStream(attachment.uri)
+                ?: return@withContext notSaved
+
+            var file = File.createTempFile("upload_", ".tmp", context.cacheDir)
+            tempFile = file
+            file.outputStream().use { output ->
+                inputStream.use { input ->
+                    input.copyTo(output)
+                }
             }
-            withContext(Dispatchers.Main) {
-                val mediaType = if (attachment.isVideo) "video" else "image"
-                _uploadMessage.value = "Uploading $mediaType (${index + 1} of ${_attachments.value.size})..."
+
+            // HEIC becomes JPEG (the re-encode also drops its location);
+            // anything else keeps its bytes.
+            var mimeType = attachment.mimeType
+            if (isHeic(mimeType)) {
+                val jpeg = File.createTempFile("upload_", ".jpg", context.cacheDir)
+                if (convertHeicToJpeg(file, jpeg)) {
+                    file.delete()
+                    file = jpeg
+                    tempFile = jpeg
+                    mimeType = JPEG_MIME
+                } else {
+                    jpeg.delete()
+                }
             }
 
-            try {
-                // Read file from URI
-                val inputStream = context.contentResolver.openInputStream(attachment.uri)
-                    ?: return@withContext notSaved
+            // The location comes out before the hash: the blob is public
+            // once uploaded (iOS #335).
+            if (!MediaPrivacy.removeLocation(file, mimeType)) {
+                return@withContext ComposeNoteUpload.Failed(MediaPrivacy.FAILURE_MESSAGE)
+            }
 
-                var tempFile = File.createTempFile("upload_", ".tmp", context.cacheDir)
-                tempFile.outputStream().use { output ->
-                    inputStream.use { input ->
-                        input.copyTo(output)
-                    }
+            // Compute SHA-256
+            val sha256 = blossomService.computeSHA256(file)
+
+            // Whether this photo was already out there (an earlier post from
+            // this or another device): only a blob every server the delete
+            // would reach clearly lacks may be deleted if the photo is dropped.
+            val preExisting = alreadyOutThere(sha256)
+
+            // Measured from the file on disk, before it is deleted below.
+            val pixelSize = pixelSize(file, attachment.isVideo)
+            val byteCount = file.length()
+
+            val outcome = blossomService.uploadForPost(
+                fileURL = file,
+                sha256 = sha256,
+                contentType = mimeType,
+                skipOutsideServers = skipOutside,
+                onProgress = onProgress,
+            )
+
+            var unreachable = emptyList<String>()
+            val url = when (outcome) {
+                is BlossomService.PostUploadOutcome.Hosted -> outcome.url
+                is BlossomService.PostUploadOutcome.SavedOnDevice -> {
+                    // Safe on this device; the post will wait for a server.
+                    unreachable = outcome.unreachable
+                    null
                 }
+                BlossomService.PostUploadOutcome.NoOutsideServer ->
+                    return@withContext ComposeNoteUpload.Failed(MediaUploadOutcomeMessage.NO_OUTSIDE_SERVER)
+                BlossomService.PostUploadOutcome.NotSavedOnDevice ->
+                    return@withContext notSaved
+            }
 
-                // HEIC becomes JPEG (the re-encode also drops its location);
-                // anything else keeps its bytes.
-                var mimeType = attachment.mimeType
-                if (isHeic(mimeType)) {
-                    val jpeg = File.createTempFile("upload_", ".jpg", context.cacheDir)
-                    if (convertHeicToJpeg(tempFile, jpeg)) {
-                        tempFile.delete()
-                        tempFile = jpeg
-                        mimeType = JPEG_MIME
-                    } else {
-                        jpeg.delete()
-                    }
-                }
-
-                // The location comes out before the hash: the blob is public
-                // once uploaded (iOS #335).
-                if (!MediaPrivacy.removeLocation(tempFile, mimeType)) {
-                    tempFile.delete()
-                    return@withContext AttachmentUploadResult.Failed(MediaPrivacy.FAILURE_MESSAGE)
-                }
-
-                // Compute SHA-256
-                val sha256 = blossomService.computeSHA256(tempFile)
-
-                // Measured from the file on disk, before it is deleted below.
-                val pixelSize = pixelSize(tempFile, attachment.isVideo)
-                val byteCount = tempFile.length()
-
-                // Upload with progress
-                val outcome = blossomService.uploadForPost(
-                    fileURL = tempFile,
+            ComposeNoteUpload.Done(
+                QueuedMediaPost.Media(
                     sha256 = sha256,
-                    contentType = mimeType,
-                    skipOutsideServers = unreachableServers.isNotEmpty(),
-                    onProgress = { progress ->
-                        viewModelScope.launch(Dispatchers.Main) {
-                            val pct = (progress * 100).toInt()
-                            val mediaType = if (attachment.isVideo) "video" else "image"
-                            _uploadMessage.value = "Uploading $mediaType (${index + 1} of ${_attachments.value.size}) - $pct%..."
-                        }
-                    }
-                )
+                    mimeType = mimeType,
+                    url = url,
+                    pixelWidth = pixelSize?.first,
+                    pixelHeight = pixelSize?.second,
+                    alt = attachment.altText,
+                    byteCount = byteCount,
+                ),
+                unreachable,
+                preExisting = preExisting,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("ComposeNote", "Upload failed", e)
+            notSaved
+        } finally {
+            // Removing the photo mid-upload cancels this; the copy goes either way.
+            tempFile?.delete()
+        }
+    }
 
-                // Clean up temp file
-                tempFile.delete()
+    /**
+     * True unless the owner's vault and every server a delete would reach
+     * (the mirrors and the published server list) each clearly answer 404 for
+     * [sha256]. A blob posted before, from any device, is then never deleted
+     * when this photo is dropped. No answer, an error, or any 2xx counts as there.
+     */
+    private suspend fun ComposeNoteViewModel.alreadyOutThere(sha256: String): Boolean = kotlinx.coroutines.coroutineScope {
+        val base = blossomService.localBlossomURL() ?: return@coroutineScope true
+        val published = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
+        val outside = configStore.config.value.blossomDeleteTargets(published, null, includeHomeVault = false)
+        val checks = listOf(base to blossomService.localClient) + outside.map { it to blossomService.remoteClient }
+        checks.map { (server, client) ->
+            async { !answers404(client, "${server.trimEnd('/')}/$sha256") }
+        }.awaitAll().any { it }
+    }
 
-                val url = when (outcome) {
-                    is BlossomService.PostUploadOutcome.Hosted -> outcome.url
-                    is BlossomService.PostUploadOutcome.SavedOnDevice -> {
-                        // Safe on this device; the post will wait for a server.
-                        unreachableServers = outcome.unreachable
-                        null
-                    }
-                    BlossomService.PostUploadOutcome.NoOutsideServer ->
-                        return@withContext AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NO_OUTSIDE_SERVER)
-                    BlossomService.PostUploadOutcome.NotSavedOnDevice ->
-                        return@withContext notSaved
-                }
+    private fun answers404(client: okhttp3.OkHttpClient, url: String): Boolean = try {
+        val request = okhttp3.Request.Builder().url(url).head().build()
+        client.newCall(request).execute().use { it.code == 404 }
+    } catch (e: Exception) {
+        false
+    }
 
-                uploaded.add(
-                    QueuedMediaPost.Media(
-                        sha256 = sha256,
-                        mimeType = mimeType,
-                        url = url,
-                        pixelWidth = pixelSize?.first,
-                        pixelHeight = pixelSize?.second,
-                        alt = attachment.altText,
-                        byteCount = byteCount,
-                    )
-                )
-            } catch (e: Exception) {
-                Log.e("ComposeNote", "Upload failed", e)
-                return@withContext notSaved
+    /**
+     * Best-effort delete of blobs this composer uploaded that nothing will
+     * use (a photo removed, or the composer closed unsent), so a photo picked
+     * and dropped does not stay public on the outside servers. The owner's
+     * vault keeps its copy. Runs on [scope], which outlives the screen.
+     */
+    internal fun ComposeNoteViewModel.deleteUnused(media: List<QueuedMediaPost.Media>, scope: kotlinx.coroutines.CoroutineScope) {
+        media.forEach { item ->
+            val sha = item.sha256 ?: return@forEach
+            scope.launch {
+                // No photo URL: only the servers alreadyOutThere asked, so the
+                // set deleted from is exactly the set checked before the upload.
+                runCatching { blossomService.deleteFromServers(sha, null, includeHomeVault = false) }
+                    .onFailure { Log.w("ComposeNote", "Could not delete a dropped upload", it) }
             }
         }
-
-        withContext(Dispatchers.Main) {
-            _uploadMessage.value = null
-        }
-
-        AttachmentUploadResult.Done(uploaded, unreachableServers)
     }
 
     /** Host of a server URL, for naming it in a message. */
