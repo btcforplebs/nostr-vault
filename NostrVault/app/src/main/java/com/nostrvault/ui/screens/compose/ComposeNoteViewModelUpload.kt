@@ -16,6 +16,8 @@ import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -85,10 +87,10 @@ import java.io.File
             // Compute SHA-256
             val sha256 = blossomService.computeSHA256(file)
 
-            // Whether this photo was already in the owner's vault (an earlier
-            // post): only a blob we know is new may be deleted if the photo is
-            // dropped. Anything but a clear 404 counts as already there.
-            val preExisting = alreadyInVault(sha256)
+            // Whether this photo was already out there (an earlier post from
+            // this or another device): only a blob every server the delete
+            // would reach clearly lacks may be deleted if the photo is dropped.
+            val preExisting = alreadyOutThere(sha256)
 
             // Measured from the file on disk, before it is deleted below.
             val pixelSize = pixelSize(file, attachment.isVideo)
@@ -140,15 +142,27 @@ import java.io.File
         }
     }
 
-    /** True unless the owner's own vault clearly answers that it does not have [sha256]. */
-    private fun ComposeNoteViewModel.alreadyInVault(sha256: String): Boolean {
-        val base = blossomService.localBlossomURL() ?: return true
-        return try {
-            val request = okhttp3.Request.Builder().url("${base.trimEnd('/')}/$sha256").head().build()
-            blossomService.localClient.newCall(request).execute().use { it.code != 404 }
-        } catch (e: Exception) {
-            true
-        }
+    /**
+     * True unless the owner's vault and every server a delete would reach
+     * (the mirrors and the published server list) each clearly answer 404 for
+     * [sha256]. A blob posted before, from any device, is then never deleted
+     * when this photo is dropped. No answer, an error, or any 2xx counts as there.
+     */
+    private suspend fun ComposeNoteViewModel.alreadyOutThere(sha256: String): Boolean = kotlinx.coroutines.coroutineScope {
+        val base = blossomService.localBlossomURL() ?: return@coroutineScope true
+        val published = nostrService.serverLists.value[nostrService.ownerHexPubkey].orEmpty()
+        val outside = configStore.config.value.blossomDeleteTargets(published, null, includeHomeVault = false)
+        val checks = listOf(base to blossomService.localClient) + outside.map { it to blossomService.remoteClient }
+        checks.map { (server, client) ->
+            async { !answers404(client, "${server.trimEnd('/')}/$sha256") }
+        }.awaitAll().any { it }
+    }
+
+    private fun answers404(client: okhttp3.OkHttpClient, url: String): Boolean = try {
+        val request = okhttp3.Request.Builder().url(url).head().build()
+        client.newCall(request).execute().use { it.code == 404 }
+    } catch (e: Exception) {
+        false
     }
 
     /**

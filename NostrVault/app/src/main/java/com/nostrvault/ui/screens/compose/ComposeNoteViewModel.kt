@@ -139,9 +139,15 @@ class ComposeNoteViewModel @Inject constructor(
     private val cleanupScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
     /** "Discard": the text is not kept, so none of its links are either. */
     private var textDiscarded = false
+    /**
+     * Post was tapped in this session. From then on closing deletes nothing:
+     * the photos may be in a posted or queued note, with their links at the
+     * end where the text does not show them (Tron, PR #1511).
+     */
+    @Volatile internal var postTapped = false
     internal val uploads = ComposeNoteUploads(
         scope = uploadScope,
-        send = { attachment, skipOutside, onProgress -> uploadOne(attachment, skipOutside, onProgress) },
+        send = { attachment, skipOutside, onProgress -> uploadSend(attachment, skipOutside, onProgress) },
         hostedMedia = { hostedMedia(it) },
     )
     /** Where each placed photo's link goes in, valid for [anchorText]. */
@@ -440,17 +446,28 @@ class ComposeNoteViewModel @Inject constructor(
     override fun onCleared() {
         screenGone = true
         syncDraftToRelay()
+        // Closed without ever tapping Post: what was uploaded and is not in a
+        // kept draft comes off the servers. After Post, never.
+        closeCleanup()?.let { deleteUnused(it, cleanupScope) }
         // A send still running reads these; it deletes them when it ends.
         if (!_isPublishing.value) {
-            // Closed unsent: what was uploaded and is not in a kept draft comes off the servers.
-            val kept = if (textDiscarded) "" else _content.value
-            deleteUnused(ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).unusedUploads(kept), cleanupScope)
             uploads.cancelAll()
             uploadScope.cancel()
             deleteGifCopies(_attachments.value)
         }
         super.onCleared()
     }
+
+    /** What closing now deletes from the outside servers; null once Post was tapped. */
+    internal fun closeCleanup(): List<QueuedMediaPost.Media>? {
+        if (postTapped || _isPublishing.value) return null
+        val kept = if (textDiscarded) "" else _content.value
+        return ComposeNoteDraft(_content.value, _attachments.value, uploads.states.value).unusedUploads(kept)
+    }
+
+    /** One photo's upload; a seam so tests can stand in for the network. */
+    internal var uploadSend: suspend (Attachment, Boolean, (Float) -> Unit) -> ComposeNoteUpload =
+        { attachment, skipOutside, onProgress -> uploadOne(attachment, skipOutside, onProgress) }
 
     fun setShowBlossomPicker(show: Boolean) {
         _showBlossomPicker.value = show
@@ -642,6 +659,7 @@ class ComposeNoteViewModel @Inject constructor(
         }
 
         val lock = nostrService.lockPostingAccount()
+        postTapped = true
 
         // On disk before the send starts, so a crash or a killed app during
         // the upload leaves the text in Drafts. The draft goes once the post

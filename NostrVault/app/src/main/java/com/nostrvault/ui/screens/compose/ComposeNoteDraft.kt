@@ -22,9 +22,10 @@ sealed interface ComposeNoteUpload {
         val media: QueuedMediaPost.Media,
         val unreachable: List<String> = emptyList(),
         /**
-         * The owner's vault already held this blob before this pick (an
-         * earlier post, a saved photo), or could not say. Such a blob is never
-         * deleted when the photo is removed: another note may show it.
+         * Before this pick, the owner's vault or any server a delete would
+         * reach already held this blob (an earlier post from any device), or
+         * could not say. Such a blob is never deleted when the photo is
+         * removed: another note may show it.
          */
         val preExisting: Boolean = true,
     ) : ComposeNoteUpload
