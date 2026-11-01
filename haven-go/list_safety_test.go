@@ -137,11 +137,13 @@ func TestQueuedListDroppedWhenVaultHoldsNewer(t *testing.T) {
 	}
 }
 
-// No relay answered the check: one silence is not "nothing newer". The list
-// is not sent, and stays queued for a later try.
+// No relay answered the check: the list stays queued and is not sent. The
+// blast relay is live and records what it gets (Tron, #1457), so "sent and
+// failed" cannot pass for "not sent".
 func TestQueuedListNotSentWhenNoRelayAnswers(t *testing.T) {
 	sk := nostr.GeneratePrivateKey()
-	ctx, _ := blastTestSetup(t, deadRelayURL())
+	relay := newListRelay(t)
+	ctx, _ := blastTestSetup(t, relay.url)
 	pk, _ := nostr.GetPublicKey(sk)
 	config.WhitelistedPubKeys = map[string]struct{}{pk: {}}
 
@@ -158,9 +160,49 @@ func TestQueuedListNotSentWhenNoRelayAnswers(t *testing.T) {
 	if checks != 1 {
 		t.Fatalf("relays asked %d times, want 1", checks)
 	}
+	if relay.received(list.ID) {
+		t.Fatal("the list was sent although no relay answered the check")
+	}
 	s := q.snapshot()
 	if len(s) != 1 || s[0].Attempts != 1 || s[0].NextAt <= time.Now().Unix() {
 		t.Fatalf("list should stay queued with its next try pushed back: %+v", s)
+	}
+}
+
+// A "newer" copy with a bad signature is not newer: anyone could forge one to
+// make the vault drop a queued list (Tron, #1457). The relay connection is set
+// to AssumeValid so go-nostr's own check is out of the way and only ours is
+// tested.
+func TestForgedNewerListIsIgnored(t *testing.T) {
+	sk := nostr.GeneratePrivateKey()
+	now := time.Now()
+	forged := signedList(t, sk, 10002, now.Add(-time.Minute), relayTags("wss://forged.example"))
+	forged.Sig = strings.Repeat("0", 128)
+	relay := newListRelay(t, forged)
+	blastTestSetup(t, relay.url)
+
+	r, err := pool.EnsureRelay(relay.url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AssumeValid = true
+
+	ours := signedList(t, sk, 10002, now.Add(-time.Hour), relayTags("wss://ours.example"))
+	newer, answered := newerListOnRelays(context.Background(), []string{relay.url}, ours)
+	if answered != 1 {
+		t.Fatalf("answered = %d, want 1", answered)
+	}
+	if newer {
+		t.Fatal("a copy with a bad signature counted as newer")
+	}
+
+	// Control: the same relay serves a validly signed newer copy, and that one counts.
+	good := signedList(t, sk, 10002, now.Add(-time.Second), relayTags("wss://good.example"))
+	if err := relay.repl.Publish(context.Background(), *good); err != nil {
+		t.Fatal(err)
+	}
+	if newer, _ := newerListOnRelays(context.Background(), []string{relay.url}, ours); !newer {
+		t.Fatal("a validly signed newer copy was not seen")
 	}
 }
 
