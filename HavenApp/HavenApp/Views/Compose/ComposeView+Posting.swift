@@ -36,6 +36,7 @@ extension ComposeView {
         let lockedRawNpub = configService.config.activeAccountNpub
         let lockedNpub = PostingAccount.resolve(active: lockedRawNpub, owner: configService.config.ownerNpub)
         let lockedHex = configService.activeAccountHexPubkey
+        note.postTapped = true
 
         // Durably persist the current text to disk BEFORE the (potentially long) post
         // begins, so an unexpected crash during upload/mining/broadcast can't lose it.

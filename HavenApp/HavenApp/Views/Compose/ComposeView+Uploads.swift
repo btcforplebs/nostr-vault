@@ -78,6 +78,9 @@ extension ComposeView {
         var sha256: String?
         var pixelSize: CGSize?
         var byteCount: Int?
+        // Asked before the upload: was this blob new to every server a delete
+        // would reach? Only then may removing it delete it (UploadDeleteRule).
+        var freshServers: [String]?
         if let originalURL = attachment.fileURL {
             // Never upload where it was taken (MediaPrivacy).
             guard let fileURL = await MediaPrivacy.removingLocation(fromFileAt: originalURL) else {
@@ -88,6 +91,7 @@ extension ComposeView {
                 return fail(id, "Failed to read video file for upload.")
             }
             sha256 = hash
+            freshServers = await blossomService.serversLackingBlob(sha256: hash)
             pixelSize = await ComposeView.pixelSize(ofVideoAt: fileURL)
             byteCount = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int
             outcome = await blossomService.uploadForPost(fileURL: fileURL, sha256: hash, contentType: mimeType,
@@ -99,6 +103,7 @@ extension ComposeView {
             }
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             sha256 = hash
+            freshServers = await blossomService.serversLackingBlob(sha256: hash)
             pixelSize = ComposeView.pixelSize(ofImageData: data)
             byteCount = data.count
             outcome = await blossomService.uploadForPost(data: data, sha256: hash, contentType: mimeType,
@@ -108,12 +113,13 @@ extension ComposeView {
         }
 
         let signer = UploadSigner.recorded(atStart: signerAtStart, atEnd: nostrService.activeHexPubkey)
+        if case .hosted = outcome, let sha256, let freshServers, note.freshUploads[sha256] == nil {
+            note.freshUploads[sha256] = .init(servers: freshServers, signer: signer)
+        }
         // Taken out while it was going up: nothing to record, and take back
         // what landed on an outside server anyway.
         guard !Task.isCancelled, note.attachments.contains(where: { $0.id == id }) else {
-            if case .hosted(let url) = outcome, let sha256 {
-                deleteHosted(sha256: sha256, url: url, signer: signer)
-            }
+            if case .hosted = outcome, let sha256 { deleteIfUnused(sha256: sha256) }
             return
         }
         note.update(id) {
@@ -197,16 +203,16 @@ extension ComposeView {
         return nil
     }
 
-    /// Takes an attachment out of the note. One already on an outside server
-    /// is deleted there too: before uploads started at pick, nothing left the
-    /// device until Post.
+    /// Takes an attachment out of the note. One this composer put on an
+    /// outside server is deleted there too (`deleteIfUnused`): before uploads
+    /// started at pick, nothing left the device until Post.
     @MainActor
     func withdraw(_ id: UUID) {
-        if let attachment = note.attachments.first(where: { $0.id == id }),
-           attachment.upload == .hosted, let sha256 = attachment.sha256, let url = attachment.url {
-            deleteHosted(sha256: sha256, url: url, signer: attachment.signer)
-        }
+        let attachment = note.attachments.first(where: { $0.id == id })
         note.remove(id)
+        if let attachment, attachment.upload == .hosted, let sha256 = attachment.sha256 {
+            deleteIfUnused(sha256: sha256)
+        }
     }
 
     /// The note is being thrown away: delete every photo it put on an outside server.
@@ -217,20 +223,22 @@ extension ComposeView {
         }
     }
 
-    /// Deletes a blob this composer put on the outside servers. Only when the
-    /// account that uploaded it is still the active one: the delete is signed
-    /// by the active account, and another account asking would tie the two
-    /// together at the server. Media picked from the relay (no signer) was
-    /// not put up here and is left alone.
+    /// Deletes a blob this composer put up, when `UploadDeleteRule` allows
+    /// it: no server had it before (so no other note shows it), no photo
+    /// left in this note has the same hash, Post was never tapped, and the
+    /// account that uploaded it is the active one. Only the servers asked
+    /// before the upload are sent the delete; this device's vault keeps its copy.
     @MainActor
-    private func deleteHosted(sha256: String, url: URL, signer: String?) {
-        guard let signer, signer == nostrService.activeHexPubkey else {
-            if signer != nil { print("ComposeView: not deleting \(sha256.prefix(8)): another account uploaded it") }
-            return
-        }
+    private func deleteIfUnused(sha256: String) {
+        guard let servers = UploadDeleteRule.deleteTargets(
+            sha256: sha256, fresh: note.freshUploads[sha256],
+            otherHashes: note.attachments.map(\.sha256),
+            postTapped: note.postTapped, activeHex: nostrService.activeHexPubkey) else { return }
+        note.freshUploads[sha256] = nil
         let service = blossomService
         Task.detached(priority: .utility) {
-            let report = await service.deleteFromMirrorsReport(sha256: sha256, photoURL: url, includeHomeVault: false)
+            let report = await service.deleteFromMirrorsReport(sha256: sha256, photoURL: nil,
+                                                               includeHomeVault: false, onlyServers: servers)
             if !report.failed.isEmpty {
                 print("ComposeView: removed photo \(sha256.prefix(8)) still on \(report.failedHosts.joined(separator: ", "))")
             }

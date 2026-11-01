@@ -779,6 +779,7 @@
 		82C225B813963E491616A762 /* ProfileEngagementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD292CB3880A2292BE462A49 /* ProfileEngagementStore.swift */; };
 		82D8C05B58CF489B540FD9C5 /* LiveChatAttachMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220CCFE2E1EB4539CE6C22C4 /* LiveChatAttachMenu.swift */; };
 		82F1C518309EE4C29EF8642F /* GlobalSearchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */; };
+		83321A35F00B43B720F7C965 /* UploadDeleteRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F609DCBDF0176790C50B1531 /* UploadDeleteRule.swift */; };
 		83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3056CC16711F7E38B7FE86D /* HavenConfig.swift */; };
 		837C1DBCDECBBDE38000A871 /* TrustPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CBD42B98E57609F77CA5E7 /* TrustPathService.swift */; };
 		838C819BE2CDC266568308E9 /* NIP46Service+Methods.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9953C03BA85F5AE78844A7 /* NIP46Service+Methods.swift */; };
@@ -1566,6 +1567,7 @@
 		FB5A7CBE73F89D446B156553 /* UploadSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */; };
 		FB89228E126B00DD97677142 /* ThreadedReplyNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 683CAD74DC1CCF06AAE882CF /* ThreadedReplyNode.swift */; };
 		FB8C1C02D62249690AB8F049 /* VideoPlayerCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322961A17859BE8B8A7F46A3 /* VideoPlayerCache.swift */; };
+		FBCD8949947175BF3D6FA050 /* UploadDeleteRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F609DCBDF0176790C50B1531 /* UploadDeleteRule.swift */; };
 		FBCF14F6C8AABAE90DDC2EA9 /* DMService+ExternalFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288BA92372A8506F03AF9217 /* DMService+ExternalFetch.swift */; };
 		FC06EA259E80D2DF39C07DA1 /* DeletedPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F46900B31B7943F8CBF7892 /* DeletedPost.swift */; };
 		FC0E9B79F57A815ED1D00BDE /* BlossomService+PostUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125339BC390902958460CB6C /* BlossomService+PostUpload.swift */; };
@@ -2415,6 +2417,7 @@
 		F5274A812424C7D0CF407E92 /* ComposeView+RelayMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ComposeView+RelayMedia.swift"; sourceTree = "<group>"; };
 		F58012CD7192B288A68542B7 /* ProfileSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSection.swift; sourceTree = "<group>"; };
 		F5C28F31699E930265306429 /* MenuBarView+Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MenuBarView+Sidebar.swift"; sourceTree = "<group>"; };
+		F609DCBDF0176790C50B1531 /* UploadDeleteRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadDeleteRule.swift; sourceTree = "<group>"; };
 		F6E19D4039CEF9C7FA5E2991 /* PillLaneStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillLaneStack.swift; sourceTree = "<group>"; };
 		F720A3057EBF19D5EE421C52 /* NWCService+PayInvoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NWCService+PayInvoice.swift"; sourceTree = "<group>"; };
 		F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryGrid.swift; sourceTree = "<group>"; };
@@ -2751,6 +2754,7 @@
 				2DC3CF62D154BEFC6898E6F7 /* ComposeView+Uploads.swift */,
 				E7A623FB39DA0A3C42E9249A /* ImportedVideoFile.swift */,
 				99C0558BBF96A014CC6EEFFD /* LongFormPreviewSection.swift */,
+				F609DCBDF0176790C50B1531 /* UploadDeleteRule.swift */,
 				5F5DE617DD05A43CC7A57DCE /* UploadServersLink.swift */,
 				1F9BBC06F0AE2BC8D187209F /* UploadSigner.swift */,
 			);
@@ -4681,6 +4685,7 @@
 				1F95FE3EAEC35F682BAF6EDD /* UGCReportingDialog.swift in Sources */,
 				AE7EE7795067BC53A690AAAB /* UnlikePill.swift in Sources */,
 				3C6E786965708E27B9C1EEE0 /* UploadAuthCache.swift in Sources */,
+				FBCD8949947175BF3D6FA050 /* UploadDeleteRule.swift in Sources */,
 				C8314546237A2FC0EC680732 /* UploadProgressDelegate.swift in Sources */,
 				01EF894E3129F7A74639B269 /* UploadServersLink.swift in Sources */,
 				495BF3BD841311840500DF6C /* UploadSigner.swift in Sources */,
@@ -5472,6 +5477,7 @@
 				D1FD56BEC02FCA184FCAECAA /* UGCReportingDialog.swift in Sources */,
 				104702FCB22CFBAFA35F7A96 /* UnlikePill.swift in Sources */,
 				09CB11E9A2910514821C1006 /* UploadAuthCache.swift in Sources */,
+				83321A35F00B43B720F7C965 /* UploadDeleteRule.swift in Sources */,
 				25AC009A9676E31F793F17CE /* UploadProgressDelegate.swift in Sources */,
 				955A376EBAE96D11F97B1C43 /* UploadServersLink.swift in Sources */,
 				FB5A7CBE73F89D446B156553 /* UploadSigner.swift in Sources */,
