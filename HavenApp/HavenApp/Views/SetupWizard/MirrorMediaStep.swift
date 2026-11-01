@@ -224,7 +224,7 @@ struct MirrorMediaStep: View {
 
         let trimmedURL = blossomURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURL.isEmpty, let _ = URL(string: trimmedURL) else {
-            syncError = "Invalid Blossom server URL."
+            syncError = "Invalid media server URL."
             showSyncError = true
             isSyncing = false
             return

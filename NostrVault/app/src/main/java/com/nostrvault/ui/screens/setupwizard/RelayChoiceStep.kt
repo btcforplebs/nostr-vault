@@ -83,7 +83,7 @@ internal fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
             OutlinedTextField(
                 value = blossomInput,
                 onValueChange = viewModel::setExternalBlossomInput,
-                label = { Text("Blossom URL (optional)") },
+                label = { Text("Media server URL (optional)") },
                 placeholder = { Text("https://your.domain") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),

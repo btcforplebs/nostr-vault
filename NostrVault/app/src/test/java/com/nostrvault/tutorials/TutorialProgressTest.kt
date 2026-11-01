@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /** Same cases as iOS `TutorialProgressTests`, so the two apps keep one set of rules. */
 class TutorialProgressTest {
@@ -194,6 +195,37 @@ class TutorialProgressTest {
                 .joinToString(" ").lowercase()
             listOf("can connect to it", "blossom", "fips", "personal relay", "in your pocket").forEach { word ->
                 assertFalse("${id.name}: $word", text.contains(word))
+            }
+        }
+    }
+
+    /** Setup and the widget use the same words as the tips: what the user
+     *  sees there never says Blossom, FIPS or personal relay (nv-tutorial
+     *  2026-11-01). Reads the shipped sources and strings from this checkout. */
+    @Test fun setupAndWidgetCopyUsesTheGlossary() {
+        val shown = mutableListOf<Pair<String, String>>()
+        // Literal prose (anything with a space: URLs, folder names and
+        // identifiers have none) in the setup screens and widget code.
+        val literal = Regex(""""((?:[^"\\\n]|\\.)* (?:[^"\\\n]|\\.)*)"""")
+        val dirs = listOf("src/main/java/com/nostrvault/ui/screens/setupwizard", "src/main/java/com/nostrvault/widget")
+        val files = dirs.flatMap { File(it).listFiles { f -> f.extension == "kt" }.orEmpty().toList() }
+        assertTrue("setup and widget sources not found under ${File(".").absolutePath}", files.size > 5)
+        files.forEach { file ->
+            file.readLines().forEach { line ->
+                val code = line.trim()
+                if (code.startsWith("//") || code.startsWith("*") || code.contains("Log.")) return@forEach
+                literal.findAll(line).forEach { shown += file.name to it.groupValues[1] }
+            }
+        }
+        // Widget names and descriptions in the string resources.
+        val resource = Regex("""<string name="(widget_\w+)">([^<]*)</string>""")
+        resource.findAll(File("src/main/res/values/strings.xml").readText())
+            .forEach { shown += it.groupValues[1] to it.groupValues[2] }
+        assertTrue(shown.size > 50)
+
+        shown.forEach { (place, text) ->
+            listOf("can connect to it", "blossom", "fips", "personal relay", "in your pocket").forEach { word ->
+                assertFalse("$place: $word in \"$text\"", text.lowercase().contains(word))
             }
         }
     }
