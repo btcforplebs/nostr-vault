@@ -67,8 +67,6 @@ internal fun HeroNoteCard(
     onZap: () -> Unit,
     onShare: () -> Unit,
     onBroadcast: () -> Unit,
-    /** Web of Trust for the author; null on your own notes. */
-    onTrustWeb: (() -> Unit)? = null,
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
     val heroContext = LocalContext.current
@@ -213,7 +211,7 @@ internal fun HeroNoteCard(
                                     },
                                 )
                             }
-                            add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = onBroadcast))
+                            // Broadcast is the action bar's last button, as on iOS.
                             if (isOwnNote) {
                                 add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = onDelete))
                             } else {
@@ -340,7 +338,7 @@ internal fun HeroNoteCard(
                 onLike = { onLike() },
                 onZap = { onZap() },
                 onLongPressLike = { onLongPressLike() },
-                onTrustWeb = onTrustWeb,
+                onBroadcast = onBroadcast,
             )
 
             // Engagement row — only shown when at least one count is non-zero.

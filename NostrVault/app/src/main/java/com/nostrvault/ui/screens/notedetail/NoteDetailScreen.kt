@@ -569,9 +569,6 @@ fun NoteDetailScreen(
                         onZap = { zapTargetNote = focusedNote },
                         onShare = { shareNote(context, focusedNote!!) },
                         onBroadcast = { broadcastTargetNote = focusedNote },
-                        onTrustWeb = focusedNote!!.effectiveAuthor.let { author ->
-                            if (viewModel.isOwnNote(author)) null else ({ openTrustWeb(author) })
-                        },
                     )
                 }
 
