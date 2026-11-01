@@ -5,10 +5,38 @@ import android.os.PowerManager
 import android.util.Log
 import com.nostrvault.relay.RelayForegroundService.Companion.TAG
 import com.nostrvault.relay.RelayForegroundService.Companion.WAKELOCK_TAG
+import com.nostrvault.relay.RelayForegroundService.LifecycleState
+
+/**
+ * When the relay keeps the CPU awake.
+ *
+ * The foreground service keeps the process alive; the wake lock only stops
+ * the CPU from sleeping. That is needed while the relay boots or stops (the
+ * databases open and close), and while the FIPS mesh offers this relay to
+ * peers, who would otherwise wait for doze's next maintenance window.
+ *
+ * Serving this phone's own app needs none: the app is on screen when it asks.
+ * Held all the time, it kept the CPU out of deep doze all night (5h48m on the
+ * Moto, 10-31 to 11-01).
+ */
+internal object RelayWakeLockPolicy {
+    fun shouldHold(state: LifecycleState, servingMesh: Boolean): Boolean = when (state) {
+        LifecycleState.BOOTING, LifecycleState.STOPPING -> true
+        LifecycleState.RUNNING -> servingMesh
+        LifecycleState.IDLE -> false
+    }
+}
 
     // ── Wake lock ──────────────────────────────────────────────────
 
-    internal fun RelayForegroundService.acquireWakeLock() {
+    /** Takes or drops the wake lock to match [RelayWakeLockPolicy]. */
+    internal fun RelayForegroundService.syncWakeLock() {
+        synchronized(this) {
+            if (RelayWakeLockPolicy.shouldHold(lifecycleState, servingMesh)) acquireWakeLock() else releaseWakeLock()
+        }
+    }
+
+    private fun RelayForegroundService.acquireWakeLock() {
         if (wakeLock?.isHeld == true) return // already held, avoid double-acquire
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -24,11 +52,13 @@ import com.nostrvault.relay.RelayForegroundService.Companion.WAKELOCK_TAG
     }
 
     internal fun RelayForegroundService.releaseWakeLock() {
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
-                Log.d(TAG, "Wake lock released")
+        synchronized(this) {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    Log.d(TAG, "Wake lock released")
+                }
             }
+            wakeLock = null
         }
-        wakeLock = null
     }
