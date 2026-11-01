@@ -88,11 +88,18 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
      * that gets there first, or while this runs, simply waits for the one
      * open or load to finish, the same as before. The config is still read
      * on main (MainActivity.onCreate) before anything is drawn or saved.
+     *
+     * The Go environment is set here on main first: setenv is not safe while
+     * other threads run, so the warm-up thread only loads. The library load
+     * is not wrapped in runCatching: if HavenBridge's initializer throws,
+     * the crash report keeps that cause instead of the bare
+     * NoClassDefFoundError main would hit later.
      */
     private fun warmUpOffMain() {
+        com.nostrvault.relay.GoRuntimeEnv.ensure()
         Thread({
             runCatching { com.nostrvault.data.local.CredentialStore.init(this) }
-            runCatching { com.nostrvault.relay.HavenBridge.isLoaded }
+            com.nostrvault.relay.HavenBridge.isLoaded
         }, "nv-startup-warmup").start()
     }
 
