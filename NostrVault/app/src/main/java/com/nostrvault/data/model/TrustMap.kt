@@ -791,6 +791,10 @@ class GlobeCamera {
      * Something on screen is still moving, or will start drifting soon: keep
      * the frame clock running. False is the cue to let it sleep.
      */
+    /** No finger, flight, flick or zoom under way: any motion left is the slow drift. */
+    val onlyDrifting: Boolean
+        get() = !dragging && flyTarget == null && spin.isZero && zoom == zoomTarget
+
     fun wantsFrames(now: Double, reduceMotion: Boolean): Boolean {
         if (dragging || flyTarget != null || !spin.isZero || zoom != zoomTarget) return true
         return !reduceMotion && (keepsDrifting || now - lastTouch < SLEEP_AFTER)

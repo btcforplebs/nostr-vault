@@ -15,6 +15,9 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.NostrService.ReplaceableLookup
 import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
 
+/** How long a lookup waits after its socket drops, for an EOSE still on its way to the collector. */
+internal const val GONE_DRAIN_MS = 250L
+
     internal fun NostrService.parseRelayListEvent(pubkey: String, tags: List<List<String>>, createdAt: Long) {
         val (readRelays, writeRelays) = profileRepository.parseRelayListTags(tags)
         scope.launch(Dispatchers.Main.immediate) {
@@ -244,14 +247,24 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
                                     }
                                 }
                             }
-                            launch {
+                            val sender = launch {
                                 client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
                                 val dFilter = dTag?.let { ""","#d":[${JsonPrimitive(it)}]""" } ?: ""
                                 client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"]$dFilter,"limit":1}]""")
                             }
                             client.connect()
+                            // A relay that failed, closed or was never dialled (blocked, held)
+                            // is done now, not at the timeout; it still doesn't count as answered.
+                            val gone = launch {
+                                client.connectionState.first { it == WebSocketClient.ConnectionState.DISCONNECTED }
+                                // An EOSE sent just before the close may still sit in [messages].
+                                delay(GONE_DRAIN_MS)
+                                done.complete(Unit)
+                            }
                             done.await()
                             collector.cancel()
+                            sender.cancel()
+                            gone.cancel()
                         }
                     } finally {
                         client.disconnect()

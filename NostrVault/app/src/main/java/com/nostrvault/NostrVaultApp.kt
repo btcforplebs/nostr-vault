@@ -61,6 +61,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                 if (com.nostrvault.relay.HavenBridge.isLoaded) {
                     runCatching { com.nostrvault.relay.HavenBridge.setAppForeground(on) }
                 }
+                if (!on) trimGoMemory()
             },
         )
         // GIFs downloaded for "Save to my Blossom" that a crash left behind.
@@ -87,9 +88,11 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                 Log.w("NostrVaultApp", "Critical memory pressure (level=$level), evicting all caches")
                 mediaCacheService.evictMemoryCaches()
                 imageLoader.memoryCache?.clear()
+                trimGoMemory()
             }
             level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE -> {
                 Log.w("NostrVaultApp", "Moderate memory pressure (level=$level), trimming caches")
+                trimGoMemory()
                 mediaCacheService.trimMemoryCaches()
                 // Proportional eviction instead of full clear — preserves hot avatars
                 imageLoader.memoryCache?.trimMemory(level)
@@ -100,6 +103,14 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
                 // across brief backgrounding prevents avatar reload flash on return.
                 Log.d("NostrVaultApp", "Background memory pressure (level=$level), preserving Coil cache")
             }
+        }
+    }
+
+    /** The relay's free Go memory back to the system, off the main thread ([HavenBridge.trimMemory]). */
+    private fun trimGoMemory() {
+        if (!com.nostrvault.relay.HavenBridge.isLoaded) return
+        applicationScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.nostrvault.relay.HavenBridge.trimMemory() }
         }
     }
 

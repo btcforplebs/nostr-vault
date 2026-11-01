@@ -70,6 +70,22 @@ import com.nostrvault.service.NostrService.Companion.isLoopbackRelay
     internal suspend fun NostrService.lookupOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published =
         lookupRelayListsImpl(ownerHexPubkey)
 
+    /**
+     * The owner's lists as this phone last saw them, with nothing looked up:
+     * what Settings > Relays shows while [lookupOwnerRelayListsImpl] waits on
+     * slow relays. Never known, so nothing is published from it.
+     */
+    internal fun NostrService.cachedOwnerRelayListsImpl(): com.nostrvault.relay.RelayDraft.Published {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return com.nostrvault.relay.RelayDraft.Published()
+        return com.nostrvault.relay.RelayDraft.Published(
+            read = relayLists.value[owner].orEmpty().filter(com.nostrvault.relay.RelayDraft::listable),
+            write = outboxRelays.value[owner].orEmpty().filter(com.nostrvault.relay.RelayDraft::listable),
+            dms = configStore.config.value.dmInboxRelays.filterNot(::isLoopbackRelay),
+            relayListAt = relayListCreatedAt[owner],
+        )
+    }
+
     /** [lookupOwnerRelayListsImpl] for any account, by hex pubkey. */
     internal suspend fun NostrService.lookupRelayListsImpl(owner: String): com.nostrvault.relay.RelayDraft.Published = coroutineScope {
         if (owner.isBlank()) return@coroutineScope com.nostrvault.relay.RelayDraft.Published()

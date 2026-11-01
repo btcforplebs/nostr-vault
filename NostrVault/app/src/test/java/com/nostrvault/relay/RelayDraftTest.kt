@@ -346,4 +346,27 @@ class RelayDraftTest {
             RelayDraft.rebaseDMList(before = listOf("wss://inbox.example"), after = listOf("wss://new.example"), newest = newest),
         )
     }
+
+    /**
+     * The screen opens on the cached lists; edits made before the lookup lands
+     * are made again on what it found, not lost and not kept on stale rows.
+     */
+    @Test
+    fun `edits made while the lookup runs land on the looked-up lists`() {
+        val cached = RelayDraft.Published(read = listOf("wss://nostr.land"))
+        val opening = RelayDraft.start(config, cached, pinned = listOf(ownRelay, ownInbox))
+        val edits = listOf<(RelayDraft.State) -> RelayDraft.State>(
+            { RelayDraft.toggle(it, key("wss://nostr.land"), Job.WRITE) },
+            { RelayDraft.add(it, "wss://new.example", setOf(Job.READ)) },
+            { RelayDraft.remove(it, key("wss://gone.example")) },
+        )
+        edits.fold(opening) { acc, e -> e(acc) }
+        val landed = RelayDraft.replay(start(), edits)
+        assertEquals(setOf(Job.READ, Job.WRITE), RelayDraft.jobs(landed.draft, key("wss://nostr.land")))
+        assertEquals(setOf(Job.READ), RelayDraft.jobs(landed.draft, key("wss://new.example")))
+        // The looked-up lists stay underneath: his DM inbox came only from the lookup.
+        assertEquals(setOf(Job.DMS), RelayDraft.jobs(landed.draft, key("wss://inbox.nostr.wine")))
+        assertTrue(landed.published.relayListKnown)
+        assertEquals(start(), RelayDraft.replay(start(), emptyList()))
+    }
 }

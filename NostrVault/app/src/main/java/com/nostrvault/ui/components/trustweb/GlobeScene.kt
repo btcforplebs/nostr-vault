@@ -9,7 +9,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
@@ -35,8 +34,6 @@ import kotlin.math.roundToInt
  * counters are Compose state.
  */
 internal class GlobeScene(
-    /** Draw stars as batched points: the oval paths cost a slow phone a whole frame. */
-    internal val lite: Boolean = false,
     /** Upright on a phone the globe fills the width; tablets keep their framing. */
     private val phone: Boolean = false,
 ) {
@@ -445,7 +442,11 @@ internal class GlobeScene(
         // Full rate only under a finger (a drag or pinch, a flick's spin); a
         // storm of arrivals at 60 fps, drift, settling and a few arcs at 30.
         // iOS `GlobeScene.wantedRate`.
-        frameRate = GlobeStorm.FrameRate.pick(finger = camera.dragging || !camera.spin.isZero, busy = arcs.busy)
+        frameRate = GlobeStorm.FrameRate.pick(
+            finger = camera.dragging || !camera.spin.isZero,
+            busy = arcs.busy,
+            onlyDrift = !settling && !fading && arcs.idle && camera.onlyDrifting,
+        )
         if (still && arcs.idle) awake = false
     }
 
@@ -540,8 +541,6 @@ internal class GlobeScene(
     internal var coreR = 0.0
     internal var ready = false
 
-    /** Stars bucketed by kind and brightness: one pass, a few fills. */
-    internal val buckets = Array(Slot.entries.size) { Array(LEVELS + 1) { Path() } }
     /** Threads by brightness band, front to back ([GlobeThreads]); each glows in one blurred layer. */
     internal val glow = Array(GlobeThreads.BANDS) { Path() }
     internal val strong = Array(GlobeThreads.BANDS) { Path() }
@@ -601,7 +600,6 @@ internal class GlobeScene(
         if (key.contentEquals(preparedFor)) return
         preparedFor = key
         dpPx = density
-        for (slot in buckets) for (p in slot) p.reset()
         for (bucket in pointBuckets.values) bucket.count = 0
         for (band in 0 until GlobeThreads.BANDS) { glow[band].reset(); strong[band].reset(); faint[band].reset() }
         dashed.reset()
@@ -646,13 +644,7 @@ internal class GlobeScene(
             val level = (min(1.0, base * a) * LEVELS).roundToInt()
             if (level <= 0) continue
             val r = size * p.scale * zoom * density
-            if (lite) {
-                pointBucket(slot, min(LEVELS, level), r).add(p.x.toFloat(), p.y.toFloat())
-            } else {
-                buckets[slot.ordinal][min(LEVELS, level)].addOval(
-                    Rect((p.x - r).toFloat(), (p.y - r).toFloat(), (p.x + r).toFloat(), (p.y + r).toFloat()),
-                )
-            }
+            pointBucket(slot, min(LEVELS, level), r).add(p.x.toFloat(), p.y.toFloat())
         }
 
         // Threads: core → bridge → author, drawn out over half a second.

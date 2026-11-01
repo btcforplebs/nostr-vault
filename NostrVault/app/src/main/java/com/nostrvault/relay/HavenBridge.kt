@@ -118,6 +118,15 @@ object HavenBridge {
      */
     external fun setAppForeground(on: Boolean)
 
+    /**
+     * A full Go GC that hands free memory back to the system. Sync and import
+     * rounds spike the heap, and Go keeps the peak until something else frees
+     * it, which on an idle relay can be an hour away. Tens to hundreds of ms:
+     * never on the main thread. iOS calls it on background too.
+     * Maps to Go: TrimMemoryC()
+     */
+    external fun trimMemory()
+
     // -----------------------------------------------------------------------
     // Database operations
     // -----------------------------------------------------------------------

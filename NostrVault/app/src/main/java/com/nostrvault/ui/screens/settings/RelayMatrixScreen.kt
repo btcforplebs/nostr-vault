@@ -89,9 +89,19 @@ class RelayMatrixViewModel @Inject constructor(
     private val _results = MutableStateFlow<Map<String, RelayProbeResult>>(emptyMap())
     val results = _results.asStateFlow()
 
-    /** Null until the published lists have been looked up. */
+    /**
+     * Opens on the lists this phone already has; the looked-up lists replace
+     * them when every relay has answered or timed out ([checking]).
+     */
     private val _draft = MutableStateFlow<RelayDraft.State?>(null)
     val draft = _draft.asStateFlow()
+
+    private val _checking = MutableStateFlow(true)
+    /** The published lists are still being looked up; Save waits for them. */
+    val checking = _checking.asStateFlow()
+
+    /** Edits made while [checking], replayed onto the looked-up lists. */
+    private var editsWhileChecking: MutableList<(RelayDraft.State) -> RelayDraft.State>? = mutableListOf()
 
     private val _notPublished = MutableStateFlow<List<String>>(emptyList())
     /** Lists the last Save kept on this device: the newest copy couldn't be read at Save. */
@@ -110,11 +120,21 @@ class RelayMatrixViewModel @Inject constructor(
     val follow = _follow.asStateFlow()
 
     init {
+        // Rows and speed dots at once, from what this phone has: the lookup
+        // waits on its slowest relay, up to 6 s (sweep 11-01).
+        val opening = configStore.config.value.let { cfg ->
+            RelayDraft.start(RelayMatrix.lists(cfg), nostrService.cachedOwnerRelayLists(), pinned(cfg))
+        }
+        _draft.value = opening
+        probe(RelayMatrix.needingProbe(opening.layout.map { it.url }, _results.value.keys))
         viewModelScope.launch {
             val published = runCatching { nostrService.lookupOwnerRelayLists() }.getOrElse { RelayDraft.Published() }
             val cfg = configStore.config.value
-            val state = RelayDraft.start(RelayMatrix.lists(cfg), published, pinned(cfg))
+            val looked = RelayDraft.start(RelayMatrix.lists(cfg), published, pinned(cfg))
+            val state = RelayDraft.replay(looked, editsWhileChecking.orEmpty())
+            editsWhileChecking = null
             _draft.value = state
+            _checking.value = false
             probe(RelayMatrix.needingProbe(state.layout.map { it.url }, _results.value.keys))
             refreshSuggestions()
         }
@@ -174,6 +194,7 @@ class RelayMatrixViewModel @Inject constructor(
         val state = _draft.value ?: return
         val next = change(state)
         if (next == state) return
+        editsWhileChecking?.add(change)
         _draft.value = next
         // Only relays with no speed yet, so the timed rows keep their dots.
         probe(RelayMatrix.needingProbe(next.layout.map { it.url }, _results.value.keys))
@@ -300,6 +321,7 @@ fun RelayMatrixScreen(
     val cfg by viewModel.config.collectAsState()
     val results by viewModel.results.collectAsState()
     val state by viewModel.draft.collectAsState()
+    val checking by viewModel.checking.collectAsState()
     val colors = LocalNostrVaultColors.current
     val accent = colors.primary
 
@@ -369,7 +391,7 @@ fun RelayMatrixScreen(
             )
         },
         bottomBar = {
-            if (state != null) RelaySaveBar(changes, accent) { confirming = true }
+            if (state != null && !checking) RelaySaveBar(changes, accent) { confirming = true }
         },
         containerColor = WindowBackground,
     ) { padding ->
@@ -501,7 +523,12 @@ fun RelayMatrixScreen(
                 }
             } else {
                 val published = state!!.published
-                if (!published.relayListKnown || !published.dmListKnown) {
+                if (checking) {
+                    item {
+                        Text("Checking your published lists…", color = SecondaryText, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
+                } else if (!published.relayListKnown || !published.dmListKnown) {
                     item {
                         Text(
                             "Your relays didn't send your current " +
