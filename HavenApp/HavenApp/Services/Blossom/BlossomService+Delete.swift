@@ -45,12 +45,21 @@ extension BlossomService {
     /// addresses are not targets, and every other server is asked first
     /// whether it is a vault (NIP-11 pubkey = owner). One that can't be asked
     /// is reported as still holding the file.
-    func deleteFromMirrorsReport(sha256: String, photoURL: URL?, includeHomeVault: Bool) async -> MirrorDeleteResult {
-        let (targets, ownerHex) = await MainActor.run {
+    ///
+    /// `onlyServers` narrows the delete to those servers (the composer's
+    /// pre-upload check, `UploadDeleteRule`): a server added since is never
+    /// sent a delete for a blob it was not asked about.
+    func deleteFromMirrorsReport(sha256: String, photoURL: URL?, includeHomeVault: Bool,
+                                 onlyServers: [String]? = nil) async -> MirrorDeleteResult {
+        var (targets, ownerHex) = await MainActor.run {
             (configService.config.blossomDeleteTargets(
                 ownerServerList: nostrService.serverLists[nostrService.activeHexPubkey] ?? [],
                 photoURL: photoURL, includeHomeVault: includeHomeVault),
              nostrService.activeHexPubkey)
+        }
+        if let onlyServers {
+            let asked = Set(onlyServers.map(HavenConfig.blossomServerKey))
+            targets = targets.filter { asked.contains(HavenConfig.blossomServerKey($0)) }
         }
         guard !targets.isEmpty else {
             logger.warning("No Blossom mirrors configured for deletion")
@@ -135,6 +144,47 @@ extension BlossomService {
         }
 
         return result
+    }
+
+    /// Before a composer upload: asks this device's vault and every server a
+    /// later delete would reach (`blossomDeleteTargets` with no photo link)
+    /// whether it already has `sha256`. Returns the outside servers asked
+    /// when every one, the vault included, clearly answered 404; nil when any
+    /// has it or could not say (`UploadDeleteRule.isFresh`), so a blob already
+    /// in another note is never deleted.
+    func serversLackingBlob(sha256: String) async -> [String]? {
+        let outside = await MainActor.run {
+            configService.config.blossomDeleteTargets(
+                ownerServerList: nostrService.serverLists[nostrService.activeHexPubkey] ?? [],
+                photoURL: nil, includeHomeVault: false)
+        }
+        let vault = await localBlossomURL()
+        let statuses = await withTaskGroup(of: Int?.self) { group in
+            for server in [vault] + outside {
+                group.addTask { [self] in await headStatus(server: server, sha256: sha256) }
+            }
+            var all: [Int?] = []
+            for await status in group { all.append(status) }
+            return all
+        }
+        return UploadDeleteRule.isFresh(statuses: statuses) ? outside : nil
+    }
+
+    /// The HTTP status of `HEAD <server>/<sha256>`, or nil for no answer.
+    private func headStatus(server: String, sha256: String) async -> Int? {
+        guard var components = URLComponents(string: server) else { return nil }
+        if components.scheme == "http", let host = components.host,
+           !["localhost", "127.0.0.1", "0.0.0.0"].contains(host.lowercased()) {
+            components.scheme = "https"
+        }
+        guard let base = components.url else { return nil }
+        let url = base.appendingPathComponent(sha256)
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 10
+        let session = isLocalhost(url) ? localhostSession : remoteSession
+        guard let (_, response) = try? await session.data(for: request) else { return nil }
+        return (response as? HTTPURLResponse)?.statusCode
     }
 
     /// Delete media from local Blossom storage

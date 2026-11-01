@@ -52,6 +52,13 @@ final class ComposerNote: ObservableObject {
     var skipOutsideServers = false
     /// The outside servers that did not answer, for the queued-post message.
     var unreachableServers: [String] = []
+    /// Blobs this composer put up that no server had before, by hash, with
+    /// the servers asked (`UploadDeleteRule`). Only these may be deleted.
+    var freshUploads: [String: UploadDeleteRule.FreshUpload] = [:]
+    /// Post was tapped. Set when the account is locked and never cleared:
+    /// from then on removing or discarding deletes nothing, even after a
+    /// failed send, since a queued or pending note may hold the links.
+    var postTapped = false
 
     private func shiftAnchors(from old: String, to new: String) {
         guard old != new, !anchors.isEmpty else { return }
