@@ -19,6 +19,10 @@ struct iPhoneTabView: View {
     /// The tab bar alone, without the mini player above it.
     @State private var tabBarOnlyHeight: CGFloat = 0
     @ObservedObject private var buttonRow = FloatingButtonRow.shared
+    /// The software keyboard is on screen. The bottom inset follows it up,
+    /// so on Search the tab bar would sit over the results while typing.
+    @State private var keyboardUp = false
+    private var hidesChromeForKeyboard: Bool { keyboardUp && selectedTab == 1 }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -125,6 +129,8 @@ struct iPhoneTabView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // The music mini player rides above the tab bar on every tab.
             // Measured together, so screens inset for both.
+            // Hidden while typing on Search, so results get the space.
+            if !hidesChromeForKeyboard {
             VStack(spacing: 6) {
                 // Leaves room on the right for the screen's floating button
                 // (Post, Blossom, Relay), which drops level with it.
@@ -162,12 +168,20 @@ struct iPhoneTabView: View {
                 GeometryReader { geo in
                     Color.clear
                         .onAppear { tabBarHeight = geo.size.height; buttonRow.update(chromeHeight: geo.size.height) }
+                        .onDisappear { tabBarHeight = 0; buttonRow.update(chromeHeight: 0) }
                         .onChange(of: geo.size.height) { _, height in
                             tabBarHeight = height
                             buttonRow.update(chromeHeight: height)
                         }
                 }
             )
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardUp = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardUp = false
         }
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
