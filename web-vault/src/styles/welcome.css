@@ -35,7 +35,7 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
 .welcome-browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .welcome-search { display: flex; align-items: center; gap: 8px; min-height: 50px; padding: 0 6px 0 14px; border-radius: 999px;
   background: var(--s1); border: 1px solid var(--hair); color: var(--text-3); transition: border-color var(--press); }
-.welcome-search:focus-within { border-color: var(--accent-line); }
+.welcome-search:focus-within { border-color: var(--accent); }
 .welcome-search input { flex: 1; min-width: 0; height: 46px; padding: 0; border: 0; background: none; color: var(--text); font: var(--t-body); }
 .welcome-search input:focus { outline: none; }
 .welcome-search input::placeholder { color: var(--text-3); }
@@ -47,3 +47,11 @@ html[data-shell="learn"] .welcome-learn { visibility: hidden; } /* the page is a
 
 /* The guest bar's way back here, beside "Viewing as a guest". */
 .guest-bar .guest-home { flex: none; }
+
+/* Get the app, on a phone only (components/get-app.js): a door like the others, outlined in orange so Create an account
+   stays the one filled button, and the line under it saying what TestFlight or Zapstore is. */
+.welcome-app { display: grid; gap: 6px; padding-bottom: 4px; }
+.welcome .welcome-get { display: flex; align-items: center; justify-content: center; box-sizing: border-box; border-color: var(--accent);
+  color: var(--accent); text-decoration: none; }
+.welcome .welcome-get:hover, .welcome .welcome-get:focus-visible { color: var(--accent-light); }
+.welcome-app-line { margin: 0; text-align: center; font: 400 13px/1.35 var(--font); color: var(--text-2); }
