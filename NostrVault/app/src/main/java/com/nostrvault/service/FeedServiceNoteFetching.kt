@@ -1,5 +1,6 @@
 package com.nostrvault.service
 
+import com.nostrvault.util.ParseCache
 import com.nostrvault.relay.VerifiedEvents
 import com.nostrvault.data.model.*
 import com.nostrvault.data.remote.LookupSocketPool
@@ -80,8 +81,11 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
         // over-500 trim drops notes the feed doesn't reference (one opened
         // from Search, say), and those must not then be called unavailable.
         val arrived = ConcurrentHashMap.newKeySet<String>()
-        requestRelayListsFor(chunk)
-        val firstHints = hintRelays(chunk, ownRelays, cap = 12).filterKeys { !isDamus(it) }
+        // Read once per batch: each pass below used to rescan the whole feed
+        // and re-decode every nevent in it (Moto check 11-01, startup jank).
+        val refs = referenceIndex(chunk)
+        requestRelayListsFor(chunk, refs)
+        val firstHints = hintRelays(chunk, ownRelays, cap = 12, refs).filterKeys { !isDamus(it) }
         requestNotes(ownRelays.associateWith { chunk } + firstHints, arrived)
 
         val stillMissing = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }
@@ -89,7 +93,7 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
             val asked = ownRelays + firstHints.keys
             val askedKeys = asked.map { normalizeRelay(it) }.toSet()
             val fallbacks = FALLBACK_NOTE_RELAYS.filter { normalizeRelay(it) !in askedKeys }
-            val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24)
+            val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24, refs)
             requestNotes(fallbacks.associateWith { stillMissing } + hints, arrived)
         }
 
@@ -106,15 +110,14 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
      * that cover the most ids. Keeping them in arrival order let the first
      * ids fill the cap, so later ids got no hint relay at all.
      */
-    private fun FeedService.hintRelays(ids: List<String>, exclude: Collection<String>, cap: Int): Map<String, List<String>> {
+    private fun FeedService.hintRelays(ids: List<String>, exclude: Collection<String>, cap: Int, refs: (String) -> Pair<String?, String?>): Map<String, List<String>> {
         val skip = exclude.map { normalizeRelay(it) }.toSet()
         // Keyed by the normalized form to merge duplicates, but the request
         // goes to the URL as written: lowercasing would change a path.
         val urlForKey = mutableMapOf<String, String>()
         val byRelay = mutableMapOf<String, MutableList<String>>()
-        val quoted = quotedAuthors()
         for (id in ids) {
-            val (hint, author) = referenceHints(id, quoted)
+            val (hint, author) = refs(id)
             val urls = buildList {
                 hint?.let { add(it) }
                 author?.let { a -> nostrService.outboxRelays.value[a]?.take(3)?.let { addAll(it) } }
@@ -141,36 +144,55 @@ import com.nostrvault.service.FeedService.Companion.UNAVAILABLE_RETRY_MS
         val out = HashMap<String, String>()
         val notes = _notes.value.asSequence() + _parentNotesCache.value.values.asSequence()
         for (note in notes) {
-            if (!note.content.contains("nevent1", ignoreCase = true)) continue
-            for (identifier in QuoteRef.identifiers(note.content)) {
-                if (!identifier.startsWith("nevent1", ignoreCase = true)) continue
-                val pointer = HavenBridge.decodeNeventPointer(identifier) ?: continue
-                pointer.author?.let { out.putIfAbsent(pointer.id, it) }
-            }
+            for ((id, author) in neventAuthors(note)) out.putIfAbsent(id, author)
         }
         return out
     }
 
     /**
-     * The relay hint and author a loaded note gives for the id it references
-     * ([NoteReferenceHints]); for a quote, the author its nevent names ([quoted]).
+     * The (id, author) pairs [note]'s nevents name. A note's text never
+     * changes, so each note is decoded once while in recent use: this ran
+     * over every loaded note for every lookup batch, the largest CPU cost on
+     * the Moto in the first seconds after launch.
      */
-    private fun FeedService.referenceHints(id: String, quoted: Map<String, String>): Pair<String?, String?> {
+    private fun neventAuthors(note: FeedNote): List<Pair<String, String>> {
+        if (!note.content.contains("nevent1", ignoreCase = true)) return emptyList()
+        return neventAuthorCache.getOrPut(note.id) {
+            QuoteRef.identifiers(note.content)
+                .filter { it.startsWith("nevent1", ignoreCase = true) }
+                .mapNotNull { identifier ->
+                    val pointer = HavenBridge.decodeNeventPointer(identifier) ?: return@mapNotNull null
+                    pointer.author?.let { pointer.id to it }
+                }
+        }
+    }
+
+    private val neventAuthorCache = ParseCache<String, List<Pair<String, String>>>(2_000)
+
+    /**
+     * The relay hint and author a loaded note gives for each of [ids]
+     * ([NoteReferenceHints]); for a quote, the author its nevent names.
+     * Built in one walk over the loaded notes for the whole batch.
+     */
+    private fun FeedService.referenceIndex(ids: List<String>): (String) -> Pair<String?, String?> {
+        val quoted = quotedAuthors()
         val notes = _notes.value.asSequence() +
             _parentNotesCache.value.values.asSequence() +
             _feedThreadReplies.value.values.asSequence()
-        val (hint, author) = NoteReferenceHints.find(id, notes) ?: return null to quoted[id]
-        return hint to (author ?: quoted[id])
+        val found = NoteReferenceHints.findEach(ids.toSet(), notes)
+        return { id ->
+            val hit = found[id]
+            if (hit == null) null to quoted[id] else hit.first to (hit.second ?: quoted[id])
+        }
     }
 
     /** Authors referenced by these ids whose write relays aren't known yet. */
-    private fun FeedService.requestRelayListsFor(ids: List<String>) {
+    private fun FeedService.requestRelayListsFor(ids: List<String>, refs: (String) -> Pair<String?, String?>) {
         val known = nostrService.outboxRelays.value
         if (relayListRequested.size > 5000) relayListRequested.clear()
         // Once per author: force skips the profile fetch's throttle, and an
         // author with no kind 10002 would otherwise be re-asked every batch.
-        val quoted = quotedAuthors()
-        val authors = ids.mapNotNull { referenceHints(it, quoted).second }
+        val authors = ids.mapNotNull { refs(it).second }
             .filter { it !in known && relayListRequested.add(it) }
             .distinct()
         if (authors.isNotEmpty()) {
