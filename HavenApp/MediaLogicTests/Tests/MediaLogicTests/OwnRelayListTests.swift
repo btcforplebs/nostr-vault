@@ -62,6 +62,36 @@ final class OwnRelayListTests: XCTestCase {
         XCTAssertEqual(config.blastrRelays, ["wss://write.example.com"])
     }
 
+    /// Never connect on a host covers every path there, and the write list
+    /// goes to the relay, which has no blocklist (Tron #1529).
+    func testABlockedHostIsLeftOutOnEveryPath() {
+        var config = HavenConfig()
+        config.blockedRelays = ["wss://bad.example.com"]
+        config.adoptRelayList(read: ["wss://bad.example.com/x", "wss://read.example.com"],
+                              write: ["wss://bad.example.com/x", "wss://BAD.example.com/", "wss://write.example.com"],
+                              publishedAt: 1_000)
+        XCTAssertEqual(config.feedRelays, ["wss://read.example.com"])
+        XCTAssertEqual(config.blastrRelays, ["wss://write.example.com"])
+    }
+
+    /// A copy dated far ahead (a client with a wrong clock) is ignored: it
+    /// would stay the newest on the relays and undo every edit here.
+    func testAFutureDatedListIsIgnoredSoAnEditStays() {
+        let now: Int64 = 1_000_000
+        var config = HavenConfig()
+        XCTAssertFalse(config.adoptRelayList(read: theirRead, write: theirWrite,
+                                             publishedAt: now + ListMerge.maxSkew, now: now))
+        XCTAssertNil(config.relayListUpdatedAt)
+        config.feedRelays = ["wss://mine.example.com"]
+        config.relayListUpdatedAt = now
+        XCTAssertFalse(config.adoptRelayList(read: theirRead, write: theirWrite,
+                                             publishedAt: now + 365 * 24 * 3600, now: now + 60))
+        XCTAssertEqual(config.feedRelays, ["wss://mine.example.com"])
+        // Just inside the skew still counts.
+        XCTAssertTrue(config.adoptRelayList(read: theirRead, write: theirWrite,
+                                            publishedAt: now + ListMerge.maxSkew - 1, now: now))
+    }
+
     /// A list with only write relays leaves reading where it was (and the
     /// reverse), rather than leaving that side empty.
     func testAnEmptySideKeepsWhatItHad() {

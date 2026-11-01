@@ -61,18 +61,24 @@ extension HavenConfig {
 
     /// Makes the owner's published relay list (kind 10002, parsed into its
     /// read and write relays) this device's, when `adoptsRelayList` says so.
-    /// Relays no one else can reach, known-dead ones and blocked ones are
-    /// left out, as Settings > Relays would. A side that ends up empty keeps
-    /// what it had. Never publishes anything. Returns whether a list changed.
+    /// Relays no one else can reach, known-dead ones and blocked ones (by
+    /// the Never connect rule, every path on a blocked host) are left out:
+    /// the write list goes to the relay, which has no blocklist of its own.
+    /// A side that ends up empty keeps what it had. A copy dated
+    /// `ListMerge.maxSkew` or more ahead of `now` is ignored: it would stay
+    /// the newest on the relays and undo every later edit here. Never
+    /// publishes anything. Returns whether a list changed.
     @discardableResult
-    mutating func adoptRelayList(read: [String], write: [String], publishedAt: Int64) -> Bool {
-        guard Self.adoptsRelayList(localUpdatedAt: relayListUpdatedAt, publishedAt: publishedAt) else { return false }
-        let blocked = Set(blockedRelays.map { Self.normalizedRelayURL($0).lowercased() })
+    mutating func adoptRelayList(read: [String], write: [String], publishedAt: Int64,
+                                 now: Int64 = Int64(Date().timeIntervalSince1970)) -> Bool {
+        guard publishedAt < now + ListMerge.maxSkew,
+              Self.adoptsRelayList(localUpdatedAt: relayListUpdatedAt, publishedAt: publishedAt) else { return false }
+        let blocked = blockedRelays
         func usable(_ list: [String]) -> [String] {
             var seen = Set<String>()
             return list.map(Self.normalizedRelayURL).filter {
                 RelayDraft.listable($0) && !Self.isDeadRelay($0)
-                    && !blocked.contains($0.lowercased()) && seen.insert($0.lowercased()).inserted
+                    && !RelayBlocklist.isBlocked($0, in: blocked) && seen.insert($0.lowercased()).inserted
             }
         }
         let newRead = usable(read), newWrite = usable(write)

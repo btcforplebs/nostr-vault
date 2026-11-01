@@ -86,6 +86,30 @@ class OwnRelayListTest {
     }
 
     @Test
+    fun `a blocked host is left out on every path`() {
+        // The write list goes to the relay, which has no blocklist (Tron #1529).
+        val config = HavenConfig.newInstall().copy(blockedRelays = listOf("wss://bad.example.com"))
+        val adopted = adopt(
+            config,
+            read = listOf("wss://bad.example.com/x", "wss://read.example.com"),
+            write = listOf("wss://bad.example.com/x", "wss://BAD.example.com/", "wss://write.example.com"), at = 1_000,
+        )
+        assertEquals(listOf("wss://read.example.com"), adopted.feedRelays)
+        assertEquals(listOf("wss://write.example.com"), adopted.blastrRelays)
+    }
+
+    @Test
+    fun `a future-dated list is ignored so an edit stays`() {
+        val skew = com.nostrvault.service.ListMerge.MAX_SKEW
+        val fresh = HavenConfig.newInstall()
+        assertSame(fresh, adopt(fresh, at = now + skew))
+        val mine = fresh.copy(feedRelays = listOf("wss://mine.example.com"), relayListUpdatedAt = now)
+        assertSame(mine, adopt(mine, at = now + 365L * 24 * 3600))
+        // Just inside the skew still counts.
+        assertEquals(theirRead, adopt(mine, at = now + skew - 1).feedRelays)
+    }
+
+    @Test
     fun `an empty side keeps what it had`() {
         val config = HavenConfig.newInstall()
         val adopted = adopt(config, read = emptyList(), write = listOf("wss://write.example.com"), at = 1_000)

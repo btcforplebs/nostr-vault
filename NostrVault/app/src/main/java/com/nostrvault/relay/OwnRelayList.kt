@@ -32,8 +32,12 @@ object OwnRelayList {
     /**
      * [config] with the published list ([read], [write]) as its read and write
      * relays, when [adopts] says so. Relays no one else can reach, dead ones
-     * and blocked ones are left out, as Settings > Relays would; a side that
-     * ends up empty keeps what it had.
+     * and blocked ones (by the Never connect rule, every path on a blocked
+     * host) are left out: the write list goes to the relay, which has no
+     * blocklist of its own. A side that ends up empty keeps what it had. A
+     * copy dated [com.nostrvault.service.ListMerge.MAX_SKEW] or more ahead of
+     * [now] is ignored: it would stay the newest on the relays and undo every
+     * later edit here.
      *
      * An install from before [HavenConfig.relayListUpdatedAt] has no stamp.
      * Its lists count as never edited when they hold only shipped relays;
@@ -41,17 +45,18 @@ object OwnRelayList {
      * until a newer list is published.
      */
     fun adopting(config: HavenConfig, read: List<String>, write: List<String>, publishedAt: Long, now: Long): HavenConfig {
+        if (!com.nostrvault.service.ListMerge.notAhead(publishedAt, now)) return config
         val lists = RelayMatrix.lists(config)
         if (config.relayListUpdatedAt == null && !looksUnedited(lists.read, lists.write)) {
             return config.copy(relayListUpdatedAt = now)
         }
         if (!adopts(config.relayListUpdatedAt, publishedAt)) return config
-        val blocked = config.blockedRelays.map(RelayMatrix::key).toSet()
+        val blocked = config.blockedRelays
         fun usable(list: List<String>): List<String> {
             val seen = HashSet<String>()
             return list.map(DMInbox::normalizedRelayURL).filter {
                 RelayDraft.listable(it) && !DeadRelays.isDead(it) &&
-                    RelayMatrix.key(it) !in blocked && seen.add(RelayMatrix.key(it))
+                    !RelayBlocklist.isBlocked(it, blocked) && seen.add(RelayMatrix.key(it))
             }
         }
         val newRead = usable(read)
