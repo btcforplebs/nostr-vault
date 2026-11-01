@@ -101,6 +101,19 @@ type SimpleInMemory struct {
 	// builtAt is when the graph in pubkeys started building (unix seconds),
 	// or the saved cache's time. A follow list newer than this is not in it.
 	builtAt atomic.Int64
+
+	// followListAt is when each follow's follow list was made, as the last
+	// full build saw it: a floor for the zombie check (zombies.go).
+	followListAt atomic.Pointer[map[string]int64]
+}
+
+// FollowListDates returns each follow's follow-list date from the last full
+// build (depth 3), or nil before one has run. A floor, not a last-seen.
+func (wt *SimpleInMemory) FollowListDates() map[string]int64 {
+	if m := wt.followListAt.Load(); m != nil {
+		return *m
+	}
+	return nil
 }
 
 type layers struct {
@@ -472,6 +485,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 		followIndex[pk] = i
 	}
 	links := make(map[string][]int)
+	listAt := make(map[string]int64, len(follows))
 	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
 	updateProgress(func(p *Progress) {
 		p.Phase = "lists"
@@ -494,6 +508,9 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 			events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
 			for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
 				from, isFollow := followIndex[ev.PubKey]
+				if isFollow && int64(ev.CreatedAt) > listAt[ev.PubKey] {
+					listAt[ev.PubKey] = int64(ev.CreatedAt)
+				}
 				for contact := range ev.Tags.FindAll("p") {
 					if len(contact) > 1 {
 						// One list's tags arrive together, so a repeated tag
@@ -622,6 +639,7 @@ func (wt *SimpleInMemory) build(ctx context.Context) {
 
 	wt.layers.Store(&layers{follows: follows, vouches: vouches})
 	wt.pubkeys.Store(&newWot)
+	wt.followListAt.Store(&listAt)
 	wt.builtAt.Store(started)
 	wt.SaveCache()
 	wt.saveLinks(follows, links)

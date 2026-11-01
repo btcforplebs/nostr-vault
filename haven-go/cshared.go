@@ -588,6 +588,32 @@ func WotNewcomersC(from C.int) *C.char {
 	return C.CString(string(result))
 }
 
+//export WotZombiesC
+func WotZombiesC(owner *C.char, force C.int) *C.char {
+	// JSON wot.ZombieState for owner (hex): the last zombie check, if any,
+	// and whether one is running. Starts a check when there is none, it is a
+	// day old, or force is 1; poll again for the result. {"error": ...} when
+	// the relay isn't up or owner isn't an account here. Read-only: nothing
+	// is signed or published. The caller frees the string.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("WotZombiesC: recovered from panic: %v", r)
+		}
+	}()
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil {
+		result, _ := json.Marshal(map[string]string{"error": "relay not running"})
+		return C.CString(string(result))
+	}
+	state, ok := zombieReport(c, C.GoString(owner), force != 0)
+	if !ok {
+		result, _ := json.Marshal(map[string]string{"error": "not an account on this relay"})
+		return C.CString(string(result))
+	}
+	result, _ := json.Marshal(state)
+	return C.CString(string(result))
+}
+
 //export RequestCatchUpC
 func RequestCatchUpC() {
 	// Like RequestRelaySyncC, but for the app returning from absence
